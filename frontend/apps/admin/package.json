@@ -1,0 +1,41 @@
+{
+  "name": "@v2board/admin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5174",
+    "build": "tsc --noEmit && vite build",
+    "build:deploy": "tsc --noEmit && vite build --config vite.config.deploy.ts",
+    "preview": "vite preview --port 5174",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ant-design/charts": "^2.6.7",
+    "@ant-design/icons": "^6.0.0",
+    "@tanstack/react-query": "catalog:",
+    "@v2board/api-client": "workspace:*",
+    "@v2board/config": "workspace:*",
+    "@v2board/i18n": "workspace:*",
+    "@v2board/types": "workspace:*",
+    "antd": "^6.4.3",
+    "axios": "catalog:",
+    "dayjs": "catalog:",
+    "i18next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-i18next": "catalog:",
+    "react-router-dom": "catalog:",
+    "zustand": "catalog:"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "happy-dom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

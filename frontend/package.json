@@ -1,0 +1,48 @@
+{
+  "name": "v2board-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.0.0",
+  "engines": {
+    "node": ">=20.18.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "dev:admin": "pnpm --filter @v2board/admin dev",
+    "dev:user": "pnpm --filter @v2board/user dev",
+    "build": "pnpm -r --parallel build",
+    "build:admin": "pnpm --filter @v2board/admin build",
+    "build:user": "pnpm --filter @v2board/user build",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
+    "test": "pnpm -r --parallel test",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.9.1",
+    "@typescript-eslint/eslint-plugin": "^8.59.4",
+    "@typescript-eslint/parser": "^8.59.4",
+    "eslint": "^10.0.0",
+    "eslint-config-prettier": "^10.0.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "globals": "^17.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.0",
+    "playwright": "^1.60.0",
+    "prettier": "^3.4.2",
+    "typescript": "^6.0.3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css}": [
+      "prettier --write"
+    ]
+  }
+}
