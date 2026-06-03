@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { normalizeLegacyHashRoute } from '@v2board/config';
+import {
+  installLegacyHashRouteNormalizer,
+  normalizeLegacyHashRoute,
+} from '@v2board/config';
 
 const options = {
   authenticatedFallback: '/dashboard',
@@ -51,5 +54,27 @@ describe('normalizeLegacyHashRoute', () => {
     normalizeLegacyHashRoute(options);
 
     expect(window.location.hash).toBe('#/ticket/7');
+  });
+
+  it('normalizes broken nested hashes that appear after the app has mounted', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const dispose = installLegacyHashRouteNormalizer(options);
+    setUrl('/#/login/dashboard');
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+
+    expect(window.location.hash).toBe('#/dashboard');
+    dispose();
+  });
+
+  it('stops normalizing runtime hash changes after cleanup', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const dispose = installLegacyHashRouteNormalizer(options);
+    dispose();
+    setUrl('/#/login/dashboard');
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+
+    expect(window.location.hash).toBe('#/login/dashboard');
   });
 });

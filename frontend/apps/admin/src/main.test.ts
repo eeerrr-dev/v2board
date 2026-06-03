@@ -7,11 +7,14 @@ const mainSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'm
 
 describe('admin legacy entrypoint', () => {
   it('normalizes broken hash routes before rendering the admin router', () => {
-    expect(mainSource).toContain("import { normalizeLegacyHashRoute } from '@v2board/config';");
-    expect(mainSource).toContain('normalizeLegacyHashRoute({');
+    expect(mainSource).toContain('installLegacyHashRouteNormalizer');
+    expect(mainSource).toContain('normalizeLegacyHashRoute');
+    expect(mainSource).toContain('const legacyHashRouteOptions = {');
     expect(mainSource).toContain("authenticatedFallback: '/dashboard'");
     expect(mainSource).toContain("guestFallback: '/login'");
     expect(mainSource).toContain('routes: ADMIN_LEGACY_ROUTE_PATHS');
+    expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
+    expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
   });
 
   it('initializes legacy settings and dark mode before rendering', () => {

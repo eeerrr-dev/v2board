@@ -53,3 +53,11 @@ export function normalizeLegacyHashRoute(options: LegacyHashRouteOptions): void 
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${nextHash}`);
   }
 }
+
+export function installLegacyHashRouteNormalizer(options: LegacyHashRouteOptions): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+
+  const normalize = () => normalizeLegacyHashRoute(options);
+  window.addEventListener('hashchange', normalize);
+  return () => window.removeEventListener('hashchange', normalize);
+}

@@ -11,12 +11,15 @@ const configIndexSource = readFileSync(
 
 describe('user legacy entrypoint', () => {
   it('normalizes broken hash routes before rendering the user router', () => {
-    expect(mainSource).toContain("import { normalizeLegacyHashRoute } from '@v2board/config';");
-    expect(mainSource).toContain('normalizeLegacyHashRoute({');
+    expect(mainSource).toContain('installLegacyHashRouteNormalizer');
+    expect(mainSource).toContain('normalizeLegacyHashRoute');
+    expect(mainSource).toContain('const legacyHashRouteOptions = {');
     expect(mainSource).toContain("authenticatedFallback: '/dashboard'");
     expect(mainSource).toContain("guestFallback: '/login'");
     expect(mainSource).toContain("publicRoutes: ['/', '/login', '/register', '/forgetpassword']");
     expect(mainSource).toContain('routes: USER_LEGACY_ROUTE_PATHS');
+    expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
+    expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
   });
 
   it('keeps the app on HashRouter like the bundled theme', () => {
