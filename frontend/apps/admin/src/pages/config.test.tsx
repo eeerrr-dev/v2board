@@ -476,9 +476,12 @@ describe('ConfigPage legacy theme config', () => {
     const updateStart = source.indexOf('const setConfigValue = (parentKey: ConfigGroupKey');
     const updateEnd = source.indexOf('  const sendTestMail = () => {', updateStart);
     const updateBlock = source.slice(updateStart, updateEnd);
+    const returnBlock = updateBlock.slice(updateBlock.indexOf('      return {'));
 
+    expect(updateBlock).toContain('[field]: nextValue,');
     expect(updateBlock).toContain('[parentKey]: nextGroup,');
-    expect(updateBlock).not.toContain('[field]: nextValue,');
+    expect(returnBlock).toContain('[parentKey]: nextGroup,');
+    expect(returnBlock).not.toContain('[field]: nextValue,');
   });
 
   it('keeps the original uncontrolled value fields for legacy inputs', () => {
