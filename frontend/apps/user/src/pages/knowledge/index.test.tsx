@@ -183,15 +183,15 @@ describe('KnowledgePage bundled-theme list', () => {
     expect(html).toContain('最后更新: 2023/11/15');
   });
 
-  it('renders a visible empty state when the local knowledge base has no articles', () => {
+  it('keeps an empty knowledge payload as the bundled search-only view', () => {
     mocks.groups = {};
 
     const html = renderToStaticMarkup(<KnowledgePage />);
 
     expect(html).toContain('v2board-knowledge-search-bar');
-    expect(html).toContain('block block-rounded ');
-    expect(html).toContain('class="ant-empty ant-empty-normal"');
-    expect(html).toContain('暂无数据');
+    expect(html).not.toContain('block block-rounded ');
+    expect(html).not.toContain('class="ant-empty ant-empty-normal"');
+    expect(html).not.toContain('暂无数据');
   });
 
   it('keeps the bundled-theme unkeyed category and article rows', () => {

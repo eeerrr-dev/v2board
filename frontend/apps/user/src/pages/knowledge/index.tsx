@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
 import { CloseIcon, SearchIcon } from '@/components/ant-icon';
 import { AntBtn } from '@/components/ant-btn';
-import { LegacyEmpty } from '@/components/legacy-empty';
 import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
 import { renderLegacyMarkdown } from '@/lib/markdown';
 import { legacyCopyText } from '@/lib/legacy-settings';
@@ -139,16 +138,6 @@ export default function KnowledgePage() {
       {loading ? (
         <div className="spinner-grow text-primary" role="status">
           <span className="sr-only">Loading...</span>
-        </div>
-      ) : Object.keys(knowledgeGroups).length === 0 ? (
-        <div className="row mb-3 mb-md-0">
-          <div className="col-md-12">
-            <div className="block block-rounded ">
-              <div className="block-content">
-                <LegacyEmpty />
-              </div>
-            </div>
-          </div>
         </div>
       ) : (
         Object.keys(knowledgeGroups).map((category) => (
