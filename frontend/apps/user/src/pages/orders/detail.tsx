@@ -152,9 +152,8 @@ export default function OrderDetailPage() {
   const order = (orderQuery.data ?? { plan: {} }) as Order;
   const isPending = order.status === 0;
   const isDeposit = order.plan?.id == 0;
-  const periodLabel = order.period && PERIOD_LABEL_KEY[order.period]
-    ? t(PERIOD_LABEL_KEY[order.period])
-    : undefined;
+  const periodLabelKey = order.period ? PERIOD_LABEL_KEY[order.period] : undefined;
+  const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
   const legacyPreHandlingAmount =
     preHandlingAmount ??
     order.pre_handling_amount ??

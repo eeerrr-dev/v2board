@@ -1,10 +1,14 @@
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act } from 'react';
 import type { CSSProperties } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TransferDialog } from './transfer-dialog';
 import { WithdrawDialog } from './withdraw-dialog';
+
+const testDir = dirname(fileURLToPath(import.meta.url));
 
 const mocks = vi.hoisted(() => ({
   invalidateQueries: vi.fn(),
@@ -181,7 +185,7 @@ describe('invite commission dialogs bundled-theme behavior', () => {
   });
 
   it('keeps transfer amount conversion out of the dialog like the old component', () => {
-    const source = readFileSync(new URL('./transfer-dialog.tsx', import.meta.url), 'utf8');
+    const source = readFileSync(join(testDir, 'transfer-dialog.tsx'), 'utf8');
 
     expect(source).toContain('await mutateAsync(yuan);');
     expect(source).not.toContain('Number(yuan) * 100');

@@ -101,7 +101,7 @@ export default function PlanCheckoutPage() {
 
   const saveOrder = async () => {
     if (!planQuery.data) return;
-    const currentPeriod = period ?? getDefaultPeriod(planQuery.data);
+    const currentPeriod = (period ?? getDefaultPeriod(planQuery.data)) as PlanPeriod;
     setSubmitting(true);
     try {
       const tradeNo = await user.saveOrder(apiClient, {

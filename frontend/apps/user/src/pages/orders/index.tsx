@@ -199,9 +199,8 @@ export default function OrdersPage() {
                       <tbody className="ant-table-tbody">
                         {orders.map((order, index) => {
                           const status = STATUS_LABEL[order.status];
-                          const periodLabel = order.period && PERIOD_LABEL[order.period]
-                            ? t(PERIOD_LABEL[order.period])
-                            : undefined;
+                          const periodLabelKey = order.period ? PERIOD_LABEL[order.period] : undefined;
+                          const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
                           return (
                             <tr
                               className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}

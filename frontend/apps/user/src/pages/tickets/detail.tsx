@@ -5,6 +5,14 @@ import { useReplyTicketMutation, useTicket } from '@/lib/queries';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { toast } from '@/lib/legacy-toast';
 
+function legacyTicketMessageLength(data?: { message?: unknown[] }) {
+  return data?.message!.length;
+}
+
+function assumeLegacyTicketMessages<T extends { message?: unknown }>(
+  _data: T | undefined,
+): asserts _data is T & { message: NonNullable<T['message']> } {}
+
 export default function TicketDetailPage() {
   const { ticket_id } = useParams();
   const { t } = useTranslation();
@@ -37,7 +45,7 @@ export default function TicketDetailPage() {
     const chat = chatRef.current;
     if (!chat) return;
     chat.scrollTo(0, chat.scrollHeight);
-  }, [ticket.data?.message.length]);
+  }, [legacyTicketMessageLength(ticket.data)]);
 
   const submitReply = async () => {
     if (reply.isPending) return;
@@ -54,6 +62,7 @@ export default function TicketDetailPage() {
   };
 
   const data = ticket.data;
+  assumeLegacyTicketMessages(data);
 
   return (
     <div>
