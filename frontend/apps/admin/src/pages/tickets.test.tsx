@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import dayjs from 'dayjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import TicketsPage, { startLegacyTicketPolling } from './tickets';
 
 const ticketsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'tickets.tsx'), 'utf8');
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   params: {} as Record<string, string>,
   closeTicketMutate: vi.fn(),
   ticketRefetch: vi.fn(),
+  ticketQueries: [] as Array<Record<string, unknown>>,
   adminUserInfoIds: [] as Array<number | null | undefined>,
 }));
 
@@ -26,38 +27,41 @@ vi.mock('react-router-dom', () => ({
 }));
 
 vi.mock('@/lib/queries', () => ({
-  useAdminTickets: () => ({
-    isLoading: false,
-    isFetching: false,
-    refetch: vi.fn(),
-    data: {
-      data: [
-        {
-          id: 1,
-          user_id: 1,
-          subject: '支付问题',
-          level: 2,
-          status: 0,
-          reply_status: 0,
-          last_reply_user_id: null,
-          created_at: 1700000000,
-          updated_at: 1700086400,
-        },
-        {
-          id: 2,
-          user_id: 2,
-          subject: '已完成',
-          level: 0,
-          status: 1,
-          reply_status: 1,
-          last_reply_user_id: null,
-          created_at: 1700000000,
-          updated_at: 1700086400,
-        },
-      ],
-      total: 2,
-    },
-  }),
+  useAdminTickets: (query: Record<string, unknown>) => {
+    mocks.ticketQueries.push(query);
+    return {
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+      data: {
+        data: [
+          {
+            id: 1,
+            user_id: 1,
+            subject: '支付问题',
+            level: 2,
+            status: 0,
+            reply_status: 0,
+            last_reply_user_id: null,
+            created_at: 1700000000,
+            updated_at: 1700086400,
+          },
+          {
+            id: 2,
+            user_id: 2,
+            subject: '已完成',
+            level: 0,
+            status: 1,
+            reply_status: 1,
+            last_reply_user_id: null,
+            created_at: 1700000000,
+            updated_at: 1700086400,
+          },
+        ],
+        total: 2,
+      },
+    };
+  },
   useCloseTicketMutation: () => ({
     mutate: mocks.closeTicketMutate,
   }),
@@ -139,7 +143,12 @@ beforeEach(() => {
   mocks.params = {};
   mocks.closeTicketMutate.mockClear();
   mocks.ticketRefetch.mockClear();
+  mocks.ticketQueries = [];
   mocks.adminUserInfoIds = [];
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('TicketsPage legacy ticket manager', () => {
@@ -190,6 +199,61 @@ describe('TicketsPage legacy ticket manager', () => {
     });
 
     expect(mocks.closeTicketMutate).toHaveBeenCalledWith(2, expect.any(Object));
+
+    await act(async () => {
+      root?.unmount();
+      root = null;
+    });
+    container.remove();
+  });
+
+  it('debounces the legacy email search before fetching the first ticket page', async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    let root: Root | null = createRoot(container);
+
+    await act(async () => {
+      root!.render(<TicketsPage />);
+      await Promise.resolve();
+    });
+
+    expect(mocks.ticketQueries[mocks.ticketQueries.length - 1]).toMatchObject({
+      current: 1,
+      pageSize: 10,
+      status: 0,
+    });
+
+    mocks.ticketQueries = [];
+    const emailInput = container.querySelector<HTMLInputElement>('input[placeholder="输入邮箱搜索"]')!;
+
+    await act(async () => {
+      emailInput.value = 'buyer@example.com';
+      emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(mocks.ticketQueries).toHaveLength(0);
+
+    await act(async () => {
+      vi.advanceTimersByTime(299);
+      await Promise.resolve();
+    });
+
+    expect(mocks.ticketQueries).toHaveLength(0);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
+
+    expect(mocks.ticketQueries[mocks.ticketQueries.length - 1]).toMatchObject({
+      current: 1,
+      pageSize: 10,
+      status: 0,
+      email: 'buyer@example.com',
+    });
+    expect(ticketsSource).toContain('setTimeout(() => filter(key, value), 300)');
 
     await act(async () => {
       root?.unmount();
