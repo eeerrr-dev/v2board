@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { App as AntdApp } from 'antd';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 import { AdminLayout } from '@/components/layout/admin-layout';
+import { RouteErrorBoundary } from '@/components/route-error-boundary';
 import { bindMessageApi } from '@/lib/api';
 import LoginPage from '@/pages/login';
 import DashboardPage from '@/pages/dashboard';
@@ -75,25 +76,97 @@ function RootRedirect() {
 }
 
 const ADMIN_ROUTE_ELEMENTS: Record<AdminLegacyRoutePath, ReactNode> = {
-  '/config/payment': <PaymentsPage />,
-  '/config/system': <ConfigPage />,
-  '/config/theme': <ConfigPage />,
-  '/coupon': <CouponsPage />,
-  '/giftcard': <CouponsPage />,
-  '/dashboard': <DashboardPage />,
+  '/config/payment': (
+    <RouteErrorBoundary>
+      <PaymentsPage />
+    </RouteErrorBoundary>
+  ),
+  '/config/system': (
+    <RouteErrorBoundary>
+      <ConfigPage />
+    </RouteErrorBoundary>
+  ),
+  '/config/theme': (
+    <RouteErrorBoundary>
+      <ConfigPage />
+    </RouteErrorBoundary>
+  ),
+  '/coupon': (
+    <RouteErrorBoundary>
+      <CouponsPage />
+    </RouteErrorBoundary>
+  ),
+  '/giftcard': (
+    <RouteErrorBoundary>
+      <CouponsPage />
+    </RouteErrorBoundary>
+  ),
+  '/dashboard': (
+    <RouteErrorBoundary>
+      <DashboardPage />
+    </RouteErrorBoundary>
+  ),
   '/': <RootRedirect />,
-  '/knowledge': <KnowledgePage />,
-  '/login': <LoginPage />,
-  '/notice': <NoticesPage />,
-  '/order': <OrdersPage />,
-  '/plan': <PlansPage />,
-  '/queue': <SystemPage />,
-  '/server/group': <ServersPage />,
-  '/server/manage': <ServersPage />,
-  '/server/route': <ServersPage />,
-  '/ticket/:ticket_id': <TicketsPage />,
-  '/ticket': <TicketsPage />,
-  '/user': <UsersPage />,
+  '/knowledge': (
+    <RouteErrorBoundary>
+      <KnowledgePage />
+    </RouteErrorBoundary>
+  ),
+  '/login': (
+    <RouteErrorBoundary>
+      <LoginPage />
+    </RouteErrorBoundary>
+  ),
+  '/notice': (
+    <RouteErrorBoundary>
+      <NoticesPage />
+    </RouteErrorBoundary>
+  ),
+  '/order': (
+    <RouteErrorBoundary>
+      <OrdersPage />
+    </RouteErrorBoundary>
+  ),
+  '/plan': (
+    <RouteErrorBoundary>
+      <PlansPage />
+    </RouteErrorBoundary>
+  ),
+  '/queue': (
+    <RouteErrorBoundary>
+      <SystemPage />
+    </RouteErrorBoundary>
+  ),
+  '/server/group': (
+    <RouteErrorBoundary>
+      <ServersPage />
+    </RouteErrorBoundary>
+  ),
+  '/server/manage': (
+    <RouteErrorBoundary>
+      <ServersPage />
+    </RouteErrorBoundary>
+  ),
+  '/server/route': (
+    <RouteErrorBoundary>
+      <ServersPage />
+    </RouteErrorBoundary>
+  ),
+  '/ticket/:ticket_id': (
+    <RouteErrorBoundary>
+      <TicketsPage />
+    </RouteErrorBoundary>
+  ),
+  '/ticket': (
+    <RouteErrorBoundary>
+      <TicketsPage />
+    </RouteErrorBoundary>
+  ),
+  '/user': (
+    <RouteErrorBoundary>
+      <UsersPage />
+    </RouteErrorBoundary>
+  ),
 };
 
 export default function App() {
@@ -105,11 +178,7 @@ export default function App() {
       <Route path="/login" element={ADMIN_ROUTE_ELEMENTS['/login']} />
       <Route path="/" element={ADMIN_ROUTE_ELEMENTS['/']} />
       <Route path="/ticket/:ticket_id" element={ADMIN_ROUTE_ELEMENTS['/ticket/:ticket_id']} />
-      <Route
-        element={
-          <AdminLayout />
-        }
-      >
+      <Route element={<AdminLayout />}>
         {ADMIN_LAYOUT_ROUTE_PATHS.map((path) => (
           <Route key={path} path={path} element={ADMIN_ROUTE_ELEMENTS[path]} />
         ))}
