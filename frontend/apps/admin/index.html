@@ -1,9 +1,32 @@
 <!doctype html>
 <html lang="zh-CN">
   <head>
+    <link rel="stylesheet" href="/assets/admin/components.chunk.css" />
+    <link rel="stylesheet" href="/assets/admin/umi.css" />
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no"
+    />
     <title>V2Board Admin</title>
+    <script>
+      window.routerBase = '/';
+    </script>
+    <script>
+      window.settings = {
+        title: 'V2Board',
+        theme: {
+          sidebar: 'light',
+          header: 'dark',
+          color: 'default',
+        },
+        version: 'dev',
+        host: '',
+        background_url: '',
+        logo: '',
+        secure_path: 'admin',
+      };
+    </script>
   </head>
   <body>
     <div id="root"></div>

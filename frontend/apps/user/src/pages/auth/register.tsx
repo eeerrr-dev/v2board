@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LanguageMenu } from '@/components/layout/language-menu';
@@ -12,26 +12,31 @@ import {
 import { i18nGet } from '@/lib/errors';
 import { getLegacyDescription, getLegacyLogo, getLegacyTitle } from '@/lib/legacy-settings';
 import { toast } from '@/lib/legacy-toast';
+import { legacyHref } from '@/lib/legacy-href';
+import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
 export default function RegisterPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const { data: config, isFetching: isConfigLoading } = useGuestConfig();
+  const guestConfig = useGuestConfig();
+  const { data: config } = guestConfig;
+  const configLoading = useLegacyFetchLoading(guestConfig.isFetching);
   const { mutateAsync: register, isPending } = useRegisterMutation();
   const { mutateAsync: sendCode, isPending: isSendingCode } = useSendEmailVerifyMutation();
   const { run: runRecaptcha, recaptchaModal } = useLegacyRecaptcha(
-    config?.is_recaptcha === 1,
+    Boolean(config?.is_recaptcha),
     config?.recaptcha_site_key,
   );
 
-  const initialInviteCode = params.get('code') ?? '';
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [emailCode, setEmailCode] = useState('');
-  const [inviteCode, setInviteCode] = useState(initialInviteCode);
-  const [emailSuffix, setEmailSuffix] = useState('');
+  const initialInviteCode = params.get('code');
+  const emailRef = useRef<HTMLInputElement | null>(null);
+  const emailCodeRef = useRef<HTMLInputElement | null>(null);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement | null>(null);
+  const inviteCodeRef = useRef<HTMLInputElement | null>(null);
+  const cooldownRef = useRef(60);
+  const [emailSuffix, setEmailSuffix] = useState<string | undefined>(undefined);
   const [tosChecked, setTosChecked] = useState(false);
   const [cooldown, setCooldown] = useState(60);
   const logo = getLegacyLogo();
@@ -40,31 +45,47 @@ export default function RegisterPage() {
   const emailWhitelistSuffix = config?.email_whitelist_suffix;
   const emailSuffixes = Array.isArray(emailWhitelistSuffix) ? emailWhitelistSuffix : [];
   const hasEmailWhitelist = Boolean(emailWhitelistSuffix);
-  const registerEmail = hasEmailWhitelist ? `${email}@${emailSuffix}` : email;
+  const selectedEmailSuffix = hasEmailWhitelist
+    ? emailSuffixes.includes(emailSuffix ?? '')
+      ? emailSuffix
+      : emailSuffixes[0]
+    : '';
+  const getEmail = () => {
+    const email = emailRef.current!.value;
+    return hasEmailWhitelist ? `${email}@${selectedEmailSuffix}` : email;
+  };
 
-  useEffect(() => {
-    if (cooldown >= 60) return;
-    const timer = window.setTimeout(() => {
-      setCooldown((value) => (value > 0 ? value - 1 : 60));
+  const startSendEmailVerifyCountdown = () => {
+    window.setTimeout(() => {
+      if (cooldownRef.current !== 0) {
+        cooldownRef.current -= 1;
+        setCooldown(cooldownRef.current);
+        startSendEmailVerifyCountdown();
+      } else {
+        cooldownRef.current = 60;
+        setCooldown(60);
+      }
     }, 1000);
-    return () => window.clearTimeout(timer);
-  }, [cooldown]);
+  };
 
   useEffect(() => {
-    if (emailSuffix || !hasEmailWhitelist) return;
-    setEmailSuffix(emailSuffixes[0] ?? '');
-  }, [emailSuffix, emailSuffixes, hasEmailWhitelist]);
+    if (!hasEmailWhitelist) {
+      if (emailSuffix !== '') setEmailSuffix('');
+      return;
+    }
+    if (emailSuffix !== selectedEmailSuffix) setEmailSuffix(selectedEmailSuffix);
+  }, [emailSuffix, hasEmailWhitelist, selectedEmailSuffix]);
 
   const onSendCode = async (recaptchaData?: string) => {
     try {
       const sent = await sendCode({
-        email: registerEmail,
+        email: getEmail(),
         isforget: 0,
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
       if (!sent) return;
       toast.success('发送成功', { description: '如果没有收到验证码请检查垃圾箱。' });
-      window.setTimeout(() => setCooldown(59), 1000);
+      startSendEmailVerifyCountdown();
     } catch {}
   };
 
@@ -73,16 +94,17 @@ export default function RegisterPage() {
       toast.error(i18nGet('请求失败'), { description: t('auth.tos_required') });
       return;
     }
-    if (password !== confirmPassword) {
+    const password = passwordRef.current!.value;
+    if (password !== confirmPasswordRef.current!.value) {
       toast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') });
       return;
     }
     try {
       await register({
-        email: registerEmail,
+        email: getEmail(),
         password,
-        invite_code: inviteCode,
-        email_code: config?.is_email_verify ? emailCode : '',
+        invite_code: inviteCodeRef.current!.value,
+        email_code: config?.is_email_verify ? emailCodeRef.current!.value : '',
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
       navigate('/login');
@@ -99,7 +121,7 @@ export default function RegisterPage() {
           <div className="col-md-12 order-md-1 bg-white">
             <div className="block-content block-content-full px-lg-4 py-md-4 py-lg-4">
               <div className="mb-3 text-center">
-                <a className="font-size-h1" href="javascript:void(0);">
+                <a className="font-size-h1" ref={legacyHref()}>
                   {logo ? (
                     <img className="v2board-logo mb-3" src={logo} />
                   ) : (
@@ -108,7 +130,7 @@ export default function RegisterPage() {
                 </a>
                 {description && <p className="font-size-sm text-muted mb-3">{description}</p>}
               </div>
-              {isConfigLoading ? (
+              {configLoading ? (
                 <div className="content content-full text-center">
                   <div className="spinner-grow text-primary" role="status">
                     <span className="sr-only">Loading...</span>
@@ -125,13 +147,12 @@ export default function RegisterPage() {
                       type="text"
                       className="form-control form-control-alt"
                       placeholder={t('auth.email')}
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
+                      ref={emailRef}
                     />
                     {hasEmailWhitelist ? (
                       <select
                         className="form-control form-control-alt"
-                        value={emailSuffix}
+                        value={selectedEmailSuffix}
                         onChange={(event) => setEmailSuffix(event.target.value)}
                       >
                         {emailSuffixes.map((suffix) => (
@@ -150,8 +171,7 @@ export default function RegisterPage() {
                           type="text"
                           className="form-control form-control-alt"
                           placeholder={t('auth.email_code')}
-                          value={emailCode}
-                          onChange={(event) => setEmailCode(event.target.value)}
+                          ref={emailCodeRef}
                         />
                       </div>
                       <div className="col-3">
@@ -176,8 +196,7 @@ export default function RegisterPage() {
                       type="password"
                       className="form-control form-control-alt"
                       placeholder={t('auth.password')}
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
+                      ref={passwordRef}
                     />
                   </div>
                   <div className="form-group">
@@ -185,33 +204,36 @@ export default function RegisterPage() {
                       type="password"
                       className="form-control form-control-alt"
                       placeholder={t('auth.password')}
-                      value={confirmPassword}
-                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      ref={confirmPasswordRef}
                     />
                   </div>
                   <div className="form-group">
                     <input
                       type="text"
                       disabled={Boolean(initialInviteCode)}
+                      defaultValue={initialInviteCode ?? undefined}
                       className="form-control form-control-alt"
                       placeholder={
-                        config?.is_invite_force ? t('auth.invite_code') : t('auth.invite_code_optional')
+                        config?.is_invite_force
+                          ? t('auth.invite_code')
+                          : t('auth.invite_code_optional')
                       }
-                      value={inviteCode}
-                      onChange={(event) => setInviteCode(event.target.value)}
+                      ref={inviteCodeRef}
                     />
                   </div>
 
                   {config?.tos_url ? (
                     <div className="form-group">
                       <div className="custom-control custom-checkbox custom-control-primary">
+                        {/* Original wires only onClick (umi.js @1339000) — a controlled
+                            checkbox with no onChange and no readOnly, so it emits React's
+                            dev-only warning; match its DOM exactly (no extra attributes). */}
                         <input
                           type="checkbox"
                           className="custom-control-input"
                           checked={tosChecked}
                           style={{ zIndex: 1000 }}
                           onClick={() => setTosChecked((value) => !value)}
-                          onChange={() => undefined}
                         />
                         <label className="custom-control-label">
                           <div
@@ -244,21 +266,21 @@ export default function RegisterPage() {
                 </div>
               )}
             </div>
-            <div className="text-left bg-gray-lighter p-3 px-4">
-              <a
-                className="font-size-sm text-muted"
-                href="javascript:void(0);"
-                onClick={() => navigate('/login')}
-              >
-                {t('auth.return_to_login')}
-              </a>
-              <LanguageMenu
-                legacyIcon
-                showLabel
-                triggerClassName="v2board-login-i18n-btn"
-              />
-            </div>
           </div>
+        </div>
+        <div className="text-left bg-gray-lighter p-3 px-4">
+          <a
+            className="font-size-sm text-muted"
+            ref={legacyHref()}
+            onClick={() => navigate('/login')}
+          >
+            {t('auth.return_to_login')}
+          </a>
+          <LanguageMenu
+            legacyIcon
+            showLabel
+            triggerClassName="v2board-login-i18n-btn"
+          />
         </div>
       </div>
       {recaptchaModal}

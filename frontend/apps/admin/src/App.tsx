@@ -1,65 +1,119 @@
-import { Suspense, lazy, useEffect } from 'react';
-import { App as AntdApp, Spin } from 'antd';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, type ReactNode } from 'react';
+import { App as AntdApp } from 'antd';
+import { Route, Routes, useNavigate } from 'react-router-dom';
 import { AdminLayout } from '@/components/layout/admin-layout';
-import { RequireAuth } from '@/components/layout/require-auth';
 import { bindMessageApi } from '@/lib/api';
+import LoginPage from '@/pages/login';
+import DashboardPage from '@/pages/dashboard';
+import UsersPage from '@/pages/users';
+import OrdersPage from '@/pages/orders';
+import PlansPage from '@/pages/plans';
+import ServersPage from '@/pages/servers';
+import TicketsPage from '@/pages/tickets';
+import PaymentsPage from '@/pages/payments';
+import CouponsPage from '@/pages/coupons';
+import KnowledgePage from '@/pages/knowledge';
+import NoticesPage from '@/pages/notices';
+import SystemPage from '@/pages/system';
+import ConfigPage from '@/pages/config';
 
-const LoginPage = lazy(() => import('@/pages/login'));
-const DashboardPage = lazy(() => import('@/pages/dashboard'));
-const UsersPage = lazy(() => import('@/pages/users'));
-const OrdersPage = lazy(() => import('@/pages/orders'));
-const PlansPage = lazy(() => import('@/pages/plans'));
-const ServersPage = lazy(() => import('@/pages/servers'));
-const TicketsPage = lazy(() => import('@/pages/tickets'));
-const PaymentsPage = lazy(() => import('@/pages/payments'));
-const CouponsPage = lazy(() => import('@/pages/coupons'));
-const KnowledgePage = lazy(() => import('@/pages/knowledge'));
-const NoticesPage = lazy(() => import('@/pages/notices'));
-const SystemPage = lazy(() => import('@/pages/system'));
-const ConfigPage = lazy(() => import('@/pages/config'));
-const StatsPage = lazy(() => import('@/pages/stats'));
+export const ADMIN_LEGACY_ROUTE_PATHS = [
+  '/config/payment',
+  '/config/system',
+  '/config/theme',
+  '/coupon',
+  '/giftcard',
+  '/dashboard',
+  '/',
+  '/knowledge',
+  '/login',
+  '/notice',
+  '/order',
+  '/plan',
+  '/queue',
+  '/server/group',
+  '/server/manage',
+  '/server/route',
+  '/ticket/:ticket_id',
+  '/ticket',
+  '/user',
+] as const;
 
-function Fallback() {
-  return (
-    <div className="h-screen flex items-center justify-center">
-      <Spin size="large" />
-    </div>
-  );
+type AdminLegacyRoutePath = (typeof ADMIN_LEGACY_ROUTE_PATHS)[number];
+
+export const ADMIN_STANDALONE_ROUTE_PATHS = [
+  '/ticket/:ticket_id',
+] as const satisfies readonly AdminLegacyRoutePath[];
+
+export const ADMIN_LAYOUT_ROUTE_PATHS = [
+  '/config/payment',
+  '/config/system',
+  '/config/theme',
+  '/coupon',
+  '/giftcard',
+  '/dashboard',
+  '/knowledge',
+  '/notice',
+  '/order',
+  '/plan',
+  '/queue',
+  '/server/group',
+  '/server/manage',
+  '/server/route',
+  '/ticket',
+  '/user',
+] as const satisfies readonly AdminLegacyRoutePath[];
+
+function RootRedirect() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    navigate('/login');
+  }, [navigate]);
+
+  return <div />;
 }
+
+const ADMIN_ROUTE_ELEMENTS: Record<AdminLegacyRoutePath, ReactNode> = {
+  '/config/payment': <PaymentsPage />,
+  '/config/system': <ConfigPage />,
+  '/config/theme': <ConfigPage />,
+  '/coupon': <CouponsPage />,
+  '/giftcard': <CouponsPage />,
+  '/dashboard': <DashboardPage />,
+  '/': <RootRedirect />,
+  '/knowledge': <KnowledgePage />,
+  '/login': <LoginPage />,
+  '/notice': <NoticesPage />,
+  '/order': <OrdersPage />,
+  '/plan': <PlansPage />,
+  '/queue': <SystemPage />,
+  '/server/group': <ServersPage />,
+  '/server/manage': <ServersPage />,
+  '/server/route': <ServersPage />,
+  '/ticket/:ticket_id': <TicketsPage />,
+  '/ticket': <TicketsPage />,
+  '/user': <UsersPage />,
+};
 
 export default function App() {
   const { message } = AntdApp.useApp();
   useEffect(() => bindMessageApi(message), [message]);
 
   return (
-    <Suspense fallback={<Fallback />}>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route
-          element={
-            <RequireAuth>
-              <AdminLayout />
-            </RequireAuth>
-          }
-        >
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/users" element={<UsersPage />} />
-          <Route path="/orders" element={<OrdersPage />} />
-          <Route path="/plans" element={<PlansPage />} />
-          <Route path="/servers" element={<ServersPage />} />
-          <Route path="/tickets" element={<TicketsPage />} />
-          <Route path="/payments" element={<PaymentsPage />} />
-          <Route path="/coupons" element={<CouponsPage />} />
-          <Route path="/knowledge" element={<KnowledgePage />} />
-          <Route path="/notices" element={<NoticesPage />} />
-          <Route path="/system" element={<SystemPage />} />
-          <Route path="/config" element={<ConfigPage />} />
-          <Route path="/stats" element={<StatsPage />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
-    </Suspense>
+    <Routes>
+      <Route path="/login" element={ADMIN_ROUTE_ELEMENTS['/login']} />
+      <Route path="/" element={ADMIN_ROUTE_ELEMENTS['/']} />
+      <Route path="/ticket/:ticket_id" element={ADMIN_ROUTE_ELEMENTS['/ticket/:ticket_id']} />
+      <Route
+        element={
+          <AdminLayout />
+        }
+      >
+        {ADMIN_LAYOUT_ROUTE_PATHS.map((path) => (
+          <Route key={path} path={path} element={ADMIN_ROUTE_ELEMENTS[path]} />
+        ))}
+      </Route>
+    </Routes>
   );
 }

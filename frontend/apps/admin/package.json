@@ -22,7 +22,9 @@
     "antd": "^6.4.3",
     "axios": "catalog:",
     "dayjs": "catalog:",
+    "echarts": "^6.1.0",
     "i18next": "catalog:",
+    "markdown-it": "^14.2.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-i18next": "catalog:",
@@ -32,6 +34,7 @@
   "devDependencies": {
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@types/markdown-it": "^14.1.2",
     "@vitejs/plugin-react": "catalog:",
     "happy-dom": "catalog:",
     "typescript": "catalog:",

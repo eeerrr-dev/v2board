@@ -6,11 +6,11 @@ import { HashRouter } from 'react-router-dom';
 
 import App from './App';
 import { LegacyConfirmProvider } from './components/legacy-confirm';
-import { setupAuthSync } from './lib/auth';
-import { applyDarkMode } from './lib/dark-mode';
+import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyLegacySettings } from './lib/legacy-settings';
 import './styles/globals.css';
 
+applyLegacySettings();
 const i18n = createI18n();
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,9 +18,7 @@ const queryClient = new QueryClient({
   },
 });
 
-setupAuthSync();
-applyLegacySettings();
-applyDarkMode();
+applyInitialDarkMode();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');

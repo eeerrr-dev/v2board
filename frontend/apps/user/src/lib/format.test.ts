@@ -3,8 +3,13 @@ import { formatBytes, formatDateTime, formatMoney } from '@v2board/config/format
 
 describe('formatters', () => {
   it('formats bytes', () => {
+    expect(formatBytes(-1)).toBe(0);
     expect(formatBytes(0)).toBe('0.00 B');
     expect(formatBytes(1024)).toBe('1024.00 B');
+    expect(formatBytes(1025)).toBe('1.00 KB');
+    expect(formatBytes(1024 * 1024)).toBe('1024.00 KB');
+    expect(formatBytes(1024 * 1024 + 1)).toBe('1.00 MB');
+    expect(formatBytes(1024 * 1024 * 1024)).toBe('1024.00 MB');
     expect(formatBytes(2 * 1024 * 1024 * 1024)).toBe('2.00 GB');
   });
   it('formats money in cents', () => {

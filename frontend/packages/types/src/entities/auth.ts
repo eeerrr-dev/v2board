@@ -8,10 +8,3 @@ export interface CheckLoginResult {
   is_login: boolean;
   is_admin?: boolean;
 }
-
-export interface ActiveSession {
-  id: string;
-  ip: string;
-  ua: string;
-  login_at: number;
-}

@@ -1,29 +1,47 @@
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
 interface PlanContentProps {
-  content: string;
+  content?: string | null;
   className?: string;
   htmlClassName?: string;
+  guardNull?: boolean;
 }
 
-export function PlanContent({ content, className, htmlClassName }: PlanContentProps) {
-  const features = parseFeatures(content);
-  if (!features) {
+export function PlanContent({ content, className, htmlClassName, guardNull = false }: PlanContentProps) {
+  // The original parses the plan content as JSON, then maps it as a feature list.
+  // The plan-list page gates ONLY on `typeof parsed === 'object'`, so a JSON
+  // `null` (typeof 'object') enters the map branch and `null.map` throws. The
+  // checkout page instead gates on `g && typeof g === 'object'`, so a JSON `null`
+  // falls back to raw HTML — `guardNull` selects that variant. In both cases a
+  // parse failure or a plain `{}` behaves exactly as the original does.
+  let parsed: unknown;
+  let parseFailed = false;
+  try {
+    parsed = JSON.parse(content as string);
+  } catch {
+    parseFailed = true;
+  }
+
+  const isFeatureList = guardNull
+    ? parsed != null && typeof parsed === 'object'
+    : typeof parsed === 'object';
+  if (parseFailed || !isFeatureList) {
     return (
       <div
         className={cn(htmlClassName ?? className)}
-        dangerouslySetInnerHTML={{ __html: content }}
+        dangerouslySetInnerHTML={{ __html: content as string }}
       />
     );
   }
 
+  const features = parsed as Array<{ feature?: unknown; support?: unknown }>;
   return (
     <div className={cn(className)}>
-      {features.map((item, index) => {
+      {features.map((item) => {
         const supported = Boolean(item.support);
         return (
           <div
-            key={`${item.feature}-${index}`}
             style={{
               textAlign: 'left',
               marginBottom: 8,
@@ -34,30 +52,10 @@ export function PlanContent({ content, className, htmlClassName }: PlanContentPr
               className={`si ${supported ? 'si-check' : 'si-close'} text-primary`}
               style={{ fontSize: 21, verticalAlign: 'sub' }}
             />
-            <span style={{ paddingLeft: 8 }}>{item.feature}</span>
+            <span style={{ paddingLeft: 8 }}>{item.feature as ReactNode}</span>
           </div>
         );
       })}
     </div>
   );
-}
-
-function parseFeatures(content: string): Array<{ feature: string; support?: boolean }> | null {
-  try {
-    const parsed = JSON.parse(content) as unknown;
-    if (
-      Array.isArray(parsed) &&
-      parsed.every((item) => {
-        return (
-          item &&
-          typeof item === 'object' &&
-          'feature' in item &&
-          typeof (item as { feature?: unknown }).feature === 'string'
-        );
-      })
-    ) {
-      return parsed as Array<{ feature: string; support?: boolean }>;
-    }
-  } catch {}
-  return null;
 }

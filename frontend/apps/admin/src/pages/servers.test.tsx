@@ -1,0 +1,1153 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import ServersPage, {
+  createServerSortPayload,
+  getLegacyNetworkSettingsPlaceholder,
+  getLegacyServerInitialValues,
+  moveServerNodeByLegacyDragIndexes,
+} from './servers';
+
+const serversSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'servers.tsx'), 'utf8');
+const queriesSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'), 'utf8');
+const defaultUserAgent = window.navigator.userAgent;
+
+const mocks = vi.hoisted(() => ({
+  pathname: '/server/group',
+  usePrompt: vi.fn(),
+}));
+
+vi.mock('react-router-dom', () => ({
+  unstable_usePrompt: mocks.usePrompt,
+  useLocation: () => ({ pathname: mocks.pathname }),
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+vi.mock('@/lib/queries', () => ({
+  useServerGroups: () => ({
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
+    data: [
+      {
+        id: 1,
+        name: 'VIP',
+        user_count: 12,
+        server_count: 3,
+        created_at: 1,
+        updated_at: 1,
+      },
+    ],
+  }),
+  useSaveServerGroupMutation: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+  useDropServerGroupMutation: () => ({
+    mutate: vi.fn(),
+  }),
+  useServerNodes: () => ({
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
+    data: [
+      {
+        id: 1,
+        name: 'Tokyo',
+        group_id: [1],
+        route_id: [],
+        type: 'shadowsocks',
+        host: 'example.com',
+        port: 443,
+        server_port: null,
+        show: 1,
+        rate: '1',
+        parent_id: null,
+        online: 8,
+        last_check_at: null,
+        is_online: 1,
+        available_status: 2,
+      },
+      {
+        id: 2,
+        name: 'Child',
+        group_id: [1],
+        route_id: [],
+        type: 'vmess',
+        host: 'child.example.com',
+        port: 8443,
+        server_port: null,
+        show: 0,
+        rate: '2',
+        parent_id: 1,
+        online: 0,
+        last_check_at: null,
+        is_online: 0,
+        available_status: 0,
+      },
+    ],
+  }),
+  useSortServerNodesMutation: () => ({
+    mutate: vi.fn(),
+  }),
+  useServerRoutes: () => ({
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
+    data: [
+      {
+        id: 1,
+        remarks: 'Netflix',
+        match: ['geosite:netflix', 'domain:example.com'],
+        action: 'route',
+        action_value: '{}',
+        created_at: 1,
+        updated_at: 1,
+      },
+      {
+        id: 2,
+        remarks: 'Default',
+        match: [],
+        action: 'default_out',
+        action_value: '{}',
+        created_at: 1,
+        updated_at: 1,
+      },
+    ],
+  }),
+  useUpdateServerMutation: vi.fn(),
+  useDropServerMutation: vi.fn(),
+  useCopyServerMutation: vi.fn(),
+  useSaveServerRouteMutation: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+  useDropServerRouteMutation: () => ({
+    mutate: vi.fn(),
+  }),
+}));
+
+function setUserAgent(value: string) {
+  Object.defineProperty(window.navigator, 'userAgent', {
+    configurable: true,
+    value,
+  });
+}
+
+beforeEach(() => {
+  mocks.pathname = '/server/group';
+  mocks.usePrompt.mockClear();
+  setUserAgent(defaultUserAgent);
+});
+
+describe('ServersPage legacy server group route', () => {
+  it('renders /server/group as the original standalone permission group table', () => {
+    mocks.pathname = '/server/group';
+    const html = renderToStaticMarkup(<ServersPage />);
+
+    expect(html).toContain('class="d-flex justify-content-between align-items-center"');
+    expect(html).toContain('class="block block-rounded"');
+    expect(html).toContain('class="bg-white"');
+    expect(html).toContain('添加权限组');
+    expect(html).toContain('组ID');
+    expect(html).toContain('组名称');
+    expect(html).toContain('用户数量');
+    expect(html).toContain('节点数量');
+    expect(html).toContain('操作');
+    expect(html).toContain('anticon-user');
+    expect(html).toContain('anticon-database');
+    expect(html).toContain('编辑');
+    expect(html).toContain('删除');
+    expect(html).not.toContain('ant-tabs');
+    expect(html).not.toContain('created_at');
+  });
+
+  it('renders /server/route as the original standalone route table', () => {
+    mocks.pathname = '/server/route';
+    const html = renderToStaticMarkup(<ServersPage />);
+
+    expect(html).toContain('class="d-flex justify-content-between align-items-center"');
+    expect(html).toContain('class="block block-rounded"');
+    expect(html).toContain('class="bg-white"');
+    expect(html).toContain('添加路由');
+    expect(html).toContain('ID');
+    expect(html).toContain('备注');
+    expect(html).toContain('匹配数量');
+    expect(html).toContain('动作');
+    expect(html).toContain('操作');
+    expect(html).toContain('匹配 2 条规则');
+    expect(html).toContain('无规则时默认');
+    expect(html).toContain('指定出站服务器(域名目标)');
+    expect(html).toContain('自定义默认出站');
+    expect(html).toContain('编辑');
+    expect(html).toContain('删除');
+    expect(html).not.toContain('ant-tabs');
+    expect(html).not.toContain('action_value');
+  });
+
+  it('keeps the original server group modal submit loading tied to group fetching', () => {
+    const groupModalSource = serversSource.slice(
+      serversSource.indexOf('function ServerGroupModal'),
+      serversSource.indexOf('function getRouteMatchLabel'),
+    );
+
+    expect(groupModalSource).toContain('const groups = useServerGroups()');
+    expect(groupModalSource).toContain('if (groups.isFetching) return;');
+    expect(groupModalSource).toContain('await save.mutateAsync({ ...submit });');
+    expect(groupModalSource).toContain('void groups.refetch();');
+    expect(groupModalSource.indexOf('await save.mutateAsync({ ...submit });')).toBeLessThan(
+      groupModalSource.indexOf('void groups.refetch();'),
+    );
+    expect(groupModalSource.indexOf('void groups.refetch();')).toBeLessThan(
+      groupModalSource.indexOf('setVisible(false);'),
+    );
+    expect(groupModalSource).not.toContain('await groups.refetch();');
+    expect(groupModalSource).toContain(
+      "okText={groups.isFetching ? <LoadingOutlined /> : '提交'}",
+    );
+    expect(groupModalSource).not.toContain('save.mutateAsync({ id: submit.id, name: submit.name })');
+    expect(groupModalSource).not.toContain('okText={save.isPending');
+  });
+
+  it('keeps the original server route modal submit loading tied to route fetching', () => {
+    const routeModalSource = serversSource.slice(
+      serversSource.indexOf('function ServerRouteModal'),
+      serversSource.indexOf('function getServerTypeTag'),
+    );
+
+    expect(routeModalSource).toContain('const routes = useServerRoutes()');
+    expect(routeModalSource).toContain('if (routes.isFetching) return;');
+    expect(routeModalSource).toContain('await save.mutateAsync(payload);');
+    expect(routeModalSource).toContain('void routes.refetch();');
+    expect(routeModalSource.indexOf('await save.mutateAsync(payload);')).toBeLessThan(
+      routeModalSource.indexOf('void routes.refetch();'),
+    );
+    expect(routeModalSource.indexOf('void routes.refetch();')).toBeLessThan(
+      routeModalSource.indexOf('setVisible(false);'),
+    );
+    expect(routeModalSource).not.toContain('await routes.refetch();');
+    expect(routeModalSource).toContain(
+      "okText={routes.isFetching ? <LoadingOutlined /> : '提交'}",
+    );
+    expect(routeModalSource).not.toContain('okText={save.isPending');
+  });
+
+  it('keeps the legacy standalone server group and route tables without explicit rowKey props', () => {
+    const groupPageSource = serversSource.slice(
+      serversSource.indexOf('function ServerGroupPage'),
+      serversSource.indexOf('function ServerGroupModal'),
+    );
+    const routePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerRoutePage'),
+      serversSource.indexOf('function ServerRouteModal'),
+    );
+
+    expect(groupPageSource).toContain('tableLayout="auto"');
+    expect(groupPageSource).toContain('pagination={false}');
+    expect(groupPageSource).not.toContain('rowKey="id"');
+    expect(routePageSource).toContain('tableLayout="auto"');
+    expect(routePageSource).toContain('pagination={false}');
+    expect(routePageSource).not.toContain('rowKey="id"');
+  });
+
+  it('keeps the original keyed edit modal instances in group and route action columns', () => {
+    const groupPageSource = serversSource.slice(
+      serversSource.indexOf('function ServerGroupPage'),
+      serversSource.indexOf('function ServerGroupModal'),
+    );
+    const routePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerRoutePage'),
+      serversSource.indexOf('function ServerRouteModal'),
+    );
+
+    expect(groupPageSource).toContain('<ServerGroupModal key={record.id} record={record}>');
+    expect(routePageSource).toContain('<ServerRouteModal key={record.id} route={record}>');
+  });
+
+  it('keeps standalone server group and route mutations fetching from the page after success', () => {
+    const groupPageSource = serversSource.slice(
+      serversSource.indexOf('function ServerGroupPage'),
+      serversSource.indexOf('function ServerGroupModal'),
+    );
+    const routePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerRoutePage'),
+      serversSource.indexOf('function ServerRouteModal'),
+    );
+    const groupHooksSource = queriesSource.slice(
+      queriesSource.indexOf('export function useSaveServerGroupMutation()'),
+      queriesSource.indexOf('export function useSaveServerRouteMutation()'),
+    );
+    const routeHooksSource = queriesSource.slice(
+      queriesSource.indexOf('export function useSaveServerRouteMutation()'),
+      queriesSource.indexOf('export function useDropServerMutation()'),
+    );
+
+    expect(groupPageSource).toContain('drop.mutate(record.id, {');
+    expect(groupPageSource).toContain('void groups.refetch();');
+    expect(routePageSource).toContain('drop.mutate(record.id, {');
+    expect(routePageSource).toContain('void routes.refetch();');
+    expect(groupHooksSource).not.toContain('onSuccess');
+    expect(groupHooksSource).not.toContain('adminKeys.serverGroups');
+    expect(routeHooksSource).not.toContain('onSuccess');
+    expect(routeHooksSource).not.toContain('adminKeys.serverRoutes');
+  });
+
+  it('keeps server node refreshes fire-and-forget across the page source', () => {
+    expect(serversSource).not.toContain('await nodes.refetch();');
+  });
+
+  it('keeps the original modal label targets without generated control ids', () => {
+    const groupModalSource = serversSource.slice(
+      serversSource.indexOf('function ServerGroupModal'),
+      serversSource.indexOf('function getRouteMatchLabel'),
+    );
+    const routeModalSource = serversSource.slice(
+      serversSource.indexOf('function ServerRouteModal'),
+      serversSource.indexOf('function getServerTypeTag'),
+    );
+
+    expect(groupModalSource).toContain('htmlFor="example-text-input-alt"');
+    expect(routeModalSource.match(/htmlFor="example-text-input-alt"/g)).toHaveLength(5);
+    expect(groupModalSource).not.toContain('server-group-name');
+    expect(routeModalSource).not.toContain('server-route-');
+  });
+
+  it('keeps the original modal input values without empty-string fallbacks', () => {
+    const groupModalSource = serversSource.slice(
+      serversSource.indexOf('function ServerGroupModal'),
+      serversSource.indexOf('function getRouteMatchLabel'),
+    );
+    const routeModalSource = serversSource.slice(
+      serversSource.indexOf('function ServerRouteModal'),
+      serversSource.indexOf('function getServerTypeTag'),
+    );
+
+    expect(groupModalSource).toContain('value={submit.name}');
+    expect(routeModalSource).toContain('value={route.remarks}');
+    expect(routeModalSource.match(/value=\{legacyInputValue\(route\.action_value\)\}/g)).toHaveLength(2);
+    expect(serversSource).toContain('function legacyInputValue(value: unknown)');
+    expect(serversSource).toContain("return value?.split(',').join('\\n');");
+    expect(groupModalSource).not.toContain("submit.name ?? ''");
+    expect(routeModalSource).not.toContain("route.remarks ?? ''");
+    expect(routeModalSource).not.toContain('route.action_value ?? undefined');
+    expect(routeModalSource).not.toContain("route.action_value ?? ''");
+    expect(serversSource).not.toContain("return value?.split(',').join('\\n') ?? ''");
+  });
+
+  it('keeps the original network settings placeholder lookup without defaulting to tcp', () => {
+    expect(serversSource).toContain(
+      "return LEGACY_NETWORK_SETTINGS_PLACEHOLDERS[type]?.[String(network)] || '';",
+    );
+    expect(serversSource).toContain(
+      'placeholder={getLegacyNetworkSettingsPlaceholder(type, network)}',
+    );
+    expect(serversSource).not.toContain(
+      "LEGACY_NETWORK_SETTINGS_PLACEHOLDERS[String(network ?? 'tcp')]",
+    );
+    expect(serversSource).not.toContain("LEGACY_NETWORK_SETTINGS_PLACEHOLDERS[String(network)] ?? ''");
+  });
+
+  it('uses the original type-specific transport placeholders', () => {
+    expect(getLegacyNetworkSettingsPlaceholder('v2node', 'tcp')).toContain(
+      '"acceptProxyProtocol": false',
+    );
+    expect(getLegacyNetworkSettingsPlaceholder('v2node', 'http')).toContain(
+      '"Host": "xtls.github.io"',
+    );
+    expect(getLegacyNetworkSettingsPlaceholder('vmess', 'tcp')).not.toContain(
+      'acceptProxyProtocol',
+    );
+    expect(getLegacyNetworkSettingsPlaceholder('vmess', 'ws')).toContain(
+      '"Host": "v2ray.com"',
+    );
+    expect(getLegacyNetworkSettingsPlaceholder('vmess', 'xhttp')).not.toContain(
+      '"mode": "auto"',
+    );
+    expect(getLegacyNetworkSettingsPlaceholder('vless', 'ws')).toContain(
+      '"security": "auto"',
+    );
+    expect(getLegacyNetworkSettingsPlaceholder('vless', 'xhttp')).toContain(
+      '"mode": "auto"',
+    );
+    expect(getLegacyNetworkSettingsPlaceholder('trojan', 'tcp')).toBe('');
+    expect(getLegacyNetworkSettingsPlaceholder('trojan', 'httpupgrade')).toBe('');
+  });
+
+  it('keeps the grouped server tab edit input without an empty-string fallback', () => {
+    const groupsTabSource = serversSource.slice(
+      serversSource.indexOf('function GroupsTab'),
+      serversSource.indexOf('function RoutesTab'),
+    );
+
+    expect(groupsTabSource).toContain('defaultValue={editing?.name}');
+    expect(groupsTabSource).not.toContain("defaultValue={editing?.name ?? ''}");
+  });
+
+  it('keeps the original modal open behavior without resetting form state', () => {
+    const groupModalSource = serversSource.slice(
+      serversSource.indexOf('function ServerGroupModal'),
+      serversSource.indexOf('function getRouteMatchLabel'),
+    );
+    const routeModalSource = serversSource.slice(
+      serversSource.indexOf('function ServerRouteModal'),
+      serversSource.indexOf('function getServerTypeTag'),
+    );
+
+    expect(groupModalSource).toContain('const open = () => {\n    setVisible(true);\n  };');
+    expect(routeModalSource).toContain('const open = () => {\n    setVisible(true);\n  };');
+    expect(groupModalSource).not.toContain('setSubmit(record ?? {})');
+    expect(routeModalSource).not.toContain('setRoute(initialRoute ?? {})');
+  });
+
+  it('keeps the original handwritten route action options without mapped keys', () => {
+    const routeModalSource = serversSource.slice(
+      serversSource.indexOf('function ServerRouteModal'),
+      serversSource.indexOf('function getServerTypeTag'),
+    );
+
+    const optionOrder = [
+      'value="block"',
+      'value="block_ip"',
+      'value="block_port"',
+      'value="protocol"',
+      'value="dns"',
+      'value="route"',
+      'value="route_ip"',
+      'value="default_out"',
+    ];
+
+    const optionIndexes = optionOrder.map((text) => routeModalSource.indexOf(text));
+
+    expect(optionIndexes.every((index) => index >= 0)).toBe(true);
+    expect(optionIndexes).toEqual([...optionIndexes].sort((a, b) => a - b));
+    expect(routeModalSource).not.toContain('Object.entries(ROUTE_ACTION_TEXT).map');
+    expect(routeModalSource).not.toContain('<Select.Option key={value}');
+  });
+
+  it('keeps the original vertical divider markup in server action columns', () => {
+    expect(serversSource.match(/<div className="ant-divider ant-divider-vertical" \/>/g)).toHaveLength(3);
+    expect(serversSource).not.toContain('<span className="ant-divider ant-divider-vertical"');
+    expect(serversSource).not.toContain('role="separator"');
+  });
+
+  it('renders /server/manage with the original initial non-sort table before getNodes completes', () => {
+    mocks.pathname = '/server/manage';
+    const html = renderToStaticMarkup(<ServersPage />);
+
+    expect(html).toContain('class="block block-bottom v2board-server-manage"');
+    expect(html).toContain('class="v2board-table-action"');
+    expect(html).toContain('输入任意关键字搜索');
+    expect(html).toContain('编辑排序');
+    expect(html).toContain('节点ID');
+    expect(html).toContain('节点');
+    expect(html).toContain('Tokyo');
+    expect(html).toContain('显隐');
+    expect(html).toContain('地址');
+    expect(html).toContain('人数');
+    expect(html).toContain('倍率');
+    expect(html).toContain('权限组');
+    expect(html).toContain('操作');
+    expect(html).not.toContain('保存排序');
+    expect(html).not.toContain('<th class="ant-table-cell" scope="col">排序</th>');
+    expect(html).not.toContain('ant-tabs');
+  });
+
+  it('keeps the legacy server manage table without an explicit rowKey', () => {
+    const managePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerManagePage'),
+      serversSource.indexOf('function NodesTab'),
+    );
+
+    expect(managePageSource).toContain('tableLayout="auto"');
+    expect(managePageSource).toContain('data-sort-index');
+    expect(managePageSource).not.toContain('data-row-key');
+    expect(managePageSource).not.toContain('rowKey=');
+  });
+
+  it('renders /server/manage as the original mobile node list on mobile user agents', () => {
+    mocks.pathname = '/server/manage';
+    setUserAgent('Mozilla/5.0 Mobile');
+    const html = renderToStaticMarkup(<ServersPage />);
+
+    expect(html).toContain('ant-list');
+    expect(html).toContain('v2board_node_mobile');
+    expect(html).toContain('child_node');
+    expect(html).toContain('example.com:443');
+    expect(html).toContain('操作');
+    expect(html).not.toContain('编辑排序');
+    expect(serversSource).toContain('function isLegacyMobile()');
+    expect(serversSource).toContain("window.navigator.userAgent.toLowerCase().includes('mobile')");
+    expect(serversSource).toContain('<List');
+    expect(serversSource).toContain('actions={[\n                    <>');
+    expect(serversSource).not.toContain('<span key="summary">');
+  });
+
+  it('uses the original available_status-only badge mapping', () => {
+    expect(serversSource).toContain('function getLegacyAvailableStatus(status?: number | null)');
+    expect(serversSource).toContain('getLegacyAvailableStatus(row.available_status)');
+    expect(serversSource).toContain('getLegacyAvailableStatus(node.available_status)');
+    expect(serversSource).not.toContain('available_status ??');
+  });
+
+  it('keeps the original parseInt switch checked values in server manage', () => {
+    expect(serversSource).toContain('checked={checked as unknown as boolean}');
+    expect(serversSource).toContain(
+      'checked={parseInt(String(node.show), 10) as unknown as boolean}',
+    );
+    expect(serversSource).not.toContain('checked={Boolean(checked)}');
+    expect(serversSource).not.toContain('checked={Boolean(parseInt(String(node.show), 10))}');
+  });
+
+  it('keeps the original server show update key/value dispatch shape', () => {
+    const managePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerManagePage'),
+      serversSource.indexOf('function NodesTab'),
+    );
+    const hook = queriesSource.slice(
+      queriesSource.indexOf('export function useUpdateServerMutation()'),
+      queriesSource.indexOf('export function useSortServerNodesMutation()'),
+    );
+
+    expect(managePageSource).toContain("key: 'show',");
+    expect(managePageSource).toContain('value: checked ? 0 : 1,');
+    expect(managePageSource).not.toContain('show: checked ? 0 : 1');
+    expect(hook).toContain("mutationFn: (vars: { type: admin.ServerTypeName; id: number; key: 'show'; value: 0 | 1 }) =>");
+    expect(hook).toContain('admin.updateServer(apiClient, vars.type, vars.id, vars.key, vars.value)');
+    expect(hook).not.toContain('vars.show');
+  });
+
+  it('keeps the original permission-group filter and tag rendering details', () => {
+    const managePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerManagePage'),
+      serversSource.indexOf('function NodesTab'),
+    );
+
+    expect(serversSource).toContain(
+      "(row.group_id as unknown[]).indexOf(String(value)) !== -1",
+    );
+    expect(serversSource).toContain('<Tag>{name}</Tag>');
+    expect(managePageSource).toContain(
+      '.map((id) => groups.data?.find((group) => group.id === Number(id))?.name)',
+    );
+    expect(managePageSource).toContain('.filter(Boolean);');
+    expect(managePageSource).not.toContain('?? String(id)');
+    expect(managePageSource).not.toContain(".join(', ')");
+    expect(serversSource).not.toContain('row.group_id.map(String).includes(String(value))');
+    expect(serversSource).not.toContain('<Tag key={name}>{name}</Tag>');
+  });
+
+  it('wires /server/manage edit actions to the node edit drawer instead of a placeholder notice', () => {
+    expect(serversSource).not.toContain('编辑节点表单会继续按旧版逐类补齐');
+    expect(serversSource).toContain('function LegacyNodeEditMenuTrigger');
+    expect(serversSource).toContain('key={row.id}');
+    expect(serversSource).toContain('record={row}');
+    expect(serversSource).toContain('record={contextRecord}');
+    expect(serversSource).not.toContain("runNodeAction('edit', contextRecord)");
+    expect(serversSource).not.toContain('record={editing ?? undefined}');
+  });
+
+  it('wires the original /server/manage add-node type menu to the node edit drawer', () => {
+    expect(serversSource).toContain('items: SERVER_TYPES.map((type) => ({');
+    expect(serversSource).toContain('<LegacyNodeEditMenuTrigger');
+    expect(serversSource).toContain('key={Math.random()}');
+    expect(serversSource).toContain('type={type}');
+    expect(serversSource).not.toContain('onClick: ({ key }) => setEditing({ type: key as admin.ServerTypeName })');
+    expect(serversSource).not.toContain('setEditing({ ...row, type: row.type as admin.ServerTypeName })');
+    expect(serversSource).toContain('record?: Partial<admin.ServerNode>');
+  });
+
+  it('keeps the original add-node protocol menu order', () => {
+    expect(serversSource).toContain(`const SERVER_TYPES: admin.ServerTypeName[] = [
+  'v2node',
+  'shadowsocks',
+  'vmess',
+  'trojan',
+  'hysteria',
+  'tuic',
+  'vless',
+  'anytls',
+]`);
+  });
+
+  it('uses the original server drawer shell for node editing', () => {
+    expect(serversSource).toContain('function NodeEditDrawer');
+    expect(serversSource).toContain('<Drawer');
+    expect(serversSource).toContain('id="server"');
+    expect(serversSource).toContain('maskClosable');
+    expect(serversSource).toContain("title={id ? '编辑节点' : '新建节点'}");
+    expect(serversSource).toContain('width="80%"');
+    expect(serversSource).toContain('className="v2board-drawer-action"');
+    expect(serversSource).toContain('提交');
+    expect(serversSource).toContain('取消');
+    expect(serversSource).not.toContain('function NodeEditModal');
+    expect(serversSource).not.toContain('width={720}');
+  });
+
+  it('keeps the original node edit drawer mounted after close', () => {
+    const nodeDrawerSource = serversSource.slice(
+      serversSource.indexOf('function NodeEditDrawer'),
+      serversSource.indexOf('function parseLegacyJsonPayloadField'),
+    );
+
+    expect(nodeDrawerSource).not.toContain('destroyOnClose');
+  });
+
+  it('uses the original server drawer form-group layout for common node fields', () => {
+    expect(serversSource).toContain('component={false}');
+    expect(serversSource).toContain('className="form-group col-8"');
+    expect(serversSource).toContain('className="form-group col-4"');
+    expect(serversSource).toContain('className="form-group col-md-12 col-xs-12"');
+    expect(serversSource).toContain('className="form-group col-md-6 col-xs-12"');
+    expect(serversSource).toContain('节点名称');
+    expect(serversSource).toContain('请输入节点名称');
+    expect(serversSource).toContain('<Form.Item noStyle name="name">');
+    expect(serversSource).not.toContain(
+      '<Form.Item noStyle name="name" rules={[{ required: true }]}>',
+    );
+    expect(serversSource).toContain('倍率');
+    expect(serversSource).toContain('addonAfter="x"');
+    expect(serversSource).toContain('<Form.Item noStyle name="rate">');
+    expect(serversSource).not.toContain(
+      '<Form.Item noStyle name="rate" rules={[{ required: true }]}>',
+    );
+    expect(serversSource).toContain('节点标签');
+    expect(serversSource).toContain('输入后回车添加标签');
+    expect(serversSource).toContain('function normalizeLegacyNullableArray');
+    expect(serversSource).toContain(
+      'getValueFromEvent={normalizeLegacyNullableArray}',
+    );
+    expect(serversSource).toContain('权限组');
+    expect(serversSource).toContain('添加权限组');
+    expect(serversSource).toContain('<Form.Item noStyle name="group_id">');
+    expect(serversSource).not.toContain(
+      '<Form.Item noStyle name="group_id" rules={[{ required: true }]}>',
+    );
+    expect(serversSource).toContain('节点地址');
+    expect(serversSource).toContain('地址或IP');
+    expect(serversSource).toContain('<Form.Item noStyle name="host">');
+    expect(serversSource).not.toContain(
+      '<Form.Item noStyle name="host" rules={[{ required: true }]}>',
+    );
+    expect(serversSource).toContain('连接端口');
+    expect(serversSource).toContain('用户连接端口');
+    expect(serversSource).toContain('<Form.Item noStyle name="port">');
+    expect(serversSource).not.toContain(
+      '<Form.Item noStyle name="port" rules={[{ required: true }]}>',
+    );
+    expect(serversSource).toContain('服务端口');
+    expect(serversSource).toContain('非NAT同连接端口');
+    expect(serversSource).toContain('父节点');
+    expect(serversSource).toContain('更多解答');
+    expect(serversSource).toContain('ReadOutlined');
+    expect(serversSource).toContain(
+      "type === 'vmess' || type === 'vless' ? <ReadOutlined /> : '更多解答'",
+    );
+    expect(serversSource).toContain('路由组');
+    expect(serversSource).toContain('请选择路由组');
+    expect(serversSource).toContain('name="route_id"');
+    expect(serversSource).toContain('<Select.Option key={group.id}>');
+    expect(serversSource).toContain('<Select.Option key={route.id}>');
+    expect(serversSource).toContain('<Select.Option key={Math.random()} value={node.id}>');
+    expect(serversSource).not.toContain('key={`${node.type}-${node.id}`}');
+    expect(serversSource).not.toContain('<Select.Option key={group.id} value={group.id}>');
+    expect(serversSource).not.toContain('<Select.Option key={route.id} value={route.id}>');
+    expect(serversSource).not.toContain('label="Host"');
+    expect(serversSource).not.toContain('label="Port"');
+    expect(serversSource).not.toContain('label="Server Port"');
+  });
+
+  it('uses the original new-node defaults for each server type', () => {
+    expect(getLegacyServerInitialValues('vmess')).toEqual({ rate: 1, tls: 0 });
+    expect(getLegacyServerInitialValues('shadowsocks')).toEqual({
+      rate: 1,
+      cipher: 'chacha20-ietf-poly1305',
+    });
+    expect(getLegacyServerInitialValues('hysteria')).toEqual({
+      rate: 1,
+      insecure: 0,
+      version: 1,
+    });
+    expect(getLegacyServerInitialValues('vless')).toEqual({
+      rate: 1,
+      tls: 0,
+      flow: null,
+    });
+    expect(getLegacyServerInitialValues('trojan')).toEqual({ rate: 1, tls: 0 });
+    expect(getLegacyServerInitialValues('tuic')).toEqual({
+      rate: 1,
+      insecure: 0,
+      disable_sni: 0,
+      udp_relay_mode: 'native',
+      zero_rtt_handshake: 0,
+      congestion_control: 'cubic',
+    });
+    expect(getLegacyServerInitialValues('anytls')).toEqual({ rate: 1, insecure: 0 });
+    expect(getLegacyServerInitialValues('v2node')).toEqual({
+      rate: 1,
+      tls: 0,
+      network: 'tcp',
+      disable_sni: 0,
+      zero_rtt_handshake: 0,
+      flow: null,
+    });
+    expect(getLegacyServerInitialValues('vmess')).not.toHaveProperty('show');
+    expect(getLegacyServerInitialValues('vmess')).not.toHaveProperty('port');
+    expect(getLegacyServerInitialValues('vmess')).not.toHaveProperty('group_id');
+    expect(getLegacyServerInitialValues('vmess')).not.toHaveProperty('route_id');
+    expect(getLegacyServerInitialValues('vmess')).not.toHaveProperty('network');
+    expect(getLegacyServerInitialValues('trojan')).not.toHaveProperty('network');
+    expect(getLegacyServerInitialValues('vless')).not.toHaveProperty('network');
+    expect(serversSource.match(/name="network" initialValue="tcp"/g)).toHaveLength(2);
+  });
+
+  it('uses the original Shadowsocks-specific drawer fields', () => {
+    expect(serversSource).toContain('form: FormInstance');
+    expect(serversSource).toContain("Form.useWatch('obfs', form)");
+    expect(getLegacyServerInitialValues('shadowsocks').cipher).toBe(
+      'chacha20-ietf-poly1305',
+    );
+    expect(getLegacyServerInitialValues('v2node').cipher).toBeUndefined();
+    expect(serversSource).toContain(
+      '<Form.Item noStyle name="cipher" initialValue="chacha20-ietf-poly1305">',
+    );
+    expect(serversSource).toContain(
+      '<Form.Item noStyle name="cipher" initialValue="aes-128-gcm">',
+    );
+    expect(serversSource).toContain('加密算法');
+    expect(serversSource).toContain('aes-128-gcm');
+    expect(serversSource).toContain('aes-192-gcm');
+    expect(serversSource).toContain('aes-256-gcm');
+    expect(serversSource).toContain('chacha20-ietf-poly1305');
+    expect(serversSource).toContain('2022-blake3-aes-128-gcm');
+    expect(serversSource).toContain('2022-blake3-aes-256-gcm');
+    expect(serversSource).toContain('混淆');
+    expect(serversSource).toContain('<Select.Option value="">无</Select.Option>');
+    expect(serversSource).toContain('<Select.Option value="http">HTTP</Select.Option>');
+    expect(serversSource).toContain("shadowsocksObfs === 'http'");
+    expect(serversSource).toContain('className="row mt-2"');
+    expect(serversSource).toContain('className="form-group col-4 mb-0"');
+    expect(serversSource).toContain('className="form-group col-8 mb-0"');
+    expect(serversSource).toContain('placeholder="路径"');
+    expect(serversSource).toContain('placeholder="Host"');
+    expect(serversSource).not.toContain('label="Cipher"');
+  });
+
+  it('uses the original V2node-specific listen address, protocol, transport, and install command fields', () => {
+    expect(serversSource).toContain("type === 'v2node' ? (");
+    expect(serversSource).toContain('连接地址');
+    expect(serversSource).toContain('监听地址');
+    expect(serversSource).toContain('name="listen_ip"');
+    expect(serversSource).toContain('地址或IP默认为0.0.0.0');
+    expect(serversSource).toContain('placeholder="服务端开放端口"');
+    expect(serversSource).toContain('tls: 0');
+    expect(serversSource).toContain("network: 'tcp'");
+    expect(serversSource).toContain('flow: null');
+    expect(serversSource).toContain('function V2nodeFields');
+    expect(serversSource).toContain('节点协议');
+    expect(serversSource).toContain('AnyTLS');
+    expect(serversSource).toContain('Hysteria2');
+    expect(serversSource).toContain('Shadowsocks');
+    expect(serversSource).toContain('Trojan');
+    expect(serversSource).toContain('Tuic');
+    expect(serversSource).toContain('VLess');
+    expect(serversSource).toContain('VMess');
+    expect(serversSource).toContain('LEGACY_TLS_FORCED_PROTOCOLS');
+    expect(serversSource).toContain("showChildDrawer('编辑安全性配置', 'tls_settings')");
+    expect(serversSource).toContain('HTTP伪装');
+    expect(serversSource).toContain("showChildDrawer('编辑协议配置', 'network_settings')");
+    expect(serversSource).toContain('id="v2ray-protocol"');
+    expect(serversSource).toContain('协议详细配置');
+    expect(serversSource).toContain('https://www.v2ray.com/chapter_02/05_transport.html');
+    expect(serversSource).toContain('LEGACY_NETWORK_SETTINGS_PLACEHOLDERS');
+    expect(serversSource).toContain('GunService');
+    expect(serversSource).toContain('HTTPUpgrade');
+    expect(serversSource).toContain('XHTTP');
+    expect(serversSource).toContain("showChildDrawer('编辑填充方案', 'padding_scheme')");
+    expect(serversSource).toContain('混淆方式obfs');
+    expect(serversSource).toContain('salamander');
+    expect(serversSource).toContain('客户端启用 0-RTT');
+    expect(serversSource).toContain('加密方式');
+    expect(serversSource).toContain('XTLS流控算法');
+    expect(serversSource).toContain('一键安装指令');
+    expect(serversSource).toContain('readOnly');
+    expect(serversSource).toContain('delete payload.install_command');
+  });
+
+  it('parses the original protocol JSON fields before saving node payloads', () => {
+    const nodeDrawerSource = serversSource.slice(
+      serversSource.indexOf('function NodeEditDrawer'),
+      serversSource.indexOf('function parseLegacyJsonPayloadField'),
+    );
+
+    expect(serversSource).toContain('function prepareLegacyServerPayload');
+    expect(serversSource).toContain('function parseLegacyJsonPayloadField');
+    expect(serversSource).toContain("parseLegacyJsonPayloadField(payload, 'networkSettings')");
+    expect(serversSource).toContain("parseLegacyJsonPayloadField(payload, 'network_settings')");
+    expect(serversSource).toContain("if (type === 'trojan' || type === 'vless' || type === 'v2node')");
+    expect(serversSource).toContain("if (type === 'vmess')");
+    expect(serversSource).toContain('payload.dnsSettings = null');
+    expect(serversSource).toContain("message.error('传输协议配置格式有误')");
+    expect(serversSource).toContain('const payload = prepareLegacyServerPayload(type, values, id);');
+    expect(nodeDrawerSource).toContain('await admin.saveServer(apiClient, type, payload);');
+    expect(nodeDrawerSource).toContain('onSaved?.();');
+    expect(nodeDrawerSource).toContain('onClose();');
+    expect(nodeDrawerSource.indexOf('await admin.saveServer(apiClient, type, payload);')).toBeLessThan(
+      nodeDrawerSource.indexOf('onSaved?.();'),
+    );
+    expect(nodeDrawerSource.indexOf('onSaved?.();')).toBeLessThan(
+      nodeDrawerSource.indexOf('onClose();'),
+    );
+    expect(nodeDrawerSource).not.toContain('await onSaved?.();');
+    expect(nodeDrawerSource).not.toContain("message.success(t('common.success'))");
+    expect(nodeDrawerSource).not.toContain("message.success('操作成功')");
+    expect(serversSource).not.toContain('JSON.parse(payload.network_settings)');
+    expect(serversSource).not.toContain('payload.tags = payload.tags.length > 0');
+    expect(serversSource).not.toContain('payload.route_id = payload.route_id.length > 0');
+  });
+
+  it('keeps cancel-only node drawer closes separate from save-triggered node refetches', () => {
+    const triggerSource = serversSource.slice(
+      serversSource.indexOf('function LegacyNodeEditMenuTrigger'),
+      serversSource.indexOf('function ServerManagePage'),
+    );
+    const legacyNodesTabDrawer = serversSource.slice(
+      serversSource.indexOf('<NodeEditDrawer\n        open={editing != null}'),
+      serversSource.indexOf('function NodeEditDrawer'),
+    );
+
+    expect(triggerSource).toContain('onSaved={onSaved}');
+    expect(triggerSource).toContain('onClose={() => setOpen(false)}');
+    expect(triggerSource).not.toContain('onClose();');
+    expect(triggerSource).not.toContain('void nodes.refetch();');
+    expect(legacyNodesTabDrawer).toContain('onSaved={() => {\n          void nodes.refetch();\n        }}');
+    expect(legacyNodesTabDrawer).toContain('onClose={() => {\n          setEditing(null);\n        }}');
+    expect(legacyNodesTabDrawer).not.toContain('nodes.refetch();\n        }}\n      />');
+  });
+
+  it('formats the original VMess protocol object before opening the edit drawer', () => {
+    const networkSettings = {
+      path: '/',
+      headers: {
+        Host: 'v2ray.com',
+      },
+    };
+    const values = getLegacyServerInitialValues('vmess', {
+      networkSettings,
+    } as unknown as Parameters<typeof getLegacyServerInitialValues>[1]);
+
+    expect(values.networkSettings).toBe(JSON.stringify(networkSettings, null, 2));
+    expect(serversSource).toContain('normalizedRecord.networkSettings');
+    expect(serversSource).toContain('normalizedRecord.networkSettings = JSON.stringify(');
+  });
+
+  it('uses the original Trojan-specific drawer fields and child config drawer', () => {
+    expect(serversSource).toContain('showChildDrawer');
+    expect(serversSource).toContain('childDrawer.field');
+    expect(serversSource).toContain('closable={false}');
+    expect(serversSource).toContain('title={childDrawer.title}');
+    expect(serversSource).toContain('field={childDrawer.field}');
+    expect(serversSource).toContain('name={field}');
+    expect(serversSource).toContain("type === 'trojan' ? <TrojanAllowInsecureField /> : <ServerInsecureField />");
+    expect(serversSource).toContain('function TrojanAllowInsecureField');
+    expect(serversSource).toContain('className="form-group col-md-4 col-xs-12"');
+    expect(serversSource).toContain('placeholder="服务端开放端口"');
+    expect(serversSource).toContain('允许不安全');
+    expect(serversSource).toContain('使用自签名证书需要允许不安全，用户才可以连接');
+    expect(serversSource).toContain('placeholder="允许不安全"');
+    expect(serversSource).toContain('服务器名称指示(sni)');
+    expect(serversSource).toContain('当节点地址与证书不一致时用于证书验证');
+    expect(serversSource).toContain('传输协议');
+    expect(serversSource).toContain('编辑配置');
+    expect(serversSource).toContain("showChildDrawer('编辑协议配置', 'network_settings')");
+    expect(serversSource).toContain('placeholder="选择传输协议"');
+    expect(serversSource).toContain('<Select.Option value="tcp">TCP</Select.Option>');
+    expect(serversSource).toContain('<Select.Option value="ws">WebSocket</Select.Option>');
+    expect(serversSource).toContain('<Select.Option value="grpc">gRPC</Select.Option>');
+    expect(serversSource).not.toContain('label="Allow insecure"');
+  });
+
+  it('uses the original VMess-specific TLS and protocol drawer fields', () => {
+    expect(serversSource).toContain("type === 'vmess' ? (");
+    expect(serversSource).toContain('function VmessTlsField');
+    expect(serversSource).toContain('className="form-group col-md-8 col-xs-12"');
+    expect(serversSource).toContain('placeholder="请输入连接地址"');
+    expect(serversSource).toContain("showChildDrawer('编辑TLS配置', 'tlsSettings')");
+    expect(serversSource).toContain('placeholder="是否支持TLS"');
+    expect(serversSource).toContain('不支持');
+    expect(serversSource).toContain('支持');
+    expect(serversSource).toContain("showChildDrawer('编辑协议配置', 'networkSettings')");
+    expect(serversSource).toContain('<Select.Option value="kcp">mKCP</Select.Option>');
+    expect(serversSource).toContain('<Select.Option value="httpupgrade">HTTPUpgrade</Select.Option>');
+    expect(serversSource).toContain('<Select.Option value="xhttp">XHTTP</Select.Option>');
+  });
+
+  it('uses the original VLess-specific security, protocol, encryption, and flow fields', () => {
+    expect(serversSource).toContain("type === 'vmess' || type === 'vless' ? (");
+    expect(serversSource).toContain('function VlessSecurityField');
+    expect(serversSource).toContain('安全性');
+    expect(serversSource).toContain("showChildDrawer('编辑安全性配置', 'tls_settings')");
+    expect(serversSource).toContain('<Select.Option key={0} value={0}>');
+    expect(serversSource).toContain('Reality');
+    expect(serversSource).toContain("showChildDrawer('编辑协议配置', 'network_settings')");
+    expect(serversSource).toContain('加密方式');
+    expect(serversSource).toContain("showChildDrawer('编辑加密配置', 'encryption_settings')");
+    expect(serversSource).toContain('placeholder="选择加密方式"');
+    expect(serversSource).toContain('MLKEM768X25519PLUS');
+    expect(serversSource).toContain('XTLS流控算法');
+    expect(serversSource).toContain('placeholder="选择XTLS流控算法"');
+    expect(serversSource).toContain('xtls-rprx-vision');
+    expect(serversSource).toContain("const vlessNetwork = Form.useWatch('network', form);");
+    expect(serversSource).toContain("{String(vlessNetwork) === 'tcp' ? (");
+    expect(serversSource).not.toContain("vlessNetwork === 'tcp'");
+    expect(serversSource).not.toContain('name="reality_settings" label="Reality settings (JSON)"');
+  });
+
+  it('uses the original TLS and encryption child drawer forms instead of raw textareas', () => {
+    expect(serversSource).toContain('LEGACY_TLS_SETTINGS_DEFAULTS');
+    expect(serversSource).toContain('LEGACY_ENCRYPTION_SETTINGS_DEFAULTS');
+    expect(serversSource).toContain('function LegacyTlsSettingsField');
+    expect(serversSource).toContain("field === 'tls_settings' || field === 'tlsSettings'");
+    expect(serversSource).toContain("certApply={field === 'tls_settings'}");
+    expect(serversSource).toContain('Server Name(SNI)');
+    expect(serversSource).toContain('REALITY必填，与后端保持一致');
+    expect(serversSource).toContain('证书模式Cert Mode');
+    expect(serversSource).toContain("value={legacySelectValue(value.cert_mode ?? 'self')}");
+    expect(serversSource).not.toContain("legacyText(value.cert_mode) || 'self'");
+    expect(serversSource).toContain('HTTP申请');
+    expect(serversSource).toContain('DNS申请');
+    expect(serversSource).toContain('无证书(关闭TLS)');
+    expect(serversSource).toContain('DNS解析提供商Provider');
+    expect(serversSource).toContain('https://go-acme.github.io/lego/dns/index.html');
+    expect(serversSource).toContain('证书公钥文件地址Cert File Path');
+    expect(serversSource).toContain('证书私钥文件地址Key File Path');
+    expect(serversSource).toContain('Server Address');
+    expect(serversSource).toContain('Proxy Protocol');
+    expect(serversSource).toContain('Private Key');
+    expect(serversSource).toContain('Public Key');
+    expect(serversSource).toContain('ShortId');
+    expect(serversSource).toContain('FingerPrint');
+    expect(serversSource).toContain('Reject unknown sni');
+    expect(serversSource).toContain('Allow Insecure');
+    expect(serversSource).toContain('ECH (Encrypted Client Hello)');
+    expect(serversSource).toContain('Cloudflare 托管 ECH');
+    expect(serversSource).toContain('ECH Server Name (伪装域名/外层SNI)');
+    expect(serversSource).toContain('function LegacyEncryptionSettingsField');
+    expect(serversSource).toContain("field === 'encryption_settings'");
+    expect(serversSource).toContain('Mode');
+    expect(serversSource).toContain('xorpub');
+    expect(serversSource).toContain('random');
+    expect(serversSource).toContain('RTT');
+    expect(serversSource).toContain('Ticket time');
+    expect(serversSource).toContain('Server Padding');
+    expect(serversSource).toContain('Client Padding');
+    expect(serversSource).toContain('Password');
+  });
+
+  it('uses the original Hysteria-specific version, insecure, obfs, and bandwidth fields', () => {
+    expect(serversSource).toContain("type === 'hysteria' ||");
+    expect(serversSource).toContain("type === 'tuic' ||");
+    expect(serversSource).toContain("type === 'anytls' ? (");
+    expect(serversSource).toContain('function ServerInsecureField');
+    expect(serversSource).toContain('name="insecure" initialValue={0}');
+    expect(serversSource).toContain('HYSTERIA版本');
+    expect(serversSource).toContain('<Select.Option key={0} value={1}>');
+    expect(serversSource).toContain('v1');
+    expect(serversSource).toContain('<Select.Option key={1} value={2}>');
+    expect(serversSource).toContain('v2');
+    expect(serversSource).toContain('混淆方式obfs');
+    expect(serversSource).toContain('xplus');
+    expect(serversSource).toContain('salamander');
+    expect(serversSource).toContain('混淆密码obfsParam');
+    expect(serversSource).toContain('混淆密码obfs_password');
+    expect(serversSource).toContain('留空自动生成');
+    expect(serversSource).toContain('上行带宽');
+    expect(serversSource).toContain('服务端发送带宽,留空或填0使用BBR');
+    expect(serversSource).toContain('下行带宽');
+    expect(serversSource).toContain('服务端接收带宽,留空或填0使用BBR');
+    expect(serversSource).not.toContain('label="Up Mbps"');
+    expect(serversSource).not.toContain('label="Down Mbps"');
+    expect(serversSource).not.toContain('label="Obfs password"');
+  });
+
+  it('uses the original TUIC-specific insecure, SNI, relay, congestion, and 0-RTT fields', () => {
+    expect(serversSource).toContain("type === 'tuic'");
+    expect(serversSource).toContain('disable_sni: 0');
+    expect(serversSource).toContain("udp_relay_mode: 'native'");
+    expect(serversSource).toContain('zero_rtt_handshake: 0');
+    expect(serversSource).toContain("congestion_control: 'cubic'");
+    expect(serversSource).toContain("Form.useWatch('disable_sni', form)");
+    expect(serversSource).toContain('禁用SNI');
+    expect(serversSource).toContain('name="disable_sni" initialValue={0}');
+    expect(serversSource).toContain('数据包中继模式');
+    expect(serversSource).toContain('name="udp_relay_mode" initialValue="native"');
+    expect(serversSource).toContain('native');
+    expect(serversSource).toContain('quic');
+    expect(serversSource).toContain('tuicDisableSni');
+    expect(serversSource).toContain('服务器名称指示(sni)');
+    expect(serversSource).toContain('拥塞控制算法');
+    expect(serversSource).toContain('name="congestion_control" initialValue="cubic"');
+    expect(serversSource).toContain('new_reno');
+    expect(serversSource).toContain('客户端启用 0-RTT');
+    expect(serversSource).toContain('name="zero_rtt_handshake" initialValue={0}');
+    expect(serversSource).not.toContain('label="SNI"');
+    expect(serversSource).not.toContain('label="ALPN"');
+    expect(serversSource).not.toContain('label="Congestion control"');
+  });
+
+  it('uses the original AnyTLS-specific SNI and padding scheme child drawer', () => {
+    expect(serversSource).toContain("type === 'anytls'");
+    expect(serversSource).toContain("const anyTlsDefaults = type === 'anytls' ? { insecure: 0 } : {};");
+    expect(serversSource).toContain("showChildDrawer('编辑填充方案', 'padding_scheme')");
+    expect(serversSource).toContain('编辑填充方案');
+    expect(serversSource).toContain('function ServerChildDrawerField');
+    expect(serversSource).toContain("field === 'padding_scheme'");
+    expect(serversSource).toContain('id="anytls-padding-scheme"');
+    expect(serversSource).toContain('ANYTLS_PADDING_SCHEME_PLACEHOLDER');
+    expect(serversSource).toContain('stop=8');
+    expect(serversSource).toContain('0=30-30');
+    expect(serversSource).toContain('7=500-1000');
+    expect(serversSource).not.toContain('label="Padding scheme"');
+    expect(serversSource).not.toContain('label="Insecure"');
+  });
+
+  it('preserves the original /server/manage row right-click menu outside sort mode', () => {
+    expect(serversSource).toContain('id="v2board-table-dropdown"');
+    expect(serversSource).toContain('ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical');
+    expect(serversSource).toContain('sortMode');
+    expect(serversSource).toContain('? {}');
+    expect(serversSource).toContain('onContextMenu: (event) =>');
+    expect(serversSource).toContain('event.preventDefault()');
+    expect(serversSource).toContain('event.clientY');
+    expect(serversSource).toContain('event.clientX');
+    expect(serversSource).toContain("display: contextMenu && !sortMode ? 'unset' : 'none'");
+    expect(serversSource).toContain('<FormOutlined /> 编辑');
+    expect(serversSource).toContain("runNodeAction('copy', contextRecord)");
+    expect(serversSource).toContain("runNodeAction('delete', contextRecord)");
+  });
+
+  it('keeps standalone server pages under the original refetch loading mask', () => {
+    expect(serversSource).toContain('<LegacySpin loading={groups.isFetching}>');
+    expect(serversSource).toContain('<LegacySpin loading={routes.isFetching}>');
+    expect(serversSource).toContain('<LegacySpin loading={nodes.isFetching || sortingLoading}>');
+    expect(serversSource).not.toContain('<LegacySpin loading={groups.isLoading}>');
+    expect(serversSource).not.toContain('<LegacySpin loading={routes.isLoading}>');
+    expect(serversSource).not.toContain('<LegacySpin loading={nodes.isLoading}>');
+  });
+
+  it('preserves the legacy remembered server table page size habit', () => {
+    expect(serversSource).toContain("const LEGACY_HABIT_KEY = 'habit'");
+    expect(serversSource).toContain("const LEGACY_SERVER_PAGE_SIZE_KEY = 'server_manage_page_size'");
+    expect(serversSource).toContain('function readLegacyServerPageSize()');
+    expect(serversSource).toContain('useState(readLegacyServerPageSize)');
+    expect(serversSource).toContain('writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, size)');
+    expect(serversSource).toContain('const legacyHabit = stored as unknown as Record<string, unknown>;');
+    expect(serversSource).toContain('legacyHabit[key] = value;');
+    expect(serversSource).toContain(
+      'window.localStorage.setItem(LEGACY_HABIT_KEY, JSON.stringify(legacyHabit));',
+    );
+    expect(serversSource).toContain(
+      'window.localStorage.setItem(LEGACY_HABIT_KEY, JSON.stringify({ [key]: value }));',
+    );
+    expect(serversSource).not.toContain('const parsed = stored ? JSON.parse(stored) : {};');
+    expect(serversSource).not.toContain('next[key] = value;');
+  });
+
+  it('uses the old copy helper for server address copying', () => {
+    expect(serversSource).toContain("import { legacyCopyText } from '@/lib/legacy-copy';");
+    expect(serversSource).toContain('legacyCopyText(row.host)');
+    expect(serversSource).not.toContain('legacyCopyText(`${row.host}:${row.port}`)');
+    expect(serversSource).not.toContain('navigator.clipboard?.writeText');
+  });
+
+  it('builds the original grouped server sort payload from the full node order', () => {
+    const nodes = [
+      { id: 1, type: 'shadowsocks' },
+      { id: 9, type: 'vmess' },
+      { id: 3, type: 'shadowsocks' },
+    ] as Parameters<typeof createServerSortPayload>[0];
+
+    expect(createServerSortPayload(nodes)).toEqual({
+      shadowsocks: { 1: 0, 3: 2 },
+      vmess: { 9: 1 },
+    });
+    expect(serversSource).toContain('sort.mutate(createServerSortPayload(orderedNodes)');
+    expect(serversSource).toContain('void nodes.refetch();');
+    expect(serversSource).not.toContain('sort.mutate(createServerSortPayload(filteredNodes)');
+  });
+
+  it('keeps the old server-manage sort-mode lifecycle', () => {
+    expect(serversSource).toContain('const [sortMode, setSortMode] = useState(false)');
+    expect(serversSource).toContain('if (nodes.data) {');
+    expect(serversSource).toContain('setOrderedNodes(nodes.data)');
+    expect(serversSource).toContain('setSortMode(false)');
+    expect(serversSource).toContain("{sortMode ? '保存排序' : '编辑排序'}");
+    expect(serversSource).toContain('onSuccess: () => {\n                      void nodes.refetch();\n                    },');
+    expect(serversSource).not.toContain('onSuccess: () => setSortMode(false)');
+  });
+
+  it('keeps server-manage node mutations fetching from the page after success', () => {
+    const managePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerManagePage'),
+      serversSource.indexOf('function NodesTab'),
+    );
+    const nodeHooksSource = queriesSource.slice(
+      queriesSource.indexOf('export function useDropServerMutation()'),
+      queriesSource.length,
+    );
+
+    expect(managePageSource).toContain('update.mutate(');
+    expect(managePageSource).toContain('copy.mutate(');
+    expect(managePageSource).toContain('drop.mutate(');
+    expect(managePageSource).toContain('sort.mutate(createServerSortPayload(orderedNodes), {');
+    expect(managePageSource.match(/void nodes\.refetch\(\);/g)?.length).toBeGreaterThanOrEqual(7);
+    expect(nodeHooksSource).not.toContain('onSuccess');
+    expect(nodeHooksSource).not.toContain('adminKeys.serverNodes');
+  });
+
+  it('keeps the original uncontrolled server-manage search input', () => {
+    const managePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerManagePage'),
+      serversSource.indexOf('function NodesTab'),
+    );
+
+    expect(managePageSource).toContain('const [searchKey, setSearchKey] = useState<string | undefined>()');
+    expect(managePageSource).toContain('placeholder="输入任意关键字搜索"');
+    expect(managePageSource).toContain('onChange={(event) => setSearchKey(event.target.value)}');
+    expect(managePageSource).not.toContain('value={searchKey}');
+  });
+
+  it('restores the original unsaved server sort navigation prompt', () => {
+    mocks.pathname = '/server/manage';
+    renderToStaticMarkup(<ServersPage />);
+
+    expect(mocks.usePrompt).toHaveBeenCalledWith({
+      message: '节点排序还没有保存，是否离开',
+      when: false,
+    });
+    expect(serversSource).toContain('unstable_usePrompt as usePrompt');
+    expect(serversSource).toContain("const LEGACY_SERVER_SORT_PROMPT = '节点排序还没有保存，是否离开'");
+    expect(serversSource).toContain('<LegacyServerSortPrompt when={sortMode} />');
+  });
+
+  it('reorders server rows with the old sortable-table index behavior', () => {
+    const nodes = [
+      { id: 1, type: 'shadowsocks' },
+      { id: 2, type: 'vmess' },
+      { id: 3, type: 'trojan' },
+    ] as Parameters<typeof moveServerNodeByLegacyDragIndexes>[0];
+
+    expect(moveServerNodeByLegacyDragIndexes(nodes, 0, 2).map((node) => node.id)).toEqual([
+      2, 3, 1,
+    ]);
+    expect(moveServerNodeByLegacyDragIndexes(nodes, 2, 0).map((node) => node.id)).toEqual([
+      3, 1, 2,
+    ]);
+    expect(serversSource).toContain('components={sortMode ? sortComponents : undefined}');
+    expect(serversSource).toContain('moveServerNodeByLegacyDragIndexes(orderRef.current, from, to)');
+  });
+});

@@ -1,204 +1,402 @@
-import { useState } from 'react';
 import {
-  App,
-  Button,
-  Card,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Popconfirm,
-  Space,
-  Switch,
-  Table,
-  Typography,
-} from 'antd';
-import { useTranslation } from 'react-i18next';
+  cloneElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
+import { Button, Input, Modal, Select, Spin, Switch, Table, Tooltip } from 'antd';
+import type { TableProps } from 'antd';
+import { MenuOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { admin } from '@v2board/api-client';
+import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
+import { apiClient } from '@/lib/api';
 import {
   useAdminPayments,
   useDropPaymentMutation,
-  usePaymentMethods,
   useSavePaymentMutation,
   useShowPaymentMutation,
+  useSortPaymentMutation,
 } from '@/lib/queries';
-import { admin } from '@v2board/api-client';
-import { apiClient } from '@/lib/api';
-import type { AdminPayment } from '@v2board/types';
-import { i18nGet } from '@/lib/errors';
+
+type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];
+
+function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
+  return (
+    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
+      {children}
+    </Spin>
+  );
+}
+
+function PaymentEditor({
+  record,
+  fetchLoading,
+  children,
+  onSave,
+  onSaved,
+}: {
+  record?: AdminPayment;
+  fetchLoading: boolean;
+  children: ReactElement<{ onClick?: () => void }>;
+  onSave: (payload: SavePaymentPayload) => Promise<unknown>;
+  onSaved: () => void;
+}) {
+  const [submit, setSubmit] = useState<Record<string, unknown>>(() => ({ ...(record ?? {}) }));
+  const [visible, setVisible] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
+  const [selectPaymentMethod, setSelectPaymentMethod] = useState<string | undefined>(
+    record?.payment,
+  );
+  const [form, setForm] = useState<PaymentFormDefinition>({});
+  const [config, setConfig] = useState<Record<string, unknown>>(() => ({
+    ...(record?.config ?? {}),
+  }));
+
+  const submitOnChange = (key: string, value: unknown) => {
+    setSubmit((current) => ({ ...current, [key]: value }));
+  };
+
+  const configOnChange = (key: string, value: unknown) => {
+    setConfig((current) => ({ ...current, [key]: value }));
+  };
+
+  const onSelectPaymentMethod = async (payment: string | undefined) => {
+    const nextForm = await admin.paymentForm(apiClient, payment, record?.id);
+    setForm(nextForm);
+    setSelectPaymentMethod(payment);
+  };
+
+  const show = async () => {
+    const methods = await admin.paymentMethods(apiClient);
+    const selected = record?.payment || methods[0];
+    setPaymentMethods(methods);
+    setSelectPaymentMethod(selected);
+    setVisible(true);
+    await onSelectPaymentMethod(selected);
+  };
+
+  const save = async () => {
+    await onSave({
+      ...submit,
+      payment: selectPaymentMethod,
+      config,
+    } as SavePaymentPayload);
+    setVisible(false);
+    onSaved();
+  };
+
+  return (
+    <>
+      {cloneElement(children, { onClick: show })}
+      <Modal
+        title={submit.id ? '编辑支付方式' : '添加支付方式'}
+        open={visible}
+        onCancel={() => setVisible(false)}
+        onOk={save}
+        okText={submit.id ? '保存' : '添加'}
+        okButtonProps={{ loading: fetchLoading }}
+        cancelText="取消"
+      >
+        <div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">显示名称</label>
+            <Input
+              placeholder="用于前端显示使用"
+              defaultValue={submit.name as string | undefined}
+              onChange={(event) => submitOnChange('name', event.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">图标URL(选填)</label>
+            <Input
+              placeholder="用于前端显示使用(https://x.com/icon.svg)"
+              defaultValue={submit.icon as string | undefined}
+              onChange={(event) => submitOnChange('icon', event.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">自定义通知域名(选填)</label>
+            <Input
+              placeholder="网关的通知将会发送到该域名(https://x.com)"
+              defaultValue={submit.notify_domain as string | undefined}
+              onChange={(event) => submitOnChange('notify_domain', event.target.value)}
+            />
+          </div>
+          <div className="row">
+            <div className="col-6">
+              <div className="form-group">
+                <label htmlFor="example-text-input-alt">百分比手续费(选填)</label>
+                <Input
+                  suffix="%"
+                  type="number"
+                  placeholder="在订单金额基础上附加手续费"
+                  defaultValue={submit.handling_fee_percent as string | number | undefined}
+                  onChange={(event) => submitOnChange('handling_fee_percent', event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="col-6">
+              <div className="form-group">
+                <label htmlFor="example-text-input-alt">固定手续费(选填)</label>
+                <Input
+                  type="number"
+                  placeholder="在订单金额基础上附加手续费"
+                  defaultValue={(submit.handling_fee_fixed as number) / 100}
+                  onChange={(event) =>
+                    submitOnChange('handling_fee_fixed', 100 * (event.target.value as unknown as number))
+                  }
+                />
+              </div>
+            </div>
+          </div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">接口文件</label>
+            <div>
+              <Select
+                style={{ width: '100%' }}
+                defaultValue={selectPaymentMethod}
+                onChange={(value) => {
+                  void onSelectPaymentMethod(value);
+                }}
+              >
+                {paymentMethods.map((method) => (
+                  <Select.Option value={method}>
+                    {method}
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
+          </div>
+          {Object.keys(form).map((key) => {
+            const field = form[key];
+            if (!field) return null;
+            const inputType = field.type;
+            const showInput =
+              inputType === 'input' || inputType === 'text' || inputType === 'string' || !inputType;
+
+            return (
+              <div className="form-group">
+                <label htmlFor="example-text-input-alt">{field.label}</label>
+                {showInput ? (
+                  <Input
+                    placeholder={field.description}
+                    defaultValue={(config[key] || field.value) as string | undefined}
+                    onChange={(event) => configOnChange(key, event.target.value)}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+          {selectPaymentMethod === 'MGate' ? (
+            <div className="alert alert-warning mb-0" role="alert">
+              <p className="mb-0">MGate TG@nulledsan</p>
+            </div>
+          ) : null}
+        </div>
+      </Modal>
+    </>
+  );
+}
 
 export default function PaymentsPage() {
-  const { t } = useTranslation();
-  const { message } = App.useApp();
   const payments = useAdminPayments();
-  const methods = usePaymentMethods();
   const save = useSavePaymentMutation();
-  const drop = useDropPaymentMutation();
   const show = useShowPaymentMutation();
-  const [editing, setEditing] = useState<AdminPayment | null>(null);
-  const [creating, setCreating] = useState(false);
+  const drop = useDropPaymentMutation();
+  const sort = useSortPaymentMutation();
+  const [orderedPayments, setOrderedPayments] = useState<AdminPayment[]>(() => payments.data ?? []);
+  const [legacySortLoading, setLegacySortLoading] = useState(false);
+  const orderRef = useRef(orderedPayments);
+  const dragIndex = useRef<number | null>(null);
 
-  return (
-    <div className="space-y-4">
-      <Typography.Title level={3}>{t('admin.nav.payments')}</Typography.Title>
-      <Card>
-        <Button type="primary" onClick={() => setCreating(true)}>
-          {t('common.add')}
-        </Button>
-      </Card>
-      <Card>
-        <Table<AdminPayment>
-          loading={payments.isLoading}
-          rowKey="id"
-          dataSource={payments.data ?? []}
-          columns={[
-            { title: 'ID', dataIndex: 'id', width: 60 },
-            { title: t('admin.common.name'), dataIndex: 'name' },
-            { title: t('admin.common.payment_method'), dataIndex: 'payment' },
-            {
-              title: t('common.enable'),
-              dataIndex: 'enable',
-              render: (v: 0 | 1, row) => (
-                <Switch
-                  checked={v === 1}
-                  onChange={async (next) => {
-                    try {
-                      await show.mutateAsync({ id: row.id, enable: next ? 1 : 0 });
-                      message.success(t('common.success'));
-                    } catch (e) {
-                      if (e instanceof Error) message.error(i18nGet(e.message));
-                    }
-                  }}
-                />
-              ),
-            },
-            {
-              title: t('common.operation'),
-              render: (_, row) => (
-                <Space size="small">
-                  <Button size="small" onClick={() => setEditing(row)}>
-                    {t('common.edit')}
-                  </Button>
-                  <Popconfirm
-                    title={t('common.delete')}
-                    onConfirm={async () => {
-                      try {
-                        await drop.mutateAsync(row.id);
-                        message.success(t('common.success'));
-                      } catch (e) {
-                        if (e instanceof Error) message.error(i18nGet(e.message));
-                      }
-                    }}
-                  >
-                    <Button size="small" danger>
-                      {t('common.delete')}
-                    </Button>
-                  </Popconfirm>
-                </Space>
-              ),
-            },
-          ]}
-        />
-      </Card>
-      <PaymentModal
-        open={Boolean(editing) || creating}
-        payment={editing}
-        methods={methods.data ?? []}
-        onClose={() => {
-          setEditing(null);
-          setCreating(false);
-        }}
-        onSubmit={async (values) => {
-          try {
-            await save.mutateAsync(values);
-            message.success(t('common.success'));
-            setEditing(null);
-            setCreating(false);
-          } catch (e) {
-            if (e instanceof Error) message.error(i18nGet(e.message));
-          }
-        }}
-      />
-    </div>
+  useEffect(() => {
+    if (payments.data) setOrderedPayments(payments.data);
+  }, [payments.data]);
+
+  orderRef.current = orderedPayments;
+
+  const components = useMemo(
+    () => ({
+      body: {
+        row: (
+          props: HTMLAttributes<HTMLTableRowElement> & { 'data-sort-index'?: number },
+        ) => {
+          const onDrop = () => {
+            const from = dragIndex.current;
+            const to = Number(props['data-sort-index']);
+            dragIndex.current = null;
+            if (from == null || !Number.isFinite(to) || from === to) return;
+
+            const next = [...orderRef.current];
+            const moved = next[from];
+            if (!moved) return;
+            if (from < to) {
+              next.splice(to + 1, 0, moved);
+              next.splice(from, 1);
+            } else {
+              next.splice(to, 0, moved);
+              next.splice(from + 1, 1);
+            }
+            setOrderedPayments(next);
+            setLegacySortLoading(true);
+            sort.mutate(next.map((payment) => payment.id), {
+              onSuccess: () => {
+                void payments.refetch().finally(() => {
+                  setLegacySortLoading(false);
+                });
+              },
+            });
+          };
+
+          return <tr {...props} onDragOver={(event) => event.preventDefault()} onDrop={onDrop} />;
+        },
+      },
+    }),
+    [payments, sort],
   );
-}
 
-function PaymentModal({
-  open,
-  payment,
-  methods,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  payment: AdminPayment | null;
-  methods: string[];
-  onClose: () => void;
-  onSubmit: (values: Partial<AdminPayment>) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [form] = Form.useForm();
-  const [paymentType, setPaymentType] = useState(payment?.payment ?? methods[0] ?? '');
-  const formDef = useFormDef(paymentType);
-
-  return (
-    <Modal
-      open={open}
-      title={payment ? t('common.edit') : t('common.add')}
-      onCancel={onClose}
-      onOk={() => form.submit()}
-      destroyOnClose
-    >
-      <Form
-        layout="vertical"
-        form={form}
-        initialValues={payment ?? { enable: 1, payment: methods[0] }}
-        onFinish={(values) => onSubmit({ ...values, id: payment?.id })}
-      >
-        <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-          <Input />
-        </Form.Item>
-        <Form.Item name="payment" label="Payment driver" rules={[{ required: true }]}>
-          <select
-            value={paymentType}
-            onChange={(e) => {
-              setPaymentType(e.target.value);
-              form.setFieldValue('payment', e.target.value);
+  const columns: TableProps<AdminPayment>['columns'] = [
+    {
+      title: 'ID',
+      dataIndex: 'id',
+      key: 'id',
+      render: (id: number, _row, index) => (
+        <>
+          <MenuOutlined
+            draggable
+            onDragStart={() => {
+              dragIndex.current = index;
             }}
-            style={{ width: '100%', height: 32, padding: '0 8px' }}
+            style={{ cursor: 'move' }}
+          />{' '}
+          {id}
+        </>
+      ),
+    },
+    {
+      title: '启用',
+      dataIndex: 'enable',
+      key: 'enable',
+      render: (enable: 0 | 1 | string, row) => (
+        <Switch
+          checked={parseInt(String(enable), 10) as unknown as boolean}
+          size="small"
+          onChange={() =>
+            show.mutate(row.id, {
+              onSuccess: () => {
+                void payments.refetch();
+              },
+            })
+          }
+        />
+      ),
+    },
+    {
+      title: '显示名称',
+      dataIndex: 'name',
+      key: 'name',
+    },
+    {
+      title: '支付接口',
+      dataIndex: 'payment',
+      key: 'payment',
+    },
+    {
+      title: (
+        <span>
+          通知地址{' '}
+          <Tooltip
+            placement="top"
+            title="支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。"
           >
-            {methods.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </Form.Item>
-        <Form.Item name="icon" label="Icon URL">
-          <Input />
-        </Form.Item>
-        <Form.Item name="handling_fee_fixed" label="Handling fee (fixed, cents)">
-          <InputNumber style={{ width: '100%' }} />
-        </Form.Item>
-        <Form.Item name="handling_fee_percent" label="Handling fee (percent)">
-          <InputNumber style={{ width: '100%' }} />
-        </Form.Item>
-        {formDef &&
-          Object.entries(formDef).map(([key, def]) => (
-            <Form.Item key={key} name={['config', key]} label={def.label} tooltip={def.description}>
-              <Input />
-            </Form.Item>
-          ))}
-      </Form>
-    </Modal>
-  );
-}
+            <QuestionCircleOutlined />
+          </Tooltip>
+        </span>
+      ),
+      dataIndex: 'notify_url',
+      key: 'notify_url',
+    },
+    {
+      title: '操作',
+      dataIndex: 'action',
+      key: 'action',
+      align: 'right',
+      fixed: 'right',
+      render: (_value, row) => (
+        <>
+          <PaymentEditor
+            key={row.id}
+            record={row}
+            fetchLoading={payments.isFetching}
+            onSave={(payload) => save.mutateAsync(payload)}
+            onSaved={() => {
+              void payments.refetch();
+            }}
+          >
+            <a href="javascript:void(0);">编辑</a>
+          </PaymentEditor>
+          <div className="ant-divider ant-divider-vertical" />
+          <a
+            href="javascript:void(0)"
+            onClick={() => {
+              Modal.confirm({
+                title: '警告',
+                content: '确定要删除该条项目吗？',
+                onOk: () => {
+                  void drop.mutateAsync(row.id).then(() => {
+                    void payments.refetch();
+                  });
+                },
+                okText: '确定',
+                cancelText: '取消',
+              });
+            }}
+          >
+            删除
+          </a>
+        </>
+      ),
+    },
+  ];
 
-function useFormDef(paymentType: string) {
-  const [formDef, setFormDef] = useState<Record<string, { label: string; description?: string }> | null>(
-    null,
+  return (
+    <>
+      <div className="d-flex justify-content-between align-items-center" />
+      <LegacySpin loading={payments.isFetching || legacySortLoading}>
+        <div className="block block-rounded">
+          <div className="bg-white">
+            <div style={{ padding: 15 }}>
+              <PaymentEditor
+                key={0}
+                fetchLoading={payments.isFetching}
+                onSave={(payload) => save.mutateAsync(payload)}
+                onSaved={() => {
+                  void payments.refetch();
+                }}
+              >
+                <Button>
+                  <PlusOutlined /> 添加支付方式
+                </Button>
+              </PaymentEditor>
+            </div>
+            <Table<AdminPayment>
+              tableLayout="auto"
+              dataSource={orderedPayments}
+              columns={columns}
+              components={components}
+              pagination={false}
+              onRow={(_record, index) =>
+                ({ 'data-sort-index': index } as HTMLAttributes<HTMLElement>)
+              }
+              scroll={{ x: 1300 }}
+            />
+          </div>
+        </div>
+      </LegacySpin>
+    </>
   );
-  if (paymentType && formDef == null) {
-    void admin.paymentForm(apiClient, paymentType).then(setFormDef).catch(() => setFormDef({}));
-  }
-  return formDef;
 }

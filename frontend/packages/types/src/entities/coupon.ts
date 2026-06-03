@@ -24,6 +24,7 @@ export interface CouponCheckPayload {
 
 export interface Giftcard {
   id: number;
+  name: string;
   code: string;
   type: 1 | 2 | 3 | 4 | 5;
   value: number;

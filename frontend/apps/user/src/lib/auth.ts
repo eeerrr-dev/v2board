@@ -1,11 +1,12 @@
 const AUTH_STORAGE_KEY = 'authorization';
-const SUBSCRIBE_TOKEN_KEY = 'subscribe_token';
-
-type AuthListener = (value: string | null) => void;
-const listeners = new Set<AuthListener>();
+const listeners = new Set<(value: string | null) => void>();
 
 export function getAuthData(): string | null {
   return localStorage.getItem(AUTH_STORAGE_KEY);
+}
+
+function notifyAuthChange(value = getAuthData()): void {
+  listeners.forEach((listener) => listener(value));
 }
 
 export function setAuthData(value: string | null): void {
@@ -14,32 +15,16 @@ export function setAuthData(value: string | null): void {
   } else {
     localStorage.setItem(AUTH_STORAGE_KEY, value);
   }
-  for (const l of listeners) l(value);
+  notifyAuthChange(value);
 }
 
-export function subscribeAuth(listener: AuthListener): () => void {
+export function subscribeAuth(listener: (value: string | null) => void): () => void {
   listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-export function getSubscribeToken(): string | null {
-  return localStorage.getItem(SUBSCRIBE_TOKEN_KEY);
-}
-
-export function setSubscribeToken(value: string | null): void {
-  if (value === null) localStorage.removeItem(SUBSCRIBE_TOKEN_KEY);
-  else localStorage.setItem(SUBSCRIBE_TOKEN_KEY, value);
-}
-
-export function setupAuthSync(): void {
-  window.addEventListener('storage', (event) => {
-    if (event.key === AUTH_STORAGE_KEY) {
-      for (const l of listeners) l(event.newValue);
-    }
-  });
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function logout(): void {
   setAuthData(null);
-  setSubscribeToken(null);
 }

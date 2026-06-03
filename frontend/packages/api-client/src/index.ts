@@ -4,4 +4,10 @@ export * as passport from './endpoints/passport';
 export * as guest from './endpoints/guest';
 export * as user from './endpoints/user';
 export * as admin from './endpoints/admin';
-export type { AdminFilter, AdminPageQuery } from './endpoints/admin';
+export type {
+  AdminFilter,
+  AdminPageQuery,
+  AdminThemeField,
+  AdminThemeInfo,
+  AdminThemesResult,
+} from './endpoints/admin';

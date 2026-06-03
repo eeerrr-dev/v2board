@@ -1,0 +1,326 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { renderToStaticMarkup } from 'react-dom/server';
+import dayjs from 'dayjs';
+import { describe, expect, it, vi } from 'vitest';
+import OrdersPage from './orders';
+
+const ordersSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'orders.tsx'), 'utf8');
+const legacyFilterDrawerSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../components/legacy-filter-drawer.tsx'),
+  'utf8',
+);
+const adminQueriesSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'),
+  'utf8',
+);
+
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}));
+
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    removeQueries: vi.fn(),
+  }),
+}));
+
+vi.mock('@/lib/queries', () => ({
+  useAdminOrders: () => ({
+    isLoading: false,
+    isFetching: false,
+    data: {
+      data: [
+        {
+          id: 1,
+          trade_no: '202601010001',
+          callback_no: null,
+          plan_id: 1,
+          period: 'month_price',
+          type: 1,
+          total_amount: 1200,
+          handling_amount: null,
+          discount_amount: 0,
+          surplus_amount: 0,
+          refund_amount: 0,
+          balance_amount: 0,
+          surplus_order_ids: null,
+          status: 0,
+          commission_status: 0,
+          commission_balance: 0,
+          payment_id: null,
+          invite_user_id: null,
+          paid_at: null,
+          created_at: 1700000000,
+          updated_at: 1700000000,
+          user_id: 1,
+          plan_name: '基础套餐',
+        },
+        {
+          id: 2,
+          trade_no: '202601010002',
+          callback_no: 'cb-1',
+          plan_id: 1,
+          period: 'year_price',
+          type: 2,
+          total_amount: 8800,
+          handling_amount: null,
+          discount_amount: 0,
+          surplus_amount: 0,
+          refund_amount: 0,
+          balance_amount: 0,
+          surplus_order_ids: null,
+          status: 3,
+          commission_status: 1,
+          commission_balance: 1200,
+          payment_id: null,
+          invite_user_id: 3,
+          paid_at: null,
+          created_at: 1700086400,
+          updated_at: 1700086400,
+          user_id: 2,
+          plan_name: '年度套餐',
+        },
+      ],
+      total: 2,
+    },
+  }),
+  useAdminPlans: () => ({
+    data: [{ id: 1, name: '基础套餐' }],
+  }),
+  useAdminOrderDetail: () => ({
+    data: undefined,
+  }),
+  useAdminUserInfo: () => ({
+    data: undefined,
+  }),
+  useAssignOrderMutation: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+  useMarkOrderPaidMutation: () => ({
+    mutateAsync: vi.fn(),
+  }),
+  useCancelOrderMutation: () => ({
+    mutateAsync: vi.fn(),
+  }),
+  useUpdateOrderMutation: () => ({
+    mutateAsync: vi.fn(),
+  }),
+}));
+
+describe('OrdersPage legacy order manager', () => {
+  it('renders the original order table shell, columns, status controls, and assign action', () => {
+    const html = renderToStaticMarkup(<OrdersPage />);
+
+    expect(html).toContain('class="d-flex justify-content-between align-items-center"');
+    expect(html).toContain('class="block block-rounded"');
+    expect(html).toContain('class="bg-white"');
+    expect(html).toContain('过滤器');
+    expect(html).toContain('添加订单');
+    expect(html).toContain('# 订单号');
+    expect(html).toContain('类型');
+    expect(html).toContain('订阅计划');
+    expect(html).toContain('周期');
+    expect(html).toContain('支付金额');
+    expect(html).toContain('订单状态');
+    expect(html).toContain('佣金金额');
+    expect(html).toContain('佣金状态');
+    expect(html).toContain('创建时间');
+    expect(html).toContain('202...001');
+    expect(html).toContain('新购');
+    expect(html).toContain('月付');
+    expect(html).toContain('12.00');
+    expect(html).toContain('待支付');
+    expect(html).toContain('标记为');
+    expect(html).toContain('续费');
+    expect(html).toContain('年付');
+    expect(html).toContain('88.00');
+    expect(html).toContain('已完成');
+    expect(html).toContain('12.00');
+    expect(html).toContain('发放中');
+    expect(html).toContain(dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm'));
+    expect(html).not.toContain('ant-card');
+    expect(html).not.toContain('ant-typography');
+    expect(html).not.toContain('ant-descriptions');
+  });
+
+  it('uses the original drawer-style multi-condition filter with select status values', () => {
+    expect(ordersSource).not.toContain('function LegacyFilterButton');
+    expect(ordersSource).toContain('<LegacyFilterDrawer');
+    expect(ordersSource).toContain('function filterButtonType(active: boolean)');
+    expect(ordersSource).toContain("return active ? 'primary' : ('' as ButtonProps['type']);");
+    expect(ordersSource).toContain('type={filterButtonType(query.filter.length > 0)}');
+    expect(ordersSource).not.toContain("type={query.filter.length > 0 ? 'primary' : 'default'}");
+    expect(ordersSource).toContain("key: 'status'");
+    expect(ordersSource).toContain("type: 'select'");
+    expect(ordersSource).toContain("{ key: '未支付', value: 0 }");
+    expect(ordersSource).toContain("{ key: '已支付', value: 1 }");
+    expect(ordersSource).toContain("{ key: '无效', value: 3 }");
+    expect(legacyFilterDrawerSource).toContain('className="v2board-filter-drawer"');
+    expect(legacyFilterDrawerSource).toContain('添加条件');
+    expect(legacyFilterDrawerSource).toContain('欲检索内容');
+    expect(legacyFilterDrawerSource).toContain('v2board-drawer-action');
+    expect(legacyFilterDrawerSource).toContain('检索');
+  });
+
+  it('submits the legacy assigned-order modal state without default replacements', () => {
+    expect(ordersSource).toContain('.mutateAsync(submit)');
+    expect(ordersSource).toContain('onAssigned();\n              close();');
+    expect(ordersSource).not.toContain('await onAssigned();');
+    expect(ordersSource).toContain(
+      'onAssigned={() => {\n                  void orders.refetch();\n                }}',
+    );
+    expect(ordersSource).toContain('onAssigned: () => void;');
+    expect(ordersSource).not.toContain("period: submit.period ?? 'month_price'");
+    expect(ordersSource).not.toContain('total_amount: Number(submit.total_amount ?? 0)');
+
+    const assignHook = adminQueriesSource.slice(
+      adminQueriesSource.indexOf('export function useAssignOrderMutation()'),
+      adminQueriesSource.indexOf('export function useReplyTicketMutation()'),
+    );
+    expect(assignHook).not.toContain('onSuccess');
+    expect(assignHook).not.toContain("queryKey: ['admin', 'orders']");
+  });
+
+  it('keeps the original assigned-order modal loading text behavior', () => {
+    expect(ordersSource).toContain("okText={assign.isPending ? <LoadingOutlined /> : '确定'}");
+    expect(ordersSource).not.toContain('okButtonProps={{ loading: assign.isPending }}');
+  });
+
+  it('keeps the original assigned-order label targets without generated input ids', () => {
+    expect(ordersSource).toContain('<label htmlFor="example-text-input-alt">用户邮箱</label>');
+    expect(ordersSource).toContain('<label htmlFor="example-text-input-alt">请选择订阅</label>');
+    expect(ordersSource).toContain('<label htmlFor="example-text-input-alt">请选择周期</label>');
+    expect(ordersSource).toContain('<label htmlFor="example-text-input-alt">支付金额</label>');
+    expect(ordersSource).not.toContain('assign-email');
+    expect(ordersSource).not.toContain('assign-plan');
+    expect(ordersSource).not.toContain('assign-period');
+    expect(ordersSource).not.toContain('assign-amount');
+  });
+
+  it('keeps the original assigned-order select option structure and random keys', () => {
+    expect(ordersSource).toContain('<Select.Option key={Math.random()} value={plan.id}>');
+    expect(ordersSource).toContain('<Select.Option key={Math.random()} value={period}>');
+    expect(ordersSource).not.toContain('options={plans.map');
+    expect(ordersSource).not.toContain('options={PERIOD_OPTIONS}');
+    expect(ordersSource).not.toContain('const PERIOD_OPTIONS');
+  });
+
+  it('uses the original outer fetchLoading spin wrapper for order refetches', () => {
+    expect(ordersSource).toContain('function LegacySpin');
+    expect(ordersSource).toContain('<LegacySpin loading={orders.isFetching}>');
+    expect(ordersSource).toContain('className="spinner-grow text-primary"');
+    expect(ordersSource).not.toContain('              loading={orders.isFetching}');
+    expect(ordersSource).not.toContain('loading={orders.isLoading}');
+  });
+
+  it('empties the cached order list on page unmount like the original order model', () => {
+    expect(ordersSource).toContain("import { useQueryClient } from '@tanstack/react-query';");
+    expect(ordersSource).toContain('const queryClient = useQueryClient();');
+    expect(ordersSource).toContain("queryClient.removeQueries({ queryKey: ['admin', 'orders'] });");
+    expect(ordersSource).not.toContain("queryClient.removeQueries({ queryKey: adminKeys.orders(query) });");
+  });
+
+  it('keeps the original direct badge status mapping and order action menu keys', () => {
+    expect(ordersSource).toContain("<Badge status={ORDER_STATUS_BADGE[value]} />");
+    expect(ordersSource).toContain("<Badge status={COMMISSION_STATUS_BADGE[value]} />");
+    expect(ordersSource).not.toContain("ORDER_STATUS_BADGE[value] ?? 'default'");
+    expect(ordersSource).not.toContain("COMMISSION_STATUS_BADGE[value] ?? 'default'");
+    expect(ordersSource).toContain("{ key: '1', label: '已支付' }");
+    expect(ordersSource).toContain("{ key: '2', label: '取消' }");
+    expect(ordersSource).toContain("key === '1'");
+    expect(ordersSource).not.toContain("key === 'paid'");
+  });
+
+  it('keeps order action refetches after successful mutation requests', () => {
+    const paidStart = ordersSource.indexOf('paid.mutateAsync(row.trade_no)');
+    const cancelStart = ordersSource.indexOf('cancel.mutateAsync(row.trade_no)');
+    const sharedRefetch = ordersSource.indexOf('void orders.refetch();', paidStart);
+    const updateStart = ordersSource.indexOf('updateOrder\n                      .mutateAsync({');
+    const updateRefetch = ordersSource.indexOf('void orders.refetch();', updateStart);
+
+    expect(paidStart).toBeGreaterThan(-1);
+    expect(cancelStart).toBeGreaterThan(paidStart);
+    expect(sharedRefetch).toBeGreaterThan(cancelStart);
+    expect(updateStart).toBeGreaterThan(-1);
+    expect(updateRefetch).toBeGreaterThan(updateStart);
+
+    const paidHook = adminQueriesSource.slice(
+      adminQueriesSource.indexOf('export function useMarkOrderPaidMutation()'),
+      adminQueriesSource.indexOf('export function useCancelOrderMutation()'),
+    );
+    const cancelHook = adminQueriesSource.slice(
+      adminQueriesSource.indexOf('export function useCancelOrderMutation()'),
+      adminQueriesSource.indexOf('export function useUpdateOrderMutation()'),
+    );
+    const updateHook = adminQueriesSource.slice(
+      adminQueriesSource.indexOf('export function useUpdateOrderMutation()'),
+      adminQueriesSource.indexOf('export function useAssignOrderMutation()'),
+    );
+    expect(paidHook).not.toContain('onSuccess');
+    expect(cancelHook).not.toContain('onSuccess');
+    expect(updateHook).not.toContain('onSuccess');
+    expect(paidHook).not.toContain("queryKey: ['admin', 'orders']");
+    expect(cancelHook).not.toContain("queryKey: ['admin', 'orders']");
+    expect(updateHook).not.toContain("queryKey: ['admin', 'orders']");
+  });
+
+  it('keeps the original commission display text separate from menu text', () => {
+    expect(ordersSource).toContain("3: '已驳回'");
+    expect(ordersSource).toContain("{ key: '3', label: '无效', disabled: value === 3 }");
+    expect(ordersSource).not.toContain("3: '无效'");
+  });
+
+  it('keeps the original direct amount arithmetic without zero fallback', () => {
+    expect(ordersSource).toContain('return ((value as number) / 100).toFixed(2);');
+    expect(ordersSource).not.toContain('value ?? 0');
+  });
+
+  it('keeps the original short order number substr slicing', () => {
+    expect(ordersSource).toContain('return `${value.substr(0, 3)}...${value.substr(-3)}`;');
+    expect(ordersSource).not.toContain('value.substring(0, 3)');
+    expect(ordersSource).not.toContain('value.substring(value.length - 3)');
+  });
+
+  it('keeps the original first-fetch pagination and addFilter jump page values', () => {
+    expect(ordersSource).toContain('const storedFilter = readStoredOrderFilter();');
+    expect(ordersSource).toContain('current: storedFilter.length > 0 ? 1 : 0,');
+    expect(ordersSource).toContain('filter: storedFilter,');
+    expect(ordersSource).toContain('current: query.current || 1,');
+    expect(ordersSource).toContain('setQuery((state) => ({ ...state, current: 1, filter }))');
+  });
+
+  it('keeps pagination updates on the table onChange path only', () => {
+    expect(ordersSource).toContain('onChange={(pagination: TablePaginationConfig) =>');
+    expect(ordersSource).toContain('current: pagination.current ?? state.current');
+    expect(ordersSource).toContain('pageSize: pagination.pageSize ?? state.pageSize');
+    expect(ordersSource).not.toContain(
+      'onChange: (current: number, pageSize: number) =>',
+    );
+  });
+
+  it('keeps the bundled order pagination total as the direct response field', () => {
+    expect(ordersSource).toContain('total: orders.data?.total,');
+    expect(ordersSource).not.toContain('total: orders.data?.total ?? 0');
+  });
+
+  it('waits for invite user details before showing invited order detail content', () => {
+    expect(ordersSource).toContain(
+      "const loaded = Boolean(detail && user.data?.email && (!detail.invite_user_id || inviteUser.data?.email));",
+    );
+    expect(ordersSource).not.toContain('const loaded = Boolean(detail && user.data?.email);');
+  });
+
+  it('keeps the original table row identity and detail fallback behavior', () => {
+    expect(ordersSource).not.toContain('rowKey="id"');
+    expect(ordersSource).toContain(
+      "const planName = plans.find((plan) => plan.id === detail?.plan_id)?.name;",
+    );
+    expect(ordersSource).not.toContain('detail?.plan_name');
+    expect(ordersSource).not.toContain('PERIOD_TEXT[detail.period] ?? detail.period');
+    expect(ordersSource).not.toContain('PERIOD_TEXT[value] ?? value');
+    expect(ordersSource).not.toContain('{planName ??');
+  });
+});

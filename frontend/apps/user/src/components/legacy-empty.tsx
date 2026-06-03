@@ -13,12 +13,14 @@ const ANT_EMPTY_DESCRIPTION: Record<string, string> = {
   'fa-IR': 'داده‌ای موجود نیست',
 };
 
-export function LegacyEmpty() {
+export function LegacyEmpty({ size = 'normal' }: { size?: 'normal' | 'small' }) {
   const { i18n } = useTranslation();
   const description = ANT_EMPTY_DESCRIPTION[i18n.language] ?? ANT_EMPTY_DESCRIPTION['en-US'];
+  const className =
+    size === 'small' ? 'ant-empty ant-empty-normal ant-empty-small' : 'ant-empty ant-empty-normal';
 
   return (
-    <div className="ant-empty ant-empty-normal">
+    <div className={className}>
       <div className="ant-empty-image">
         <svg width="64" height="41" viewBox="0 0 64 41" xmlns="http://www.w3.org/2000/svg">
           <g transform="translate(0 1)" fill="none" fillRule="evenodd">

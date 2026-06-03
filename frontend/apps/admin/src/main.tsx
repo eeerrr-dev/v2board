@@ -1,30 +1,29 @@
-import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConfigProvider, App as AntdApp, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import enUS from 'antd/locale/en_US';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 import { createI18n } from '@v2board/i18n';
 import { HashRouter } from 'react-router-dom';
 import App from './App';
-import { setupAuthSync } from './lib/auth';
+import { applyInitialDarkMode } from './lib/dark-mode';
+import { applyAdminLegacySettings } from './lib/legacy-settings';
+
+applyAdminLegacySettings();
+applyInitialDarkMode();
 
 const i18n = createI18n();
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false } },
 });
 
-setupAuthSync();
-
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');
 
 function Boot() {
-  const lang = i18n.resolvedLanguage;
   return (
     <ConfigProvider
-      locale={lang?.startsWith('zh') ? zhCN : enUS}
+      locale={zhCN}
       theme={{
         algorithm: antdTheme.defaultAlgorithm,
         token: {
@@ -71,9 +70,7 @@ function Boot() {
 }
 
 createRoot(root).render(
-  <StrictMode>
-    <I18nextProvider i18n={i18n}>
-      <Boot />
-    </I18nextProvider>
-  </StrictMode>,
+  <I18nextProvider i18n={i18n}>
+    <Boot />
+  </I18nextProvider>,
 );

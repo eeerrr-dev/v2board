@@ -1,18 +1,28 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { QRCodeCanvas } from '@rc-component/qrcode';
+import { useQueryClient } from '@tanstack/react-query';
+import QRCode from 'qrcode.react';
 import { user } from '@v2board/api-client';
-import type { Order } from '@v2board/types';
+import type { Order, PaymentMethod } from '@v2board/types';
 import { apiClient } from '@/lib/api';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { useCommConfig, useOrder, usePaymentMethods, useCancelOrderMutation } from '@/lib/queries';
-import { formatDateTime } from '@v2board/config/format';
+import {
+  userKeys,
+  useCommConfig,
+  useOrder,
+  usePaymentMethods,
+  useCancelOrderMutation,
+  useUserInfo,
+} from '@/lib/queries';
 import { legacyConfirm } from '@/components/legacy-confirm';
 import { StripeCardForm } from '@/components/stripe-card-form';
 import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
+import { CheckCircleIcon, InfoCircleIcon, WarningIcon } from '@/components/ant-icon';
 import { toast } from '@/lib/legacy-toast';
+import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
+import { formatLegacyDateTime } from '@v2board/config/format';
 
 const PERIOD_LABEL_KEY: Record<string, string> = {
   month_price: 'plan.monthly',
@@ -27,104 +37,129 @@ const PERIOD_LABEL_KEY: Record<string, string> = {
 
 export default function OrderDetailPage() {
   const { t } = useTranslation();
-  const { tradeNo } = useParams();
+  const { trade_no } = useParams();
+  const tradeNo = trade_no;
+  const queryClient = useQueryClient();
   const orderQuery = useOrder(tradeNo);
   const paymentsQuery = usePaymentMethods({ enabled: Boolean(orderQuery.data) });
-  const { data: comm } = useCommConfig();
+  // Old componentDidMount dispatches order/detail, then user/getUserInfo, then comm/config.
+  useUserInfo({ refetchOnMount: 'always' });
+  const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
   const cancel = useCancelOrderMutation();
   const [methodId, setMethodId] = useState<number | undefined>();
-  const [payUrl, setPayUrl] = useState<string | null>(null);
+  const [qrcodeVisible, setQrcodeVisible] = useState(false);
+  const [payUrl, setPayUrl] = useState<string | undefined>();
   const [paying, setPaying] = useState(false);
   const [stripePk, setStripePk] = useState<string | null>(null);
   const [stripeToken, setStripeToken] = useState<{ id: string } | null>(null);
+  const [preHandlingAmount, setPreHandlingAmount] = useState<number | undefined>();
   const symbol = comm?.currency_symbol;
   const currency = comm?.currency;
   const paymentMethods = orderQuery.data ? paymentsQuery.data : undefined;
+  const hasLoadedOrder = Boolean(orderQuery.data);
+  const loading = useLegacyFetchLoading(orderQuery.isFetching);
 
+  // The original calls check() once from the order/detail fetch callback, regardless of the
+  // loaded status: it polls /user/order/check every 3s while pending, and on a non-pending
+  // result clears the timer, hides the QR modal and refetches the detail. A ref keeps this to
+  // one start per trade_no so the refetch (which re-runs this effect) cannot restart the poll.
+  const checkedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!tradeNo) return;
-    if (orderQuery.data?.status !== 0) return;
-    const id = window.setInterval(() => {
-      user
-        .checkOrder(apiClient, tradeNo)
-        .then((status) => {
-          if (status !== 0) {
-            orderQuery.refetch();
-            window.clearInterval(id);
-          }
-        })
-        .catch(() => {});
-    }, 3000);
-    return () => window.clearInterval(id);
-  }, [tradeNo, orderQuery]);
+    if (!tradeNo || !hasLoadedOrder) return;
+    if (checkedRef.current === tradeNo) return;
+    checkedRef.current = tradeNo;
+    let cancelled = false;
+    let timer = 0;
+    const check = () => {
+      timer = window.setTimeout(() => {
+        user
+          .checkOrder(apiClient, tradeNo)
+          .then((status) => {
+            if (cancelled) return;
+            if (status !== 0) {
+              setQrcodeVisible(false);
+              // The original poll success only hides the QR modal; it leaves
+              // payUrl in state. Manual modal cancel is the path that clears it.
+              orderQuery.refetch();
+            } else {
+              check();
+            }
+          })
+          .catch(() => {});
+      }, 3000);
+    };
+    check();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [tradeNo, hasLoadedOrder]);
 
   useEffect(() => {
     const first = paymentMethods?.[0];
-    if (methodId !== undefined || !first) return;
+    if (methodId !== undefined || !first || !orderQuery.data) return;
     setMethodId(first.id);
-  }, [methodId, paymentMethods]);
+    setPreHandlingAmount(calculatePreHandlingAmount(orderQuery.data, first));
+  }, [methodId, orderQuery.data, paymentMethods]);
 
   useEffect(() => {
-    if (orderQuery.data?.status !== 0) setPayUrl(null);
+    if (orderQuery.data?.status !== 0) {
+      setQrcodeVisible(false);
+    }
   }, [orderQuery.data?.status, tradeNo]);
 
-  const selectedPayment = paymentMethods?.find((p) => p.id === methodId);
+  useEffect(
+    () => () => {
+      queryClient.removeQueries({ queryKey: ['user', 'orders'] });
+      queryClient.removeQueries({ queryKey: userKeys.payments });
+    },
+    [queryClient],
+  );
+
+  const effectiveMethodId = methodId ?? paymentMethods?.[0]?.id;
+  const selectedPayment = paymentMethods?.find((p) => p.id === effectiveMethodId);
   const isStripePayment = selectedPayment?.payment === 'StripeCredit';
 
   useEffect(() => {
-    setStripeToken(null);
-    if (methodId === undefined || !isStripePayment) {
-      setStripePk(null);
-      return;
-    }
+    // The original only fetches the Stripe public key the first time a Stripe method is
+    // selected (it guards on the existing key) and never resets it or the card token when
+    // switching methods. So once a pk/token is captured it persists across method changes
+    // — match that by fetching once and never clearing either piece of state.
+    if (!isStripePayment || effectiveMethodId === undefined || stripePk) return;
     let cancelled = false;
     user
-      .getStripePublicKey(apiClient, methodId)
+      .getStripePublicKey(apiClient, effectiveMethodId)
       .then((pk) => {
         if (!cancelled) setStripePk(pk);
       })
-      .catch(() => {
-        if (!cancelled) setStripePk(null);
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [isStripePayment, methodId]);
+  }, [effectiveMethodId, isStripePayment, stripePk]);
 
   const handleStripeToken = useCallback((token: { id: string } | null) => {
     setStripeToken(token);
   }, []);
 
-  if (orderQuery.isFetching) {
+  if (loading) {
     return (
       <div className="spinner-grow text-primary" role="status">
         <span className="sr-only">Loading...</span>
       </div>
     );
   }
-  if (orderQuery.error || !orderQuery.data) {
-    return (
-      <div className="spinner-grow text-primary" role="status">
-        <span className="sr-only">Loading...</span>
-      </div>
-    );
-  }
-  const order = orderQuery.data;
+  const order = (orderQuery.data ?? { plan: {} }) as Order;
   const isPending = order.status === 0;
-  const isDeposit = order.period === 'deposit' || order.plan?.id === 0;
-  const periodLabel = order.period ? t(PERIOD_LABEL_KEY[order.period] ?? '') : '';
-  const handlingFee =
-    isPending &&
-    selectedPayment &&
-    order.total_amount > 0 &&
-    ((selectedPayment.handling_fee_fixed ?? 0) || (selectedPayment.handling_fee_percent ?? 0))
-      ? (() => {
-          const percent = selectedPayment.handling_fee_percent ?? 0;
-          const fixed = selectedPayment.handling_fee_fixed ?? 0;
-          return order.total_amount * (percent / 100) + fixed;
-        })()
-      : 0;
-  const grandTotal = order.total_amount + handlingFee;
+  const isDeposit = order.plan?.id == 0;
+  const periodLabel = order.period && PERIOD_LABEL_KEY[order.period]
+    ? t(PERIOD_LABEL_KEY[order.period])
+    : undefined;
+  const legacyPreHandlingAmount =
+    preHandlingAmount ??
+    order.pre_handling_amount ??
+    calculatePreHandlingAmount(order, selectedPayment);
+  const grandTotal = order.total_amount + (legacyPreHandlingAmount || 0);
 
   const onPay = async () => {
     if (!tradeNo) return;
@@ -136,15 +171,16 @@ export default function OrderDetailPage() {
     try {
       const result = await user.checkoutOrder(apiClient, {
         trade_no: tradeNo,
-        method: methodId as number,
+        method: effectiveMethodId as number,
         token: isStripePayment ? stripeToken?.id : undefined,
       });
       if (isStripePayment) {
         toast.loading(t('order.stripe_verifying'), { duration: 5000 });
         return;
       }
-      if (result.type === 0 && typeof result.data === 'string') {
-        setPayUrl(result.data);
+      if (result.type === 0) {
+        setQrcodeVisible(true);
+        setPayUrl(typeof result.data === 'string' ? result.data : undefined);
       } else if (result.type === 1 && typeof result.data === 'string') {
         window.location.href = result.data;
         toast.info('正在前往收银台');
@@ -155,23 +191,26 @@ export default function OrderDetailPage() {
     }
   };
 
-  const planName = isDeposit ? t('order.deposit') : (order.plan?.name ?? '');
   const transferEnable =
     order.plan && 'transfer_enable' in order.plan && order.plan.transfer_enable != null
       ? order.plan.transfer_enable
       : null;
 
-  const handleCancel = async () => {
-    if (!tradeNo) return;
-    const ok = await legacyConfirm({
+  const handleCancel = () => {
+    const cancelTradeNo = order.trade_no;
+    if (!cancelTradeNo) return;
+    void legacyConfirm({
       title: t('common.attention'),
       content: t('order.cancel_confirm'),
       okText: t('order.cancel'),
+      okButtonProps: { loading: cancel.isPending },
+      onOk: () => {
+        // Legacy order/cancel dispatches `fetch`, then `details` (plural). The
+        // mutation starts the list refresh; the model has no `details` effect, so
+        // the detail view is not refreshed here.
+        void cancel.mutateAsync(cancelTradeNo).catch(() => {});
+      },
     });
-    if (!ok) return;
-    try {
-      await cancel.mutateAsync(tradeNo);
-    } catch {}
   };
 
   return (
@@ -182,18 +221,20 @@ export default function OrderDetailPage() {
 
           <LegacyBlock title={t('order.product_info')} tradeTitle>
             <div className="v2board-order-info">
-              <InfoRow label={t('order.product_name')}>{planName}</InfoRow>
+              <InfoRow label={t('order.product_name')}>
+                {isDeposit ? '充值' : order.plan?.name}
+              </InfoRow>
               {!isDeposit && (
                 <>
                   <InfoRow label={t('order.product_period')}>{periodLabel}</InfoRow>
                   <InfoRow label={t('order.product_traffic')}>
-                    {transferEnable == null ? '' : `${transferEnable} GB`}
+                    {transferEnable}
+                    {' GB'}
                   </InfoRow>
                 </>
               )}
             </div>
           </LegacyBlock>
-
           <LegacyBlock
             title={t('order.info')}
             tradeTitle
@@ -205,7 +246,8 @@ export default function OrderDetailPage() {
                   className="btn btn-primary btn-sm btn-danger btn-rounded px-3"
                   onClick={handleCancel}
                 >
-                  {cancel.isPending && <LegacyLoadingIcon className="mr-1" />}
+                  {cancel.isPending && <LegacyLoadingIcon />}
+                  {' '}
                   {t('order.cancel')}
                 </button>
               ) : null
@@ -229,10 +271,14 @@ export default function OrderDetailPage() {
               {order.balance_amount ? (
                 <InfoRow label={t('order.balance_used')}>{amountText(order.balance_amount)}</InfoRow>
               ) : null}
-              {handlingFee ? (
-                <InfoRow label={t('order.handling_fee')}>{amountText(handlingFee)}</InfoRow>
+              {legacyPreHandlingAmount ? (
+                <InfoRow label={t('order.handling_fee')}>
+                  {amountText(legacyPreHandlingAmount)}
+                </InfoRow>
               ) : null}
-              <InfoRow label={t('order.created_at')}>{formatDateTime(order.created_at)}</InfoRow>
+              <InfoRow label={t('order.created_at')}>
+                {formatLegacyDateTime(order.created_at)}
+              </InfoRow>
             </div>
           </LegacyBlock>
 
@@ -246,18 +292,28 @@ export default function OrderDetailPage() {
                 <div className="block-content p-0">
                   {paymentMethods?.map((method) => (
                     <div
-                      key={method.id}
-                      className={`v2board-select ${methodId === method.id ? 'active border-primary' : ''}`}
-                      onClick={() => setMethodId(method.id)}
+                      className={`v2board-select ${effectiveMethodId === method.id ? 'active border-primary' : 'false'}`}
+                      onClick={() => {
+                        setMethodId(method.id);
+                        setPreHandlingAmount(calculatePreHandlingAmount(order, method));
+                      }}
                     >
                       <div style={{ flex: 1, paddingTop: 4 }}>
-                        <span className="v2board-select-radio">
-                          <span className="ant-radio">
-                            <span
-                              className={`ant-radio-inner${methodId === method.id ? ' ant-radio-inner-checked' : ''}`}
+                        {/* antd v3 Radio: classNames(className, {'ant-radio-wrapper':true,
+                            'ant-radio-wrapper-checked':checked}) — the passed className leads. */}
+                        <label
+                          className={`v2board-select-radio ant-radio-wrapper${effectiveMethodId === method.id ? ' ant-radio-wrapper-checked' : ''}`}
+                        >
+                          <span className={`ant-radio${effectiveMethodId === method.id ? ' ant-radio-checked' : ''}`}>
+                            <input
+                              type="radio"
+                              className="ant-radio-input"
+                              checked={effectiveMethodId === method.id}
+                              onChange={() => {}}
                             />
+                            <span className="ant-radio-inner" />
                           </span>
-                        </span>
+                        </label>
                         {method.name}
                       </div>
                       {method.icon && (
@@ -273,7 +329,7 @@ export default function OrderDetailPage() {
               {isStripePayment && stripePk && (
                 <>
                   <h3 className="font-w300 mt-5 mb-3">{t('order.credit_card_title')}</h3>
-                  <StripeCardForm publicKey={stripePk} onToken={handleStripeToken} />
+                  <StripeCardForm key={stripePk} publicKey={stripePk} onToken={handleStripeToken} />
                   <div style={{ fontSize: 12 }} className="mt-3 mb-5">
                     <i
                       className="fa fa-user-shield"
@@ -290,7 +346,8 @@ export default function OrderDetailPage() {
         {isPending && (
           <div className="col-md-4 col-sm-12">
             <div
-              className="block block-link-pop block-rounded px-3 py-3 text-light"
+              // Original class string has a DOUBLE space after `block-rounded` (umi.js).
+              className="block block-link-pop block-rounded  px-3 py-3 text-light"
               style={{ background: '#35383D' }}
             >
               <h5 className="text-light mb-3">{t('order.total')}</h5>
@@ -323,10 +380,17 @@ export default function OrderDetailPage() {
                   style={{ borderBottom: '1px solid #646669' }}
                 >
                   <div className="col-8">
-                    {order.plan?.name} {periodLabel ? `x ${periodLabel}` : ''}
+                    {/* Original renders `name, " x ", periodText` — the " x " is always
+                        present even when the period label resolves to empty. */}
+                    {order.plan?.name} x {periodLabel}
                   </div>
                   <div className="col-4 text-right">
-                    {moneyText(getPlanPeriodPrice(order), symbol)}
+                    {moneyText(
+                      (order.plan as Record<string, number | null> | undefined)?.[
+                        order.period as string
+                      ],
+                      symbol,
+                    )}
                   </div>
                 </div>
               )}
@@ -346,9 +410,9 @@ export default function OrderDetailPage() {
                   - {moneyText(order.refund_amount, symbol)}
                 </AmountBlock>
               ) : null}
-              {handlingFee ? (
+              {legacyPreHandlingAmount ? (
                 <AmountBlock label={t('order.handling_fee')}>
-                  + {(handlingFee / 100).toFixed(2)}
+                  + {(legacyPreHandlingAmount / 100).toFixed(2)}
                 </AmountBlock>
               ) : null}
 
@@ -377,18 +441,30 @@ export default function OrderDetailPage() {
         )}
       </div>
 
-      <Dialog open={Boolean(payUrl)} onOpenChange={(open) => !open && setPayUrl(null)}>
+      <Dialog
+        open={qrcodeVisible}
+        onOpenChange={(open) => {
+          if (!open) {
+            setQrcodeVisible(false);
+            setPayUrl(undefined);
+          }
+        }}
+      >
         <DialogContent
-          className="v2board-payment-qrcode v2board-qrcode-dialog"
-          showClose={false}
+          className="v2board-payment-qrcode"
+          closable={false}
+          maskClosable
+          width={300}
           centered
+          footer={<div style={{ textAlign: 'center' }}>{t('order.waiting_pay')}</div>}
         >
-          <div className="ant-modal-body">
-            {payUrl && <QRCodeCanvas value={payUrl} size={250} />}
-          </div>
-          <div className="ant-modal-footer">
-            <div style={{ textAlign: 'center' }}>{t('order.waiting_pay')}</div>
-          </div>
+          {payUrl && (
+            <QRCode
+              value={payUrl}
+              renderAs="svg"
+              size={250}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </>
@@ -453,46 +529,56 @@ function moneyText(cents: number | null | undefined, symbol?: string | null) {
   );
 }
 
-function getPlanPeriodPrice(order: Order) {
-  const plan = order.plan as Record<string, unknown> | undefined;
-  const raw = order.period ? plan?.[order.period] : null;
-  return typeof raw === 'number' ? raw : order.total_amount;
+function calculatePreHandlingAmount(order: Order, method?: PaymentMethod) {
+  return order.total_amount > 0 && (method?.handling_fee_fixed || method?.handling_fee_percent)
+    ? order.total_amount * ((method.handling_fee_percent as number) / 100) +
+        (method.handling_fee_fixed as number)
+    : 0;
 }
 
-function OrderResult({ status }: { status: number }) {
+function OrderResult({ status }: { status?: number }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const result =
     status === 1
       ? {
-          icon: 'anticon anticon-info-circle',
+          icon: <InfoCircleIcon />,
           status: 'info',
           title: t('order.processing_title'),
           subtitle: t('order.processing'),
         }
       : status === 2
         ? {
-            icon: 'anticon anticon-warning',
+            icon: <WarningIcon />,
             status: 'warning',
             title: t('common.cancelled'),
             subtitle: t('order.cancel_timeout'),
           }
-        : {
-            icon: 'anticon anticon-check-circle',
-            status: 'success',
-            title: t('common.completed'),
-            subtitle: t('order.success'),
-          };
+        : status === 3 || status === 4
+          ? {
+              icon: <CheckCircleIcon />,
+              status: 'success',
+              title: t('common.completed'),
+              subtitle: t('order.success'),
+            }
+          : {
+              icon: <InfoCircleIcon />,
+              status: 'info',
+              title: '',
+              subtitle: '',
+            };
 
   return (
     <div className="block block-rounded">
       <div className="block-content pt-0">
         <div className={`ant-result ant-result-${result.status} py-4`}>
           <div className="ant-result-icon">
-            <i className={result.icon} />
+            {result.icon}
           </div>
           <div className="ant-result-title">{result.title}</div>
-          <div className="ant-result-subtitle">{result.subtitle}</div>
+          {result.subtitle ? (
+            <div className="ant-result-subtitle">{result.subtitle}</div>
+          ) : null}
           {(status === 3 || status === 4) && (
             <div className="ant-result-extra">
               <button

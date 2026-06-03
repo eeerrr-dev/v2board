@@ -1,15 +1,13 @@
-import { useTranslation } from 'react-i18next';
-import { useEffect, useRef, useState } from 'react';
-import { SUPPORTED_LOCALES, RTL_LOCALES, type SupportedLocale } from '@v2board/i18n';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { legacyGetLocale, legacySetLocale, SUPPORTED_LOCALES } from '@v2board/i18n';
 import { setLegacyCookie } from '@/lib/legacy-cookie';
+import { useTransitionStatus } from '@/lib/use-transition-status';
+
+const I18N_TEXT = Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [locale.code, locale.label]));
 
 function getEnabledLocales() {
-  const legacyI18n = window.settings?.i18n;
-  if (!Array.isArray(legacyI18n)) return SUPPORTED_LOCALES;
-  const enabled = new Set([...legacyI18n].sort());
-  return [...enabled]
-    .map((code) => SUPPORTED_LOCALES.find((locale) => locale.code === code))
-    .filter((locale): locale is (typeof SUPPORTED_LOCALES)[number] => Boolean(locale));
+  return window.settings!.i18n!.sort().map((code) => ({ code, label: I18N_TEXT[code] }));
 }
 
 interface LanguageMenuProps {
@@ -23,48 +21,101 @@ export function LanguageMenu({
   triggerClassName,
   legacyIcon = false,
 }: LanguageMenuProps) {
-  const { i18n } = useTranslation();
-  const rootRef = useRef<HTMLSpanElement | null>(null);
+  // The original is umi's SelectLang: an antd Dropdown (trigger:click, placement:topCenter)
+  // that clones its trigger adding `ant-dropdown-trigger` (+`ant-dropdown-open` when open)
+  // and portals the overlay Menu to document.body (components.async.js renderOverlay /
+  // umi.js rc-trigger @2089800). Reproduce both — the trigger className and the body portal.
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
-  const current = (i18n.resolvedLanguage ?? 'zh-CN') as SupportedLocale;
+  const [coords, setCoords] = useState<{ left: number; top: number } | null>(null);
+  // antd keeps the overlay mounted and runs the "slide-down" leave animation on close
+  // (placement contains "top" → transitionName "slide-down", umi.js @694300). antd applies
+  // it to the px-positioned popup wrapper; here the wrapper carries the translate(-50%,-100%)
+  // that anchors its bottom-center to the trigger top (rc-align points ["bc","tc"], offset
+  // [0,-4]), so the scaleY keyframe runs on the inner .ant-dropdown-menu instead — visually
+  // identical, since the menu (with its shadow) fills the wrapper.
+  const dropdownStatus = useTransitionStatus(open, 230, 30);
+  const slideClass =
+    dropdownStatus === 'leave'
+      ? 'slide-down-leave'
+      : dropdownStatus === 'leaving'
+        ? 'slide-down-leave slide-down-leave-active'
+        : dropdownStatus === 'enter'
+          ? 'slide-down-enter'
+          : dropdownStatus === 'entering'
+            ? 'slide-down-enter slide-down-enter-active'
+            : '';
   const locales = getEnabledLocales();
-  const currentLabel = locales.find((locale) => locale.code === current)?.label ?? current;
+  const currentLabel = SUPPORTED_LOCALES.find((locale) => locale.code === legacyGetLocale())?.label;
 
-  const selectLocale = (locale: SupportedLocale) => {
-    window.localStorage.setItem('umi_locale', locale);
-    setLegacyCookie('i18n', locale);
+  // The original SelectLang.set() calls umi setLocale(e) with one argument, then writes
+  // the i18n cookie. setLocale itself decides whether a reload is needed.
+  const selectLocale = (locale: string) => {
     setOpen(false);
-    void i18n.changeLanguage(locale);
+    legacySetLocale(locale);
+    setLegacyCookie('i18n', locale);
   };
 
+  // rc-align anchors the overlay's bottom-center to the trigger's top-center with offset
+  // [0,-4] (4px gap above the trigger); recompute on scroll/resize like rc-align re-aligns.
+  const reposition = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) setCoords({ left: rect.left + rect.width / 2, top: rect.top - 4 });
+  }, []);
+
   useEffect(() => {
-    const isRtl = RTL_LOCALES.includes(current);
-    window.localStorage.setItem('umi_locale', current);
-    document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
-    document.documentElement.lang = current;
-  }, [current]);
+    if (!open) return;
+    reposition();
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => {
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    };
+  }, [open, reposition]);
 
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
-      if (rootRef.current?.contains(event.target as Node)) return;
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || popupRef.current?.contains(target)) return;
       setOpen(false);
     };
     document.addEventListener('click', close);
     return () => document.removeEventListener('click', close);
   }, [open]);
 
-  const popover = open ? (
-    <div className="ant-popover ant-popover-placement-top v2board-language-popover">
-      <div className="ant-popover-content">
-        <div className="ant-popover-arrow" />
-        <div className="ant-popover-inner" role="tooltip">
-          <div className="ant-popover-inner-content">
-            <ul className="ant-menu ant-menu-light ant-menu-root ant-menu-vertical">
+  const popover =
+    dropdownStatus !== 'exited' && coords
+      ? createPortal(
+          // antd builds the body-portaled wrapper class as `"ant-dropdown" + " " + "" + " "
+          // + placementClass`; the empty middle token leaves a double space, reproduced here.
+          <div
+            ref={popupRef}
+            className="ant-dropdown  ant-dropdown-placement-topCenter"
+            style={{
+              position: 'fixed',
+              left: coords.left,
+              top: coords.top,
+              transform: 'translate(-50%, -100%)',
+              zIndex: 1050,
+            }}
+          >
+            <ul
+              className={[
+                'ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical',
+                slideClass,
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              role="menu"
+            >
               {locales.map((locale) => (
                 <li
-                  key={locale.code}
-                  className="ant-menu-item"
+                  className="ant-dropdown-menu-item"
+                  role="menuitem"
+                  aria-disabled="false"
                   onClick={(event) => {
                     event.stopPropagation();
                     selectLocale(locale.code);
@@ -74,36 +125,46 @@ export function LanguageMenu({
                 </li>
               ))}
             </ul>
-          </div>
-        </div>
-      </div>
-    </div>
-  ) : null;
+          </div>,
+          document.body,
+        )
+      : null;
+
+  const triggerClass = `${triggerClassName ?? (showLabel ? 'v2board-login-i18n-btn' : 'btn')} ant-dropdown-trigger${
+    open ? ' ant-dropdown-open' : ''
+  }`;
 
   if (showLabel && legacyIcon) {
     return (
-      <span
-        ref={rootRef}
-        className={`${triggerClassName ?? 'v2board-login-i18n-btn'} v2board-language-popover-wrapper`}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <i className="si si-globe pr-1" aria-hidden />
-        <span className="font-size-sm text-muted" style={{ verticalAlign: 'text-bottom' }}>
-          {currentLabel}
+      <>
+        <span
+          ref={(element) => {
+            triggerRef.current = element;
+          }}
+          className={triggerClass}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <i className="si si-globe pr-1" />
+          <span className="font-size-sm text-muted" style={{ verticalAlign: 'text-bottom' }}>
+            {currentLabel}
+          </span>
         </span>
         {popover}
-      </span>
+      </>
     );
   }
 
   return (
-    <span ref={rootRef} className="v2board-language-popover-wrapper">
+    <>
       <button
         type="button"
-        className={triggerClassName ?? (showLabel ? 'v2board-login-i18n-btn' : 'btn')}
+        ref={(element) => {
+          triggerRef.current = element;
+        }}
+        className={triggerClass}
         onClick={() => setOpen((value) => !value)}
       >
-        <i className="far fa fa-language" aria-hidden />
+        <i className="far fa fa-language" />
         {showLabel && (
           <span className="font-size-sm text-muted" style={{ verticalAlign: 'text-bottom' }}>
             {currentLabel}
@@ -111,6 +172,6 @@ export function LanguageMenu({
         )}
       </button>
       {popover}
-    </span>
+    </>
   );
 }

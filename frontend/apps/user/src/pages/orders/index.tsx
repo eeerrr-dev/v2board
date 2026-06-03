@@ -1,10 +1,14 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
-import { formatDateMinuteSlash, formatDateTime } from '@v2board/config/format';
+import { formatLegacyDateTime, formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { legacyConfirm } from '@/components/legacy-confirm';
 import { LegacyEmpty } from '@/components/legacy-empty';
 import { isLegacyMobile } from '@/lib/legacy-settings';
+import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
+import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
+import { legacyHref } from '@/lib/legacy-href';
 
 const STATUS_LABEL: Record<number, { key: string; status: string }> = {
   0: { key: 'order.status_unpaid', status: 'error' },
@@ -28,60 +32,80 @@ const PERIOD_LABEL: Record<string, string> = {
 export default function OrdersPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data, isFetching } = useOrders();
+  const ordersQuery = useOrders();
+  const { data, isFetching } = ordersQuery;
   const cancel = useCancelOrderMutation();
   const orders = data ?? [];
+  const [hoverKey, setHoverKey] = useState<number | null>(null);
+  const [activeMobileKey, setActiveMobileKey] = useState<number | null>(null);
   const mobile = isLegacyMobile();
+  const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(orders.length);
+  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(orders.length);
   const desktopTableClassName = [
     'ant-table',
     'ant-table-default',
     orders.length ? '' : 'ant-table-empty',
-    'ant-table-scroll-position-left',
+    scrollPositionClassName,
   ].filter(Boolean).join(' ');
 
-  const onCancelOrder = async (tradeNo: string) => {
-    const ok = await legacyConfirm({
+  const onCancelOrder = (tradeNo: string) => {
+    void legacyConfirm({
       title: t('common.attention'),
       content: t('order.cancel_confirm'),
       okText: t('order.cancel'),
-      cancelText: t('common.cancel'),
+      okButtonProps: { loading: cancel.isPending },
+      onOk: () => {
+        void cancel.mutateAsync(tradeNo).catch(() => {});
+      },
     });
-    if (!ok) return;
-    try {
-      await cancel.mutateAsync(tradeNo);
-    } catch {}
   };
 
   return (
-    <div className={`block block-rounded ${isFetching ? 'block-mode-loading' : ''}`}>
+    // The original builds this as `"block block-rounded  ".concat(...)` — note the
+    // DOUBLE space before the loading class (umi.js @2306135), so the rendered class
+    // attribute has two spaces; reproduced verbatim.
+    <div className={`block block-rounded  ${isFetching ? 'block-mode-loading' : ''}`}>
       <div className="bg-white">
         {mobile ? (
           <div className="am-list">
             <div className="am-list-body">
-              {orders.map((order) => {
-                const status = STATUS_LABEL[order.status] ?? STATUS_LABEL[0]!;
+              {orders.map((order, index) => {
+                const status = STATUS_LABEL[order.status];
                 return (
                   <div
-                    className="am-list-item am-list-item-middle"
-                    key={order.trade_no}
+                    className={`am-list-item am-list-item-middle${activeMobileKey === index ? ' am-list-item-active' : ''}`}
+                    key={index}
+                    onTouchStart={() => setActiveMobileKey(index)}
+                    onTouchMove={() => setActiveMobileKey(null)}
+                    onTouchEnd={() => setActiveMobileKey(null)}
+                    onTouchCancel={() => setActiveMobileKey(null)}
+                    onMouseDown={() => setActiveMobileKey(index)}
+                    onMouseUp={() => setActiveMobileKey(null)}
+                    onMouseLeave={() => setActiveMobileKey(null)}
                     onClick={() => navigate(`/order/${order.trade_no}`)}
                   >
                     <div className="am-list-line am-list-line-multiple">
                       <div className="am-list-content">
                         {order.plan?.name}{' '}
-                        <div className="am-list-brief">{formatDateTime(order.created_at)}</div>
+                        <div className="am-list-brief">{formatLegacyDateTime(order.created_at)}</div>
                       </div>
                       <div className="am-list-extra">
-                        <div>{(order.total_amount / 100).toFixed(2)}</div>
                         <div>
-                          <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-                            <span className={`ant-badge-status-dot ant-badge-status-${status.status}`} />
-                          </span>
-                          {t(status.key)}
+                          <div>{(order.total_amount / 100).toFixed(2)}</div>
+                          <div>
+                            <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
+                              <span className={`ant-badge-status-dot${status ? ` ant-badge-status-${status.status}` : ''}`} />
+                              <span className="ant-badge-status-text" />
+                            </span>
+                            {status ? t(status.key) : ''}
+                          </div>
                         </div>
                       </div>
                       <div className="am-list-arrow am-list-arrow-horizontal" aria-hidden />
                     </div>
+                    {/* antd-mobile ListItem always renders a trailing ripple div
+                        (hidden until a touch triggers the cover animation). */}
+                    <div className="am-list-ripple" style={{ display: 'none' }} />
                   </div>
                 );
               })}
@@ -89,134 +113,223 @@ export default function OrdersPage() {
           </div>
         ) : (
           <div className="ant-table-wrapper">
+            {/* antd v3 Table always wraps its content in Spin (loading defaults to
+                false); with no loading prop the orders table never spins, so the
+                spinner div / ant-spin-blur are absent — only the two static wrappers. */}
+            <div className="ant-spin-nested-loading">
+              <div className="ant-spin-container">
             <div className={desktopTableClassName}>
               <div className="ant-table-content">
                 <div className="ant-table-scroll">
-                  <div className="ant-table-body" style={{ overflowX: 'auto' }}>
-                    <table style={{ minWidth: 900, width: '100%', tableLayout: 'auto' }}>
+                  <div
+                    ref={bodyRef}
+                    className="ant-table-body"
+                    tabIndex={-1}
+                    style={{ overflowX: 'scroll', WebkitTransform: 'translate3d (0, 0, 0)' }}
+                    onScroll={onScroll}
+                  >
+                    <table
+                      ref={mainTableRef}
+                      className="ant-table-fixed"
+                      style={{ width: 900, tableLayout: 'auto' }}
+                    >
+                      <colgroup>
+                        <col />
+                        <col />
+                        <col />
+                        <col />
+                        <col />
+                        <col />
+                      </colgroup>
                       <thead className="ant-table-thead">
                         <tr>
-                          <th className="ant-table-cell">{t('order.trade_no_col')}</th>
-                          <th className="ant-table-cell ant-table-cell-align-center">{t('order.period')}</th>
-                          <th className="ant-table-cell ant-table-cell-align-right">{t('order.amount')}</th>
-                          <th className="ant-table-cell">{t('order.status')}</th>
-                          <th className="ant-table-cell">{t('order.created_at')}</th>
-                          <th className="ant-table-cell ant-table-cell-align-right ant-table-fixed-columns-in-body">
-                            {t('order.action_col')}
+                          <th>
+                            <span className="ant-table-header-column">
+                              <div>
+                                <span className="ant-table-column-title">{t('order.trade_no_col')}</span>
+                                <span className="ant-table-column-sorter" />
+                              </div>
+                            </span>
+                          </th>
+                          <th className="ant-table-align-center" style={{ textAlign: 'center' }}>
+                            <span className="ant-table-header-column">
+                              <div>
+                                <span className="ant-table-column-title">{t('order.period')}</span>
+                                <span className="ant-table-column-sorter" />
+                              </div>
+                            </span>
+                          </th>
+                          <th className="ant-table-align-right" style={{ textAlign: 'right' }}>
+                            <span className="ant-table-header-column">
+                              <div>
+                                <span className="ant-table-column-title">{t('order.amount')}</span>
+                                <span className="ant-table-column-sorter" />
+                              </div>
+                            </span>
+                          </th>
+                          <th>
+                            <span className="ant-table-header-column">
+                              <div>
+                                <span className="ant-table-column-title">{t('order.status')}</span>
+                                <span className="ant-table-column-sorter" />
+                              </div>
+                            </span>
+                          </th>
+                          <th>
+                            <span className="ant-table-header-column">
+                              <div>
+                                <span className="ant-table-column-title">{t('order.created_at')}</span>
+                                <span className="ant-table-column-sorter" />
+                              </div>
+                            </span>
+                          </th>
+                          <th
+                            className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
+                            style={{ textAlign: 'right' }}
+                          >
+                            <span className="ant-table-header-column">
+                              <div>
+                                <span className="ant-table-column-title">{t('order.action_col')}</span>
+                                <span className="ant-table-column-sorter" />
+                              </div>
+                            </span>
                           </th>
                         </tr>
                       </thead>
                       <tbody className="ant-table-tbody">
-                        {orders.length ? (
-                          orders.map((order) => {
-                            const status = STATUS_LABEL[order.status] ?? STATUS_LABEL[0]!;
-                            const periodKey = order.period ? PERIOD_LABEL[order.period] : null;
-                            return (
-                              <tr className="ant-table-row ant-table-row-level-0" key={order.trade_no}>
-                                <td className="ant-table-cell">
+                        {orders.map((order, index) => {
+                          const status = STATUS_LABEL[order.status];
+                          const periodLabel = order.period && PERIOD_LABEL[order.period]
+                            ? t(PERIOD_LABEL[order.period])
+                            : undefined;
+                          return (
+                            <tr
+                              className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
+                              data-row-key={index}
+                              key={index}
+                              onMouseEnter={() => setHoverKey(index)}
+                              onMouseLeave={() => setHoverKey(null)}
+                            >
+                              <td>
+                                <a
+                                  ref={legacyHref()}
+                                  onClick={() => navigate(`/order/${order.trade_no}`)}
+                                >
+                                  {order.trade_no}
+                                </a>
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <span className="ant-tag">{periodLabel}</span>
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                {(order.total_amount / 100).toFixed(2)}
+                              </td>
+                              <td>
+                                <div>
+                                  <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
+                                    <span className={`ant-badge-status-dot${status ? ` ant-badge-status-${status.status}` : ''}`} />
+                                    <span className="ant-badge-status-text" />
+                                  </span>
+                                  {status ? t(status.key) : ''}
+                                </div>
+                              </td>
+                              <td>{formatLegacyDateMinuteSlash(order.created_at)}</td>
+                              <td
+                                className="ant-table-fixed-columns-in-body"
+                                style={{ textAlign: 'right' }}
+                              >
+                                <div>
                                   <a
-                                    href="javascript:void(0);"
+                                    ref={legacyHref()}
+                                    {...(order.status === 2 ? { disabled: true } : {})}
                                     onClick={() => navigate(`/order/${order.trade_no}`)}
                                   >
-                                    {order.trade_no}
+                                    {t('order.return')}
                                   </a>
-                                </td>
-                                <td className="ant-table-cell ant-table-cell-align-center">
-                                  <span className="ant-tag">
-                                    {periodKey ? t(periodKey) : ''}
-                                  </span>
-                                </td>
-                                <td className="ant-table-cell ant-table-cell-align-right">
-                                  {(order.total_amount / 100).toFixed(2)}
-                                </td>
-                                <td className="ant-table-cell">
-                                  <div>
-                                    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-                                      <span className={`ant-badge-status-dot ant-badge-status-${status.status}`} />
-                                    </span>
-                                    {t(status.key)}
-                                  </div>
-                                </td>
-                                <td className="ant-table-cell">{formatDateMinuteSlash(order.created_at)}</td>
-                                <td className="ant-table-cell ant-table-cell-align-right ant-table-fixed-columns-in-body">
-                                  <div>
-                                    <a
-                                      href="javascript:void(0);"
-                                      {...(order.status === 2 ? { disabled: true } : {})}
-                                      onClick={() => navigate(`/order/${order.trade_no}`)}
-                                    >
-                                      {t('order.return')}
-                                    </a>
-                                    <span className="ant-divider ant-divider-vertical" role="separator" />
-                                    <a
-                                      href="javascript:void(0);"
-                                      {...(order.status !== 0 ? { disabled: true } : {})}
-                                      onClick={() => void onCancelOrder(order.trade_no)}
-                                    >
-                                      {t('common.cancel')}
-                                    </a>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        ) : (
-                          <tr className="ant-table-placeholder">
-                            <td className="ant-table-cell" colSpan={6}>
-                              <LegacyEmpty />
-                            </td>
-                          </tr>
-                        )}
+                                  <div className="ant-divider ant-divider-vertical" />
+                                  <a
+                                    ref={legacyHref()}
+                                    {...(order.status !== 0 ? { disabled: true } : {})}
+                                    onClick={() => void onCancelOrder(order.trade_no)}
+                                  >
+                                    {t('common.cancel')}
+                                  </a>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
+                  {orders.length === 0 && (
+                    <div className="ant-table-placeholder">
+                      <LegacyEmpty />
+                    </div>
+                  )}
                 </div>
-                {orders.length > 0 && (
-                  <div className="ant-table-fixed-right">
-                    <div className="ant-table-header">
-                      <table className="ant-table-fixed" style={{ width: 170 }}>
+                <div className="ant-table-fixed-right">
+                  <div
+                    className="ant-table-body-outer"
+                    style={{ WebkitTransform: 'translate3d (0, 0, 0)' }}
+                  >
+                    <div className="ant-table-body-inner">
+                      <table ref={fixedTableRef} className="ant-table-fixed" style={{ tableLayout: 'auto' }}>
+                        <colgroup>
+                          <col />
+                        </colgroup>
                         <thead className="ant-table-thead">
                           <tr>
-                            <th className="ant-table-cell ant-table-cell-align-right">
-                              {t('order.action_col')}
+                            <th
+                              className="ant-table-align-right ant-table-row-cell-last"
+                              style={{ textAlign: 'right' }}
+                            >
+                              <span className="ant-table-header-column">
+                                <div>
+                                  <span className="ant-table-column-title">{t('order.action_col')}</span>
+                                  <span className="ant-table-column-sorter" />
+                                </div>
+                              </span>
                             </th>
                           </tr>
                         </thead>
+                        <tbody className="ant-table-tbody">
+                          {orders.map((order, index) => (
+                            <tr
+                              className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
+                              data-row-key={index}
+                              key={index}
+                              onMouseEnter={() => setHoverKey(index)}
+                              onMouseLeave={() => setHoverKey(null)}
+                            >
+                              <td style={{ textAlign: 'right' }}>
+                                <div>
+                                  <a
+                                    ref={legacyHref()}
+                                    {...(order.status === 2 ? { disabled: true } : {})}
+                                    onClick={() => navigate(`/order/${order.trade_no}`)}
+                                  >
+                                    {t('order.return')}
+                                  </a>
+                                  <div className="ant-divider ant-divider-vertical" />
+                                  <a
+                                    ref={legacyHref()}
+                                    {...(order.status !== 0 ? { disabled: true } : {})}
+                                    onClick={() => void onCancelOrder(order.trade_no)}
+                                  >
+                                    {t('common.cancel')}
+                                  </a>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
                       </table>
                     </div>
-                    <div className="ant-table-body-outer">
-                      <div className="ant-table-body-inner">
-                        <table className="ant-table-fixed" style={{ width: 170 }}>
-                          <tbody className="ant-table-tbody">
-                            {orders.map((order) => (
-                              <tr className="ant-table-row ant-table-row-level-0" key={order.trade_no}>
-                                <td className="ant-table-cell ant-table-cell-align-right">
-                                  <div>
-                                    <a
-                                      href="javascript:void(0);"
-                                      {...(order.status === 2 ? { disabled: true } : {})}
-                                      onClick={() => navigate(`/order/${order.trade_no}`)}
-                                    >
-                                      {t('order.return')}
-                                    </a>
-                                    <span className="ant-divider ant-divider-vertical" role="separator" />
-                                    <a
-                                      href="javascript:void(0);"
-                                      {...(order.status !== 0 ? { disabled: true } : {})}
-                                      onClick={() => void onCancelOrder(order.trade_no)}
-                                    >
-                                      {t('common.cancel')}
-                                    </a>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
                   </div>
-                )}
+                </div>
+              </div>
+            </div>
               </div>
             </div>
           </div>

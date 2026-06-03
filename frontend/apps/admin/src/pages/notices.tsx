@@ -1,174 +1,187 @@
-import { useState } from 'react';
-import {
-  App,
-  Button,
-  Card,
-  Form,
-  Input,
-  Modal,
-  Popconfirm,
-  Space,
-  Switch,
-  Table,
-  Typography,
-} from 'antd';
-import { useTranslation } from 'react-i18next';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Button, Input, Modal, Select, Spin, Switch, Table } from 'antd';
+import type { TableProps } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import type { Notice } from '@v2board/types';
 import {
   useAdminNotices,
   useDropNoticeMutation,
   useSaveNoticeMutation,
   useShowNoticeMutation,
-  useUpdateNoticeMutation,
 } from '@/lib/queries';
-import { formatDateTime } from '@v2board/config/format';
-import { i18nGet } from '@/lib/errors';
 
-export default function NoticesPage() {
-  const { t } = useTranslation();
-  const { message } = App.useApp();
-  const [query, setQuery] = useState({ current: 1, pageSize: 20 });
-  const notices = useAdminNotices(query);
-  const save = useSaveNoticeMutation();
-  const update = useUpdateNoticeMutation();
-  const drop = useDropNoticeMutation();
-  const show = useShowNoticeMutation();
-  const [editing, setEditing] = useState<Notice | null>(null);
-  const [creating, setCreating] = useState(false);
-
+function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
   return (
-    <div className="space-y-4">
-      <Typography.Title level={3}>{t('admin.nav.notices')}</Typography.Title>
-      <Card>
-        <Button type="primary" onClick={() => setCreating(true)}>
-          {t('common.add')}
-        </Button>
-      </Card>
-      <Card>
-        <Table<Notice>
-          loading={notices.isLoading}
-          rowKey="id"
-          dataSource={notices.data?.data ?? []}
-          columns={[
-            { title: '#', dataIndex: 'id', width: 60 },
-            {
-              title: t('admin.plan.show'),
-              dataIndex: 'show',
-              width: 80,
-              render: (v: 0 | 1, row) => (
-                <Switch
-                  size="small"
-                  checked={v === 1}
-                  onChange={async (next) => {
-                    try {
-                      await show.mutateAsync({ id: row.id, show: next ? 1 : 0 });
-                      message.success(t('common.success'));
-                    } catch (e) {
-                      if (e instanceof Error) message.error(i18nGet(e.message));
-                    }
-                  }}
-                />
-              ),
-            },
-            { title: t('admin.common.title'), dataIndex: 'title' },
-            {
-              title: t('order.created_at'),
-              dataIndex: 'created_at',
-              render: (v: number) => formatDateTime(v),
-            },
-            {
-              title: t('common.operation'),
-              render: (_: unknown, row) => (
-                <Space size="small">
-                  <Button size="small" onClick={() => setEditing(row)}>
-                    {t('common.edit')}
-                  </Button>
-                  <Popconfirm
-                    title={t('common.delete')}
-                    onConfirm={async () => {
-                      try {
-                        await drop.mutateAsync(row.id);
-                        message.success(t('common.success'));
-                      } catch (e) {
-                        if (e instanceof Error) message.error(i18nGet(e.message));
-                      }
-                    }}
-                  >
-                    <Button size="small" danger>
-                      {t('common.delete')}
-                    </Button>
-                  </Popconfirm>
-                </Space>
-              ),
-            },
-          ]}
-          pagination={{
-            current: query.current,
-            pageSize: query.pageSize,
-            total: notices.data?.total ?? 0,
-            onChange: (current, pageSize) => setQuery({ current, pageSize }),
-          }}
-        />
-      </Card>
-      <NoticeModal
-        open={Boolean(editing) || creating}
-        notice={editing}
-        onClose={() => {
-          setEditing(null);
-          setCreating(false);
-        }}
-        onSubmit={async (values) => {
-          try {
-            if (editing) {
-              await update.mutateAsync({ ...values, id: editing.id });
-            } else {
-              await save.mutateAsync(values);
-            }
-            message.success(t('common.success'));
-            setEditing(null);
-            setCreating(false);
-          } catch (e) {
-            if (e instanceof Error) message.error(i18nGet(e.message));
-          }
-        }}
-      />
-    </div>
+    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
+      {children}
+    </Spin>
   );
 }
 
-function NoticeModal({
-  open,
-  notice,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  notice: Notice | null;
-  onClose: () => void;
-  onSubmit: (values: Partial<Notice>) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [form] = Form.useForm();
+export default function NoticesPage() {
+  const notices = useAdminNotices({});
+  const save = useSaveNoticeMutation();
+  const drop = useDropNoticeMutation();
+  const show = useShowNoticeMutation();
+  const [visible, setVisible] = useState(false);
+  const [submit, setSubmit] = useState<Partial<Notice>>({});
+  const dataSource = notices.data?.data ?? [];
+
+  useEffect(() => {
+    if (!visible) setSubmit({});
+  }, [visible]);
+
+  const modalVisible = () => {
+    setVisible((current) => !current);
+  };
+
+  const saveNotice = async () => {
+    await save.mutateAsync({ ...submit });
+    void notices.refetch();
+    modalVisible();
+  };
+
+  const columns: TableProps<Notice>['columns'] = [
+    {
+      title: '#',
+      dataIndex: 'id',
+      key: 'id',
+    },
+    {
+      title: '显示',
+      dataIndex: 'show',
+      key: 'show',
+      render: (value: 0 | 1, row) => (
+        <Switch
+          size="small"
+          onChange={() =>
+            show.mutate(row.id, {
+              onSuccess: () => {
+                void notices.refetch();
+              },
+            })
+          }
+          checked={value as unknown as boolean}
+        />
+      ),
+    },
+    {
+      title: '标题',
+      dataIndex: 'title',
+      key: 'title',
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      align: 'right',
+      render: (value: number) => dayjs(1000 * value).format('YYYY/MM/DD HH:mm'),
+    },
+    {
+      title: '操作',
+      dataIndex: 'action',
+      key: 'action',
+      align: 'right',
+      fixed: 'right',
+      render: (_value, row, index) => (
+        <div>
+          <a
+            onClick={() => {
+              setSubmit(dataSource[index] as Partial<Notice>);
+              setVisible(true);
+            }}
+            href="javascript:void(0);"
+          >
+            编辑
+          </a>
+          <div className="ant-divider ant-divider-vertical" />
+          <a
+            onClick={() =>
+              drop.mutate(row.id, {
+                onSuccess: () => {
+                  void notices.refetch();
+                },
+              })
+            }
+            href="javascript:void(0);"
+          >
+            删除
+          </a>
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <Modal
-      open={open}
-      title={notice ? t('common.edit') : t('common.add')}
-      onCancel={onClose}
-      onOk={() => form.submit()}
-      destroyOnClose
-      width={720}
-    >
-      <Form layout="vertical" form={form} initialValues={notice ?? { show: 1 }} onFinish={onSubmit}>
-        <Form.Item name="title" label="Title" rules={[{ required: true }]}>
-          <Input />
-        </Form.Item>
-        <Form.Item name="img_url" label="Image URL">
-          <Input />
-        </Form.Item>
-        <Form.Item name="content" label="Content (HTML)" rules={[{ required: true }]}>
-          <Input.TextArea rows={10} />
-        </Form.Item>
-      </Form>
-    </Modal>
+    <>
+      <div className="d-flex justify-content-between align-items-center" />
+      <LegacySpin loading={notices.isFetching}>
+        <div className="block block-rounded">
+          <div className="bg-white">
+            <div style={{ padding: 15 }}>
+              <Button onClick={modalVisible}>
+                <PlusOutlined /> 添加公告
+              </Button>
+            </div>
+            <Table<Notice>
+              tableLayout="auto"
+              dataSource={dataSource}
+              pagination={false}
+              columns={columns}
+              scroll={{ x: 950 }}
+            />
+          </div>
+        </div>
+      </LegacySpin>
+      <Modal
+        title={`${submit.id ? '编辑公告' : '新建公告'}`}
+        open={visible}
+        onCancel={modalVisible}
+        onOk={() => void saveNotice()}
+        okText="提交"
+        cancelText="取消"
+      >
+        <div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">标题</label>
+            <Input
+              placeholder="请输入公告标题"
+              value={submit.title}
+              onChange={(event) => setSubmit({ ...submit, title: event.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">公告内容</label>
+            <Input.TextArea
+              rows={12}
+              value={submit.content}
+              placeholder="请输入公告内容"
+              onChange={(event) => setSubmit({ ...submit, content: event.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">公告标签</label>
+            <Select
+              mode="tags"
+              value={submit.tags || []}
+              style={{ width: '100%' }}
+              placeholder="输入后回车添加标签"
+              onChange={(tags) => {
+                setSubmit({ ...submit, tags: tags.length > 0 ? tags : null });
+              }}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">图片URL</label>
+            <Input
+              placeholder="请输入图片URL"
+              value={submit.img_url as string | undefined}
+              onChange={(event) => setSubmit({ ...submit, img_url: event.target.value })}
+            />
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }

@@ -7,7 +7,7 @@ describe('admin formatters', () => {
     expect(formatTrafficGiB(1024 ** 3)).toBe('1.00 GB');
   });
   it('formats raw bytes', () => {
-    expect(formatBytes(1024)).toBe('1.00 KB');
+    expect(formatBytes(1024)).toBe('1024.00 B');
   });
   it('formats money in cents', () => {
     expect(formatMoney(12345)).toBe('¥123.45');

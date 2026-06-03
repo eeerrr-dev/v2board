@@ -1,9 +1,53 @@
 import { user } from '@v2board/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { SubscribeInfo, UserInfo } from '@v2board/types';
+import { formatBytes } from '@v2board/config/format';
 import { apiClient } from './api';
 
 interface QueryFreshnessOptions {
   refetchOnMount?: boolean | 'always';
+}
+
+declare global {
+  interface Window {
+    Tawk_API?: { visitor?: { name?: string; email?: string } };
+    $crisp?: { push: (command: unknown[]) => void };
+  }
+}
+
+// The original getUserInfo / getSubscribe sagas report the user to the Tawk and
+// Crisp live-chat widgets right after each successful fetch. React Query v5 has
+// no useQuery onSuccess, so the same pushes run inside the queryFn (which only
+// resolves on a 200, matching the saga's `200 === code` guard).
+function reportUserInfoToChat(info: UserInfo) {
+  if (window.Tawk_API) {
+    window.Tawk_API.visitor = { name: info.email, email: info.email };
+  }
+  if (window.$crisp) {
+    window.$crisp.push(['set', 'user:email', info.email]);
+    window.$crisp.push(['set', 'session:data', [[['Balance', info.balance / 100]]]]);
+  }
+}
+
+function reportSubscribeToChat(data: SubscribeInfo) {
+  if (!window.$crisp) return;
+  // Matches moment(1e3 * expired_at).format('YYYY-MM-DD'); a null expiry becomes
+  // the epoch date exactly as the original does (no '-' fallback here).
+  const expireDate = new Date((data.expired_at ?? 0) * 1000);
+  const pad = (value: number) => `${value}`.padStart(2, '0');
+  const expireTime = `${expireDate.getFullYear()}-${pad(expireDate.getMonth() + 1)}-${pad(expireDate.getDate())}`;
+  window.$crisp.push([
+    'set',
+    'session:data',
+    [
+      [
+        ['Plan', data.plan?.name || '-'],
+        ['ExpireTime', expireTime],
+        ['UsedTraffic', formatBytes(data.u + data.d)],
+        ['AllTraffic', formatBytes(data.transfer_enable)],
+      ],
+    ],
+  ]);
 }
 
 export const userKeys = {
@@ -13,33 +57,47 @@ export const userKeys = {
   orders: (status?: number) => ['user', 'orders', status ?? 'all'] as const,
   orderDetail: (tradeNo: string) => ['user', 'orders', 'detail', tradeNo] as const,
   plans: ['user', 'plans'] as const,
-  plan: (id: number) => ['user', 'plan', id] as const,
+  plan: (id: number | string) => ['user', 'plan', id] as const,
   payments: ['user', 'payments'] as const,
   notices: ['user', 'notices'] as const,
   tickets: ['user', 'tickets'] as const,
-  ticketDetail: (id: number) => ['user', 'ticket', id] as const,
+  ticketDetail: (id: number | string) => ['user', 'ticket', id] as const,
   invite: ['user', 'invite'] as const,
-  inviteDetails: (current: number, size: number) =>
-    ['user', 'invite', 'details', current, size] as const,
+  inviteDetails: (current?: number, size?: number) =>
+    ['user', 'invite', 'details', current ?? '', size ?? ''] as const,
   knowledge: (lang: string, kw?: string) => ['user', 'knowledge', lang, kw ?? ''] as const,
-  knowledgeDetail: (id: number, lang: string) => ['user', 'knowledge', 'detail', id, lang] as const,
+  knowledgeDetail: (id: number | string, lang: string) =>
+    ['user', 'knowledge', 'detail', id, lang] as const,
   trafficLog: ['user', 'trafficLog'] as const,
   commConfig: ['user', 'comm'] as const,
-  sessions: ['user', 'sessions'] as const,
   servers: ['user', 'servers'] as const,
   telegramBot: ['user', 'telegram', 'bot'] as const,
 };
 
+export async function fetchUserInfo() {
+  const info = await user.info(apiClient);
+  reportUserInfoToChat(info);
+  return info;
+}
+
 export const useUserInfo = (options?: QueryFreshnessOptions) =>
-  useQuery({ queryKey: userKeys.info, queryFn: () => user.info(apiClient), ...options });
+  useQuery({
+    queryKey: userKeys.info,
+    queryFn: fetchUserInfo,
+    ...options,
+  });
 
 export const useUserStat = () =>
   useQuery({ queryKey: userKeys.stat, queryFn: () => user.getStat(apiClient) });
 
-export const useSubscribe = (options?: QueryFreshnessOptions) =>
+export const useSubscribe = (options?: QueryFreshnessOptions & { enabled?: boolean }) =>
   useQuery({
     queryKey: userKeys.subscribe,
-    queryFn: () => user.getSubscribe(apiClient),
+    queryFn: async () => {
+      const data = await user.getSubscribe(apiClient);
+      reportSubscribeToChat(data);
+      return data;
+    },
     ...options,
   });
 
@@ -48,7 +106,7 @@ export const useOrders = (status?: number) =>
 
 export const useOrder = (tradeNo: string | undefined) =>
   useQuery({
-    queryKey: userKeys.orderDetail(tradeNo ?? ''),
+    queryKey: userKeys.orderDetail(tradeNo as string),
     queryFn: () => user.orderDetail(apiClient, tradeNo as string),
     enabled: Boolean(tradeNo),
   });
@@ -56,10 +114,10 @@ export const useOrder = (tradeNo: string | undefined) =>
 export const usePlans = () =>
   useQuery({ queryKey: userKeys.plans, queryFn: () => user.fetchPlans(apiClient) });
 
-export const usePlan = (id: number | undefined) =>
+export const usePlan = (id: number | string | undefined) =>
   useQuery({
-    queryKey: userKeys.plan(id ?? 0),
-    queryFn: () => user.fetchPlan(apiClient, id as number),
+    queryKey: userKeys.plan(id as number | string),
+    queryFn: () => user.fetchPlan(apiClient, id as number | string),
     enabled: Boolean(id),
   });
 
@@ -79,33 +137,42 @@ export const useNotices = () =>
 export const useTickets = () =>
   useQuery({ queryKey: userKeys.tickets, queryFn: () => user.fetchTickets(apiClient) });
 
-export const useTicket = (id: number | undefined) =>
+export const useTicket = (id: number | string | undefined) =>
   useQuery({
-    queryKey: userKeys.ticketDetail(id ?? 0),
-    queryFn: () => user.ticketDetail(apiClient, id as number),
+    queryKey: userKeys.ticketDetail(id as number | string),
+    queryFn: () => user.ticketDetail(apiClient, id as number | string),
     enabled: Boolean(id),
   });
 
 export const useInvite = () =>
   useQuery({ queryKey: userKeys.invite, queryFn: () => user.fetchInvite(apiClient) });
 
-export const useInviteDetails = (current: number, pageSize: number) =>
+export const useInviteDetails = (current?: number, pageSize?: number) =>
   useQuery({
     queryKey: userKeys.inviteDetails(current, pageSize),
     queryFn: () => user.inviteDetails(apiClient, current, pageSize),
+    // Old dva state keeps the previous `invites` array while detailsLoading flips
+    // to true for pagination requests; Table then blurs the existing rows.
+    placeholderData: (previousData) => previousData,
   });
 
 export const useKnowledge = (language: string, keyword?: string) =>
   useQuery({
     queryKey: userKeys.knowledge(language, keyword),
     queryFn: () => user.fetchKnowledge(apiClient, language, keyword),
+    // The original knowledge model has one `knowledges` field; a search request flips
+    // fetchLoading but keeps the previous list until a 200 response replaces it.
+    placeholderData: (previousData) => previousData,
   });
 
-export const useKnowledgeDetail = (id: number | undefined, language: string) =>
+export const useKnowledgeDetail = (id: number | string | undefined, language: string) =>
   useQuery({
-    queryKey: userKeys.knowledgeDetail(id ?? 0, language),
-    queryFn: () => user.knowledgeDetail(apiClient, id as number, language),
-    enabled: Boolean(id),
+    queryKey: userKeys.knowledgeDetail(id as number | string, language),
+    queryFn: () => user.knowledgeDetail(apiClient, id as number | string, language),
+    enabled: id !== undefined,
+    // The legacy dva model has a single `knowledge` object and hide() clears it;
+    // there is no per-article cache to fall back to on a later open/jump.
+    gcTime: 0,
   });
 
 export const useTrafficLog = () =>
@@ -117,9 +184,6 @@ export const useCommConfig = (options?: QueryFreshnessOptions) =>
     queryFn: () => user.commConfig(apiClient),
     ...options,
   });
-
-export const useActiveSessions = () =>
-  useQuery({ queryKey: userKeys.sessions, queryFn: () => user.getActiveSession(apiClient) });
 
 export const useServers = (options?: QueryFreshnessOptions) =>
   useQuery({
@@ -151,45 +215,32 @@ export function useChangePasswordMutation() {
 }
 
 export function useUpdateProfileMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: Parameters<typeof user.update>[1]) => user.update(apiClient, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.info }),
   });
 }
 
 export function useResetSubscribeMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => user.resetSecurity(apiClient),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.subscribe }),
   });
 }
 
 export function useTransferMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (amount: number) => user.transfer(apiClient, amount),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.info }),
+    mutationFn: (amount: number | string | undefined) => user.transfer(apiClient, amount),
   });
 }
 
 export function useRedeemGiftCardMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (code: string) => user.redeemGiftCard(apiClient, code),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: userKeys.info });
-      queryClient.invalidateQueries({ queryKey: userKeys.subscribe });
-    },
   });
 }
 
 export function useGenerateInviteMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => user.generateInvite(apiClient),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.invite }),
   });
 }
 
@@ -201,11 +252,9 @@ export function useWithdrawCommissionMutation() {
 }
 
 export function useSaveTicketMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: Parameters<typeof user.saveTicket>[1]) =>
       user.saveTicket(apiClient, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.tickets }),
   });
 }
 
@@ -217,13 +266,8 @@ export function useReplyTicketMutation() {
 }
 
 export function useCloseTicketMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => user.closeTicket(apiClient, id),
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: userKeys.ticketDetail(id) });
-      queryClient.invalidateQueries({ queryKey: userKeys.tickets });
-    },
   });
 }
 
@@ -231,33 +275,27 @@ export function useCancelOrderMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (tradeNo: string) => user.cancelOrder(apiClient, tradeNo),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['user', 'orders'] }),
-  });
-}
-
-export function useNewPeriodMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => user.newPeriod(apiClient),
+    // The original cancel saga dispatches `fetch` (refresh the order LIST) then a
+    // mistyped `details` action (the effect is named `detail`), so the order DETAIL is
+    // intentionally never refreshed — it keeps rendering as pending. Match: invalidate
+    // the list queries only, leaving the detail stale.
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: userKeys.info });
-      queryClient.invalidateQueries({ queryKey: userKeys.subscribe });
+      void queryClient.invalidateQueries({
+        queryKey: ['user', 'orders'],
+        predicate: (query) => query.queryKey[2] !== 'detail',
+      });
     },
   });
 }
 
-export function useUnbindTelegramMutation() {
-  const queryClient = useQueryClient();
+export function useNewPeriodMutation() {
   return useMutation({
-    mutationFn: () => user.unbindTelegram(apiClient),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.info }),
+    mutationFn: () => user.newPeriod(apiClient),
   });
 }
 
-export function useRemoveSessionMutation() {
-  const queryClient = useQueryClient();
+export function useUnbindTelegramMutation() {
   return useMutation({
-    mutationFn: (id: string) => user.removeActiveSession(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.sessions }),
+    mutationFn: () => user.unbindTelegram(apiClient),
   });
 }

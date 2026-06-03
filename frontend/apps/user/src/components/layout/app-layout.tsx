@@ -7,6 +7,7 @@ import { logout } from '@/lib/auth';
 import { cn } from '@/lib/cn';
 import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
 import { getLegacyTheme, getLegacyTitle } from '@/lib/legacy-settings';
+import { legacyHref } from '@/lib/legacy-href';
 
 interface NavItem {
   to: string;
@@ -73,7 +74,7 @@ export function AppLayout() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { data: user } = useUserInfo();
+  const { data: user } = useUserInfo({ refetchOnMount: false });
   const [open, setOpen] = useState(false);
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
@@ -90,9 +91,11 @@ export function AppLayout() {
     setOpen(false);
   };
 
+  const toggleNav = () => setOpen((value) => !value);
+
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [location.pathname]);
+  }, []);
 
   useEffect(() => {
     if (!showAvatarMenu) return;
@@ -104,19 +107,17 @@ export function AppLayout() {
   return (
     <div
       id="page-container"
-      className={cn(
-        localeClass,
-        'sidebar-o side-scroll page-header-fixed main-content-boxed side-trans-enabled',
-        darkSidebar && 'sidebar-dark',
-        darkHeader && 'page-header-dark',
-        open && 'sidebar-o-xs',
-      )}
+      // The original builds this class via raw String.concat (umi.js @909900):
+      // `LOCALE+" sidebar-o "+(sidebarDark?"sidebar-dark":"")+" "+(headerDark?"page-header-dark":"")
+      //  +" side-scroll page-header-fixed main-content-boxed side-trans-enabled "+(showNav&&"sidebar-o-xs")`.
+      // In light/nav-closed that leaves three spaces before `side-scroll` and a trailing
+      // literal `false`. A template literal reproduces the concat byte-for-byte; cn() does not.
+      className={`${localeClass} sidebar-o ${darkSidebar ? 'sidebar-dark' : ''} ${darkHeader ? 'page-header-dark' : ''} side-scroll page-header-fixed main-content-boxed side-trans-enabled ${open && 'sidebar-o-xs'}`}
     >
       <div
         className="v2board-nav-mask"
         style={{ display: open ? 'block' : 'none' }}
-        onClick={() => setOpen(false)}
-        aria-hidden
+        onClick={toggleNav}
       />
 
       <nav id="sidebar">
@@ -130,10 +131,10 @@ export function AppLayout() {
                 className="text-white ml-2"
                 data-toggle="layout"
                 data-action="sidebar_close"
-                href="javascript:void(0);"
-                onClick={() => setOpen(false)}
+                ref={legacyHref()}
+                onClick={toggleNav}
               >
-                <i className="fa fa-times-circle" aria-hidden />
+                <i className="fa fa-times-circle" />
               </a>
             </div>
           </div>
@@ -143,14 +144,20 @@ export function AppLayout() {
           <ul className="nav-main">
             {NAV.map((group, gi) => (
               <Fragment key={gi}>
-                {group.labelKey && <li className="nav-main-heading">{t(group.labelKey)}</li>}
+                {group.labelKey && (
+                  <li key={Math.random()} className="nav-main-heading">
+                    {t(group.labelKey)}
+                  </li>
+                )}
                 {group.items.map((item) => (
-                  <li className="nav-main-item" key={item.to}>
+                  <li className="nav-main-item" key={Math.random()}>
                     <a
-                      className={cn('nav-main-link', location.pathname === item.to && 'active')}
+                      // Original inactive link renders the literal `false`:
+                      // `"nav-main-link ".concat(pathname===to && "active")` (umi.js @895700).
+                      className={`nav-main-link ${location.pathname === item.to && 'active'}`}
                       onClick={() => go(item.to)}
                     >
-                      <i className={cn('nav-main-link-icon', item.iconClass)} aria-hidden />
+                      <i className={cn('nav-main-link-icon', item.iconClass)} />
                       <span className="nav-main-link-name">{t(item.labelKey)}</span>
                     </a>
                   </li>
@@ -169,9 +176,9 @@ export function AppLayout() {
             <button
               type="button"
               className={darkHeader ? 'btn btn-primary mr-1 d-lg-none' : 'btn mr-1 d-lg-none'}
-              onClick={() => setOpen(true)}
+              onClick={toggleNav}
             >
-              <i className="fa fa-fw fa-bars" aria-hidden />
+              <i className="fa fa-fw fa-bars" />
             </button>
           </div>
 
@@ -194,7 +201,7 @@ export function AppLayout() {
                   setDarkModeState(next);
                 }}
               >
-                <i className={darkMode ? 'far fa fa-moon' : 'far fa fa-sun'} aria-hidden />
+                <i className={darkMode ? 'far fa fa-moon' : 'far fa fa-sun'} />
               </button>
             </div>
 
@@ -211,24 +218,24 @@ export function AppLayout() {
                   setShowAvatarMenu((value) => !value);
                 }}
               >
-                <i className="far fa fa-user-circle" aria-hidden />
+                <i className="far fa fa-user-circle" />
                 <span className="d-none d-lg-inline ml-1">{user?.email || 'Loading...'}</span>
-                <i className="fa fa-fw fa-angle-down ml-1" aria-hidden />
+                <i className="fa fa-fw fa-angle-down ml-1" />
               </button>
               <div className={`dropdown-menu dropdown-menu-right p-0 ${showAvatarMenu && 'show'}`}>
                 <div className="p-2">
                   <a className="dropdown-item" href="/#/profile">
-                    <i className="far fa-fw fa-user mr-1" aria-hidden /> {t('nav.profile')}
+                    <i className="far fa-fw fa-user mr-1" /> {t('nav.profile')}
                   </a>
                   <a
                     className="dropdown-item"
-                    href="javascript:void(0);"
+                    ref={legacyHref()}
                     onClick={() => {
                       logout();
                       navigate('/login');
                     }}
                   >
-                    <i className="far fa-fw fa-arrow-alt-circle-left mr-1" aria-hidden />{' '}
+                    <i className="far fa-fw fa-arrow-alt-circle-left mr-1" />{' '}
                     {t('common.logout')}
                   </a>
                 </div>

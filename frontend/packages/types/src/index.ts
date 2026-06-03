@@ -8,6 +8,7 @@ export * from './entities/invite';
 export * from './entities/notice';
 export * from './entities/knowledge';
 export * from './entities/server';
+export * from './entities/tutorial';
 export * from './entities/coupon';
 export * from './entities/stat';
 export * from './entities/config';

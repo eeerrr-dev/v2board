@@ -11,5 +11,5 @@ export interface Notice {
 
 export interface NoticePage {
   data: Notice[];
-  total: number;
+  total?: number;
 }

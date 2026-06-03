@@ -7,8 +7,10 @@ export interface TrafficLogEntry {
 }
 
 export interface AdminStatSummary {
+  online_user?: number;
   month_income: number;
   month_register_total: number;
+  day_register_total?: number;
   ticket_pending_total: number;
   commission_pending_total: number;
   day_income: number;

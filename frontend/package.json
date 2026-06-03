@@ -13,6 +13,7 @@
     "dev:user": "pnpm --filter @v2board/user dev",
     "build": "pnpm -r --parallel build",
     "build:admin": "pnpm --filter @v2board/admin build",
+    "build:deploy": "node scripts/build-deploy.mjs",
     "build:user": "pnpm --filter @v2board/user build",
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "eslint . --max-warnings 0",

@@ -1,91 +1,176 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import { App, Button, Card, Form, Input } from 'antd';
-import { passport } from '@v2board/api-client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { App } from 'antd';
+import { passport, user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
-import { setAuthData, setSecurePath, getSecurePath } from '@/lib/auth';
+import { getAuthData, setAuthData } from '@/lib/auth';
 import { i18nGet } from '@/lib/errors';
+import {
+  getAdminBackgroundUrl,
+  getAdminLogo,
+  getAdminTitle,
+} from '@/lib/legacy-settings';
 
-interface FormValues {
-  email: string;
-  password: string;
-  secure_path: string;
+function LegacyLoadingIcon() {
+  return (
+    <i aria-label="图标: loading" className="anticon anticon-loading">
+      <svg
+        className="anticon-spin"
+        viewBox="0 0 1024 1024"
+        focusable="false"
+        data-icon="loading"
+        width="1em"
+        height="1em"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3.1 19.9-16 36-35.9 36z" />
+      </svg>
+    </i>
+  );
 }
 
 export default function LoginPage() {
-  const { t } = useTranslation();
   const navigate = useNavigate();
-  const { message } = App.useApp();
+  const [params] = useSearchParams();
+  const { message, modal } = App.useApp();
   const [submitting, setSubmitting] = useState(false);
-  const [form] = Form.useForm<FormValues>();
+  const emailRef = useRef<HTMLInputElement | null>(null);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
+  const logo = getAdminLogo();
+  const title = getAdminTitle();
+  const backgroundUrl = getAdminBackgroundUrl();
+  const redirectParam = params.get('redirect');
+  const redirect = redirectParam || 'dashboard';
 
-  useEffect(() => {
-    const stored = getSecurePath();
-    if (stored) form.setFieldValue('secure_path', stored);
-  }, [form]);
-
-  const onFinish = async (values: FormValues) => {
+  const onLogin = useCallback(async () => {
     setSubmitting(true);
     try {
       const result = await passport.login(apiClient, {
-        email: values.email,
-        password: values.password,
+        email: emailRef.current!.value,
+        password: passwordRef.current!.value,
       });
-      if (!result.is_admin) {
-        throw new Error('You do not have admin privileges');
-      }
+      setSubmitting(false);
       setAuthData(result.auth_data);
-      setSecurePath(values.secure_path.replace(/^\//, ''));
-      message.success(t('auth.success_login'));
-      navigate('/dashboard', { replace: true });
+      if (!result.is_admin) {
+        return;
+      }
+      navigate('/dashboard');
+      void user.info(apiClient).catch(() => undefined);
     } catch (error) {
       if (error instanceof Error) message.error(i18nGet(error.message));
-    } finally {
       setSubmitting(false);
     }
-  };
+  }, [message, navigate]);
+
+  useEffect(() => {
+    if (getAuthData()) {
+      user.checkLogin(apiClient)
+        .then((result) => {
+          if (result.is_admin) {
+            void user.info(apiClient).catch(() => undefined);
+            navigate(redirect);
+          }
+        })
+        .catch(() => undefined);
+    }
+  }, [navigate, redirect]);
+
+  useEffect(() => {
+    const keyDown = (event: KeyboardEvent) => {
+      if (event.keyCode === 13) void onLogin();
+    };
+    window.addEventListener('keydown', keyDown, false);
+    return () => window.removeEventListener('keydown', keyDown, false);
+  }, [onLogin]);
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg,#e6f0fb 0%,#fff 100%)',
-        padding: 16,
-      }}
-    >
-      <Card title="V2Board Admin" style={{ width: 380 }}>
-        <Form layout="vertical" form={form} onFinish={onFinish}>
-          <Form.Item
-            name="email"
-            label={t('auth.email')}
-            rules={[{ required: true, type: 'email' }]}
-          >
-            <Input autoComplete="email" />
-          </Form.Item>
-          <Form.Item
-            name="password"
-            label={t('auth.password')}
-            rules={[{ required: true, min: 8 }]}
-          >
-            <Input.Password autoComplete="current-password" />
-          </Form.Item>
-          <Form.Item
-            name="secure_path"
-            label="Secure path"
-            tooltip="The admin secure path from your Laravel config (v2board.secure_path)."
-            rules={[{ required: true }]}
-          >
-            <Input placeholder="abc123" />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" loading={submitting} block>
-            {t('auth.submit_login')}
-          </Button>
-        </Form>
-      </Card>
+    <div id="page-container">
+      <main id="main-container">
+        <div
+          className="v2board-background"
+          style={{ backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined }}
+        />
+        <div className="no-gutters v2board-auth-box">
+          <div className="" style={{ maxWidth: 450, width: '100%', margin: 'auto' }}>
+            <div className="mx-2 mx-sm-0">
+              <div
+                className="block block-rounded block-transparent block-fx-pop w-100 mb-0 overflow-hidden bg-image"
+                style={{ boxShadow: '0 0.5rem 2rem #0000000d' }}
+              >
+                <div className="row no-gutters">
+                  <div className="col-md-12 order-md-1 bg-white">
+                    <div className="block-content block-content-full px-lg-4 py-md-4 py-lg-4">
+                      <div className="mb-3 text-center">
+                        <a className="font-size-h1" href="javascript:void(0);">
+                          {logo ? (
+                            <img className="v2board-logo mb-3" src={logo} />
+                          ) : (
+                            <span className="text-dark">{title || 'V2Board'}</span>
+                          )}
+                        </a>
+                        <p className="font-size-sm text-muted mb-3">登录到管理中心</p>
+                      </div>
+                      <div className="form-group">
+                        <input
+                          type="text"
+                          className="form-control form-control-alt"
+                          placeholder="邮箱"
+                          ref={emailRef}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <input
+                          type="password"
+                          className="form-control form-control-alt"
+                          placeholder="密码"
+                          ref={passwordRef}
+                        />
+                      </div>
+                      <div className="form-group mb-0">
+                        <button
+                          disabled={submitting}
+                          type="submit"
+                          className="btn btn-block btn-primary font-w400"
+                          onClick={() => void onLogin()}
+                        >
+                          {submitting ? (
+                            <LegacyLoadingIcon />
+                          ) : (
+                            <span>
+                              <i className="si si-login mr-1" />
+                              登入
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-center bg-gray-lighter p-3 px-4">
+                  <a
+                    onClick={() =>
+                      modal.info({
+                        title: '忘记密码',
+                        content: (
+                          <div>
+                            <div>在站点目录下执行命令找回密码</div>
+                            <code>php artisan reset:password 管理员邮箱</code>
+                          </div>
+                        ),
+                        centered: true,
+                        okText: '我知道了',
+                        onOk() {},
+                      })}
+                  >
+                    忘记密码
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

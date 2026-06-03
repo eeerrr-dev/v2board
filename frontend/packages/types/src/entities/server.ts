@@ -1,4 +1,12 @@
-export type ServerType = 'shadowsocks' | 'vmess' | 'trojan' | 'tuic' | 'vless' | 'hysteria' | 'anytls';
+export type ServerType =
+  | 'shadowsocks'
+  | 'vmess'
+  | 'trojan'
+  | 'tuic'
+  | 'vless'
+  | 'hysteria'
+  | 'anytls'
+  | 'v2node';
 
 export interface AvailableServer {
   id: number;
@@ -13,4 +21,5 @@ export interface AvailableServer {
   cache_key: string;
   last_check_at: number | null;
   is_online: 0 | 1;
+  tags?: string[] | null;
 }

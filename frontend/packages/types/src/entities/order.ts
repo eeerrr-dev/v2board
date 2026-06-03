@@ -7,9 +7,10 @@ export interface Order {
   callback_no: string | null;
   plan_id: number;
   period: PlanPeriod | 'deposit';
-  type: 1 | 2 | 3 | 4;
+  type: 1 | 2 | 3 | 4 | 9;
   total_amount: number;
   handling_amount: number | null;
+  pre_handling_amount?: number;
   discount_amount: number | null;
   surplus_amount: number | null;
   refund_amount: number | null;
@@ -20,6 +21,7 @@ export interface Order {
   commission_balance: number;
   payment_id: number | null;
   invite_user_id: number | null;
+  actual_commission_balance?: number | null;
   coupon_id: number | null;
   paid_at: number | null;
   created_at: number;

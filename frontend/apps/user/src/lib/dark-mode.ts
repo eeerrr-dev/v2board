@@ -49,9 +49,15 @@ export function applyDarkMode(enabled = isDarkModeEnabled()): void {
   document.documentElement.classList.toggle(DARK_MODE_CLASS, enabled);
 }
 
+export function applyInitialDarkMode(): void {
+  if (isDarkModeEnabled()) {
+    applyDarkMode(true);
+  }
+}
+
 export function setDarkMode(enabled: boolean): void {
-  setLegacyCookie(DARK_MODE_KEY, enabled ? 1 : 0);
   applyDarkMode(enabled);
+  setLegacyCookie(DARK_MODE_KEY, enabled ? 1 : 0);
 }
 
 function getBundledDarkReader(): LegacyDarkReader | null {

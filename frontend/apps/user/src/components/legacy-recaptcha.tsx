@@ -5,8 +5,13 @@ interface RecaptchaApi {
   render: (
     container: HTMLElement,
     options: {
-      sitekey: string;
+      sitekey?: string | null;
       callback: (token: string) => void;
+      theme?: 'light';
+      type?: 'image';
+      tabindex?: 0;
+      size?: 'normal';
+      badge?: 'bottomright';
       'expired-callback'?: () => void;
       'error-callback'?: () => void;
     },
@@ -24,13 +29,16 @@ declare global {
 type ProtectedAction = (recaptchaData?: string) => void | Promise<void>;
 
 let recaptchaPromise: Promise<RecaptchaApi> | null = null;
+const RECAPTCHA_SCRIPT_URL = 'https://www.recaptcha.net/recaptcha/api.js?onload=onloadcallback&render=explicit';
 
 function loadRecaptcha() {
   if (window.grecaptcha?.render) return Promise.resolve(window.grecaptcha);
   if (recaptchaPromise) return recaptchaPromise;
 
   recaptchaPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-v2board-recaptcha]');
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src="${RECAPTCHA_SCRIPT_URL}"]`,
+    );
     if (existing) {
       existing.addEventListener('load', () => {
         if (window.grecaptcha?.render) resolve(window.grecaptcha);
@@ -40,19 +48,20 @@ function loadRecaptcha() {
       return;
     }
 
-    const script = document.createElement('script');
     const resolveRecaptcha = () => {
-      if (window.grecaptcha?.render) resolve(window.grecaptcha);
-      else reject(new Error('reCAPTCHA is unavailable'));
+      if (window.grecaptcha?.render) {
+        delete window.onloadcallback;
+        resolve(window.grecaptcha);
+      } else {
+        reject(new Error('reCAPTCHA is unavailable'));
+      }
     };
+    const script = document.createElement('script');
     window.onloadcallback = resolveRecaptcha;
-    script.src = 'https://www.recaptcha.net/recaptcha/api.js?onload=onloadcallback&render=explicit';
+    script.src = RECAPTCHA_SCRIPT_URL;
     script.async = true;
-    script.defer = true;
-    script.dataset.v2boardRecaptcha = 'true';
-    script.onload = resolveRecaptcha;
     script.onerror = () => reject(new Error('reCAPTCHA failed to load'));
-    document.head.appendChild(script);
+    document.body.appendChild(script);
   });
 
   return recaptchaPromise;
@@ -60,14 +69,11 @@ function loadRecaptcha() {
 
 export function useLegacyRecaptcha(enabled: boolean, siteKey?: string | null) {
   const [open, setOpen] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const widgetIdRef = useRef<number | null>(null);
+  const [widgetKey, setWidgetKey] = useState(0);
   const actionRef = useRef<ProtectedAction | null>(null);
 
-  const close = useCallback(() => {
+  const cancel = useCallback(() => {
     setOpen(false);
-    setFailed(false);
     actionRef.current = null;
   }, []);
 
@@ -78,76 +84,94 @@ export function useLegacyRecaptcha(enabled: boolean, siteKey?: string | null) {
         return;
       }
       actionRef.current = action;
-      setFailed(false);
+      setWidgetKey(Math.random());
       setOpen(true);
     },
     [enabled],
   );
 
-  const handleToken = useCallback(
-    (token: string) => {
-      window.setTimeout(() => {
-        const action = actionRef.current;
-        setOpen(false);
-        setFailed(false);
-        actionRef.current = null;
-        if (action) void action(token);
-      }, 500);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!open || !enabled || !siteKey) return;
-
-    let cancelled = false;
-    setFailed(false);
-    loadRecaptcha()
-      .then((grecaptcha) => {
-        if (cancelled || !containerRef.current) return;
-        containerRef.current.innerHTML = '';
-        widgetIdRef.current = grecaptcha.render(containerRef.current, {
-          sitekey: siteKey,
-          callback: handleToken,
-          'expired-callback': () => {
-            if (widgetIdRef.current !== null) grecaptcha.reset(widgetIdRef.current);
-          },
-          'error-callback': () => setFailed(true),
-        });
-      })
-      .catch(() => setFailed(true));
-
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, handleToken, open, siteKey]);
+  const handleToken = useCallback((token: string | null) => {
+    // The original's handle(e) runs for BOTH a fresh token and the expired
+    // callback's null: after 500ms it closes the modal and invokes the action.
+    // A null token omits recaptcha_data from the request (a && (l.recaptcha_data = a)).
+    window.setTimeout(() => {
+      const action = actionRef.current;
+      setOpen(false);
+      actionRef.current = null;
+      if (action) void action(token ?? undefined);
+    }, 500);
+  }, []);
 
   const recaptchaModal = (
+    // The old wrapper passes onCancel: hide(), so mask clicks and Esc close the modal
+    // without invoking the protected action.
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen) close();
+        if (!nextOpen) cancel();
       }}
     >
-      <DialogContent
-        showClose={false}
-        centered
-        className="v2board-ant-modal v2board-ant-recaptcha-modal"
-      >
-        <div className="ant-modal-body">
-          <div className="v2board-recaptcha-box">
-            {siteKey && !failed ? (
-              <div ref={containerRef} />
-            ) : (
-              <div className="spinner-grow text-primary" role="status">
-                <span className="sr-only">Loading...</span>
-              </div>
-            )}
-          </div>
-        </div>
+      <DialogContent key={widgetKey} closable={false} footer={null} centered>
+        {enabled ? <LegacyRecaptchaWidget siteKey={siteKey} onToken={handleToken} /> : null}
       </DialogContent>
     </Dialog>
   );
 
   return { run, recaptchaModal };
+}
+
+function LegacyRecaptchaWidget({
+  siteKey,
+  onToken,
+}: {
+  siteKey?: string | null;
+  onToken: (token: string | null) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let grecaptchaApi: RecaptchaApi | null = null;
+    let widgetId: number | undefined;
+
+    loadRecaptcha()
+      .then((grecaptcha) => {
+        if (cancelled || !containerRef.current) return;
+        grecaptchaApi = grecaptcha;
+        const renderTarget = document.createElement('div');
+        containerRef.current.appendChild(renderTarget);
+        widgetId = grecaptcha.render(renderTarget, {
+          sitekey: siteKey,
+          callback: onToken,
+          theme: 'light',
+          type: 'image',
+          tabindex: 0,
+          size: 'normal',
+          badge: 'bottomright',
+          'expired-callback': () => onToken(null),
+          'error-callback': () => {},
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (grecaptchaApi && widgetId !== undefined) {
+        if (containerRef.current) delayCaptchaIframeRemoving(containerRef.current);
+        grecaptchaApi.reset(widgetId);
+      }
+    };
+  }, [onToken, siteKey]);
+
+  return <div ref={containerRef} />;
+}
+
+function delayCaptchaIframeRemoving(captcha: HTMLElement): void {
+  const detached = document.createElement('div');
+  document.body.appendChild(detached);
+  detached.style.display = 'none';
+  while (captcha.firstChild) detached.appendChild(captcha.firstChild);
+  window.setTimeout(() => {
+    document.body.removeChild(detached);
+  }, 5000);
 }

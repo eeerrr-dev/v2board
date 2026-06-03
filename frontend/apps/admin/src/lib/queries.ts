@@ -1,5 +1,5 @@
 import { admin } from '@v2board/api-client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from './api';
 
 export const adminKeys = {
@@ -12,31 +12,72 @@ export const adminKeys = {
   notices: (filters: unknown) => ['admin', 'notices', filters] as const,
   tickets: (filters: unknown) => ['admin', 'tickets', filters] as const,
   coupons: (filters: unknown) => ['admin', 'coupons', filters] as const,
-  giftcards: ['admin', 'giftcards'] as const,
+  giftcards: (filters: unknown) => ['admin', 'giftcards', filters] as const,
   knowledge: ['admin', 'knowledge'] as const,
   knowledgeCategories: ['admin', 'knowledge', 'categories'] as const,
   serverNodes: ['admin', 'servers', 'nodes'] as const,
   serverGroups: ['admin', 'servers', 'groups'] as const,
   serverRoutes: ['admin', 'servers', 'routes'] as const,
-  systemStatus: ['admin', 'system', 'status'] as const,
   queue: ['admin', 'system', 'queue'] as const,
-  systemLog: ['admin', 'system', 'log'] as const,
+  queueWorkload: ['admin', 'system', 'queueWorkload'] as const,
   statOrder: ['admin', 'stat', 'order'] as const,
   statUserToday: ['admin', 'stat', 'userToday'] as const,
+  statUserLast: ['admin', 'stat', 'userLast'] as const,
   statServerToday: ['admin', 'stat', 'serverToday'] as const,
+  statServerLast: ['admin', 'stat', 'serverLast'] as const,
+  statUserTraffic: (userId: number | undefined, query: unknown) =>
+    ['admin', 'stat', 'userTraffic', userId, query] as const,
   paymentMethods: ['admin', 'payment', 'methods'] as const,
   themes: ['admin', 'themes'] as const,
+  emailTemplates: ['admin', 'config', 'emailTemplates'] as const,
+  themeTemplates: ['admin', 'config', 'themeTemplates'] as const,
 };
 
 export const useStat = () => useQuery({ queryKey: adminKeys.stat, queryFn: () => admin.statSummary(apiClient) });
+// Dashboard chart effects in the bundled admin app render through one-shot
+// completion callbacks; unlike `stat/getOverride`, chart payloads are not stored
+// in dva state after the page unmounts.
+const legacyDashboardChartQueryOptions = { gcTime: 0 } as const;
+
 export const useStatOrder = () =>
-  useQuery({ queryKey: adminKeys.statOrder, queryFn: () => admin.statOrder(apiClient) });
+  useQuery({
+    queryKey: adminKeys.statOrder,
+    queryFn: () => admin.statOrder(apiClient),
+    ...legacyDashboardChartQueryOptions,
+  });
 export const useStatUserToday = () =>
-  useQuery({ queryKey: adminKeys.statUserToday, queryFn: () => admin.statUserTodayRank(apiClient) });
+  useQuery({
+    queryKey: adminKeys.statUserToday,
+    queryFn: () => admin.statUserTodayRank(apiClient),
+    ...legacyDashboardChartQueryOptions,
+  });
+export const useStatUserLast = () =>
+  useQuery({
+    queryKey: adminKeys.statUserLast,
+    queryFn: () => admin.statUserLastRank(apiClient),
+    ...legacyDashboardChartQueryOptions,
+  });
+export const useAdminUserTraffic = (
+  userId: number | undefined,
+  query: Omit<admin.AdminUserTrafficQuery, 'user_id'>,
+  enabled: boolean,
+) =>
+  useQuery({
+    queryKey: adminKeys.statUserTraffic(userId, query),
+    queryFn: () => admin.statUser(apiClient, { user_id: userId as number, ...query }),
+    enabled: enabled && userId != null,
+  });
 export const useStatServerToday = () =>
   useQuery({
     queryKey: adminKeys.statServerToday,
     queryFn: () => admin.statServerTodayRank(apiClient),
+    ...legacyDashboardChartQueryOptions,
+  });
+export const useStatServerLast = () =>
+  useQuery({
+    queryKey: adminKeys.statServerLast,
+    queryFn: () => admin.statServerLastRank(apiClient),
+    ...legacyDashboardChartQueryOptions,
   });
 
 export const useConfig = () =>
@@ -60,6 +101,20 @@ export const useAdminOrders = (query: admin.AdminPageQuery & { is_commission?: 0
     queryFn: () => admin.fetchOrders(apiClient, query),
   });
 
+export const useAdminOrderDetail = (id?: number) =>
+  useQuery({
+    queryKey: ['admin', 'order', id],
+    queryFn: () => admin.orderDetail(apiClient, id as number),
+    enabled: id != null,
+  });
+
+export const useAdminUserInfo = (id?: number | null) =>
+  useQuery({
+    queryKey: ['admin', 'user', id],
+    queryFn: () => admin.getUserInfoById(apiClient, id as number),
+    enabled: id != null,
+  });
+
 export const useAdminNotices = (query: admin.AdminPageQuery) =>
   useQuery({
     queryKey: adminKeys.notices(query),
@@ -72,14 +127,24 @@ export const useAdminTickets = (query: admin.AdminPageQuery) =>
     queryFn: () => admin.fetchTickets(apiClient, query),
   });
 
+export const useAdminTicket = (id?: number | string) =>
+  useQuery({
+    queryKey: ['admin', 'ticket', id],
+    queryFn: () => admin.ticketDetail(apiClient, id as number | string),
+    enabled: id != null,
+  });
+
 export const useAdminCoupons = (query: admin.AdminPageQuery) =>
   useQuery({
     queryKey: adminKeys.coupons(query),
     queryFn: () => admin.fetchCoupons(apiClient, query),
   });
 
-export const useAdminGiftcards = () =>
-  useQuery({ queryKey: adminKeys.giftcards, queryFn: () => admin.fetchGiftcards(apiClient) });
+export const useAdminGiftcards = (query: admin.AdminPageQuery) =>
+  useQuery({
+    queryKey: adminKeys.giftcards(query),
+    queryFn: () => admin.fetchGiftcards(apiClient, query),
+  });
 
 export const useAdminKnowledge = () =>
   useQuery({ queryKey: adminKeys.knowledge, queryFn: () => admin.fetchKnowledge(apiClient) });
@@ -99,322 +164,336 @@ export const useServerGroups = () =>
 export const useServerRoutes = () =>
   useQuery({ queryKey: adminKeys.serverRoutes, queryFn: () => admin.fetchServerRoutes(apiClient) });
 
-export const useSystemStatus = () =>
-  useQuery({ queryKey: adminKeys.systemStatus, queryFn: () => admin.systemStatus(apiClient) });
-
 export const useQueueStats = () =>
-  useQuery({ queryKey: adminKeys.queue, queryFn: () => admin.queueStats(apiClient) });
+  useQuery({
+    queryKey: adminKeys.queue,
+    queryFn: () => admin.queueStats(apiClient),
+    enabled: false,
+  });
 
-export const useSystemLog = () =>
-  useQuery({ queryKey: adminKeys.systemLog, queryFn: () => admin.systemLog(apiClient) });
+export const useQueueWorkload = () =>
+  useQuery({
+    queryKey: adminKeys.queueWorkload,
+    queryFn: () => admin.queueWorkload(apiClient),
+    enabled: false,
+  });
 
 export const useThemes = () =>
   useQuery({ queryKey: adminKeys.themes, queryFn: () => admin.themes(apiClient) });
 
+export const useEmailTemplates = () =>
+  useQuery({
+    queryKey: adminKeys.emailTemplates,
+    queryFn: () => admin.getEmailTemplate(apiClient),
+  });
+
+export const useThemeTemplates = () =>
+  useQuery({
+    queryKey: adminKeys.themeTemplates,
+    queryFn: () => admin.getThemeTemplate(apiClient),
+  });
+
+export function useThemeConfigMutation() {
+  return useMutation({
+    mutationFn: (name: string) => admin.themeConfig(apiClient, name),
+  });
+}
+
+export function useSaveThemeConfigMutation() {
+  return useMutation({
+    mutationFn: (data: Parameters<typeof admin.saveThemeConfig>[1]) =>
+      admin.saveThemeConfig(apiClient, data),
+  });
+}
+
+export function useSetTelegramWebhookMutation() {
+  return useMutation({
+    mutationFn: () => admin.setTelegramWebhook(apiClient),
+  });
+}
+
+export function useTestSendMailMutation() {
+  return useMutation({
+    mutationFn: () => admin.testSendMail(apiClient),
+  });
+}
+
 export function useSavePlanMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.savePlan>[1]) => admin.savePlan(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.plans }),
   });
 }
 
 export function useDropPlanMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.dropPlan(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.plans }),
   });
 }
 
 export function useUpdatePlanMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: number; show?: 0 | 1; renew?: 0 | 1 }) =>
-      admin.updatePlan(apiClient, vars.id, vars.show, vars.renew),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.plans }),
+    mutationFn: (vars: { id: number; key: 'show' | 'renew'; value: 0 | 1 }) =>
+      admin.updatePlan(apiClient, vars.id, vars.key, vars.value),
   });
 }
 
 export function useSortPlansMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (ids: number[]) => admin.sortPlans(apiClient, ids),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.plans }),
   });
 }
 
 export function useUpdateUserMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.updateUser>[1]) =>
       admin.updateUser(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
   });
 }
 
 export function useDeleteUserMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.deleteUser(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
   });
 }
 
 export function useResetUserSecretMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.resetUserSecret(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
   });
 }
 
 export function useGenerateUserMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.generateUser>[1]) =>
       admin.generateUser(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
+  });
+}
+
+export function useDumpUsersCsvMutation() {
+  return useMutation({
+    mutationFn: (filter?: admin.AdminFilter[]) => admin.dumpUsersCsv(apiClient, filter),
+  });
+}
+
+export function useSendMailToUsersMutation() {
+  return useMutation({
+    mutationFn: (data: Parameters<typeof admin.sendMailToUsers>[1]) =>
+      admin.sendMailToUsers(apiClient, data),
+  });
+}
+
+export function useBanUsersMutation() {
+  return useMutation({
+    mutationFn: (filter?: admin.AdminFilter[]) => admin.banUsers(apiClient, filter),
+  });
+}
+
+export function useDeleteAllUsersMutation() {
+  return useMutation({
+    mutationFn: (filter?: admin.AdminFilter[]) => admin.deleteAllUsers(apiClient, filter),
   });
 }
 
 export function useMarkOrderPaidMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (tradeNo: string) => admin.paidOrder(apiClient, tradeNo),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }),
   });
 }
 
 export function useCancelOrderMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (tradeNo: string) => admin.cancelOrder(apiClient, tradeNo),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }),
+  });
+}
+
+export function useUpdateOrderMutation() {
+  return useMutation({
+    mutationFn: (vars: {
+      tradeNo: string;
+      key: 'commission_status' | 'status';
+      value: string | number;
+    }) => admin.updateOrder(apiClient, vars.tradeNo, vars.key, vars.value),
   });
 }
 
 export function useAssignOrderMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.assignOrder>[1]) =>
       admin.assignOrder(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }),
   });
 }
 
 export function useReplyTicketMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.replyTicket>[1]) =>
       admin.replyTicket(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'tickets'] }),
   });
 }
 
 export function useCloseTicketMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.closeTicket(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'tickets'] }),
   });
 }
 
 export function useSaveNoticeMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.saveNotice>[1]) =>
       admin.saveNotice(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] }),
-  });
-}
-
-export function useUpdateNoticeMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: Parameters<typeof admin.updateNotice>[1]) =>
-      admin.updateNotice(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] }),
   });
 }
 
 export function useDropNoticeMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.dropNotice(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] }),
   });
 }
 
 export function useShowNoticeMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: number; show: 0 | 1 }) =>
-      admin.showNotice(apiClient, vars.id, vars.show),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] }),
+    mutationFn: (id: number) => admin.showNotice(apiClient, id),
   });
 }
 
 export function useSaveConfigMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.saveConfig>[1]) =>
       admin.saveConfig(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.config }),
   });
 }
 
 export function useSavePaymentMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.savePayment>[1]) =>
       admin.savePayment(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.payments }),
   });
 }
 
 export function useShowPaymentMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: number; enable: 0 | 1 }) =>
-      admin.showPayment(apiClient, vars.id, vars.enable),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.payments }),
+    mutationFn: (id: number) => admin.showPayment(apiClient, id),
+  });
+}
+
+export function useSortPaymentMutation() {
+  return useMutation({
+    mutationFn: (ids: number[]) => admin.sortPayments(apiClient, ids),
   });
 }
 
 export function useDropPaymentMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.dropPayment(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.payments }),
   });
 }
 
 export function useGenerateCouponMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.generateCoupon>[1]) =>
       admin.generateCoupon(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'coupons'] }),
   });
 }
 
 export function useDropCouponMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.dropCoupon(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'coupons'] }),
   });
 }
 
 export function useShowCouponMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, show }: { id: number; show: 0 | 1 }) => admin.showCoupon(apiClient, id, show),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'coupons'] }),
+    mutationFn: (id: number) => admin.showCoupon(apiClient, id),
   });
 }
 
 export function useGenerateGiftcardMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.generateGiftcard>[1]) =>
       admin.generateGiftcard(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.giftcards }),
   });
 }
 
 export function useDropGiftcardMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.dropGiftcard(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.giftcards }),
   });
 }
 
 export function useSaveKnowledgeMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.saveKnowledge>[1]) =>
       admin.saveKnowledge(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.knowledge }),
   });
 }
 
 export function useDropKnowledgeMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.dropKnowledge(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.knowledge }),
   });
 }
 
 export function useShowKnowledgeMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: number; show: 0 | 1 }) =>
-      admin.showKnowledge(apiClient, vars.id, vars.show),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.knowledge }),
+    mutationFn: (id: number) => admin.showKnowledge(apiClient, id),
+  });
+}
+
+export function useSortKnowledgeMutation() {
+  return useMutation({
+    mutationFn: (ids: number[]) => admin.sortKnowledge(apiClient, ids),
   });
 }
 
 export function useSaveServerGroupMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.saveServerGroup>[1]) =>
       admin.saveServerGroup(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.serverGroups }),
   });
 }
 
 export function useDropServerGroupMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.dropServerGroup(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.serverGroups }),
   });
 }
 
 export function useSaveServerRouteMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Parameters<typeof admin.saveServerRoute>[1]) =>
       admin.saveServerRoute(apiClient, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.serverRoutes }),
   });
 }
 
 export function useDropServerRouteMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => admin.dropServerRoute(apiClient, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.serverRoutes }),
   });
 }
 
 export function useDropServerMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (vars: { type: admin.ServerTypeName; id: number }) =>
       admin.dropServer(apiClient, vars.type, vars.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.serverNodes }),
   });
 }
 
 export function useCopyServerMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (vars: { type: admin.ServerTypeName; id: number }) =>
       admin.copyServer(apiClient, vars.type, vars.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.serverNodes }),
   });
 }
 
 export function useUpdateServerMutation() {
-  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { type: admin.ServerTypeName; id: number; show: 0 | 1 }) =>
-      admin.updateServer(apiClient, vars.type, vars.id, vars.show),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.serverNodes }),
+    mutationFn: (vars: { type: admin.ServerTypeName; id: number; key: 'show'; value: 0 | 1 }) =>
+      admin.updateServer(apiClient, vars.type, vars.id, vars.key, vars.value),
+  });
+}
+
+export function useSortServerNodesMutation() {
+  return useMutation({
+    mutationFn: (payload: Parameters<typeof admin.sortServerNodes>[1]) =>
+      admin.sortServerNodes(apiClient, payload),
   });
 }

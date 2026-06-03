@@ -14,6 +14,7 @@ export interface Plan {
   transfer_enable: number;
   device_limit: number | null;
   speed_limit: number | null;
+  reset_traffic_method: 0 | 1 | 2 | 3 | 4 | null;
   name: string;
   show: 0 | 1;
   sort: number | null;

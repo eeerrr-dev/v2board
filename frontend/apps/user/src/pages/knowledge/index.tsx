@@ -1,11 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
+import { CloseIcon, SearchIcon } from '@/components/ant-icon';
+import { AntBtn } from '@/components/ant-btn';
 import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
 import { renderLegacyMarkdown } from '@/lib/markdown';
 import { legacyCopyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/legacy-toast';
+import { useTransitionStatus } from '@/lib/use-transition-status';
+import { lockLegacyDrawerBodyScroll } from '@/lib/legacy-body-scroll';
+import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
+import { getRequestLocale } from '@/lib/api';
 import type { Knowledge } from '@v2board/types';
 
 declare global {
@@ -16,26 +23,55 @@ declare global {
 }
 
 export default function KnowledgePage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState('');
   const [keyword, setKeyword] = useState('');
   const [searchParams] = useSearchParams();
-  const language = i18n.resolvedLanguage ?? 'zh-CN';
-  const [selectedId, setSelectedId] = useState<number | undefined>(
-    () => Number(searchParams.get('id')) || undefined,
-  );
+  const language = getRequestLocale();
+  const [selectedId, setSelectedId] = useState<number | string | undefined>(undefined);
   const [visibleDetail, setVisibleDetail] = useState<Knowledge | undefined>();
   const { data, isFetching } = useKnowledge(language, keyword || undefined);
+  const loading = useLegacyFetchLoading(isFetching);
   const knowledgeGroups = data ?? {};
   const detail = useKnowledgeDetail(selectedId, language);
+  const refetchDetail = detail.refetch;
+  const detailVisible = selectedId !== undefined;
+  const detailDrawerStatus = useTransitionStatus(detailVisible, 300);
+  const urlIdAppliedRef = useRef(false);
+  useEffect(() => {
+    if (urlIdAppliedRef.current) return;
+    if (!data) return;
+    const raw = searchParams.get('id');
+    if (raw == null) {
+      urlIdAppliedRef.current = true;
+      return;
+    }
+    const urlId = parseInt(raw);
+    if (Number.isNaN(urlId)) {
+      urlIdAppliedRef.current = true;
+      return;
+    }
+    const matchedItem = Object.values(data)
+      .flatMap((items) => items ?? [])
+      .find((item) => parseInt(String(item.id)) === urlId);
+    if (matchedItem) {
+      urlIdAppliedRef.current = true;
+      setSelectedId(matchedItem.id);
+    }
+  }, [data, searchParams]);
   const renderedBody = useMemo(
-    () => renderLegacyMarkdown(visibleDetail?.body ?? ''),
+    () => renderLegacyMarkdown(visibleDetail?.body || ''),
     [visibleDetail?.body],
   );
 
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+
   const closeDetail = () => {
-    setVisibleDetail(undefined);
+    // The original hide() dispatches knowledge/setState {knowledge:{}}, clearing
+    // the panel content during the slide-out: the title falls back to "Loading..."
+    // and the body renders empty markdown while the drawer animates closed.
     setSelectedId(undefined);
+    setVisibleDetail(undefined);
   };
 
   useEffect(() => {
@@ -44,75 +80,87 @@ export default function KnowledgePage() {
   }, [searchValue]);
 
   useEffect(() => {
-    if (!selectedId) return;
+    if (selectedId === undefined) return;
     window.copy = (text: string) => {
+      // Legacy `window.copy` calls the copy helper, then shows one success message.
       legacyCopyText(text);
       toast.success(t('dashboard.copy_success'));
     };
     window.jump = (id: number | string) => {
-      setSelectedId(Number(id));
+      if (Object.is(id, selectedId)) void refetchDetail();
+      else setSelectedId(id);
     };
     return () => {
       window.copy = undefined;
       window.jump = undefined;
     };
-  }, [selectedId, t]);
+  }, [refetchDetail, selectedId, t]);
 
   useEffect(() => {
-    if (detail.data) setVisibleDetail(detail.data);
-  }, [detail.data]);
+    if (detail.data && !detail.isFetching) setVisibleDetail(detail.data);
+  }, [detail.data, detail.isFetching]);
+
+  useEffect(() => {
+    // rc-drawer autofocuses its tabIndex=-1 wrapper on open (domFocus in
+    // componentDidMount/Update) so the node-scoped onKeyDown can catch Escape.
+    if (detailDrawerStatus === 'entered') drawerRef.current?.focus();
+  }, [detailDrawerStatus]);
+
+  useEffect(() => {
+    if (selectedId === undefined) return;
+    return lockLegacyDrawerBodyScroll();
+  }, [selectedId]);
 
   return (
     <>
       <div className="v2board-knowledge-search-bar">
-        <form
-          className="ant-input-search ant-input-search-enter-button ant-input-search-large ant-input-group-wrapper mb-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-          }}
-        >
+        <span className="ant-input-search ant-input-search-enter-button ant-input-search-large ant-input-group-wrapper ant-input-group-wrapper-lg mb-3">
           <span className="ant-input-wrapper ant-input-group">
             <input
+              type="text"
               className="ant-input ant-input-lg"
               placeholder={t('knowledge.search_placeholder')}
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
             />
             <span className="ant-input-group-addon">
-              <button
-                type="submit"
+              <AntBtn
+                type="button"
                 className="ant-btn ant-btn-primary ant-input-search-button ant-btn-lg"
               >
-                <i className="anticon anticon-search" />
-              </button>
+                <SearchIcon />
+              </AntBtn>
             </span>
           </span>
-        </form>
+        </span>
       </div>
 
-      {isFetching ? (
+      {loading ? (
         <div className="spinner-grow text-primary" role="status">
           <span className="sr-only">Loading...</span>
         </div>
       ) : (
         Object.keys(knowledgeGroups).map((category) => (
-          <div className="row mb-3 mb-md-0" key={category}>
+          <div className="row mb-3 mb-md-0">
             <div className="col-md-12">
-              <div className="block block-rounded">
+              {/* Original class string has a trailing space: "block block-rounded " (umi.js). */}
+              <div className="block block-rounded ">
                 <div className="block-header block-header-default">
                   <h3 className="block-title">{category}</h3>
                 </div>
                 <div className="list-group">
                   {knowledgeGroups[category]?.map((item) => (
                     <a
-                      key={item.id}
                       className="list-group-item list-group-item-action"
                       style={{
                         borderRadius: 'unset',
                         border: 'unset',
                         borderBottom: '1px solid #e2e8f2',
                       }}
-                      onClick={() => setSelectedId(item.id)}
+                      onClick={() => {
+                        setVisibleDetail(undefined);
+                        setSelectedId(item.id);
+                      }}
                     >
                       <h5 className="font-size-base mb-1">{item.title}</h5>
                       <small>
@@ -129,16 +177,28 @@ export default function KnowledgePage() {
         ))
       )}
 
-      {selectedId && (
-        <div className="ant-drawer ant-drawer-right ant-drawer-open">
+      {detailDrawerStatus !== 'exited' && createPortal(
+        <div
+          ref={drawerRef}
+          tabIndex={-1}
+          className={`ant-drawer ant-drawer-right${
+            detailDrawerStatus === 'entered' ? ' ant-drawer-open' : ''
+          }`}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              closeDetail();
+            }
+          }}
+        >
           <div className="ant-drawer-mask" onClick={closeDetail} />
           <div className="ant-drawer-content-wrapper" style={{ width: '80%' }}>
             <div className="ant-drawer-content">
               <div className="ant-drawer-wrapper-body">
                 <div className="ant-drawer-header">
                   <div className="ant-drawer-title">{visibleDetail?.title || 'Loading...'}</div>
-                  <button type="button" className="ant-drawer-close" onClick={closeDetail}>
-                    <i className="anticon anticon-close" />
+                  <button aria-label="Close" className="ant-drawer-close" onClick={closeDetail}>
+                    <CloseIcon />
                   </button>
                 </div>
                 <div className="ant-drawer-body">
@@ -154,7 +214,8 @@ export default function KnowledgePage() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

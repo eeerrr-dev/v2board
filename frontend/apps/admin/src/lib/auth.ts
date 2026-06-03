@@ -1,5 +1,4 @@
-const AUTH_KEY = 'v2board.admin_auth_data';
-const SECURE_PATH_KEY = 'v2board.admin_secure_path';
+const AUTH_KEY = 'authorization';
 
 type Listener = (value: string | null) => void;
 const listeners = new Set<Listener>();
@@ -12,15 +11,6 @@ export function setAuthData(value: string | null): void {
   if (value === null) localStorage.removeItem(AUTH_KEY);
   else localStorage.setItem(AUTH_KEY, value);
   for (const l of listeners) l(value);
-}
-
-export function getSecurePath(): string | null {
-  return localStorage.getItem(SECURE_PATH_KEY);
-}
-
-export function setSecurePath(value: string | null): void {
-  if (value === null) localStorage.removeItem(SECURE_PATH_KEY);
-  else localStorage.setItem(SECURE_PATH_KEY, value);
 }
 
 export function subscribeAuth(listener: Listener): () => void {

@@ -2,6 +2,8 @@ export interface KnowledgeSummary {
   id: number;
   category: string;
   title: string;
+  sort: number | null;
+  show: 0 | 1;
   updated_at: number;
 }
 

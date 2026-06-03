@@ -1,204 +1,237 @@
-import { useMemo, useState } from 'react';
-import { Layout, Menu, Avatar, Dropdown, theme } from 'antd';
-import type { MenuProps } from 'antd';
-import {
-  DashboardOutlined,
-  UserOutlined,
-  ShoppingCartOutlined,
-  AppstoreOutlined,
-  CloudServerOutlined,
-  CustomerServiceOutlined,
-  CreditCardOutlined,
-  GiftOutlined,
-  BookOutlined,
-  NotificationOutlined,
-  MonitorOutlined,
-  SettingOutlined,
-  BarChartOutlined,
-  LogoutOutlined,
-  TranslationOutlined,
-} from '@ant-design/icons';
+import { useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import { SUPPORTED_LOCALES, type SupportedLocale } from '@v2board/i18n';
+import { user } from '@v2board/api-client';
+import { apiClient } from '@/lib/api';
 import { logout } from '@/lib/auth';
+import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
 
-const { Sider, Header, Content } = Layout;
+interface LegacyNavItem {
+  title: string;
+  type: 'heading' | 'item';
+  href?: string;
+  icon?: string;
+}
 
-// The OneUI admin uses a blue top bar (#0665D0) over a white, grouped sidebar.
-const BRAND_BLUE = '#0665D0';
+const LEGACY_NAV: LegacyNavItem[] = [
+  { title: '仪表盘', type: 'item', href: '/dashboard', icon: 'si si-speedometer' },
+  { title: '设置', type: 'heading' },
+  { title: '系统配置', type: 'item', href: '/config/system', icon: 'si si-equalizer' },
+  { title: '支付配置', type: 'item', href: '/config/payment', icon: 'si si-credit-card' },
+  { title: '主题配置', type: 'item', href: '/config/theme', icon: 'si si-magic-wand' },
+  { title: '服务器', type: 'heading' },
+  { title: '节点管理', type: 'item', href: '/server/manage', icon: 'si si-layers' },
+  { title: '权限组管理', type: 'item', href: '/server/group', icon: 'si si-wrench' },
+  { title: '路由管理', type: 'item', href: '/server/route', icon: 'si si-shuffle' },
+  { title: '财务', type: 'heading' },
+  { title: '订阅管理', type: 'item', href: '/plan', icon: 'si si-bag' },
+  { title: '订单管理', type: 'item', href: '/order', icon: 'si si-list' },
+  { title: '优惠券管理', type: 'item', href: '/coupon', icon: 'si si-present' },
+  { title: '礼品卡管理', type: 'item', href: '/giftcard', icon: 'si si-star' },
+  { title: '用户', type: 'heading' },
+  { title: '用户管理', type: 'item', href: '/user', icon: 'si si-users' },
+  { title: '公告管理', type: 'item', href: '/notice', icon: 'si si-speech' },
+  { title: '工单管理', type: 'item', href: '/ticket', icon: 'si si-support' },
+  { title: '知识库管理', type: 'item', href: '/knowledge', icon: 'si si-bulb' },
+  { title: '指标', type: 'heading' },
+  { title: '队列监控', type: 'item', href: '/queue', icon: 'si si-bar-chart' },
+];
+
+const ROUTE_TITLES: Record<string, string> = {
+  '/dashboard': '仪表盘',
+  '/config/system': '系统配置',
+  '/config/payment': '支付配置',
+  '/config/theme': '主题配置',
+  '/server/manage': '节点管理',
+  '/server/group': '权限组管理',
+  '/server/route': '路由管理',
+  '/plan': '订阅管理',
+  '/order': '订单管理',
+  '/coupon': '优惠券管理',
+  '/giftcard': '礼品卡管理',
+  '/user': '用户管理',
+  '/notice': '公告管理',
+  '/ticket': '工单管理',
+  '/knowledge': '知识库管理',
+  '/queue': '队列监控',
+};
+
+function getSettings() {
+  return window.settings ?? {};
+}
+
+function getTheme() {
+  return getSettings().theme ?? { sidebar: 'light', header: 'dark', color: 'default' };
+}
+
+function getSiteTitle() {
+  return getSettings().title || 'V2Board';
+}
 
 export function AdminLayout() {
-  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
-  const { token } = theme.useToken();
-  const version = (window as unknown as { settings?: { version?: string } }).settings?.version;
+  const [showNav, setShowNav] = useState(false);
+  const [showAvatarMenu, setShowAvatarMenu] = useState(false);
+  const [email, setEmail] = useState('');
+  const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
+  const theme = getTheme();
+  const title = ROUTE_TITLES[location.pathname] ?? '';
+  const pageClassName =
+    `sidebar-o ${theme.sidebar === 'dark' ? 'sidebar-dark' : ''} ` +
+    `${theme.header === 'dark' ? 'page-header-dark' : ''} ` +
+    `side-scroll page-header-fixed main-content-boxed side-trans-enabled ${showNav && 'sidebar-o-xs'}`;
 
-  // Menu grouped to mirror the original admin's information architecture
-  // (设置 / 服务器 / 财务 / 用户), keeping the new admin's extra pages
-  // (统计报表, 系统状态) in the closest matching place.
-  const items = useMemo<MenuProps['items']>(
-    () => [
-      { key: '/dashboard', icon: <DashboardOutlined />, label: t('admin.nav.dashboard') },
-      { key: '/stats', icon: <BarChartOutlined />, label: t('admin.nav.stat') },
-      {
-        type: 'group',
-        label: t('admin.nav.group_setting'),
-        children: [
-          { key: '/config', icon: <SettingOutlined />, label: t('admin.nav.config') },
-          { key: '/payments', icon: <CreditCardOutlined />, label: t('admin.nav.payments') },
-          { key: '/system', icon: <MonitorOutlined />, label: t('admin.nav.system') },
-        ],
-      },
-      {
-        type: 'group',
-        label: t('admin.nav.group_server'),
-        children: [{ key: '/servers', icon: <CloudServerOutlined />, label: t('admin.nav.servers') }],
-      },
-      {
-        type: 'group',
-        label: t('admin.nav.group_finance'),
-        children: [
-          { key: '/plans', icon: <AppstoreOutlined />, label: t('admin.nav.plans') },
-          { key: '/orders', icon: <ShoppingCartOutlined />, label: t('admin.nav.orders') },
-          { key: '/coupons', icon: <GiftOutlined />, label: t('admin.nav.coupons') },
-        ],
-      },
-      {
-        type: 'group',
-        label: t('admin.nav.group_user'),
-        children: [
-          { key: '/users', icon: <UserOutlined />, label: t('admin.nav.users') },
-          { key: '/notices', icon: <NotificationOutlined />, label: t('admin.nav.notices') },
-          { key: '/tickets', icon: <CustomerServiceOutlined />, label: t('admin.nav.tickets') },
-          { key: '/knowledge', icon: <BookOutlined />, label: t('admin.nav.knowledge') },
-        ],
-      },
-    ],
-    [t],
-  );
+  useEffect(() => {
+    user.info(apiClient)
+      .then((info) => setEmail(info.email ?? ''))
+      .catch(() => undefined);
+  }, []);
 
-  const pageTitle = useMemo(() => {
-    const flat = new Map<string, string>();
-    for (const item of items ?? []) {
-      if (!item) continue;
-      if ('children' in item && item.children) {
-        for (const child of item.children) {
-          if (child && 'key' in child && child.key) flat.set(String(child.key), String((child as { label?: unknown }).label ?? ''));
-        }
-      } else if ('key' in item && item.key) {
-        flat.set(String(item.key), String((item as { label?: unknown }).label ?? ''));
-      }
-    }
-    return flat.get(location.pathname) ?? '';
-  }, [items, location.pathname]);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
+    if (!showAvatarMenu) return;
+    const close = () => setShowAvatarMenu(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [showAvatarMenu]);
+
+  const navItems = useMemo(() => LEGACY_NAV, []);
+
+  const closeMobileNav = () => setShowNav(false);
+
+  const toggleDarkMode = () => {
+    const next = !darkMode;
+    setDarkModeState(next);
+    setDarkMode(next);
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
-    <Layout className="min-h-screen" style={{ minHeight: '100vh' }}>
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        breakpoint="lg"
-        trigger={null}
-        theme="light"
-        style={{ display: 'flex', flexDirection: 'column', borderRight: `1px solid ${token.colorBorderSecondary}` }}
-      >
-        <div
-          style={{
-            height: 64,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            paddingInline: 24,
-            fontWeight: 600,
-            color: '#fff',
-            fontSize: 18,
-            letterSpacing: 0.5,
-            background: BRAND_BLUE,
-          }}
-        >
-          {collapsed ? 'V2' : 'V2Board'}
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          <Menu
-            mode="inline"
-            selectedKeys={[location.pathname]}
-            items={items}
-            onClick={(e) => navigate(e.key)}
-            style={{ borderInlineEnd: 'none' }}
-          />
-        </div>
-        {!collapsed && (
-          <div style={{ padding: '12px 24px', color: token.colorTextQuaternary, fontSize: 12 }}>
-            V2Board{version ? ` v${version}` : ''}
+    <div id="page-container" className={pageClassName}>
+      <div
+        onClick={() => setShowNav((value) => !value)}
+        className="v2board-nav-mask"
+        style={{ display: showNav ? 'block' : 'none' }}
+      />
+
+      <nav id="sidebar">
+        <div className="smini-hidden bg-header-dark">
+          <div className="content-header justify-content-lg-center bg-black-10">
+            <a className="link-fx font-size-lg text-white" href="/">
+              <span className="text-white-75">{getSiteTitle()}</span>
+            </a>
+            <div className="d-lg-none">
+              <a
+                className="text-white ml-2"
+                data-toggle="layout"
+                data-action="sidebar_close"
+                href="javascript:void(0);"
+                onClick={() => setShowNav((value) => !value)}
+              >
+                <i className="fa fa-times-circle" />
+              </a>
+            </div>
           </div>
-        )}
-      </Sider>
-      <Layout>
-        <Header
-          style={{
-            background: BRAND_BLUE,
-            padding: '0 24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 16,
-            height: 64,
-            lineHeight: '64px',
-          }}
-        >
-          <span style={{ color: '#fff', fontSize: 16, fontWeight: 500 }}>{pageTitle}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <Dropdown
-              menu={{
-                items: SUPPORTED_LOCALES.map((l) => ({
-                  key: l.code,
-                  label: l.label,
-                })),
-                selectedKeys: [i18n.resolvedLanguage ?? 'en-US'],
-                onClick: (e) => i18n.changeLanguage(e.key as SupportedLocale),
-              }}
-              trigger={['click']}
+        </div>
+
+        <div className="content-side content-side-full">
+          <ul className="nav-main">
+            {navItems.map((item, index) =>
+              item.type === 'heading' ? (
+                <li key={Math.random()} className="nav-main-heading">
+                  {item.title}
+                </li>
+              ) : (
+                <li key={Math.random()} className="nav-main-item">
+                  <a
+                    className={`nav-main-link ${location.pathname === item.href && 'active'}`}
+                    onClick={() => {
+                      if (item.href) navigate(item.href);
+                      closeMobileNav();
+                    }}
+                  >
+                    {item.icon ? <i className={`nav-main-link-icon ${item.icon}`} /> : null}
+                    <span className="nav-main-link-name">{item.title}</span>
+                  </a>
+                </li>
+              ),
+            )}
+          </ul>
+        </div>
+
+        <div className="v2board-copyright">{getSiteTitle()} v1.7.5</div>
+      </nav>
+
+      <header id="page-header">
+        <div className="content-header" style={{ maxWidth: 'unset' }}>
+          <div className="sidebar-toggle" style={{ display: 'none' }}>
+            <button
+              type="button"
+              className={theme.header === 'dark' ? 'btn btn-primary mr-1 d-lg-none' : 'btn mr-1 d-lg-none'}
+              onClick={() => setShowNav((value) => !value)}
             >
-              <Avatar
-                size="small"
-                icon={<TranslationOutlined />}
-                style={{ cursor: 'pointer', background: 'rgba(255,255,255,0.2)' }}
-              />
-            </Dropdown>
-            <Dropdown
-              menu={{
-                items: [
-                  {
-                    key: 'logout',
-                    icon: <LogoutOutlined />,
-                    label: t('common.logout'),
-                  },
-                ],
-                onClick: ({ key }) => {
-                  if (key === 'logout') {
-                    logout();
-                    navigate('/login', { replace: true });
-                  }
-                },
-              }}
-              trigger={['click']}
-            >
-              <Avatar
-                size="small"
-                icon={<UserOutlined />}
-                style={{ cursor: 'pointer', background: 'rgba(255,255,255,0.2)' }}
-              />
-            </Dropdown>
+              <i className="fa fa-fw fa-bars" />
+            </button>
           </div>
-        </Header>
-        <Content style={{ padding: 24, background: token.colorBgLayout }}>
+          <div className={theme.header === 'dark' ? 'v2board-container-title text-white' : 'v2board-container-title text-black'}>
+            {title}
+          </div>
+          <div>
+            <div className="dropdown d-inline-block">
+              <button
+                type="button"
+                className={theme.header === 'dark' ? 'btn btn-primary mr-1' : 'btn mr-1'}
+                onClick={toggleDarkMode}
+              >
+                <i className={darkMode ? 'far fa fa-moon' : 'far fa fa-sun'} />
+              </button>
+            </div>
+            <div className="dropdown d-inline-block">
+              <button
+                type="button"
+                className={theme.header === 'dark' ? 'btn btn-primary' : 'btn'}
+                id="page-header-user-dropdown"
+                data-toggle="dropdown"
+                aria-haspopup="true"
+                aria-expanded="false"
+                onClick={() => setShowAvatarMenu((value) => !value)}
+              >
+                <i className="far fa fa-user-circle" />
+                <span className="d-none d-lg-inline ml-1">{email}</span>
+                <i className="fa fa-fw fa-angle-down ml-1" />
+              </button>
+              <div
+                className={`dropdown-menu dropdown-menu-right dropdown-menu-lg p-0 ${showAvatarMenu && 'show'}`}
+                aria-labelledby="page-header-user-dropdown"
+              >
+                <div className="p-2">
+                  <a
+                    className="dropdown-item d-flex justify-content-between align-items-center"
+                    href="javascript:void(0);"
+                    onClick={handleLogout}
+                  >
+                    登出
+                    <i className="fa fa-fw fa-sign-out-alt text-danger ml-1" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main id="main-container">
+        <div className="p-0 p-lg-4">
           <Outlet />
-        </Content>
-      </Layout>
-    </Layout>
+        </div>
+      </main>
+    </div>
   );
 }

@@ -1,15 +1,21 @@
+import type { CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
+
 interface LegacyLoadingIconProps {
   className?: string;
+  style?: CSSProperties;
 }
 
-export function LegacyLoadingIcon({ className }: LegacyLoadingIconProps) {
-  const classes = ['anticon', 'anticon-loading', 'anticon-spin', className]
-    .filter(Boolean)
-    .join(' ');
+export function LegacyLoadingIcon({ className, style }: LegacyLoadingIconProps) {
+  const { i18n } = useTranslation();
+  // antd v3 ships an Icon locale word only for zh-CN ("图标"); all else → "icon".
+  const word = i18n.language === 'zh-CN' ? '图标' : 'icon';
+  const classes = ['anticon', 'anticon-loading', className].filter(Boolean).join(' ');
 
   return (
-    <i aria-label="icon: loading" className={classes}>
+    <i aria-label={`${word}: loading`} className={classes} style={style}>
       <svg
+        className="anticon-spin"
         viewBox="0 0 1024 1024"
         focusable="false"
         data-icon="loading"

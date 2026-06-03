@@ -21,6 +21,8 @@ export interface AdminPayment extends PaymentMethod {
 export interface PaymentFormField {
   label: string;
   description?: string;
+  type?: string;
+  value?: string;
 }
 
 export type PaymentFormDefinition = Record<string, PaymentFormField>;

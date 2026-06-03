@@ -1,40 +1,66 @@
-// Inline SVG reproductions of the antd icons the original renders for the
-// invite actions. The new app maps most anticons to Font Awesome glyphs, but
-// antd's `transaction` and `pay-circle` have no close FA equivalent, so they
-// are reproduced as the exact antd SVG (matching the original DOM verbatim).
+import { useTranslation } from 'react-i18next';
+import type { ComponentPropsWithoutRef } from 'react';
+import { cn } from '@/lib/cn';
+import { ANT_ICONS, type AntIconName } from '@/lib/ant-icons';
 
-export function TransactionIcon() {
+// The original renders every anticon as an inline antd SVG (its umi.css bundles
+// Font Awesome only for the author's explicit `fa-*` chrome icons). These
+// components reproduce antd v3's Icon DOM verbatim from the shared path data in
+// `lib/ant-icons`, so every status/action icon matches the original pixel-for-pixel
+// instead of a Font Awesome glyph.
+
+// antd v3 ships an Icon locale word only for zh-CN ("图标"); every other locale
+// (incl. zh-TW/ja-JP) falls back to en_US's "icon".
+function useIconWord() {
+  const { i18n } = useTranslation();
+  return i18n.language === 'zh-CN' ? '图标' : 'icon';
+}
+
+// antd v3's Icon spreads every passed prop onto the <i> and forwards events, so a
+// parent (e.g. antd Tooltip cloning the icon to attach hover handlers) reaches the DOM
+// node directly; mirror that by spreading the rest of the <i> props.
+type AntIconProps = ComponentPropsWithoutRef<'i'>;
+
+// <i aria-label="<word>: <name>" class="anticon anticon-<name>"><svg ...><path/>…
+function AntIcon({ name, className, ...rest }: AntIconProps & { name: AntIconName }) {
+  const word = useIconWord();
+  const { viewBox, paths } = ANT_ICONS[name];
   return (
-    <i aria-label="图标: transaction" className="anticon anticon-transaction">
+    <i
+      {...rest}
+      aria-label={`${word}: ${name}`}
+      className={cn(`anticon anticon-${name}`, className)}
+    >
       <svg
-        viewBox="64 64 896 896"
+        viewBox={viewBox}
         focusable="false"
-        data-icon="transaction"
+        data-icon={name}
         width="1em"
         height="1em"
         fill="currentColor"
         aria-hidden="true"
       >
-        <path d="M668.6 320c0-4.4-3.6-8-8-8h-54.5c-3 0-5.8 1.7-7.1 4.4l-84.7 168.8H511l-84.7-168.8a8 8 0 0 0-7.1-4.4h-55.7c-1.3 0-2.6.3-3.8 1-3.9 2.1-5.3 7-3.2 10.8l103.9 191.6h-57c-4.4 0-8 3.6-8 8v27.1c0 4.4 3.6 8 8 8h76v39h-76c-4.4 0-8 3.6-8 8v27.1c0 4.4 3.6 8 8 8h76V704c0 4.4 3.6 8 8 8h49.9c4.4 0 8-3.6 8-8v-63.5h76.3c4.4 0 8-3.6 8-8v-27.1c0-4.4-3.6-8-8-8h-76.3v-39h76.3c4.4 0 8-3.6 8-8v-27.1c0-4.4-3.6-8-8-8H564l103.7-191.6c.5-1.1.9-2.4.9-3.7zM157.9 504.2a352.7 352.7 0 0 1 103.5-242.4c32.5-32.5 70.3-58.1 112.4-75.9 43.6-18.4 89.9-27.8 137.6-27.8 47.8 0 94.1 9.3 137.6 27.8 42.1 17.8 79.9 43.4 112.4 75.9 10 10 19.3 20.5 27.9 31.4l-50 39.1a8 8 0 0 0 3 14.1l156.8 38.3c5 1.2 9.9-2.6 9.9-7.7l.8-161.5c0-6.7-7.7-10.5-12.9-6.3l-47.8 37.4C770.7 146.3 648.6 82 511.5 82 277 82 86.3 270.1 82 503.8a8 8 0 0 0 8 8.2h60c4.3 0 7.8-3.5 7.9-7.8zM934 512h-60c-4.3 0-7.9 3.5-8 7.8a352.7 352.7 0 0 1-103.5 242.4 352.57 352.57 0 0 1-112.4 75.9c-43.6 18.4-89.9 27.8-137.6 27.8s-94.1-9.3-137.6-27.8a352.57 352.57 0 0 1-112.4-75.9c-10-10-19.3-20.5-27.9-31.4l49.9-39.1a8 8 0 0 0-3-14.1l-156.8-38.3c-5-1.2-9.9 2.6-9.9 7.7l-.8 161.7c0 6.7 7.7 10.5 12.9 6.3l47.8-37.4C253.3 877.7 375.4 942 512.5 942 747 942 937.7 753.9 942 520.2a8 8 0 0 0-8-8.2z" />
+        {paths.map((d) => (
+          <path key={d} d={d} />
+        ))}
       </svg>
     </i>
   );
 }
 
-export function PayCircleIcon() {
-  return (
-    <i aria-label="图标: pay-circle" className="anticon anticon-pay-circle">
-      <svg
-        viewBox="64 64 896 896"
-        focusable="false"
-        data-icon="pay-circle"
-        width="1em"
-        height="1em"
-        fill="currentColor"
-        aria-hidden="true"
-      >
-        <path d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372zm159.6-585h-59.5c-3 0-5.8 1.7-7.1 4.4l-90.6 180H511l-90.6-180a8 8 0 0 0-7.1-4.4h-60.7c-1.3 0-2.6.3-3.8 1-3.9 2.1-5.3 7-3.2 10.9L457 515.7h-61.4c-4.4 0-8 3.6-8 8v29.9c0 4.4 3.6 8 8 8h81.7V603h-81.7c-4.4 0-8 3.6-8 8v29.9c0 4.4 3.6 8 8 8h81.7V717c0 4.4 3.6 8 8 8h54.3c4.4 0 8-3.6 8-8v-68.1h82c4.4 0 8-3.6 8-8V611c0-4.4-3.6-8-8-8h-82v-41.5h82c4.4 0 8-3.6 8-8v-29.9c0-4.4-3.6-8-8-8h-62l111.1-204.8c.6-1.2 1-2.5 1-3.8-.1-4.4-3.7-8-8.1-8z" />
-      </svg>
-    </i>
-  );
-}
+export const TransactionIcon = (props: AntIconProps) => <AntIcon name="transaction" {...props} />;
+export const PayCircleIcon = (props: AntIconProps) => <AntIcon name="pay-circle" {...props} />;
+export const QuestionCircleIcon = (props: AntIconProps) => <AntIcon name="question-circle" {...props} />;
+export const CheckCircleIcon = (props: AntIconProps) => <AntIcon name="check-circle" {...props} />;
+export const InfoCircleIcon = (props: AntIconProps) => <AntIcon name="info-circle" {...props} />;
+export const ExclamationCircleIcon = (props: AntIconProps) => (
+  <AntIcon name="exclamation-circle" {...props} />
+);
+export const WarningIcon = (props: AntIconProps) => <AntIcon name="warning" {...props} />;
+export const SearchIcon = (props: AntIconProps) => <AntIcon name="search" {...props} />;
+export const CloseIcon = (props: AntIconProps) => <AntIcon name="close" {...props} />;
+export const LeftIcon = (props: AntIconProps) => <AntIcon name="left" {...props} />;
+export const RightIcon = (props: AntIconProps) => <AntIcon name="right" {...props} />;
+export const DoubleLeftIcon = (props: AntIconProps) => <AntIcon name="double-left" {...props} />;
+export const DoubleRightIcon = (props: AntIconProps) => <AntIcon name="double-right" {...props} />;
+export const DownIcon = (props: AntIconProps) => <AntIcon name="down" {...props} />;

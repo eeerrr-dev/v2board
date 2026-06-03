@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +17,7 @@ import {
   useUserInfo,
 } from '@/lib/queries';
 import { AntBtn } from '@/components/ant-btn';
+import { QuestionCircleIcon } from '@/components/ant-icon';
 import { legacyConfirm } from '@/components/legacy-confirm';
 import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
 import { legacyCopyText } from '@/lib/legacy-settings';
@@ -27,7 +28,11 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const info = useUserInfo({ refetchOnMount: 'always' });
   const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
-  const subscribeQuery = useSubscribe();
+  // The original /profile never dispatches user/getSubscribe on mount; it only reads
+  // whatever subscribe data already sits in the dva store (populated by dashboard/node)
+  // and re-fetches solely after unbinding Telegram. Mirror that: read the cached query
+  // without an eager mount fetch, while subscribeQuery.refetch() in onUnbindTelegram works.
+  const subscribeQuery = useSubscribe({ enabled: false });
   const subscribe = subscribeQuery.data;
   const updateProfile = useUpdateProfileMutation();
   const changePassword = useChangePasswordMutation();
@@ -35,101 +40,131 @@ export default function ProfilePage() {
   const resetSub = useResetSubscribeMutation();
   const unbindTelegram = useUnbindTelegramMutation();
 
-  const [giftCode, setGiftCode] = useState('');
-  const [oldPwd, setOldPwd] = useState('');
-  const [newPwd, setNewPwd] = useState('');
-  const [confirmPwd, setConfirmPwd] = useState('');
+  const giftCardRef = useRef<HTMLInputElement>(null);
+  const oldPasswordRef = useRef<HTMLInputElement>(null);
+  const newPasswordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
   const [depositOpen, setDepositOpen] = useState(false);
-  const [depositAmount, setDepositAmount] = useState('');
   const [telegramOpen, setTelegramOpen] = useState(false);
-  const [updatingPref, setUpdatingPref] = useState<
-    'auto_renewal' | 'remind_expire' | 'remind_traffic' | null
-  >(null);
+  const [updatingPref, setUpdatingPref] = useState({
+    auto_renewal: false,
+    remind_expire: false,
+    remind_traffic: false,
+  });
   const botInfo = useTelegramBotInfo(telegramOpen);
+  const depositBodyRef = useRef<HTMLDivElement>(null);
+  const depositInputRef = useRef<HTMLInputElement>(null);
+  const depositAmountRef = useRef<number | undefined>(undefined);
+
+  // antd Modal.confirm defaults autoFocusButton:"ok" — focus the OK button when the deposit
+  // modal opens (this parent effect runs after DialogContent focuses the dialog wrap).
+  useEffect(() => {
+    if (depositOpen) {
+      depositBodyRef.current?.querySelector<HTMLButtonElement>('.ant-btn-primary')?.focus();
+    }
+  }, [depositOpen]);
 
   const data = info.data;
   const currency = comm?.currency;
+  const depositPlaceholder = t(`请输入充值金额${currency}`);
 
   const togglePref = async (
     key: 'auto_renewal' | 'remind_expire' | 'remind_traffic',
     value: 0 | 1,
   ) => {
-    setUpdatingPref(key);
+    let succeeded = false;
+    setUpdatingPref((current) => ({ ...current, [key]: true }));
     try {
       await updateProfile.mutateAsync({ [key]: value } as Parameters<
         typeof updateProfile.mutateAsync
       >[0]);
+      succeeded = true;
     } catch {
     } finally {
-      setUpdatingPref(null);
+      setUpdatingPref((current) => ({ ...current, [key]: false }));
     }
+    if (succeeded) void info.refetch();
   };
 
   const onChangePwd = async () => {
-    if (newPwd !== confirmPwd) {
+    const oldPassword = oldPasswordRef.current!.value;
+    const newPassword = newPasswordRef.current!.value;
+    const confirmPassword = confirmPasswordRef.current!.value;
+    if (newPassword !== confirmPassword) {
       toast.error(t('profile.password_mismatch'));
       return;
     }
     try {
-      await changePassword.mutateAsync({ oldPassword: oldPwd, newPassword: newPwd });
+      await changePassword.mutateAsync({ oldPassword, newPassword });
       toast.success('修改成功，请重新登陆');
       navigate('/login');
     } catch {}
   };
 
   const onRedeem = async () => {
-    if (giftCode.length === 0) {
+    const giftcard = giftCardRef.current!.value;
+    if (giftcard.length === 0) {
       toast.error(t('profile.redeem_placeholder'));
       return;
     }
     try {
-      const result = await redeem.mutateAsync(giftCode);
+      const result = await redeem.mutateAsync(giftcard);
+      void info.refetch();
       toast.success(`兑换成功: ${redeemGiftcardText(result.type, result.value)}`);
     } catch {}
   };
 
-  const onReset = async () => {
-    const ok = await legacyConfirm({
+  const onReset = () => {
+    void legacyConfirm({
       title: t('profile.reset_subscribe_confirm'),
       content: t('profile.reset_subscribe_tip'),
       okText: t('profile.confirm'),
       cancelText: t('common.cancel'),
+      onOk: () => {
+        void resetSub
+          .mutateAsync()
+          .then(() => {
+            toast.success(t('profile.reset_success'));
+          })
+          .catch(() => {});
+      },
     });
-    if (!ok) return;
-    try {
-      await resetSub.mutateAsync();
-      toast.success(t('profile.reset_success'));
-      void info.refetch();
-    } catch {}
   };
 
-  const onUnbindTelegram = async () => {
-    const ok = await legacyConfirm({
+  const onUnbindTelegram = () => {
+    void legacyConfirm({
       title: t('profile.telegram_unbind_confirm'),
       content: t('profile.telegram_unbind_tip'),
       okText: t('profile.confirm'),
       cancelText: t('common.cancel'),
+      onOk: () => {
+        void unbindTelegram
+          .mutateAsync()
+          .then(() => {
+            toast.success(t('profile.reset_success'));
+            void info.refetch();
+            void subscribeQuery.refetch();
+          })
+          .catch(() => {});
+      },
     });
-    if (!ok) return;
-    try {
-      await unbindTelegram.mutateAsync();
-      toast.success(t('profile.reset_success'));
-      void info.refetch();
-      void subscribeQuery.refetch();
-    } catch {}
   };
 
-  const onDeposit = async () => {
-    try {
-      const tradeNo = await user.saveOrder(apiClient, {
+  const onDeposit = () => {
+    // The original stores the last typed amount on the page instance and never
+    // resets that field; Modal.confirm destroys only the input DOM. Keep that
+    // small quirk: a reopened empty modal still submits the previous typed value.
+    const depositAmountValue = depositAmountRef.current;
+    void user
+      .saveOrder(apiClient, {
         plan_id: 0,
         period: 'deposit',
-        deposit_amount: depositAmount === '' ? undefined : Number(depositAmount) * 100,
-      });
-      setDepositOpen(false);
-      setDepositAmount('');
-      navigate(`/order/${tradeNo}`);
-    } catch {}
+        deposit_amount: depositAmountValue,
+      })
+      .then((tradeNo) => navigate(`/order/${tradeNo}`))
+      .catch(() => {});
+    setDepositOpen(false);
+    if (depositInputRef.current) depositInputRef.current.value = '';
   };
 
   const copyBindCommand = () => {
@@ -152,13 +187,20 @@ export default function ProfilePage() {
                 <span className="text-muted" style={{ cursor: 'pointer' }}>
                   {t('profile.auto_renewal')}{' '}
                   <LegacySwitch
-                    loading={updatingPref === 'auto_renewal'}
-                    checked={data?.auto_renewal === 1}
+                    loading={updatingPref.auto_renewal}
+                    checked={data?.auto_renewal}
                     onChange={(checked) => void togglePref('auto_renewal', checked ? 1 : 0)}
                   />
                 </span>
                 <div className="pt-3">
-                  <AntBtn type="button" className="ant-btn ant-btn-primary" onClick={() => setDepositOpen(true)}>
+                  <AntBtn
+                    type="button"
+                    className="ant-btn ant-btn-primary"
+                    onClick={() => {
+                      if (depositInputRef.current) depositInputRef.current.value = '';
+                      setDepositOpen(true);
+                    }}
+                  >
                     {t('profile.recharge')}
                   </AntBtn>
                 </div>
@@ -168,91 +210,84 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <LegacyBlock title={t('profile.redeem_giftcard')}>
-        <div>
-          <div className="row push">
-            <div className="col-lg-8 col-xl-5">
-              <div className="form-group">
-                <input
-                  className="form-control"
-                  placeholder={t('profile.redeem_placeholder')}
-                  autoComplete="one-time-code"
-                  value={giftCode}
-                  onChange={(event) => setGiftCode(event.target.value)}
-                />
-              </div>
-              <AntBtn
-                type="button"
-                className="ant-btn ant-btn-primary"
-                disabled={redeem.isPending}
-                onClick={() => void onRedeem()}
-              >
-                {redeem.isPending ? <LegacyLoadingIcon /> : t('profile.redeem_submit')}
-              </AntBtn>
+      <LegacyBlock title={t('profile.redeem_giftcard')} withOptions={false}>
+        <div className="row push">
+          <div className="col-lg-8 col-xl-5">
+            <div className="form-group">
+              <input
+                className="form-control"
+                placeholder={t('profile.redeem_placeholder')}
+                autoComplete="one-time-code"
+                ref={giftCardRef}
+              />
             </div>
+            <AntBtn
+              type="button"
+              className={`ant-btn ant-btn-primary${redeem.isPending ? ' ant-btn-loading' : ''}`}
+              onClick={() => {
+                if (!redeem.isPending) void onRedeem();
+              }}
+            >
+              {redeem.isPending && <LegacyLoadingIcon />}
+              {t('profile.redeem_submit')}
+            </AntBtn>
           </div>
         </div>
       </LegacyBlock>
 
       <LegacyBlock title={t('profile.change_password')}>
-        <div>
-          <div className="row push">
-            <div className="col-lg-8 col-xl-5">
-              <div className="form-group">
-                <label htmlFor="profile-old-password">{t('profile.old_password')}</label>
-                <input
-                  id="profile-old-password"
-                  type="password"
-                  className="form-control"
-                  placeholder={t('profile.old_password_placeholder')}
-                  value={oldPwd}
-                  onChange={(event) => setOldPwd(event.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="profile-new-password">{t('profile.new_password')}</label>
-                <input
-                  id="profile-new-password"
-                  type="password"
-                  className="form-control"
-                  placeholder={t('profile.new_password_placeholder')}
-                  value={newPwd}
-                  onChange={(event) => setNewPwd(event.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="profile-confirm-password">{t('profile.new_password')}</label>
-                <input
-                  id="profile-confirm-password"
-                  type="password"
-                  className="form-control"
-                  placeholder={t('profile.new_password_placeholder')}
-                  value={confirmPwd}
-                  onChange={(event) => setConfirmPwd(event.target.value)}
-                />
-              </div>
-              <AntBtn
-                type="button"
-                className="ant-btn ant-btn-primary"
-                disabled={changePassword.isPending}
-                onClick={() => void onChangePwd()}
-              >
-                {changePassword.isPending ? <LegacyLoadingIcon /> : t('profile.save')}
-              </AntBtn>
+        <div className="row push">
+          <div className="col-lg-8 col-xl-5">
+            <div className="form-group">
+              <label>{t('profile.old_password')}</label>
+              <input
+                type="password"
+                className="form-control"
+                placeholder={t('profile.old_password_placeholder')}
+                ref={oldPasswordRef}
+              />
             </div>
+            <div className="form-group">
+              <label>{t('profile.new_password')}</label>
+              <input
+                type="password"
+                className="form-control"
+                placeholder={t('profile.new_password_placeholder')}
+                ref={newPasswordRef}
+              />
+            </div>
+            <div className="form-group">
+              <label>{t('profile.new_password')}</label>
+              <input
+                type="password"
+                className="form-control"
+                placeholder={t('profile.new_password_placeholder')}
+                ref={confirmPasswordRef}
+              />
+            </div>
+            <AntBtn
+              type="button"
+              className={`ant-btn ant-btn-primary${changePassword.isPending ? ' ant-btn-loading' : ''}`}
+              onClick={() => {
+                if (!changePassword.isPending) void onChangePwd();
+              }}
+            >
+              {changePassword.isPending && <LegacyLoadingIcon />}
+              {t('profile.save')}
+            </AntBtn>
           </div>
         </div>
       </LegacyBlock>
 
-      <LegacyBlock title={t('profile.notifications')}>
+      <LegacyBlock title={t('profile.notifications')} withOptions={false}>
         <div className="row">
           <div className="col-lg-8 col-xl-5">
             <div className="form-group">
               <label>{t('profile.remind_expire')}</label>
               <div>
                 <LegacySwitch
-                  loading={updatingPref === 'remind_expire'}
-                  checked={data?.remind_expire === 1}
+                  loading={updatingPref.remind_expire}
+                  checked={data?.remind_expire}
                   onChange={(checked) => void togglePref('remind_expire', checked ? 1 : 0)}
                 />
               </div>
@@ -261,8 +296,8 @@ export default function ProfilePage() {
               <label>{t('profile.remind_traffic')}</label>
               <div>
                 <LegacySwitch
-                  loading={updatingPref === 'remind_traffic'}
-                  checked={data?.remind_traffic === 1}
+                  loading={updatingPref.remind_traffic}
+                  checked={data?.remind_traffic}
                   onChange={(checked) => void togglePref('remind_traffic', checked ? 1 : 0)}
                 />
               </div>
@@ -303,7 +338,7 @@ export default function ProfilePage() {
                     </AntBtn>
                   </div>
                 </div>
-                <div className="block-options">Telegram ID: {String(data.telegram_id)}</div>
+                <div className="block-options">{t(`Telegram ID: ${String(data.telegram_id)}`)}</div>
               </div>
             )
           ) : null}
@@ -325,7 +360,8 @@ export default function ProfilePage() {
             </div>
           ) : null}
 
-          <div className="block block-rounded">
+          {/* Original class string has a trailing space: "block block-rounded " (umi.js). */}
+          <div className="block block-rounded ">
             <div className="block-header block-header-default">
               <h3 className="block-title">{t('profile.reset_subscribe')}</h3>
               <div className="block-options" />
@@ -350,88 +386,111 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
+      <Dialog
+        open={depositOpen}
+        onOpenChange={(open) => {
+          setDepositOpen(open);
+          if (!open && depositInputRef.current) depositInputRef.current.value = '';
+        }}
+      >
         <DialogContent
-          className="v2board-ant-confirm-modal ant-modal-confirm ant-modal-confirm-confirm"
-          showClose={false}
+          closable={false}
+          footer={null}
+          width={416}
+          maskClosable={false}
+          className="ant-modal-confirm ant-modal-confirm-confirm"
         >
-          <div className="ant-modal-body">
-            <div className="ant-modal-confirm-body-wrapper">
-              <div className="ant-modal-confirm-body">
-                <i className="anticon anticon-exclamation-circle" />
-                <span className="ant-modal-confirm-title">
-                  <input
-                    className="form-control"
-                    autoFocus
-                    autoComplete="one-time-code"
-                    placeholder={t('profile.deposit_placeholder', { currency })}
-                    value={depositAmount}
-                    onChange={(event) => setDepositAmount(event.target.value)}
-                  />
-                </span>
-              </div>
-              <div className="ant-modal-confirm-btns">
-                <AntBtn type="button" className="ant-btn" onClick={() => setDepositOpen(false)}>
-                  {t('common.cancel')}
-                </AntBtn>
-                <AntBtn type="button" className="ant-btn ant-btn-primary" onClick={() => void onDeposit()}>
-                  {t('profile.confirm')}
-                </AntBtn>
-              </div>
+          <div className="ant-modal-confirm-body-wrapper" ref={depositBodyRef}>
+            <div className="ant-modal-confirm-body">
+              <QuestionCircleIcon />
+              <span className="ant-modal-confirm-title">
+                <input
+                  className="form-control"
+                  autoComplete="one-time-code"
+                  placeholder={depositPlaceholder}
+                  ref={depositInputRef}
+                  onChange={(event) => {
+                    depositAmountRef.current = Number(event.target.value) * 100;
+                  }}
+                />
+              </span>
+              {/* antd Modal.confirm always renders an (empty) content div after the
+                  title; the deposit modal passes no content, so it stays empty. */}
+              <div className="ant-modal-confirm-content" />
+            </div>
+            <div className="ant-modal-confirm-btns">
+              <AntBtn
+                type="button"
+                className="ant-btn"
+                onClick={() => {
+                  setDepositOpen(false);
+                  if (depositInputRef.current) depositInputRef.current.value = '';
+                }}
+              >
+                {t('common.cancel')}
+              </AntBtn>
+              <AntBtn type="button" className="ant-btn ant-btn-primary" onClick={() => onDeposit()}>
+                {t('profile.confirm')}
+              </AntBtn>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={telegramOpen} onOpenChange={setTelegramOpen}>
-        <DialogContent className="v2board-ant-modal">
-          <div className="ant-modal-header">
-            <div className="ant-modal-title">{t('profile.telegram_bind')}</div>
-          </div>
-          <div className="ant-modal-body">
-            {botInfo.data?.username ? (
-              <>
-                <h2 className="content-heading pt-1">
-                  <i className="fa fa-arrow-right text-info mr-1" /> {t('profile.telegram_step1')}
-                </h2>
-                <div>
-                  {t('profile.telegram_search')}
-                  <a href={`https://t.me/${botInfo.data.username}`}>@{botInfo.data.username}</a>
-                </div>
-                <h2 className="content-heading">
-                  <i className="fa fa-arrow-right text-info mr-1" /> {t('profile.telegram_step2')}
-                </h2>
-                <div>
-                  {t('profile.telegram_send')}
-                  <br />
-                  <code onClick={() => copyBindCommand()}>
-                    /bind {subscribe?.subscribe_url ?? ''}
-                  </code>
-                </div>
-              </>
-            ) : (
-              <LegacyLoadingIcon />
-            )}
-          </div>
-          <div className="ant-modal-footer">
-            <AntBtn type="button" className="ant-btn ant-btn-primary" onClick={() => setTelegramOpen(false)}>
-              {t('profile.i_know')}
-            </AntBtn>
-          </div>
+        <DialogContent
+          title={t('profile.telegram_bind')}
+          okText={t('profile.i_know')}
+          cancelText={t('common.cancel')}
+          cancelButtonProps={{ hidden: true }}
+          onOk={() => setTelegramOpen(false)}
+        >
+          {botInfo.data?.username ? (
+            <>
+              <h2 className="content-heading pt-1">
+                <i className="fa fa-arrow-right text-info mr-1" /> {t('profile.telegram_step1')}
+              </h2>
+              <div>
+                {t('profile.telegram_search')}
+                <a href={`https://t.me/${botInfo.data.username}`}>@{botInfo.data.username}</a>
+              </div>
+              <h2 className="content-heading">
+                <i className="fa fa-arrow-right text-info mr-1" /> {t('profile.telegram_step2')}
+              </h2>
+              <div>
+                {t('profile.telegram_send')}
+                <br />
+                <code onClick={() => copyBindCommand()}>
+                  /bind {subscribe?.subscribe_url}
+                </code>
+              </div>
+            </>
+          ) : (
+            <LegacyLoadingIcon style={{ fontSize: 16 }} />
+          )}
         </DialogContent>
       </Dialog>
     </>
   );
 }
 
-function LegacyBlock({ title, children }: { title: ReactNode; children: ReactNode }) {
+function LegacyBlock({
+  title,
+  withOptions = true,
+  children,
+}: {
+  title: ReactNode;
+  withOptions?: boolean;
+  children: ReactNode;
+}) {
   return (
     <div className="row mb-3 mb-md-0">
       <div className="col-md-12">
-        <div className="block block-rounded">
+        {/* Original class string has a trailing space: "block block-rounded " (umi.js). */}
+        <div className="block block-rounded ">
           <div className="block-header block-header-default">
             <h3 className="block-title">{title}</h3>
-            <div className="block-options" />
+            {withOptions ? <div className="block-options" /> : null}
           </div>
           <div className="block-content">{children}</div>
         </div>
@@ -440,29 +499,64 @@ function LegacyBlock({ title, children }: { title: ReactNode; children: ReactNod
   );
 }
 
+// Mirrors antd's Wave with insertExtraNode:true (used by Switch): on click it
+// appends an .ant-click-animating-node child and flags ant-click-animating, so
+// the CSS ripple plays via the extra node rather than the ::after pseudo. The
+// shadow colour stays on --antd-wave-shadow-color, which the loaded legacy theme
+// sets exactly like the original theme CSS.
+function triggerSwitchWave(node: HTMLElement) {
+  const existing = node.querySelector('.ant-click-animating-node');
+  if (existing) existing.remove();
+  const wave = document.createElement('div');
+  wave.className = 'ant-click-animating-node';
+  node.setAttribute('ant-click-animating', 'true');
+  node.appendChild(wave);
+  const onEnd = (event: AnimationEvent) => {
+    if (event.animationName !== 'fadeEffect') return;
+    node.setAttribute('ant-click-animating', 'false');
+    if (node.contains(wave)) node.removeChild(wave);
+    node.removeEventListener('animationend', onEnd);
+  };
+  node.addEventListener('animationend', onEnd);
+}
+
 function LegacySwitch({
   checked,
   loading,
   onChange,
 }: {
-  checked: boolean;
+  checked?: unknown;
   loading?: boolean;
   onChange: (checked: boolean) => void;
 }) {
+  const className = [
+    loading && 'ant-switch-loading',
+    'ant-switch',
+    checked && 'ant-switch-checked',
+    loading && 'ant-switch-disabled',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <button
       type="button"
-      className={`ant-switch ${checked ? 'ant-switch-checked' : ''} ${loading ? 'ant-switch-loading' : ''}`}
-      aria-checked={checked}
+      className={className}
+      aria-checked={checked as boolean}
       role="switch"
       disabled={loading}
-      onClick={() => onChange(!checked)}
+      onKeyDown={(event) => {
+        // rc-switch handleKeyDown: ArrowLeft (37) → off, ArrowRight (39) → on.
+        if (event.keyCode === 37) onChange(false);
+        else if (event.keyCode === 39) onChange(true);
+      }}
+      onMouseUp={(event) => event.currentTarget.blur()}
+      onClick={(event) => {
+        triggerSwitchWave(event.currentTarget);
+        onChange(!checked);
+      }}
     >
-      {loading ? (
-        <span className="ant-switch-loading-icon">
-          <LegacyLoadingIcon />
-        </span>
-      ) : null}
+      {loading ? <LegacyLoadingIcon className="ant-switch-loading-icon" /> : null}
       <span className="ant-switch-inner" />
     </button>
   );
@@ -486,5 +580,5 @@ function redeemGiftcardText(type: number, value: number) {
 }
 
 function formatCentsPlain(cents: number) {
-  return (parseInt(String(cents), 10) / 100).toFixed(2);
+  return (parseInt(String(cents)) / 100).toFixed(2);
 }

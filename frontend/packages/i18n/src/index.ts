@@ -6,7 +6,14 @@ import type { Translations } from './locales/zh-CN';
 import zhTW from './locales/zh-TW';
 import enUS from './locales/en-US';
 import jaJP from './locales/ja-JP';
+import viVN from './locales/vi-VN';
+import koKR from './locales/ko-KR';
 import faIR from './locales/fa-IR';
+import {
+  createLegacySourceReverseMap,
+  translateLegacyDictionary,
+  type LegacyDictionary,
+} from './locales/legacy-fallback';
 
 export type SupportedLocale =
   | 'zh-CN'
@@ -19,11 +26,11 @@ export type SupportedLocale =
 
 export const SUPPORTED_LOCALES: { code: SupportedLocale; label: string }[] = [
   { code: 'zh-CN', label: '简体中文' },
+  { code: 'zh-TW', label: '繁體中文' },
   { code: 'en-US', label: 'English' },
   { code: 'ja-JP', label: '日本語' },
   { code: 'vi-VN', label: 'Tiếng Việt' },
   { code: 'ko-KR', label: '한국어' },
-  { code: 'zh-TW', label: '繁體中文' },
   { code: 'fa-IR', label: 'فارسی' },
 ];
 
@@ -42,8 +49,14 @@ export interface CreateI18nOptions {
   defaultNS?: string;
 }
 
-type LegacyI18nMap = Record<string, Record<string, string>>;
-type TranslationTree = string | number | boolean | null | TranslationTree[] | { [key: string]: TranslationTree };
+type LegacyI18nMap = Record<string, LegacyDictionary>;
+
+declare global {
+  interface Window {
+    g_lang?: string;
+    g_langSeparator?: string;
+  }
+}
 
 function getLegacyDictionary(locale: SupportedLocale): Record<string, string> | undefined {
   if (typeof window === 'undefined') return undefined;
@@ -55,6 +68,11 @@ function isSupportedLocale(locale: string | null | undefined): locale is Support
   return SUPPORTED_LOCALES.some((item) => item.code === locale);
 }
 
+function isLegacyLocaleFormat(locale: string): boolean {
+  const separator = window.g_langSeparator ?? '-';
+  return new RegExp(`^([a-z]{2})${separator}?([A-Z]{2})?$`).test(locale);
+}
+
 function getCookie(name: string): string {
   if (typeof document === 'undefined') return '';
   return document.cookie.split('; ').reduce((value, item) => {
@@ -63,47 +81,74 @@ function getCookie(name: string): string {
   }, '');
 }
 
-function getLegacyInitialLocale(fallback: SupportedLocale): SupportedLocale {
-  if (typeof window === 'undefined') return fallback;
-  const stored =
-    getCookie('i18n') || window.localStorage.getItem('umi_locale');
-  if (isSupportedLocale(stored)) return stored;
-  const language = window.navigator.language.split('-')[0];
-  return (language ? LEGACY_NAVIGATOR_LOCALES[language] : undefined) ?? fallback;
+function getLegacyBootstrapLocale(): string | undefined {
+  const cookieLocale = getCookie('i18n');
+  if (cookieLocale) return cookieLocale;
+  return LEGACY_NAVIGATOR_LOCALES[window.navigator.language.split('-')[0] ?? ''];
 }
 
-function translateFromZh(tree: TranslationTree, dict: Record<string, string> | undefined): TranslationTree {
-  if (typeof tree === 'string') return dict?.[tree] ?? tree;
-  if (Array.isArray(tree)) return tree.map((item) => translateFromZh(item, dict));
-  if (tree && typeof tree === 'object') {
-    return Object.fromEntries(
-      Object.entries(tree).map(([key, value]) => [key, translateFromZh(value, dict)]),
-    );
+function getLegacyProviderLocale(fallback: SupportedLocale): SupportedLocale {
+  if (typeof window === 'undefined') return fallback;
+  const stored = window.localStorage.getItem('umi_locale');
+  if (isSupportedLocale(stored)) return stored;
+  return fallback;
+}
+
+export function legacyGetLocale(): string {
+  if (typeof window === 'undefined') return '';
+  const separator = window.g_langSeparator ?? '-';
+  const stored = window.localStorage.getItem('umi_locale') ?? '';
+  const navigatorLocale =
+    typeof window.navigator.language === 'string'
+      ? window.navigator.language.split('-').join(separator)
+      : '';
+  return stored || window.g_lang || navigatorLocale;
+}
+
+export function legacySetLocale(locale: string | undefined, reload = true): void {
+  if (typeof window === 'undefined') return;
+  if (locale !== undefined && !isLegacyLocaleFormat(locale)) {
+    throw new Error('setLocale lang format error');
   }
-  return tree;
+  if (legacyGetLocale() === locale) return;
+  window.g_lang = locale;
+  window.localStorage.setItem('umi_locale', locale || '');
+  if (reload) window.location.reload();
+  if (window.dispatchEvent) window.dispatchEvent(new Event('languagechange'));
 }
 
 function legacyLocale(locale: SupportedLocale, fallback: Translations): Translations {
   const dict = getLegacyDictionary(locale);
-  return dict ? (translateFromZh(zhCN, dict) as Translations) : fallback;
+  const sourceReverse = createLegacySourceReverseMap(getLegacyDictionary('zh-CN'));
+  return dict ? translateLegacyDictionary(zhCN, dict, sourceReverse) : fallback;
 }
 
 export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
   const instance = i18n.createInstance();
+  const fallback = options.fallback ?? 'zh-CN';
+  if (typeof window !== 'undefined') {
+    const bootstrapLocale = getLegacyBootstrapLocale();
+    if (bootstrapLocale) legacySetLocale(bootstrapLocale);
+  }
+  const lng = getLegacyProviderLocale(fallback);
+  if (typeof window !== 'undefined') {
+    window.g_lang = lng;
+    window.g_langSeparator = '-';
+  }
   instance
     .use(initReactI18next)
     .init({
-      lng: getLegacyInitialLocale(options.fallback ?? 'zh-CN'),
+      lng,
       resources: {
         'zh-CN': { translation: legacyLocale('zh-CN', zhCN) },
         'zh-TW': { translation: legacyLocale('zh-TW', zhTW) },
         'en-US': { translation: legacyLocale('en-US', enUS) },
         'ja-JP': { translation: legacyLocale('ja-JP', jaJP) },
-        'vi-VN': { translation: legacyLocale('vi-VN', zhCN) },
-        'ko-KR': { translation: legacyLocale('ko-KR', zhCN) },
+        'vi-VN': { translation: legacyLocale('vi-VN', viVN) },
+        'ko-KR': { translation: legacyLocale('ko-KR', koKR) },
         'fa-IR': { translation: legacyLocale('fa-IR', faIR) },
       },
-      fallbackLng: options.fallback ?? 'zh-CN',
+      fallbackLng: fallback,
       ns: ['translation'],
       defaultNS: options.defaultNS ?? 'translation',
       interpolation: { escapeValue: false },
@@ -111,4 +156,4 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
   return instance;
 }
 
-export { zhCN, zhTW, enUS, jaJP, faIR };
+export { zhCN, zhTW, enUS, jaJP, viVN, koKR, faIR };

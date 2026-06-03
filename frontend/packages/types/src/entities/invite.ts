@@ -31,5 +31,5 @@ export interface CommissionDetail {
 
 export interface CommissionDetailPage {
   data: CommissionDetail[];
-  total: number;
+  total?: number;
 }

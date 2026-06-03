@@ -1,15 +1,26 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { AntBtn } from '@/components/ant-btn';
+import { QuestionCircleIcon } from '@/components/ant-icon';
+import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
 
 interface LegacyConfirmOptions {
   title: ReactNode;
   content?: ReactNode;
+  onOk?: LegacyConfirmAction;
+  onCancel?: LegacyConfirmAction;
   okText?: ReactNode;
   cancelText?: ReactNode;
   maskClosable?: boolean;
   showCancel?: boolean;
+  okButtonProps?: {
+    disabled?: boolean;
+    loading?: boolean;
+  };
 }
+
+type LegacyConfirmAction = (...args: unknown[]) => unknown;
 
 interface LegacyConfirmRequest {
   id: number;
@@ -37,15 +48,39 @@ export function legacyConfirm(options: LegacyConfirmOptions): Promise<boolean> {
 }
 
 export function LegacyConfirmProvider() {
+  const { i18n } = useTranslation();
   const [request, setRequest] = useState<LegacyConfirmRequest | null>(() => currentRequest());
+  const [open, setOpen] = useState(() => Boolean(currentRequest()));
+  const [actionLoading, setActionLoading] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const triggerCancelRef = useRef<LegacyConfirmAction | null>(null);
 
   useEffect(() => {
-    const listener = () => setRequest(currentRequest());
+    const listener = () => {
+      const nextRequest = currentRequest();
+      if (nextRequest) {
+        setRequest(nextRequest);
+        setOpen(true);
+      } else {
+        setOpen(false);
+      }
+    };
     listeners.add(listener);
     return () => {
       listeners.delete(listener);
     };
   }, []);
+
+  // antd Modal.confirm defaults autoFocusButton:"ok" — focus the OK button each time a
+  // confirm opens. This parent effect runs after DialogContent has focused the dialog wrap,
+  // so the OK button keeps focus.
+  useEffect(() => {
+    if (request) bodyRef.current?.querySelector<HTMLButtonElement>('.ant-btn-primary')?.focus();
+  }, [request]);
+
+  useEffect(() => {
+    setActionLoading(false);
+  }, [request?.id]);
 
   const close = (value: boolean) => {
     if (!request) return;
@@ -54,49 +89,116 @@ export function LegacyConfirmProvider() {
     emit();
   };
 
+  const triggerCancel = () => {
+    if (!request || !open) return;
+    triggerCancelRef.current = request.options.onCancel ?? null;
+    close(false);
+  };
+
+  const afterClose = () => {
+    const action = triggerCancelRef.current;
+    triggerCancelRef.current = null;
+    action?.({ triggerCancel: true });
+    if (!currentRequest()) setRequest(null);
+  };
+
   const options = request?.options;
+  // antd's ActionButton closes immediately for falsy action results, waits for thenables,
+  // deliberately stays open for truthy non-thenables, and passes closeModal to arity > 0
+  // callbacks without auto-closing them.
+  const runAction = (action: LegacyConfirmAction | undefined, value: boolean) => {
+    if (!action) {
+      close(value);
+      return;
+    }
+    const closeModal = () => close(value);
+    const result = action.length ? action(closeModal) : action();
+    if (!action.length && !result) {
+      close(value);
+      return;
+    }
+    if (isThenable(result)) {
+      setActionLoading(true);
+      result.then(
+        () => close(value),
+        (error) => {
+          console.error(error);
+          setActionLoading(false);
+        },
+      );
+    }
+  };
+
+  const okButtonLoading = actionLoading || Boolean(options?.okButtonProps?.loading);
+  const okButtonClassName = `ant-btn ant-btn-primary${okButtonLoading ? ' ant-btn-loading' : ''}`;
+  const defaultText = getLegacyConfirmDefaultText(i18n.language);
 
   return (
     <Dialog
-      open={Boolean(request)}
+      open={open}
       onOpenChange={(open) => {
-        if (!open && options?.maskClosable) close(false);
+        if (!open) triggerCancel();
       }}
     >
       <DialogContent
-        showClose={false}
-        className="v2board-ant-confirm-modal ant-modal-confirm ant-modal-confirm-confirm"
-        onEscapeKeyDown={(event) => {
-          if (options?.maskClosable) close(false);
-          else event.preventDefault();
-        }}
-        onPointerDownOutside={(event) => {
-          if (options?.maskClosable) close(false);
-          else event.preventDefault();
-        }}
+        closable={false}
+        footer={null}
+        width={416}
+        maskClosable={Boolean(options?.maskClosable)}
+        afterClose={afterClose}
+        className="ant-modal-confirm ant-modal-confirm-confirm"
       >
-        <div className="ant-modal-body">
-          <div className="ant-modal-confirm-body-wrapper">
-            <div className="ant-modal-confirm-body">
-              <i className="anticon anticon-exclamation-circle" />
-              <div className="ant-modal-confirm-title">{options?.title}</div>
-              {options?.content && (
-                <div className="ant-modal-confirm-content">{options.content}</div>
-              )}
-            </div>
-            <div className="ant-modal-confirm-btns">
-              {options?.showCancel !== false && (
-                <AntBtn type="button" className="ant-btn" onClick={() => close(false)}>
-                  {options?.cancelText ?? '取消'}
-                </AntBtn>
-              )}
-              <AntBtn type="button" className="ant-btn ant-btn-primary" onClick={() => close(true)}>
-                {options?.okText ?? '确定'}
+        <div className="ant-modal-confirm-body-wrapper" ref={bodyRef}>
+          <div className="ant-modal-confirm-body">
+            <QuestionCircleIcon />
+            <span className="ant-modal-confirm-title">{options?.title}</span>
+            <div className="ant-modal-confirm-content">{options?.content}</div>
+          </div>
+          <div className="ant-modal-confirm-btns">
+            {options?.showCancel !== false && (
+              <AntBtn
+                type="button"
+                className="ant-btn"
+                onClick={() => runAction(options?.onCancel, false)}
+              >
+                {options?.cancelText ?? defaultText.cancelText}
               </AntBtn>
-            </div>
+            )}
+            <AntBtn
+              type="button"
+              className={okButtonClassName}
+              disabled={options?.okButtonProps?.disabled}
+              onClick={() => runAction(options?.onOk, true)}
+            >
+              {okButtonLoading ? <LegacyLoadingIcon /> : null}
+              {options?.okText ?? defaultText.okText}
+            </AntBtn>
           </div>
         </div>
       </DialogContent>
     </Dialog>
   );
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return Boolean(value && typeof (value as PromiseLike<unknown>).then === 'function');
+}
+
+export function getLegacyConfirmDefaultText(locale: string | undefined) {
+  switch (locale) {
+    case 'zh-CN':
+      return { okText: '确 定', cancelText: '取 消' };
+    case 'zh-TW':
+      return { okText: '確 定', cancelText: '取 消' };
+    case 'ja-JP':
+      return { okText: 'OK', cancelText: 'キャンセル' };
+    case 'ko-KR':
+      return { okText: '확인', cancelText: '취소' };
+    case 'vi-VN':
+      return { okText: 'Đồng ý', cancelText: 'Hủy' };
+    case 'fa-IR':
+      return { okText: 'تایید', cancelText: 'لغو' };
+    default:
+      return { okText: 'OK', cancelText: 'Cancel' };
+  }
 }

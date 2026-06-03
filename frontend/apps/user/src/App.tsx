@@ -1,60 +1,112 @@
-import { Suspense, lazy } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, useLocation } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
+import LoginPage from '@/pages/auth/login';
+import RegisterPage from '@/pages/auth/register';
+import ForgetPage from '@/pages/auth/forget';
+import HomePage from '@/pages/home';
+import DashboardPage from '@/pages/dashboard';
+import PlansPage from '@/pages/plans';
+import PlanCheckoutPage from '@/pages/plans/checkout';
+import OrdersPage from '@/pages/orders';
+import OrderDetailPage from '@/pages/orders/detail';
+import ProfilePage from '@/pages/profile';
+import InvitePage from '@/pages/invite';
+import TicketsPage from '@/pages/tickets';
+import TicketDetailPage from '@/pages/tickets/detail';
+import KnowledgePage from '@/pages/knowledge';
+import NodePage from '@/pages/node';
+import TrafficPage from '@/pages/traffic';
 
-const LoginPage = lazy(() => import('@/pages/auth/login'));
-const RegisterPage = lazy(() => import('@/pages/auth/register'));
-const ForgetPage = lazy(() => import('@/pages/auth/forget'));
-const HomePage = lazy(() => import('@/pages/home'));
-const DashboardPage = lazy(() => import('@/pages/dashboard'));
-const PlansPage = lazy(() => import('@/pages/plans'));
-const PlanCheckoutPage = lazy(() => import('@/pages/plans/checkout'));
-const OrdersPage = lazy(() => import('@/pages/orders'));
-const OrderDetailPage = lazy(() => import('@/pages/orders/detail'));
-const ProfilePage = lazy(() => import('@/pages/profile'));
-const InvitePage = lazy(() => import('@/pages/invite'));
-const TicketsPage = lazy(() => import('@/pages/tickets'));
-const TicketDetailPage = lazy(() => import('@/pages/tickets/detail'));
-const KnowledgePage = lazy(() => import('@/pages/knowledge'));
-const NodePage = lazy(() => import('@/pages/node'));
-const TrafficPage = lazy(() => import('@/pages/traffic'));
+export const USER_LEGACY_ROUTE_PATHS = [
+  '/dashboard',
+  '/forgetpassword',
+  '/',
+  '/invite',
+  '/knowledge',
+  '/login',
+  '/node',
+  '/order/:trade_no',
+  '/order',
+  '/plan/:plan_id',
+  '/plan',
+  '/profile',
+  '/register',
+  '/ticket/:ticket_id',
+  '/ticket',
+  '/traffic',
+] as const;
 
-function Pending() {
-  return (
-    <div className="content content-full text-center">
-      <div className="spinner-grow text-primary" role="status">
-        <span className="sr-only">Loading...</span>
-      </div>
-    </div>
-  );
+type UserLegacyRoutePath = (typeof USER_LEGACY_ROUTE_PATHS)[number];
+
+const USER_ROUTE_ELEMENTS: Record<UserLegacyRoutePath, ReactNode> = {
+  '/dashboard': <DashboardPage />,
+  '/forgetpassword': <ForgetPage />,
+  '/': <HomePage />,
+  '/invite': <InvitePage />,
+  '/knowledge': <KnowledgePage />,
+  '/login': <LoginPage />,
+  '/node': <NodePage />,
+  '/order/:trade_no': <OrderDetailPage />,
+  '/order': <OrdersPage />,
+  '/plan/:plan_id': <PlanCheckoutPage />,
+  '/plan': <PlansPage />,
+  '/profile': <ProfilePage />,
+  '/register': <RegisterPage />,
+  '/ticket/:ticket_id': <TicketDetailPage />,
+  '/ticket': <TicketsPage />,
+  '/traffic': <TrafficPage />,
+};
+
+const USER_GUEST_ROUTE_PATHS = ['/login', '/register', '/forgetpassword'] as const;
+
+export const USER_APP_LAYOUT_ROUTE_PATHS = [
+  '/dashboard',
+  '/plan',
+  '/plan/:plan_id',
+  '/order',
+  '/order/:trade_no',
+  '/profile',
+  '/invite',
+  '/ticket',
+  '/knowledge',
+  '/node',
+  '/traffic',
+] as const;
+
+function routeComponentKey(pathname: string): string {
+  if (/^\/order\/[^/]+$/.test(pathname)) return '/order/:trade_no';
+  if (/^\/plan\/[^/]+$/.test(pathname)) return '/plan/:plan_id';
+  if (/^\/ticket\/[^/]+$/.test(pathname)) return '/ticket/:ticket_id';
+  return pathname;
+}
+
+function KeyedGuestLayout() {
+  const location = useLocation();
+  return <GuestLayout key={routeComponentKey(location.pathname)} />;
+}
+
+function KeyedAppLayout() {
+  const location = useLocation();
+  return <AppLayout key={routeComponentKey(location.pathname)} />;
 }
 
 export default function App() {
   return (
-    <Suspense fallback={<Pending />}>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route element={<GuestLayout />}>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/forgetpassword" element={<ForgetPage />} />
-        </Route>
-        <Route element={<AppLayout />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/plan" element={<PlansPage />} />
-          <Route path="/plan/:id" element={<PlanCheckoutPage />} />
-          <Route path="/order" element={<OrdersPage />} />
-          <Route path="/order/:tradeNo" element={<OrderDetailPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/invite" element={<InvitePage />} />
-          <Route path="/ticket" element={<TicketsPage />} />
-          <Route path="/knowledge" element={<KnowledgePage />} />
-          <Route path="/node" element={<NodePage />} />
-          <Route path="/traffic" element={<TrafficPage />} />
-        </Route>
-        <Route path="/ticket/:id" element={<TicketDetailPage />} />
-      </Routes>
-    </Suspense>
+    <Routes>
+      <Route path="/" element={USER_ROUTE_ELEMENTS['/']} />
+      <Route element={<KeyedGuestLayout />}>
+        {USER_GUEST_ROUTE_PATHS.map((path) => (
+          <Route key={path} path={path} element={USER_ROUTE_ELEMENTS[path]} />
+        ))}
+      </Route>
+      <Route element={<KeyedAppLayout />}>
+        {USER_APP_LAYOUT_ROUTE_PATHS.map((path) => (
+          <Route key={path} path={path} element={USER_ROUTE_ELEMENTS[path]} />
+        ))}
+      </Route>
+      <Route path="/ticket/:ticket_id" element={USER_ROUTE_ELEMENTS['/ticket/:ticket_id']} />
+    </Routes>
   );
 }

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { user } from '@v2board/api-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -9,42 +9,45 @@ import { getAuthData, setAuthData } from '@/lib/auth';
 import { useLoginMutation, useTokenLoginMutation } from '@/lib/guest';
 import { getLegacyDescription, getLegacyLogo, getLegacyTitle } from '@/lib/legacy-settings';
 import { apiClient } from '@/lib/api';
-import { userKeys } from '@/lib/queries';
+import { fetchUserInfo, userKeys } from '@/lib/queries';
+import { legacyHref } from '@/lib/legacy-href';
 
 export default function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const location = useLocation();
   const [params] = useSearchParams();
   const queryClient = useQueryClient();
   const { mutateAsync, isPending } = useLoginMutation();
   const { mutateAsync: tokenLogin } = useTokenLoginMutation();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const emailRef = useRef<HTMLInputElement | null>(null);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
   const logo = getLegacyLogo();
   const title = getLegacyTitle();
   const description = getLegacyDescription();
-  const stateRedirect = (location.state as { redirect?: string } | null)?.redirect;
   const queryRedirect = params.get('redirect');
-  const redirect = queryRedirect ?? stateRedirect ?? '/dashboard';
+  const redirect = queryRedirect || 'dashboard';
   const verify = params.get('verify');
 
   const onLogin = useCallback(async () => {
     try {
-      const result = await mutateAsync({ email, password });
+      const result = await mutateAsync({
+        email: emailRef.current!.value,
+        password: passwordRef.current!.value,
+      });
       setAuthData(result.auth_data);
-      await queryClient.invalidateQueries({ queryKey: userKeys.info });
-      navigate(redirect || '/dashboard');
+      // The saga dispatches user/getUserInfo with `put`, then immediately pushes.
+      // It never waits for the user-info request to settle.
+      void queryClient
+        .fetchQuery({ queryKey: userKeys.info, queryFn: fetchUserInfo })
+        .catch(() => undefined);
+      navigate(redirect);
     } catch {}
-  }, [email, mutateAsync, navigate, password, queryClient, redirect]);
+  }, [mutateAsync, navigate, queryClient, redirect]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const finishLogin = async (authData: string) => {
+    const finishLogin = (authData: string) => {
       setAuthData(authData);
-      await queryClient.invalidateQueries({ queryKey: userKeys.info });
-      if (!cancelled) navigate(redirect || '/dashboard');
+      navigate(redirect);
     };
 
     if (verify) {
@@ -53,25 +56,23 @@ export default function LoginPage() {
         ...(queryRedirect !== null ? { redirect: queryRedirect } : {}),
       })
         .then((result) => {
-          if (result?.auth_data) void finishLogin(result.auth_data);
+          if (result?.auth_data) finishLogin(result.auth_data);
         })
         .catch(() => undefined);
     }
 
     if (getAuthData()) {
       user.checkLogin(apiClient)
-        .then(async (result) => {
-          if (result.is_login && !cancelled) {
-            await queryClient.invalidateQueries({ queryKey: userKeys.info });
-            if (!cancelled) navigate(redirect || '/dashboard');
+        .then((result) => {
+          if (result.is_login) {
+            void queryClient
+              .fetchQuery({ queryKey: userKeys.info, queryFn: fetchUserInfo })
+              .catch(() => undefined);
+            navigate(redirect);
           }
         })
         .catch(() => undefined);
     }
-
-    return () => {
-      cancelled = true;
-    };
   }, [navigate, queryClient, queryRedirect, redirect, tokenLogin, verify]);
 
   useEffect(() => {
@@ -92,7 +93,7 @@ export default function LoginPage() {
         <div className="col-md-12 order-md-1 bg-white">
           <div className="block-content block-content-full px-lg-4 py-md-4 py-lg-4">
             <div className="mb-3 text-center">
-              <a className="font-size-h1" href="javascript:void(0);">
+              <a className="font-size-h1" ref={legacyHref()}>
                 {logo ? (
                   <img className="v2board-logo mb-3" src={logo} />
                 ) : (
@@ -101,67 +102,63 @@ export default function LoginPage() {
               </a>
               {description && <p className="font-size-sm text-muted mb-3">{description}</p>}
             </div>
-            <div>
-              <div className="form-group">
-                <input
-                  type="text"
-                  className="form-control form-control-alt"
-                  placeholder={t('auth.email')}
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <input
-                  type="password"
-                  className="form-control form-control-alt"
-                  placeholder={t('auth.password')}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </div>
-              <div className="form-group mb-0">
-                <button
-                  disabled={isPending}
-                  type="submit"
-                  className="btn btn-block btn-primary font-w400"
-                  onClick={() => void onLogin()}
-                >
-                  {isPending ? (
-                    <LegacyLoadingIcon />
-                  ) : (
-                    <span>
-                      <i className="si si-login mr-1" />
-                      {t('auth.submit_login')}
-                    </span>
-                  )}
-                </button>
-              </div>
+            <div className="form-group">
+              <input
+                type="text"
+                className="form-control form-control-alt"
+                placeholder={t('auth.email')}
+                ref={emailRef}
+              />
+            </div>
+            <div className="form-group">
+              <input
+                type="password"
+                className="form-control form-control-alt"
+                placeholder={t('auth.password')}
+                ref={passwordRef}
+              />
+            </div>
+            <div className="form-group mb-0">
+              <button
+                disabled={isPending}
+                type="submit"
+                className="btn btn-block btn-primary font-w400"
+                onClick={() => void onLogin()}
+              >
+                {isPending ? (
+                  <LegacyLoadingIcon />
+                ) : (
+                  <span>
+                    <i className="si si-login mr-1" />
+                    {t('auth.submit_login')}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
-          <div className="text-left bg-gray-lighter p-3 px-4">
-            <a
-              className="font-size-sm text-muted"
-              href="javascript:void(0);"
-              onClick={() => navigate('/register')}
-            >
-              {t('auth.sign_up')}
-            </a>
-            <span className="ant-divider ant-divider-vertical" role="separator" />
-            <a
-              className="font-size-sm text-muted"
-              href="javascript:void(0);"
-              onClick={() => navigate('/forgetpassword')}
-            >
-              {t('auth.forget_password')}
-            </a>
-            <LanguageMenu
-              legacyIcon
-              showLabel
-              triggerClassName="v2board-login-i18n-btn"
-            />
-          </div>
         </div>
+      </div>
+      <div className="text-left bg-gray-lighter p-3 px-4">
+        <a
+          className="font-size-sm text-muted"
+          ref={legacyHref()}
+          onClick={() => navigate('/register')}
+        >
+          {t('auth.sign_up')}
+        </a>
+        <div className="ant-divider ant-divider-vertical" />
+        <a
+          className="font-size-sm text-muted"
+          ref={legacyHref()}
+          onClick={() => navigate('/forgetpassword')}
+        >
+          {t('auth.forget_password')}
+        </a>
+        <LanguageMenu
+          legacyIcon
+          showLabel
+          triggerClassName="v2board-login-i18n-btn"
+        />
       </div>
     </div>
   );

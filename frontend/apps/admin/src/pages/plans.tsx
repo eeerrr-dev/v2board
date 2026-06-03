@@ -1,217 +1,580 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  cloneElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import {
   App,
   Button,
-  Card,
+  Checkbox,
+  Divider,
+  Drawer,
   Dropdown,
-  Form,
   Input,
-  InputNumber,
-  Modal,
-  Space,
+  Row,
+  Col,
+  Select,
+  Spin,
   Switch,
   Table,
   Tag,
-  Typography,
+  Tooltip,
 } from 'antd';
 import type { TableProps } from 'antd';
-import { CaretDownOutlined, MenuOutlined, UserOutlined } from '@ant-design/icons';
-import { useTranslation } from 'react-i18next';
-import type { Plan } from '@v2board/types';
+import {
+  CaretDownOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  InfoCircleOutlined,
+  MenuOutlined,
+  PlusOutlined,
+  QuestionCircleOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
+import type { Plan, PlanPeriod } from '@v2board/types';
 import {
   useAdminPlans,
+  useConfig,
   useDropPlanMutation,
   useSavePlanMutation,
   useServerGroups,
   useSortPlansMutation,
   useUpdatePlanMutation,
 } from '@/lib/queries';
-import { formatMoney } from '@v2board/config/format';
 import { i18nGet } from '@/lib/errors';
 
-const PRICE_KEYS: (keyof Plan)[] = [
-  'month_price',
-  'quarter_price',
-  'half_year_price',
-  'year_price',
-  'two_year_price',
-  'three_year_price',
-  'onetime_price',
-  'reset_price',
-];
+type EditablePlan = {
+  [K in keyof Omit<Plan, 'id'>]?: Plan[K] | string | null;
+} & {
+  id?: number;
+  force_update?: boolean;
+};
 
-const PRICE_COLUMNS: { key: string; dataIndex: keyof Plan }[] = [
-  { key: 'plan.monthly', dataIndex: 'month_price' },
-  { key: 'plan.quarterly', dataIndex: 'quarter_price' },
-  { key: 'plan.half_year', dataIndex: 'half_year_price' },
-  { key: 'plan.yearly', dataIndex: 'year_price' },
-  { key: 'plan.two_year', dataIndex: 'two_year_price' },
-  { key: 'plan.three_year', dataIndex: 'three_year_price' },
-  { key: 'plan.onetime', dataIndex: 'onetime_price' },
-  { key: 'admin.plan.reset_price', dataIndex: 'reset_price' },
-];
+type SavePlanPayload = EditablePlan;
+
+function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
+  return (
+    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
+      {children}
+    </Spin>
+  );
+}
+
+function emptyPlan(): EditablePlan {
+  return {
+    show: 0,
+    name: null,
+    transfer_enable: null,
+    group_id: undefined,
+    month_price: null,
+    quarter_price: null,
+    half_year_price: null,
+    year_price: null,
+    two_year_price: null,
+    three_year_price: null,
+    onetime_price: null,
+    reset_price: null,
+  } as EditablePlan;
+}
+
+function PlanEditor({
+  record,
+  children,
+  saveLoading,
+  currencySymbol,
+  groups,
+  onSave,
+  onLegacyMount,
+}: {
+  record?: Plan;
+  children: ReactElement<{ onClick?: () => void }>;
+  saveLoading: boolean;
+  currencySymbol?: string;
+  groups: Array<{ id: number; name: string }>;
+  onSave: (payload: SavePlanPayload) => Promise<unknown>;
+  onLegacyMount: () => void;
+}) {
+  const { message } = App.useApp();
+  const [visible, setVisible] = useState(false);
+  const [submit, setSubmit] = useState<EditablePlan>(() => ({ ...(record ?? emptyPlan()) }));
+
+  useEffect(() => {
+    onLegacyMount();
+  }, [onLegacyMount]);
+
+  const change = (key: keyof EditablePlan, value: unknown) => {
+    setSubmit((current) => ({ ...current, [key]: value }));
+  };
+
+  const priceOnChange = (key: PlanPeriod, value: string) => {
+    change(key, value !== '' ? value : null);
+  };
+
+  const save = async () => {
+    try {
+      await onSave({ ...submit });
+      setVisible(false);
+    } catch (error) {
+      if (error instanceof Error) message.error(i18nGet(error.message));
+    }
+  };
+
+  return (
+    <>
+      {cloneElement(children, { onClick: () => setVisible(true) })}
+      <Drawer
+        id="plan"
+        maskClosable
+        onClose={() => setVisible(false)}
+        title={`${submit.id ? '编辑订阅' : '新建订阅'}`}
+        open={visible}
+        width="80%"
+      >
+        <div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">套餐名称</label>
+            <Input
+              placeholder="请输入套餐名称"
+              value={submit.name as string | undefined}
+              onChange={(event) => change('name', event.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">套餐描述</label>
+            <Input.TextArea
+              rows={4}
+              value={submit.content as string | undefined}
+              placeholder="请输入套餐描述，支持HTML"
+              onChange={(event) => change('content', event.target.value)}
+            />
+          </div>
+
+          <Divider>
+            售价设置{' '}
+            <Tooltip title="将金额留空则不会进行出售" placement="top">
+              <InfoCircleOutlined />
+            </Tooltip>
+          </Divider>
+
+          <Row gutter={10}>
+            <Col md={4}>
+              <PlanInput
+                label="月付"
+                value={submit.month_price !== null ? submit.month_price : undefined}
+                onChange={(value) => priceOnChange('month_price', value)}
+              />
+            </Col>
+            <Col md={4}>
+              <PlanInput
+                label="季付"
+                value={submit.quarter_price !== null ? submit.quarter_price : undefined}
+                onChange={(value) => priceOnChange('quarter_price', value)}
+              />
+            </Col>
+            <Col md={4}>
+              <PlanInput
+                label="半年"
+                value={submit.half_year_price !== null ? submit.half_year_price : undefined}
+                onChange={(value) => priceOnChange('half_year_price', value)}
+              />
+            </Col>
+            <Col md={4}>
+              <PlanInput
+                label="年付"
+                value={submit.year_price !== null ? submit.year_price : undefined}
+                onChange={(value) => priceOnChange('year_price', value)}
+              />
+            </Col>
+            <Col md={4}>
+              <PlanInput
+                label="两年付"
+                value={submit.two_year_price !== null ? submit.two_year_price : undefined}
+                onChange={(value) => priceOnChange('two_year_price', value)}
+              />
+            </Col>
+            <Col md={4}>
+              <PlanInput
+                label="三年付"
+                value={submit.three_year_price !== null ? submit.three_year_price : undefined}
+                onChange={(value) => priceOnChange('three_year_price', value)}
+              />
+            </Col>
+          </Row>
+          <Row gutter={10}>
+            <Col md={12}>
+              <PlanInput
+                label="一次性"
+                addonAfter={currencySymbol}
+                value={submit.onetime_price !== null ? submit.onetime_price : undefined}
+                onChange={(value) => priceOnChange('onetime_price', value)}
+              />
+            </Col>
+            <Col md={12}>
+              <PlanInput
+                label="重置包"
+                addonAfter={currencySymbol}
+                value={submit.reset_price !== null ? submit.reset_price : undefined}
+                onChange={(value) => priceOnChange('reset_price', value)}
+              />
+            </Col>
+          </Row>
+
+          <Divider />
+
+          <PlanInput
+            label="套餐流量"
+            addonAfter="GB"
+            placeholder="请输入套餐流量"
+            value={submit.transfer_enable}
+            onChange={(value) => change('transfer_enable', value)}
+          />
+          <PlanInput
+            label="设备数限制"
+            placeholder="留空则不限制"
+            value={submit.device_limit}
+            onChange={(value) => change('device_limit', value)}
+          />
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">
+              权限组{' '}
+              <a href="javascript:(0);">添加权限组</a>
+            </label>
+            <Select
+              placeholder="请选择权限组"
+              style={{ width: '100%' }}
+              value={submit.group_id}
+              onChange={(value) => change('group_id', value)}
+            >
+              {groups.map((group) => (
+                <Select.Option key={group.id} value={group.id}>
+                  {group.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="example-text-input-alt">流量重置方式</label>
+            <Select
+              placeholder="请选择权限组"
+              style={{ width: '100%' }}
+              value={submit.reset_traffic_method}
+              onChange={(value) => change('reset_traffic_method', value)}
+            >
+              <Select.Option key={null} value={null}>跟随系统设置</Select.Option>
+              <Select.Option key={0} value={0}>每月1号</Select.Option>
+              <Select.Option key={1} value={1}>按月重置</Select.Option>
+              <Select.Option key={2} value={2}>不重置</Select.Option>
+              <Select.Option key={3} value={3}>每年1月1日</Select.Option>
+              <Select.Option key={4} value={4}>按年重置</Select.Option>
+            </Select>
+          </div>
+          <PlanInput
+            label="最大容纳用户量"
+            placeholder="留空则不限制"
+            value={submit.capacity_limit}
+            onChange={(value) => change('capacity_limit', value)}
+          />
+          <PlanInput
+            label="限速"
+            addonAfter="Mbps"
+            placeholder="留空则不限制"
+            value={submit.speed_limit}
+            onChange={(value) => change('speed_limit', value)}
+          />
+
+          <div className="v2board-drawer-action">
+            <div style={{ float: 'left', marginTop: 5 }}>
+              <Tooltip
+                title="勾选后变更的流量、限速、权限组将应用到该套餐下的用户"
+                placement="top"
+              >
+                <Checkbox
+                  onChange={(event) => change('force_update', event.target.checked)}
+                >
+                  强制更新到用户
+                </Checkbox>
+              </Tooltip>
+            </div>
+            <Button style={{ marginRight: 8 }} onClick={() => setVisible(false)}>
+              取消
+            </Button>
+            <Button loading={saveLoading} onClick={() => !saveLoading && void save()} type="primary">
+              提交
+            </Button>
+          </div>
+        </div>
+      </Drawer>
+    </>
+  );
+}
+
+function PlanInput({
+  label,
+  value,
+  placeholder,
+  addonAfter,
+  onChange,
+}: {
+  label: string;
+  value: unknown;
+  placeholder?: string;
+  addonAfter?: ReactNode;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="form-group">
+      <label htmlFor="example-text-input-alt">{label}</label>
+      <Input
+        addonAfter={addonAfter}
+        placeholder={placeholder}
+        value={value as string | number | undefined}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
 
 export default function PlansPage() {
-  const { t } = useTranslation();
-  const { message, modal } = App.useApp();
   const plans = useAdminPlans();
   const groups = useServerGroups();
+  const config = useConfig();
   const save = useSavePlanMutation();
   const drop = useDropPlanMutation();
   const update = useUpdatePlanMutation();
   const sort = useSortPlansMutation();
-  const [editing, setEditing] = useState<Plan | null>(null);
-  const [creating, setCreating] = useState(false);
+  const { message } = App.useApp();
+  const [order, setOrder] = useState<Plan[]>(() => plans.data ?? []);
+  const [legacySortLoading, setLegacySortLoading] = useState(false);
+  const [contextRecord, setContextRecord] = useState<Plan | undefined>();
+  const [contextMenu, setContextMenu] = useState<{ top: number; left: number } | null>(null);
+  const orderRef = useRef(order);
+  const dragIndex = useRef<number | null>(null);
+  orderRef.current = order;
 
-  // Local mirror of the plan order so the drag handle can reorder optimistically.
-  const [order, setOrder] = useState<Plan[]>([]);
   useEffect(() => {
     if (plans.data) setOrder(plans.data);
   }, [plans.data]);
-  const orderRef = useRef(order);
-  orderRef.current = order;
-  const dragIndex = useRef<number | null>(null);
 
-  const groupMap = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const g of groups.data ?? []) map.set(g.id, g.name);
-    return map;
-  }, [groups.data]);
+  const refetchConfig = config.refetch;
+  const refetchGroups = groups.refetch;
+  const refetchPlanEditorDependencies = useCallback(() => {
+    void refetchConfig();
+    void refetchGroups();
+  }, [refetchConfig, refetchGroups]);
 
-  // Reorder rows by dragging the 排序 handle, then persist the new id order.
+  const persistSort = (next: Plan[]) => {
+    setOrder(next);
+    setLegacySortLoading(true);
+    sort.mutate(next.map((plan) => plan.id), {
+      onSuccess: () => {
+        void plans.refetch().finally(() => {
+          setLegacySortLoading(false);
+        });
+      },
+    });
+  };
+
   const components = useMemo(
     () => ({
       body: {
-        row: (props: React.HTMLAttributes<HTMLTableRowElement> & { 'data-row-key'?: number }) => {
+        row: (props: HTMLAttributes<HTMLTableRowElement> & { 'data-sort-index'?: number }) => {
           const onDrop = () => {
             const from = dragIndex.current;
-            const current = orderRef.current;
-            const to = current.findIndex((p) => p.id === props['data-row-key']);
+            const to = Number(props['data-sort-index']);
             dragIndex.current = null;
-            if (from == null || to < 0 || from === to) return;
-            const next = [...current];
-            const [moved] = next.splice(from, 1);
-            if (!moved) return;
-            next.splice(to, 0, moved);
-            setOrder(next);
-            sort.mutate(next.map((p) => p.id));
+            if (from == null || !Number.isFinite(to) || from === to) return;
+            const next = [...orderRef.current];
+            if (from < to) {
+              next.splice(to + 1, 0, next[from] as Plan);
+              next.splice(from, 1);
+            } else {
+              next.splice(to, 0, next[from] as Plan);
+              next.splice(from + 1, 1);
+            }
+            persistSort(next);
           };
-          return <tr {...props} onDragOver={(e) => e.preventDefault()} onDrop={onDrop} />;
+          return <tr {...props} onDragOver={(event) => event.preventDefault()} onDrop={onDrop} />;
         },
       },
     }),
     [sort],
   );
 
-  const doDelete = (row: Plan) =>
-    modal.confirm({
-      title: t('common.delete'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          await drop.mutateAsync(row.id);
-          message.success(t('common.success'));
-        } catch (e) {
-          if (e instanceof Error) message.error(i18nGet(e.message));
-        }
+  const savePlan = async (payload: SavePlanPayload) => {
+    await save.mutateAsync(payload);
+    void plans.refetch();
+  };
+
+  const dropPlan = (id?: number) => {
+    if (!id) return;
+    drop.mutate(id, {
+      onSuccess: () => {
+        void plans.refetch();
+      },
+      onError: (error) => {
+        if (error instanceof Error) message.error(i18nGet(error.message));
       },
     });
+  };
 
-  const toggle = async (id: number, field: 'show' | 'renew', next: boolean) => {
-    try {
-      await update.mutateAsync({ id, [field]: next ? 1 : 0 });
-      message.success(t('common.success'));
-    } catch (e) {
-      if (e instanceof Error) message.error(i18nGet(e.message));
-    }
+  const updatePlan = (id: number, key: 'show' | 'renew', value: 0 | 1) => {
+    update.mutate(
+      { id, key, value },
+      {
+        onSuccess: () => {
+          void plans.refetch();
+        },
+        onError: (error) => {
+          if (error instanceof Error) message.error(i18nGet(error.message));
+        },
+      },
+    );
   };
 
   const columns: TableProps<Plan>['columns'] = [
     {
-      title: t('admin.plan.order'),
-      width: 60,
-      render: (_: unknown, __: Plan, index: number) => (
-        <span
+      title: '排序',
+      dataIndex: 'sort',
+      key: 'sort',
+      render: (_value, _record, index) => (
+        <MenuOutlined
           draggable
+          style={{ cursor: 'move' }}
           onDragStart={() => {
             dragIndex.current = index;
           }}
-          style={{ cursor: 'move' }}
-        >
-          <MenuOutlined />
-        </span>
+        />
       ),
     },
     {
-      title: t('admin.plan.sale_status'),
+      title: '销售状态',
       dataIndex: 'show',
-      width: 90,
-      render: (v: 0 | 1, row) => (
-        <Switch size="small" checked={v === 1} onChange={(next) => toggle(row.id, 'show', next)} />
+      key: 'show',
+      render: (value: 0 | 1, record) => (
+        <Switch
+          size="small"
+          checked={parseInt(String(value), 10) as unknown as boolean}
+          onClick={() => updatePlan(record.id, 'show', parseInt(String(value), 10) ? 0 : 1)}
+        />
       ),
     },
     {
-      title: t('admin.plan.renew'),
-      dataIndex: 'renew',
-      width: 70,
-      render: (v: 0 | 1, row) => (
-        <Switch size="small" checked={v === 1} onChange={(next) => toggle(row.id, 'renew', next)} />
-      ),
-    },
-    { title: t('admin.common.name'), dataIndex: 'name' },
-    {
-      title: t('admin.plan.stat'),
-      dataIndex: 'count',
-      width: 80,
-      render: (v: number | undefined) => (
+      title: (
         <span>
-          <UserOutlined /> {v ?? 0}
+          续费{' '}
+          <Tooltip
+            placement="top"
+            title="在订阅停止销售时，已购用户是否可以续费"
+          >
+            <QuestionCircleOutlined />
+          </Tooltip>
         </span>
       ),
+      dataIndex: 'renew',
+      key: 'renew',
+      render: (value: 0 | 1, record) => (
+        <Switch
+          size="small"
+          checked={parseInt(String(value), 10) as unknown as boolean}
+          onClick={() => updatePlan(record.id, 'renew', parseInt(String(value), 10) ? 0 : 1)}
+        />
+      ),
+    },
+    { title: '名称', dataIndex: 'name', key: 'name' },
+    {
+      title: '统计',
+      dataIndex: 'count',
+      key: 'count',
+      render: (value: number) => (
+        <>
+          <UserOutlined style={{ cursor: 'move' }} /> {value}
+        </>
+      ),
     },
     {
-      title: t('admin.plan.traffic'),
+      title: '流量',
       dataIndex: 'transfer_enable',
-      render: (v: number) => `${v} GB`,
+      key: 'transfer_enable',
+      render: (value: number) => <>{value} GB</>,
     },
     {
-      title: t('admin.plan.device_limit'),
+      title: '设备数限制',
       dataIndex: 'device_limit',
-      render: (v: number | null) => v ?? '-',
+      key: 'device_limit',
+      render: (value: number | null) => (value !== null ? value : '-'),
     },
-    ...PRICE_COLUMNS.map((c) => ({
-      title: t(c.key),
-      dataIndex: c.dataIndex,
-      render: (v: number | null) => (v ? formatMoney(v, '') : '-'),
-    })),
+    { title: '月付', dataIndex: 'month_price', key: 'month_price', render: formatPrice },
+    { title: '季付', dataIndex: 'quarter_price', key: 'quarter_price', render: formatPrice },
+    { title: '半年付', dataIndex: 'half_year_price', key: 'half_year_price', render: formatPrice },
+    { title: '年付', dataIndex: 'year_price', key: 'year_price', render: formatPrice },
+    { title: '两年付', dataIndex: 'two_year_price', key: 'two_year_price', render: formatPrice },
+    { title: '三年付', dataIndex: 'three_year_price', key: 'three_year_price', render: formatPrice },
+    { title: '一次性', dataIndex: 'onetime_price', key: 'onetime_price', render: formatPrice },
+    { title: '重置包', dataIndex: 'reset_price', key: 'reset_price', render: formatPrice },
     {
-      title: t('admin.user.group'),
+      title: '权限组',
       dataIndex: 'group_id',
-      render: (v: number) => <Tag>{groupMap.get(v) ?? '-'}</Tag>,
+      key: 'group_id',
+      render: (value: number) => {
+        const tags: ReactNode[] = [];
+        (groups.data ?? []).map((group) => {
+          if (group.id === parseInt(String(value), 10)) tags.push(<Tag>{group.name}</Tag>);
+        });
+        return tags;
+      },
     },
     {
-      title: t('common.operation'),
+      title: '操作',
+      dataIndex: 'action',
+      key: 'action',
       fixed: 'right',
-      width: 100,
-      render: (_: unknown, row) => (
+      align: 'right',
+      render: (_value, record) => (
         <Dropdown
           trigger={['click']}
           menu={{
             items: [
-              { key: 'edit', label: t('common.edit') },
-              { key: 'delete', danger: true, label: t('common.delete') },
+              {
+                key: 'edit',
+                label: (
+                  <PlanEditor
+                    key={record.id}
+                    record={record}
+                    groups={groups.data ?? []}
+                    currencySymbol={config.data?.site?.currency_symbol}
+                    saveLoading={save.isPending}
+                    onSave={savePlan}
+                    onLegacyMount={refetchPlanEditorDependencies}
+                  >
+                    <a>
+                      <EditOutlined /> 编辑
+                    </a>
+                  </PlanEditor>
+                ),
+              },
+              {
+                key: 'delete',
+                label: (
+                  <span style={{ color: '#ff4d4f' }}>
+                    <DeleteOutlined /> 删除
+                  </span>
+                ),
+              },
             ],
-            onClick: ({ key }) => {
-              if (key === 'edit') setEditing(row);
-              else doDelete(row);
+            onClick: ({ key, domEvent }) => {
+              domEvent.stopPropagation();
+              if (key === 'delete') dropPlan(record.id);
             },
           }}
         >
-          <a onClick={(e) => e.preventDefault()}>
-            <Space size={4}>
-              {t('common.operation')}
-              <CaretDownOutlined />
-            </Space>
+          <a href="javascript:void(0);">
+            操作 <CaretDownOutlined />
           </a>
         </Dropdown>
       ),
@@ -219,120 +582,90 @@ export default function PlansPage() {
   ];
 
   return (
-    <div className="space-y-4">
-      <Typography.Title level={3}>{t('admin.nav.plans')}</Typography.Title>
-      <Card>
-        <Button type="primary" onClick={() => setCreating(true)}>
-          {t('admin.plan.new')}
-        </Button>
-      </Card>
-      <Card>
-        <Table<Plan>
-          loading={plans.isLoading}
-          rowKey="id"
-          dataSource={order}
-          columns={columns}
-          components={components}
-          pagination={false}
-          scroll={{ x: 'max-content' }}
-        />
-      </Card>
-      <PlanModal
-        open={Boolean(editing) || creating}
-        plan={editing}
-        onClose={() => {
-          setEditing(null);
-          setCreating(false);
-        }}
-        onSubmit={async (values) => {
-          try {
-            await save.mutateAsync(values);
-            message.success(t('common.success'));
-            setEditing(null);
-            setCreating(false);
-          } catch (e) {
-            if (e instanceof Error) message.error(i18nGet(e.message));
-          }
-        }}
-      />
-    </div>
+    <>
+      <div className="d-flex justify-content-between align-items-center" />
+      <LegacySpin loading={plans.isFetching || legacySortLoading}>
+        <div className="block block-rounded">
+          <div className="bg-white">
+            <div style={{ padding: 15 }}>
+              <PlanEditor
+                groups={groups.data ?? []}
+                currencySymbol={config.data?.site?.currency_symbol}
+                saveLoading={save.isPending}
+                onSave={savePlan}
+                onLegacyMount={refetchPlanEditorDependencies}
+              >
+                <Button>
+                  <PlusOutlined /> 添加订阅
+                </Button>
+              </PlanEditor>
+            </div>
+            <Table<Plan>
+              onRow={(record, index) => {
+                const rowEvents = {
+                  onClick: () => setContextMenu(null),
+                  onContextMenu: (event) => {
+                    event.preventDefault();
+                    setContextRecord(record);
+                    setContextMenu({ top: event.clientY, left: event.clientX });
+                  },
+                } satisfies HTMLAttributes<HTMLElement>;
+                return { ...rowEvents, 'data-sort-index': index } as HTMLAttributes<HTMLElement>;
+              }}
+              tableLayout="auto"
+              dataSource={order}
+              columns={columns}
+              components={components}
+              pagination={false}
+              scroll={{ x: 1300 }}
+            />
+            <div
+              id="v2board-table-dropdown"
+              className="ant-dropdown ant-dropdown-placement-bottomLeft"
+              style={{
+                display: contextMenu ? 'unset' : 'none',
+                position: 'fixed',
+                top: contextMenu?.top ?? 0,
+                left: contextMenu?.left ?? 0,
+              }}
+              onClick={() => setContextMenu(null)}
+            >
+              <ul className="ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical">
+                <li className="ant-dropdown-menu-item">
+                  <PlanEditor
+                    record={contextRecord}
+                    key={contextRecord?.id}
+                    groups={groups.data ?? []}
+                    currencySymbol={config.data?.site?.currency_symbol}
+                    saveLoading={save.isPending}
+                    onSave={savePlan}
+                    onLegacyMount={refetchPlanEditorDependencies}
+                  >
+                    <a>
+                      <EditOutlined /> 编辑
+                    </a>
+                  </PlanEditor>
+                </li>
+                <li
+                  className="ant-dropdown-menu-item"
+                  onClick={() => {
+                    setContextMenu(null);
+                    dropPlan(contextRecord?.id);
+                  }}
+                >
+                  <a style={{ color: '#ff4d4f' }}>
+                    <DeleteOutlined /> 删除
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </LegacySpin>
+    </>
   );
 }
 
-function PlanModal({
-  open,
-  plan,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  plan: Plan | null;
-  onClose: () => void;
-  onSubmit: (values: Partial<Plan> & { force_update?: 0 | 1 }) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [form] = Form.useForm();
-  return (
-    <Modal
-      open={open}
-      title={plan ? t('admin.plan.edit') : t('admin.plan.new')}
-      onCancel={onClose}
-      onOk={() => form.submit()}
-      destroyOnClose
-      width={720}
-    >
-      <Form
-        layout="vertical"
-        form={form}
-        initialValues={
-          plan ?? { show: 1, renew: 1, transfer_enable: 100, group_id: 1, sort: 1 }
-        }
-        onFinish={(values) => onSubmit({ ...values, id: plan?.id })}
-      >
-        <Form.Item name="name" label={t('plan.detail')} rules={[{ required: true }]}>
-          <Input />
-        </Form.Item>
-        <Form.Item name="content" label="Content">
-          <Input.TextArea rows={3} />
-        </Form.Item>
-        <div className="grid grid-cols-2 gap-4">
-          <Form.Item name="group_id" label="Group ID" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="transfer_enable" label="GB / cycle" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="device_limit" label={t('plan.device_limit')}>
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="speed_limit" label={t('plan.speed_limit')}>
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="capacity_limit" label="Capacity">
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="sort" label="Sort">
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-          {PRICE_KEYS.map((k) => (
-            <Form.Item key={k} name={k} label={k}>
-              <InputNumber style={{ width: '100%' }} />
-            </Form.Item>
-          ))}
-        </div>
-        <Form.Item name="show" label={t('admin.plan.show')}>
-          <InputNumber min={0} max={1} />
-        </Form.Item>
-        <Form.Item name="renew" label={t('admin.plan.allow_renew')}>
-          <InputNumber min={0} max={1} />
-        </Form.Item>
-        <Form.Item name="force_update" label="Sync existing subscribers">
-          <InputNumber min={0} max={1} />
-        </Form.Item>
-        {plan?.count != null && plan.count > 0 && (
-          <Tag color="orange">{plan.count} active users</Tag>
-        )}
-      </Form>
-    </Modal>
-  );
+function formatPrice(value: number | null) {
+  return value !== null ? value.toFixed(2) : '-';
 }

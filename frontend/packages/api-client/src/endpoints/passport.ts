@@ -43,13 +43,3 @@ export const sendEmailVerify = (client: ApiClient, payload: SendEmailVerifyPaylo
 
 export const token2Login = (client: ApiClient, payload: TokenLoginPayload) =>
   client.request<AuthData | null>({ url: '/passport/auth/token2Login', method: 'GET', params: payload });
-
-export const pv = (client: ApiClient, invite_code: string) =>
-  client.request<true>({ url: '/passport/comm/pv', method: 'POST', data: { invite_code } });
-
-export const getQuickLoginUrl = (client: ApiClient, auth_data: string, redirect?: string) =>
-  client.request<string>({
-    url: '/passport/auth/getQuickLoginUrl',
-    method: 'POST',
-    data: { auth_data, redirect },
-  });

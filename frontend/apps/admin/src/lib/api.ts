@@ -1,7 +1,8 @@
 import { createApiClient } from '@v2board/api-client';
 import type { App } from 'antd';
-import { getAuthData, getSecurePath, logout } from './auth';
+import { getAuthData, logout } from './auth';
 import { i18nGet } from './errors';
+import { getAdminApiBaseUrl, getAdminSecurePath } from './legacy-settings';
 
 let messageApi: ReturnType<typeof App.useApp>['message'] | null = null;
 export function bindMessageApi(api: ReturnType<typeof App.useApp>['message']): void {
@@ -9,14 +10,13 @@ export function bindMessageApi(api: ReturnType<typeof App.useApp>['message']): v
 }
 
 export const apiClient = createApiClient({
-  baseURL: '/api/v1',
+  baseURL: getAdminApiBaseUrl(),
   getAuthData: () => getAuthData(),
-  adminSecurePath: () => getSecurePath(),
+  adminSecurePath: () => getAdminSecurePath(),
+  nullFormValue: 'empty',
   onUnauthorized: () => {
     logout();
-    if (!window.location.pathname.endsWith('/login')) {
-      window.location.replace('/login');
-    }
+    window.location.href = `${window.location.origin}${window.location.pathname}`;
   },
   onError: (error) => {
     if (error.status === 0 || error.status >= 500) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 type StripeToken = { id: string };
 type StripeChangeEvent = {
@@ -7,14 +7,15 @@ type StripeChangeEvent = {
 };
 type StripeCardElement = {
   mount: (selector: HTMLElement) => void;
-  unmount: () => void;
+  unmount?: () => void;
   destroy?: () => void;
   on: (event: 'change', handler: (event: StripeChangeEvent) => void) => void;
 };
 type StripeElements = {
-  create: (type: 'card', options: Record<string, unknown>) => StripeCardElement;
+  create: (type: 'card', options?: Record<string, unknown>) => StripeCardElement;
 };
 type StripeInstance = {
+  _registerWrapper?: (info: { name: string; version: string; startTime: number }) => void;
   elements: () => StripeElements;
   createToken: (
     card: StripeCardElement,
@@ -28,15 +29,48 @@ declare global {
 }
 
 const STRIPE_SRC = 'https://js.stripe.com/v3';
+const STRIPE_SRC_PATTERN = /^https:\/\/js\.stripe\.com\/v3\/?(\?.*)?$/;
+const STRIPE_CARD_OPTIONS = {
+  style: {
+    base: {
+      color: '#32325d',
+      fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
+      fontSmoothing: 'antialiased',
+      fontSize: '16px',
+      '::placeholder': {
+        color: '#aab7c4',
+      },
+    },
+    invalid: {
+      color: '#fa755a',
+      iconColor: '#fa755a',
+    },
+  },
+};
 let stripeScriptPromise: Promise<void> | null = null;
+
+function findStripeScript() {
+  const scripts = document.querySelectorAll<HTMLScriptElement>(`script[src^="${STRIPE_SRC}"]`);
+  for (const script of scripts) {
+    if (STRIPE_SRC_PATTERN.test(script.src)) return script;
+  }
+  return null;
+}
 
 function loadStripeScript() {
   if (window.Stripe) return Promise.resolve();
   if (!stripeScriptPromise) {
     stripeScriptPromise = new Promise((resolve, reject) => {
-      const existing = document.querySelector<HTMLScriptElement>(`script[src="${STRIPE_SRC}"]`);
+      const existing = findStripeScript();
       if (existing) {
-        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener(
+          'load',
+          () => {
+            if (window.Stripe) resolve();
+            else reject(new Error('Stripe.js not available'));
+          },
+          { once: true },
+        );
         existing.addEventListener('error', () => reject(new Error('Failed to load Stripe.js')), {
           once: true,
         });
@@ -44,10 +78,17 @@ function loadStripeScript() {
       }
       const script = document.createElement('script');
       script.src = STRIPE_SRC;
-      script.async = true;
-      script.onload = () => resolve();
+      script.onload = () => {
+        if (window.Stripe) resolve();
+        else reject(new Error('Stripe.js not available'));
+      };
       script.onerror = () => reject(new Error('Failed to load Stripe.js'));
-      document.body.appendChild(script);
+      const target = document.head || document.body;
+      if (!target) {
+        reject(new Error('Expected document.body not to be null. Stripe.js requires a <body> element.'));
+        return;
+      }
+      target.appendChild(script);
     });
   }
   return stripeScriptPromise;
@@ -63,50 +104,28 @@ export function StripeCardForm({
   onError?: (message: string | null) => void;
 }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
     let card: StripeCardElement | null = null;
-
-    setLoading(true);
-    onToken(null);
-    onError?.(null);
+    const startTime = Date.now();
 
     void loadStripeScript()
       .then(() => {
         if (!mounted || !mountRef.current || !window.Stripe) return;
         const stripe = window.Stripe(publicKey);
-        const elements = stripe.elements();
-        card = elements.create('card', {
-          style: {
-            base: {
-              color: '#32325d',
-              fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
-              fontSmoothing: 'antialiased',
-              fontSize: '16px',
-              '::placeholder': {
-                color: '#aab7c4',
-              },
-            },
-            invalid: {
-              color: '#fa755a',
-              iconColor: '#fa755a',
-            },
-          },
+        stripe._registerWrapper?.({
+          name: 'stripe-js',
+          version: '1.38.1',
+          startTime,
         });
+        const elements = stripe.elements();
+        card = elements.create('card', STRIPE_CARD_OPTIONS);
         card.mount(mountRef.current);
-        card.on('change', (event) => {
-          if (event.error?.message) {
-            onToken(null);
-            onError?.(event.error.message);
-            return;
-          }
-          onError?.(null);
-          if (!event.complete || !card) {
-            onToken(null);
-            return;
-          }
+        // The original ignores the change event and calls createToken on every
+        // change (no event.complete/error guard), reporting the result each time.
+        card.on('change', () => {
+          if (!card) return;
           void stripe.createToken(card).then((result) => {
             if (!mounted) return;
             if (result.error?.message) {
@@ -114,31 +133,24 @@ export function StripeCardForm({
               onError?.(result.error.message);
               return;
             }
+            onError?.(null);
             onToken(result.token ?? null);
           });
         });
-        if (mounted) setLoading(false);
       })
       .catch((error: Error) => {
         if (!mounted) return;
-        setLoading(false);
-        onToken(null);
         onError?.(error.message);
       });
 
     return () => {
       mounted = false;
       if (card) {
-        card.unmount();
-        card.destroy?.();
+        if (card.destroy) card.destroy();
+        else card.unmount?.();
       }
     };
   }, [onError, onToken, publicKey]);
 
-  return (
-    <div className="StripeElement">
-      {loading && <div className="font-size-sm text-muted">Loading...</div>}
-      <div ref={mountRef} className={loading ? 'hidden' : ''} />
-    </div>
-  );
+  return <div ref={mountRef} />;
 }

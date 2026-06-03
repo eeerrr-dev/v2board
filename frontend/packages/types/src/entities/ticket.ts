@@ -31,7 +31,7 @@ export interface TicketCreatePayload {
 }
 
 export interface TicketReplyPayload {
-  id: number;
+  id: number | string;
   message?: string;
 }
 

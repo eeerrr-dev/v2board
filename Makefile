@@ -13,9 +13,13 @@ endif
 up:
 	$(DC) up -d --build
 	@echo ""
-	@echo "  app       http://localhost:8000"
-	@echo "  admin     http://localhost:8000/admin   (admin@local / 12345678)"
+	@echo "  user      http://localhost:5173            (new frontend, HMR)"
+	@echo "  admin     http://localhost:5174            (new admin, HMR)"
+	@echo "  api/legacy http://localhost:8000           (backend; admin@local / 12345678)"
 	@echo "  mailpit   http://localhost:8025"
+	@echo ""
+	@echo "  note: first 'make up' runs pnpm install in the frontend container"
+	@echo "        (a few minutes); tail it with 'make logs' or '$(DC) logs -f frontend'"
 
 down:
 	$(DC) down

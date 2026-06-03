@@ -2,46 +2,58 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useReplyTicketMutation, useTicket } from '@/lib/queries';
-import { formatDateMinuteSlash } from '@v2board/config/format';
+import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { toast } from '@/lib/legacy-toast';
 
 export default function TicketDetailPage() {
-  const { id } = useParams();
+  const { ticket_id } = useParams();
   const { t } = useTranslation();
-  const ticketId = Number(id);
+  const ticketId = ticket_id;
   const ticket = useTicket(ticketId);
   const reply = useReplyTicketMutation();
   const [message, setMessage] = useState<string | undefined>();
   const chatRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const pollRef = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      ticket.refetch();
-    }, 5000);
-    return () => window.clearInterval(timer);
+    // The bundled component stores a module-level `r = () => setTimeout(...)` and
+    // componentWillUnmount only sets `r = undefined`; it does not clear the pending
+    // timeout. That leaves exactly one already-scheduled fetch after the chat popup
+    // closes, then the loop stops because `typeof r` is no longer "function".
+    pollRef.current = () => {
+      window.setTimeout(() => {
+        void ticket.refetch();
+        if (typeof pollRef.current === 'function') pollRef.current();
+      }, 5000);
+    };
+    pollRef.current();
+    return () => {
+      pollRef.current = undefined;
+    };
   }, [ticket.refetch]);
 
   useEffect(() => {
     const chat = chatRef.current;
     if (!chat) return;
     chat.scrollTo(0, chat.scrollHeight);
-  }, [ticket.data?.message?.length]);
+  }, [ticket.data?.message.length]);
 
   const submitReply = async () => {
     if (reply.isPending) return;
-    const toastId = toast.loading('发送中');
+    toast.loading('发送中');
     try {
-      await reply.mutateAsync({ id: ticketId, message });
-      toast.dismiss(toastId);
+      await reply.mutateAsync({ id: ticketId as string, message });
+      toast.destroy();
       toast.success('发送成功');
       setMessage(undefined);
+      if (inputRef.current) inputRef.current.value = '';
     } catch {
-      toast.dismiss(toastId);
+      toast.destroy();
     }
   };
 
   const data = ticket.data;
-  const messages = data?.message ?? [];
 
   return (
     <div>
@@ -52,11 +64,11 @@ export default function TicketDetailPage() {
         className="bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1"
         ref={chatRef}
       >
-        {messages.map((item) =>
+        {data?.message.map((item) =>
           item.is_me ? (
-            <div key={item.id}>
+            <div>
               <div className="font-size-sm text-muted my-2 text-right">
-                {formatDateMinuteSlash(item.created_at)}
+                {formatLegacyDateMinuteSlash(item.created_at)}
               </div>
               <div className="text-right ml-4">
                 <div className="d-inline-block bg-gray-lighter px-3 py-2 mb-2 mw-100 rounded text-left">
@@ -65,9 +77,9 @@ export default function TicketDetailPage() {
               </div>
             </div>
           ) : (
-            <div key={item.id}>
+            <div>
               <div className="font-size-sm text-muted my-2">
-                {formatDateMinuteSlash(item.created_at)}
+                {formatLegacyDateMinuteSlash(item.created_at)}
               </div>
               <div className="mr-4">
                 <div className="d-inline-block bg-success-lighter px-3 py-2 mb-2 mw-100 rounded text-left">
@@ -80,7 +92,7 @@ export default function TicketDetailPage() {
       </div>
       <div className="js-chat-form block-content p-2 bg-body-dark input___1j_ND">
         <input
-          value={message ?? ''}
+          ref={inputRef}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
             if (event.keyCode === 13) void submitReply();

@@ -1,5 +1,4 @@
 import type {
-  ActiveSession,
   AvailableServer,
   CheckLoginResult,
   Coupon,
@@ -21,6 +20,9 @@ import type {
   TicketReplyPayload,
   TicketWithdrawPayload,
   TrafficLogEntry,
+  Tutorial,
+  TutorialFetchResult,
+  TutorialStep,
   UserCommConfig,
   UserInfo,
   UserUpdatePayload,
@@ -59,8 +61,12 @@ export const changePassword = (client: ApiClient, old_password: string, new_pass
 export const resetSecurity = (client: ApiClient) =>
   client.request<string>({ url: '/user/resetSecurity', method: 'GET' });
 
-export const transfer = (client: ApiClient, transfer_amount: number) =>
-  client.request<true>({ url: '/user/transfer', method: 'POST', data: { transfer_amount } });
+export const transfer = (client: ApiClient, transferAmount: number | string | undefined) =>
+  client.request<true>({
+    url: '/user/transfer',
+    method: 'POST',
+    data: { transfer_amount: 100 * (transferAmount as number) },
+  });
 
 export const newPeriod = (client: ApiClient) =>
   client.request<true>({ url: '/user/newPeriod', method: 'POST' });
@@ -86,20 +92,10 @@ export const redeemGiftCard = async (
 export const unbindTelegram = (client: ApiClient) =>
   client.request<true>({ url: '/user/unbindTelegram', method: 'GET' });
 
-export const getActiveSession = (client: ApiClient) =>
-  client.request<ActiveSession[]>({ url: '/user/getActiveSession', method: 'GET' });
-
-export const removeActiveSession = (client: ApiClient, session_id: string) =>
-  client.request<boolean>({
-    url: '/user/removeActiveSession',
-    method: 'POST',
-    data: { session_id },
-  });
-
 export const fetchPlans = (client: ApiClient) =>
   client.request<Plan[]>({ url: '/user/plan/fetch', method: 'GET' });
 
-export const fetchPlan = (client: ApiClient, id: number) =>
+export const fetchPlan = (client: ApiClient, id: number | string) =>
   client.request<Plan>({ url: '/user/plan/fetch', method: 'GET', params: { id } });
 
 export const fetchOrders = (client: ApiClient, status?: number) =>
@@ -124,7 +120,7 @@ export const checkoutOrder = async (
     method: 'POST',
     data: payload,
   });
-  return { type: (env.type ?? 0) as OrderCheckoutResult['type'], data: env.data };
+  return { type: env.type as OrderCheckoutResult['type'], data: env.data };
 };
 
 export const checkOrder = (client: ApiClient, trade_no: string) =>
@@ -144,15 +140,15 @@ export const fetchInvite = (client: ApiClient) =>
 
 export const inviteDetails = async (
   client: ApiClient,
-  current = 1,
-  page_size = 10,
+  current?: number,
+  page_size?: number,
 ): Promise<CommissionDetailPage> => {
   const env = await client.requestEnvelope<CommissionDetailPage['data']>({
     url: '/user/invite/details',
     method: 'GET',
     params: { current, page_size },
   });
-  return { data: env.data, total: env.total ?? 0 };
+  return { data: env.data, total: env.total };
 };
 
 export const fetchNotices = async (client: ApiClient): Promise<NoticePage> => {
@@ -160,16 +156,13 @@ export const fetchNotices = async (client: ApiClient): Promise<NoticePage> => {
     url: '/user/notice/fetch',
     method: 'GET',
   });
-  return { data: env.data, total: env.total ?? 0 };
+  return { data: env.data };
 };
-
-export const noticeDetail = (client: ApiClient, id: number) =>
-  client.request<Notice>({ url: '/user/notice/fetch', method: 'GET', params: { id } });
 
 export const fetchTickets = (client: ApiClient) =>
   client.request<Ticket[]>({ url: '/user/ticket/fetch', method: 'GET' });
 
-export const ticketDetail = (client: ApiClient, id: number) =>
+export const ticketDetail = (client: ApiClient, id: number | string) =>
   client.request<Ticket>({ url: '/user/ticket/fetch', method: 'GET', params: { id } });
 
 export const saveTicket = (client: ApiClient, payload: TicketCreatePayload) =>
@@ -187,7 +180,25 @@ export const withdrawTicket = (client: ApiClient, payload: TicketWithdrawPayload
 export const fetchServers = (client: ApiClient) =>
   client.request<AvailableServer[]>({ url: '/user/server/fetch', method: 'GET' });
 
-export const checkCoupon = (client: ApiClient, code: string, plan_id: number) =>
+export const fetchTutorials = (client: ApiClient) =>
+  client.request<TutorialFetchResult>({ url: '/user/tutorial/fetch', method: 'GET' });
+
+export const tutorialDetail = async (client: ApiClient, id: number | string): Promise<Tutorial> => {
+  const data = await client.request<Tutorial>({
+    url: '/user/tutorial/fetch',
+    method: 'GET',
+    params: { id },
+  });
+  return { ...data, steps: parseTutorialSteps(data.steps) };
+};
+
+function parseTutorialSteps(steps: Tutorial['steps']): TutorialStep[] {
+  if (!steps) return [];
+  if (Array.isArray(steps)) return steps;
+  return JSON.parse(steps) as TutorialStep[];
+}
+
+export const checkCoupon = (client: ApiClient, code: string, plan_id: number | string) =>
   client.request<Coupon>({
     url: '/user/coupon/check',
     method: 'POST',
@@ -214,7 +225,7 @@ export const fetchKnowledge = (client: ApiClient, language: string, keyword?: st
     params: { language, keyword },
   });
 
-export const knowledgeDetail = (client: ApiClient, id: number, language: string) =>
+export const knowledgeDetail = (client: ApiClient, id: number | string, language: string) =>
   client.request<Knowledge>({ url: '/user/knowledge/fetch', method: 'GET', params: { id, language } });
 
 export const getTrafficLog = (client: ApiClient) =>

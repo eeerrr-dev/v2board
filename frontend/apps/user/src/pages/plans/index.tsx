@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useCommConfig, usePlans } from '@/lib/queries';
 import { PlanContent } from '@/components/plan-content';
+import { legacyHref } from '@/lib/legacy-href';
 
 type PlanLike = NonNullable<ReturnType<typeof usePlans>['data']>[number];
 
@@ -19,11 +20,19 @@ const RENEWAL_PRICE_KEYS = PERIOD_PRICES.filter((p) => p.key !== 'onetime_price'
 
 type FilterKind = 'all' | 'period' | 'traffic';
 
+function getUnitPriceTag(plan: PlanLike) {
+  let unitPrice: { key: keyof PlanLike; labelKey: string } | undefined;
+  [...PERIOD_PRICES].reverse().forEach((period) => {
+    if (plan[period.key] !== null) unitPrice = period;
+  });
+  return unitPrice;
+}
+
 export default function PlansPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data, isLoading } = usePlans();
-  const { data: comm } = useCommConfig();
+  const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
   const symbol = comm?.currency_symbol;
   const [filter, setFilter] = useState<FilterKind>('all');
 
@@ -44,20 +53,23 @@ export default function PlansPage() {
       </h2>
       <div className="mb-3 font-size-sm mt-3 m-3 mx-xl-0">
         <span className="v2board-plan-tabs border-primary text-primary">
+          {/* Original inactive tabs use `N === tabs && "active bg-primary"` → false, so
+              React omits the class attribute entirely (umi.js @659916); undefined matches
+              that omitted-attribute DOM (an empty class="" would not). */}
           <span
-            className={filter === 'all' ? 'active bg-primary' : ''}
+            className={filter === 'all' ? 'active bg-primary' : undefined}
             onClick={() => setFilter('all')}
           >
             {t('plan.filter_all')}
           </span>
           <span
-            className={filter === 'period' ? 'active bg-primary' : ''}
+            className={filter === 'period' ? 'active bg-primary' : undefined}
             onClick={() => setFilter('period')}
           >
             {t('plan.filter_period')}
           </span>
           <span
-            className={filter === 'traffic' ? 'active bg-primary' : ''}
+            className={filter === 'traffic' ? 'active bg-primary' : undefined}
             onClick={() => setFilter('traffic')}
           >
             {t('plan.filter_traffic')}
@@ -72,19 +84,20 @@ export default function PlansPage() {
       ) : (
         <div className="row">
           {filtered.map((plan) => {
-            const unitPrice = PERIOD_PRICES.find((p) => plan[p.key] !== null);
+            const unitPrice = getUnitPriceTag(plan);
             const isSoldOut = plan.capacity_limit !== null && plan.capacity_limit <= 0;
             const almostSoldOut =
               plan.capacity_limit !== null &&
               plan.capacity_limit >= 1 &&
               plan.capacity_limit <= 5;
-            if (!unitPrice) return null;
 
             return (
+              // Faithful to the original, which assigns key={Math.random()} to the
+              // plan card wrapper on every render (no mount animation, so invisible).
               <div key={Math.random()} className="col-md-12 col-xl-4">
                 <a
                   className="block block-link-pop block-rounded m-3 mx-xl-0"
-                  href="javascript:void(0);"
+                  ref={legacyHref()}
                   onClick={() => {
                     if (!isSoldOut) navigate(`/plan/${plan.id}`);
                   }}
@@ -98,9 +111,9 @@ export default function PlansPage() {
                   <div className="block-content bg-gray-light">
                     <div className="py-2">
                       <p className="h1 mb-2">
-                        {symbol} {((plan[unitPrice.key] as number) / 100).toFixed(2)}
+                        {symbol} {((unitPrice ? (plan[unitPrice.key] as number) : NaN) / 100).toFixed(2)}
                       </p>
-                      <p className="h6 text-muted">{t(unitPrice.labelKey)}</p>
+                      <p className="h6 text-muted">{unitPrice ? t(unitPrice.labelKey) : ''}</p>
                     </div>
                   </div>
                   <div className="block-content py-3">

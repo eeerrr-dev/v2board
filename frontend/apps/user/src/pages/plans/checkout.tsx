@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import { user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
 import {
+  userKeys,
   useCancelOrderMutation,
   useCommConfig,
   useOrders,
@@ -15,6 +17,8 @@ import type { Coupon, Plan, PlanPeriod } from '@v2board/types';
 import { PlanContent } from '@/components/plan-content';
 import { legacyConfirm } from '@/components/legacy-confirm';
 import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
+import { ExclamationCircleIcon } from '@/components/ant-icon';
+import { AntBtn } from '@/components/ant-btn';
 
 const PERIOD_LABELS: Record<PlanPeriod, string> = {
   month_price: 'plan.monthly',
@@ -27,7 +31,9 @@ const PERIOD_LABELS: Record<PlanPeriod, string> = {
   reset_price: 'plan.reset',
 };
 
-const PERIODS: { key: keyof Plan; period: Exclude<PlanPeriod, 'reset_price'>; labelKey: string }[] = [
+type PurchasablePlanPeriod = Exclude<PlanPeriod, 'reset_price'>;
+
+const PERIODS: { key: PurchasablePlanPeriod; period: PurchasablePlanPeriod; labelKey: string }[] = [
   { key: 'month_price', period: 'month_price', labelKey: 'plan.monthly' },
   { key: 'quarter_price', period: 'quarter_price', labelKey: 'plan.quarterly' },
   { key: 'half_year_price', period: 'half_year_price', labelKey: 'plan.half_year' },
@@ -38,20 +44,21 @@ const PERIODS: { key: keyof Plan; period: Exclude<PlanPeriod, 'reset_price'>; la
 ];
 
 export default function PlanCheckoutPage() {
-  const { id } = useParams();
-  const planId = Number(id);
+  const { plan_id } = useParams();
+  const planId = plan_id;
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data: comm } = useCommConfig();
-  const { data: info } = useUserInfo();
-  const { data: subscribe } = useSubscribe();
-  const orders = useOrders();
-  const cancelOrder = useCancelOrderMutation();
+  const queryClient = useQueryClient();
   const planQuery = usePlan(planId);
+  const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
+  const orders = useOrders();
+  const { data: info } = useUserInfo({ refetchOnMount: false });
+  const { data: subscribe } = useSubscribe({ enabled: false });
+  const cancelOrder = useCancelOrderMutation();
   const [period, setPeriod] = useState<PlanPeriod | null>(null);
-  const [coupon, setCoupon] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const couponRef = useRef<HTMLInputElement>(null);
 
   const symbol = comm?.currency_symbol;
   const currency = comm?.currency;
@@ -73,9 +80,21 @@ export default function PlanCheckoutPage() {
     if (planQuery.error) navigate('/plan');
   }, [navigate, planQuery.error]);
 
+  useEffect(
+    () => () => {
+      queryClient.removeQueries({ queryKey: userKeys.plans });
+      queryClient.removeQueries({ queryKey: userKeys.plan(planId as string) });
+    },
+    [planId, queryClient],
+  );
+
   const onApplyCoupon = async () => {
     try {
-      const checked = await user.checkCoupon(apiClient, coupon, planId);
+      const checked = await user.checkCoupon(
+        apiClient,
+        couponRef.current!.value,
+        planId as string,
+      );
       setAppliedCoupon(checked);
     } catch {}
   };
@@ -87,7 +106,7 @@ export default function PlanCheckoutPage() {
     try {
       const tradeNo = await user.saveOrder(apiClient, {
         plan_id: planQuery.data.id,
-        period: currentPeriod ?? undefined,
+        period: currentPeriod,
         coupon_code: appliedCoupon?.name ? appliedCoupon.code : undefined,
       });
       navigate(`/order/${tradeNo}`);
@@ -105,13 +124,13 @@ export default function PlanCheckoutPage() {
       info.plan_id !== plan.id &&
       !isLegacyExpired(subscribe?.expired_at)
     ) {
-      const ok = await legacyConfirm({
+      void legacyConfirm({
         title: t('common.attention'),
         content: t('plan.change_warning'),
-        okText: t('common.confirm'),
+        onOk: () => {
+          void saveOrder();
+        },
       });
-      if (!ok) return;
-      await saveOrder();
       return;
     }
 
@@ -119,24 +138,25 @@ export default function PlanCheckoutPage() {
     const unfinishedOrder =
       firstOrder && (firstOrder.status === 0 || firstOrder.status === 1) ? firstOrder : undefined;
     if (unfinishedOrder) {
-      const ok = await legacyConfirm({
+      void legacyConfirm({
         title: t('common.attention'),
         content: t('plan.unfinished_order_confirm'),
         okText: t('plan.confirm_cancel_previous'),
         cancelText: t('plan.return_orders'),
+        okButtonProps: { loading: cancelOrder.isPending },
+        onOk: () => {
+          void cancelOrder
+            .mutateAsync(unfinishedOrder.trade_no)
+            .then(() => {
+              // Legacy order/cancel owns the list refresh, then dispatches `details`
+              // (plural), which has no effect; this callback only continues ordering.
+              void saveOrder();
+            })
+            .catch(() => {});
+        },
+        onCancel: () => navigate('/order'),
       });
-      if (!ok) {
-        navigate('/order');
-        return;
-      }
-      setSubmitting(true);
-      try {
-        await cancelOrder.mutateAsync(unfinishedOrder.trade_no);
-      } catch {
-        setSubmitting(false);
-        return;
-      }
-      setSubmitting(false);
+      return;
     }
     await saveOrder();
   };
@@ -158,14 +178,23 @@ export default function PlanCheckoutPage() {
 
   const plan = planQuery.data;
   const selectedPeriod = period ?? getDefaultPeriod(plan);
-  const basePrice = selectedPeriod
-    ? ((plan as unknown as Record<string, number | null>)[selectedPeriod] ?? 0)
-    : 0;
+  // Faithful to the original render: the base row is `(plan[selectPeriod]/100).toFixed(2)`
+  // and getTotalAmount() reads `plan[selectPeriod]` directly. With no period selectable
+  // (all prices null) selectPeriod has no value, so plan[selectPeriod] is undefined and
+  // both the base row and grand total render "NaN" rather than "0.00".
+  const basePrice = (plan as unknown as Record<string, number | null>)[
+    selectedPeriod as PlanPeriod
+  ] as number;
   const periodLabel = selectedPeriod ? t(PERIOD_LABELS[selectedPeriod]) : '';
-  const discount = appliedCoupon
+  // Faithful to the original couponProcess(amount, type, value): case 1 → value,
+  // case 2 → amount*(value/100), no default → undefined → the discount/total render
+  // "NaN" for any unknown coupon type.
+  const discount = appliedCoupon?.name
     ? appliedCoupon.type === 1
-      ? appliedCoupon.value
-      : Number((basePrice * (appliedCoupon.value / 100)).toFixed(2))
+      ? Number(appliedCoupon.value.toFixed(2))
+      : appliedCoupon.type === 2
+        ? Number((basePrice * (appliedCoupon.value / 100)).toFixed(2))
+        : NaN
     : 0;
   const totalAmount = Math.max(0, basePrice - discount);
   const canRenew = Boolean(plan.renew || info?.plan_id !== plan.id);
@@ -178,17 +207,19 @@ export default function PlanCheckoutPage() {
             <div className="block-content">
               <div className="ant-result ant-result-info">
                 <div className="ant-result-icon">
-                  <i className="anticon anticon-info-circle" />
+                  <ExclamationCircleIcon />
                 </div>
                 <div className="ant-result-title">{t('plan.cannot_renew_current')}</div>
                 <div className="ant-result-subtitle">
-                  <button
+                  {/* antd v3 Button: classNames('ant-btn', className, {'ant-btn-primary':type}) —
+                      the passed className precedes the type modifier. */}
+                  <AntBtn
                     type="button"
-                    className="ant-btn ant-btn-primary mt-3"
+                    className="ant-btn mt-3 ant-btn-primary"
                     onClick={() => navigate('/plan')}
                   >
-                    <span>{t('plan.select_other')}</span>
-                  </button>
+                    {t('plan.select_other')}
+                  </AntBtn>
                 </div>
               </div>
             </div>
@@ -204,9 +235,10 @@ export default function PlanCheckoutPage() {
         <div className="block block-link-pop block-rounded py-3" style={{ backgroundColor: '#fff' }}>
           <h4 className="mb-0 px-3">{plan.name}</h4>
           <PlanContent
-            content={plan.content ?? ''}
+            content={plan.content}
             className="v2board-plan-content px-3"
             htmlClassName="v2board-plan-content"
+            guardNull
           />
         </div>
 
@@ -217,22 +249,36 @@ export default function PlanCheckoutPage() {
           </div>
           <div className="block-content p-0">
             {periods.map((item) => {
-              const price = (plan as unknown as Record<string, number | null>)[item.period];
-              if (price === null || price === undefined) return null;
+              const price = plan[item.period];
+              if (price === null) return null;
               return (
                 <div
-                  key={item.period}
                   onClick={() => setPeriod(item.period)}
-                  className={`v2board-select ${selectedPeriod === item.period ? 'active border-primary' : ''}`}
+                  className={`v2board-select ${selectedPeriod === item.period ? 'active border-primary' : 'false'}`}
                 >
                   <div style={{ flex: 1 }}>
-                    <span className="v2board-select-radio">
-                      <span className="ant-radio">
-                        <span
-                          className={`ant-radio-inner${selectedPeriod === item.period ? ' ant-radio-inner-checked' : ''}`}
+                    {/* antd v3 Radio: classNames(className, {'ant-radio-wrapper':true,
+                        'ant-radio-wrapper-checked':checked}) — the passed className leads. */}
+                    <label
+                      className={`v2board-select-radio ant-radio-wrapper${selectedPeriod === item.period ? ' ant-radio-wrapper-checked' : ''}`}
+                    >
+                      <span className={`ant-radio${selectedPeriod === item.period ? ' ant-radio-checked' : ''}`}>
+                        {/* The visible checked dot is driven by the ant-radio-checked class
+                            above; the (opacity:0) input binds to the post-mount `period`
+                            state — never the render-time default — so it adopts checked via
+                            an update rather than at mount. The original (React 16 antd Radio)
+                            sets selectPeriod atomically with the plan yet never reflects
+                            `checked` to the attribute; React 19 reflects a mount-time checked,
+                            so deferring keeps the DOM attribute-free, matching the original. */}
+                        <input
+                          type="radio"
+                          className="ant-radio-input"
+                          checked={period === item.period}
+                          onChange={() => {}}
                         />
+                        <span className="ant-radio-inner" />
                       </span>
-                    </span>
+                    </label>
                     {t(item.labelKey)}
                   </div>
                   <div style={{ flex: 1, textAlign: 'right' }}>
@@ -250,14 +296,14 @@ export default function PlanCheckoutPage() {
 
       <div className="col-md-4 col-sm-12">
         <div
-          className="block block-link-pop block-rounded px-3 py-3 mb-2 text-light"
+          // Original class string has a DOUBLE space after `block-rounded` (umi.js).
+          className="block block-link-pop block-rounded  px-3 py-3 mb-2 text-light"
           style={{ background: '#35383D' }}
         >
           <input
             type="text"
             className="form-control v2board-input-coupon p-0"
-            value={coupon}
-            onChange={(event) => setCoupon(event.target.value)}
+            ref={couponRef}
             placeholder={t('plan.coupon_question')}
           />
           <button
@@ -272,7 +318,8 @@ export default function PlanCheckoutPage() {
         </div>
 
         <div
-          className="block block-link-pop block-rounded px-3 py-3 text-light"
+          // Original class string has a DOUBLE space after `block-rounded` (umi.js).
+          className="block block-link-pop block-rounded  px-3 py-3 text-light"
           style={{ background: '#35383D' }}
         >
           <h5 className="text-light mb-3">{t('plan.order_total')}</h5>
