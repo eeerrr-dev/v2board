@@ -209,9 +209,9 @@ describe('OrdersPage legacy order manager', () => {
   });
 
   it('uses the original outer fetchLoading spin wrapper for order refetches', () => {
-    expect(ordersSource).toContain('function LegacySpin');
+    expect(ordersSource).toContain("import { LegacySpin } from '@/components/legacy-spin';");
     expect(ordersSource).toContain('<LegacySpin loading={orders.isFetching}>');
-    expect(ordersSource).toContain('className="spinner-grow text-primary"');
+    expect(ordersSource).not.toContain('className="spinner-grow text-primary"');
     expect(ordersSource).not.toContain('              loading={orders.isFetching}');
     expect(ordersSource).not.toContain('loading={orders.isLoading}');
   });

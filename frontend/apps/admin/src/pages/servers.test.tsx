@@ -7,7 +7,9 @@ import ServersPage, {
   createServerSortPayload,
   getLegacyNetworkSettingsPlaceholder,
   getLegacyServerInitialValues,
+  installLegacyServerSortPrompt,
   moveServerNodeByLegacyDragIndexes,
+  shouldPromptLegacyServerSortClick,
 } from './servers';
 
 const serversSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'servers.tsx'), 'utf8');
@@ -16,11 +18,9 @@ const defaultUserAgent = window.navigator.userAgent;
 
 const mocks = vi.hoisted(() => ({
   pathname: '/server/group',
-  usePrompt: vi.fn(),
 }));
 
 vi.mock('react-router-dom', () => ({
-  unstable_usePrompt: mocks.usePrompt,
   useLocation: () => ({ pathname: mocks.pathname }),
 }));
 
@@ -141,8 +141,9 @@ function setUserAgent(value: string) {
 
 beforeEach(() => {
   mocks.pathname = '/server/group';
-  mocks.usePrompt.mockClear();
   setUserAgent(defaultUserAgent);
+  document.body.innerHTML = '';
+  vi.restoreAllMocks();
 });
 
 describe('ServersPage legacy server group route', () => {
@@ -376,6 +377,8 @@ describe('ServersPage legacy server group route', () => {
     );
     expect(getLegacyNetworkSettingsPlaceholder('trojan', 'tcp')).toBe('');
     expect(getLegacyNetworkSettingsPlaceholder('trojan', 'httpupgrade')).toBe('');
+    expect(serversSource).toContain('tcp: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.tcp!,');
+    expect(serversSource).toContain('xhttp: LEGACY_VLESS_NETWORK_SETTINGS_PLACEHOLDERS.xhttp!,');
   });
 
   it('keeps the grouped server tab edit input without an empty-string fallback', () => {
@@ -1123,15 +1126,64 @@ describe('ServersPage legacy server group route', () => {
 
   it('restores the original unsaved server sort navigation prompt', () => {
     mocks.pathname = '/server/manage';
-    renderToStaticMarkup(<ServersPage />);
+    const html = renderToStaticMarkup(<ServersPage />);
 
-    expect(mocks.usePrompt).toHaveBeenCalledWith({
-      message: '节点排序还没有保存，是否离开',
-      when: false,
-    });
-    expect(serversSource).toContain('unstable_usePrompt as usePrompt');
+    expect(html).toContain('v2board-server-manage');
     expect(serversSource).toContain("const LEGACY_SERVER_SORT_PROMPT = '节点排序还没有保存，是否离开'");
     expect(serversSource).toContain('<LegacyServerSortPrompt when={sortMode} />');
+    expect(serversSource).toContain('installLegacyServerSortPrompt()');
+    expect(serversSource).toContain("document.addEventListener('click', warnBeforeRouteClick, true)");
+    expect(serversSource).toContain("window.addEventListener('hashchange', warnBeforeHashChange)");
+    expect(serversSource).toContain("window.addEventListener('beforeunload', warnBeforeUnload)");
+    expect(serversSource).toContain('event.returnValue = message');
+    expect(serversSource).not.toContain('unstable_usePrompt as usePrompt');
+  });
+
+  it('prompts for legacy server sort route clicks without blocking page-local controls', () => {
+    const navLink = document.createElement('a');
+    navLink.className = 'nav-main-link';
+    navLink.appendChild(document.createElement('span'));
+    document.body.appendChild(navLink);
+
+    const page = document.createElement('div');
+    page.className = 'v2board-server-manage';
+    const pageButton = document.createElement('button');
+    page.appendChild(pageButton);
+    document.body.appendChild(page);
+
+    expect(shouldPromptLegacyServerSortClick(navLink.firstElementChild)).toBe(true);
+    expect(shouldPromptLegacyServerSortClick(pageButton)).toBe(false);
+  });
+
+  it('cancels legacy server sort route clicks before React navigation runs', () => {
+    const confirm = vi.fn(() => false);
+    Object.defineProperty(window, 'confirm', { configurable: true, value: confirm });
+    const dispose = installLegacyServerSortPrompt('节点排序还没有保存，是否离开');
+    const navLink = document.createElement('a');
+    navLink.className = 'nav-main-link';
+    document.body.appendChild(navLink);
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+
+    expect(navLink.dispatchEvent(click)).toBe(false);
+    expect(click.defaultPrevented).toBe(true);
+    expect(confirm).toHaveBeenCalledWith('节点排序还没有保存，是否离开');
+
+    dispose();
+  });
+
+  it('restores the previous hash when the legacy server sort prompt rejects a hash transition', () => {
+    const confirm = vi.fn(() => false);
+    Object.defineProperty(window, 'confirm', { configurable: true, value: confirm });
+    window.location.hash = '#/server/manage';
+    const dispose = installLegacyServerSortPrompt('节点排序还没有保存，是否离开');
+
+    window.location.hash = '#/dashboard';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+
+    expect(window.location.hash).toBe('#/server/manage');
+    expect(confirm).toHaveBeenCalledWith('节点排序还没有保存，是否离开');
+
+    dispose();
   });
 
   it('reorders server rows with the old sortable-table index behavior', () => {

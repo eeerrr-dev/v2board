@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Input, Modal, Select, Spin, Switch, Table } from 'antd';
+import { useEffect, useState } from 'react';
+import { Button, Input, Modal, Select, Switch, Table } from 'antd';
 import type { TableProps } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -10,14 +10,7 @@ import {
   useSaveNoticeMutation,
   useShowNoticeMutation,
 } from '@/lib/queries';
-
-function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
-  );
-}
+import { LegacySpin } from '@/components/legacy-spin';
 
 export default function NoticesPage() {
   const notices = useAdminNotices({});

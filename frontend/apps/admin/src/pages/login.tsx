@@ -30,6 +30,11 @@ function LegacyLoadingIcon() {
   );
 }
 
+function normalizeRedirectTarget(target: string | null): string {
+  if (!target) return '/dashboard';
+  return target.startsWith('/') ? target : `/${target}`;
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -41,7 +46,7 @@ export default function LoginPage() {
   const title = getAdminTitle();
   const backgroundUrl = getAdminBackgroundUrl();
   const redirectParam = params.get('redirect');
-  const redirect = redirectParam || 'dashboard';
+  const redirect = normalizeRedirectTarget(redirectParam);
 
   const onLogin = useCallback(async () => {
     setSubmitting(true);

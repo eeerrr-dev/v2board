@@ -43,4 +43,8 @@ describe('user legacy route table', () => {
       '<Route path="/ticket/:ticket_id" element={USER_ROUTE_ELEMENTS[\'/ticket/:ticket_id\']} />',
     );
   });
+
+  it('redirects unmatched legacy hashes back through the bundled home route', () => {
+    expect(source).toContain('<Route path="*" element={USER_ROUTE_ELEMENTS[\'/\']} />');
+  });
 });

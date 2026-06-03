@@ -237,7 +237,7 @@ describe('CouponsPage legacy routes', () => {
     );
     expect(source).toContain('legacyCouponQuery = next;');
     expect(source).toContain('legacyGiftcardQuery = next;');
-    expect(source.match(/\\.\\.\\.pagination,/g)).toHaveLength(2);
+    expect(source.match(/\.\.\.pagination,/g)).toHaveLength(2);
     expect(source).not.toContain('current: pagination.current');
     expect(source).not.toContain('pageSize: pagination.pageSize');
     expect(source).not.toContain(

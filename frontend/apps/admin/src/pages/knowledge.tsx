@@ -6,9 +6,8 @@ import {
   useState,
   type HTMLAttributes,
   type ReactElement,
-  type ReactNode,
 } from 'react';
-import { App, Button, Drawer, Input, Modal, Select, Spin, Switch, Table } from 'antd';
+import { App, Button, Drawer, Input, Modal, Select, Switch, Table } from 'antd';
 import type { TableProps } from 'antd';
 import { LoadingOutlined, MenuOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -24,6 +23,7 @@ import {
   useShowKnowledgeMutation,
   useSortKnowledgeMutation,
 } from '@/lib/queries';
+import { LegacySpin } from '@/components/legacy-spin';
 
 type SaveKnowledgePayload = Parameters<typeof admin.saveKnowledge>[1];
 
@@ -43,14 +43,6 @@ const LEGACY_KNOWLEDGE_LOCALES = (
 
 function renderLegacyAdminMarkdown(markdown: string) {
   return legacyAdminMarkdown.render(markdown);
-}
-
-function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
-  );
 }
 
 function LegacyMarkdownEditor({

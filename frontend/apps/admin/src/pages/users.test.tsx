@@ -200,9 +200,9 @@ describe('UsersPage legacy user manager', () => {
     expect(userTrafficModalSource).toContain("styles={{ body: { padding: 0 } }}");
     expect(userTrafficModalSource).toContain('footer={false}');
     expect(userTrafficModalSource).not.toContain('footer={null}');
-    expect(userTrafficModalSource).toContain('function LegacyTrafficSpin');
-    expect(userTrafficModalSource).toContain('className="spinner-grow text-primary"');
-    expect(userTrafficModalSource).toContain('<LegacyTrafficSpin loading={records.isFetching}>');
+    expect(userTrafficModalSource).toContain("import { LegacySpin } from '@/components/legacy-spin';");
+    expect(userTrafficModalSource).toContain('<LegacySpin loading={records.isFetching}>');
+    expect(userTrafficModalSource).not.toContain('<Spin');
     expect(userTrafficModalSource).toContain('page: 1');
     expect(userTrafficModalSource).toContain('total: 0');
     expect(userTrafficModalSource).toContain('pagination,');
@@ -510,7 +510,7 @@ describe('UsersPage legacy user manager', () => {
   });
 
   it('keeps the original refetch loading mask around the whole user table block', () => {
-    expect(usersSource).toContain('function LegacySpin');
+    expect(usersSource).toContain("import { LegacySpin } from '@/components/legacy-spin';");
     expect(usersSource).toContain('<LegacySpin loading={users.isFetching}>');
     expect(usersSource).not.toContain('loading={users.isLoading}');
   });

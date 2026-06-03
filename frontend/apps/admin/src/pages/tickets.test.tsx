@@ -331,16 +331,17 @@ describe('TicketsPage legacy ticket manager', () => {
 
   it('keeps the old unkeyed ticket message map from the bundled chat component', () => {
     const messageSource = ticketsSource.slice(
-      ticketsSource.indexOf('{current?.message.map((item) =>'),
-      ticketsSource.indexOf('<div className="js-chat-form', ticketsSource.indexOf('{current?.message.map((item) =>')),
+      ticketsSource.indexOf('{current?.message!.map((item) =>'),
+      ticketsSource.indexOf('<div className="js-chat-form', ticketsSource.indexOf('{current?.message!.map((item) =>')),
     );
 
-    expect(messageSource).toContain('{current?.message.map((item) =>');
+    expect(messageSource).toContain('{current?.message!.map((item) =>');
     expect(messageSource).not.toContain('key={item.id}');
     expect(messageSource).not.toContain('key={index}');
     expect(messageSource).not.toContain('key=');
     expect(ticketsSource).not.toContain('current?.message?.map');
     expect(ticketsSource).not.toContain('ticket.data?.message?.length');
+    expect(ticketsSource).toContain('ticket.data?.message!.length');
   });
 
   it('scrolls the bundled admin chat window to the latest message', () => {

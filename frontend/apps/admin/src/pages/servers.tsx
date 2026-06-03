@@ -1,5 +1,5 @@
 import { cloneElement, useEffect, useMemo, useRef, useState } from 'react';
-import type { HTMLAttributes, MouseEvent, ReactElement, ReactNode } from 'react';
+import type { HTMLAttributes, MouseEvent as ReactMouseEvent, ReactElement, ReactNode } from 'react';
 import {
   App,
   Button,
@@ -13,7 +13,6 @@ import {
   Popconfirm,
   Select,
   Space,
-  Spin,
   Switch,
   Table,
   Tabs,
@@ -39,7 +38,7 @@ import {
 } from '@ant-design/icons';
 import type { FormInstance, MenuProps, TableProps } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { unstable_usePrompt as usePrompt, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
   useCopyServerMutation,
   useDropServerGroupMutation,
@@ -58,6 +57,7 @@ import { apiClient } from '@/lib/api';
 import { i18nGet } from '@/lib/errors';
 import { legacyCopyText } from '@/lib/legacy-copy';
 import { formatDateTime } from '@v2board/config/format';
+import { LegacySpin } from '@/components/legacy-spin';
 
 const SERVER_TYPES: admin.ServerTypeName[] = [
   'v2node',
@@ -190,7 +190,7 @@ const LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS: Record<string, string> = {
   ),
 };
 const LEGACY_VLESS_NETWORK_SETTINGS_PLACEHOLDERS: Record<string, string> = {
-  tcp: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.tcp,
+  tcp: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.tcp!,
   ws: JSON.stringify(
     {
       security: 'auto',
@@ -202,9 +202,9 @@ const LEGACY_VLESS_NETWORK_SETTINGS_PLACEHOLDERS: Record<string, string> = {
     null,
     4,
   ),
-  grpc: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.grpc,
-  kcp: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.kcp,
-  httpupgrade: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.httpupgrade,
+  grpc: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.grpc!,
+  kcp: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.kcp!,
+  httpupgrade: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.httpupgrade!,
   xhttp: JSON.stringify(
     {
       path: '/',
@@ -218,8 +218,8 @@ const LEGACY_VLESS_NETWORK_SETTINGS_PLACEHOLDERS: Record<string, string> = {
 };
 const LEGACY_TROJAN_NETWORK_SETTINGS_PLACEHOLDERS: Record<string, string> = {
   tcp: '',
-  ws: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.ws,
-  grpc: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.grpc,
+  ws: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.ws!,
+  grpc: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.grpc!,
 };
 const LEGACY_V2NODE_NETWORK_SETTINGS_PLACEHOLDERS: Record<string, string> = {
   tcp: JSON.stringify(
@@ -259,7 +259,7 @@ const LEGACY_V2NODE_NETWORK_SETTINGS_PLACEHOLDERS: Record<string, string> = {
     null,
     4,
   ),
-  grpc: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.grpc,
+  grpc: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.grpc!,
   httpupgrade: JSON.stringify(
     {
       acceptProxyProtocol: false,
@@ -269,7 +269,7 @@ const LEGACY_V2NODE_NETWORK_SETTINGS_PLACEHOLDERS: Record<string, string> = {
     null,
     4,
   ),
-  xhttp: LEGACY_VLESS_NETWORK_SETTINGS_PLACEHOLDERS.xhttp,
+  xhttp: LEGACY_VLESS_NETWORK_SETTINGS_PLACEHOLDERS.xhttp!,
 };
 const LEGACY_NETWORK_SETTINGS_PLACEHOLDERS: Partial<
   Record<admin.ServerTypeName, Record<string, string>>
@@ -348,14 +348,6 @@ export default function ServersPage() {
         ]}
       />
     </div>
-  );
-}
-
-function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
   );
 }
 
@@ -796,11 +788,70 @@ function isLegacyMobile() {
   return window.navigator.userAgent.toLowerCase().includes('mobile');
 }
 
+export function shouldPromptLegacyServerSortClick(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false;
+  if (target.closest('.v2board-server-manage')) return false;
+  if (target.closest('.nav-main-link')) return true;
+  if (target.closest('.dropdown-item')) return true;
+
+  const anchor = target.closest('a');
+  if (!anchor) return false;
+  const href = anchor.getAttribute('href');
+  return Boolean(href && !href.startsWith('javascript:'));
+}
+
+export function installLegacyServerSortPrompt(message = LEGACY_SERVER_SORT_PROMPT) {
+  if (typeof window === 'undefined') return () => {};
+
+  let lastHash = window.location.hash;
+  let restoringHash = false;
+
+  const confirmLeave = () => window.confirm(message);
+
+  const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+    event.preventDefault();
+    event.returnValue = message;
+    return message;
+  };
+
+  const warnBeforeRouteClick = (event: MouseEvent) => {
+    if (!shouldPromptLegacyServerSortClick(event.target)) return;
+    if (confirmLeave()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  const warnBeforeHashChange = () => {
+    if (restoringHash) {
+      restoringHash = false;
+      return;
+    }
+    if (window.location.hash === lastHash) return;
+    if (confirmLeave()) {
+      lastHash = window.location.hash;
+      return;
+    }
+    restoringHash = true;
+    window.location.hash = lastHash || '#/server/manage';
+  };
+
+  window.addEventListener('beforeunload', warnBeforeUnload);
+  document.addEventListener('click', warnBeforeRouteClick, true);
+  window.addEventListener('hashchange', warnBeforeHashChange);
+
+  return () => {
+    window.removeEventListener('beforeunload', warnBeforeUnload);
+    document.removeEventListener('click', warnBeforeRouteClick, true);
+    window.removeEventListener('hashchange', warnBeforeHashChange);
+  };
+}
+
 function LegacyServerSortPrompt({ when }: { when: boolean }) {
-  usePrompt({
-    message: LEGACY_SERVER_SORT_PROMPT,
-    when,
-  });
+  useEffect(() => {
+    if (!when) return undefined;
+    return installLegacyServerSortPrompt();
+  }, [when]);
+
   return null;
 }
 
@@ -819,14 +870,14 @@ function LegacyNodeEditMenuTrigger({
   groups: admin.ServerGroup[];
   routes: admin.ServerRoute[];
   onSaved: () => void;
-  children: ReactElement<{ onClick?: (event: MouseEvent<HTMLElement>) => void }>;
+  children: ReactElement<{ onClick?: (event: ReactMouseEvent<HTMLElement>) => void }>;
 }) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
       {cloneElement(children, {
-        onClick: (event: MouseEvent<HTMLElement>) => {
+        onClick: (event: ReactMouseEvent<HTMLElement>) => {
           children.props.onClick?.(event);
           setOpen(true);
         },

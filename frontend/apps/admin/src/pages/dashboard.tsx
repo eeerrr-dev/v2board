@@ -88,7 +88,7 @@ function renderRankChart<T extends ServerRankItem | UserRankItem>(
   } = {
     tooltip: {
       trigger: 'axis',
-      formatter: (params) => `${(params as Array<{ value: unknown }>)[0].value} GB`,
+      formatter: (params) => `${(params as Array<{ value: unknown }>)[0]!.value} GB`,
     },
     grid: { top: '1%', left: '1%', right: '1%', bottom: '3%', containLabel: true },
     xAxis: { type: 'value' },

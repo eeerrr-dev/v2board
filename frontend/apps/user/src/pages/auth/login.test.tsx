@@ -221,7 +221,8 @@ describe('LoginPage bundled-theme behavior', () => {
       queryFn: mocks.fetchUserInfo,
       queryKey: ['user', 'info'],
     });
-    expect(mocks.navigate).toHaveBeenCalledWith('order');
+    expect(mocks.navigate).toHaveBeenCalledWith('/order');
+    expect(mocks.navigate).not.toHaveBeenCalledWith('order');
   });
 
   it('keeps the original login submit values as direct ref reads', () => {
@@ -280,7 +281,8 @@ describe('LoginPage bundled-theme behavior', () => {
     });
     expect(mocks.setAuthData).toHaveBeenCalledWith('TOKEN_AUTH');
     expect(mocks.queryClient.fetchQuery).not.toHaveBeenCalled();
-    expect(mocks.navigate).toHaveBeenCalledWith('order');
+    expect(mocks.navigate).toHaveBeenCalledWith('/order');
+    expect(mocks.navigate).not.toHaveBeenCalledWith('order');
   });
 
   it('keeps token2Login and checkLogin uncancelled like the old login component', () => {
@@ -318,6 +320,7 @@ describe('LoginPage bundled-theme behavior', () => {
       queryFn: mocks.fetchUserInfo,
       queryKey: ['user', 'info'],
     });
-    expect(mocks.navigate).toHaveBeenCalledWith('dashboard');
+    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
+    expect(mocks.navigate).not.toHaveBeenCalledWith('dashboard');
   });
 });

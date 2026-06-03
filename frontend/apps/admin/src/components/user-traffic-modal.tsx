@@ -1,23 +1,15 @@
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
-import { Modal, Spin, Table } from 'antd';
+import { Modal, Table } from 'antd';
 import type { TablePaginationConfig } from 'antd';
 import { formatBytes, formatDate } from '@v2board/config/format';
 import { useAdminUserTraffic } from '@/lib/queries';
+import { LegacySpin } from '@/components/legacy-spin';
 
 interface LegacyTrafficPagination {
   current?: number;
   page?: number;
   pageSize: number;
   total?: number;
-}
-
-function LegacyTrafficSpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
-  );
 }
 
 export function UserTrafficModal({
@@ -54,7 +46,7 @@ export function UserTrafficModal({
       title="流量记录"
       onCancel={onClose}
     >
-      <LegacyTrafficSpin loading={records.isFetching}>
+      <LegacySpin loading={records.isFetching}>
         <Table
           dataSource={records.data?.data ?? []}
           pagination={{
@@ -94,7 +86,7 @@ export function UserTrafficModal({
             setPagination(next as LegacyTrafficPagination)
           }
         />
-      </LegacyTrafficSpin>
+      </LegacySpin>
     </Modal>
   );
 }

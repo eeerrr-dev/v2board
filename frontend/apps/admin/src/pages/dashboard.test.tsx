@@ -131,7 +131,7 @@ describe('DashboardPage legacy OneUI layout', () => {
 
   it('keeps the original rank tooltip axis payload assumption', () => {
     expect(dashboardSource).toContain(
-      "formatter: (params) => `${(params as Array<{ value: unknown }>)[0].value} GB`,",
+      "formatter: (params) => `${(params as Array<{ value: unknown }>)[0]!.value} GB`,",
     );
     expect(dashboardSource).not.toContain('Array.isArray(params)');
   });

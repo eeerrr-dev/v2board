@@ -114,6 +114,7 @@ export default function App() {
           <Route key={path} path={path} element={ADMIN_ROUTE_ELEMENTS[path]} />
         ))}
       </Route>
+      <Route path="*" element={ADMIN_ROUTE_ELEMENTS['/']} />
     </Routes>
   );
 }

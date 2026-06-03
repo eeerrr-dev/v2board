@@ -67,6 +67,7 @@ describe('admin legacy route table', () => {
     expect(source).toContain("navigate('/login');");
     expect(source).toContain('return <div />;');
     expect(source).toContain("'/': <RootRedirect />,");
+    expect(source).toContain('<Route path="*" element={ADMIN_ROUTE_ELEMENTS[\'/\']} />');
     expect(source).not.toContain('<Navigate to="/login" />');
   });
 

@@ -11,7 +11,6 @@ import {
   Modal,
   Row,
   Select,
-  Spin,
   Table,
   Tag,
   Tooltip,
@@ -41,6 +40,7 @@ import {
 } from '@/lib/queries';
 import { i18nGet } from '@/lib/errors';
 import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-filter-drawer';
+import { LegacySpin } from '@/components/legacy-spin';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -131,14 +131,6 @@ function readStoredOrderFilter(): AdminFilter[] {
 }
 
 const detailRowStyle = { marginBottom: 0 };
-
-function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
-  );
-}
 
 function cents(value?: number | null) {
   return ((value as number) / 100).toFixed(2);

@@ -6,6 +6,14 @@ import { describe, expect, it } from 'vitest';
 const mainSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'main.tsx'), 'utf8');
 
 describe('admin legacy entrypoint', () => {
+  it('normalizes broken hash routes before rendering the admin router', () => {
+    expect(mainSource).toContain("import { normalizeLegacyHashRoute } from '@v2board/config';");
+    expect(mainSource).toContain('normalizeLegacyHashRoute({');
+    expect(mainSource).toContain("authenticatedFallback: '/dashboard'");
+    expect(mainSource).toContain("guestFallback: '/login'");
+    expect(mainSource).toContain('routes: ADMIN_LEGACY_ROUTE_PATHS');
+  });
+
   it('initializes legacy settings and dark mode before rendering', () => {
     expect(mainSource).toContain('applyAdminLegacySettings();\napplyInitialDarkMode();');
   });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type AnchorHTMLAttributes } from 'react';
 import {
   App,
   Badge,
@@ -8,7 +8,6 @@ import {
   Input,
   Modal,
   Select,
-  Spin,
   Table,
   Tag,
   Tooltip,
@@ -56,6 +55,7 @@ import { legacyCopyText } from '@/lib/legacy-copy';
 import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
 import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-filter-drawer';
+import { LegacySpin } from '@/components/legacy-spin';
 
 type QueryState = TablePaginationConfig & {
   current: number;
@@ -187,14 +187,6 @@ function downloadGeneratedUserCsv(buffer: unknown) {
   anchor.download = `USER ${dayjs().format('YYYY-MM-DD HH:mm:ss')}.csv`;
   anchor.click();
   window.URL.revokeObjectURL(url);
-}
-
-function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
-  );
 }
 
 export default function UsersPage() {

@@ -107,6 +107,7 @@ export default function App() {
         ))}
       </Route>
       <Route path="/ticket/:ticket_id" element={USER_ROUTE_ELEMENTS['/ticket/:ticket_id']} />
+      <Route path="*" element={USER_ROUTE_ELEMENTS['/']} />
     </Routes>
   );
 }

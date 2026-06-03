@@ -12,6 +12,11 @@ import { apiClient } from '@/lib/api';
 import { fetchUserInfo, userKeys } from '@/lib/queries';
 import { legacyHref } from '@/lib/legacy-href';
 
+function normalizeRedirectTarget(target: string | null): string {
+  if (!target) return '/dashboard';
+  return target.startsWith('/') ? target : `/${target}`;
+}
+
 export default function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -25,7 +30,7 @@ export default function LoginPage() {
   const title = getLegacyTitle();
   const description = getLegacyDescription();
   const queryRedirect = params.get('redirect');
-  const redirect = queryRedirect || 'dashboard';
+  const redirect = normalizeRedirectTarget(queryRedirect);
   const verify = params.get('verify');
 
   const onLogin = useCallback(async () => {

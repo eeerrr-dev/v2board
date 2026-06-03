@@ -20,7 +20,6 @@ import {
   Row,
   Col,
   Select,
-  Spin,
   Switch,
   Table,
   Tag,
@@ -48,6 +47,7 @@ import {
   useUpdatePlanMutation,
 } from '@/lib/queries';
 import { i18nGet } from '@/lib/errors';
+import { LegacySpin } from '@/components/legacy-spin';
 
 type EditablePlan = {
   [K in keyof Omit<Plan, 'id'>]?: Plan[K] | string | null;
@@ -57,14 +57,6 @@ type EditablePlan = {
 };
 
 type SavePlanPayload = EditablePlan;
-
-function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
-  );
-}
 
 function emptyPlan(): EditablePlan {
   return {

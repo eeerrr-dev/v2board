@@ -6,9 +6,8 @@ import {
   useState,
   type HTMLAttributes,
   type ReactElement,
-  type ReactNode,
 } from 'react';
-import { Button, Input, Modal, Select, Spin, Switch, Table, Tooltip } from 'antd';
+import { Button, Input, Modal, Select, Switch, Table, Tooltip } from 'antd';
 import type { TableProps } from 'antd';
 import { MenuOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { admin } from '@v2board/api-client';
@@ -21,16 +20,9 @@ import {
   useShowPaymentMutation,
   useSortPaymentMutation,
 } from '@/lib/queries';
+import { LegacySpin } from '@/components/legacy-spin';
 
 type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];
-
-function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
-  );
-}
 
 function PaymentEditor({
   record,

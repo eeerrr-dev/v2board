@@ -73,6 +73,22 @@ export function legacyAdminAssetsPlugin(): Plugin {
   return legacyAssetPlugin('serve-legacy-admin-assets', '/assets/admin', '../../../public/assets/admin');
 }
 
+// The legacy admin dashboard polls Horizon directly from the current origin.
+// In Vite dev, that path would otherwise fall through to index.html and trip
+// the React error overlay when the response is parsed as JSON.
+export function localHorizonStatsPlugin(): Plugin {
+  return {
+    name: 'serve-local-horizon-stats',
+    configureServer(server) {
+      server.middlewares.use('/monitor/api/stats', (_req, res) => {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ status: 'running' }));
+      });
+    },
+  };
+}
+
 export function buildAppViteConfig(options: AppViteOptions): UserConfig {
   const apiTarget = options.apiTarget ?? process.env.VITE_API_BASE ?? 'http://127.0.0.1:8000';
   return {

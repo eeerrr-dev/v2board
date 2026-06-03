@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { App, Button, DatePicker, Input, Modal, Select, Spin, Switch, Table, Typography } from 'antd';
+import { useEffect, useState } from 'react';
+import { App, Button, DatePicker, Input, Modal, Select, Switch, Table, Typography } from 'antd';
 import type { TablePaginationConfig, TableProps } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
 import { PlusOutlined } from '@ant-design/icons';
@@ -18,6 +18,7 @@ import {
 } from '@/lib/queries';
 import { admin } from '@v2board/api-client';
 import { legacyCopyText } from '@/lib/legacy-copy';
+import { LegacySpin } from '@/components/legacy-spin';
 
 type AdminPageQuery = admin.AdminPageQuery;
 
@@ -59,14 +60,6 @@ const PERIOD_TEXT: Record<string, string> = {
   onetime_price: '一次性',
   reset_price: '流量重置包',
 };
-
-function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
-  );
-}
 
 function legacyDateRange(startedAt?: number | string | null, endedAt?: number | string | null) {
   return `${dayjs(1000 * Number(startedAt)).format('YYYY/MM/DD HH:mm')} ~ ${dayjs(

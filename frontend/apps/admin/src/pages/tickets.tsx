@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
-import { App, Badge, Input, Radio, Spin, Table, Tooltip } from 'antd';
+import { useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
+import { App, Badge, Input, Radio, Table, Tooltip } from 'antd';
 import type { TablePaginationConfig, TableProps } from 'antd';
 import type { ColumnType, FilterValue } from 'antd/es/table/interface';
 import dayjs from 'dayjs';
@@ -16,20 +16,13 @@ import {
 import type { AdminPageQuery } from '@v2board/api-client';
 import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
+import { LegacySpin } from '@/components/legacy-spin';
 
 type TicketQuery = AdminPageQuery & {
   status?: number;
   email?: string;
   reply_status?: FilterValue | null;
 };
-
-function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
-  );
-}
 
 function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTMLAnchorElement> {
   return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;
@@ -227,7 +220,7 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
   const [trafficOpen, setTrafficOpen] = useState(false);
   const chatRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const messageCount = ticket.data?.message.length;
+  const messageCount = ticket.data?.message!.length;
 
   useEffect(() => {
     const chat = chatRef.current;
@@ -272,7 +265,7 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
         className="bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1"
         ref={chatRef}
       >
-        {current?.message.map((item) =>
+        {current?.message!.map((item) =>
           item.is_me ? (
             <div>
               <div className="font-size-sm text-muted my-2 text-right">

@@ -4,11 +4,18 @@ import zhCN from 'antd/locale/zh_CN';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 import { createI18n } from '@v2board/i18n';
+import { normalizeLegacyHashRoute } from '@v2board/config';
 import { HashRouter } from 'react-router-dom';
-import App from './App';
+import App, { ADMIN_LEGACY_ROUTE_PATHS } from './App';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyAdminLegacySettings } from './lib/legacy-settings';
 
+normalizeLegacyHashRoute({
+  authenticatedFallback: '/dashboard',
+  guestFallback: '/login',
+  publicRoutes: ['/login'],
+  routes: ADMIN_LEGACY_ROUTE_PATHS,
+});
 applyAdminLegacySettings();
 applyInitialDarkMode();
 

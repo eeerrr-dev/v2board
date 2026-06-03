@@ -1,8 +1,9 @@
-import { Spin, Table } from 'antd';
+import { Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect } from 'react';
 import type { QueueWorkloadItem } from '@v2board/types';
 import { useQueueStats, useQueueWorkload } from '@/lib/queries';
+import { LegacySpin } from '@/components/legacy-spin';
 
 const QUEUE_NAMES: Record<string, string> = {
   order_handle: '订单队列',
@@ -38,14 +39,6 @@ const columns: ColumnsType<QueueWorkloadItem> = [
     render: (value: number) => `${value}s`,
   },
 ];
-
-function LegacySpin({ loading, children }: { loading: boolean; children: ReactNode }) {
-  return (
-    <Spin spinning={loading} indicator={<div className="spinner-grow text-primary" />}>
-      {children}
-    </Spin>
-  );
-}
 
 export function startLegacyQueuePolling(
   refetchStats: () => unknown,
