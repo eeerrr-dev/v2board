@@ -721,7 +721,7 @@ export default function DashboardPage() {
           if (!open) setActiveNotice(null);
         }}
       >
-        <DialogContent title={activeNotice?.title} maskClosable footer={null}>
+        <DialogContent title={activeNotice?.title} maskClosable footer={false}>
           {activeNotice?.content && (
             <div
               className="notice-content"
@@ -768,7 +768,7 @@ export default function DashboardPage() {
         <Dialog open={subscribeOpen} onOpenChange={setSubscribeOpen}>
           <DialogContent
             closable={false}
-            footer={null}
+            footer={false}
             width={300}
             centered
             bodyStyle={{ padding: 0 }}
@@ -780,7 +780,7 @@ export default function DashboardPage() {
       <Dialog open={qrOpen} onOpenChange={setQrOpen}>
         <DialogContent
           closable={false}
-          footer={null}
+          footer={false}
           width={300}
           centered
           style={{ textAlign: 'center' }}

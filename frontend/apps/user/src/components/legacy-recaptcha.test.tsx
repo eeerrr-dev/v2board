@@ -1,10 +1,18 @@
 import { act } from 'react';
 import type { ReactNode } from 'react';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
+
+const source = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'legacy-recaptcha.tsx'),
+  'utf8',
+);
 
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
@@ -69,5 +77,12 @@ describe('useLegacyRecaptcha legacy DOM', () => {
     expect(body.firstElementChild?.tagName).toBe('DIV');
     expect(body.firstElementChild?.children).toHaveLength(1);
     expect(body.querySelector('.grecaptcha-render-target')).toBeTruthy();
+  });
+
+  it('keeps the bundled modal props for the captcha challenge', () => {
+    expect(source).toContain(
+      '<DialogContent key={widgetKey} closable={false} footer={false} centered>',
+    );
+    expect(source).not.toContain('footer={null}');
   });
 });

@@ -280,7 +280,7 @@ function OrderDetailModal({
   const loaded = Boolean(detail && user.data?.email && (!detail.invite_user_id || inviteUser.data?.email));
 
   return (
-    <Modal open={open} title="订单信息" onCancel={onClose} footer={null}>
+    <Modal open={open} title="订单信息" onCancel={onClose} footer={false}>
       {loaded && detail ? (
         <div>
           <OrderDetailRow label="邮箱">

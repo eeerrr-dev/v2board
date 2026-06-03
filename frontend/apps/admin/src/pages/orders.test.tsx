@@ -313,6 +313,15 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).not.toContain('const loaded = Boolean(detail && user.data?.email);');
   });
 
+  it('keeps the original false footer on the order detail modal', () => {
+    expect(ordersSource).toContain(
+      '<Modal open={open} title="订单信息" onCancel={onClose} footer={false}>',
+    );
+    expect(ordersSource).not.toContain(
+      '<Modal open={open} title="订单信息" onCancel={onClose} footer={null}>',
+    );
+  });
+
   it('keeps the original table row identity and detail fallback behavior', () => {
     expect(ordersSource).not.toContain('rowKey="id"');
     expect(ordersSource).toContain(

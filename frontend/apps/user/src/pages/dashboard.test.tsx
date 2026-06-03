@@ -400,7 +400,7 @@ describe('DashboardPage bundled-theme actions', () => {
     expect(slideSource).not.toContain('key={notice.id}');
   });
 
-  it('keeps the bundled-theme notice modal mask and footer props explicit', () => {
+  it('keeps the bundled-theme notice modal mask and false footer props explicit', () => {
     const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
     const modalSource = source.slice(
       source.indexOf('<DialogContent title={activeNotice?.title}'),
@@ -408,9 +408,11 @@ describe('DashboardPage bundled-theme actions', () => {
     );
 
     expect(modalSource).toContain(
-      '<DialogContent title={activeNotice?.title} maskClosable footer={null}>',
+      '<DialogContent title={activeNotice?.title} maskClosable footer={false}>',
     );
     expect(modalSource).not.toContain('<DialogContent title={activeNotice?.title} footer={null}>');
+    expect(source).toContain('footer={false}');
+    expect(source).not.toContain('footer={null}');
   });
 
   it('creates the reset-traffic order with the original confirm options', async () => {
