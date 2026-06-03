@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App, Button, DatePicker, Input, Modal, Select, Switch, Table, Typography } from 'antd';
+import { App, Button, DatePicker, Input, Modal, Select, Switch, Table } from 'antd';
 import type { TablePaginationConfig, TableProps } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
 import { PlusOutlined } from '@ant-design/icons';
@@ -193,18 +193,16 @@ function CouponPage() {
       dataIndex: 'code',
       key: 'code',
       render: (value: string) => (
-        <Typography.Text style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
+        <span style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
           {value}
-        </Typography.Text>
+        </span>
       ),
     },
     {
       title: '剩余次数',
       dataIndex: 'limit_use',
       key: 'limit_use',
-      render: (value: number | null) => (
-        <Typography.Text>{value !== null ? value : '无限'}</Typography.Text>
-      ),
+      render: (value: number | null) => (value !== null ? value : '无限'),
     },
     {
       title: '有效期',
@@ -536,18 +534,16 @@ function GiftcardPage() {
       dataIndex: 'code',
       key: 'code',
       render: (value: string) => (
-        <Typography.Text style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
+        <span style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
           {value}
-        </Typography.Text>
+        </span>
       ),
     },
     {
       title: '剩余次数',
       dataIndex: 'limit_use',
       key: 'limit_use',
-      render: (value: number | null) => (
-        <Typography.Text>{value !== null ? value : '无限'}</Typography.Text>
-      ),
+      render: (value: number | null) => (value !== null ? value : '无限'),
     },
     {
       title: '有效期',

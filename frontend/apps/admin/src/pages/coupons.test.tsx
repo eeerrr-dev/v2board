@@ -136,6 +136,7 @@ describe('CouponsPage legacy routes', () => {
     expect(html).toContain('删除');
     expect(html).not.toContain('ant-tabs');
     expect(html).not.toContain('ant-card');
+    expect(html).not.toContain('ant-typography');
   });
 
   it('renders /giftcard as the original standalone giftcard table', () => {
@@ -157,6 +158,7 @@ describe('CouponsPage legacy routes', () => {
     expect(html).toContain('删除');
     expect(html).not.toContain('ant-tabs');
     expect(html).not.toContain('ant-card');
+    expect(html).not.toContain('ant-typography');
   });
 
   it('keeps the legacy CSV download for batch coupon and giftcard generation', () => {
@@ -277,7 +279,17 @@ describe('CouponsPage legacy routes', () => {
   it('uses the old copy helper for coupon and giftcard code copying', () => {
     expect(source).toContain("import { legacyCopyText } from '@/lib/legacy-copy';");
     expect(source).toContain('legacyCopyText(text)');
+    expect(source.match(/<span style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g)).toHaveLength(2);
+    expect(source).not.toContain('Typography.Text');
+    expect(source).not.toContain("Typography } from 'antd'");
     expect(source).not.toContain('navigator.clipboard?.writeText');
+  });
+
+  it('keeps coupon and giftcard limit-use cells as old plain table text', () => {
+    expect(
+      source.match(/render: \(value: number \| null\) => \(value !== null \? value : '无限'\),/g),
+    ).toHaveLength(2);
+    expect(source).not.toContain('<Typography.Text>{value !== null ? value : \'无限\'}</Typography.Text>');
   });
 
   it('keeps the original strict giftcard plan lookup', () => {
