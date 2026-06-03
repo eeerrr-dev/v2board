@@ -48,6 +48,7 @@ import {
 } from '@/lib/queries';
 import { i18nGet } from '@/lib/errors';
 import { LegacySpin } from '@/components/legacy-spin';
+import { legacyHref } from '@/lib/legacy-href';
 
 type EditablePlan = {
   [K in keyof Omit<Plan, 'id'>]?: Plan[K] | string | null;
@@ -565,7 +566,7 @@ export default function PlansPage() {
             },
           }}
         >
-          <a href="javascript:void(0);">
+          <a ref={legacyHref()}>
             操作 <CaretDownOutlined />
           </a>
         </Dropdown>

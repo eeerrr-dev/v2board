@@ -24,6 +24,7 @@ import {
   useSortKnowledgeMutation,
 } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
+import { legacyHref } from '@/lib/legacy-href';
 
 type SaveKnowledgePayload = Parameters<typeof admin.saveKnowledge>[1];
 
@@ -451,11 +452,11 @@ export default function KnowledgePage() {
       render: (_value, row) => (
         <>
           <KnowledgeEditor id={row.id} onSave={saveKnowledge} onSaved={refetchKnowledge}>
-            <a href="javascript:void(0);">编辑</a>
+            <a ref={legacyHref()}>编辑</a>
           </KnowledgeEditor>
           <div className="ant-divider ant-divider-vertical" />
           <a
-            href="javascript:void(0);"
+            ref={legacyHref()}
             onClick={() => {
               Modal.confirm({
                 title: '警告',

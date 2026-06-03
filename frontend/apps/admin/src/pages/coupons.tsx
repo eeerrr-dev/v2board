@@ -19,6 +19,7 @@ import {
 import { admin } from '@v2board/api-client';
 import { legacyCopyText } from '@/lib/legacy-copy';
 import { LegacySpin } from '@/components/legacy-spin';
+import { legacyHref } from '@/lib/legacy-href';
 
 type AdminPageQuery = admin.AdminPageQuery;
 
@@ -224,7 +225,7 @@ function CouponPage() {
               setSubmit(data[index] as CouponSubmit);
               modalVisible();
             }}
-            href="javascript:void(0);"
+            ref={legacyHref()}
           >
             编辑
           </a>
@@ -243,7 +244,7 @@ function CouponPage() {
                 cancelText: '取消',
               });
             }}
-            href="javascript:void(0);"
+            ref={legacyHref()}
           >
             删除
           </a>
@@ -565,7 +566,7 @@ function GiftcardPage() {
               setSubmit(data[index] as GiftcardSubmit);
               modalVisible();
             }}
-            href="javascript:void(0);"
+            ref={legacyHref()}
           >
             编辑
           </a>
@@ -584,7 +585,7 @@ function GiftcardPage() {
                 cancelText: '取消',
               });
             }}
-            href="javascript:void(0);"
+            ref={legacyHref()}
           >
             删除
           </a>

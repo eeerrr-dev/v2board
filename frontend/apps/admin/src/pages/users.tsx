@@ -56,6 +56,7 @@ import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
 import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-filter-drawer';
 import { LegacySpin } from '@/components/legacy-spin';
+import { legacyHref } from '@/lib/legacy-href';
 
 type QueryState = TablePaginationConfig & {
   current: number;
@@ -480,7 +481,7 @@ export default function UsersPage() {
               },
             }}
           >
-            <a href="javascript:void(0);">
+            <a ref={legacyHref()}>
               操作 <CaretDownOutlined />
             </a>
           </Dropdown>

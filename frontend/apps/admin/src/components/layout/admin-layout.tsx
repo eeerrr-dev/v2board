@@ -4,6 +4,7 @@ import { user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
 import { logout } from '@/lib/auth';
 import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
+import { legacyHref } from '@/lib/legacy-href';
 
 interface LegacyNavItem {
   title: string;
@@ -132,7 +133,7 @@ export function AdminLayout() {
                 className="text-white ml-2"
                 data-toggle="layout"
                 data-action="sidebar_close"
-                href="javascript:void(0);"
+                ref={legacyHref()}
                 onClick={() => setShowNav((value) => !value)}
               >
                 <i className="fa fa-times-circle" />
@@ -214,7 +215,7 @@ export function AdminLayout() {
                 <div className="p-2">
                   <a
                     className="dropdown-item d-flex justify-content-between align-items-center"
-                    href="javascript:void(0);"
+                    ref={legacyHref()}
                     onClick={handleLogout}
                   >
                     登出

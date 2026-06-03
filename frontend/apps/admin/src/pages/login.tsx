@@ -10,6 +10,7 @@ import {
   getAdminLogo,
   getAdminTitle,
 } from '@/lib/legacy-settings';
+import { legacyHref } from '@/lib/legacy-href';
 
 function LegacyLoadingIcon() {
   return (
@@ -107,7 +108,7 @@ export default function LoginPage() {
                   <div className="col-md-12 order-md-1 bg-white">
                     <div className="block-content block-content-full px-lg-4 py-md-4 py-lg-4">
                       <div className="mb-3 text-center">
-                        <a className="font-size-h1" href="javascript:void(0);">
+                        <a className="font-size-h1" ref={legacyHref()}>
                           {logo ? (
                             <img className="v2board-logo mb-3" src={logo} />
                           ) : (

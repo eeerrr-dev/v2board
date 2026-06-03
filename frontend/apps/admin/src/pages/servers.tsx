@@ -53,6 +53,7 @@ import { i18nGet } from '@/lib/errors';
 import { legacyCopyText } from '@/lib/legacy-copy';
 import { formatDateTime } from '@v2board/config/format';
 import { LegacySpin } from '@/components/legacy-spin';
+import { legacyHref } from '@/lib/legacy-href';
 
 const SERVER_TYPES: admin.ServerTypeName[] = [
   'v2node',
@@ -376,11 +377,11 @@ function ServerGroupPage() {
       render: (_: unknown, record) => (
         <div>
           <ServerGroupModal key={record.id} record={record}>
-            <a href="javascript:void(0);">编辑</a>
+            <a ref={legacyHref()}>编辑</a>
           </ServerGroupModal>
           <div className="ant-divider ant-divider-vertical" />
           <a
-            href="javascript:void(0);"
+            ref={legacyHref()}
             onClick={() =>
               drop.mutate(record.id, {
                 onSuccess: () => {
@@ -529,11 +530,11 @@ function ServerRoutePage() {
       render: (_: unknown, record) => (
         <div>
           <ServerRouteModal key={record.id} route={record}>
-            <a href="javascript:void(0);">编辑</a>
+            <a ref={legacyHref()}>编辑</a>
           </ServerRouteModal>
           <div className="ant-divider ant-divider-vertical" />
           <a
-            href="javascript:void(0);"
+            ref={legacyHref()}
             onClick={() =>
               drop.mutate(record.id, {
                 onSuccess: () => {
@@ -1197,7 +1198,7 @@ function ServerManagePage() {
           render: (_: unknown, row) => (
             <div>
               <Dropdown trigger={['click']} menu={actionMenu(row)}>
-                <a href="javascript:void(0);">
+                <a ref={legacyHref()}>
                   操作 <CaretDownOutlined />
                 </a>
               </Dropdown>
@@ -1227,7 +1228,7 @@ function ServerManagePage() {
                         void nodes.refetch();
                       }}
                     >
-                      <a href="javascript:void(0);">
+                      <a ref={legacyHref()}>
                         {getServerTypeTag(type, SERVER_TYPE_LABELS[type])}
                       </a>
                     </LegacyNodeEditMenuTrigger>
@@ -1297,7 +1298,7 @@ function ServerManagePage() {
                       <div className="ant-divider ant-divider-vertical" />
                       <span>
                         <Dropdown trigger={['click']} menu={actionMenu(node)}>
-                          <a href="javascript:void(0);">
+                          <a ref={legacyHref()}>
                             操作 <CaretDownOutlined />
                           </a>
                         </Dropdown>
@@ -2358,7 +2359,7 @@ function VmessTlsField({
       <label>
         TLS{' '}
         <a
-          href="javascript:void(0);"
+          ref={legacyHref()}
           onClick={() => showChildDrawer('编辑TLS配置', 'tlsSettings')}
         >
           编辑配置
@@ -2393,7 +2394,7 @@ function VlessSecurityField({
         安全性{' '}
         {parseInt(String(security ?? 0), 10) !== 0 ? (
           <a
-            href="javascript:void(0);"
+            ref={legacyHref()}
             onClick={() => showChildDrawer('编辑安全性配置', 'tls_settings')}
           >
             编辑配置
@@ -2477,7 +2478,7 @@ function V2nodeFields({
               安全性{' '}
               {securityValue ? (
                 <a
-                  href="javascript:void(0);"
+                  ref={legacyHref()}
                   onClick={() => showChildDrawer('编辑安全性配置', 'tls_settings')}
                 >
                   编辑配置
@@ -2510,7 +2511,7 @@ function V2nodeFields({
             <label>
               传输协议{' '}
               <a
-                href="javascript:void(0);"
+                ref={legacyHref()}
                 onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
               >
                 编辑配置
@@ -2534,7 +2535,7 @@ function V2nodeFields({
             <label>
               传输协议{' '}
               <a
-                href="javascript:void(0);"
+                ref={legacyHref()}
                 onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
               >
                 编辑配置
@@ -2561,7 +2562,7 @@ function V2nodeFields({
           <div className="form-group col-md-12 col-xs-12">
             <label>
               <a
-                href="javascript:void(0);"
+                ref={legacyHref()}
                 onClick={() => showChildDrawer('编辑填充方案', 'padding_scheme')}
               >
                 编辑填充方案
@@ -2707,7 +2708,7 @@ function V2nodeFields({
                 加密方式{' '}
                 {encryption ? (
                   <a
-                    href="javascript:void(0);"
+                    ref={legacyHref()}
                     onClick={() => showChildDrawer('编辑加密配置', 'encryption_settings')}
                   >
                     编辑配置
@@ -2820,7 +2821,7 @@ function ServerTypeFields({
           <label>
             传输协议{' '}
             <a
-              href="javascript:void(0);"
+              ref={legacyHref()}
               onClick={() => showChildDrawer('编辑协议配置', 'networkSettings')}
             >
               编辑配置
@@ -2854,7 +2855,7 @@ function ServerTypeFields({
             <label>
               传输协议{' '}
               <a
-                href="javascript:void(0);"
+                ref={legacyHref()}
                 onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
               >
                 编辑配置
@@ -2953,7 +2954,7 @@ function ServerTypeFields({
             <label>
               传输协议{' '}
               <a
-                href="javascript:void(0);"
+                ref={legacyHref()}
                 onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
               >
                 编辑配置
@@ -2977,7 +2978,7 @@ function ServerTypeFields({
               加密方式{' '}
               {vlessEncryption ? (
                 <a
-                  href="javascript:void(0);"
+                  ref={legacyHref()}
                   onClick={() => showChildDrawer('编辑加密配置', 'encryption_settings')}
                 >
                   编辑配置
@@ -3121,7 +3122,7 @@ function ServerTypeFields({
           <div className="form-group col-md-12 col-xs-12">
             <label>
               <a
-                href="javascript:void(0);"
+                ref={legacyHref()}
                 onClick={() => showChildDrawer('编辑填充方案', 'padding_scheme')}
               >
                 编辑填充方案

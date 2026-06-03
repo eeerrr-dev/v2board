@@ -11,6 +11,7 @@ import {
   useShowNoticeMutation,
 } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
+import { legacyHref } from '@/lib/legacy-href';
 
 export default function NoticesPage() {
   const notices = useAdminNotices({});
@@ -84,7 +85,7 @@ export default function NoticesPage() {
               setSubmit(dataSource[index] as Partial<Notice>);
               setVisible(true);
             }}
-            href="javascript:void(0);"
+            ref={legacyHref()}
           >
             编辑
           </a>
@@ -97,7 +98,7 @@ export default function NoticesPage() {
                 },
               })
             }
-            href="javascript:void(0);"
+            ref={legacyHref()}
           >
             删除
           </a>

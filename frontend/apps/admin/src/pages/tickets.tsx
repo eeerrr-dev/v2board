@@ -17,6 +17,7 @@ import type { AdminPageQuery } from '@v2board/api-client';
 import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
 import { LegacySpin } from '@/components/legacy-spin';
+import { legacyHref } from '@/lib/legacy-href';
 
 type TicketQuery = AdminPageQuery & {
   status?: number;
@@ -144,13 +145,13 @@ function TicketListPage() {
       fixed: 'right',
       render: (_value, row) => (
         <div>
-          <a href="javascript:void(0);" onClick={() => toChat(row.id)}>
+          <a ref={legacyHref()} onClick={() => toChat(row.id)}>
             查看
           </a>
           <div className="ant-divider ant-divider-vertical" />
           <a
             {...legacyDisabledAnchorProps(row.status)}
-            href="javascript:void(0);"
+            ref={legacyHref()}
             onClick={() =>
               closeTicket.mutate(row.id, {
                 onSuccess: () => {

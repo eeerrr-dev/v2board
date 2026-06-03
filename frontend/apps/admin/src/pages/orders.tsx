@@ -41,6 +41,7 @@ import {
 import { i18nGet } from '@/lib/errors';
 import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-filter-drawer';
 import { LegacySpin } from '@/components/legacy-spin';
+import { legacyHref } from '@/lib/legacy-href';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -284,7 +285,7 @@ function OrderDetailModal({
         <div>
           <OrderDetailRow label="邮箱">
             <a
-              href="javascript:void(0);"
+              ref={legacyHref()}
               onClick={() => user.data && onUserFilter('email', '模糊', user.data.email)}
             >
               {user.data?.email}
@@ -310,7 +311,7 @@ function OrderDetailModal({
               <OrderDetailRow label="邀请人">
                 <Tooltip title="查看TA邀请的人">
                   <a
-                    href="javascript:void(0);"
+                    ref={legacyHref()}
                     onClick={() =>
                       inviteUser.data &&
                       onUserFilter('invite_by_email', '模糊', inviteUser.data.email)
@@ -383,7 +384,7 @@ export default function OrdersPage() {
         dataIndex: 'trade_no',
         key: 'trade_no',
         render: (value: string, row) => (
-          <a href="javascript:void(0);" onClick={() => setDetailId(row.id)}>
+          <a ref={legacyHref()} onClick={() => setDetailId(row.id)}>
             {shortTradeNo(value)}
           </a>
         ),
@@ -450,7 +451,7 @@ export default function OrdersPage() {
                 <Badge status={ORDER_STATUS_BADGE[value]} />
                 <span>{ORDER_STATUS_TEXT[value]} </span>
                 {value === 0 ? (
-                  <a href="javascript:void(0);">
+                  <a ref={legacyHref()}>
                     标记为 <CaretDownOutlined />
                   </a>
                 ) : null}
@@ -514,7 +515,7 @@ export default function OrdersPage() {
                 <div>
                   <Badge status={COMMISSION_STATUS_BADGE[value]} />
                   <span>{COMMISSION_STATUS_TEXT[value]} </span>
-                  <a href="javascript:void(0);">
+                  <a ref={legacyHref()}>
                     标记为 <CaretDownOutlined />
                   </a>
                 </div>

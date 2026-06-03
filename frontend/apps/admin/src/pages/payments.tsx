@@ -21,6 +21,7 @@ import {
   useSortPaymentMutation,
 } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
+import { legacyHref } from '@/lib/legacy-href';
 
 type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];
 
@@ -329,11 +330,11 @@ export default function PaymentsPage() {
               void payments.refetch();
             }}
           >
-            <a href="javascript:void(0);">编辑</a>
+            <a ref={legacyHref()}>编辑</a>
           </PaymentEditor>
           <div className="ant-divider ant-divider-vertical" />
           <a
-            href="javascript:void(0)"
+            ref={legacyHref('javascript:void(0)')}
             onClick={() => {
               Modal.confirm({
                 title: '警告',

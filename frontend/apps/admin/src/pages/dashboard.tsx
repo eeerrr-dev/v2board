@@ -15,6 +15,7 @@ import {
   useStatUserToday,
 } from '@/lib/queries';
 import { getAdminApiBaseUrl } from '@/lib/legacy-settings';
+import { legacyHref } from '@/lib/legacy-href';
 
 function formatCent(value?: number) {
   return value ? (value / 100).toFixed(2) : '0.00';
@@ -199,7 +200,7 @@ export default function DashboardPage() {
             有 {data.ticket_pending_total} 条工单等待处理{' '}
             <a
               className="alert-link"
-              href="javascript:void(0)"
+              ref={legacyHref('javascript:void(0)')}
               onClick={() => navigate('/ticket')}
             >
               立即处理
@@ -214,7 +215,7 @@ export default function DashboardPage() {
             有 {data.commission_pending_total} 笔佣金等待确认{' '}
             <a
               className="alert-link"
-              href="javascript:void(0)"
+              ref={legacyHref('javascript:void(0)')}
               onClick={goPendingCommissionOrders}
             >
               立即处理

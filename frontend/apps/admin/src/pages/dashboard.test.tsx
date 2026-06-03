@@ -98,6 +98,7 @@ describe('DashboardPage legacy OneUI layout', () => {
       html.match(/<a class="block block-bordered block-link-pop text-center mb-0">/g) ?? [];
 
     expect(shortcutAnchors).toHaveLength(4);
+    expect(dashboardSource).toContain("ref={legacyHref('javascript:void(0)')}");
     expect(dashboardSource).not.toContain(
       `className="block block-bordered block-link-pop text-center mb-0"
                 href="javascript:void(0)"`,
