@@ -381,14 +381,22 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('xhttp: LEGACY_VLESS_NETWORK_SETTINGS_PLACEHOLDERS.xhttp!,');
   });
 
-  it('keeps the grouped server tab edit input without an empty-string fallback', () => {
-    const groupsTabSource = serversSource.slice(
-      serversSource.indexOf('function GroupsTab'),
-      serversSource.indexOf('function RoutesTab'),
+  it('does not keep the unused tabbed server fallback absent from the bundled routes', () => {
+    const serversPageSource = serversSource.slice(
+      serversSource.indexOf('export default function ServersPage'),
+      serversSource.indexOf('function ServerGroupPage'),
     );
 
-    expect(groupsTabSource).toContain('defaultValue={editing?.name}');
-    expect(groupsTabSource).not.toContain("defaultValue={editing?.name ?? ''}");
+    expect(serversPageSource).toContain('if (location.pathname === \'/server/group\') return <ServerGroupPage />;');
+    expect(serversPageSource).toContain('if (location.pathname === \'/server/route\') return <ServerRoutePage />;');
+    expect(serversPageSource).toContain('if (location.pathname === \'/server/manage\') return <ServerManagePage />;');
+    expect(serversPageSource).toContain('return null;');
+    expect(serversSource).not.toContain('function NodesTab');
+    expect(serversSource).not.toContain('function GroupsTab');
+    expect(serversSource).not.toContain('function RoutesTab');
+    expect(serversSource).not.toContain('<Tabs');
+    expect(serversSource).not.toContain('<Card');
+    expect(serversSource).not.toContain('Typography.Title');
   });
 
   it('keeps the original modal open behavior without resetting form state', () => {
@@ -463,7 +471,7 @@ describe('ServersPage legacy server group route', () => {
   it('keeps the legacy server manage table without an explicit rowKey', () => {
     const managePageSource = serversSource.slice(
       serversSource.indexOf('function ServerManagePage'),
-      serversSource.indexOf('function NodesTab'),
+      serversSource.indexOf('function NodeEditDrawer'),
     );
 
     expect(managePageSource).toContain('tableLayout="auto"');
@@ -509,7 +517,7 @@ describe('ServersPage legacy server group route', () => {
   it('keeps the original server show update key/value dispatch shape', () => {
     const managePageSource = serversSource.slice(
       serversSource.indexOf('function ServerManagePage'),
-      serversSource.indexOf('function NodesTab'),
+      serversSource.indexOf('function NodeEditDrawer'),
     );
     const hook = queriesSource.slice(
       queriesSource.indexOf('export function useUpdateServerMutation()'),
@@ -527,7 +535,7 @@ describe('ServersPage legacy server group route', () => {
   it('keeps the original permission-group filter and tag rendering details', () => {
     const managePageSource = serversSource.slice(
       serversSource.indexOf('function ServerManagePage'),
-      serversSource.indexOf('function NodesTab'),
+      serversSource.indexOf('function NodeEditDrawer'),
     );
 
     expect(serversSource).toContain(
@@ -818,18 +826,11 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function LegacyNodeEditMenuTrigger'),
       serversSource.indexOf('function ServerManagePage'),
     );
-    const legacyNodesTabDrawer = serversSource.slice(
-      serversSource.indexOf('<NodeEditDrawer\n        open={editing != null}'),
-      serversSource.indexOf('function NodeEditDrawer'),
-    );
 
     expect(triggerSource).toContain('onSaved={onSaved}');
     expect(triggerSource).toContain('onClose={() => setOpen(false)}');
     expect(triggerSource).not.toContain('onClose();');
     expect(triggerSource).not.toContain('void nodes.refetch();');
-    expect(legacyNodesTabDrawer).toContain('onSaved={() => {\n          void nodes.refetch();\n        }}');
-    expect(legacyNodesTabDrawer).toContain('onClose={() => {\n          setEditing(null);\n        }}');
-    expect(legacyNodesTabDrawer).not.toContain('nodes.refetch();\n        }}\n      />');
   });
 
   it('formats the original VMess protocol object before opening the edit drawer', () => {
@@ -1096,7 +1097,7 @@ describe('ServersPage legacy server group route', () => {
   it('keeps server-manage node mutations fetching from the page after success', () => {
     const managePageSource = serversSource.slice(
       serversSource.indexOf('function ServerManagePage'),
-      serversSource.indexOf('function NodesTab'),
+      serversSource.indexOf('function NodeEditDrawer'),
     );
     const nodeHooksSource = queriesSource.slice(
       queriesSource.indexOf('export function useDropServerMutation()'),
@@ -1115,7 +1116,7 @@ describe('ServersPage legacy server group route', () => {
   it('keeps the original uncontrolled server-manage search input', () => {
     const managePageSource = serversSource.slice(
       serversSource.indexOf('function ServerManagePage'),
-      serversSource.indexOf('function NodesTab'),
+      serversSource.indexOf('function NodeEditDrawer'),
     );
 
     expect(managePageSource).toContain('const [searchKey, setSearchKey] = useState<string | undefined>()');
