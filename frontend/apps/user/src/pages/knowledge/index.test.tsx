@@ -10,18 +10,11 @@ const knowledgeSource = readFileSync(`${process.cwd()}/src/pages/knowledge/index
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-const mocks = vi.hoisted(() => ({
-  legacyCopyText: vi.fn(),
-  toastSuccess: vi.fn(),
-  lockBodyScroll: vi.fn(),
-  unlockBodyScroll: vi.fn(),
-  detailRefetch: vi.fn(),
-  knowledgeArgs: [] as Array<{ language: string; keyword?: string }>,
-  detailArgs: [] as Array<{ id: number | string | undefined; language: string }>,
-  fetching: false,
-  detailFetching: false,
-  searchParams: new URLSearchParams(),
-  groups: {
+const mocks = vi.hoisted(() => {
+  const defaultGroups: Record<
+    string,
+    Array<{ id: number; title: string; body: string; category: string; updated_at: number }>
+  > = {
     General: [
       {
         id: 1,
@@ -40,32 +33,47 @@ const mocks = vi.hoisted(() => ({
         updated_at: 1_700_086_400,
       },
     ],
-  },
-  detailById: {
-    1: {
-      id: 1,
-      title: 'Copy Article',
-      body: '<button onclick="copy(`token`)">copy</button>',
-      category: 'General',
-      updated_at: 1_700_000_000,
-      language: 'zh-CN',
-      sort: null,
-      show: 1,
-      created_at: 1_700_000_000,
-    },
-    2: {
-      id: 2,
-      title: 'Router Guide',
-      body: '<a onclick="jump(1)">jump</a>',
-      category: 'Router',
-      updated_at: 1_700_086_400,
-      language: 'zh-CN',
-      sort: null,
-      show: 1,
-      created_at: 1_700_086_400,
-    },
-  } as Record<string, unknown>,
-}));
+  };
+
+  return {
+    legacyCopyText: vi.fn(),
+    toastSuccess: vi.fn(),
+    lockBodyScroll: vi.fn(),
+    unlockBodyScroll: vi.fn(),
+    detailRefetch: vi.fn(),
+    knowledgeArgs: [] as Array<{ language: string; keyword?: string }>,
+    detailArgs: [] as Array<{ id: number | string | undefined; language: string }>,
+    fetching: false,
+    detailFetching: false,
+    searchParams: new URLSearchParams(),
+    defaultGroups,
+    groups: defaultGroups,
+    detailById: {
+      1: {
+        id: 1,
+        title: 'Copy Article',
+        body: '<button onclick="copy(`token`)">copy</button>',
+        category: 'General',
+        updated_at: 1_700_000_000,
+        language: 'zh-CN',
+        sort: null,
+        show: 1,
+        created_at: 1_700_000_000,
+      },
+      2: {
+        id: 2,
+        title: 'Router Guide',
+        body: '<a onclick="jump(1)">jump</a>',
+        category: 'Router',
+        updated_at: 1_700_086_400,
+        language: 'zh-CN',
+        sort: null,
+        show: 1,
+        created_at: 1_700_086_400,
+      },
+    } as Record<string, unknown>,
+  };
+});
 
 const labels: Record<string, string> = {
   'dashboard.copy_success': '复制成功',
@@ -137,6 +145,7 @@ describe('KnowledgePage bundled-theme list', () => {
     mocks.fetching = false;
     mocks.detailFetching = false;
     mocks.searchParams = new URLSearchParams();
+    mocks.groups = mocks.defaultGroups;
     mocks.knowledgeArgs = [];
     mocks.detailArgs = [];
   });
@@ -174,6 +183,17 @@ describe('KnowledgePage bundled-theme list', () => {
     expect(html).toContain('最后更新: 2023/11/15');
   });
 
+  it('renders a visible empty state when the local knowledge base has no articles', () => {
+    mocks.groups = {};
+
+    const html = renderToStaticMarkup(<KnowledgePage />);
+
+    expect(html).toContain('v2board-knowledge-search-bar');
+    expect(html).toContain('block block-rounded ');
+    expect(html).toContain('class="ant-empty ant-empty-normal"');
+    expect(html).toContain('暂无数据');
+  });
+
   it('keeps the bundled-theme unkeyed category and article rows', () => {
     const categorySource = knowledgeSource.slice(
       knowledgeSource.indexOf('Object.keys(knowledgeGroups).map((category) => ('),
@@ -205,6 +225,7 @@ describe('KnowledgePage legacy interactions', () => {
     mocks.fetching = false;
     mocks.detailFetching = false;
     mocks.searchParams = new URLSearchParams();
+    mocks.groups = mocks.defaultGroups;
     mocks.knowledgeArgs = [];
     mocks.detailArgs = [];
     mocks.legacyCopyText.mockClear();
