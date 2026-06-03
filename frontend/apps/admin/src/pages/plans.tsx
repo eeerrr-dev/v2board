@@ -236,7 +236,7 @@ function PlanEditor({
           <div className="form-group">
             <label htmlFor="example-text-input-alt">
               权限组{' '}
-              <a href="javascript:(0);">添加权限组</a>
+              <a ref={legacyHref('javascript:(0);')}>添加权限组</a>
             </label>
             <Select
               placeholder="请选择权限组"

@@ -25,12 +25,16 @@ describe('admin legacy javascript hrefs', () => {
     const noSemicolon = document.createElement('a');
     legacyHref('javascript:void(0)')(noSemicolon);
     expect(noSemicolon.getAttribute('href')).toBe('javascript:void(0)');
+
+    const expressionHref = document.createElement('a');
+    legacyHref('javascript:(0);')(expressionHref);
+    expect(expressionHref.getAttribute('href')).toBe('javascript:(0);');
   });
 
   it('does not pass javascript href strings through React props in admin source', () => {
     const offenders = walk(join(process.cwd(), 'src')).filter((path) => {
       const source = readFileSync(path, 'utf8');
-      return /href="javascript:void\(0\);?"/.test(source);
+      return /href=(["'])javascript:/.test(source);
     });
 
     expect(offenders).toEqual([]);

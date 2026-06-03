@@ -1507,7 +1507,7 @@ function NodeEditDrawer({
             <label>
               权限组{' '}
               <Tooltip>
-                <a href="javascript:(0);">添加权限组</a>
+                <a ref={legacyHref('javascript:(0);')}>添加权限组</a>
               </Tooltip>
             </label>
             <Form.Item noStyle name="group_id">
