@@ -2,7 +2,6 @@ import { Route, Routes, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
-import { RouteErrorBoundary } from '@/components/route-error-boundary';
 import LoginPage from '@/pages/auth/login';
 import RegisterPage from '@/pages/auth/register';
 import ForgetPage from '@/pages/auth/forget';
@@ -42,86 +41,22 @@ export const USER_LEGACY_ROUTE_PATHS = [
 type UserLegacyRoutePath = (typeof USER_LEGACY_ROUTE_PATHS)[number];
 
 const USER_ROUTE_ELEMENTS: Record<UserLegacyRoutePath, ReactNode> = {
-  '/dashboard': (
-    <RouteErrorBoundary>
-      <DashboardPage />
-    </RouteErrorBoundary>
-  ),
-  '/forgetpassword': (
-    <RouteErrorBoundary>
-      <ForgetPage />
-    </RouteErrorBoundary>
-  ),
-  '/': (
-    <RouteErrorBoundary>
-      <HomePage />
-    </RouteErrorBoundary>
-  ),
-  '/invite': (
-    <RouteErrorBoundary>
-      <InvitePage />
-    </RouteErrorBoundary>
-  ),
-  '/knowledge': (
-    <RouteErrorBoundary>
-      <KnowledgePage />
-    </RouteErrorBoundary>
-  ),
-  '/login': (
-    <RouteErrorBoundary>
-      <LoginPage />
-    </RouteErrorBoundary>
-  ),
-  '/node': (
-    <RouteErrorBoundary>
-      <NodePage />
-    </RouteErrorBoundary>
-  ),
-  '/order/:trade_no': (
-    <RouteErrorBoundary>
-      <OrderDetailPage />
-    </RouteErrorBoundary>
-  ),
-  '/order': (
-    <RouteErrorBoundary>
-      <OrdersPage />
-    </RouteErrorBoundary>
-  ),
-  '/plan/:plan_id': (
-    <RouteErrorBoundary>
-      <PlanCheckoutPage />
-    </RouteErrorBoundary>
-  ),
-  '/plan': (
-    <RouteErrorBoundary>
-      <PlansPage />
-    </RouteErrorBoundary>
-  ),
-  '/profile': (
-    <RouteErrorBoundary>
-      <ProfilePage />
-    </RouteErrorBoundary>
-  ),
-  '/register': (
-    <RouteErrorBoundary>
-      <RegisterPage />
-    </RouteErrorBoundary>
-  ),
-  '/ticket/:ticket_id': (
-    <RouteErrorBoundary>
-      <TicketDetailPage />
-    </RouteErrorBoundary>
-  ),
-  '/ticket': (
-    <RouteErrorBoundary>
-      <TicketsPage />
-    </RouteErrorBoundary>
-  ),
-  '/traffic': (
-    <RouteErrorBoundary>
-      <TrafficPage />
-    </RouteErrorBoundary>
-  ),
+  '/dashboard': <DashboardPage />,
+  '/forgetpassword': <ForgetPage />,
+  '/': <HomePage />,
+  '/invite': <InvitePage />,
+  '/knowledge': <KnowledgePage />,
+  '/login': <LoginPage />,
+  '/node': <NodePage />,
+  '/order/:trade_no': <OrderDetailPage />,
+  '/order': <OrdersPage />,
+  '/plan/:plan_id': <PlanCheckoutPage />,
+  '/plan': <PlansPage />,
+  '/profile': <ProfilePage />,
+  '/register': <RegisterPage />,
+  '/ticket/:ticket_id': <TicketDetailPage />,
+  '/ticket': <TicketsPage />,
+  '/traffic': <TrafficPage />,
 };
 
 const USER_GUEST_ROUTE_PATHS = ['/login', '/register', '/forgetpassword'] as const;

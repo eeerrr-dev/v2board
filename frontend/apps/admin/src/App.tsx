@@ -2,7 +2,6 @@ import { useEffect, type ReactNode } from 'react';
 import { App as AntdApp } from 'antd';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 import { AdminLayout } from '@/components/layout/admin-layout';
-import { RouteErrorBoundary } from '@/components/route-error-boundary';
 import { bindMessageApi } from '@/lib/api';
 import LoginPage from '@/pages/login';
 import DashboardPage from '@/pages/dashboard';
@@ -76,97 +75,25 @@ function RootRedirect() {
 }
 
 const ADMIN_ROUTE_ELEMENTS: Record<AdminLegacyRoutePath, ReactNode> = {
-  '/config/payment': (
-    <RouteErrorBoundary>
-      <PaymentsPage />
-    </RouteErrorBoundary>
-  ),
-  '/config/system': (
-    <RouteErrorBoundary>
-      <ConfigPage />
-    </RouteErrorBoundary>
-  ),
-  '/config/theme': (
-    <RouteErrorBoundary>
-      <ConfigPage />
-    </RouteErrorBoundary>
-  ),
-  '/coupon': (
-    <RouteErrorBoundary>
-      <CouponsPage />
-    </RouteErrorBoundary>
-  ),
-  '/giftcard': (
-    <RouteErrorBoundary>
-      <CouponsPage />
-    </RouteErrorBoundary>
-  ),
-  '/dashboard': (
-    <RouteErrorBoundary>
-      <DashboardPage />
-    </RouteErrorBoundary>
-  ),
+  '/config/payment': <PaymentsPage />,
+  '/config/system': <ConfigPage />,
+  '/config/theme': <ConfigPage />,
+  '/coupon': <CouponsPage />,
+  '/giftcard': <CouponsPage />,
+  '/dashboard': <DashboardPage />,
   '/': <RootRedirect />,
-  '/knowledge': (
-    <RouteErrorBoundary>
-      <KnowledgePage />
-    </RouteErrorBoundary>
-  ),
-  '/login': (
-    <RouteErrorBoundary>
-      <LoginPage />
-    </RouteErrorBoundary>
-  ),
-  '/notice': (
-    <RouteErrorBoundary>
-      <NoticesPage />
-    </RouteErrorBoundary>
-  ),
-  '/order': (
-    <RouteErrorBoundary>
-      <OrdersPage />
-    </RouteErrorBoundary>
-  ),
-  '/plan': (
-    <RouteErrorBoundary>
-      <PlansPage />
-    </RouteErrorBoundary>
-  ),
-  '/queue': (
-    <RouteErrorBoundary>
-      <SystemPage />
-    </RouteErrorBoundary>
-  ),
-  '/server/group': (
-    <RouteErrorBoundary>
-      <ServersPage />
-    </RouteErrorBoundary>
-  ),
-  '/server/manage': (
-    <RouteErrorBoundary>
-      <ServersPage />
-    </RouteErrorBoundary>
-  ),
-  '/server/route': (
-    <RouteErrorBoundary>
-      <ServersPage />
-    </RouteErrorBoundary>
-  ),
-  '/ticket/:ticket_id': (
-    <RouteErrorBoundary>
-      <TicketsPage />
-    </RouteErrorBoundary>
-  ),
-  '/ticket': (
-    <RouteErrorBoundary>
-      <TicketsPage />
-    </RouteErrorBoundary>
-  ),
-  '/user': (
-    <RouteErrorBoundary>
-      <UsersPage />
-    </RouteErrorBoundary>
-  ),
+  '/knowledge': <KnowledgePage />,
+  '/login': <LoginPage />,
+  '/notice': <NoticesPage />,
+  '/order': <OrdersPage />,
+  '/plan': <PlansPage />,
+  '/queue': <SystemPage />,
+  '/server/group': <ServersPage />,
+  '/server/manage': <ServersPage />,
+  '/server/route': <ServersPage />,
+  '/ticket/:ticket_id': <TicketsPage />,
+  '/ticket': <TicketsPage />,
+  '/user': <UsersPage />,
 };
 
 export default function App() {

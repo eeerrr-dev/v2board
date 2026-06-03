@@ -76,6 +76,10 @@ describe('admin legacy route table', () => {
     expect(source).not.toContain('<Suspense');
     expect(source).not.toContain('fallback={<Fallback />}');
     expect(source).not.toContain('Spin size="large"');
+    expect(source).not.toContain('RouteErrorBoundary');
+    expect(source).not.toContain('页面加载失败');
+    expect(source).not.toContain('componentDidCatch');
+    expect(source).not.toContain('getDerivedStateFromError');
     expect(source).toContain("import DashboardPage from '@/pages/dashboard';");
     expect(source).toContain("import ConfigPage from '@/pages/config';");
   });

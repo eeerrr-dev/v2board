@@ -47,4 +47,11 @@ describe('user legacy route table', () => {
   it('redirects unmatched legacy hashes back through the bundled home route', () => {
     expect(source).toContain('<Route path="*" element={USER_ROUTE_ELEMENTS[\'/\']} />');
   });
+
+  it('does not add route-level fallback UI absent from the bundled theme', () => {
+    expect(source).not.toContain('RouteErrorBoundary');
+    expect(source).not.toContain('页面加载失败');
+    expect(source).not.toContain('componentDidCatch');
+    expect(source).not.toContain('getDerivedStateFromError');
+  });
 });
