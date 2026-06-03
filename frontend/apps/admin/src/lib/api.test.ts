@@ -1,17 +1,39 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InternalAxiosRequestConfig } from 'axios';
 import { apiClient } from './api';
 
 const apiSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'api.ts'), 'utf8');
 
 describe('admin api legacy path resolution', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>();
+    const storage = {
+      clear: () => store.clear(),
+      getItem: (key: string) => store.get(key) ?? null,
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    };
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: storage,
+    });
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: storage,
+    });
+  });
+
   afterEach(() => {
     window.settings = undefined;
     window.g_lang = undefined;
-    localStorage.clear();
+    window.localStorage.clear();
   });
 
   it('prefixes admin endpoints with window.settings.secure_path', () => {
@@ -59,9 +81,9 @@ describe('admin api legacy path resolution', () => {
     }
   });
 
-  it('keeps the old 403 behavior: clear auth and reload the current admin entry', () => {
+  it('clears auth and reloads the current admin entry on the login hash', () => {
     expect(apiSource).toContain('logout();');
-    expect(apiSource).toContain('window.location.href = `${window.location.origin}${window.location.pathname}`;');
+    expect(apiSource).toContain('window.location.href = `${window.location.origin}${window.location.pathname}#/login`;');
     expect(apiSource).not.toContain("window.location.replace('/login')");
   });
 });
