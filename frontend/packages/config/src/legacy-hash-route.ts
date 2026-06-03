@@ -1,5 +1,6 @@
 export interface LegacyHashRouteOptions {
   authenticatedFallback: string;
+  canonicalPath?: string;
   guestFallback: string;
   publicRoutes: readonly string[];
   routes: readonly string[];
@@ -11,6 +12,11 @@ function normalizePath(path: string): string {
   const next = path.trim();
   if (!next || next === '#') return '/';
   return next.startsWith('/') ? next : `/${next}`;
+}
+
+function normalizeCanonicalPath(path: string): string {
+  const next = normalizePath(path);
+  return next !== '/' && next.endsWith('/') ? next.slice(0, -1) : next;
 }
 
 function routePattern(route: string): RegExp {
@@ -49,8 +55,12 @@ export function normalizeLegacyHashRoute(options: LegacyHashRouteOptions): void 
   }
 
   const nextHash = `${path}${query}`;
-  if (rawHash !== nextHash) {
-    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${nextHash}`);
+  const nextPathname =
+    options.canonicalPath === undefined
+      ? window.location.pathname
+      : normalizeCanonicalPath(options.canonicalPath);
+  if (rawHash !== nextHash || window.location.pathname !== nextPathname) {
+    window.history.replaceState(null, '', `${nextPathname}${window.location.search}#${nextHash}`);
   }
 }
 

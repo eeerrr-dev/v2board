@@ -15,6 +15,7 @@ import { applyAdminLegacySettings } from './lib/legacy-settings';
 
 const legacyHashRouteOptions = {
   authenticatedFallback: '/dashboard',
+  canonicalPath: '/',
   guestFallback: '/login',
   publicRoutes: ['/login'],
   routes: ADMIN_LEGACY_ROUTE_PATHS,

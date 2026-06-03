@@ -16,6 +16,7 @@ import './styles/globals.css';
 
 const legacyHashRouteOptions = {
   authenticatedFallback: '/dashboard',
+  canonicalPath: '/',
   guestFallback: '/login',
   publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
   routes: USER_LEGACY_ROUTE_PATHS,

@@ -11,6 +11,7 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('normalizeLegacyHashRoute');
     expect(mainSource).toContain('const legacyHashRouteOptions = {');
     expect(mainSource).toContain("authenticatedFallback: '/dashboard'");
+    expect(mainSource).toContain("canonicalPath: '/'");
     expect(mainSource).toContain("guestFallback: '/login'");
     expect(mainSource).toContain('routes: ADMIN_LEGACY_ROUTE_PATHS');
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');

@@ -6,6 +6,7 @@ import {
 
 const options = {
   authenticatedFallback: '/dashboard',
+  canonicalPath: '/',
   guestFallback: '/login',
   publicRoutes: ['/login'],
   routes: ['/dashboard', '/login', '/ticket/:ticket_id'],
@@ -43,8 +44,18 @@ describe('normalizeLegacyHashRoute', () => {
 
     normalizeLegacyHashRoute(options);
 
-    expect(window.location.pathname).toBe('/login/dashboard');
+    expect(window.location.pathname).toBe('/');
     expect(window.location.hash).toBe('#/login');
+  });
+
+  it('cleans stale legacy pathnames when the hash route is already valid', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    setUrl('/login/dashboard#/dashboard');
+
+    normalizeLegacyHashRoute(options);
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.hash).toBe('#/dashboard');
   });
 
   it('keeps dynamic detail routes as known routes', () => {

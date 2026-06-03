@@ -15,6 +15,7 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('normalizeLegacyHashRoute');
     expect(mainSource).toContain('const legacyHashRouteOptions = {');
     expect(mainSource).toContain("authenticatedFallback: '/dashboard'");
+    expect(mainSource).toContain("canonicalPath: '/'");
     expect(mainSource).toContain("guestFallback: '/login'");
     expect(mainSource).toContain("publicRoutes: ['/', '/login', '/register', '/forgetpassword']");
     expect(mainSource).toContain('routes: USER_LEGACY_ROUTE_PATHS');
