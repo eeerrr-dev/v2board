@@ -389,9 +389,9 @@ export default function OrdersPage() {
         dataIndex: 'trade_no',
         key: 'trade_no',
         render: (value: string, row) => (
-          <a ref={legacyHref()} onClick={() => setDetailId(row.id)}>
-            {shortTradeNo(value)}
-          </a>
+          <div onClick={() => setDetailId(row.id)}>
+            <a ref={legacyHref()}>{shortTradeNo(value)}</a>
+          </div>
         ),
       },
       {
@@ -422,7 +422,7 @@ export default function OrdersPage() {
       {
         title: (
           <span>
-            <Tooltip title="标记为[已支付]后将会由系统进行开通后并完成">
+            <Tooltip placement="top" title="标记为[已支付]后将会由系统进行开通后并完成">
               订单状态 <QuestionCircleOutlined />
             </Tooltip>
           </span>
@@ -477,7 +477,7 @@ export default function OrdersPage() {
         title: (
           <span>
             佣金状态{' '}
-            <Tooltip title="标记为[有效]后将会由系统处理后发放到用户并完成">
+            <Tooltip placement="top" title="标记为[有效]后将会由系统处理后发放到用户并完成">
               <QuestionCircleOutlined />
             </Tooltip>
           </span>

@@ -282,6 +282,21 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).not.toContain('value.substring(value.length - 3)');
   });
 
+  it('keeps the original wrapper click target for opening order details', () => {
+    expect(ordersSource).toContain('<div onClick={() => setDetailId(row.id)}>');
+    expect(ordersSource).toContain('<a ref={legacyHref()}>{shortTradeNo(value)}</a>');
+    expect(ordersSource).not.toContain('<a ref={legacyHref()} onClick={() => setDetailId(row.id)}>');
+  });
+
+  it('keeps the original top placement for order status tooltips', () => {
+    expect(ordersSource).toContain(
+      '<Tooltip placement="top" title="标记为[已支付]后将会由系统进行开通后并完成">',
+    );
+    expect(ordersSource).toContain(
+      '<Tooltip placement="top" title="标记为[有效]后将会由系统处理后发放到用户并完成">',
+    );
+  });
+
   it('keeps the original first-fetch pagination and addFilter jump page values', () => {
     expect(ordersSource).toContain('const storedFilter = readStoredOrderFilter();');
     expect(ordersSource).toContain('current: storedFilter.length > 0 ? 1 : 0,');
