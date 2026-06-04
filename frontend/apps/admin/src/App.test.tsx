@@ -72,6 +72,7 @@ describe('admin legacy route table', () => {
   it('normalizes unmatched legacy hashes without rendering the root redirect first', () => {
     expect(source).toContain('path="*"');
     expect(source).toContain('function LegacyUnknownRouteRedirect()');
+    expect(source).toContain("publicRoutes: ['/', '/login']");
     expect(source).toContain('nestedPrefixes: ADMIN_LEGACY_ROUTE_PATHS');
     expect(source).toContain('getNormalizedLegacyHashPath(current, ADMIN_LEGACY_ROUTE_OPTIONS)');
     expect(source).toContain('return <Navigate to={normalized} replace />;');

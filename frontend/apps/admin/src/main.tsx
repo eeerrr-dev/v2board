@@ -22,7 +22,7 @@ const legacyHashRouteOptions = {
   canonicalPath: '/',
   guestFallback: '/login',
   nestedPrefixes: ADMIN_LEGACY_ROUTE_PATHS,
-  publicRoutes: ['/login'],
+  publicRoutes: ['/', '/login'],
   routes: ADMIN_LEGACY_ROUTE_PATHS,
 } as const;
 
