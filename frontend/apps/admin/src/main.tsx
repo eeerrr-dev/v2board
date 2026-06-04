@@ -15,6 +15,7 @@ import App, { ADMIN_LEGACY_ROUTE_PATHS } from './App';
 import { RouteBoundaryElement } from './components/route-error-boundary';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyAdminLegacySettings } from './lib/legacy-settings';
+import './styles/antd-v5-compat.css';
 
 const legacyHashRouteOptions = {
   authenticatedFallback: '/dashboard',

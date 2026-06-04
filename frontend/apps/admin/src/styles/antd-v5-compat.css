@@ -1,0 +1,22 @@
+/*
+ * The admin entry deliberately loads the bundled Ant Design 3 stylesheet.
+ * Ant Design 5 Table wraps its table in an idle `.ant-spin`, and the legacy
+ * `.ant-spin { display: none }` rule hides that wrapper. Keep this scoped to
+ * Table's internal Spin so the hand-built LegacySpin still matches the bundle.
+ */
+.ant-table-wrapper > .ant-spin {
+  position: relative;
+  display: block;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  vertical-align: baseline;
+  opacity: 1;
+  transition: none;
+}
+
+.ant-table-wrapper > .ant-spin > .ant-spin-container {
+  position: relative;
+  opacity: 1;
+}

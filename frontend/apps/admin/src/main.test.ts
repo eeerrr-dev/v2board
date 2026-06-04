@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const mainSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'main.tsx'), 'utf8');
+const antdCompatSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'styles/antd-v5-compat.css'),
+  'utf8',
+);
 
 describe('admin legacy entrypoint', () => {
   it('normalizes broken hash routes before rendering the admin router', () => {
@@ -50,5 +54,12 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain("import zhCN from 'antd/locale/zh_CN';");
     expect(mainSource).toContain('locale={zhCN}');
     expect(mainSource).not.toContain("antd/locale/en_US");
+  });
+
+  it('keeps Ant Design 5 table spin wrappers visible under the legacy admin stylesheet', () => {
+    expect(mainSource).toContain("import './styles/antd-v5-compat.css';");
+    expect(antdCompatSource).toContain('.ant-table-wrapper > .ant-spin');
+    expect(antdCompatSource).toContain('display: block;');
+    expect(antdCompatSource).not.toMatch(/^\.ant-spin\s*\{/m);
   });
 });
