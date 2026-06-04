@@ -14,14 +14,14 @@ const mocks = vi.hoisted(() => ({
     'common.confirm': '确定',
     'dashboard.alert_open_ticket_suffix': '条工单正在处理中',
     'dashboard.alert_pending_order': '还有没支付的订单',
-    'dashboard.alert_traffic_rate': '当前已使用流量达 {{rate}}%',
+    'dashboard.alert_traffic_rate': '当前已使用流量达 {rate}%',
     'dashboard.alert_view': '立即查看',
     'dashboard.buy_reset_package': '购买流量重置包',
     'dashboard.buy_subscribe': '购买订阅',
     'dashboard.copy_subscribe': '复制订阅地址',
     'dashboard.copy_success': '复制成功',
-    'dashboard.devices_online': '在线设备 {{alive_ip}}/{{device_limit}}',
-    'dashboard.expires_in': '于 {{date}} 到期，距离到期还有 {{day}} 天。',
+    'dashboard.devices_online': '在线设备 {alive_ip}/{device_limit}',
+    'dashboard.expires_in': '于 {date} 到期，距离到期还有 {day} 天。',
     'dashboard.import_to': '导入到',
     'dashboard.long_term': '该订阅长期有效',
     'dashboard.new_period': '提前开启流量周期',
@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
     'dashboard.plan': '我的订阅',
     'dashboard.qrcode_client_tip': '使用支持扫码的客户端进行订阅',
     'dashboard.renew_subscribe': '续费订阅',
-    'dashboard.reset_in_days': '已用流量将在 {{reset_day}} 日后重置',
+    'dashboard.reset_in_days': '已用流量将在 {reset_day} 日后重置',
     'dashboard.reset_package_confirm_content':
       '点击「确定」将会跳转到收银台，支付订单后系统将会清空您当月已使用流量。',
     'dashboard.reset_package_confirm_title': '确定重置当前已用流量？',
@@ -47,7 +47,7 @@ const mocks = vi.hoisted(() => ({
     'dashboard.shortcut_tutorial_desc': '学习如何使用',
     'dashboard.shortcuts': '捷径',
     'dashboard.use_tutorial': '不会使用，查看使用教程',
-    'dashboard.used_traffic': '已用 {{used}} / 总计 {{total}}',
+    'dashboard.used_traffic': '已用 {used} / 总计 {total}',
     'notice.title': '公告',
     'order.pay_now': '立即支付',
   } as Record<string, string>,
@@ -84,6 +84,7 @@ vi.mock('react-i18next', () => ({
       let label = mocks.labels[key] ?? key;
       Object.entries(values ?? {}).forEach(([name, value]) => {
         label = label.replaceAll(`{{${name}}}`, String(value));
+        label = label.replaceAll(`{${name}}`, String(value));
       });
       return label;
     },

@@ -120,7 +120,7 @@ export function legacySetLocale(locale: string | undefined, reload = true): void
 function legacyLocale(locale: SupportedLocale, fallback: Translations): Translations {
   const dict = getLegacyDictionary(locale);
   const sourceReverse = createLegacySourceReverseMap(getLegacyDictionary('zh-CN'));
-  return dict ? translateLegacyDictionary(zhCN, dict, sourceReverse) : fallback;
+  return translateLegacyDictionary(dict ? zhCN : fallback, dict, sourceReverse);
 }
 
 export function createI18n(options: CreateI18nOptions = {}): I18nInstance {

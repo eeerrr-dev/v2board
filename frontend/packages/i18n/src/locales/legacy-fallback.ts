@@ -39,11 +39,11 @@ export function translateLegacyDictionary<T extends TranslationTree>(
   sourceReverse?: Map<string, string>,
 ): T {
   if (typeof tree === 'string') {
-    if (!dict) return tree;
+    if (!dict) return i18nextMessage(tree) as T;
     const legacyKey = legacyMessageKey(tree);
     const sourceKey = sourceReverse?.get(tree) ?? sourceReverse?.get(legacyKey);
     const translated = dict[tree] ?? dict[legacyKey] ?? (sourceKey ? dict[sourceKey] : undefined);
-    return (translated === undefined ? tree : i18nextMessage(translated)) as T;
+    return i18nextMessage(translated === undefined ? tree : translated) as T;
   }
   if (Array.isArray(tree)) {
     return tree.map((item) => translateLegacyDictionary(item, dict, sourceReverse)) as T;

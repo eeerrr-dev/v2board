@@ -45,7 +45,28 @@ describe('legacy i18n dictionaries', () => {
       '您的信用卡信息只会被用作当次扣款，系统并不会保存，这是我们认为最安全的。',
     );
     expect(i18n.t('traffic.notice')).toBe('流量明细仅保留近月数据以供查询。');
-    expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('当前已使用流量达 80%');
+    expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
+      '已用 1 GB / 总计 10 GB',
+    );
+    expect(i18n.t('dashboard.devices_online', { alive_ip: 1, device_limit: 3 })).toBe(
+      '在线设备 1/3',
+    );
+    expect(i18n.t('dashboard.reset_in_days', { reset_day: 5 })).toBe(
+      '已用流量将在 5 日后重置',
+    );
+    expect(i18n.t('dashboard.expires_in', { date: '2026/06/04', day: 7 })).toBe(
+      '于 2026/06/04 到期，距离到期还有 7 天。',
+    );
+    expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('当前已使用流量达80%');
+    expect(i18n.t('invite.transfer_notice', { title: 'V2Board' })).toBe(
+      '划转后的余额仅用于V2Board消费使用',
+    );
+    expect(i18n.t('knowledge.last_update', { date: '2026/06/04' })).toBe(
+      '最后更新: 2026/06/04',
+    );
+    expect(i18n.t('auth.tos_html', { url: 'https://example.test' })).toContain(
+      'href="{url}"',
+    );
     expect(i18n.t('node.status_tip')).toBe('节点五分钟内节点在线情况');
     expect(i18n.t('ticket.message_placeholder')).toBe('请描述你遇到的问题');
     expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后会到达你的佣金账户。');
@@ -86,6 +107,13 @@ describe('legacy i18n dictionaries', () => {
         '佣金将会在确认后会到达你的佣金账户。': '佣金将会在确认后到达您的佣金账户。',
         '节点五分钟内节点在线情况': '五分钟内节点在线情况',
         '流量明细仅保留近月数据以供查询。': '流量明细仅保留近一个月数据以供查询。',
+        '已用 {used} / 总计 {total}': '已用 {used} / 总计 {total}',
+        '在线设备 {alive_ip}/{device_limit}': '在线设备 {alive_ip}/{device_limit}',
+        '已用流量将在 {reset_day} 日后重置': '已用流量将在 {reset_day} 日后重置',
+        '于 {date} 到期，距离到期还有 {day} 天。': '于 {date} 到期，距离到期还有 {day} 天。',
+        '当前已使用流量达{rate}%': '当前已使用流量达 {rate}%',
+        '划转后的余额仅用于{title}消费使用': '划转后的余额仅用于{title}消费使用',
+        '最后更新: {date}': '最后更新: {date}',
         '如果你的订阅地址或信息泄露可以进行此操作。重置后你的UUID及订阅将会变更，需要重新进行订阅。':
           '如果您的订阅地址或信息发生泄露可以执行此操作。重置后您的 UUID 及订阅将会变更，需要重新导入订阅。',
         重置订阅提示信息:
@@ -113,6 +141,25 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后到达您的佣金账户。');
     expect(i18n.t('node.status_tip')).toBe('五分钟内节点在线情况');
     expect(i18n.t('traffic.notice')).toBe('流量明细仅保留近一个月数据以供查询。');
+    expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
+      '已用 1 GB / 总计 10 GB',
+    );
+    expect(i18n.t('dashboard.devices_online', { alive_ip: 1, device_limit: 3 })).toBe(
+      '在线设备 1/3',
+    );
+    expect(i18n.t('dashboard.reset_in_days', { reset_day: 5 })).toBe(
+      '已用流量将在 5 日后重置',
+    );
+    expect(i18n.t('dashboard.expires_in', { date: '2026/06/04', day: 7 })).toBe(
+      '于 2026/06/04 到期，距离到期还有 7 天。',
+    );
+    expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('当前已使用流量达 80%');
+    expect(i18n.t('invite.transfer_notice', { title: 'V2Board' })).toBe(
+      '划转后的余额仅用于V2Board消费使用',
+    );
+    expect(i18n.t('knowledge.last_update', { date: '2026/06/04' })).toBe(
+      '最后更新: 2026/06/04',
+    );
     expect(i18n.t('profile.telegram_bind')).toBe('绑定 Telegram');
     expect(i18n.t('profile.telegram_search')).toBe('打开 Telegram 搜索');
     expect(i18n.t('profile.telegram_send')).toBe('向机器人发送您的');
@@ -145,6 +192,13 @@ describe('legacy i18n dictionaries', () => {
         向机器人发送你的: '向机器人发送您的',
         '请描述你遇到的问题': '请描述您遇到的问题',
         '节点五分钟内节点在线情况': '五分钟内节点在线情况',
+        '已用 {used} / 总计 {total}': '已用 {used} / 总计 {total}',
+        '在线设备 {alive_ip}/{device_limit}': '在线设备 {alive_ip}/{device_limit}',
+        '已用流量将在 {reset_day} 日后重置': '已用流量将在 {reset_day} 日后重置',
+        '于 {date} 到期，距离到期还有 {day} 天。': '于 {date} 到期，距离到期还有 {day} 天。',
+        '当前已使用流量达{rate}%': '当前已使用流量达 {rate}%',
+        '划转后的余额仅用于{title}消费使用': '划转后的余额仅用于{title}消费使用',
+        '最后更新: {date}': '最后更新: {date}',
       },
       'en-US': {
         '订单系统正在进行处理，请稍等1-3分钟。':
@@ -166,6 +220,16 @@ describe('legacy i18n dictionaries', () => {
         向机器人发送你的: 'Send the following command to bot',
         '请描述你遇到的问题': 'Please describe the problem you encountered',
         '节点五分钟内节点在线情况': 'Access Point online status in the last 5 minutes',
+        '已用 {used} / 总计 {total}': '{used} Used / Total {total}',
+        '在线设备 {alive_ip}/{device_limit}': '{alive_ip} Online / {device_limit} Device(s)',
+        '已用流量将在 {reset_day} 日后重置':
+          'Used data will reset after {reset_day} days',
+        '于 {date} 到期，距离到期还有 {day} 天。':
+          'Will expire on {date}, {day} days before expiration, ',
+        '当前已使用流量达{rate}%': 'Currently used data up to {rate}%',
+        '划转后的余额仅用于{title}消费使用':
+          'The transferred balance will be used for {title} payments only',
+        '最后更新: {date}': 'Last Updated: {date}',
       },
     });
 
@@ -201,6 +265,27 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('node.status_tip')).toBe(
       'Access Point online status in the last 5 minutes',
     );
+    expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
+      '1 GB Used / Total 10 GB',
+    );
+    expect(i18n.t('dashboard.devices_online', { alive_ip: 1, device_limit: 3 })).toBe(
+      '1 Online / 3 Device(s)',
+    );
+    expect(i18n.t('dashboard.reset_in_days', { reset_day: 5 })).toBe(
+      'Used data will reset after 5 days',
+    );
+    expect(i18n.t('dashboard.expires_in', { date: '2026/06/04', day: 7 })).toBe(
+      'Will expire on 2026/06/04, 7 days before expiration, ',
+    );
+    expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe(
+      'Currently used data up to 80%',
+    );
+    expect(i18n.t('invite.transfer_notice', { title: 'V2Board' })).toBe(
+      'The transferred balance will be used for V2Board payments only',
+    );
+    expect(i18n.t('knowledge.last_update', { date: '2026/06/04' })).toBe(
+      'Last Updated: 2026/06/04',
+    );
   });
 
   it('keeps localized fallback copy aligned with the bundled legacy dictionaries', () => {
@@ -213,6 +298,16 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('plan.pick_best_for_you')).toBe('選擇最適合您的計劃');
     expect(i18n.t('node.status_tip')).toBe('五分鐘內節點線上情況');
     expect(i18n.t('traffic.notice')).toBe('流量明細僅保留近一個月資料以供查詢。');
+    expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
+      '已用 1 GB / 總計 10 GB',
+    );
+    expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('當前已用流量達 80%');
+    expect(i18n.t('invite.transfer_notice', { title: 'V2Board' })).toBe(
+      '劃轉后的餘額僅用於 V2Board 消費使用',
+    );
+    expect(i18n.t('knowledge.last_update', { date: '2026/06/04' })).toBe(
+      '最後更新: 2026/06/04',
+    );
 
     setLegacyLocale('en-US');
     i18n = createI18n();
@@ -249,6 +344,18 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('traffic.notice')).toBe(
       'Chi tiết dung lượng chỉ lưu dữ liệu của những tháng gần đây để truy vấn.',
     );
+    expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
+      'Đã sử dụng 1 GB / Tổng dung lượng 10 GB',
+    );
+    expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe(
+      'Dữ liệu hiện đang sử dụng lên đến 80%',
+    );
+    expect(i18n.t('invite.transfer_notice', { title: 'V2Board' })).toBe(
+      'Số dư sau khi chuyển khoản chỉ dùng để tiêu dùng V2Board',
+    );
+    expect(i18n.t('knowledge.last_update', { date: '2026/06/04' })).toBe(
+      'Cập nhật gần đây: 2026/06/04',
+    );
 
     setLegacyLocale('ko-KR');
     i18n = createI18n();
@@ -262,6 +369,13 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('plan.pick_best_for_you')).toBe('당신에게 맞는 플랜을 선택하세요');
     expect(i18n.t('node.status_tip')).toBe('지난 5분 동안의 액세스 포인트 온라인 상태');
     expect(i18n.t('traffic.notice')).toBe('귀하의 트래픽 세부 정보는 최근 몇 달 동안만 유지됩니다');
+    expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('当前已使用流量达80%');
+    expect(i18n.t('invite.transfer_notice', { title: 'V2Board' })).toBe(
+      '이체된 잔액은 V2Board 결제에만 사용됩니다.',
+    );
+    expect(i18n.t('knowledge.last_update', { date: '2026/06/04' })).toBe(
+      '마지막 업데이트2026/06/04',
+    );
   });
 
   it('keeps legacy source typos when the bundled dictionaries also miss them', () => {

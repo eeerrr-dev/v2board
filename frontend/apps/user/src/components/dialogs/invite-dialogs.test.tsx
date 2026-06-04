@@ -37,7 +37,7 @@ vi.mock('react-i18next', () => ({
         'invite.current_commission_balance': '当前推广佣金余额',
         'invite.transfer': '划转',
         'invite.transfer_amount': '划转金额',
-        'invite.transfer_notice': '划转后的余额仅用于{{title}}消费使用',
+        'invite.transfer_notice': '划转后的余额仅用于{title}消费使用',
         'invite.transfer_placeholder': '请输入需要划转到余额的金额',
         'invite.withdraw': '申请提现',
         'invite.withdraw_account': '提现账号',
@@ -47,7 +47,9 @@ vi.mock('react-i18next', () => ({
         'invite.withdraw_method_placeholder': '请选择提现方式',
         'invite.withdraw_submit': '确认',
       };
-      return (labels[key] ?? key).replace('{{title}}', String(values?.title ?? ''));
+      return (labels[key] ?? key)
+        .replace('{{title}}', String(values?.title ?? ''))
+        .replace('{title}', String(values?.title ?? ''));
     },
   }),
 }));

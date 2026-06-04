@@ -77,7 +77,7 @@ const mocks = vi.hoisted(() => {
 
 const labels: Record<string, string> = {
   'dashboard.copy_success': '复制成功',
-  'knowledge.last_update': '最后更新: {{date}}',
+  'knowledge.last_update': '最后更新: {date}',
   'knowledge.search_placeholder': '搜索文档',
 };
 
@@ -88,7 +88,9 @@ vi.mock('react-router-dom', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, string>) =>
-      (labels[key] ?? key).replace('{{date}}', values?.date ?? ''),
+      (labels[key] ?? key)
+        .replace('{{date}}', values?.date ?? '')
+        .replace('{date}', values?.date ?? ''),
     i18n: { language: 'zh-CN' },
   }),
 }));
