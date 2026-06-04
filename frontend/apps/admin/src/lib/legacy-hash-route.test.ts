@@ -142,6 +142,17 @@ describe('normalizeLegacyHashRoute', () => {
     expect(getNormalizedLegacyHashPath('/ticket/7', options)).toBe('/ticket/7');
   });
 
+  it('normalizes paths nested below any known route prefix when configured', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+
+    expect(
+      getNormalizedLegacyHashPath('/dashboard/ticket/7', {
+        ...options,
+        nestedPrefixes: options.routes,
+      }),
+    ).toBe('/ticket/7');
+  });
+
   it('stops normalizing runtime hash changes after cleanup', () => {
     window.localStorage.setItem('authorization', 'jwt');
     const dispose = installLegacyHashRouteNormalizer(options);
