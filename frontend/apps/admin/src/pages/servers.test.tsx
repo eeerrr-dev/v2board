@@ -200,14 +200,14 @@ describe('ServersPage legacy server group route', () => {
     expect(groupModalSource).toContain('const groups = useServerGroups()');
     expect(groupModalSource).toContain('if (groups.isFetching) return;');
     expect(groupModalSource).toContain('await save.mutateAsync({ ...submit });');
-    expect(groupModalSource).toContain('void groups.refetch();');
+    expect(groupModalSource).toContain('await groups.refetch();');
     expect(groupModalSource.indexOf('await save.mutateAsync({ ...submit });')).toBeLessThan(
-      groupModalSource.indexOf('void groups.refetch();'),
+      groupModalSource.indexOf('await groups.refetch();'),
     );
-    expect(groupModalSource.indexOf('void groups.refetch();')).toBeLessThan(
+    expect(groupModalSource.indexOf('await groups.refetch();')).toBeLessThan(
       groupModalSource.indexOf('setVisible(false);'),
     );
-    expect(groupModalSource).not.toContain('await groups.refetch();');
+    expect(groupModalSource).not.toContain('void groups.refetch();\n    setVisible(false);');
     expect(groupModalSource).toContain(
       "okText={groups.isFetching ? <LoadingOutlined /> : '提交'}",
     );
@@ -224,14 +224,14 @@ describe('ServersPage legacy server group route', () => {
     expect(routeModalSource).toContain('const routes = useServerRoutes()');
     expect(routeModalSource).toContain('if (routes.isFetching) return;');
     expect(routeModalSource).toContain('await save.mutateAsync(payload);');
-    expect(routeModalSource).toContain('void routes.refetch();');
+    expect(routeModalSource).toContain('await routes.refetch();');
     expect(routeModalSource.indexOf('await save.mutateAsync(payload);')).toBeLessThan(
-      routeModalSource.indexOf('void routes.refetch();'),
+      routeModalSource.indexOf('await routes.refetch();'),
     );
-    expect(routeModalSource.indexOf('void routes.refetch();')).toBeLessThan(
+    expect(routeModalSource.indexOf('await routes.refetch();')).toBeLessThan(
       routeModalSource.indexOf('setVisible(false);'),
     );
-    expect(routeModalSource).not.toContain('await routes.refetch();');
+    expect(routeModalSource).not.toContain('void routes.refetch();\n    setVisible(false);');
     expect(routeModalSource).toContain(
       "okText={routes.isFetching ? <LoadingOutlined /> : '提交'}",
     );

@@ -441,7 +441,7 @@ function ServerGroupModal({
 
   const saveGroup = async () => {
     await save.mutateAsync({ ...submit });
-    void groups.refetch();
+    await groups.refetch();
     setVisible(false);
   };
 
@@ -602,7 +602,7 @@ function ServerRouteModal({
       payload.match = [];
     }
     await save.mutateAsync(payload);
-    void routes.refetch();
+    await routes.refetch();
     setVisible(false);
   };
 
