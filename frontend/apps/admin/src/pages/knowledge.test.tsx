@@ -120,25 +120,25 @@ describe('KnowledgePage legacy knowledge manager', () => {
 
     expect(editorSaveBlock).toContain("await onSave({ ...knowledge });");
     expect(editorSaveBlock).toContain('setSaveLoading(false);');
-    expect(editorSaveBlock).toContain('onSaved();');
+    expect(editorSaveBlock).toContain('await onSaved();');
     expect(editorSaveBlock).toContain("message.success('保存成功');");
     expect(editorSaveBlock.indexOf("await onSave({ ...knowledge });")).toBeLessThan(
       editorSaveBlock.indexOf('setSaveLoading(false);'),
     );
     expect(editorSaveBlock.indexOf('setSaveLoading(false);')).toBeLessThan(
-      editorSaveBlock.indexOf('onSaved();'),
+      editorSaveBlock.indexOf('await onSaved();'),
     );
-    expect(editorSaveBlock.indexOf('onSaved();')).toBeLessThan(
+    expect(editorSaveBlock.indexOf('await onSaved();')).toBeLessThan(
       editorSaveBlock.indexOf("message.success('保存成功');"),
     );
     expect(source).toContain(
       'const saveKnowledge = (payload: SaveKnowledgePayload) => save.mutateAsync(payload);',
     );
-    expect(source).toContain('const refetchKnowledge = () => {\n    void list.refetch();\n  };');
+    expect(source).toContain('const refetchKnowledge = () => list.refetch();');
     expect(source).toContain("message.success('保存成功');");
-    expect(source).toContain('onSaved: () => void;');
-    expect(source).toContain('    onSaved();\n    message.success');
-    expect(source).not.toContain('await onSaved();');
+    expect(source).toContain('onSaved: () => void | Promise<unknown>;');
+    expect(source).toContain('    await onSaved();\n    message.success');
+    expect(source).not.toContain('    onSaved();\n    message.success');
     expect(source).not.toContain('message.success(\'保存成功\');\n      hide();');
     expect(source).not.toContain("await onSave(knowledge);");
     expect(source).not.toContain('await save.mutateAsync(payload);\n    await list.refetch();');
@@ -182,9 +182,9 @@ describe('KnowledgePage legacy knowledge manager', () => {
     const saveStart = source.indexOf(
       'const saveKnowledge = (payload: SaveKnowledgePayload) => save.mutateAsync(payload);',
     );
-    const saveRefetch = source.indexOf('const refetchKnowledge = () => {', saveStart);
+    const saveRefetch = source.indexOf('const refetchKnowledge = () => list.refetch();', saveStart);
     const editorSaveStart = source.indexOf("await onSave({ ...knowledge });");
-    const editorRefetch = source.indexOf('onSaved();', editorSaveStart);
+    const editorRefetch = source.indexOf('await onSaved();', editorSaveStart);
     const sortStart = source.indexOf('sort.mutate(next.map((knowledge) => knowledge.id),');
     const sortRefetch = source.indexOf('void list.refetch();', sortStart);
     const showStart = source.indexOf('show.mutate(row.id, {');

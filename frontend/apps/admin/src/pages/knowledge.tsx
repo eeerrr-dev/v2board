@@ -211,7 +211,7 @@ function KnowledgeEditor({
   id?: number;
   children: ReactElement<{ onClick?: () => void }>;
   onSave: (payload: SaveKnowledgePayload) => Promise<unknown>;
-  onSaved: () => void;
+  onSaved: () => void | Promise<unknown>;
 }) {
   const { message } = App.useApp();
   const [visible, setVisible] = useState(false);
@@ -252,7 +252,7 @@ function KnowledgeEditor({
     } finally {
       setSaveLoading(false);
     }
-    onSaved();
+    await onSaved();
     message.success('保存成功');
   };
 
@@ -384,9 +384,7 @@ export default function KnowledgePage() {
   );
 
   const saveKnowledge = (payload: SaveKnowledgePayload) => save.mutateAsync(payload);
-  const refetchKnowledge = () => {
-    void list.refetch();
-  };
+  const refetchKnowledge = () => list.refetch();
 
   const columns: TableProps<KnowledgeSummary>['columns'] = [
     {
