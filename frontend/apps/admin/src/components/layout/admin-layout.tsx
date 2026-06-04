@@ -21,7 +21,9 @@ interface LegacyLayoutSearch {
 }
 
 interface AdminLayoutProps {
+  loading?: boolean;
   search?: LegacyLayoutSearch;
+  title?: string;
 }
 
 const LEGACY_NAV: LegacyNavItem[] = [
@@ -79,7 +81,7 @@ function getSiteTitle() {
   return getSettings().title || 'V2Board';
 }
 
-export function AdminLayout({ search }: AdminLayoutProps = {}) {
+export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const [showNav, setShowNav] = useState(false);
@@ -88,7 +90,7 @@ export function AdminLayout({ search }: AdminLayoutProps = {}) {
   const [email, setEmail] = useState('');
   const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
   const theme = getTheme();
-  const title = ROUTE_TITLES[location.pathname] ?? '';
+  const title = titleProp ?? ROUTE_TITLES[location.pathname] ?? '';
   const pageClassName =
     `sidebar-o ${theme.sidebar === 'dark' ? 'sidebar-dark' : ''} ` +
     `${theme.header === 'dark' ? 'page-header-dark' : ''} ` +
@@ -278,11 +280,21 @@ export function AdminLayout({ search }: AdminLayoutProps = {}) {
         </div>
       </header>
 
-      <main id="main-container">
-        <div className="p-0 p-lg-4">
-          <RouteBoundaryOutlet />
-        </div>
-      </main>
+      {loading ? (
+        <main id="main-container">
+          <div className="content content-full text-center pt-5">
+            <div className="spinner-grow text-primary" role="status">
+              <span className="sr-only">Loading...</span>
+            </div>
+          </div>
+        </main>
+      ) : (
+        <main id="main-container">
+          <div className="p-0 p-lg-4">
+            <RouteBoundaryOutlet />
+          </div>
+        </main>
+      )}
     </div>
   );
 }

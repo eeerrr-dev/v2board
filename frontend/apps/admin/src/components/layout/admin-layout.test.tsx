@@ -71,6 +71,19 @@ describe('AdminLayout legacy shell', () => {
     expect(html).toContain('V2Board v1.7.5');
   });
 
+  it('renders the bundled loading main container when loading is passed', () => {
+    const html = renderToStaticMarkup(<AdminLayout loading />);
+
+    expect(html).toContain('id="main-container"');
+    expect(html).toContain('class="content content-full text-center pt-5"');
+    expect(html).toContain('class="spinner-grow text-primary"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('class="sr-only"');
+    expect(html).toContain('Loading...');
+    expect(html).not.toContain('class="p-0 p-lg-4"');
+    expect(html).not.toContain('data-outlet="true"');
+  });
+
   it('renders the legacy admin navigation labels and icons', () => {
     const html = renderToStaticMarkup(<AdminLayout />);
 
@@ -268,6 +281,15 @@ describe('AdminLayout legacy dark mode behavior', () => {
     });
 
     expect(container.querySelector('.v2board-container-title')!.textContent).toBe('');
+  });
+
+  it('prefers the bundled layout title prop over the route title', async () => {
+    await act(async () => {
+      root.render(<AdminLayout title="自定义标题" />);
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('.v2board-container-title')!.textContent).toBe('自定义标题');
   });
 
   it('closes the avatar menu on the next document click like the old layout', async () => {
