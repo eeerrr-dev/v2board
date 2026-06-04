@@ -46,7 +46,7 @@ describe('legacy i18n dictionaries', () => {
     );
     expect(i18n.t('traffic.notice')).toBe('流量明细仅保留近一个月数据以供查询。');
     expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('当前已使用流量达 80%');
-    expect(i18n.t('node.status_tip')).toBe('五分钟内节点在线情况');
+    expect(i18n.t('node.status_tip')).toBe('节点五分钟内节点在线情况');
     expect(i18n.t('ticket.message_placeholder')).toBe('请描述你遇到的问题');
     expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后会到达你的佣金账户。');
     expect(i18n.t('plan.pick_title')).toBe('选择最适合你的计划');
@@ -83,6 +83,7 @@ describe('legacy i18n dictionaries', () => {
         '你还有未完成的订单，购买前需要先进行取消，确定取消先前的订单吗？':
           '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
         '佣金将会在确认后会到达你的佣金账户。': '佣金将会在确认后到达您的佣金账户。',
+        '节点五分钟内节点在线情况': '五分钟内节点在线情况',
         '如果你的订阅地址或信息泄露可以进行此操作。重置后你的UUID及订阅将会变更，需要重新进行订阅。':
           '如果您的订阅地址或信息发生泄露可以执行此操作。重置后您的 UUID 及订阅将会变更，需要重新导入订阅。',
         重置订阅提示信息:
@@ -107,6 +108,7 @@ describe('legacy i18n dictionaries', () => {
       '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
     );
     expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后到达您的佣金账户。');
+    expect(i18n.t('node.status_tip')).toBe('五分钟内节点在线情况');
     expect(i18n.t('profile.telegram_bind')).toBe('绑定 Telegram');
     expect(i18n.t('profile.telegram_search')).toBe('打开 Telegram 搜索');
     expect(i18n.t('profile.telegram_send')).toBe('向机器人发送您的');
@@ -195,6 +197,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('nav.profile')).toBe('您的帳戸');
     expect(i18n.t('dashboard.copy_subscribe')).toBe('複製訂閲位址');
     expect(i18n.t('order.processing')).toBe('訂單系統正在進行處理，請稍等 1-3 分鐘。');
+    expect(i18n.t('node.status_tip')).toBe('五分鐘內節點線上情況');
 
     setLegacyLocale('en-US');
     i18n = createI18n();
@@ -226,6 +229,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('order.processing')).toBe(
       'Hệ thống đang xử lý đơn hàng, vui lòng đợi 1-3p.',
     );
+    expect(i18n.t('node.status_tip')).toBe('Node trạng thái online trong vòng 5 phút');
 
     setLegacyLocale('ko-KR');
     i18n = createI18n();
@@ -236,6 +240,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('order.processing')).toBe(
       '주문 시스템이 처리 중입니다. 1-3분 정도 기다려 주십시오.',
     );
+    expect(i18n.t('node.status_tip')).toBe('지난 5분 동안의 액세스 포인트 온라인 상태');
   });
 
   it('keeps legacy source typos when the bundled dictionaries also miss them', () => {

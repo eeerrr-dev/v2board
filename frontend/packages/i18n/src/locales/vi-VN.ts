@@ -89,6 +89,7 @@ const viVNDictionary = {
   "标签": "Nhãn",
   "续费": "Gia hạn",
   "五分钟内节点在线情况": "Node trạng thái online trong vòng 5 phút",
+  "节点五分钟内节点在线情况": "Node trạng thái online trong vòng 5 phút",
   "使用的流量将乘以倍率进行扣除": "Dung lượng sử dụng nhân với bội số rồi khấu trừ",
   "记录时间": "Thời gian ghi",
   "实际上行": "Upload thực tế",

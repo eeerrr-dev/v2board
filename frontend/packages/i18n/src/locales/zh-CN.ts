@@ -177,7 +177,7 @@ const zhCN = {
     tags: '标签',
     renew: '续费',
     subscribe: '订阅',
-    status_tip: '五分钟内节点在线情况',
+    status_tip: '节点五分钟内节点在线情况',
     rate_tip: '使用的流量将乘以倍率进行扣除',
     no_available: '没有可用节点，如果您未订阅或已过期请',
   },
