@@ -111,9 +111,10 @@ export default function OrderDetailPage() {
   useEffect(
     () => () => {
       queryClient.removeQueries({ queryKey: ['user', 'orders'] });
+      if (tradeNo) queryClient.removeQueries({ queryKey: userKeys.orderDetail(tradeNo) });
       queryClient.removeQueries({ queryKey: userKeys.payments });
     },
-    [queryClient],
+    [queryClient, tradeNo],
   );
 
   const effectiveMethodId = methodId ?? paymentMethods?.[0]?.id;

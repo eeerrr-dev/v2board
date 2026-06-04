@@ -15,6 +15,7 @@ const legacyConfirm = vi.hoisted(() => vi.fn());
 const cancelMutateAsync = vi.hoisted(() => vi.fn());
 const cancelState = vi.hoisted(() => ({ isPending: false }));
 const invalidateQueries = vi.hoisted(() => vi.fn());
+const removeQueries = vi.hoisted(() => vi.fn());
 const paymentState = vi.hoisted(() => ({
   data: [{ id: 1, name: 'Legacy Pay', payment: 'LegacyPay' }] as Array<
     { id: number; name: string; payment: string } & Record<string, unknown>
@@ -72,7 +73,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     invalidateQueries,
-    removeQueries: vi.fn(),
+    removeQueries,
   }),
 }));
 
@@ -95,6 +96,7 @@ vi.mock('@/components/legacy-confirm', () => ({
 vi.mock('@/lib/queries', () => ({
   userKeys: {
     orders: () => ['user', 'orders', 'all'],
+    orderDetail: (tradeNo: string) => ['user', 'orders', 'detail', tradeNo],
     payments: ['user', 'payments'],
   },
   useOrder: () => ({
@@ -136,6 +138,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     cancelMutateAsync.mockResolvedValue(true);
     cancelState.isPending = false;
     invalidateQueries.mockReset();
+    removeQueries.mockReset();
     paymentState.data = [{ id: 1, name: 'Legacy Pay', payment: 'LegacyPay' }];
     orderState.isFetching = false;
     orderState.data = {
@@ -433,6 +436,33 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     expect(orderDetailSource).toContain('void cancel.mutateAsync(cancelTradeNo).catch(() => {});');
     expect(orderDetailSource).not.toContain('queryClient.invalidateQueries({ queryKey: userKeys.orders() })');
     expect(orderDetailSource).not.toContain('void orderQuery.refetch();');
+  });
+
+  it('clears the order model state on unmount like the bundled order/empty reducer', async () => {
+    const localContainer = document.createElement('div');
+    document.body.appendChild(localContainer);
+    const localRoot = createRoot(localContainer);
+
+    removeQueries.mockClear();
+    try {
+      await act(async () => {
+        localRoot.render(<OrderDetailPage />);
+        await Promise.resolve();
+      });
+
+      act(() => localRoot.unmount());
+
+      expect(removeQueries).toHaveBeenCalledWith({ queryKey: ['user', 'orders'] });
+      expect(removeQueries).toHaveBeenCalledWith({
+        queryKey: ['user', 'orders', 'detail', 'ORDER123'],
+      });
+      expect(removeQueries).toHaveBeenCalledWith({ queryKey: ['user', 'payments'] });
+      expect(orderDetailSource).toContain(
+        'queryClient.removeQueries({ queryKey: userKeys.orderDetail(tradeNo) });',
+      );
+    } finally {
+      localContainer.remove();
+    }
   });
 
   it('renders the legacy cancel loading icon inline without a wrapper element', () => {
