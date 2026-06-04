@@ -54,4 +54,12 @@ describe('user legacy route table', () => {
     expect(source).not.toContain('lazy(() => import(');
     expect(source).not.toContain('<Suspense');
   });
+
+  it('keeps the shared layout mounted while switching routes', () => {
+    expect(source).toContain('<Route element={<GuestLayout />}>');
+    expect(source).toContain('<Route element={<AppLayout />}>');
+    expect(source).not.toContain('key={routeComponentKey');
+    expect(source).not.toContain('function KeyedAppLayout');
+    expect(source).not.toContain('function KeyedGuestLayout');
+  });
 });

@@ -1,4 +1,4 @@
-import { Route, Routes, useLocation } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
@@ -76,23 +76,6 @@ export const USER_APP_LAYOUT_ROUTE_PATHS = [
   '/traffic',
 ] as const;
 
-function routeComponentKey(pathname: string): string {
-  if (/^\/order\/[^/]+$/.test(pathname)) return '/order/:trade_no';
-  if (/^\/plan\/[^/]+$/.test(pathname)) return '/plan/:plan_id';
-  if (/^\/ticket\/[^/]+$/.test(pathname)) return '/ticket/:ticket_id';
-  return pathname;
-}
-
-function KeyedGuestLayout() {
-  const location = useLocation();
-  return <GuestLayout key={routeComponentKey(location.pathname)} />;
-}
-
-function KeyedAppLayout() {
-  const location = useLocation();
-  return <AppLayout key={routeComponentKey(location.pathname)} />;
-}
-
 export default function App() {
   return (
     <Routes>
@@ -100,12 +83,12 @@ export default function App() {
         path="/"
         element={<RouteBoundaryElement>{USER_ROUTE_ELEMENTS['/']}</RouteBoundaryElement>}
       />
-      <Route element={<KeyedGuestLayout />}>
+      <Route element={<GuestLayout />}>
         {USER_GUEST_ROUTE_PATHS.map((path) => (
           <Route key={path} path={path} element={USER_ROUTE_ELEMENTS[path]} />
         ))}
       </Route>
-      <Route element={<KeyedAppLayout />}>
+      <Route element={<AppLayout />}>
         {USER_APP_LAYOUT_ROUTE_PATHS.map((path) => (
           <Route key={path} path={path} element={USER_ROUTE_ELEMENTS[path]} />
         ))}
