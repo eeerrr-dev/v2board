@@ -65,6 +65,7 @@ describe('legacy i18n dictionaries', () => {
         '变更订阅会导致当前订阅被新订阅覆盖，请注意。':
           '请注意，变更订阅会导致当前订阅被新订阅覆盖。',
         '请描述你遇到的问题': '请描述您遇到的问题',
+        '节点五分钟内节点在线情况': '五分钟内节点在线情况',
       },
       'en-US': {
         '订单系统正在进行处理，请稍等1-3分钟。':
@@ -72,6 +73,7 @@ describe('legacy i18n dictionaries', () => {
         '变更订阅会导致当前订阅被新订阅覆盖，请注意。':
           'Attention please, change subscription will overwrite your current subscription.',
         '请描述你遇到的问题': 'Please describe the problem you encountered',
+        '节点五分钟内节点在线情况': 'Access Point online status in the last 5 minutes',
       },
     });
 
@@ -85,6 +87,9 @@ describe('legacy i18n dictionaries', () => {
     );
     expect(i18n.t('plan.change_warning')).toBe(
       'Attention please, change subscription will overwrite your current subscription.',
+    );
+    expect(i18n.t('node.status_tip')).toBe(
+      'Access Point online status in the last 5 minutes',
     );
   });
 
