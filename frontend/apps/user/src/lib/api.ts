@@ -6,17 +6,13 @@ import { i18nGet } from './errors';
 import { getLegacySettings } from './legacy-settings';
 import { toast } from './legacy-toast';
 
-let redirectingToLogin = false;
-
 export const apiClient = createApiClient({
   baseURL: getApiBaseUrl(),
   getAuthData: () => getAuthData(),
   getLocale: () => getRequestLocale(),
   onUnauthorized: () => {
-    if (redirectingToLogin) return;
-    redirectingToLogin = true;
     logout();
-    window.location.replace('/#/login');
+    window.location.href = '/';
   },
   onError: (error: ApiError) => {
     toast.error(i18nGet('请求失败'), { description: error.message });

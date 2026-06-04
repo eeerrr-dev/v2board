@@ -6,11 +6,10 @@ import { describe, expect, it } from 'vitest';
 const apiSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'api.ts'), 'utf8');
 
 describe('user api unauthorized handling', () => {
-  it('clears auth and redirects to the hash login route once on 403', () => {
+  it('clears auth and redirects to the site root on 403 like the bundled theme', () => {
     expect(apiSource).toContain('logout();');
-    expect(apiSource).toContain('if (redirectingToLogin) return;');
-    expect(apiSource).toContain('redirectingToLogin = true;');
-    expect(apiSource).toContain("window.location.replace('/#/login');");
-    expect(apiSource).not.toContain("window.location.href = '/';");
+    expect(apiSource).toContain("window.location.href = '/';");
+    expect(apiSource).not.toContain('redirectingToLogin');
+    expect(apiSource).not.toContain("window.location.replace('/#/login');");
   });
 });
