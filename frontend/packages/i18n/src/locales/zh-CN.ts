@@ -191,7 +191,7 @@ const zhCN = {
     actual_download: '实际下行',
     deduct_rate: '扣费倍率',
     total_charged: '合计',
-    notice: '流量明细仅保留近一个月数据以供查询。',
+    notice: '流量明细仅保留近月数据以供查询。',
     total_formula: '公式：(实际上行 + 实际下行) x 扣费倍率 = 扣除流量',
   },
   plan: {
