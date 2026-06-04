@@ -1002,6 +1002,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('ECH Server Name (伪装域名/外层SNI)');
     expect(serversSource).toContain('function LegacyEncryptionSettingsField');
     expect(serversSource).toContain("field === 'encryption_settings'");
+    expect(serversSource).toContain('form.setFieldsValue({ encryption_settings: value });');
     expect(serversSource).toContain('Mode');
     expect(serversSource).toContain('xorpub');
     expect(serversSource).toContain('random');

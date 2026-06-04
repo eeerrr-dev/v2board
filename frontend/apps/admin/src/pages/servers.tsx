@@ -2224,7 +2224,13 @@ function LegacyEncryptionSettingsField({
   settings: unknown;
   encryption: unknown;
 }) {
-  const value = normalizeLegacySettings(settings, LEGACY_ENCRYPTION_SETTINGS_DEFAULTS);
+  const value = useMemo(
+    () => normalizeLegacySettings(settings, LEGACY_ENCRYPTION_SETTINGS_DEFAULTS),
+    [settings],
+  );
+  useEffect(() => {
+    form.setFieldsValue({ encryption_settings: value });
+  }, [form, value]);
   const change = (key: string, next: unknown) => {
     form.setFieldsValue({ encryption_settings: { ...value, [key]: next } });
   };
