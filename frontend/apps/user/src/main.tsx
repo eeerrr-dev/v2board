@@ -10,6 +10,7 @@ import { HashRouter } from 'react-router-dom';
 
 import App, { USER_LEGACY_ROUTE_PATHS } from './App';
 import { LegacyConfirmProvider } from './components/legacy-confirm';
+import { RouteBoundaryElement } from './components/route-error-boundary';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyLegacySettings } from './lib/legacy-settings';
 import './styles/globals.css';
@@ -41,8 +42,10 @@ createRoot(root).render(
   <I18nextProvider i18n={i18n}>
     <QueryClientProvider client={queryClient}>
       <HashRouter>
-        <App />
-        <LegacyConfirmProvider />
+        <RouteBoundaryElement>
+          <App />
+          <LegacyConfirmProvider />
+        </RouteBoundaryElement>
       </HashRouter>
     </QueryClientProvider>
   </I18nextProvider>,

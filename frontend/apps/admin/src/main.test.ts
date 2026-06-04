@@ -26,6 +26,13 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).not.toContain('StrictMode');
   });
 
+  it('wraps the whole admin app with the white-screen guard inside HashRouter', () => {
+    expect(mainSource).toContain("import { RouteBoundaryElement } from './components/route-error-boundary';");
+    expect(mainSource).toContain('<HashRouter>');
+    expect(mainSource).toContain('<RouteBoundaryElement>');
+    expect(mainSource).toContain('<App />');
+  });
+
   it('does not install a storage-event auth sync listener absent from the bundled admin entry', () => {
     expect(mainSource).not.toContain('setupAuthSync');
     expect(mainSource).not.toContain("from './lib/auth'");

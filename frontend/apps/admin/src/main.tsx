@@ -10,6 +10,7 @@ import {
 } from '@v2board/config';
 import { HashRouter } from 'react-router-dom';
 import App, { ADMIN_LEGACY_ROUTE_PATHS } from './App';
+import { RouteBoundaryElement } from './components/route-error-boundary';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyAdminLegacySettings } from './lib/legacy-settings';
 
@@ -75,7 +76,9 @@ function Boot() {
       <AntdApp>
         <QueryClientProvider client={queryClient}>
           <HashRouter>
-            <App />
+            <RouteBoundaryElement>
+              <App />
+            </RouteBoundaryElement>
           </HashRouter>
         </QueryClientProvider>
       </AntdApp>

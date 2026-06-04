@@ -25,7 +25,10 @@ describe('user legacy entrypoint', () => {
 
   it('keeps the app on HashRouter like the bundled theme', () => {
     expect(mainSource).toContain("import { HashRouter } from 'react-router-dom';");
+    expect(mainSource).toContain("import { RouteBoundaryElement } from './components/route-error-boundary';");
     expect(mainSource).toContain('<HashRouter>');
+    expect(mainSource).toContain('<RouteBoundaryElement>');
+    expect(mainSource).toContain('<App />');
   });
 
   it('keeps the browser-facing config barrel free of Vite-only helpers', () => {
