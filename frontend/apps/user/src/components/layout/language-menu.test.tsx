@@ -113,6 +113,59 @@ describe('LanguageMenu antd dropdown behavior', () => {
     ).toEqual(['English', 'فارسی', '日本語', '한국어', 'Tiếng Việt', '简体中文', '繁體中文']);
   });
 
+  it('keeps the top-center dropdown inside the viewport like rc-align overflow adjustment', () => {
+    const heightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    const widthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get() {
+        return String(this.className).includes('ant-dropdown') ? 96 : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get() {
+        return String(this.className).includes('ant-dropdown') ? 160 : 0;
+      },
+    });
+
+    try {
+      act(() => {
+        root.render(<LanguageMenu legacyIcon showLabel triggerClassName="v2board-login-i18n-btn" />);
+      });
+
+      const trigger = container.querySelector('.v2board-login-i18n-btn') as HTMLElement;
+      trigger.getBoundingClientRect = () =>
+        ({
+          top: 8,
+          right: 60,
+          bottom: 28,
+          left: 20,
+          width: 40,
+          height: 20,
+          x: 20,
+          y: 8,
+          toJSON: () => {},
+        }) as DOMRect;
+
+      act(() => {
+        trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+
+      const popup = document.body.querySelector('.ant-dropdown') as HTMLElement;
+      expect(popup.style.top).toBe('96px');
+      expect(popup.style.left).toBe('80px');
+      expect(popup.style.transform).toBe('translate(-50%, -100%)');
+    } finally {
+      if (heightDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetHeight', heightDescriptor);
+      }
+      if (widthDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetWidth', widthDescriptor);
+      }
+    }
+  });
+
   it('keeps the old unkeyed locale menu item map from SelectLang', () => {
     const source = readFileSync('src/components/layout/language-menu.tsx', 'utf8');
     const menuSource = source.slice(

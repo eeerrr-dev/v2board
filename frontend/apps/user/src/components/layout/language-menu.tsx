@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { legacyGetLocale, legacySetLocale, SUPPORTED_LOCALES } from '@v2board/i18n';
 import { setLegacyCookie } from '@/lib/legacy-cookie';
@@ -63,6 +63,26 @@ export function LanguageMenu({
     const rect = triggerRef.current?.getBoundingClientRect();
     if (rect) setCoords({ left: rect.left + rect.width / 2, top: rect.top - 4 });
   }, []);
+
+  useLayoutEffect(() => {
+    if (dropdownStatus === 'exited' || !coords || !popupRef.current) return;
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const popupHeight = popupRef.current.offsetHeight;
+    const popupWidth = popupRef.current.offsetWidth;
+    if (!popupHeight && !popupWidth) return;
+    const minLeft = popupWidth / 2;
+    const maxLeft = Math.max(minLeft, window.innerWidth - popupWidth / 2);
+
+    const next = {
+      left: popupWidth
+        ? Math.min(Math.max(rect.left + rect.width / 2, minLeft), maxLeft)
+        : coords.left,
+      top: popupHeight ? Math.max(rect.top - 4, popupHeight) : coords.top,
+    };
+
+    if (next.left !== coords.left || next.top !== coords.top) setCoords(next);
+  }, [coords, dropdownStatus]);
 
   useEffect(() => {
     if (!open) return;
