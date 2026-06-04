@@ -97,6 +97,7 @@ const viVNDictionary = {
   "流量明细仅保留近一个月数据以供查询。": "Chi tiết dung lượng chỉ lưu dữ liệu của những tháng gần đây để truy vấn.",
   "公式：(实际上行 + 实际下行) x 扣费倍率 = 扣除流量": "Công thức: (upload thực tế + download thực tế) x bội số trừ phí = Dung lượng khấu trừ",
   "选择订阅": "Chọn gói",
+  "选择最适合你的计划": "Chọn kế hoạch phù hợp với bạn nhất",
   "选择最适合您的计划": "Chọn kế hoạch phù hợp với bạn nhất",
   "配置订阅": "Thiết lập gói",
   "订单总额": "Tổng tiền đơn hàng",

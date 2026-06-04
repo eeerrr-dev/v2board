@@ -46,6 +46,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('node.status_tip')).toBe('五分钟内节点在线情况');
     expect(i18n.t('ticket.message_placeholder')).toBe('请描述您遇到的问题');
     expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后到达您的佣金账户。');
+    expect(i18n.t('plan.pick_title')).toBe('选择最适合你的计划');
     expect(i18n.t('plan.select_other')).toBe('选择其它订阅');
     expect(i18n.t('plan.change_warning')).toBe('请注意，变更订阅会导致当前订阅被新订阅覆盖。');
     expect(i18n.t('plan.unfinished_order_confirm')).toBe(
@@ -56,6 +57,23 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('profile.reset_subscribe_warning')).toBe(
       '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
     );
+  });
+
+  it('renders zh-CN through the bundled legacy dictionary when it is loaded', () => {
+    setLegacyLocale('zh-CN');
+    setLegacyI18n({
+      'zh-CN': {
+        选择最适合你的计划: '选择最适合您的计划',
+        绑定Telegram: '绑定 Telegram',
+        打开Telegram搜索: '打开 Telegram 搜索',
+      },
+    });
+
+    const i18n = createI18n();
+
+    expect(i18n.t('plan.pick_title')).toBe('选择最适合您的计划');
+    expect(i18n.t('profile.telegram_bind')).toBe('绑定 Telegram');
+    expect(i18n.t('profile.telegram_search')).toBe('打开 Telegram 搜索');
   });
 
   it('translates zh-CN fallback copy through the original legacy source key', () => {

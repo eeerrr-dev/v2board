@@ -197,7 +197,7 @@ const zhCN = {
   plan: {
     title: '购买订阅',
     pick: '选择订阅',
-    pick_title: '选择最适合您的计划',
+    pick_title: '选择最适合你的计划',
     checkout_title: '配置订阅',
     order_total: '订单总额',
     grand_total: '总计',

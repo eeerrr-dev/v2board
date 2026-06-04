@@ -63,7 +63,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 const labels: Record<string, string> = {
-  'plan.pick_title': '选择最适合您的计划',
+  'plan.pick_title': '选择最适合你的计划',
   'plan.filter_all': '全部',
   'plan.filter_period': '按周期',
   'plan.filter_traffic': '按流量',
@@ -149,7 +149,7 @@ describe('PlansPage legacy list markup', () => {
     const html = renderToStaticMarkup(<PlansPage />);
 
     expect(html).toContain('font-weight-normal mb-4 m-3 mx-xl-0 mt-xl-0 mt-4');
-    expect(html).toContain('选择最适合您的计划');
+    expect(html).toContain('选择最适合你的计划');
     expect(html).toContain('v2board-plan-tabs border-primary text-primary');
     expect(html).toContain('block block-link-pop block-rounded m-3 mx-xl-0');
     expect(html).toContain('v2board-sold-out-tag');
