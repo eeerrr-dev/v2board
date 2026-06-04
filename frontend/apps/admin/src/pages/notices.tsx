@@ -20,6 +20,7 @@ export default function NoticesPage() {
   const show = useShowNoticeMutation();
   const [visible, setVisible] = useState(false);
   const [submit, setSubmit] = useState<Partial<Notice>>({});
+  const [saveLoading] = useState<boolean | undefined>(undefined);
   const dataSource = notices.data?.data ?? [];
 
   useEffect(() => {
@@ -133,9 +134,9 @@ export default function NoticesPage() {
         open={visible}
         onCancel={modalVisible}
         onOk={() => {
-          if (!save.isPending) void saveNotice();
+          saveLoading || void saveNotice();
         }}
-        okText={save.isPending ? <LoadingOutlined /> : '提交'}
+        okText={saveLoading ? <LoadingOutlined /> : '提交'}
         cancelText="取消"
       >
         <div>
