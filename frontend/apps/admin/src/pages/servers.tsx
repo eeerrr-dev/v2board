@@ -124,6 +124,7 @@ const ANYTLS_PADDING_SCHEME_PLACEHOLDER = JSON.stringify(
   4,
 );
 const LEGACY_TLS_FORCED_PROTOCOLS = ['anytls', 'hysteria2', 'trojan', 'tuic'];
+const LEGACY_V2NODE_SECURITY_FALLBACK_PROTOCOLS = ['hysteria2', 'trojan', 'tuic'];
 const LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS: Record<string, string> = {
   tcp: JSON.stringify(
     {
@@ -1778,7 +1779,7 @@ export function getLegacyServerInitialValues(
         }
       : {};
 
-  const values: Record<string, unknown> = {
+  return {
     rate: 1,
     ...tuicDefaults,
     ...shadowsocksDefaults,
@@ -1790,18 +1791,20 @@ export function getLegacyServerInitialValues(
     ...v2nodeDefaults,
     ...normalizedRecord,
   };
-  if (
-    type === 'v2node' &&
-    LEGACY_TLS_FORCED_PROTOCOLS.includes(String(values.protocol)) &&
-    !parseInt(String(values.tls ?? 0), 10)
-  ) {
-    values.tls = 1;
-  }
-  return values;
 }
 
 export function getLegacyNetworkSettingsPlaceholder(type: admin.ServerTypeName, network: unknown) {
   return LEGACY_NETWORK_SETTINGS_PLACEHOLDERS[type]?.[String(network)] || '';
+}
+
+export function getLegacyV2nodeSecurityValue(protocol: unknown, tls: unknown) {
+  const parsedTls = parseInt(String(tls ?? 0), 10);
+  if (parsedTls) return parsedTls;
+  const protocolValue = protocol == null ? null : String(protocol);
+  return protocolValue &&
+    LEGACY_V2NODE_SECURITY_FALLBACK_PROTOCOLS.includes(protocolValue)
+    ? 1
+    : 0;
 }
 
 function normalizeLegacySettings(
@@ -2424,9 +2427,7 @@ function V2nodeFields({
   const obfs = Form.useWatch('obfs', form);
   const encryption = Form.useWatch('encryption', form);
   const protocolValue = protocol == null ? null : String(protocol);
-  const securityValue =
-    parseInt(String(tls ?? 0), 10) ||
-    (protocolValue && LEGACY_TLS_FORCED_PROTOCOLS.includes(protocolValue) ? 1 : 0);
+  const securityValue = getLegacyV2nodeSecurityValue(protocolValue, tls);
 
   const changeProtocol = (value: string) => {
     form.setFieldsValue({
@@ -2479,7 +2480,14 @@ function V2nodeFields({
                 </a>
               ) : null}
             </label>
-            <Form.Item noStyle name="tls" initialValue={0}>
+            <Form.Item
+              noStyle
+              name="tls"
+              initialValue={0}
+              getValueProps={(value) => ({
+                value: getLegacyV2nodeSecurityValue(protocolValue, value),
+              })}
+            >
               <Select style={{ width: '100%' }}>
                 {protocolValue === 'vless' || protocolValue === 'vmess' ? (
                   <Select.Option key={0} value={0}>

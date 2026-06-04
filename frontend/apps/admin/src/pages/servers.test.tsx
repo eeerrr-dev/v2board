@@ -7,6 +7,7 @@ import ServersPage, {
   createServerSortPayload,
   getLegacyNetworkSettingsPlaceholder,
   getLegacyServerInitialValues,
+  getLegacyV2nodeSecurityValue,
   installLegacyServerSortPrompt,
   moveServerNodeByLegacyDragIndexes,
   shouldPromptLegacyServerSortClick,
@@ -714,6 +715,45 @@ describe('ServersPage legacy server group route', () => {
     expect(getLegacyServerInitialValues('trojan')).not.toHaveProperty('network');
     expect(getLegacyServerInitialValues('vless')).not.toHaveProperty('network');
     expect(serversSource.match(/name="network" initialValue="tcp"/g)).toHaveLength(2);
+  });
+
+  it('keeps original V2node edit values instead of forcing TLS during initialization', () => {
+    expect(
+      getLegacyServerInitialValues('v2node', {
+        type: 'v2node',
+        protocol: 'anytls',
+        tls: 0,
+        network: 'tcp',
+      } as unknown as Parameters<typeof getLegacyServerInitialValues>[1]),
+    ).toMatchObject({
+      protocol: 'anytls',
+      tls: 0,
+      network: 'tcp',
+    });
+    expect(
+      getLegacyServerInitialValues('v2node', {
+        type: 'v2node',
+        protocol: 'hysteria2',
+        tls: 0,
+      } as unknown as Parameters<typeof getLegacyServerInitialValues>[1]),
+    ).toMatchObject({
+      protocol: 'hysteria2',
+      tls: 0,
+    });
+  });
+
+  it('matches the original V2node security select fallback protocols', () => {
+    expect(getLegacyV2nodeSecurityValue('anytls', 0)).toBe(0);
+    expect(getLegacyV2nodeSecurityValue('hysteria2', 0)).toBe(1);
+    expect(getLegacyV2nodeSecurityValue('trojan', 0)).toBe(1);
+    expect(getLegacyV2nodeSecurityValue('tuic', 0)).toBe(1);
+    expect(getLegacyV2nodeSecurityValue('vless', 0)).toBe(0);
+    expect(getLegacyV2nodeSecurityValue('anytls', 2)).toBe(2);
+
+    expect(serversSource).toContain(
+      "const LEGACY_V2NODE_SECURITY_FALLBACK_PROTOCOLS = ['hysteria2', 'trojan', 'tuic']",
+    );
+    expect(serversSource).toContain('getValueProps={(value) => ({');
   });
 
   it('uses the original Shadowsocks-specific drawer fields', () => {
