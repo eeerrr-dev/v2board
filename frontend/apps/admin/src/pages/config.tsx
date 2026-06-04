@@ -343,7 +343,7 @@ function SystemConfigPage() {
     <div
       className={`mb-0 block border-bottom ${config.isFetching ? 'block-mode-loading' : ''}`}
     >
-      <Tabs activeKey={activeTab} onChange={(key) => setActiveTab(key as ConfigGroupKey)} size="large">
+      <Tabs defaultActiveKey={activeTab} onChange={(key) => setActiveTab(key as ConfigGroupKey)} size="large">
         <Tabs.TabPane tab="站点" key="site">
           <div className="">
             <ConfigItem title="站点名称" description="用于显示需要站点名称的地方。">

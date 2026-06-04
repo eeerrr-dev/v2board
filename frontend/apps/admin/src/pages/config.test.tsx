@@ -349,6 +349,13 @@ describe('ConfigPage legacy theme config', () => {
     expect(html).not.toContain('ant-typography');
   });
 
+  it('keeps the original system config tabs uncontrolled after initial render', () => {
+    expect(configSource).toContain(
+      '<Tabs defaultActiveKey={activeTab} onChange={(key) => setActiveTab(key as ConfigGroupKey)} size="large">',
+    );
+    expect(configSource).not.toContain('<Tabs activeKey={activeTab}');
+  });
+
   it('keeps the original split read and save keys for system config fields', () => {
     const source = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), 'config.tsx'),
