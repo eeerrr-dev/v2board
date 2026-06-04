@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import type { ReactNode } from 'react';
 import { ConfigProvider, App as AntdApp, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -38,12 +39,12 @@ const queryClient = new QueryClient({
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');
 
-function LegacyRouteGuard() {
+function LegacyRouteGate({ children }: { children: ReactNode }) {
   const location = useLocation();
   const current = `${location.pathname}${location.search}`;
   const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);
 
-  return normalized !== current ? <Navigate to={normalized} replace /> : null;
+  return normalized !== current ? <Navigate to={normalized} replace /> : <>{children}</>;
 }
 
 function Boot() {
@@ -88,8 +89,9 @@ function Boot() {
         <QueryClientProvider client={queryClient}>
           <HashRouter>
             <RouteBoundaryElement>
-              <LegacyRouteGuard />
-              <App />
+              <LegacyRouteGate>
+                <App />
+              </LegacyRouteGate>
             </RouteBoundaryElement>
           </HashRouter>
         </QueryClientProvider>

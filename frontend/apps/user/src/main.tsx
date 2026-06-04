@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 import { createI18n } from '@v2board/i18n';
@@ -40,12 +41,12 @@ applyInitialDarkMode();
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');
 
-function LegacyRouteGuard() {
+function LegacyRouteGate({ children }: { children: ReactNode }) {
   const location = useLocation();
   const current = `${location.pathname}${location.search}`;
   const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);
 
-  return normalized !== current ? <Navigate to={normalized} replace /> : null;
+  return normalized !== current ? <Navigate to={normalized} replace /> : <>{children}</>;
 }
 
 createRoot(root).render(
@@ -53,8 +54,9 @@ createRoot(root).render(
     <QueryClientProvider client={queryClient}>
       <HashRouter>
         <RouteBoundaryElement>
-          <LegacyRouteGuard />
-          <App />
+          <LegacyRouteGate>
+            <App />
+          </LegacyRouteGate>
           <LegacyConfirmProvider />
         </RouteBoundaryElement>
       </HashRouter>

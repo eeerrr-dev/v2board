@@ -22,9 +22,10 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('routes: ADMIN_LEGACY_ROUTE_PATHS');
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
-    expect(mainSource).toContain('function LegacyRouteGuard()');
+    expect(mainSource).toContain("import type { ReactNode } from 'react';");
+    expect(mainSource).toContain('function LegacyRouteGate({ children }: { children: ReactNode })');
     expect(mainSource).toContain('const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);');
-    expect(mainSource).toContain('return normalized !== current ? <Navigate to={normalized} replace /> : null;');
+    expect(mainSource).toContain('return normalized !== current ? <Navigate to={normalized} replace /> : <>{children}</>;');
   });
 
   it('initializes legacy settings and dark mode before rendering', () => {
@@ -41,7 +42,8 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('Navigate');
     expect(mainSource).toContain("import { RouteBoundaryElement } from './components/route-error-boundary';");
     expect(mainSource).toContain('<HashRouter>');
-    expect(mainSource).toContain('<LegacyRouteGuard />');
+    expect(mainSource).toContain('<LegacyRouteGate>');
+    expect(mainSource).toContain('</LegacyRouteGate>');
     expect(mainSource).toContain('<RouteBoundaryElement>');
     expect(mainSource).toContain('<App />');
   });
