@@ -44,7 +44,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('traffic.notice')).toBe('流量明细仅保留近一个月数据以供查询。');
     expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('当前已使用流量达 80%');
     expect(i18n.t('node.status_tip')).toBe('五分钟内节点在线情况');
-    expect(i18n.t('ticket.message_placeholder')).toBe('请描述您遇到的问题');
+    expect(i18n.t('ticket.message_placeholder')).toBe('请描述你遇到的问题');
     expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后到达您的佣金账户。');
     expect(i18n.t('plan.pick_title')).toBe('选择最适合你的计划');
     expect(i18n.t('plan.select_other')).toBe('选择其它订阅');
@@ -66,6 +66,7 @@ describe('legacy i18n dictionaries', () => {
         选择最适合你的计划: '选择最适合您的计划',
         绑定Telegram: '绑定 Telegram',
         打开Telegram搜索: '打开 Telegram 搜索',
+        请描述你遇到的问题: '请描述您遇到的问题',
       },
     });
 
@@ -74,6 +75,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('plan.pick_title')).toBe('选择最适合您的计划');
     expect(i18n.t('profile.telegram_bind')).toBe('绑定 Telegram');
     expect(i18n.t('profile.telegram_search')).toBe('打开 Telegram 搜索');
+    expect(i18n.t('ticket.message_placeholder')).toBe('请描述您遇到的问题');
   });
 
   it('translates zh-CN fallback copy through the original legacy source key', () => {

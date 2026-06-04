@@ -316,7 +316,7 @@ const zhCN = {
     replied: '已答复',
     last_reply: '最后回复',
     message: '消息',
-    message_placeholder: '请描述您遇到的问题',
+    message_placeholder: '请描述你遇到的问题',
     reply_placeholder: '输入内容回复工单...',
     send: '发送',
     close_ticket: '关闭',

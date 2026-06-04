@@ -176,6 +176,7 @@ const viVNDictionary = {
   "已关闭": "Đã đóng",
   "最后回复": "Trả lời gần đây",
   "消息": "Thông tin",
+  "请描述你遇到的问题": "Hãy mô tả vấn đề gặp phải",
   "请描述您遇到的问题": "Hãy mô tả vấn đề gặp phải",
   "输入内容回复工单...": "Nhập nội dung trả lời công việc...",
   "请输入工单主题": "Hãy nhập chủ đề công việc",
