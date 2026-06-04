@@ -6,6 +6,21 @@ import { buildAppViteConfig, legacyThemePlugin } from '@v2board/config/vite';
 export default defineConfig({
   ...buildAppViteConfig({ port: 5173 }),
   plugins: [react(), legacyThemePlugin()],
+  optimizeDeps: {
+    include: [
+      '@tanstack/react-query',
+      'axios',
+      'clsx',
+      'i18next',
+      'markdown-it',
+      'qrcode.react',
+      'react',
+      'react-dom/client',
+      'react-i18next',
+      'react-router-dom',
+      'tailwind-merge',
+    ],
+  },
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
