@@ -77,15 +77,15 @@ describe('NoticesPage legacy notice manager', () => {
     );
 
     expect(saveBlock).toContain('await save.mutateAsync({ ...submit });');
-    expect(saveBlock).toContain('void notices.refetch();');
+    expect(saveBlock).toContain('await notices.refetch();');
     expect(saveBlock).toContain('modalVisible();');
     expect(saveBlock.indexOf('await save.mutateAsync({ ...submit });')).toBeLessThan(
-      saveBlock.indexOf('void notices.refetch();'),
+      saveBlock.indexOf('await notices.refetch();'),
     );
-    expect(saveBlock.indexOf('void notices.refetch();')).toBeLessThan(
+    expect(saveBlock.indexOf('await notices.refetch();')).toBeLessThan(
       saveBlock.indexOf('modalVisible();'),
     );
-    expect(saveBlock).not.toContain('await notices.refetch();');
+    expect(saveBlock).not.toContain('void notices.refetch();\n    modalVisible();');
     expect(mutationBlock).not.toContain("queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })");
     expect(source).toContain("import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';");
     expect(source).toContain('if (!save.isPending) void saveNotice();');

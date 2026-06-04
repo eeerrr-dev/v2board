@@ -32,7 +32,7 @@ export default function NoticesPage() {
 
   const saveNotice = async () => {
     await save.mutateAsync({ ...submit });
-    void notices.refetch();
+    await notices.refetch();
     modalVisible();
   };
 
