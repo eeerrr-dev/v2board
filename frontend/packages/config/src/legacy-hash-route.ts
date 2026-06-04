@@ -64,7 +64,10 @@ export function getNormalizedLegacyHashPath(
     typeof window !== 'undefined' &&
     Boolean(window.localStorage.getItem(options.authStorageKey ?? 'authorization'));
   const nestedPrefixes = options.nestedPrefixes ?? options.publicRoutes;
-  let path = stripNestedPrefix(normalizePath(rawPath), nestedPrefixes);
+  const normalizedRawPath = normalizePath(rawPath);
+  let path = isKnownRoute(normalizedRawPath, options.routes)
+    ? normalizedRawPath
+    : stripNestedPrefix(normalizedRawPath, nestedPrefixes);
 
   if (!isKnownRoute(path, options.routes)) {
     path = hasAuth ? options.authenticatedFallback : options.guestFallback;

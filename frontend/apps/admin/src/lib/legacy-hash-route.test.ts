@@ -10,7 +10,7 @@ const options = {
   canonicalPath: '/',
   guestFallback: '/login',
   publicRoutes: ['/login'],
-  routes: ['/dashboard', '/login', '/ticket/:ticket_id'],
+  routes: ['/dashboard', '/login', '/ticket/:ticket_id', '/ticket'],
 } as const;
 
 function setUrl(url: string) {
@@ -111,6 +111,35 @@ describe('normalizeLegacyHashRoute', () => {
     normalizeLegacyHashRoute(options);
 
     expect(window.location.hash).toBe('#/ticket/7');
+  });
+
+  it('keeps exact dynamic detail routes before recovering nested route prefixes', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const appRoutes = [
+      '/dashboard',
+      '/login',
+      '/order/:trade_no',
+      '/order',
+      '/plan/:plan_id',
+      '/plan',
+      '/profile',
+      '/ticket/:ticket_id',
+      '/ticket',
+    ] as const;
+    const appOptions = {
+      ...options,
+      nestedPrefixes: appRoutes,
+      routes: appRoutes,
+    };
+
+    expect(getNormalizedLegacyHashPath('/order/2026060408061914022260977', appOptions)).toBe(
+      '/order/2026060408061914022260977',
+    );
+    expect(getNormalizedLegacyHashPath('/plan/8', appOptions)).toBe('/plan/8');
+    expect(getNormalizedLegacyHashPath('/ticket/7', appOptions)).toBe('/ticket/7');
+    expect(getNormalizedLegacyHashPath('/order/2026060408061914022260977/profile', appOptions)).toBe(
+      '/profile',
+    );
   });
 
   it('normalizes broken nested hashes that appear after the app has mounted', () => {
