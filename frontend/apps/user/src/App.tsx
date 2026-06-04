@@ -92,8 +92,8 @@ function LegacyUnknownRouteRedirect() {
   const normalized = getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS);
 
   useEffect(() => {
-    navigate(normalized, { replace: true });
-  }, [navigate, normalized]);
+    if (normalized !== current) navigate(normalized, { replace: true });
+  }, [current, navigate, normalized]);
 
   return (
     <div className="content content-full text-center">

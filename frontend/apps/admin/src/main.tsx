@@ -93,8 +93,8 @@ function Boot() {
       <AntdApp>
         <QueryClientProvider client={queryClient}>
           <HashRouter>
-            <LegacyRouteGuard />
             <RouteBoundaryElement>
+              <LegacyRouteGuard />
               <App />
             </RouteBoundaryElement>
           </HashRouter>
