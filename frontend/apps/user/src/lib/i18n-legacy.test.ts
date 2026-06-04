@@ -37,7 +37,7 @@ describe('legacy i18n dictionaries', () => {
 
     const i18n = createI18n();
 
-    expect(i18n.t('order.processing')).toBe('订单系统正在进行处理，请等候 1-3 分钟。');
+    expect(i18n.t('order.processing')).toBe('订单系统正在进行处理，请稍等1-3分钟。');
     expect(i18n.t('order.cancel_confirm')).toBe(
       '如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？',
     );
@@ -67,11 +67,13 @@ describe('legacy i18n dictionaries', () => {
         绑定Telegram: '绑定 Telegram',
         打开Telegram搜索: '打开 Telegram 搜索',
         请描述你遇到的问题: '请描述您遇到的问题',
+        '订单系统正在进行处理，请稍等1-3分钟。': '订单系统正在进行处理，请等候 1-3 分钟。',
       },
     });
 
     const i18n = createI18n();
 
+    expect(i18n.t('order.processing')).toBe('订单系统正在进行处理，请等候 1-3 分钟。');
     expect(i18n.t('plan.pick_title')).toBe('选择最适合您的计划');
     expect(i18n.t('profile.telegram_bind')).toBe('绑定 Telegram');
     expect(i18n.t('profile.telegram_search')).toBe('打开 Telegram 搜索');

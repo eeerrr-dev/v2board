@@ -155,6 +155,7 @@ const viVNDictionary = {
   "等待支付中": "Đang chờ thanh toán",
   "开通中": "Đang xử lý",
   "已折抵": "Quy Đổi",
+  "订单系统正在进行处理，请稍等1-3分钟。": "Hệ thống đang xử lý đơn hàng, vui lòng đợi 1-3p.",
   "订单系统正在进行处理，请等候 1-3 分钟。": "Hệ thống đang xử lý đơn hàng, vui lòng đợi 1-3p.",
   "订单由于超时支付已被取消。": "Do quá giờ nên đã hủy đơn hàng.",
   "请选择支付方式": "Chọn phương thức thanh toán",

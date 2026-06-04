@@ -285,7 +285,7 @@ const zhCN = {
     status_completed: '已完成',
     status_credit: '已折抵',
     processing_title: '开通中',
-    processing: '订单系统正在进行处理，请等候 1-3 分钟。',
+    processing: '订单系统正在进行处理，请稍等1-3分钟。',
     cancel_timeout: '订单由于超时支付已被取消。',
     please_select_payment: '请选择支付方式',
     checkout: '结账',
