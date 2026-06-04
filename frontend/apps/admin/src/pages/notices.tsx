@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal, Select, Switch, Table } from 'antd';
 import type { TableProps } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Notice } from '@v2board/types';
 import {
@@ -132,8 +132,10 @@ export default function NoticesPage() {
         title={`${submit.id ? '编辑公告' : '新建公告'}`}
         open={visible}
         onCancel={modalVisible}
-        onOk={() => void saveNotice()}
-        okText="提交"
+        onOk={() => {
+          if (!save.isPending) void saveNotice();
+        }}
+        okText={save.isPending ? <LoadingOutlined /> : '提交'}
         cancelText="取消"
       >
         <div>

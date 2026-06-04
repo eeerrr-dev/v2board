@@ -87,11 +87,12 @@ describe('NoticesPage legacy notice manager', () => {
     );
     expect(saveBlock).not.toContain('await notices.refetch();');
     expect(mutationBlock).not.toContain("queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })");
-    expect(source).toContain('onOk={() => void saveNotice()}');
-    expect(source).toContain('okText="提交"');
+    expect(source).toContain("import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';");
+    expect(source).toContain('if (!save.isPending) void saveNotice();');
+    expect(source).toContain("okText={save.isPending ? <LoadingOutlined /> : '提交'}");
+    expect(source).not.toContain('onOk={() => void saveNotice()}');
+    expect(source).not.toContain('okText="提交"');
     expect(source).not.toContain('if (save.isPending) return;');
-    expect(source).not.toContain("okText={save.isPending ? <LoadingOutlined /> : '提交'}");
-    expect(source).not.toContain('LoadingOutlined');
     expect(source).not.toContain('await save.mutateAsync(submit);');
     expect(source).not.toContain('okButtonProps={{ loading');
   });
