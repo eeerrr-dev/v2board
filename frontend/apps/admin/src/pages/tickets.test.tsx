@@ -228,7 +228,10 @@ describe('TicketsPage legacy ticket manager', () => {
     const emailInput = container.querySelector<HTMLInputElement>('input[placeholder="输入邮箱搜索"]')!;
 
     await act(async () => {
-      emailInput.value = 'buyer@example.com';
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        emailInput,
+        'buyer@example.com',
+      );
       emailInput.dispatchEvent(new Event('input', { bubbles: true }));
       await Promise.resolve();
     });
@@ -236,14 +239,14 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(mocks.ticketQueries).toHaveLength(0);
 
     await act(async () => {
-      vi.advanceTimersByTime(299);
+      vi.advanceTimersByTime(399);
       await Promise.resolve();
     });
 
     expect(mocks.ticketQueries).toHaveLength(0);
 
     await act(async () => {
-      vi.advanceTimersByTime(1);
+      vi.advanceTimersToNextTimer();
       await Promise.resolve();
     });
 
@@ -253,7 +256,7 @@ describe('TicketsPage legacy ticket manager', () => {
       status: 0,
       email: 'buyer@example.com',
     });
-    expect(ticketsSource).toContain('setTimeout(() => filter(key, value), 300)');
+    expect(ticketsSource).toContain('setTimeout(() => filter(key, value), 400)');
 
     await act(async () => {
       root?.unmount();

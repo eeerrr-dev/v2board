@@ -71,7 +71,7 @@ function TicketListPage() {
 
   const onSearch = (key: keyof TicketQuery, value: string) => {
     clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => filter(key, value), 300);
+    searchTimer.current = setTimeout(() => filter(key, value), 400);
   };
 
   const toChat = (id: number) => {
