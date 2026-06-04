@@ -805,15 +805,17 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain("message.error('传输协议配置格式有误')");
     expect(serversSource).toContain('const payload = prepareLegacyServerPayload(type, values, id);');
     expect(nodeDrawerSource).toContain('await admin.saveServer(apiClient, type, payload);');
-    expect(nodeDrawerSource).toContain('onSaved?.();');
+    expect(nodeDrawerSource).toContain('await onSaved?.();');
     expect(nodeDrawerSource).toContain('onClose();');
     expect(nodeDrawerSource.indexOf('await admin.saveServer(apiClient, type, payload);')).toBeLessThan(
-      nodeDrawerSource.indexOf('onSaved?.();'),
+      nodeDrawerSource.indexOf('await onSaved?.();'),
     );
-    expect(nodeDrawerSource.indexOf('onSaved?.();')).toBeLessThan(
+    expect(nodeDrawerSource.indexOf('await onSaved?.();')).toBeLessThan(
       nodeDrawerSource.indexOf('onClose();'),
     );
-    expect(nodeDrawerSource).not.toContain('await onSaved?.();');
+    expect(serversSource).toContain('onSaved?: () => void | Promise<unknown>;');
+    expect(serversSource).toContain('onSaved: () => void | Promise<unknown>;');
+    expect(serversSource.match(/onSaved=\{\(\) => nodes\.refetch\(\)\}/g)).toHaveLength(3);
     expect(nodeDrawerSource).not.toContain("message.success(t('common.success'))");
     expect(nodeDrawerSource).not.toContain("message.success('操作成功')");
     expect(serversSource).not.toContain('JSON.parse(payload.network_settings)');
@@ -1108,7 +1110,8 @@ describe('ServersPage legacy server group route', () => {
     expect(managePageSource).toContain('copy.mutate(');
     expect(managePageSource).toContain('drop.mutate(');
     expect(managePageSource).toContain('sort.mutate(createServerSortPayload(orderedNodes), {');
-    expect(managePageSource.match(/void nodes\.refetch\(\);/g)?.length).toBeGreaterThanOrEqual(7);
+    expect(managePageSource.match(/void nodes\.refetch\(\);/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(managePageSource.match(/onSaved=\{\(\) => nodes\.refetch\(\)\}/g)).toHaveLength(3);
     expect(nodeHooksSource).not.toContain('onSuccess');
     expect(nodeHooksSource).not.toContain('adminKeys.serverNodes');
   });

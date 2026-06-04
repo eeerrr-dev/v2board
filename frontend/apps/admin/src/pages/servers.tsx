@@ -853,7 +853,7 @@ function LegacyNodeEditMenuTrigger({
   nodes: admin.ServerNode[];
   groups: admin.ServerGroup[];
   routes: admin.ServerRoute[];
-  onSaved: () => void;
+  onSaved: () => void | Promise<unknown>;
   children: ReactElement<{ onClick?: (event: ReactMouseEvent<HTMLElement>) => void }>;
 }) {
   const [open, setOpen] = useState(false);
@@ -995,9 +995,7 @@ function ServerManagePage() {
               nodes={nodes.data ?? []}
               groups={groups.data ?? []}
               routes={routes.data ?? []}
-              onSaved={() => {
-                void nodes.refetch();
-              }}
+              onSaved={() => nodes.refetch()}
             >
               <a>
                 <EditOutlined /> 编辑
@@ -1224,9 +1222,7 @@ function ServerManagePage() {
                       nodes={nodes.data ?? []}
                       groups={groups.data ?? []}
                       routes={routes.data ?? []}
-                      onSaved={() => {
-                        void nodes.refetch();
-                      }}
+                      onSaved={() => nodes.refetch()}
                     >
                       <a ref={legacyHref()}>
                         {getServerTypeTag(type, SERVER_TYPE_LABELS[type])}
@@ -1372,9 +1368,7 @@ function ServerManagePage() {
                     nodes={nodes.data ?? []}
                     groups={groups.data ?? []}
                     routes={routes.data ?? []}
-                    onSaved={() => {
-                      void nodes.refetch();
-                    }}
+                    onSaved={() => nodes.refetch()}
                   >
                     <a>
                       <FormOutlined /> 编辑
@@ -1421,7 +1415,7 @@ function NodeEditDrawer({
   nodes: admin.ServerNode[];
   groups: admin.ServerGroup[];
   routes: admin.ServerRoute[];
-  onSaved?: () => void;
+  onSaved?: () => void | Promise<unknown>;
   onClose: () => void;
 }) {
   const { message } = App.useApp();
@@ -1461,7 +1455,7 @@ function NodeEditDrawer({
           try {
             const payload = prepareLegacyServerPayload(type, values, id);
             await admin.saveServer(apiClient, type, payload);
-            onSaved?.();
+            await onSaved?.();
             onClose();
           } catch (e) {
             if (e instanceof SyntaxError) {
