@@ -167,12 +167,10 @@ describe('OrdersPage legacy order manager', () => {
 
   it('submits the legacy assigned-order modal state without default replacements', () => {
     expect(ordersSource).toContain('.mutateAsync(submit)');
-    expect(ordersSource).toContain('onAssigned();\n              close();');
-    expect(ordersSource).not.toContain('await onAssigned();');
-    expect(ordersSource).toContain(
-      'onAssigned={() => {\n                  void orders.refetch();\n                }}',
-    );
-    expect(ordersSource).toContain('onAssigned: () => void;');
+    expect(ordersSource).toContain('await onAssigned();\n      close();');
+    expect(ordersSource).not.toContain('onAssigned();\n              close();');
+    expect(ordersSource).toContain('onAssigned={() => orders.refetch()}');
+    expect(ordersSource).toContain('onAssigned: () => void | Promise<unknown>;');
     expect(ordersSource).not.toContain("period: submit.period ?? 'month_price'");
     expect(ordersSource).not.toContain('total_amount: Number(submit.total_amount ?? 0)');
 

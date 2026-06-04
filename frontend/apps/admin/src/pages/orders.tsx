@@ -164,7 +164,7 @@ function AssignOrderButton({
   onAssigned,
 }: {
   plans: Plan[];
-  onAssigned: () => void;
+  onAssigned: () => void | Promise<unknown>;
 }) {
   const { message } = App.useApp();
   const assign = useAssignOrderMutation();
@@ -181,6 +181,16 @@ function AssignOrderButton({
     setSubmit({});
   };
 
+  const assignOrder = async () => {
+    try {
+      await assign.mutateAsync(submit);
+      await onAssigned();
+      close();
+    } catch (error) {
+      showError(message, error);
+    }
+  };
+
   return (
     <>
       <Button style={{ marginLeft: 10 }} onClick={() => setOpen(true)}>
@@ -193,13 +203,7 @@ function AssignOrderButton({
         cancelText="取消"
         onCancel={close}
         onOk={() => {
-          assign
-            .mutateAsync(submit)
-            .then(() => {
-              onAssigned();
-              close();
-            })
-            .catch((error) => showError(message, error));
+          void assignOrder();
         }}
       >
         <div className="form-group">
@@ -554,9 +558,7 @@ export default function OrdersPage() {
               </LegacyFilterDrawer>
               <AssignOrderButton
                 plans={plans.data ?? []}
-                onAssigned={() => {
-                  void orders.refetch();
-                }}
+                onAssigned={() => orders.refetch()}
               />
             </div>
             <Table<AdminOrderRow>
