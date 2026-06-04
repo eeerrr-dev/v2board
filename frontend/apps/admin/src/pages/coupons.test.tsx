@@ -170,20 +170,18 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain('useQueryClient');
 
     const couponDownload = source.indexOf("downloadGeneratedCsv('COUPON', response.buffer)");
-    const couponRefetch = source.indexOf('void coupons.refetch();');
-    const couponClose = source.indexOf('modalVisible();', couponRefetch);
+    const couponAwaitRefetch = source.indexOf('await coupons.refetch();');
+    const couponClose = source.indexOf('modalVisible();', couponAwaitRefetch);
     expect(couponDownload).toBeGreaterThan(-1);
-    expect(couponRefetch).toBeGreaterThan(couponDownload);
-    expect(couponClose).toBeGreaterThan(couponRefetch);
-    expect(source).not.toContain('await coupons.refetch();');
+    expect(couponAwaitRefetch).toBeGreaterThan(couponDownload);
+    expect(couponClose).toBeGreaterThan(couponAwaitRefetch);
 
     const giftcardDownload = source.indexOf("downloadGeneratedCsv('GIFTCARD', response.buffer)");
-    const giftcardRefetch = source.indexOf('void giftcards.refetch();');
-    const giftcardClose = source.indexOf('modalVisible();', giftcardRefetch);
+    const giftcardAwaitRefetch = source.indexOf('await giftcards.refetch();');
+    const giftcardClose = source.indexOf('modalVisible();', giftcardAwaitRefetch);
     expect(giftcardDownload).toBeGreaterThan(-1);
-    expect(giftcardRefetch).toBeGreaterThan(giftcardDownload);
-    expect(giftcardClose).toBeGreaterThan(giftcardRefetch);
-    expect(source).not.toContain('await giftcards.refetch();');
+    expect(giftcardAwaitRefetch).toBeGreaterThan(giftcardDownload);
+    expect(giftcardClose).toBeGreaterThan(giftcardAwaitRefetch);
 
     const generateCouponHook = queriesSource.slice(
       queriesSource.indexOf('export function useGenerateCouponMutation()'),
