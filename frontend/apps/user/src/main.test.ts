@@ -13,6 +13,7 @@ describe('user legacy entrypoint', () => {
   it('normalizes broken hash routes before rendering the user router', () => {
     expect(mainSource).toContain('installLegacyHashRouteNormalizer');
     expect(mainSource).toContain('normalizeLegacyHashRoute');
+    expect(mainSource).toContain('getNormalizedLegacyHashPath');
     expect(mainSource).toContain('const legacyHashRouteOptions = {');
     expect(mainSource).toContain("authenticatedFallback: '/dashboard'");
     expect(mainSource).toContain("canonicalPath: '/'");
@@ -21,12 +22,18 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('routes: USER_LEGACY_ROUTE_PATHS');
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
+    expect(mainSource).toContain('function LegacyRouteGuard()');
+    expect(mainSource).toContain('const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);');
+    expect(mainSource).toContain('if (normalized !== current) navigate(normalized, { replace: true });');
   });
 
   it('keeps the app on HashRouter like the bundled theme', () => {
-    expect(mainSource).toContain("import { HashRouter } from 'react-router-dom';");
+    expect(mainSource).toContain('HashRouter');
+    expect(mainSource).toContain('useLocation');
+    expect(mainSource).toContain('useNavigate');
     expect(mainSource).toContain("import { RouteBoundaryElement } from './components/route-error-boundary';");
     expect(mainSource).toContain('<HashRouter>');
+    expect(mainSource).toContain('<LegacyRouteGuard />');
     expect(mainSource).toContain('<RouteBoundaryElement>');
     expect(mainSource).toContain('<App />');
   });

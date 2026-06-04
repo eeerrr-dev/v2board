@@ -36,15 +36,16 @@ function stripNestedPrefix(path: string, prefixes: readonly string[]): string {
   return normalizePath(path.slice(prefix.length));
 }
 
-export function normalizeLegacyHashRoute(options: LegacyHashRouteOptions): void {
-  if (typeof window === 'undefined') return;
-
-  const rawHash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
-  const routeSource = rawHash || window.location.pathname;
+export function getNormalizedLegacyHashPath(
+  routeSource: string,
+  options: LegacyHashRouteOptions,
+): string {
   const queryIndex = routeSource.indexOf('?');
   const rawPath = queryIndex >= 0 ? routeSource.slice(0, queryIndex) : routeSource;
   const query = queryIndex >= 0 ? routeSource.slice(queryIndex) : '';
-  const hasAuth = Boolean(window.localStorage.getItem(options.authStorageKey ?? 'authorization'));
+  const hasAuth =
+    typeof window !== 'undefined' &&
+    Boolean(window.localStorage.getItem(options.authStorageKey ?? 'authorization'));
   const nestedPrefixes = options.nestedPrefixes ?? options.publicRoutes;
   let path = stripNestedPrefix(normalizePath(rawPath), nestedPrefixes);
 
@@ -56,7 +57,15 @@ export function normalizeLegacyHashRoute(options: LegacyHashRouteOptions): void 
     path = options.guestFallback;
   }
 
-  const nextHash = `${path}${query}`;
+  return `${path}${query}`;
+}
+
+export function normalizeLegacyHashRoute(options: LegacyHashRouteOptions): void {
+  if (typeof window === 'undefined') return;
+
+  const rawHash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
+  const routeSource = rawHash || window.location.pathname;
+  const nextHash = getNormalizedLegacyHashPath(routeSource, options);
   const nextPathname =
     options.canonicalPath === undefined
       ? window.location.pathname
@@ -71,5 +80,9 @@ export function installLegacyHashRouteNormalizer(options: LegacyHashRouteOptions
 
   const normalize = () => normalizeLegacyHashRoute(options);
   window.addEventListener('hashchange', normalize);
-  return () => window.removeEventListener('hashchange', normalize);
+  window.addEventListener('popstate', normalize);
+  return () => {
+    window.removeEventListener('hashchange', normalize);
+    window.removeEventListener('popstate', normalize);
+  };
 }

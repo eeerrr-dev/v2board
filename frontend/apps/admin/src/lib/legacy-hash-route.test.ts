@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  getNormalizedLegacyHashPath,
   installLegacyHashRouteNormalizer,
   normalizeLegacyHashRoute,
 } from '@v2board/config';
@@ -121,6 +122,24 @@ describe('normalizeLegacyHashRoute', () => {
 
     expect(window.location.hash).toBe('#/dashboard');
     dispose();
+  });
+
+  it('normalizes browser history moves after the app has mounted', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const dispose = installLegacyHashRouteNormalizer(options);
+    setUrl('/#/login/dashboard');
+
+    window.dispatchEvent(new PopStateEvent('popstate'));
+
+    expect(window.location.hash).toBe('#/dashboard');
+    dispose();
+  });
+
+  it('normalizes internal router locations without waiting for hashchange', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+
+    expect(getNormalizedLegacyHashPath('/login/dashboard', options)).toBe('/dashboard');
+    expect(getNormalizedLegacyHashPath('/ticket/7', options)).toBe('/ticket/7');
   });
 
   it('stops normalizing runtime hash changes after cleanup', () => {
