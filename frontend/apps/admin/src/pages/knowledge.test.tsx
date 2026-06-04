@@ -119,13 +119,9 @@ describe('KnowledgePage legacy knowledge manager', () => {
     );
 
     expect(editorSaveBlock).toContain("await onSave({ ...knowledge });");
-    expect(editorSaveBlock).toContain('setSaveLoading(false);');
     expect(editorSaveBlock).toContain('await onSaved();');
     expect(editorSaveBlock).toContain("message.success('保存成功');");
     expect(editorSaveBlock.indexOf("await onSave({ ...knowledge });")).toBeLessThan(
-      editorSaveBlock.indexOf('setSaveLoading(false);'),
-    );
-    expect(editorSaveBlock.indexOf('setSaveLoading(false);')).toBeLessThan(
       editorSaveBlock.indexOf('await onSaved();'),
     );
     expect(editorSaveBlock.indexOf('await onSaved();')).toBeLessThan(
@@ -138,6 +134,11 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain("message.success('保存成功');");
     expect(source).toContain('onSaved: () => void | Promise<unknown>;');
     expect(source).toContain('    await onSaved();\n    message.success');
+    expect(source).toContain('saveLoading?: boolean;');
+    expect(source).toContain('saveLoading={save.isPending}');
+    expect(source).not.toContain('const [saveLoading, setSaveLoading] = useState(false);');
+    expect(source).not.toContain('setSaveLoading(true);');
+    expect(source).not.toContain('setSaveLoading(false);');
     expect(source).not.toContain('    onSaved();\n    message.success');
     expect(source).not.toContain('message.success(\'保存成功\');\n      hide();');
     expect(source).not.toContain("await onSave(knowledge);");

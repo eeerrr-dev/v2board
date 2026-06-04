@@ -207,16 +207,17 @@ function KnowledgeEditor({
   children,
   onSave,
   onSaved,
+  saveLoading,
 }: {
   id?: number;
   children: ReactElement<{ onClick?: () => void }>;
   onSave: (payload: SaveKnowledgePayload) => Promise<unknown>;
   onSaved: () => void | Promise<unknown>;
+  saveLoading?: boolean;
 }) {
   const { message } = App.useApp();
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [saveLoading, setSaveLoading] = useState(false);
   const [knowledge, setKnowledge] = useState<Partial<Knowledge>>({});
   const [editorKey, setEditorKey] = useState(Math.random());
 
@@ -246,12 +247,7 @@ function KnowledgeEditor({
   };
 
   const save = async () => {
-    setSaveLoading(true);
-    try {
-      await onSave({ ...knowledge });
-    } finally {
-      setSaveLoading(false);
-    }
+    await onSave({ ...knowledge });
     await onSaved();
     message.success('保存成功');
   };
@@ -449,7 +445,12 @@ export default function KnowledgePage() {
       fixed: 'right',
       render: (_value, row) => (
         <>
-          <KnowledgeEditor id={row.id} onSave={saveKnowledge} onSaved={refetchKnowledge}>
+          <KnowledgeEditor
+            id={row.id}
+            onSave={saveKnowledge}
+            onSaved={refetchKnowledge}
+            saveLoading={save.isPending}
+          >
             <a ref={legacyHref()}>编辑</a>
           </KnowledgeEditor>
           <div className="ant-divider ant-divider-vertical" />
@@ -481,7 +482,11 @@ export default function KnowledgePage() {
       <div className="block border-bottom">
         <div className="bg-white">
           <div style={{ padding: 15 }}>
-            <KnowledgeEditor onSave={saveKnowledge} onSaved={refetchKnowledge}>
+            <KnowledgeEditor
+              onSave={saveKnowledge}
+              onSaved={refetchKnowledge}
+              saveLoading={save.isPending}
+            >
               <Button>
                 <PlusOutlined /> 新增
               </Button>
