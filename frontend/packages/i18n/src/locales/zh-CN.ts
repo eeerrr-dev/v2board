@@ -225,7 +225,7 @@ const zhCN = {
     cannot_renew: '该订阅无法续费',
     cannot_renew_current: '该订阅无法续费，仅允许新用户购买',
     select_other: '选择其他订阅',
-    pick_best_for_you: '选择最适合您的计划',
+    pick_best_for_you: '选择最适合你的计划',
     coupon_question: '有优惠券？',
     verify: '验证',
     place_order: '下单',

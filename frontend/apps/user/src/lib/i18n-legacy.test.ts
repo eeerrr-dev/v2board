@@ -50,6 +50,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('ticket.message_placeholder')).toBe('请描述你遇到的问题');
     expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后会到达你的佣金账户。');
     expect(i18n.t('plan.pick_title')).toBe('选择最适合你的计划');
+    expect(i18n.t('plan.pick_best_for_you')).toBe('选择最适合你的计划');
     expect(i18n.t('plan.select_other')).toBe('选择其他订阅');
     expect(i18n.t('plan.change_warning')).toBe('变更订阅会导致当前订阅被新订阅覆盖，请注意。');
     expect(i18n.t('plan.unfinished_order_confirm')).toBe(
@@ -103,6 +104,7 @@ describe('legacy i18n dictionaries', () => {
       '您的信用卡信息只会用于当次扣款，系统并不会保存，我们认为这是最安全的。',
     );
     expect(i18n.t('plan.pick_title')).toBe('选择最适合您的计划');
+    expect(i18n.t('plan.pick_best_for_you')).toBe('选择最适合您的计划');
     expect(i18n.t('plan.select_other')).toBe('选择其它订阅');
     expect(i18n.t('plan.change_warning')).toBe('请注意，变更订阅会导致当前订阅被新订阅覆盖。');
     expect(i18n.t('plan.unfinished_order_confirm')).toBe(
@@ -128,6 +130,7 @@ describe('legacy i18n dictionaries', () => {
     setLegacyI18n({
       'zh-CN': {
         '订单系统正在进行处理，请稍等1-3分钟。': '订单系统正在进行处理，请等候 1-3 分钟。',
+        选择最适合你的计划: '选择最适合您的计划',
         '变更订阅会导致当前订阅被新订阅覆盖，请注意。':
           '请注意，变更订阅会导致当前订阅被新订阅覆盖。',
         选择其他订阅: '选择其它订阅',
@@ -146,6 +149,7 @@ describe('legacy i18n dictionaries', () => {
       'en-US': {
         '订单系统正在进行处理，请稍等1-3分钟。':
           'Order system is being processed, please wait 1 to 3 minutes.',
+        选择最适合你的计划: 'Choose the right plan for you',
         '变更订阅会导致当前订阅被新订阅覆盖，请注意。':
           'Attention please, change subscription will overwrite your current subscription.',
         选择其他订阅: 'Choose another subscription',
@@ -170,6 +174,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('order.processing')).toBe(
       'Order system is being processed, please wait 1 to 3 minutes.',
     );
+    expect(i18n.t('plan.pick_best_for_you')).toBe('Choose the right plan for you');
     expect(i18n.t('ticket.message_placeholder')).toBe(
       'Please describe the problem you encountered',
     );
@@ -205,6 +210,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('nav.profile')).toBe('您的帳戸');
     expect(i18n.t('dashboard.copy_subscribe')).toBe('複製訂閲位址');
     expect(i18n.t('order.processing')).toBe('訂單系統正在進行處理，請稍等 1-3 分鐘。');
+    expect(i18n.t('plan.pick_best_for_you')).toBe('選擇最適合您的計劃');
     expect(i18n.t('node.status_tip')).toBe('五分鐘內節點線上情況');
     expect(i18n.t('traffic.notice')).toBe('流量明細僅保留近一個月資料以供查詢。');
 
@@ -238,6 +244,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('order.processing')).toBe(
       'Hệ thống đang xử lý đơn hàng, vui lòng đợi 1-3p.',
     );
+    expect(i18n.t('plan.pick_best_for_you')).toBe('Chọn kế hoạch phù hợp với bạn nhất');
     expect(i18n.t('node.status_tip')).toBe('Node trạng thái online trong vòng 5 phút');
     expect(i18n.t('traffic.notice')).toBe(
       'Chi tiết dung lượng chỉ lưu dữ liệu của những tháng gần đây để truy vấn.',
@@ -252,6 +259,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('order.processing')).toBe(
       '주문 시스템이 처리 중입니다. 1-3분 정도 기다려 주십시오.',
     );
+    expect(i18n.t('plan.pick_best_for_you')).toBe('당신에게 맞는 플랜을 선택하세요');
     expect(i18n.t('node.status_tip')).toBe('지난 5분 동안의 액세스 포인트 온라인 상태');
     expect(i18n.t('traffic.notice')).toBe('귀하의 트래픽 세부 정보는 최근 몇 달 동안만 유지됩니다');
   });
