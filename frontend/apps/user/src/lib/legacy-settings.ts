@@ -302,10 +302,11 @@ export function isLegacyMobile(): boolean {
   return userAgent.includes('mobile');
 }
 
-export function legacyCopyText(text: string | undefined): void {
+export function legacyCopyText(text: string | number | null | undefined): boolean {
   const value = String(text);
   let mark: HTMLSpanElement | null = null;
   let range: Range | null = null;
+  let copied = false;
   const restoreSelection = deselectCurrentSelection();
 
   try {
@@ -331,13 +332,15 @@ export function legacyCopyText(text: string | undefined): void {
     range.selectNodeContents(mark);
     selection?.addRange(range);
     if (!document.execCommand('copy')) throw new Error('copy command was unsuccessful');
+    copied = true;
   } catch {
     const clipboardData = (window as unknown as {
       clipboardData?: { setData: (format: string, value: string) => void };
     }).clipboardData;
     try {
+      clipboardData?.setData('text', value);
+      copied = Boolean(clipboardData);
       if (!clipboardData) throw new Error('clipboardData unavailable');
-      clipboardData.setData('text', value);
     } catch {
       const key = /mac os x/i.test(navigator.userAgent) ? '\u2318+C' : 'Ctrl+C';
       window.prompt(`Copy to clipboard: ${key}, Enter`, value);
@@ -351,6 +354,8 @@ export function legacyCopyText(text: string | undefined): void {
     if (mark) document.body.removeChild(mark);
     restoreSelection();
   }
+
+  return copied;
 }
 
 function deselectCurrentSelection(): () => void {

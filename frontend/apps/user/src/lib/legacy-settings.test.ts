@@ -26,6 +26,7 @@ describe('legacy settings bootstrap', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    document.body.innerHTML = '';
   });
 
   it('uses the packaged theme css path when no service host is configured', () => {
@@ -90,8 +91,56 @@ describe('legacy settings bootstrap', () => {
       value: execCommand,
     });
 
-    legacyCopyText('legacy text');
+    expect(legacyCopyText('legacy text')).toBe(true);
 
     expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('span')).toBeNull();
+  });
+
+  it('falls back to the old clipboardData copy path when execCommand fails', () => {
+    const execCommand = vi.fn(() => false);
+    const setData = vi.fn();
+    const prompt = vi.fn();
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+    Object.defineProperty(window, 'clipboardData', {
+      configurable: true,
+      value: { setData },
+    });
+    Object.defineProperty(window, 'prompt', {
+      configurable: true,
+      value: prompt,
+    });
+
+    expect(legacyCopyText('fallback text')).toBe(true);
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(setData).toHaveBeenCalledWith('text', 'fallback text');
+    expect(prompt).not.toHaveBeenCalled();
+    expect(document.querySelector('span')).toBeNull();
+  });
+
+  it('falls back to the original copy prompt when clipboardData is unavailable', () => {
+    const execCommand = vi.fn(() => false);
+    const prompt = vi.fn();
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+    Object.defineProperty(window, 'clipboardData', {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(window, 'prompt', {
+      configurable: true,
+      value: prompt,
+    });
+
+    expect(legacyCopyText('manual text')).toBe(false);
+
+    expect(prompt).toHaveBeenCalledWith(expect.stringContaining('Copy to clipboard:'), 'manual text');
+    expect(document.querySelector('span')).toBeNull();
   });
 });
