@@ -253,7 +253,7 @@ const zhCN = {
     product_traffic: '产品流量',
     pay: '立即支付',
     cancel: '关闭订单',
-    cancel_confirm: '如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？',
+    cancel_confirm: '如果你已经付款，取消订单可能会导致支付失败，确定取消订单吗？',
     coupon: '优惠券',
     apply_coupon: '验证',
     coupon_placeholder: '请输入优惠码',
@@ -294,7 +294,7 @@ const zhCN = {
     view_tutorial: '查看使用教程',
     credit_card_title: '填写信用卡支付信息',
     credit_card_security:
-      '您的信用卡信息只会用于当次扣款，系统并不会保存，我们认为这是最安全的。',
+      '您的信用卡信息只会被用作当次扣款，系统并不会保存，这是我们认为最安全的。',
     credit_card_check: '请检查信用卡支付信息',
     credit_card_unavailable: '信用卡支付暂不可用',
     stripe_verifying: '请稍等，我们正在验证该笔支付',

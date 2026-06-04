@@ -39,7 +39,10 @@ describe('legacy i18n dictionaries', () => {
 
     expect(i18n.t('order.processing')).toBe('订单系统正在进行处理，请稍等1-3分钟。');
     expect(i18n.t('order.cancel_confirm')).toBe(
-      '如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？',
+      '如果你已经付款，取消订单可能会导致支付失败，确定取消订单吗？',
+    );
+    expect(i18n.t('order.credit_card_security')).toBe(
+      '您的信用卡信息只会被用作当次扣款，系统并不会保存，这是我们认为最安全的。',
     );
     expect(i18n.t('traffic.notice')).toBe('流量明细仅保留近一个月数据以供查询。');
     expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('当前已使用流量达 80%');
@@ -68,12 +71,22 @@ describe('legacy i18n dictionaries', () => {
         打开Telegram搜索: '打开 Telegram 搜索',
         请描述你遇到的问题: '请描述您遇到的问题',
         '订单系统正在进行处理，请稍等1-3分钟。': '订单系统正在进行处理，请等候 1-3 分钟。',
+        '如果你已经付款，取消订单可能会导致支付失败，确定取消订单吗？':
+          '如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？',
+        '您的信用卡信息只会被用作当次扣款，系统并不会保存，这是我们认为最安全的。':
+          '您的信用卡信息只会用于当次扣款，系统并不会保存，我们认为这是最安全的。',
       },
     });
 
     const i18n = createI18n();
 
     expect(i18n.t('order.processing')).toBe('订单系统正在进行处理，请等候 1-3 分钟。');
+    expect(i18n.t('order.cancel_confirm')).toBe(
+      '如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？',
+    );
+    expect(i18n.t('order.credit_card_security')).toBe(
+      '您的信用卡信息只会用于当次扣款，系统并不会保存，我们认为这是最安全的。',
+    );
     expect(i18n.t('plan.pick_title')).toBe('选择最适合您的计划');
     expect(i18n.t('profile.telegram_bind')).toBe('绑定 Telegram');
     expect(i18n.t('profile.telegram_search')).toBe('打开 Telegram 搜索');
