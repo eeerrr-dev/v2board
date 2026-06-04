@@ -3,6 +3,7 @@ import { App, Button, DatePicker, Divider, Drawer, Input, Select } from 'antd';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { AdminFilter } from '@v2board/api-client';
+import type { ButtonProps } from 'antd';
 
 export interface LegacyFilterOption {
   key?: ReactNode;
@@ -184,7 +185,12 @@ export function LegacyFilterDrawer({
           <PlusOutlined /> 添加条件
         </Button>
         <div className="v2board-drawer-action">
-          <Button disabled={!filters.length} danger onClick={reset} style={{ float: 'left' }}>
+          <Button
+            disabled={!filters.length}
+            type={'danger' as ButtonProps['type']}
+            onClick={reset}
+            style={{ float: 'left' }}
+          >
             重置
           </Button>
           <Button style={{ marginRight: 8 }} onClick={hide}>

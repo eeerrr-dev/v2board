@@ -435,6 +435,8 @@ describe('UsersPage legacy user manager', () => {
     expect(legacyFilterDrawerSource).toContain('添加条件');
     expect(legacyFilterDrawerSource).toContain('欲检索内容不能为空');
     expect(legacyFilterDrawerSource).toContain('v2board-drawer-action');
+    expect(legacyFilterDrawerSource).toContain("type={'danger' as ButtonProps['type']}");
+    expect(legacyFilterDrawerSource).not.toContain('danger onClick={reset}');
     expect(legacyFilterDrawerSource).toContain('useState<AdminFilter[]>(value || [])');
     expect(legacyFilterDrawerSource).not.toContain('if (!open) setFilters(value)');
     expect(legacyFilterDrawerSource).toContain('...item,');
