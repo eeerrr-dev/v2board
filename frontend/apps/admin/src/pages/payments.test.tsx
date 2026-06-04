@@ -73,6 +73,11 @@ describe('PaymentsPage legacy payment config', () => {
     expect(html).not.toContain('ant-typography');
   });
 
+  it('keeps the bundled notification-address tooltip copy', () => {
+    expect(source).toContain('title="支付网关将会把数据通知到本地址，请通过防火墙放行本地址。"');
+    expect(source).not.toContain('支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。');
+  });
+
   it('uses the legacy falsy fallback for dynamic payment config defaults', () => {
     expect(source).toContain('defaultValue={(config[key] || field.value) as string | undefined}');
     expect(source).not.toContain('config[key] ?? field.value');
