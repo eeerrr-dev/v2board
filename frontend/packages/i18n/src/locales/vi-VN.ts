@@ -192,6 +192,7 @@ const viVNDictionary = {
   "已注册用户数": "Số người dùng đã đăng ký",
   "累计获得佣金": "Hoa hồng tích lũy kiếm được",
   "确认中的佣金": "Hoa hồng đang xác nhận",
+  "佣金将会在确认后会到达你的佣金账户。": "Sau khi xác nhận tiền hoa hồng sẽ gửi đến tài khoản hoa hồng của bạn.",
   "佣金将会在确认后到达您的佣金账户。": "Sau khi xác nhận tiền hoa hồng sẽ gửi đến tài khoản hoa hồng của bạn.",
   "佣金比例": "Tỷ lệ hoa hồng",
   "三级分销比例": "Tỷ lệ phân phối ba cấp",

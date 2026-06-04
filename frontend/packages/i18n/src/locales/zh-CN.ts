@@ -337,7 +337,7 @@ const zhCN = {
     registered: '已注册用户数',
     valid_commission: '累计获得佣金',
     pending_commission: '确认中的佣金',
-    pending_hint: '佣金将会在确认后到达您的佣金账户。',
+    pending_hint: '佣金将会在确认后会到达你的佣金账户。',
     commission_rate: '佣金比例',
     triple_rate: '三级分销比例',
     triple_hint: '您邀请的用户再次邀请用户将按照订单金额乘以分销等级的比例进行分成。',

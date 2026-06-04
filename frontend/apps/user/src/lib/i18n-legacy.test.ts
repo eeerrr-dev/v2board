@@ -48,7 +48,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('当前已使用流量达 80%');
     expect(i18n.t('node.status_tip')).toBe('五分钟内节点在线情况');
     expect(i18n.t('ticket.message_placeholder')).toBe('请描述你遇到的问题');
-    expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后到达您的佣金账户。');
+    expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后会到达你的佣金账户。');
     expect(i18n.t('plan.pick_title')).toBe('选择最适合你的计划');
     expect(i18n.t('plan.select_other')).toBe('选择其他订阅');
     expect(i18n.t('plan.change_warning')).toBe('变更订阅会导致当前订阅被新订阅覆盖，请注意。');
@@ -80,6 +80,7 @@ describe('legacy i18n dictionaries', () => {
           '请注意，变更订阅会导致当前订阅被新订阅覆盖。',
         '你还有未完成的订单，购买前需要先进行取消，确定取消先前的订单吗？':
           '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
+        '佣金将会在确认后会到达你的佣金账户。': '佣金将会在确认后到达您的佣金账户。',
       },
     });
 
@@ -98,6 +99,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('plan.unfinished_order_confirm')).toBe(
       '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
     );
+    expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后到达您的佣金账户。');
     expect(i18n.t('profile.telegram_bind')).toBe('绑定 Telegram');
     expect(i18n.t('profile.telegram_search')).toBe('打开 Telegram 搜索');
     expect(i18n.t('ticket.message_placeholder')).toBe('请描述您遇到的问题');
@@ -113,6 +115,7 @@ describe('legacy i18n dictionaries', () => {
         选择其他订阅: '选择其它订阅',
         '你还有未完成的订单，购买前需要先进行取消，确定取消先前的订单吗？':
           '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
+        '佣金将会在确认后会到达你的佣金账户。': '佣金将会在确认后到达您的佣金账户。',
         '请描述你遇到的问题': '请描述您遇到的问题',
         '节点五分钟内节点在线情况': '五分钟内节点在线情况',
       },
@@ -124,6 +127,8 @@ describe('legacy i18n dictionaries', () => {
         选择其他订阅: 'Choose another subscription',
         '你还有未完成的订单，购买前需要先进行取消，确定取消先前的订单吗？':
           'You still have an unpaid order. You need to cancel it before purchasing. Are you sure you want to cancel the previous order?',
+        '佣金将会在确认后会到达你的佣金账户。':
+          'The commission will reach your commission account after review.',
         '请描述你遇到的问题': 'Please describe the problem you encountered',
         '节点五分钟内节点在线情况': 'Access Point online status in the last 5 minutes',
       },
@@ -143,6 +148,9 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('plan.select_other')).toBe('Choose another subscription');
     expect(i18n.t('plan.unfinished_order_confirm')).toBe(
       'You still have an unpaid order. You need to cancel it before purchasing. Are you sure you want to cancel the previous order?',
+    );
+    expect(i18n.t('invite.pending_hint')).toBe(
+      'The commission will reach your commission account after review.',
     );
     expect(i18n.t('node.status_tip')).toBe(
       'Access Point online status in the last 5 minutes',
