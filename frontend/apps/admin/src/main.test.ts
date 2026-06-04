@@ -36,6 +36,14 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).not.toContain('StrictMode');
   });
 
+  it('does not install timed query freshness or automatic retry absent from the bundled admin models', () => {
+    expect(mainSource).toContain(
+      'defaultOptions: { queries: { staleTime: 0, retry: false, refetchOnWindowFocus: false } },',
+    );
+    expect(mainSource).not.toContain('staleTime: 30_000');
+    expect(mainSource).not.toContain('retry: 1');
+  });
+
   it('wraps the whole admin app with the white-screen guard inside HashRouter', () => {
     expect(mainSource).toContain('HashRouter');
     expect(mainSource).toContain('useLocation');

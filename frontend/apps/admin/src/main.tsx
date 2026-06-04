@@ -33,7 +33,7 @@ applyInitialDarkMode();
 
 const i18n = createI18n();
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false } },
+  defaultOptions: { queries: { staleTime: 0, retry: false, refetchOnWindowFocus: false } },
 });
 
 const root = document.getElementById('root');
