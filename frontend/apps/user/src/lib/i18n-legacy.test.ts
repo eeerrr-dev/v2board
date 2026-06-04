@@ -57,9 +57,11 @@ describe('legacy i18n dictionaries', () => {
     );
     expect(i18n.t('profile.telegram_bind')).toBe('绑定Telegram');
     expect(i18n.t('profile.telegram_search')).toBe('打开Telegram搜索');
-    expect(i18n.t('profile.reset_subscribe_warning')).toBe(
-      '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
+    expect(i18n.t('profile.telegram_send')).toBe('向机器人发送你的');
+    expect(i18n.t('profile.reset_subscribe_tip')).toBe(
+      '如果你的订阅地址或信息泄露可以进行此操作。重置后你的UUID及订阅将会变更，需要重新进行订阅。',
     );
+    expect(i18n.t('profile.reset_subscribe_warning')).toBe('重置订阅提示信息');
   });
 
   it('renders zh-CN through the bundled legacy dictionary when it is loaded', () => {
@@ -81,6 +83,11 @@ describe('legacy i18n dictionaries', () => {
         '你还有未完成的订单，购买前需要先进行取消，确定取消先前的订单吗？':
           '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
         '佣金将会在确认后会到达你的佣金账户。': '佣金将会在确认后到达您的佣金账户。',
+        '如果你的订阅地址或信息泄露可以进行此操作。重置后你的UUID及订阅将会变更，需要重新进行订阅。':
+          '如果您的订阅地址或信息发生泄露可以执行此操作。重置后您的 UUID 及订阅将会变更，需要重新导入订阅。',
+        重置订阅提示信息:
+          '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
+        向机器人发送你的: '向机器人发送您的',
       },
     });
 
@@ -102,6 +109,13 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后到达您的佣金账户。');
     expect(i18n.t('profile.telegram_bind')).toBe('绑定 Telegram');
     expect(i18n.t('profile.telegram_search')).toBe('打开 Telegram 搜索');
+    expect(i18n.t('profile.telegram_send')).toBe('向机器人发送您的');
+    expect(i18n.t('profile.reset_subscribe_tip')).toBe(
+      '如果您的订阅地址或信息发生泄露可以执行此操作。重置后您的 UUID 及订阅将会变更，需要重新导入订阅。',
+    );
+    expect(i18n.t('profile.reset_subscribe_warning')).toBe(
+      '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
+    );
     expect(i18n.t('ticket.message_placeholder')).toBe('请描述您遇到的问题');
   });
 
@@ -116,6 +130,11 @@ describe('legacy i18n dictionaries', () => {
         '你还有未完成的订单，购买前需要先进行取消，确定取消先前的订单吗？':
           '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
         '佣金将会在确认后会到达你的佣金账户。': '佣金将会在确认后到达您的佣金账户。',
+        '如果你的订阅地址或信息泄露可以进行此操作。重置后你的UUID及订阅将会变更，需要重新进行订阅。':
+          '如果您的订阅地址或信息发生泄露可以执行此操作。重置后您的 UUID 及订阅将会变更，需要重新导入订阅。',
+        重置订阅提示信息:
+          '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
+        向机器人发送你的: '向机器人发送您的',
         '请描述你遇到的问题': '请描述您遇到的问题',
         '节点五分钟内节点在线情况': '五分钟内节点在线情况',
       },
@@ -129,6 +148,11 @@ describe('legacy i18n dictionaries', () => {
           'You still have an unpaid order. You need to cancel it before purchasing. Are you sure you want to cancel the previous order?',
         '佣金将会在确认后会到达你的佣金账户。':
           'The commission will reach your commission account after review.',
+        '如果你的订阅地址或信息泄露可以进行此操作。重置后你的UUID及订阅将会变更，需要重新进行订阅。':
+          'In case of your account information or subscription leak, this option is for reset. After resetting your UUID and subscription will change, you need to re-subscribe.',
+        重置订阅提示信息:
+          'When your subscription or account is leaked and abused by unknown parties, you can reset your subscription information here to avoid unnecessary losses.',
+        向机器人发送你的: 'Send the following command to bot',
         '请描述你遇到的问题': 'Please describe the problem you encountered',
         '节点五分钟内节点在线情况': 'Access Point online status in the last 5 minutes',
       },
@@ -152,6 +176,13 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('invite.pending_hint')).toBe(
       'The commission will reach your commission account after review.',
     );
+    expect(i18n.t('profile.reset_subscribe_tip')).toBe(
+      'In case of your account information or subscription leak, this option is for reset. After resetting your UUID and subscription will change, you need to re-subscribe.',
+    );
+    expect(i18n.t('profile.reset_subscribe_warning')).toBe(
+      'When your subscription or account is leaked and abused by unknown parties, you can reset your subscription information here to avoid unnecessary losses.',
+    );
+    expect(i18n.t('profile.telegram_send')).toBe('Send the following command to bot');
     expect(i18n.t('node.status_tip')).toBe(
       'Access Point online status in the last 5 minutes',
     );

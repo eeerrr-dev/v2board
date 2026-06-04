@@ -379,9 +379,8 @@ const zhCN = {
     confirm: '确认',
     reset_subscribe: '重置订阅信息',
     reset_subscribe_tip:
-      '如果您的订阅地址或信息发生泄露可以执行此操作。重置后您的 UUID 及订阅将会变更，需要重新导入订阅。',
-    reset_subscribe_warning:
-      '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
+      '如果你的订阅地址或信息泄露可以进行此操作。重置后你的UUID及订阅将会变更，需要重新进行订阅。',
+    reset_subscribe_warning: '重置订阅提示信息',
     reset_subscribe_confirm: '确定要重置订阅信息？',
     reset_success: '重置成功',
     reset: '重置',
@@ -399,7 +398,7 @@ const zhCN = {
     telegram_step1: '第一步',
     telegram_step2: '第二步',
     telegram_search: '打开Telegram搜索',
-    telegram_send: '向机器人发送您的',
+    telegram_send: '向机器人发送你的',
     telegram_discuss: 'Telegram 讨论组',
     telegram_unbind_confirm: '确定要解除绑定Telegram？',
     telegram_unbind_tip: '如果你的Telegram ID已失效可以进行此操作。重置后你需要重新进行绑定。',
