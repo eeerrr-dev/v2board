@@ -402,6 +402,28 @@ describe('legacy i18n dictionaries', () => {
     expect(legacyGetLocale()).toBe('zh-CN');
   });
 
+  it('normalizes old underscore i18n cookies before bootstrapping the provider', () => {
+    Object.defineProperty(window.navigator, 'language', { value: 'fr-FR', configurable: true });
+    document.cookie = 'i18n=zh_CN;path=/';
+
+    const i18n = createI18n();
+
+    expect(i18n.language).toBe('zh-CN');
+    expect(window.localStorage.getItem('umi_locale')).toBe('zh-CN');
+    expect(window.g_lang).toBe('zh-CN');
+  });
+
+  it('ignores invalid i18n cookies instead of throwing before the app mounts', () => {
+    Object.defineProperty(window.navigator, 'language', { value: 'fr-FR', configurable: true });
+    document.cookie = 'i18n=bad-locale;path=/';
+
+    const i18n = createI18n();
+
+    expect(i18n.language).toBe('zh-CN');
+    expect(window.localStorage.getItem('umi_locale')).toBeNull();
+    expect(window.g_lang).toBe('zh-CN');
+  });
+
   it('does not use an exact supported navigator language without legacy storage', () => {
     Object.defineProperty(window.navigator, 'language', { value: 'en-US', configurable: true });
 

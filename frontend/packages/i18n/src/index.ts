@@ -73,6 +73,17 @@ function isLegacyLocaleFormat(locale: string): boolean {
   return new RegExp(`^([a-z]{2})${separator}?([A-Z]{2})?$`).test(locale);
 }
 
+function normalizeLegacyBootstrapLocale(locale: string | null | undefined): string | undefined {
+  const raw = locale?.trim();
+  if (!raw) return undefined;
+  const separator = window.g_langSeparator ?? '-';
+  const match = /^([a-z]{2})(?:[-_]?([A-Z]{2}))?$/i.exec(raw);
+  if (!match) return undefined;
+  const language = match[1]!.toLowerCase();
+  const region = match[2]?.toUpperCase();
+  return region ? `${language}${separator}${region}` : language;
+}
+
 function getCookie(name: string): string {
   if (typeof document === 'undefined') return '';
   return document.cookie.split('; ').reduce((value, item) => {
@@ -82,9 +93,10 @@ function getCookie(name: string): string {
 }
 
 function getLegacyBootstrapLocale(): string | undefined {
-  const cookieLocale = getCookie('i18n');
+  const cookieLocale = normalizeLegacyBootstrapLocale(getCookie('i18n'));
   if (cookieLocale) return cookieLocale;
-  return LEGACY_NAVIGATOR_LOCALES[window.navigator.language.split('-')[0] ?? ''];
+  const navigatorLocale = normalizeLegacyBootstrapLocale(window.navigator.language);
+  return LEGACY_NAVIGATOR_LOCALES[navigatorLocale?.split('-')[0] ?? ''];
 }
 
 function getLegacyProviderLocale(fallback: SupportedLocale): SupportedLocale {
