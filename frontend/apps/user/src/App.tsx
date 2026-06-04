@@ -1,5 +1,5 @@
-import { useEffect, type ReactNode } from 'react';
-import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { type ReactNode } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
@@ -87,21 +87,10 @@ export const USER_APP_LAYOUT_ROUTE_PATHS = [
 
 function LegacyUnknownRouteRedirect() {
   const location = useLocation();
-  const navigate = useNavigate();
   const current = `${location.pathname}${location.search}`;
   const normalized = getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS);
 
-  useEffect(() => {
-    if (normalized !== current) navigate(normalized, { replace: true });
-  }, [current, navigate, normalized]);
-
-  return (
-    <div className="content content-full text-center">
-      <div className="spinner-grow text-primary" role="status">
-        <span className="sr-only">Loading...</span>
-      </div>
-    </div>
-  );
+  return <Navigate to={normalized} replace />;
 }
 
 export default function App() {

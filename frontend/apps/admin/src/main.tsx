@@ -1,5 +1,4 @@
 import { createRoot } from 'react-dom/client';
-import { useEffect } from 'react';
 import { ConfigProvider, App as AntdApp, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -10,7 +9,7 @@ import {
   installLegacyHashRouteNormalizer,
   normalizeLegacyHashRoute,
 } from '@v2board/config';
-import { HashRouter, useLocation, useNavigate } from 'react-router-dom';
+import { HashRouter, Navigate, useLocation } from 'react-router-dom';
 import App, { ADMIN_LEGACY_ROUTE_PATHS } from './App';
 import { RouteBoundaryElement } from './components/route-error-boundary';
 import { applyInitialDarkMode } from './lib/dark-mode';
@@ -41,15 +40,10 @@ if (!root) throw new Error('root element missing');
 
 function LegacyRouteGuard() {
   const location = useLocation();
-  const navigate = useNavigate();
+  const current = `${location.pathname}${location.search}`;
+  const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);
 
-  useEffect(() => {
-    const current = `${location.pathname}${location.search}`;
-    const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);
-    if (normalized !== current) navigate(normalized, { replace: true });
-  }, [location.pathname, location.search, navigate]);
-
-  return null;
+  return normalized !== current ? <Navigate to={normalized} replace /> : null;
 }
 
 function Boot() {

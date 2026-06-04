@@ -48,7 +48,7 @@ describe('user legacy route table', () => {
     expect(source).toContain('function LegacyUnknownRouteRedirect()');
     expect(source).toContain('nestedPrefixes: USER_LEGACY_ROUTE_PATHS');
     expect(source).toContain('getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS)');
-    expect(source).toContain('navigate(normalized, { replace: true });');
+    expect(source).toContain('return <Navigate to={normalized} replace />;');
     expect(source).toContain('<LegacyUnknownRouteRedirect />');
   });
 

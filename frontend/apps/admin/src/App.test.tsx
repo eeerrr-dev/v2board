@@ -74,7 +74,7 @@ describe('admin legacy route table', () => {
     expect(source).toContain('function LegacyUnknownRouteRedirect()');
     expect(source).toContain('nestedPrefixes: ADMIN_LEGACY_ROUTE_PATHS');
     expect(source).toContain('getNormalizedLegacyHashPath(current, ADMIN_LEGACY_ROUTE_OPTIONS)');
-    expect(source).toContain('navigate(normalized, { replace: true });');
+    expect(source).toContain('return <Navigate to={normalized} replace />;');
     expect(source).toContain('<LegacyUnknownRouteRedirect />');
   });
 

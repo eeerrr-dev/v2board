@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { App as AntdApp } from 'antd';
-import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AdminLayout } from '@/components/layout/admin-layout';
 import { bindMessageApi } from '@/lib/api';
@@ -86,21 +86,10 @@ function RootRedirect() {
 
 function LegacyUnknownRouteRedirect() {
   const location = useLocation();
-  const navigate = useNavigate();
   const current = `${location.pathname}${location.search}`;
   const normalized = getNormalizedLegacyHashPath(current, ADMIN_LEGACY_ROUTE_OPTIONS);
 
-  useEffect(() => {
-    if (normalized !== current) navigate(normalized, { replace: true });
-  }, [current, navigate, normalized]);
-
-  return (
-    <div className="content content-full text-center">
-      <div className="spinner-grow text-primary" role="status">
-        <span className="sr-only">Loading...</span>
-      </div>
-    </div>
-  );
+  return <Navigate to={normalized} replace />;
 }
 
 const ADMIN_ROUTE_ELEMENTS: Record<AdminLegacyRoutePath, ReactNode> = {

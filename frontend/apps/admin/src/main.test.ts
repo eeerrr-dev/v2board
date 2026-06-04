@@ -24,7 +24,7 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
     expect(mainSource).toContain('function LegacyRouteGuard()');
     expect(mainSource).toContain('const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);');
-    expect(mainSource).toContain('if (normalized !== current) navigate(normalized, { replace: true });');
+    expect(mainSource).toContain('return normalized !== current ? <Navigate to={normalized} replace /> : null;');
   });
 
   it('initializes legacy settings and dark mode before rendering', () => {
@@ -38,7 +38,7 @@ describe('admin legacy entrypoint', () => {
   it('wraps the whole admin app with the white-screen guard inside HashRouter', () => {
     expect(mainSource).toContain('HashRouter');
     expect(mainSource).toContain('useLocation');
-    expect(mainSource).toContain('useNavigate');
+    expect(mainSource).toContain('Navigate');
     expect(mainSource).toContain("import { RouteBoundaryElement } from './components/route-error-boundary';");
     expect(mainSource).toContain('<HashRouter>');
     expect(mainSource).toContain('<LegacyRouteGuard />');

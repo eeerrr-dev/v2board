@@ -1,5 +1,4 @@
 import { createRoot } from 'react-dom/client';
-import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 import { createI18n } from '@v2board/i18n';
@@ -8,7 +7,7 @@ import {
   installLegacyHashRouteNormalizer,
   normalizeLegacyHashRoute,
 } from '@v2board/config';
-import { HashRouter, useLocation, useNavigate } from 'react-router-dom';
+import { HashRouter, Navigate, useLocation } from 'react-router-dom';
 
 import App, { USER_LEGACY_ROUTE_PATHS } from './App';
 import { LegacyConfirmProvider } from './components/legacy-confirm';
@@ -43,15 +42,10 @@ if (!root) throw new Error('root element missing');
 
 function LegacyRouteGuard() {
   const location = useLocation();
-  const navigate = useNavigate();
+  const current = `${location.pathname}${location.search}`;
+  const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);
 
-  useEffect(() => {
-    const current = `${location.pathname}${location.search}`;
-    const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);
-    if (normalized !== current) navigate(normalized, { replace: true });
-  }, [location.pathname, location.search, navigate]);
-
-  return null;
+  return normalized !== current ? <Navigate to={normalized} replace /> : null;
 }
 
 createRoot(root).render(
