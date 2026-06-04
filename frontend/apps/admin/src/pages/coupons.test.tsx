@@ -310,6 +310,22 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain('submit.plan_id ?? undefined');
   });
 
+  it('keeps the bundled giftcard value unit switch', () => {
+    const addonSource = source.slice(
+      source.indexOf('function legacyGiftcardValueAddon'),
+      source.indexOf('function useCopy'),
+    );
+
+    expect(addonSource).toContain('switch (type)');
+    expect(addonSource).toContain("case 1:\n      return '¥';");
+    expect(addonSource).toContain("case 2:\n      return '天';");
+    expect(addonSource).toContain("case 3:\n      return 'GB';");
+    expect(addonSource).toContain("case 4:\n      return '';");
+    expect(addonSource).toContain("case 5:\n      return '天';");
+    expect(source).toContain('addonAfter={legacyGiftcardValueAddon(submit.type)}');
+    expect(source).not.toContain("submit.type === 2 || submit.type === 5 ? '天'");
+  });
+
   it('keeps the original random keys for dynamic coupon and giftcard select options', () => {
     expect(source.match(/key=\{Math\.random\(\)\}/g)).toHaveLength(3);
     expect(source).not.toContain('key={plan.id}');

@@ -83,6 +83,23 @@ function rangeValue(startedAt?: number | string | null, endedAt?: number | strin
   ] as [Dayjs | null, Dayjs | null];
 }
 
+function legacyGiftcardValueAddon(type: GiftcardSubmit['type']) {
+  switch (type) {
+    case 1:
+      return '¥';
+    case 2:
+      return '天';
+    case 3:
+      return 'GB';
+    case 4:
+      return '';
+    case 5:
+      return '天';
+    default:
+      return '';
+  }
+}
+
 function useCopy() {
   const { message } = App.useApp();
   return (text: string) => {
@@ -677,15 +694,7 @@ function GiftcardPage() {
                   <Select.Option value={5}>兑换订阅套餐</Select.Option>
                 </Select>
               }
-              addonAfter={
-                submit.type === 1
-                  ? '¥'
-                  : submit.type === 2 || submit.type === 5
-                    ? '天'
-                    : submit.type === 3
-                      ? 'GB'
-                      : ''
-              }
+              addonAfter={legacyGiftcardValueAddon(submit.type)}
               disabled={submit.type === 4}
               placeholder={submit.type === 5 ? '一次性套餐输入0' : '请输入值'}
               value={submit.type === 4 ? 0 : submit.value}
