@@ -401,7 +401,7 @@ export default function PlansPage() {
 
   const savePlan = async (payload: SavePlanPayload) => {
     await save.mutateAsync(payload);
-    void plans.refetch();
+    await plans.refetch();
   };
 
   const dropPlan = (id?: number) => {

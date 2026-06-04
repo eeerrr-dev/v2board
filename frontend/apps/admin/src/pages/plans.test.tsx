@@ -136,8 +136,8 @@ describe('PlansPage legacy subscription management', () => {
 
   it('submits the original drawer state instead of rewriting prices in the page component', () => {
     expect(plansSource).toContain('await onSave({ ...submit });');
-    expect(plansSource).toContain('await save.mutateAsync(payload);\n    void plans.refetch();');
-    expect(plansSource).not.toContain('await plans.refetch();');
+    expect(plansSource).toContain('await save.mutateAsync(payload);\n    await plans.refetch();');
+    expect(plansSource).not.toContain('await save.mutateAsync(payload);\n    void plans.refetch();');
     expect(plansSource).not.toContain('serializePlan(');
     expect(plansSource).not.toContain('Math.round(100 * Number(next[key]))');
   });
