@@ -96,9 +96,7 @@ function ThemeConfigPage() {
                   <ThemeSettingsButton
                     themeKey={key}
                     theme={theme}
-                    onSaved={() => {
-                      void themes.refetch();
-                    }}
+                    onSaved={() => themes.refetch()}
                   />
                 </div>
               </div>
@@ -117,7 +115,7 @@ function ThemeSettingsButton({
 }: {
   themeKey: string;
   theme: AdminThemeInfo;
-  onSaved: () => void;
+  onSaved: () => void | Promise<unknown>;
 }) {
   const { message } = App.useApp();
   const getConfig = useThemeConfigMutation();
@@ -138,14 +136,14 @@ function ThemeSettingsButton({
     setParams({});
   };
 
-  const save = () => {
-    saveConfig
-      .mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) })
-      .then(() => {
-        onSaved();
-        message.success('保存成功');
-      })
-      .catch((error) => showError(message, error));
+  const save = async () => {
+    try {
+      await saveConfig.mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) });
+      await onSaved();
+      message.success('保存成功');
+    } catch (error) {
+      showError(message, error);
+    }
   };
 
   return (

@@ -263,7 +263,7 @@ describe('ConfigPage legacy theme config', () => {
     expect(activateThemeBlock).toContain('void themes.refetch();');
     expect(activateThemeBlock).not.toContain("message.success('保存成功')");
     expect(configSource).toContain(
-      'onSaved={() => {\n                      void themes.refetch();\n                    }}',
+      'onSaved={() => themes.refetch()}',
     );
   });
 
@@ -274,9 +274,9 @@ describe('ConfigPage legacy theme config', () => {
 
   it('keeps theme and system config saves fetching from the page after success', () => {
     const themeSaveStart = configSource.indexOf(
-      '.mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) })',
+      'await saveConfig.mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) });',
     );
-    const themeRefetch = configSource.indexOf('onSaved();', themeSaveStart);
+    const themeRefetch = configSource.indexOf('await onSaved();', themeSaveStart);
     const themeSuccess = configSource.indexOf("message.success('保存成功');", themeRefetch);
     const systemSaveStart = configSource.indexOf(
       'save\n        .mutateAsync(nextGroup as Partial<AdminConfigFlat>)',
@@ -295,8 +295,7 @@ describe('ConfigPage legacy theme config', () => {
     expect(themeSaveStart).toBeGreaterThan(-1);
     expect(themeRefetch).toBeGreaterThan(themeSaveStart);
     expect(themeSuccess).toBeGreaterThan(themeRefetch);
-    expect(configSource).not.toContain('await onSaved();');
-    expect(configSource).toContain('onSaved: () => void;');
+    expect(configSource).toContain('onSaved: () => void | Promise<unknown>;');
     expect(systemSaveStart).toBeGreaterThan(-1);
     expect(systemSuccess).toBeGreaterThan(systemSaveStart);
     expect(systemRefetch).toBeGreaterThan(systemSuccess);
