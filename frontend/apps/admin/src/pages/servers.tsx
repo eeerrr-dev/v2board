@@ -1807,6 +1807,22 @@ export function getLegacyV2nodeSecurityValue(protocol: unknown, tls: unknown) {
     : 0;
 }
 
+export function getLegacyNumericSelectValue(value: unknown, fallback = 0) {
+  return parseInt(String(value ?? fallback), 10) || fallback;
+}
+
+export function getLegacyBinarySelectValue(value: unknown) {
+  return getLegacyNumericSelectValue(value) ? 1 : 0;
+}
+
+function legacyNumericSelectValueProps(value: unknown, fallback = 0) {
+  return { value: getLegacyNumericSelectValue(value, fallback) };
+}
+
+function legacyBinarySelectValueProps(value: unknown) {
+  return { value: getLegacyBinarySelectValue(value) };
+}
+
 function normalizeLegacySettings(
   value: unknown,
   defaults: Record<string, unknown>,
@@ -2307,7 +2323,12 @@ function TrojanAllowInsecureField() {
           允许不安全 <QuestionCircleOutlined />
         </Tooltip>
       </label>
-      <Form.Item noStyle name="allow_insecure" initialValue={0}>
+      <Form.Item
+        noStyle
+        name="allow_insecure"
+        initialValue={0}
+        getValueProps={legacyBinarySelectValueProps}
+      >
         <Select placeholder="允许不安全" style={{ width: '100%' }}>
           <Select.Option key={0} value={0}>
             否
@@ -2332,7 +2353,12 @@ function ServerInsecureField() {
           允许不安全 <QuestionCircleOutlined />
         </Tooltip>
       </label>
-      <Form.Item noStyle name="insecure" initialValue={0}>
+      <Form.Item
+        noStyle
+        name="insecure"
+        initialValue={0}
+        getValueProps={legacyBinarySelectValueProps}
+      >
         <Select placeholder="允许不安全" style={{ width: '100%' }}>
           <Select.Option key={0} value={0}>
             否
@@ -2362,7 +2388,12 @@ function VmessTlsField({
           编辑配置
         </a>
       </label>
-      <Form.Item noStyle name="tls" initialValue={0}>
+      <Form.Item
+        noStyle
+        name="tls"
+        initialValue={0}
+        getValueProps={legacyBinarySelectValueProps}
+      >
         <Select placeholder="是否支持TLS" style={{ width: '100%' }}>
           <Select.Option key={0} value={0}>
             不支持
@@ -2398,7 +2429,12 @@ function VlessSecurityField({
           </a>
         ) : null}
       </label>
-      <Form.Item noStyle name="tls" initialValue={0}>
+      <Form.Item
+        noStyle
+        name="tls"
+        initialValue={0}
+        getValueProps={legacyNumericSelectValueProps}
+      >
         <Select style={{ width: '100%' }}>
           <Select.Option key={0} value={0}>
             无
@@ -2623,7 +2659,12 @@ function V2nodeFields({
           <div className="row">
             <div className="form-group col-md-6 col-xs-12">
               <label>禁用SNI</label>
-              <Form.Item noStyle name="disable_sni" initialValue={0}>
+              <Form.Item
+                noStyle
+                name="disable_sni"
+                initialValue={0}
+                getValueProps={legacyBinarySelectValueProps}
+              >
                 <Select style={{ width: '100%' }}>
                   <Select.Option key={0} value={0}>
                     否
@@ -2667,7 +2708,12 @@ function V2nodeFields({
             </div>
             <div className="form-group col-md-6 col-xs-12">
               <label>客户端启用 0-RTT</label>
-              <Form.Item noStyle name="zero_rtt_handshake" initialValue={0}>
+              <Form.Item
+                noStyle
+                name="zero_rtt_handshake"
+                initialValue={0}
+                getValueProps={legacyBinarySelectValueProps}
+              >
                 <Select style={{ width: '100%' }}>
                   <Select.Option key={0} value={0}>
                     否
@@ -2881,7 +2927,12 @@ function ServerTypeFields({
         <div className="row">
           <div className="form-group col-md-6 col-xs-12">
             <label>禁用SNI</label>
-            <Form.Item noStyle name="disable_sni" initialValue={0}>
+            <Form.Item
+              noStyle
+              name="disable_sni"
+              initialValue={0}
+              getValueProps={legacyBinarySelectValueProps}
+            >
               <Select style={{ width: '100%' }}>
                 <Select.Option key={0} value={0}>
                   否
@@ -2933,7 +2984,12 @@ function ServerTypeFields({
           </div>
           <div className="form-group col-md-6 col-xs-12">
             <label>客户端启用 0-RTT</label>
-            <Form.Item noStyle name="zero_rtt_handshake" initialValue={0}>
+            <Form.Item
+              noStyle
+              name="zero_rtt_handshake"
+              initialValue={0}
+              getValueProps={legacyBinarySelectValueProps}
+            >
               <Select style={{ width: '100%' }}>
                 <Select.Option key={0} value={0}>
                   否
@@ -3024,7 +3080,12 @@ function ServerTypeFields({
         <div className="row">
           <div className="form-group col-md-3 col-xs-12">
             <label>HYSTERIA版本</label>
-            <Form.Item noStyle name="version" initialValue={1}>
+            <Form.Item
+              noStyle
+              name="version"
+              initialValue={1}
+              getValueProps={(value) => legacyNumericSelectValueProps(value, 1)}
+            >
               <Select style={{ width: '100%' }}>
                 <Select.Option key={0} value={1}>
                   v1

@@ -5,7 +5,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ServersPage, {
   createServerSortPayload,
+  getLegacyBinarySelectValue,
   getLegacyNetworkSettingsPlaceholder,
+  getLegacyNumericSelectValue,
   getLegacyServerInitialValues,
   getLegacyV2nodeSecurityValue,
   installLegacyServerSortPrompt,
@@ -756,6 +758,22 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('getValueProps={(value) => ({');
   });
 
+  it('coerces legacy numeric select display values like the original parseInt bindings', () => {
+    expect(getLegacyBinarySelectValue('0')).toBe(0);
+    expect(getLegacyBinarySelectValue('1')).toBe(1);
+    expect(getLegacyBinarySelectValue(2)).toBe(1);
+    expect(getLegacyBinarySelectValue(undefined)).toBe(0);
+    expect(getLegacyNumericSelectValue('2')).toBe(2);
+    expect(getLegacyNumericSelectValue('0', 1)).toBe(1);
+    expect(getLegacyNumericSelectValue(undefined, 1)).toBe(1);
+
+    expect(serversSource.match(/getValueProps=\{legacyBinarySelectValueProps\}/g)).toHaveLength(7);
+    expect(serversSource).toContain('getValueProps={legacyNumericSelectValueProps}');
+    expect(serversSource).toContain(
+      'getValueProps={(value) => legacyNumericSelectValueProps(value, 1)}',
+    );
+  });
+
   it('uses the original Shadowsocks-specific drawer fields', () => {
     expect(serversSource).toContain('form: FormInstance');
     expect(serversSource).toContain("Form.useWatch('obfs', form)");
@@ -999,7 +1017,8 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain("type === 'tuic' ||");
     expect(serversSource).toContain("type === 'anytls' ? (");
     expect(serversSource).toContain('function ServerInsecureField');
-    expect(serversSource).toContain('name="insecure" initialValue={0}');
+    expect(serversSource).toContain('name="insecure"');
+    expect(serversSource).toContain('getValueProps={legacyBinarySelectValueProps}');
     expect(serversSource).toContain('HYSTERIA版本');
     expect(serversSource).toContain('<Select.Option key={0} value={1}>');
     expect(serversSource).toContain('v1');
@@ -1028,7 +1047,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain("congestion_control: 'cubic'");
     expect(serversSource).toContain("Form.useWatch('disable_sni', form)");
     expect(serversSource).toContain('禁用SNI');
-    expect(serversSource).toContain('name="disable_sni" initialValue={0}');
+    expect(serversSource).toContain('name="disable_sni"');
     expect(serversSource).toContain('数据包中继模式');
     expect(serversSource).toContain('name="udp_relay_mode" initialValue="native"');
     expect(serversSource).toContain('native');
@@ -1039,7 +1058,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('name="congestion_control" initialValue="cubic"');
     expect(serversSource).toContain('new_reno');
     expect(serversSource).toContain('客户端启用 0-RTT');
-    expect(serversSource).toContain('name="zero_rtt_handshake" initialValue={0}');
+    expect(serversSource).toContain('name="zero_rtt_handshake"');
     expect(serversSource).not.toContain('label="SNI"');
     expect(serversSource).not.toContain('label="ALPN"');
     expect(serversSource).not.toContain('label="Congestion control"');
