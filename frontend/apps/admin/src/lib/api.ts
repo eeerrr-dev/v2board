@@ -16,7 +16,7 @@ export const apiClient = createApiClient({
   nullFormValue: 'empty',
   onUnauthorized: () => {
     logout();
-    window.location.href = window.location.origin + window.location.pathname;
+    window.location.href = `${window.location.origin}${window.location.pathname}#/login`;
   },
   onError: (error) => {
     if (error.status === 0 || error.status >= 500) {

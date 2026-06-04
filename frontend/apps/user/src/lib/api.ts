@@ -12,7 +12,7 @@ export const apiClient = createApiClient({
   getLocale: () => getRequestLocale(),
   onUnauthorized: () => {
     logout();
-    window.location.href = '/';
+    window.location.href = '/#/login';
   },
   onError: (error: ApiError) => {
     toast.error(i18nGet('请求失败'), { description: error.message });
