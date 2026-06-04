@@ -96,6 +96,12 @@ export function buildAppViteConfig(options: AppViteOptions): UserConfig {
     server: {
       port: options.port,
       host: '0.0.0.0',
+      hmr: {
+        // The packaged theme never had Vite's runtime error overlay. Keep local
+        // dev from covering the legacy UI with a blank/error pane; errors still
+        // stay visible in the console and route boundaries.
+        overlay: false,
+      },
       headers: {
         'Cache-Control': 'no-store, max-age=0',
       },
