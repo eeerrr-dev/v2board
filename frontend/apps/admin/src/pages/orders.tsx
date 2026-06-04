@@ -116,6 +116,7 @@ const ORDER_FILTER_KEYS: LegacyFilterKey[] = [
 interface QueryState {
   current: number;
   pageSize: number;
+  total?: number;
   filter: AdminFilter[];
 }
 
@@ -574,6 +575,7 @@ export default function OrdersPage() {
                   ...state,
                   current: pagination.current ?? state.current,
                   pageSize: pagination.pageSize ?? state.pageSize,
+                  total: pagination.total,
                 }))
               }
             />

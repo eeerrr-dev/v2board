@@ -296,6 +296,7 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).toContain('onChange={(pagination: TablePaginationConfig) =>');
     expect(ordersSource).toContain('current: pagination.current ?? state.current');
     expect(ordersSource).toContain('pageSize: pagination.pageSize ?? state.pageSize');
+    expect(ordersSource).toContain('total: pagination.total');
     expect(ordersSource).not.toContain(
       'onChange: (current: number, pageSize: number) =>',
     );
