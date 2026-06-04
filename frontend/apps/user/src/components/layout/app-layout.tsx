@@ -9,6 +9,7 @@ import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
 import { getLegacyTheme, getLegacyTitle } from '@/lib/legacy-settings';
 import { legacyHref } from '@/lib/legacy-href';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
+import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
 
 interface NavItem {
   to: string;
@@ -19,6 +20,18 @@ interface NavItem {
 interface NavGroup {
   labelKey?: string;
   items: NavItem[];
+}
+
+interface LegacyLayoutSearch {
+  placeholder?: string;
+  defaultValue?: string;
+  onChange: (value: string) => void;
+}
+
+interface AppLayoutProps {
+  loading?: boolean;
+  search?: LegacyLayoutSearch;
+  title?: string;
 }
 
 const NAV: NavGroup[] = [
@@ -71,17 +84,19 @@ function findActiveLabel(pathname: string): string | undefined {
   return undefined;
 }
 
-export function AppLayout() {
+export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps = {}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const { data: user } = useUserInfo({ refetchOnMount: false });
   const [open, setOpen] = useState(false);
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
+  const [showSearchBar, setShowSearchBar] = useState(false);
   const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
   const activeLabel = findActiveLabel(location.pathname);
   const legacyTheme = getLegacyTheme();
-  const title = getLegacyTitle();
+  const siteTitle = getLegacyTitle();
+  const title = titleProp ?? (activeLabel ? t(activeLabel) : '');
   const darkSidebar = legacyTheme.sidebar === 'dark';
   const darkHeader = legacyTheme.header === 'dark';
   const headerButtonClass = darkHeader ? 'btn btn-primary mr-1' : 'btn mr-1';
@@ -125,7 +140,7 @@ export function AppLayout() {
         <div className="smini-hidden bg-header-dark">
           <div className="content-header justify-content-lg-center bg-white-10">
             <a className="font-size-lg text-white" href="/">
-              <span className="text-white-75">{title}</span>
+              <span className="text-white-75">{siteTitle}</span>
             </a>
             <div className="d-lg-none">
               <a
@@ -168,12 +183,12 @@ export function AppLayout() {
           </ul>
         </div>
 
-        <div className="v2board-copyright">{title} v1.7.4</div>
+        <div className="v2board-copyright">{siteTitle} v1.7.4</div>
       </nav>
 
       <header id="page-header">
         <div className="content-header">
-          <div className="sidebar-toggle" style={{ display: 'none' }}>
+          <div className="sidebar-toggle" style={{ display: search ? 'block' : 'none' }}>
             <button
               type="button"
               className={darkHeader ? 'btn btn-primary mr-1 d-lg-none' : 'btn mr-1 d-lg-none'}
@@ -181,6 +196,16 @@ export function AppLayout() {
             >
               <i className="fa fa-fw fa-bars" />
             </button>
+            {search && (
+              <button
+                type="button"
+                className={darkHeader ? 'btn btn-primary' : 'btn'}
+                onClick={() => setShowSearchBar(true)}
+              >
+                <i className="fa fa-fw fa-search" />{' '}
+                <span className="ml-1 d-none d-sm-inline-block">{t('common.search')}</span>
+              </button>
+            )}
           </div>
 
           <div
@@ -188,7 +213,7 @@ export function AppLayout() {
               darkHeader ? 'v2board-container-title text-white' : 'v2board-container-title text-black'
             }
           >
-            {activeLabel ? t(activeLabel) : ''}
+            {title}
           </div>
 
           <div>
@@ -243,14 +268,50 @@ export function AppLayout() {
               </div>
             </div>
           </div>
+          {search && (
+            <div className={`overlay-header bg-dark ${showSearchBar ? 'show' : ''}`}>
+              <div className="content-header bg-dark">
+                <div className="w-100">
+                  <div className="input-group">
+                    <div className="input-group-prepend">
+                      <button
+                        type="button"
+                        className="btn btn-dark"
+                        onClick={() => setShowSearchBar(false)}
+                      >
+                        <i className="fa fa-fw fa-times-circle" />
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      className="form-control border-0"
+                      placeholder={search.placeholder}
+                      onChange={(event) => search.onChange(event.target.value)}
+                      defaultValue={search.defaultValue}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
-      <main id="main-container">
-        <div className="content content-full">
-          <RouteBoundaryOutlet />
-        </div>
-      </main>
+      {loading ? (
+        <main id="main-container">
+          <div className="content content-full font-size-h1">
+            <div className="p-md-0 p-3">
+              <LegacyLoadingIcon />
+            </div>
+          </div>
+        </main>
+      ) : (
+        <main id="main-container">
+          <div className="content content-full">
+            <RouteBoundaryOutlet />
+          </div>
+        </main>
+      )}
     </div>
   );
 }

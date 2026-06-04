@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   darkMode: false,
   labels: {
     'common.logout': '登出',
+    'common.search': '搜索',
     'nav.buy_subscribe': '购买订阅',
     'nav.dashboard': '仪表盘',
     'nav.group_finance': '财务',
@@ -41,6 +42,7 @@ vi.mock('react-router-dom', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    i18n: { language: 'zh-CN' },
     t: (key: string) => mocks.labels[key] ?? key,
   }),
 }));
@@ -138,6 +140,17 @@ describe('AppLayout bundled-theme markup', () => {
     expect(html).toContain('Outlet content');
   });
 
+  it('renders the bundled loading main container when loading is passed', () => {
+    const html = renderToStaticMarkup(<AppLayout loading />);
+
+    expect(html).toContain('id="main-container"');
+    expect(html).toContain('class="content content-full font-size-h1"');
+    expect(html).toContain('class="p-md-0 p-3"');
+    expect(html).toContain('class="anticon anticon-loading"');
+    expect(html).toContain('data-icon="loading"');
+    expect(html).not.toContain('data-outlet="true"');
+  });
+
   it('uses detail route titles without marking sidebar items active', () => {
     mocks.location = { pathname: '/order/TRADE123' };
 
@@ -179,9 +192,9 @@ describe('AppLayout bundled-theme behavior', () => {
     document.body.innerHTML = '';
   });
 
-  async function renderLayout() {
+  async function renderLayout(props?: Parameters<typeof AppLayout>[0]) {
     await act(async () => {
-      root.render(<AppLayout />);
+      root.render(<AppLayout {...props} />);
       await Promise.resolve();
     });
   }
@@ -267,6 +280,61 @@ describe('AppLayout bundled-theme behavior', () => {
 
     expect(mocks.setDarkMode).toHaveBeenCalledWith(true);
     expect(darkButton.innerHTML).toContain('fa-moon');
+  });
+
+  it('renders and controls the bundled header search overlay when search props are passed', async () => {
+    const onChange = vi.fn();
+    await renderLayout({
+      search: {
+        placeholder: '搜索文档',
+        defaultValue: 'node',
+        onChange,
+      },
+    });
+
+    const sidebarToggle = container.querySelector<HTMLElement>('.sidebar-toggle')!;
+    expect(sidebarToggle.style.display).toBe('block');
+    expect(container.innerHTML).toContain('overlay-header bg-dark ');
+
+    const searchButton = Array.from(
+      sidebarToggle.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.includes('搜索'))!;
+
+    await act(async () => {
+      searchButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('.overlay-header')!.className).toContain('show');
+    const input = container.querySelector<HTMLInputElement>('.overlay-header input')!;
+    expect(input.defaultValue).toBe('node');
+    expect(input.placeholder).toBe('搜索文档');
+
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        input,
+        'trojan',
+      );
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onChange).toHaveBeenCalledWith('trojan');
+
+    const closeButton = container.querySelector<HTMLButtonElement>('.overlay-header .btn-dark')!;
+    await act(async () => {
+      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('.overlay-header')!.className).not.toContain('show');
+  });
+
+  it('prefers the bundled layout title prop over the route title', async () => {
+    await renderLayout({ title: '自定义标题' });
+
+    expect(container.querySelector('.v2board-container-title')!.textContent).toBe('自定义标题');
+    expect(container.querySelector('.v2board-copyright')!.textContent).toBe('V2Board v1.7.4');
   });
 
   it('opens the avatar menu, keeps javascript logout href, and logs out to login', async () => {
