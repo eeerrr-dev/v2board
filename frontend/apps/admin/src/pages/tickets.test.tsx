@@ -239,7 +239,7 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(mocks.ticketQueries).toHaveLength(0);
 
     await act(async () => {
-      vi.advanceTimersByTime(399);
+      vi.advanceTimersByTime(299);
       await Promise.resolve();
     });
 
@@ -256,7 +256,7 @@ describe('TicketsPage legacy ticket manager', () => {
       status: 0,
       email: 'buyer@example.com',
     });
-    expect(ticketsSource).toContain('setTimeout(() => filter(key, value), 400)');
+    expect(ticketsSource).toContain('setTimeout(() => filter(key, value), 300)');
 
     await act(async () => {
       root?.unmount();
@@ -312,6 +312,13 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(ticketsSource).toContain('tableLayout="auto"');
     expect(ticketsSource).toContain("size: 'small'");
     expect(ticketsSource).not.toContain('rowKey="id"');
+  });
+
+  it('keeps the original full pagination merge on ticket table changes', () => {
+    expect(ticketsSource).toContain('total?: number;');
+    expect(ticketsSource).toContain('...pagination,');
+    expect(ticketsSource).not.toContain('current: pagination.current');
+    expect(ticketsSource).not.toContain('pageSize: pagination.pageSize');
   });
 
   it('keeps the bundled ticket pagination total as the direct response field', () => {

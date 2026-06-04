@@ -20,6 +20,7 @@ import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 
 type TicketQuery = AdminPageQuery & {
+  total?: number;
   status?: number;
   email?: string;
   reply_status?: FilterValue | null;
@@ -71,7 +72,7 @@ function TicketListPage() {
 
   const onSearch = (key: keyof TicketQuery, value: string) => {
     clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => filter(key, value), 400);
+    searchTimer.current = setTimeout(() => filter(key, value), 300);
   };
 
   const toChat = (id: number) => {
@@ -200,8 +201,7 @@ function TicketListPage() {
             ) => {
               setQuery((current) => ({
                 ...current,
-                current: pagination.current,
-                pageSize: pagination.pageSize,
+                ...pagination,
                 ...filters,
               }));
             }}
