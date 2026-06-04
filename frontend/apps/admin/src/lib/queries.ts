@@ -33,11 +33,20 @@ export const adminKeys = {
   themeTemplates: ['admin', 'config', 'themeTemplates'] as const,
 };
 
-export const useStat = () => useQuery({ queryKey: adminKeys.stat, queryFn: () => admin.statSummary(apiClient) });
+// The bundled dashboard dispatches stat/getOverride on every mount and lets the
+// legacy request layer settle once; it does not inherit a route-level cache or retry.
+const legacyDashboardSummaryQueryOptions = { staleTime: 0, retry: false } as const;
+
+export const useStat = () =>
+  useQuery({
+    queryKey: adminKeys.stat,
+    queryFn: () => admin.statSummary(apiClient),
+    ...legacyDashboardSummaryQueryOptions,
+  });
 // Dashboard chart effects in the bundled admin app render through one-shot
 // completion callbacks; unlike `stat/getOverride`, chart payloads are not stored
 // in dva state after the page unmounts.
-const legacyDashboardChartQueryOptions = { gcTime: 0 } as const;
+const legacyDashboardChartQueryOptions = { gcTime: 0, retry: false } as const;
 
 export const useStatOrder = () =>
   useQuery({

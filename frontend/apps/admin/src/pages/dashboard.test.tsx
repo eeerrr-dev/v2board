@@ -161,7 +161,13 @@ describe('DashboardPage legacy OneUI layout', () => {
   });
 
   it('does not cache one-shot dashboard chart payloads after the page unmounts', () => {
-    expect(queriesSource).toContain('const legacyDashboardChartQueryOptions = { gcTime: 0 } as const;');
+    expect(queriesSource).toContain(
+      'const legacyDashboardSummaryQueryOptions = { staleTime: 0, retry: false } as const;',
+    );
+    expect(queriesSource).toContain('...legacyDashboardSummaryQueryOptions,');
+    expect(queriesSource).toContain(
+      'const legacyDashboardChartQueryOptions = { gcTime: 0, retry: false } as const;',
+    );
     expect(queriesSource.match(/\.\.\.legacyDashboardChartQueryOptions/g)).toHaveLength(5);
     expect(queriesSource).toContain('queryFn: () => admin.statOrder(apiClient),');
     expect(queriesSource).toContain('queryFn: () => admin.statServerTodayRank(apiClient),');
