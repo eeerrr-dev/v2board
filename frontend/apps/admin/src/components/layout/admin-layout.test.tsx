@@ -202,6 +202,59 @@ describe('AdminLayout legacy dark mode behavior', () => {
     expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
   });
 
+  it('renders and controls the bundled header search overlay when search props are passed', async () => {
+    const onChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <AdminLayout
+          search={{
+            placeholder: '输入任意关键字搜索',
+            defaultValue: 'node',
+            onChange,
+          }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const sidebarToggle = container.querySelector<HTMLElement>('.sidebar-toggle')!;
+    expect(sidebarToggle.style.display).toBe('block');
+    expect(container.innerHTML).toContain('overlay-header bg-dark ');
+
+    const searchButton = Array.from(
+      sidebarToggle.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.includes('搜索'))!;
+
+    await act(async () => {
+      searchButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('.overlay-header')!.className).toContain('show');
+    const input = container.querySelector<HTMLInputElement>('.overlay-header input')!;
+    expect(input.defaultValue).toBe('node');
+    expect(input.placeholder).toBe('输入任意关键字搜索');
+
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        input,
+        'trojan',
+      );
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onChange).toHaveBeenCalledWith('trojan');
+
+    const closeButton = container.querySelector<HTMLButtonElement>('.overlay-header .btn-dark')!;
+    await act(async () => {
+      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('.overlay-header')!.className).not.toContain('show');
+  });
+
   it('only titles legacy route paths and does not support removed alias paths', async () => {
     mocks.location = { pathname: '/user' };
     await renderLayout();

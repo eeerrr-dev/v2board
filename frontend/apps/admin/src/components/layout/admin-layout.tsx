@@ -14,6 +14,16 @@ interface LegacyNavItem {
   icon?: string;
 }
 
+interface LegacyLayoutSearch {
+  placeholder?: string;
+  defaultValue?: string;
+  onChange: (value: string) => void;
+}
+
+interface AdminLayoutProps {
+  search?: LegacyLayoutSearch;
+}
+
 const LEGACY_NAV: LegacyNavItem[] = [
   { title: '仪表盘', type: 'item', href: '/dashboard', icon: 'si si-speedometer' },
   { title: '设置', type: 'heading' },
@@ -69,11 +79,12 @@ function getSiteTitle() {
   return getSettings().title || 'V2Board';
 }
 
-export function AdminLayout() {
+export function AdminLayout({ search }: AdminLayoutProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const [showNav, setShowNav] = useState(false);
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
+  const [showSearchBar, setShowSearchBar] = useState(false);
   const [email, setEmail] = useState('');
   const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
   const theme = getTheme();
@@ -175,7 +186,7 @@ export function AdminLayout() {
 
       <header id="page-header">
         <div className="content-header" style={{ maxWidth: 'unset' }}>
-          <div className="sidebar-toggle" style={{ display: 'none' }}>
+          <div className="sidebar-toggle" style={{ display: search ? 'block' : 'none' }}>
             <button
               type="button"
               className={theme.header === 'dark' ? 'btn btn-primary mr-1 d-lg-none' : 'btn mr-1 d-lg-none'}
@@ -183,6 +194,16 @@ export function AdminLayout() {
             >
               <i className="fa fa-fw fa-bars" />
             </button>
+            {search && (
+              <button
+                type="button"
+                className={theme.header === 'dark' ? 'btn btn-primary' : 'btn'}
+                onClick={() => setShowSearchBar(true)}
+              >
+                <i className="fa fa-fw fa-search" />{' '}
+                <span className="ml-1 d-none d-sm-inline-block">搜索</span>
+              </button>
+            )}
           </div>
           <div className={theme.header === 'dark' ? 'v2board-container-title text-white' : 'v2board-container-title text-black'}>
             {title}
@@ -228,6 +249,32 @@ export function AdminLayout() {
               </div>
             </div>
           </div>
+          {search && (
+            <div className={`overlay-header bg-dark ${showSearchBar ? 'show' : ''}`}>
+              <div className="content-header bg-dark">
+                <div className="w-100">
+                  <div className="input-group">
+                    <div className="input-group-prepend">
+                      <button
+                        type="button"
+                        className="btn btn-dark"
+                        onClick={() => setShowSearchBar(false)}
+                      >
+                        <i className="fa fa-fw fa-times-circle" />
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      className="form-control border-0"
+                      placeholder={search.placeholder}
+                      onChange={(event) => search.onChange(event.target.value)}
+                      defaultValue={search.defaultValue}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
