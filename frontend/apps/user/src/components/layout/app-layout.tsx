@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LanguageMenu } from './language-menu';
@@ -87,8 +87,7 @@ export function AppLayout() {
   const headerButtonClass = darkHeader ? 'btn btn-primary mr-1' : 'btn mr-1';
   const localeClass = String(window.localStorage.getItem('umi_locale'));
 
-  const go = (to: string, event?: MouseEvent<HTMLAnchorElement>) => {
-    event?.preventDefault();
+  const go = (to: string) => {
     navigate(to);
     setOpen(false);
   };
@@ -154,11 +153,10 @@ export function AppLayout() {
                 {group.items.map((item) => (
                   <li className="nav-main-item" key={Math.random()}>
                     <a
-                      href={`/#${item.to}`}
                       // Original inactive link renders the literal `false`:
                       // `"nav-main-link ".concat(pathname===to && "active")` (umi.js @895700).
                       className={`nav-main-link ${location.pathname === item.to && 'active'}`}
-                      onClick={(event) => go(item.to, event)}
+                      onClick={() => go(item.to)}
                     >
                       <i className={cn('nav-main-link-icon', item.iconClass)} />
                       <span className="nav-main-link-name">{t(item.labelKey)}</span>
