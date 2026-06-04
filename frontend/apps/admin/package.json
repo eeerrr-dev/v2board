@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 5174",
+    "dev": "vite optimize --force && vite --host 0.0.0.0 --port 5174",
     "build": "tsc --noEmit && vite build",
     "build:deploy": "tsc --noEmit && vite build --config vite.config.deploy.ts",
     "preview": "vite preview --port 5174",
