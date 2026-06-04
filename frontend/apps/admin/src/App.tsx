@@ -69,6 +69,7 @@ export const ADMIN_LAYOUT_ROUTE_PATHS = [
 const ADMIN_LEGACY_ROUTE_OPTIONS = {
   authenticatedFallback: '/dashboard',
   guestFallback: '/login',
+  nestedPrefixes: ADMIN_LEGACY_ROUTE_PATHS,
   publicRoutes: ['/login'],
   routes: ADMIN_LEGACY_ROUTE_PATHS,
 } as const;

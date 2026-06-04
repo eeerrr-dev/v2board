@@ -26,14 +26,31 @@ function routePattern(route: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
+function routePrefixLength(path: string, route: string): number | null {
+  if (route === '/') return null;
+  if (!route.includes(':')) {
+    return path.startsWith(`${route}/`) ? route.length : null;
+  }
+
+  const escaped = route
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/:[^/]+/g, '[^/]+');
+  const match = new RegExp(`^(${escaped})(?=/)`).exec(path);
+  return match?.[1]?.length ?? null;
+}
+
 function isKnownRoute(path: string, routes: readonly string[]): boolean {
   return routes.some((route) => route === path || (route.includes(':') && routePattern(route).test(path)));
 }
 
 function stripNestedPrefix(path: string, prefixes: readonly string[]): string {
-  const prefix = prefixes.find((item) => item !== '/' && path.startsWith(`${item}/`));
-  if (!prefix) return path;
-  return normalizePath(path.slice(prefix.length));
+  let length = 0;
+  for (const prefix of prefixes) {
+    const next = routePrefixLength(path, prefix);
+    if (next !== null && next > length) length = next;
+  }
+  if (!length) return path;
+  return normalizePath(path.slice(length));
 }
 
 export function getNormalizedLegacyHashPath(

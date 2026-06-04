@@ -66,6 +66,7 @@ const USER_GUEST_ROUTE_PATHS = ['/login', '/register', '/forgetpassword'] as con
 const USER_LEGACY_ROUTE_OPTIONS = {
   authenticatedFallback: '/dashboard',
   guestFallback: '/login',
+  nestedPrefixes: USER_LEGACY_ROUTE_PATHS,
   publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
   routes: USER_LEGACY_ROUTE_PATHS,
 } as const;
