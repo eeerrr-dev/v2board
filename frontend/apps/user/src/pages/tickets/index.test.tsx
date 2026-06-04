@@ -182,6 +182,11 @@ describe('TicketsPage bundled-theme table', () => {
     expect(html).toContain('1970/01/01 00:01');
     expect(html.match(/ant-divider ant-divider-vertical/g)).toHaveLength(6);
     expect(html).not.toContain('role="separator"');
+    expect(html).not.toContain('data-row-key');
+  });
+
+  it('keeps bundled antd table row keys internal-only', () => {
+    expect(source).not.toContain('data-row-key');
   });
 
   it('keeps the original new-ticket button text even while ticket save is pending', () => {

@@ -204,7 +204,6 @@ export default function OrdersPage() {
                           return (
                             <tr
                               className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
-                              data-row-key={index}
                               key={index}
                               onMouseEnter={() => setHoverKey(index)}
                               onMouseLeave={() => setHoverKey(null)}
@@ -296,7 +295,6 @@ export default function OrdersPage() {
                           {orders.map((order, index) => (
                             <tr
                               className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
-                              data-row-key={index}
                               key={index}
                               onMouseEnter={() => setHoverKey(index)}
                               onMouseLeave={() => setHoverKey(null)}

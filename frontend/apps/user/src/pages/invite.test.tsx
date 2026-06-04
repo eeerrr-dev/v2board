@@ -2,9 +2,12 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
+import { readFileSync } from 'node:fs';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import InvitePage from './invite';
+
+const inviteSource = readFileSync(`${process.cwd()}/src/pages/invite.tsx`, 'utf8');
 
 const mocks = vi.hoisted(() => ({
   comm: {
@@ -187,6 +190,11 @@ describe('InvitePage bundled-theme markup', () => {
     expect(html).toContain('佣金');
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_600));
     expect(html).toContain('12.34');
+    expect(html).not.toContain('data-row-key');
+  });
+
+  it('keeps bundled antd table row keys internal-only', () => {
+    expect(inviteSource).not.toContain('data-row-key');
   });
 
   it('renders the old distribution-rate branch and withdraw button when enabled', () => {

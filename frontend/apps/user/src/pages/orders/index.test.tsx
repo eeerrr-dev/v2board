@@ -139,6 +139,7 @@ describe('OrdersPage bundled-theme table', () => {
     expect(html).toContain('1970/01/01 00:00');
     expect(html.match(/ant-divider ant-divider-vertical/g)).toHaveLength(4);
     expect(html).not.toContain('role="separator"');
+    expect(html).not.toContain('data-row-key');
   });
 
   it('renders the legacy mobile list item structure', () => {
@@ -163,6 +164,10 @@ describe('OrdersPage bundled-theme table', () => {
     expect(ordersSource).toContain('<span className="ant-tag">{periodLabel}</span>');
     expect(ordersSource).not.toContain("periodKey ? t(periodKey) : ''");
     expect(ordersSource).not.toContain("PERIOD_LABEL[order.period] ?? ''");
+  });
+
+  it('keeps bundled antd table row keys internal-only', () => {
+    expect(ordersSource).not.toContain('data-row-key');
   });
 
   it('applies the original block loading class directly from order fetchLoading', () => {
