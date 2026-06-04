@@ -799,7 +799,7 @@ export default function DashboardPage() {
 }
 
 function getSubscribeTargets(url: string) {
-  const title = window.settings?.title;
+  const title = window.settings!.title;
   const userAgent = window.navigator.userAgent;
   const lowerUserAgent = userAgent.toLowerCase();
   const isAppleMobile =

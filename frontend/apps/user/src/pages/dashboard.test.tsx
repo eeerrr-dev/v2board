@@ -396,6 +396,17 @@ describe('DashboardPage bundled-theme actions', () => {
     expect(tutorialShortcutSource).not.toContain("window.settings?.title ?? ''");
   });
 
+  it('keeps the bundled-theme direct settings title read for subscribe import URLs', () => {
+    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
+    const targetsSource = source.slice(
+      source.indexOf('function getSubscribeTargets'),
+      source.indexOf('function isLegacyExpired'),
+    );
+
+    expect(targetsSource).toContain('const title = window.settings!.title;');
+    expect(targetsSource).not.toContain('const title = window.settings?.title;');
+  });
+
   it('keeps the bundled-theme random keys for notice carousel slides', () => {
     const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
     const slideSource = source.slice(
