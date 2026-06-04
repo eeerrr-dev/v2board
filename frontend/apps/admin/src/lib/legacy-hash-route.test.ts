@@ -182,6 +182,32 @@ describe('normalizeLegacyHashRoute', () => {
     ).toBe('/ticket/7');
   });
 
+  it('recovers paths nested below multiple known route prefixes', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const appRoutes = [
+      '/config/system',
+      '/dashboard',
+      '/login',
+      '/order',
+      '/server/manage',
+      '/ticket/:ticket_id',
+      '/ticket',
+    ] as const;
+    const appOptions = {
+      ...options,
+      nestedPrefixes: appRoutes,
+      routes: appRoutes,
+    };
+
+    expect(getNormalizedLegacyHashPath('/login/dashboard/config/system', appOptions)).toBe(
+      '/config/system',
+    );
+    expect(getNormalizedLegacyHashPath('/dashboard/config/system/server/manage', appOptions)).toBe(
+      '/server/manage',
+    );
+    expect(getNormalizedLegacyHashPath('/ticket/7/dashboard/order', appOptions)).toBe('/order');
+  });
+
   it('prefers dynamic route prefixes over shorter static prefixes when recovering nested paths', () => {
     window.localStorage.setItem('authorization', 'jwt');
 

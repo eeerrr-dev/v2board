@@ -43,14 +43,24 @@ function isKnownRoute(path: string, routes: readonly string[]): boolean {
   return routes.some((route) => route === path || (route.includes(':') && routePattern(route).test(path)));
 }
 
-function stripNestedPrefix(path: string, prefixes: readonly string[]): string {
-  let length = 0;
-  for (const prefix of prefixes) {
-    const next = routePrefixLength(path, prefix);
-    if (next !== null && next > length) length = next;
+function stripNestedPrefix(
+  path: string,
+  prefixes: readonly string[],
+  routes: readonly string[],
+): string {
+  let current = path;
+
+  while (true) {
+    if (isKnownRoute(current, routes)) return current;
+
+    let length = 0;
+    for (const prefix of prefixes) {
+      const next = routePrefixLength(current, prefix);
+      if (next !== null && next > length) length = next;
+    }
+    if (!length) return current;
+    current = normalizePath(current.slice(length));
   }
-  if (!length) return path;
-  return normalizePath(path.slice(length));
 }
 
 export function getNormalizedLegacyHashPath(
@@ -67,7 +77,7 @@ export function getNormalizedLegacyHashPath(
   const normalizedRawPath = normalizePath(rawPath);
   let path = isKnownRoute(normalizedRawPath, options.routes)
     ? normalizedRawPath
-    : stripNestedPrefix(normalizedRawPath, nestedPrefixes);
+    : stripNestedPrefix(normalizedRawPath, nestedPrefixes, options.routes);
 
   if (!isKnownRoute(path, options.routes)) {
     path = hasAuth ? options.authenticatedFallback : options.guestFallback;
