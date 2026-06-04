@@ -103,11 +103,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     axios: instance,
     request: async <T,>(config: AxiosRequestConfig) => {
       const response = await instance.request<BackendEnvelope<T>>(config);
-      return unwrapLegacyEnvelope(response.data, response.status).data;
+      return unwrapLegacyEnvelope(response.data, response.status, options).data;
     },
     requestEnvelope: async <T,>(config: AxiosRequestConfig) => {
       const response = await instance.request<BackendEnvelope<T>>(config);
-      return unwrapLegacyEnvelope(response.data, response.status);
+      return unwrapLegacyEnvelope(response.data, response.status, options);
     },
     resolveAdminPath: (path) => {
       const securePath = options.adminSecurePath?.();
@@ -120,6 +120,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 function unwrapLegacyEnvelope<T>(
   envelope: BackendEnvelope<T>,
   httpStatus: number,
+  options: ApiClientOptions,
 ): BackendEnvelope<T> {
   if (!isEnvelopeObject(envelope)) {
     return {
@@ -130,11 +131,13 @@ function unwrapLegacyEnvelope<T>(
   }
   const legacyEnvelope = { code: httpStatus, ...envelope };
   if (legacyEnvelope.code !== 200) {
-    throw new ApiError(
+    const apiError = new ApiError(
       legacyEnvelope.code,
       legacyEnvelope.message ?? legacyEnvelope.msg ?? 'Request failed, please try again later',
       legacyEnvelope,
     );
+    if (legacyEnvelope.code === 403) options.onUnauthorized?.(apiError);
+    throw apiError;
   }
   return legacyEnvelope;
 }

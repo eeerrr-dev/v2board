@@ -287,6 +287,19 @@ describe('createApiClient', () => {
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 
+  it('maps legacy envelope code 403 into ApiError and fires onUnauthorized', async () => {
+    const onUnauthorized = vi.fn();
+    const client = createApiClient({ baseURL: '/api/v1', onUnauthorized });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onGet('/user/info').reply(200, { code: 403, message: 'auth required' });
+
+    await expect(client.request({ url: '/user/info', method: 'GET' })).rejects.toMatchObject({
+      status: 403,
+      message: 'auth required',
+    });
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
   it('maps other non-2xx responses into ApiError without unauthorized handling', async () => {
     const onUnauthorized = vi.fn();
     const onError = vi.fn();
