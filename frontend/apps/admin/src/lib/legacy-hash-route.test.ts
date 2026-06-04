@@ -142,6 +142,31 @@ describe('normalizeLegacyHashRoute', () => {
     );
   });
 
+  it('recovers known pages that would otherwise be swallowed by dynamic detail routes', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const appRoutes = [
+      '/dashboard',
+      '/login',
+      '/order/:trade_no',
+      '/order',
+      '/plan/:plan_id',
+      '/plan',
+      '/profile',
+      '/server/manage',
+      '/ticket/:ticket_id',
+      '/ticket',
+    ] as const;
+    const appOptions = {
+      ...options,
+      nestedPrefixes: appRoutes,
+      routes: appRoutes,
+    };
+
+    expect(getNormalizedLegacyHashPath('/plan/order', appOptions)).toBe('/order');
+    expect(getNormalizedLegacyHashPath('/ticket/dashboard', appOptions)).toBe('/dashboard');
+    expect(getNormalizedLegacyHashPath('/server/manage/order', appOptions)).toBe('/order');
+  });
+
   it('normalizes broken nested hashes that appear after the app has mounted', () => {
     window.localStorage.setItem('authorization', 'jwt');
     const dispose = installLegacyHashRouteNormalizer(options);
