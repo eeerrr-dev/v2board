@@ -76,14 +76,18 @@ export function LegacyFilterDrawer({
   };
 
   const search = () => {
-    if (filters.some((filter) => isBlank(filter.value))) {
-      notification.error({
-        message: '过滤器',
-        description: '欲检索内容不能为空',
-        duration: 1.5,
-      });
-      return;
-    }
+    let valid = true;
+    filters.forEach((filter) => {
+      if (isBlank(filter.value)) {
+        notification.error({
+          message: '过滤器',
+          description: '欲检索内容不能为空',
+          duration: 1.5,
+        });
+        valid = false;
+      }
+    });
+    if (!valid) return;
     onChange(filters);
     hide();
   };

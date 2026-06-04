@@ -445,6 +445,13 @@ describe('UsersPage legacy user manager', () => {
       "key: next.key,\n            condition: next.condition[0]!,\n            value: '',",
     );
     expect(legacyFilterDrawerSource).toContain("return value === '';");
+    expect(legacyFilterDrawerSource).toContain('let valid = true;');
+    expect(legacyFilterDrawerSource).toContain('filters.forEach((filter) => {');
+    expect(legacyFilterDrawerSource).toContain('valid = false;');
+    expect(legacyFilterDrawerSource).toContain('if (!valid) return;');
+    expect(legacyFilterDrawerSource).not.toContain(
+      'filters.some((filter) => isBlank(filter.value))',
+    );
     expect(legacyFilterDrawerSource).toContain('defaultValue={filter.value || undefined}');
     expect(legacyFilterDrawerSource).toContain("date && date.format('X')");
     expect(legacyFilterDrawerSource).not.toContain("date ? date.format('X') : ''");
