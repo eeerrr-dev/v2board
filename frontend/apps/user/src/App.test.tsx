@@ -43,9 +43,12 @@ describe('user legacy route table', () => {
     expect(source).toContain("USER_ROUTE_ELEMENTS['/ticket/:ticket_id']");
   });
 
-  it('redirects unmatched legacy hashes back through the bundled home route', () => {
+  it('normalizes unmatched legacy hashes without rendering the bundled home route first', () => {
     expect(source).toContain('path="*"');
-    expect(source).toContain("USER_ROUTE_ELEMENTS['/']");
+    expect(source).toContain('function LegacyUnknownRouteRedirect()');
+    expect(source).toContain('getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS)');
+    expect(source).toContain('navigate(normalized, { replace: true });');
+    expect(source).toContain('<LegacyUnknownRouteRedirect />');
   });
 
   it('keeps the route table stable while wrapping standalone routes with the white-screen guard', () => {

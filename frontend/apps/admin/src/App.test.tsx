@@ -66,9 +66,15 @@ describe('admin legacy route table', () => {
     expect(source).toContain("navigate('/login');");
     expect(source).toContain('return <div />;');
     expect(source).toContain("'/': <RootRedirect />,");
-    expect(source).toContain('path="*"');
-    expect(source).toContain("ADMIN_ROUTE_ELEMENTS['/']");
     expect(source).not.toContain('<Navigate to="/login" />');
+  });
+
+  it('normalizes unmatched legacy hashes without rendering the root redirect first', () => {
+    expect(source).toContain('path="*"');
+    expect(source).toContain('function LegacyUnknownRouteRedirect()');
+    expect(source).toContain('getNormalizedLegacyHashPath(current, ADMIN_LEGACY_ROUTE_OPTIONS)');
+    expect(source).toContain('navigate(normalized, { replace: true });');
+    expect(source).toContain('<LegacyUnknownRouteRedirect />');
   });
 
   it('keeps the bundled admin route modules synchronous while adding the white-screen guard', () => {

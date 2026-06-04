@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { App as AntdApp } from 'antd';
-import { Route, Routes, useNavigate } from 'react-router-dom';
+import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AdminLayout } from '@/components/layout/admin-layout';
 import { bindMessageApi } from '@/lib/api';
 import LoginPage from '@/pages/login';
@@ -65,6 +66,13 @@ export const ADMIN_LAYOUT_ROUTE_PATHS = [
   '/user',
 ] as const satisfies readonly AdminLegacyRoutePath[];
 
+const ADMIN_LEGACY_ROUTE_OPTIONS = {
+  authenticatedFallback: '/dashboard',
+  guestFallback: '/login',
+  publicRoutes: ['/login'],
+  routes: ADMIN_LEGACY_ROUTE_PATHS,
+} as const;
+
 function RootRedirect() {
   const navigate = useNavigate();
 
@@ -73,6 +81,25 @@ function RootRedirect() {
   }, [navigate]);
 
   return <div />;
+}
+
+function LegacyUnknownRouteRedirect() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const current = `${location.pathname}${location.search}`;
+  const normalized = getNormalizedLegacyHashPath(current, ADMIN_LEGACY_ROUTE_OPTIONS);
+
+  useEffect(() => {
+    navigate(normalized, { replace: true });
+  }, [navigate, normalized]);
+
+  return (
+    <div className="content content-full text-center">
+      <div className="spinner-grow text-primary" role="status">
+        <span className="sr-only">Loading...</span>
+      </div>
+    </div>
+  );
 }
 
 const ADMIN_ROUTE_ELEMENTS: Record<AdminLegacyRoutePath, ReactNode> = {
@@ -124,7 +151,11 @@ export default function App() {
       </Route>
       <Route
         path="*"
-        element={<RouteBoundaryElement>{ADMIN_ROUTE_ELEMENTS['/']}</RouteBoundaryElement>}
+        element={
+          <RouteBoundaryElement>
+            <LegacyUnknownRouteRedirect />
+          </RouteBoundaryElement>
+        }
       />
     </Routes>
   );

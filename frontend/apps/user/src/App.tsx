@@ -1,5 +1,6 @@
-import { Route, Routes } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
 import LoginPage from '@/pages/auth/login';
@@ -62,6 +63,13 @@ const USER_ROUTE_ELEMENTS: Record<UserLegacyRoutePath, ReactNode> = {
 
 const USER_GUEST_ROUTE_PATHS = ['/login', '/register', '/forgetpassword'] as const;
 
+const USER_LEGACY_ROUTE_OPTIONS = {
+  authenticatedFallback: '/dashboard',
+  guestFallback: '/login',
+  publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
+  routes: USER_LEGACY_ROUTE_PATHS,
+} as const;
+
 export const USER_APP_LAYOUT_ROUTE_PATHS = [
   '/dashboard',
   '/plan',
@@ -75,6 +83,25 @@ export const USER_APP_LAYOUT_ROUTE_PATHS = [
   '/node',
   '/traffic',
 ] as const;
+
+function LegacyUnknownRouteRedirect() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const current = `${location.pathname}${location.search}`;
+  const normalized = getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS);
+
+  useEffect(() => {
+    navigate(normalized, { replace: true });
+  }, [navigate, normalized]);
+
+  return (
+    <div className="content content-full text-center">
+      <div className="spinner-grow text-primary" role="status">
+        <span className="sr-only">Loading...</span>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   return (
@@ -101,7 +128,11 @@ export default function App() {
       />
       <Route
         path="*"
-        element={<RouteBoundaryElement>{USER_ROUTE_ELEMENTS['/']}</RouteBoundaryElement>}
+        element={
+          <RouteBoundaryElement>
+            <LegacyUnknownRouteRedirect />
+          </RouteBoundaryElement>
+        }
       />
     </Routes>
   );
