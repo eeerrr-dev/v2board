@@ -302,7 +302,7 @@ export default function PaymentsPage() {
           通知地址{' '}
           <Tooltip
             placement="top"
-            title="支付网关将会把数据通知到本地址，请通过防火墙放行本地址。"
+            title="支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。"
           >
             <QuestionCircleOutlined />
           </Tooltip>

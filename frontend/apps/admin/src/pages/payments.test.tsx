@@ -74,8 +74,8 @@ describe('PaymentsPage legacy payment config', () => {
   });
 
   it('keeps the bundled notification-address tooltip copy', () => {
-    expect(source).toContain('title="支付网关将会把数据通知到本地址，请通过防火墙放行本地址。"');
-    expect(source).not.toContain('支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。');
+    expect(source).toContain('title="支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。"');
+    expect(source).not.toContain('支付网关将会把数据通知到本地址，请通过防火墙放行本地址。');
   });
 
   it('uses the legacy falsy fallback for dynamic payment config defaults', () => {
