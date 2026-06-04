@@ -318,6 +318,8 @@ describe('ConfigPage legacy theme config', () => {
     expect(configSource).toContain('const options = field.select_options as Record<string, string>;');
     expect(configSource).toContain('{Object.keys(options).map((key) => (');
     expect(configSource).toContain('<Select.Option value={key}>{options[key]}</Select.Option>');
+    expect(configSource).toContain("if (field.field_type === 'input') {");
+    expect(configSource).toContain('return undefined;');
     expect(configSource).not.toContain('<div className="form-group" key={field.field_name}>');
     expect(configSource).not.toContain('options={Object.entries(field.select_options ?? {}).map');
     expect(configSource).not.toContain('Object.keys(field.select_options ?? {})');

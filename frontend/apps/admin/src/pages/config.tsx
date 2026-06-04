@@ -211,13 +211,16 @@ function ThemeField({
       />
     );
   }
-  return (
-    <Input
-      placeholder={field.placeholder}
-      value={value as string | undefined}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  );
+  if (field.field_type === 'input') {
+    return (
+      <Input
+        placeholder={field.placeholder}
+        value={value as string | undefined}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  }
+  return undefined;
 }
 
 function encodeLegacyThemeConfig(params: Record<string, unknown>) {
