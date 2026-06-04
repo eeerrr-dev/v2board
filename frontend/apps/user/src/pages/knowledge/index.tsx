@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
+import { LegacyEmpty } from '@/components/legacy-empty';
 import { CloseIcon, SearchIcon } from '@/components/ant-icon';
 import { AntBtn } from '@/components/ant-btn';
 import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
@@ -37,6 +38,7 @@ export default function KnowledgePage() {
   const refetchDetail = detail.refetch;
   const detailVisible = selectedId !== undefined;
   const detailDrawerStatus = useTransitionStatus(detailVisible, 300);
+  const categories = Object.keys(knowledgeGroups);
   const urlIdAppliedRef = useRef(false);
   useEffect(() => {
     if (urlIdAppliedRef.current) return;
@@ -139,8 +141,14 @@ export default function KnowledgePage() {
         <div className="spinner-grow text-primary" role="status">
           <span className="sr-only">Loading...</span>
         </div>
+      ) : categories.length === 0 ? (
+        <div className="block block-rounded">
+          <div className="block-content py-5">
+            <LegacyEmpty />
+          </div>
+        </div>
       ) : (
-        Object.keys(knowledgeGroups).map((category) => (
+        categories.map((category) => (
           <div className="row mb-3 mb-md-0">
             <div className="col-md-12">
               {/* Original class string has a trailing space: "block block-rounded " (umi.js). */}
