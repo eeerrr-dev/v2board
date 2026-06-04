@@ -16,6 +16,7 @@ import {
   generateCoupon,
   generateGiftcard,
   generateUser,
+  fetchPlans,
   savePlan,
   sendMailToUsers,
   setTelegramWebhook,
@@ -157,8 +158,20 @@ describe('createApiClient', () => {
   it('uses the legacy user transfer multiplication shape in the API layer', () => {
     const source = readFileSync(new URL('./endpoints/user.ts', import.meta.url), 'utf8');
 
-    expect(source).toContain('transfer_amount: 100 * (transferAmount as number),');
+    expect(source).toContain('transfer_amount: 100 * (transferAmount as number)');
     expect(source).not.toContain('Number(transferAmount)');
+  });
+
+  it('keeps redeem gift card type and value on the legacy response envelope', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/user/redeemgiftcard').reply(200, { data: true, type: 1, value: 1234 });
+
+    await expect(userEndpoints.redeemGiftCard(client, 'CARD-123')).resolves.toEqual({
+      type: 1,
+      value: 1234,
+    });
+    expect(mock.history.post[0]?.data).toBe('giftcard=CARD-123');
   });
 
   it('treats HTTP 201 as a legacy request failure', async () => {
@@ -494,7 +507,11 @@ describe('createApiClient', () => {
   });
 
   it('submits legacy admin plan prices in cents from the API layer', async () => {
-    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const client = createApiClient({
+      baseURL: '/api/v1',
+      adminSecurePath: () => 'admin-path',
+      nullFormValue: 'empty',
+    });
     const mock = new AxiosMockAdapter(client.axios);
     mock.onPost('/admin-path/plan/save').reply(200, { data: true });
 
