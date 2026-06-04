@@ -51,7 +51,8 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('plan.unfinished_order_confirm')).toBe(
       '您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？',
     );
-    expect(i18n.t('profile.telegram_bind')).toBe('绑定 Telegram');
+    expect(i18n.t('profile.telegram_bind')).toBe('绑定Telegram');
+    expect(i18n.t('profile.telegram_search')).toBe('打开Telegram搜索');
     expect(i18n.t('profile.reset_subscribe_warning')).toBe(
       '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
     );

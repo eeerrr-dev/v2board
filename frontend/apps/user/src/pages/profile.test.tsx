@@ -68,7 +68,7 @@ const labels: Record<string, string> = {
   'profile.reset_success': '重置成功',
   'profile.reset': '重置',
   'profile.confirm': '确认',
-  'profile.telegram_bind': '绑定 Telegram',
+  'profile.telegram_bind': '绑定Telegram',
   'profile.telegram_unbind': '解除绑定',
   'profile.telegram_unbind_confirm': '确定要解除绑定Telegram？',
   'profile.telegram_unbind_tip': '如果你的Telegram ID已失效可以进行此操作。重置后你需要重新进行绑定。',
@@ -78,7 +78,7 @@ const labels: Record<string, string> = {
   'profile.i_know': '我知道了',
   'profile.telegram_step1': '第一步',
   'profile.telegram_step2': '第二步',
-  'profile.telegram_search': '打开 Telegram 搜索',
+  'profile.telegram_search': '打开Telegram搜索',
   'profile.telegram_send': '向机器人发送您的',
   'profile.password_mismatch': '两次新密码输入不同',
 };
@@ -284,7 +284,7 @@ describe('ProfilePage legacy gift card flow', () => {
     expect(container.textContent).toContain(
       '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
     );
-    expect(container.textContent).toContain('绑定 Telegram');
+    expect(container.textContent).toContain('绑定Telegram');
     expect(container.textContent).toContain('Telegram 讨论组');
 
     const startButton = Array.from(container.querySelectorAll('button')).find(
@@ -298,7 +298,7 @@ describe('ProfilePage legacy gift card flow', () => {
     });
 
     expect(container.textContent).toContain('第一步');
-    expect(container.textContent).toContain('打开 Telegram 搜索');
+    expect(container.textContent).toContain('打开Telegram搜索');
     expect(container.querySelector('a[href="https://t.me/legacy_bot"]')?.textContent).toBe(
       '@legacy_bot',
     );
