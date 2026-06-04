@@ -285,6 +285,13 @@ describe('DashboardPage bundled-theme markup', () => {
     expect(html).toContain('购买订阅');
   });
 
+  it('keeps the bundled-theme subscription branch keyed only by plan_id', () => {
+    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
+
+    expect(source).toContain(') : hasPlan ? (');
+    expect(source).not.toContain(') : hasPlan && sub?.plan ? (');
+  });
+
   it('renders the original loading icon when subscribe has not loaded an email', () => {
     mocks.subscribe = {};
 

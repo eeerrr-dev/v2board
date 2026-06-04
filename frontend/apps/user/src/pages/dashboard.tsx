@@ -170,6 +170,7 @@ export default function DashboardPage() {
   // (getPreClones = 1, getPostClones = slideCount), so the reel holds 2n + 1 slides.
   const trackWidth = slideWidth ? (noticeList.length * 2 + 1) * slideWidth : undefined;
   const subscribeUrl = sub?.subscribe_url as string;
+  const legacySub = sub!;
 
   // react-slick swipe (draggable:false ⇒ touch only). touch-action:pan-y lets the page
   // scroll vertically; we own horizontal gestures, follow the finger, then advance one
@@ -560,13 +561,13 @@ export default function DashboardPage() {
                 <div className="font-size-h3 mb-3">
                   <LegacyLoadingIcon />
                 </div>
-              ) : hasPlan && sub?.plan ? (
+              ) : hasPlan ? (
                 <div>
                   <div>
                     <div className="justify-content-md-between align-items-md-center">
                       <div>
-                        <h3 className="h4 mb-3">{sub.plan!.name}</h3>
-                        {sub.expired_at === null ? (
+                        <h3 className="h4 mb-3">{legacySub.plan!.name}</h3>
+                        {legacySub.expired_at === null ? (
                           <p className="font-size-sm text-muted">{t('dashboard.long_term')}</p>
                         ) : expired ? (
                           <p className="font-size-sm text-muted">
@@ -578,13 +579,13 @@ export default function DashboardPage() {
                           <p className="font-size-sm text-muted">
                             <span>
                               {t('dashboard.expires_in', {
-                                date: formatLegacyDate(sub.expired_at).replaceAll('-', '/'),
+                                date: formatLegacyDate(legacySub.expired_at).replaceAll('-', '/'),
                                 day: daysLeft,
                               })}
-                              {sub.reset_day !== null
-                                ? sub.reset_day === 0
+                              {legacySub.reset_day !== null
+                                ? legacySub.reset_day === 0
                                   ? t('dashboard.reset_today')
-                                  : t('dashboard.reset_in_days', { reset_day: sub.reset_day })
+                                  : t('dashboard.reset_in_days', { reset_day: legacySub.reset_day })
                                 : ''}
                             </span>
                           </p>
@@ -607,14 +608,14 @@ export default function DashboardPage() {
                             <span className="font-w700">
                               {t('dashboard.used_traffic', {
                                 used: formatBytes(used),
-                                total: formatBytes(sub.transfer_enable),
+                                total: formatBytes(legacySub.transfer_enable),
                               })}
                             </span>
                             <span className="font-w700">{'  '}</span>
                             <span className="font-w700">
                               {t('dashboard.devices_online', {
-                                alive_ip: sub.alive_ip,
-                                device_limit: sub.device_limit ?? '∞',
+                                alive_ip: legacySub.alive_ip,
+                                device_limit: legacySub.device_limit ?? '∞',
                               })}
                             </span>
                           </p>
@@ -645,7 +646,7 @@ export default function DashboardPage() {
                               <AntBtn
                                 type="button"
                                 className="ant-btn ant-btn-primary"
-                                onClick={() => navigate(canRenew ? `/plan/${sub.plan_id}` : '/plan')}
+                                onClick={() => navigate(canRenew ? `/plan/${legacySub.plan_id}` : '/plan')}
                               >
                                 {canRenew
                                   ? t('dashboard.renew_subscribe')
