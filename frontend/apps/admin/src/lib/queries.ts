@@ -130,10 +130,15 @@ export const useAdminNotices = (query: admin.AdminPageQuery) =>
     queryFn: () => admin.fetchNotices(apiClient, query),
   });
 
+// The bundled ticket model dispatches ticket/fetch on list and chat mounts;
+// results live in model state, not a time-based route cache.
+const legacyTicketQueryOptions = { staleTime: 0, retry: false } as const;
+
 export const useAdminTickets = (query: admin.AdminPageQuery) =>
   useQuery({
     queryKey: adminKeys.tickets(query),
     queryFn: () => admin.fetchTickets(apiClient, query),
+    ...legacyTicketQueryOptions,
   });
 
 export const useAdminTicket = (id?: number | string) =>
@@ -141,6 +146,7 @@ export const useAdminTicket = (id?: number | string) =>
     queryKey: ['admin', 'ticket', id],
     queryFn: () => admin.ticketDetail(apiClient, id as number | string),
     enabled: id != null,
+    ...legacyTicketQueryOptions,
   });
 
 export const useAdminCoupons = (query: admin.AdminPageQuery) =>

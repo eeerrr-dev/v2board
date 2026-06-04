@@ -279,6 +279,16 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(ticketsSource).not.toContain('loading={tickets.isLoading}');
   });
 
+  it('does not keep ticket list or chat fetches fresh in a timed route cache', () => {
+    expect(queriesSource).toContain(
+      'const legacyTicketQueryOptions = { staleTime: 0, retry: false } as const;',
+    );
+    expect(queriesSource.match(/\.\.\.legacyTicketQueryOptions/g)).toHaveLength(2);
+    expect(queriesSource).toContain('queryFn: () => admin.fetchTickets(apiClient, query),');
+    expect(queriesSource).toContain('queryFn: () => admin.ticketDetail(apiClient, id as number | string),');
+    expect(queriesSource).not.toContain('refetchOnMount: false');
+  });
+
   it('keeps the original desktop ticket chat popup behavior', () => {
     expect(ticketsSource).toContain(
       'const url = `${window.location.origin}${window.location.pathname}#/ticket/${id}`;',
