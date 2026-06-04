@@ -96,6 +96,9 @@ export function buildAppViteConfig(options: AppViteOptions): UserConfig {
     server: {
       port: options.port,
       host: '0.0.0.0',
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+      },
       proxy: {
         '/api': { target: apiTarget, changeOrigin: true, secure: false },
       },
