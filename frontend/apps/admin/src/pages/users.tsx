@@ -683,9 +683,7 @@ export default function UsersPage() {
         userId={editing?.id}
         open={editing != null}
         onClose={() => setEditing(null)}
-        onSaved={() => {
-          void users.refetch();
-        }}
+        onSaved={() => users.refetch()}
       />
 
       <GenerateUserModal

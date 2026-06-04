@@ -221,7 +221,7 @@ describe('UsersPage legacy user manager', () => {
   it('uses the shared legacy user management drawer for row edits', () => {
     expect(usersSource).not.toContain('<UserEditModal');
     expect(usersSource).toContain('<UserManageDrawer');
-    expect(usersSource).toContain('onSaved={() => {\n          void users.refetch();\n        }}');
+    expect(usersSource).toContain('onSaved={() => users.refetch()}');
     expect(userManageDrawerSource).toContain('width="80%"');
     expect(userManageDrawerSource).toContain('title="用户管理"');
     expect(userManageDrawerSource).toContain('v2board-drawer-action');
@@ -309,9 +309,8 @@ describe('UsersPage legacy user manager', () => {
     expect(updateStart).toBeGreaterThan(-1);
     expect(updateRefetch).toBeGreaterThan(updateStart);
     expect(updateHide).toBeGreaterThan(updateRefetch);
-    expect(userManageDrawerSource).toContain('onSaved?: () => void;');
-    expect(userManageDrawerSource).toContain('        onSaved?.();\n        hide();');
-    expect(userManageDrawerSource).not.toContain('await onSaved?.();');
+    expect(userManageDrawerSource).toContain('onSaved?: () => void | Promise<unknown>;');
+    expect(userManageDrawerSource).toContain('        await onSaved?.();\n        hide();');
     expect(userManageDrawerSource).not.toContain("message.success('操作成功')");
     expect(updateUserHook).not.toContain('onSuccess');
     expect(updateUserHook).not.toContain("queryKey: ['admin', 'users']");

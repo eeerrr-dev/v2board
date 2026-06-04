@@ -102,7 +102,7 @@ export function UserManageDrawer({
   userId?: number | null;
   open: boolean;
   onClose: () => void;
-  onSaved?: () => void;
+  onSaved?: () => void | Promise<unknown>;
 }) {
   const { message } = App.useApp();
   const [values, setValues] = useState<UserManageFormValues | null>(null);
@@ -135,8 +135,8 @@ export function UserManageDrawer({
     if (!userId || !values) return;
     update
       .mutateAsync(toPayload(values, userId))
-      .then(() => {
-        onSaved?.();
+      .then(async () => {
+        await onSaved?.();
         hide();
       })
       .catch((error: unknown) => {
