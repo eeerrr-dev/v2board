@@ -1,11 +1,14 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import NodePage from './node';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
+
+const nodeSource = readFileSync(`${process.cwd()}/src/pages/node.tsx`, 'utf8');
 
 const queryState = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -166,6 +169,12 @@ describe('NodePage bundled-theme table and empty state', () => {
     expect(html).toContain('IEPL');
     expect(html).toContain('Netflix');
     expect(html).toContain('<td>-</td>');
+    expect(html).not.toContain('data-row-key');
+  });
+
+  it('keeps the bundled antd row key as internal-only state', () => {
+    expect(nodeSource).toContain('<tr className="ant-table-row ant-table-row-level-0" key={index}>');
+    expect(nodeSource).not.toContain('data-row-key');
   });
 
   it('keeps javascript href anchors and routes empty-state actions like the original', async () => {
