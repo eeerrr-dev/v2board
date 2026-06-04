@@ -56,9 +56,8 @@ describe('admin legacy route table', () => {
 
   it('does not add route-level auth wrappers absent from the bundled admin routes', () => {
     expect(source).not.toContain('RequireAuth');
-    expect(source).toContain(
-      '<Route path="/ticket/:ticket_id" element={ADMIN_ROUTE_ELEMENTS[\'/ticket/:ticket_id\']} />',
-    );
+    expect(source).toContain('path="/ticket/:ticket_id"');
+    expect(source).toContain("ADMIN_ROUTE_ELEMENTS['/ticket/:ticket_id']");
     expect(source).toContain('<AdminLayout />');
   });
 
@@ -67,19 +66,18 @@ describe('admin legacy route table', () => {
     expect(source).toContain("navigate('/login');");
     expect(source).toContain('return <div />;');
     expect(source).toContain("'/': <RootRedirect />,");
-    expect(source).toContain('<Route path="*" element={ADMIN_ROUTE_ELEMENTS[\'/\']} />');
+    expect(source).toContain('path="*"');
+    expect(source).toContain("ADMIN_ROUTE_ELEMENTS['/']");
     expect(source).not.toContain('<Navigate to="/login" />');
   });
 
-  it('keeps the bundled admin route modules synchronous instead of adding a new route fallback', () => {
+  it('keeps the bundled admin route modules synchronous while adding the white-screen guard', () => {
     expect(source).not.toContain('lazy(() => import(');
     expect(source).not.toContain('<Suspense');
     expect(source).not.toContain('fallback={<Fallback />}');
     expect(source).not.toContain('Spin size="large"');
-    expect(source).not.toContain('RouteErrorBoundary');
-    expect(source).not.toContain('页面加载失败');
-    expect(source).not.toContain('componentDidCatch');
-    expect(source).not.toContain('getDerivedStateFromError');
+    expect(source).toContain("import { RouteBoundaryElement } from '@/components/route-error-boundary';");
+    expect(source).toContain('<RouteBoundaryElement>{ADMIN_ROUTE_ELEMENTS');
     expect(source).toContain("import DashboardPage from '@/pages/dashboard';");
     expect(source).toContain("import ConfigPage from '@/pages/config';");
   });

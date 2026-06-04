@@ -1,5 +1,6 @@
-import { Outlet, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { getLegacySettings } from '@/lib/legacy-settings';
+import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 
 export function GuestLayout() {
   const { pathname } = useLocation();
@@ -20,7 +21,7 @@ export function GuestLayout() {
             style={{ maxWidth: 450, width: '100%', margin: 'auto' }}
           >
             <div className="mx-2 mx-sm-0">
-              <Outlet />
+              <RouteBoundaryOutlet />
             </div>
           </div>
         </div>

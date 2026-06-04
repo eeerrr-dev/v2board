@@ -18,6 +18,7 @@ import TicketDetailPage from '@/pages/tickets/detail';
 import KnowledgePage from '@/pages/knowledge';
 import NodePage from '@/pages/node';
 import TrafficPage from '@/pages/traffic';
+import { RouteBoundaryElement } from '@/components/route-error-boundary';
 
 export const USER_LEGACY_ROUTE_PATHS = [
   '/dashboard',
@@ -95,7 +96,10 @@ function KeyedAppLayout() {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={USER_ROUTE_ELEMENTS['/']} />
+      <Route
+        path="/"
+        element={<RouteBoundaryElement>{USER_ROUTE_ELEMENTS['/']}</RouteBoundaryElement>}
+      />
       <Route element={<KeyedGuestLayout />}>
         {USER_GUEST_ROUTE_PATHS.map((path) => (
           <Route key={path} path={path} element={USER_ROUTE_ELEMENTS[path]} />
@@ -106,8 +110,16 @@ export default function App() {
           <Route key={path} path={path} element={USER_ROUTE_ELEMENTS[path]} />
         ))}
       </Route>
-      <Route path="/ticket/:ticket_id" element={USER_ROUTE_ELEMENTS['/ticket/:ticket_id']} />
-      <Route path="*" element={USER_ROUTE_ELEMENTS['/']} />
+      <Route
+        path="/ticket/:ticket_id"
+        element={
+          <RouteBoundaryElement>{USER_ROUTE_ELEMENTS['/ticket/:ticket_id']}</RouteBoundaryElement>
+        }
+      />
+      <Route
+        path="*"
+        element={<RouteBoundaryElement>{USER_ROUTE_ELEMENTS['/']}</RouteBoundaryElement>}
+      />
     </Routes>
   );
 }

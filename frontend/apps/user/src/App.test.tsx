@@ -39,19 +39,19 @@ describe('user legacy route table', () => {
 
   it('keeps ticket details as the original standalone chat route', () => {
     expect(USER_APP_LAYOUT_ROUTE_PATHS).not.toContain('/ticket/:ticket_id');
-    expect(source).toContain(
-      '<Route path="/ticket/:ticket_id" element={USER_ROUTE_ELEMENTS[\'/ticket/:ticket_id\']} />',
-    );
+    expect(source).toContain('path="/ticket/:ticket_id"');
+    expect(source).toContain("USER_ROUTE_ELEMENTS['/ticket/:ticket_id']");
   });
 
   it('redirects unmatched legacy hashes back through the bundled home route', () => {
-    expect(source).toContain('<Route path="*" element={USER_ROUTE_ELEMENTS[\'/\']} />');
+    expect(source).toContain('path="*"');
+    expect(source).toContain("USER_ROUTE_ELEMENTS['/']");
   });
 
-  it('does not add route-level fallback UI absent from the bundled theme', () => {
-    expect(source).not.toContain('RouteErrorBoundary');
-    expect(source).not.toContain('页面加载失败');
-    expect(source).not.toContain('componentDidCatch');
-    expect(source).not.toContain('getDerivedStateFromError');
+  it('keeps the route table stable while wrapping standalone routes with the white-screen guard', () => {
+    expect(source).toContain("import { RouteBoundaryElement } from '@/components/route-error-boundary';");
+    expect(source).toContain('<RouteBoundaryElement>{USER_ROUTE_ELEMENTS');
+    expect(source).not.toContain('lazy(() => import(');
+    expect(source).not.toContain('<Suspense');
   });
 });

@@ -16,6 +16,7 @@ import KnowledgePage from '@/pages/knowledge';
 import NoticesPage from '@/pages/notices';
 import SystemPage from '@/pages/system';
 import ConfigPage from '@/pages/config';
+import { RouteBoundaryElement } from '@/components/route-error-boundary';
 
 export const ADMIN_LEGACY_ROUTE_PATHS = [
   '/config/payment',
@@ -102,15 +103,29 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={ADMIN_ROUTE_ELEMENTS['/login']} />
-      <Route path="/" element={ADMIN_ROUTE_ELEMENTS['/']} />
-      <Route path="/ticket/:ticket_id" element={ADMIN_ROUTE_ELEMENTS['/ticket/:ticket_id']} />
+      <Route
+        path="/login"
+        element={<RouteBoundaryElement>{ADMIN_ROUTE_ELEMENTS['/login']}</RouteBoundaryElement>}
+      />
+      <Route
+        path="/"
+        element={<RouteBoundaryElement>{ADMIN_ROUTE_ELEMENTS['/']}</RouteBoundaryElement>}
+      />
+      <Route
+        path="/ticket/:ticket_id"
+        element={
+          <RouteBoundaryElement>{ADMIN_ROUTE_ELEMENTS['/ticket/:ticket_id']}</RouteBoundaryElement>
+        }
+      />
       <Route element={<AdminLayout />}>
         {ADMIN_LAYOUT_ROUTE_PATHS.map((path) => (
           <Route key={path} path={path} element={ADMIN_ROUTE_ELEMENTS[path]} />
         ))}
       </Route>
-      <Route path="*" element={ADMIN_ROUTE_ELEMENTS['/']} />
+      <Route
+        path="*"
+        element={<RouteBoundaryElement>{ADMIN_ROUTE_ELEMENTS['/']}</RouteBoundaryElement>}
+      />
     </Routes>
   );
 }

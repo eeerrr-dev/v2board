@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
 import { logout } from '@/lib/auth';
 import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
 import { legacyHref } from '@/lib/legacy-href';
+import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 
 interface LegacyNavItem {
   title: string;
@@ -230,7 +231,7 @@ export function AdminLayout() {
 
       <main id="main-container">
         <div className="p-0 p-lg-4">
-          <Outlet />
+          <RouteBoundaryOutlet />
         </div>
       </main>
     </div>

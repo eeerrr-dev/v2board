@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LanguageMenu } from './language-menu';
 import { useUserInfo } from '@/lib/queries';
@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn';
 import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
 import { getLegacyTheme, getLegacyTitle } from '@/lib/legacy-settings';
 import { legacyHref } from '@/lib/legacy-href';
+import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 
 interface NavItem {
   to: string;
@@ -247,7 +248,7 @@ export function AppLayout() {
 
       <main id="main-container">
         <div className="content content-full">
-          <Outlet />
+          <RouteBoundaryOutlet />
         </div>
       </main>
     </div>
