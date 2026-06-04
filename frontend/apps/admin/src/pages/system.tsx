@@ -44,17 +44,17 @@ export function startLegacyQueuePolling(
   refetchStats: () => unknown,
   refetchWorkload: () => unknown,
 ) {
-  let timer: number | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const getData = () => {
     void refetchStats();
     void refetchWorkload();
-    timer = window.setTimeout(() => {
+    timer = setTimeout(() => {
       getData();
     }, 3000);
   };
   getData();
   return () => {
-    if (timer !== undefined) window.clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
   };
 }
 

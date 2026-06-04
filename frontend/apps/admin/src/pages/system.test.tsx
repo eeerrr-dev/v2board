@@ -69,11 +69,11 @@ describe('SystemPage legacy queue monitor', () => {
     ];
     const refetchStats = vi.fn();
     const refetchWorkload = vi.fn();
-    const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation((handler) => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation((handler) => {
       if (typeof handler === 'function') timeoutHandlers.push(handler);
       return timeoutIds[timeoutHandlers.length - 1] ?? timeoutIds[0]!;
     });
-    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout').mockImplementation(() => undefined);
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout').mockImplementation(() => undefined);
 
     try {
       const stopPolling = startLegacyQueuePolling(refetchStats, refetchWorkload);
@@ -87,8 +87,10 @@ describe('SystemPage legacy queue monitor', () => {
         ].join('\n'),
       );
       expect(systemSource).toContain('3000');
-      expect(systemSource).toContain('window.setTimeout');
-      expect(systemSource).toContain('window.clearTimeout');
+      expect(systemSource).toContain('timer = setTimeout(() =>');
+      expect(systemSource).toContain('clearTimeout(timer);');
+      expect(systemSource).not.toContain('window.setTimeout');
+      expect(systemSource).not.toContain('window.clearTimeout');
       expect(systemSource).not.toContain('window.setInterval');
       expect(systemSource).not.toContain('[queueStats.refetch, queueWorkload.refetch]');
       expect(queriesSource).not.toContain('refetchInterval: 3000');
