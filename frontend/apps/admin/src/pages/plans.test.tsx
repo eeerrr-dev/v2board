@@ -112,6 +112,13 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).not.toContain('d-none');
   });
 
+  it('keeps the legacy action dropdown delete color on the menu item', () => {
+    expect(plansSource).toContain("key: 'delete',");
+    expect(plansSource).toContain("style: { color: '#ff4d4f' },");
+    expect(plansSource).toContain('<DeleteOutlined /> 删除');
+    expect(plansSource).not.toContain("<span style={{ color: '#ff4d4f' }}>");
+  });
+
   it('keeps the legacy plan table without an explicit rowKey', () => {
     expect(plansSource).toContain('tableLayout="auto"');
     expect(plansSource).toContain('pagination={false}');

@@ -553,10 +553,11 @@ export default function PlansPage() {
               },
               {
                 key: 'delete',
+                style: { color: '#ff4d4f' },
                 label: (
-                  <span style={{ color: '#ff4d4f' }}>
+                  <>
                     <DeleteOutlined /> 删除
-                  </span>
+                  </>
                 ),
               },
             ],
