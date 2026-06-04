@@ -77,6 +77,11 @@ export default function InvitePage() {
   const detailRows = details.data?.data ?? [];
   const detailPaginationTotal = details.data?.total ?? detailRows.length;
   const detailPaginationItemTotal = detailPaginationTotal || detailRows.length;
+  const detailPaginationCurrent = getLegacyMaxCurrent(
+    detailPaginationItemTotal,
+    page ?? 1,
+    pageSize ?? 10,
+  );
   const detailsLoading = useLegacyFetchLoading(details.isFetching);
 
   const copyInviteLink = (code: string) => {
@@ -360,7 +365,7 @@ export default function InvitePage() {
                     </div>
                     {detailPaginationItemTotal > 0 && (
                       <InvitePagination
-                        current={page ?? 1}
+                        current={detailPaginationCurrent}
                         pageSize={pageSize ?? 10}
                         total={detailPaginationItemTotal}
                         onChange={(nextPage, nextPageSize) => {
@@ -391,6 +396,10 @@ function StatRow({ label, value }: { label: ReactNode; value?: ReactNode }) {
 
 function formatCentsPlain(cents: number) {
   return (parseInt(String(cents)) / 100).toFixed(2);
+}
+
+function getLegacyMaxCurrent(total: number, current: number, pageSize: number) {
+  return (current - 1) * pageSize >= total ? Math.floor((total - 1) / pageSize) + 1 : current;
 }
 
 function InvitePagination({

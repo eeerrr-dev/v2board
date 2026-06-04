@@ -2,6 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
+import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import InvitePage from './invite';
 
@@ -180,11 +181,11 @@ describe('InvitePage bundled-theme markup', () => {
     expect(html.match(/<table style="table-layout:auto">/g)).toHaveLength(2);
     expect(html).toContain('ABC123');
     expect(html).toContain('复制链接');
-    expect(html).toContain('2023/11/14 22:13');
+    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
     expect(html).toContain('佣金发放记录');
     expect(html).toContain('发放时间');
     expect(html).toContain('佣金');
-    expect(html).toContain('2023/11/14 22:23');
+    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_600));
     expect(html).toContain('12.34');
   });
 
@@ -346,5 +347,29 @@ describe('InvitePage bundled-theme actions', () => {
     expect(pageTwo.textContent).toBe('2');
     expect(container.innerHTML).toContain('ant-pagination-item-2 ant-pagination-item-active');
     expect(mocks.detailQueryCalls.at(-1)).toEqual({ current: 2, pageSize: 10 });
+  });
+
+  it('clamps the visible commission-history page like the old Table getMaxCurrent helper', async () => {
+    mocks.detailRows = [{ created_at: 1_700_000_600, get_amount: 1234 }];
+    mocks.detailsTotal = 45;
+
+    await renderInvite();
+
+    const pageFour = container.querySelector<HTMLLIElement>('.ant-pagination-item-4')!;
+
+    await act(async () => {
+      pageFour.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.innerHTML).toContain('ant-pagination-item-4 ant-pagination-item-active');
+    expect(mocks.detailQueryCalls.at(-1)).toEqual({ current: 4, pageSize: 10 });
+
+    mocks.detailsTotal = 25;
+
+    await renderInvite();
+
+    expect(container.innerHTML).toContain('ant-pagination-item-3 ant-pagination-item-active');
+    expect(container.innerHTML).not.toContain('ant-pagination-item-4 ant-pagination-item-active');
   });
 });
