@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, Table } from 'antd';
 import type { TablePaginationConfig } from 'antd';
 import { formatBytes, formatDate } from '@v2board/config/format';
@@ -26,6 +26,7 @@ export function UserTrafficModal({
     pageSize: 10,
     total: 0,
   });
+  const lastUserIdRef = useRef<number | null | undefined>(undefined);
   const records = useAdminUserTraffic(
     userId ?? undefined,
     pagination,
@@ -33,7 +34,11 @@ export function UserTrafficModal({
   );
 
   useEffect(() => {
-    if (open) setPagination({ page: 1, pageSize: 10, total: 0 });
+    if (!open || userId == null) return;
+    if (lastUserIdRef.current !== undefined && lastUserIdRef.current !== userId) {
+      setPagination({ page: 1, pageSize: 10, total: 0 });
+    }
+    lastUserIdRef.current = userId;
   }, [open, userId]);
 
   return (

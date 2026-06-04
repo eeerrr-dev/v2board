@@ -206,10 +206,17 @@ describe('UsersPage legacy user manager', () => {
     expect(userTrafficModalSource).toContain('page: 1');
     expect(userTrafficModalSource).toContain('total: 0');
     expect(userTrafficModalSource).toContain('pagination,');
+    expect(userTrafficModalSource).toContain('const lastUserIdRef = useRef<number | null | undefined>(undefined);');
+    expect(userTrafficModalSource).toContain('if (!open || userId == null) return;');
+    expect(userTrafficModalSource).toContain(
+      'lastUserIdRef.current !== undefined && lastUserIdRef.current !== userId',
+    );
+    expect(userTrafficModalSource).toContain('lastUserIdRef.current = userId;');
     expect(userTrafficModalSource).toContain('total: records.data?.total,');
     expect(userTrafficModalSource).toContain('total?: number;');
     expect(userTrafficModalSource).toContain('key: \'d\'');
     expect(userTrafficModalSource).not.toContain('page: pagination.current');
+    expect(userTrafficModalSource).not.toContain('if (open) setPagination({ page: 1, pageSize: 10, total: 0 });');
     expect(userTrafficModalSource).not.toContain('records.data?.total ?? pagination.total');
     expect(userTrafficModalSource).not.toContain('<Table\n          loading={records.isFetching}');
     expect(userTrafficModalSource).not.toContain('rowKey={(record)');
