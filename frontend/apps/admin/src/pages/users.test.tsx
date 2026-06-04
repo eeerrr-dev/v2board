@@ -354,14 +354,13 @@ describe('UsersPage legacy user manager', () => {
     expect(generateUserModalSource).not.toContain('<Form');
     expect(generateUserModalSource).not.toContain('rules={[{ required: true }]}');
     expect(usersSource).toContain('downloadGeneratedUserCsv(response.buffer)');
-    expect(usersSource).toContain('void users.refetch();');
-    expect(usersSource).toContain('void users.refetch();\n              setCreating(false);');
-    expect(usersSource).not.toContain('await users.refetch();');
+    expect(usersSource).toContain('await users.refetch();');
+    expect(usersSource).toContain('await users.refetch();\n              setCreating(false);');
     expect(usersSource).toContain("USER ${dayjs().format('YYYY-MM-DD HH:mm:ss')}.csv");
     expect(usersSource).not.toContain("message.success('操作成功')");
 
     const downloadIndex = usersSource.indexOf('downloadGeneratedUserCsv(response.buffer)');
-    const refetchIndex = usersSource.indexOf('void users.refetch();', downloadIndex);
+    const refetchIndex = usersSource.indexOf('await users.refetch();', downloadIndex);
     const closeIndex = usersSource.indexOf('setCreating(false);', refetchIndex);
     expect(downloadIndex).toBeGreaterThan(-1);
     expect(refetchIndex).toBeGreaterThan(downloadIndex);

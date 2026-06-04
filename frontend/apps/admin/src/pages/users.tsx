@@ -694,9 +694,9 @@ export default function UsersPage() {
         onSubmit={(values) =>
           generate
             .mutateAsync(values as Parameters<typeof generate.mutateAsync>[0])
-            .then((response) => {
+            .then(async (response) => {
               if (values.generate_count) downloadGeneratedUserCsv(response.buffer);
-              void users.refetch();
+              await users.refetch();
               setCreating(false);
             })
             .catch((error) => showError(message, error))
