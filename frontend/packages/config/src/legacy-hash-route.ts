@@ -108,10 +108,35 @@ export function normalizeLegacyHashRoute(options: LegacyHashRouteOptions): void 
 export function installLegacyHashRouteNormalizer(options: LegacyHashRouteOptions): () => void {
   if (typeof window === 'undefined') return () => undefined;
 
-  const normalize = () => normalizeLegacyHashRoute(options);
+  let normalizing = false;
+  const normalize = () => {
+    if (normalizing) return;
+    normalizing = true;
+    try {
+      normalizeLegacyHashRoute(options);
+    } finally {
+      normalizing = false;
+    }
+  };
+  const originalPushState = window.history.pushState;
+  const originalReplaceState = window.history.replaceState;
+  const wrapStateWriter = (writer: History['pushState']): History['pushState'] =>
+    function normalizedStateWriter(this: History, ...args: Parameters<History['pushState']>) {
+      writer.apply(this, args);
+      normalize();
+    };
+  const pushState = wrapStateWriter(originalPushState);
+  const replaceState = wrapStateWriter(originalReplaceState);
+
+  window.history.pushState = pushState;
+  window.history.replaceState = replaceState;
   window.addEventListener('hashchange', normalize);
   window.addEventListener('popstate', normalize);
   return () => {
+    if (window.history.pushState === pushState) window.history.pushState = originalPushState;
+    if (window.history.replaceState === replaceState) {
+      window.history.replaceState = originalReplaceState;
+    }
     window.removeEventListener('hashchange', normalize);
     window.removeEventListener('popstate', normalize);
   };

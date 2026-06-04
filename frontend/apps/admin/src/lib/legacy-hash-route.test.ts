@@ -164,6 +164,28 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
+  it('normalizes router pushState hash changes after the app has mounted', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const dispose = installLegacyHashRouteNormalizer(options);
+
+    window.history.pushState(null, '', '/#/login/dashboard');
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.hash).toBe('#/dashboard');
+    dispose();
+  });
+
+  it('normalizes router replaceState hash changes after the app has mounted', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const dispose = installLegacyHashRouteNormalizer(options);
+
+    window.history.replaceState(null, '', '/login/dashboard#/ticket/7/dashboard');
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.hash).toBe('#/dashboard');
+    dispose();
+  });
+
   it('normalizes internal router locations without waiting for hashchange', () => {
     window.localStorage.setItem('authorization', 'jwt');
 
