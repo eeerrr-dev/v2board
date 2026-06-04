@@ -7,6 +7,7 @@ $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
 use App\Models\Plan;
+use App\Models\Knowledge;
 use App\Models\ServerGroup;
 use App\Models\User;
 use App\Utils\Helper;
@@ -20,7 +21,7 @@ if (!User::where('email', 'admin@local')->exists()) {
     $user->token = Helper::guid();
     $user->is_admin = 1;
     $user->save();
-    echo "[seed] admin user created: admin@local / 123456\n";
+    echo "[seed] admin user created: admin@local / 12345678\n";
 }
 
 if (!ServerGroup::query()->exists()) {
@@ -49,6 +50,29 @@ if (!Plan::query()->exists()) {
     $plan->onetime_price = 9900;
     $plan->save();
     echo "[seed] plan created: id={$plan->id}\n";
+}
+
+if (!Knowledge::query()->exists()) {
+    $knowledge = new Knowledge();
+    $knowledge->language = 'zh-CN';
+    $knowledge->category = '使用文档';
+    $knowledge->title = '本地开发环境快速开始';
+    $knowledge->body = <<<'MARKDOWN'
+# 本地开发环境快速开始
+
+这是 Docker 本地开发环境的默认文档，用来避免知识库为空时页面看起来像白屏。
+
+- 用户端：http://localhost:5173
+- 管理端：http://localhost:5174
+- 测试账号：admin@local
+- 测试密码：12345678
+
+如果需要验证订阅购买流程，可以从“购买订阅”进入默认的 Test Plan。
+MARKDOWN;
+    $knowledge->sort = 1;
+    $knowledge->show = 1;
+    $knowledge->save();
+    echo "[seed] knowledge article created: id={$knowledge->id}\n";
 }
 
 $configPath = base_path('config/v2board.php');
