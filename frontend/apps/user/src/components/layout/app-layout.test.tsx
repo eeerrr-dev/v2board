@@ -214,6 +214,20 @@ describe('AppLayout bundled-theme behavior', () => {
     );
   });
 
+  it('scrolls back to top when the route changes', async () => {
+    await renderLayout();
+    scrollTo.mockClear();
+
+    mocks.location = { pathname: '/order' };
+    await act(async () => {
+      root.render(<AppLayout />);
+      await Promise.resolve();
+    });
+
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+  });
+
   it('navigates with sidebar links and closes the sidebar after navigation', async () => {
     await renderLayout();
 

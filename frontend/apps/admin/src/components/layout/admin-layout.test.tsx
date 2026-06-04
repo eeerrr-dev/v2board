@@ -151,6 +151,20 @@ describe('AdminLayout legacy dark mode behavior', () => {
     );
   });
 
+  it('scrolls back to top when the route changes', async () => {
+    await renderLayout();
+    scrollTo.mockClear();
+
+    mocks.location = { pathname: '/order' };
+    await act(async () => {
+      root.render(<AdminLayout />);
+      await Promise.resolve();
+    });
+
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+  });
+
   it('requests user info on mount even without a local authorization token', async () => {
     expect(window.localStorage.getItem('authorization')).toBeNull();
 

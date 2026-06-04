@@ -91,7 +91,7 @@ export function AdminLayout() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, []);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     if (!showAvatarMenu) return;
