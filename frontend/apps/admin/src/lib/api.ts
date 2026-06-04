@@ -5,6 +5,7 @@ import { i18nGet } from './errors';
 import { getAdminApiBaseUrl, getAdminSecurePath } from './legacy-settings';
 
 let messageApi: ReturnType<typeof App.useApp>['message'] | null = null;
+let redirectingToLogin = false;
 export function bindMessageApi(api: ReturnType<typeof App.useApp>['message']): void {
   messageApi = api;
 }
@@ -15,8 +16,10 @@ export const apiClient = createApiClient({
   adminSecurePath: () => getAdminSecurePath(),
   nullFormValue: 'empty',
   onUnauthorized: () => {
+    if (redirectingToLogin) return;
+    redirectingToLogin = true;
     logout();
-    window.location.href = window.location.origin + window.location.pathname;
+    window.location.replace(`${window.location.origin}${window.location.pathname}#/login`);
   },
   onError: (error) => {
     if (error.status === 0 || error.status >= 500) {
