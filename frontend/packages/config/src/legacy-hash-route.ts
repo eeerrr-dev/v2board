@@ -125,7 +125,11 @@ export function installLegacyHashRouteNormalizer(options: LegacyHashRouteOptions
   const wrapStateWriter = (writer: History['pushState']): History['pushState'] =>
     function normalizedStateWriter(this: History, ...args: Parameters<History['pushState']>) {
       writer.apply(this, args);
+      const writtenHref = window.location.href;
       normalize();
+      if (window.location.href !== writtenHref) {
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }
     };
   const pushState = wrapStateWriter(originalPushState);
   const replaceState = wrapStateWriter(originalReplaceState);

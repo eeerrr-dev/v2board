@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getNormalizedLegacyHashPath,
   installLegacyHashRouteNormalizer,
@@ -198,6 +198,34 @@ describe('normalizeLegacyHashRoute', () => {
     expect(window.location.pathname).toBe('/');
     expect(window.location.hash).toBe('#/dashboard');
     dispose();
+  });
+
+  it('notifies listeners when a pushState URL is corrected after mount', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const listener = vi.fn();
+    window.addEventListener('popstate', listener);
+    const dispose = installLegacyHashRouteNormalizer(options);
+
+    window.history.pushState(null, '', '/#/login/dashboard');
+
+    expect(window.location.hash).toBe('#/dashboard');
+    expect(listener).toHaveBeenCalledTimes(1);
+    dispose();
+    window.removeEventListener('popstate', listener);
+  });
+
+  it('does not notify listeners for already normalized pushState URLs', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const listener = vi.fn();
+    window.addEventListener('popstate', listener);
+    const dispose = installLegacyHashRouteNormalizer(options);
+
+    window.history.pushState(null, '', '/#/dashboard');
+
+    expect(window.location.hash).toBe('#/dashboard');
+    expect(listener).not.toHaveBeenCalled();
+    dispose();
+    window.removeEventListener('popstate', listener);
   });
 
   it('normalizes router replaceState hash changes after the app has mounted', () => {

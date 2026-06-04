@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
@@ -115,6 +115,15 @@ export function AdminLayout() {
     navigate('/login');
   };
 
+  const handleNavClick = (
+    event: MouseEvent<HTMLAnchorElement>,
+    href: string | undefined,
+  ) => {
+    event.preventDefault();
+    if (href) navigate(href);
+    closeMobileNav();
+  };
+
   return (
     <div id="page-container" className={pageClassName}>
       <div
@@ -153,11 +162,9 @@ export function AdminLayout() {
               ) : (
                 <li key={Math.random()} className="nav-main-item">
                   <a
+                    href={item.href ? `/#${item.href}` : undefined}
                     className={`nav-main-link ${location.pathname === item.href && 'active'}`}
-                    onClick={() => {
-                      if (item.href) navigate(item.href);
-                      closeMobileNav();
-                    }}
+                    onClick={(event) => handleNavClick(event, item.href)}
                   >
                     {item.icon ? <i className={`nav-main-link-icon ${item.icon}`} /> : null}
                     <span className="nav-main-link-name">{item.title}</span>

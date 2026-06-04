@@ -81,6 +81,8 @@ describe('AdminLayout legacy shell', () => {
     expect(html).toContain('队列监控');
     expect(html).toContain('nav-main-link-icon si si-speedometer');
     expect(html).toContain('nav-main-link active');
+    expect(html).toContain('href="/#/dashboard"');
+    expect(html).toContain('href="/#/server/manage"');
   });
 
   it('keeps bundled-theme random keys for admin sidebar menu headings and items', () => {
@@ -188,11 +190,14 @@ describe('AdminLayout legacy dark mode behavior', () => {
     const nodeManage = Array.from(container.querySelectorAll('.nav-main-link')).find(
       (link) => link.textContent === '节点管理',
     )!;
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
     await act(async () => {
-      nodeManage.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      nodeManage.dispatchEvent(click);
       await Promise.resolve();
     });
 
+    expect((nodeManage as HTMLAnchorElement).getAttribute('href')).toBe('/#/server/manage');
+    expect(click.defaultPrevented).toBe(true);
     expect(mocks.navigate).toHaveBeenCalledWith('/server/manage');
     expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
   });

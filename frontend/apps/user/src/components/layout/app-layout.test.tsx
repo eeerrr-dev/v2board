@@ -111,6 +111,8 @@ describe('AppLayout bundled-theme markup', () => {
     expect(html).toContain('class="font-size-lg text-white" href="/"');
     expect(html).toContain('<span class="text-white-75">V2Board</span>');
     expect(html).toContain('class="nav-main"');
+    expect(html).toContain('href="/#/dashboard"');
+    expect(html).toContain('href="/#/knowledge"');
     expect(html).toContain('class="nav-main-link active"');
     expect(html).toContain('class="nav-main-link false"');
     expect(html).toContain('class="nav-main-heading">订阅</li>');
@@ -240,11 +242,14 @@ describe('AppLayout bundled-theme behavior', () => {
     const knowledge = Array.from(container.querySelectorAll('.nav-main-link')).find(
       (link) => link.textContent === '使用文档',
     )!;
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
     await act(async () => {
-      knowledge.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      knowledge.dispatchEvent(click);
       await Promise.resolve();
     });
 
+    expect((knowledge as HTMLAnchorElement).getAttribute('href')).toBe('/#/knowledge');
+    expect(click.defaultPrevented).toBe(true);
     expect(mocks.navigate).toHaveBeenCalledWith('/knowledge');
     expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
   });
