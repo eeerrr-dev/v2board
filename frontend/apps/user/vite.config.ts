@@ -5,6 +5,7 @@ import { buildAppViteConfig, legacyThemePlugin } from '@v2board/config/vite';
 
 export default defineConfig({
   ...buildAppViteConfig({ port: 5173 }),
+  cacheDir: '../../node_modules/.vite/user',
   plugins: [react(), legacyThemePlugin()],
   optimizeDeps: {
     include: [
@@ -15,11 +16,16 @@ export default defineConfig({
       'markdown-it',
       'qrcode.react',
       'react',
+      'react-dom',
       'react-dom/client',
+      'react/jsx-dev-runtime',
+      'react/jsx-runtime',
       'react-i18next',
       'react-router-dom',
       'tailwind-merge',
     ],
+    holdUntilCrawlEnd: false,
+    noDiscovery: true,
   },
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },

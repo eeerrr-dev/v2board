@@ -9,6 +9,7 @@ import {
 
 export default defineConfig({
   ...buildAppViteConfig({ port: 5174 }),
+  cacheDir: '../../node_modules/.vite/admin',
   plugins: [react(), legacyAdminAssetsPlugin(), localHorizonStatsPlugin()],
   optimizeDeps: {
     include: [
@@ -23,10 +24,15 @@ export default defineConfig({
       'i18next',
       'markdown-it',
       'react',
+      'react-dom',
       'react-dom/client',
+      'react/jsx-dev-runtime',
+      'react/jsx-runtime',
       'react-i18next',
       'react-router-dom',
     ],
+    holdUntilCrawlEnd: false,
+    noDiscovery: true,
   },
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
 });
