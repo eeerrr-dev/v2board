@@ -50,6 +50,8 @@ export function normalizeLegacyHashRoute(options: LegacyHashRouteOptions): void 
 
   if (!isKnownRoute(path, options.routes)) {
     path = hasAuth ? options.authenticatedFallback : options.guestFallback;
+  } else if (hasAuth && options.publicRoutes.includes(path)) {
+    path = options.authenticatedFallback;
   } else if (!hasAuth && !options.publicRoutes.includes(path)) {
     path = options.guestFallback;
   }

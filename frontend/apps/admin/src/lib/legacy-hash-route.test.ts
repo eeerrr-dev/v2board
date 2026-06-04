@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   installLegacyHashRouteNormalizer,
   normalizeLegacyHashRoute,
@@ -17,6 +17,28 @@ function setUrl(url: string) {
 }
 
 describe('normalizeLegacyHashRoute', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>();
+    const storage = {
+      clear: () => store.clear(),
+      getItem: (key: string) => store.get(key) ?? null,
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    };
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: storage,
+    });
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: storage,
+    });
+  });
+
   afterEach(() => {
     window.localStorage.clear();
     setUrl('/');
@@ -46,6 +68,29 @@ describe('normalizeLegacyHashRoute', () => {
 
     expect(window.location.pathname).toBe('/');
     expect(window.location.hash).toBe('#/login');
+  });
+
+  it('normalizes authenticated public hashes to the authenticated destination', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    setUrl('/#/login');
+
+    normalizeLegacyHashRoute(options);
+
+    expect(window.location.hash).toBe('#/dashboard');
+  });
+
+  it('normalizes authenticated root entries before rendering the empty root shell', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    setUrl('/');
+
+    normalizeLegacyHashRoute({
+      ...options,
+      publicRoutes: ['/', '/login'],
+      routes: ['/', '/dashboard', '/login'],
+    });
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.hash).toBe('#/dashboard');
   });
 
   it('cleans stale legacy pathnames when the hash route is already valid', () => {
