@@ -41,9 +41,7 @@ function PaymentEditor({
   const [submit, setSubmit] = useState<Record<string, unknown>>(() => ({ ...(record ?? {}) }));
   const [visible, setVisible] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
-  const [selectPaymentMethod, setSelectPaymentMethod] = useState<string | undefined>(
-    record?.payment,
-  );
+  const [selectPaymentMethod, setSelectPaymentMethod] = useState<string | undefined>(undefined);
   const [form, setForm] = useState<PaymentFormDefinition>({});
   const [config, setConfig] = useState<Record<string, unknown>>(() => ({
     ...(record?.config ?? {}),

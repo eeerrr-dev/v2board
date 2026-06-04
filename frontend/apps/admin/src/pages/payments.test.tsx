@@ -99,6 +99,10 @@ describe('PaymentsPage legacy payment config', () => {
   });
 
   it('keeps the original uncontrolled payment method select', () => {
+    expect(source).toContain(
+      'const [selectPaymentMethod, setSelectPaymentMethod] = useState<string | undefined>(undefined);',
+    );
+    expect(source).not.toContain('useState<string | undefined>(\n    record?.payment,\n  )');
     expect(source).toContain('setSelectPaymentMethod(selected);');
     expect(source).toContain('defaultValue={selectPaymentMethod}');
     expect(source).toContain('<Select.Option value={method}>');
