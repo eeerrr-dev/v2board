@@ -185,24 +185,24 @@ describe('KnowledgePage bundled-theme list', () => {
     expect(html).toContain('最后更新: 2023/11/15');
   });
 
-  it('shows an empty state for empty knowledge payloads so the page is not blank', () => {
+  it('keeps an empty knowledge payload as the bundled search-only view', () => {
     mocks.groups = {};
 
     const html = renderToStaticMarkup(<KnowledgePage />);
 
     expect(html).toContain('v2board-knowledge-search-bar');
-    expect(html).toContain('block block-rounded');
-    expect(html).toContain('class="ant-empty ant-empty-normal"');
-    expect(html).toContain('暂无数据');
+    expect(html).not.toContain('block block-rounded ');
+    expect(html).not.toContain('class="ant-empty ant-empty-normal"');
+    expect(html).not.toContain('暂无数据');
   });
 
   it('keeps the bundled-theme unkeyed category and article rows', () => {
     const categorySource = knowledgeSource.slice(
-      knowledgeSource.indexOf('categories.map((category) => ('),
-      knowledgeSource.indexOf('{detailDrawerStatus', knowledgeSource.indexOf('categories.map')),
+      knowledgeSource.indexOf('Object.keys(knowledgeGroups).map((category) => ('),
+      knowledgeSource.indexOf('{detailDrawerStatus', knowledgeSource.indexOf('Object.keys(knowledgeGroups).map')),
     );
 
-    expect(categorySource).toContain('categories.map((category) => (');
+    expect(categorySource).toContain('Object.keys(knowledgeGroups).map((category) => (');
     expect(categorySource).toContain('knowledgeGroups[category]?.map((item) => (');
     expect(categorySource).not.toContain('key={category}');
     expect(categorySource).not.toContain('key={item.id}');
