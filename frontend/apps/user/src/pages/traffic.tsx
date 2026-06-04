@@ -127,7 +127,8 @@ export default function TrafficPage() {
                             const rate = Number.parseFloat(row.server_rate);
                             const upload = parseInt(String(row.u));
                             const download = parseInt(String(row.d));
-                            const charged = (upload + download) * Number(row.server_rate);
+                            const charged =
+                              (upload + download) * (row.server_rate as unknown as number);
                             return (
                               <tr
                                 className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
@@ -202,7 +203,7 @@ export default function TrafficPage() {
                               const charged =
                                 (parseInt(String(row.u)) +
                                   parseInt(String(row.d))) *
-                                Number(row.server_rate);
+                                (row.server_rate as unknown as number);
                               return (
                                 <tr
                                   className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}

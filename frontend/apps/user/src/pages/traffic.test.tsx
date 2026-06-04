@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import TrafficPage from './traffic';
+
+const trafficSource = readFileSync(`${process.cwd()}/src/pages/traffic.tsx`, 'utf8');
 
 const queryState = vi.hoisted(() => ({
   rows: [] as Array<{
@@ -143,5 +146,15 @@ describe('TrafficPage bundled-theme table', () => {
     expect(html).toContain('<td style="text-align:right">200.00 B</td>');
     expect(html).toContain('<td style="text-align:right">0.00 B</td>');
     expect(html).toContain('<span class="ant-tag" style="min-width:60px">-</span>');
+  });
+
+  it('keeps the legacy charged total coercion expression', () => {
+    expect(trafficSource).toContain(
+      '(upload + download) * (row.server_rate as unknown as number)',
+    );
+    expect(trafficSource).toContain(
+      '(parseInt(String(row.u)) +\n                                  parseInt(String(row.d))) *\n                                (row.server_rate as unknown as number)',
+    );
+    expect(trafficSource).not.toContain('Number(row.server_rate)');
   });
 });
