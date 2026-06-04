@@ -16,6 +16,14 @@ describe('dark mode legacy storage', () => {
     expect(isDarkModeEnabled()).toBe(true);
   });
 
+  it('ignores malformed legacy dark mode cookie encoding during startup', () => {
+    document.cookie = 'dark_mode=%E0%A4%A;path=/';
+
+    expect(isDarkModeEnabled()).toBe(false);
+    expect(() => applyInitialDarkMode()).not.toThrow();
+    expect(document.documentElement.classList.contains('v2board-dark-mode')).toBe(false);
+  });
+
   it('writes the legacy cookie without using localStorage', () => {
     setDarkMode(true);
 

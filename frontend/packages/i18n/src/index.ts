@@ -88,7 +88,12 @@ function getCookie(name: string): string {
   if (typeof document === 'undefined') return '';
   return document.cookie.split('; ').reduce((value, item) => {
     const [key, raw] = item.split('=');
-    return key === name && raw !== undefined ? decodeURIComponent(raw) : value;
+    if (key !== name || raw === undefined) return value;
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return value;
+    }
   }, '');
 }
 

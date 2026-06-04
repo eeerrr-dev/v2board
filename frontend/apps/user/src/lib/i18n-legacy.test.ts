@@ -424,6 +424,17 @@ describe('legacy i18n dictionaries', () => {
     expect(window.g_lang).toBe('zh-CN');
   });
 
+  it('ignores malformed i18n cookie encoding instead of throwing before the app mounts', () => {
+    Object.defineProperty(window.navigator, 'language', { value: 'fr-FR', configurable: true });
+    document.cookie = 'i18n=%E0%A4%A;path=/';
+
+    const i18n = createI18n();
+
+    expect(i18n.language).toBe('zh-CN');
+    expect(window.localStorage.getItem('umi_locale')).toBeNull();
+    expect(window.g_lang).toBe('zh-CN');
+  });
+
   it('does not use an exact supported navigator language without legacy storage', () => {
     Object.defineProperty(window.navigator, 'language', { value: 'en-US', configurable: true });
 
