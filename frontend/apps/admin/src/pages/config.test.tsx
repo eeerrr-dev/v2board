@@ -307,6 +307,13 @@ describe('ConfigPage legacy theme config', () => {
   });
 
   it('keeps the original dynamic theme field structure and option rendering', () => {
+    expect(configSource).toContain('{Object.entries(themeItems).map(([key, theme]) => {');
+    const themeCardBlock = configSource.slice(
+      configSource.indexOf('{Object.entries(themeItems).map(([key, theme]) => {'),
+      configSource.indexOf('function ThemeSettingsButton('),
+    );
+
+    expect(themeCardBlock).not.toContain('key={key}');
     expect(configSource).toContain('{(theme.configs ?? []).map((field) => (');
     expect(configSource).toContain('<div className="form-group">');
     expect(configSource).toContain('const options = field.select_options as Record<string, string>;');

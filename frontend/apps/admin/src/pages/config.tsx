@@ -75,7 +75,6 @@ function ThemeConfigPage() {
       {Object.entries(themeItems).map(([key, theme]) => {
         return (
           <div
-            key={key}
             className="block block-transparent bg-image mb-0 mb-md-3 bg-primary"
             style={{ backgroundImage: `url(${THEME_BACKGROUND})` }}
           >
