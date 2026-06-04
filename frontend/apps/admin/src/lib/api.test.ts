@@ -81,11 +81,12 @@ describe('admin api legacy path resolution', () => {
     }
   });
 
-  it('clears auth and reloads the current admin entry at the login hash', () => {
+  it('clears auth and reloads the current admin entry without adding a hash route', () => {
     expect(apiSource).toContain('logout();');
     expect(apiSource).toContain(
-      'window.location.href = `${window.location.origin}${window.location.pathname}#/login`;',
+      'window.location.href = window.location.origin + window.location.pathname;',
     );
+    expect(apiSource).not.toContain('#/login');
     expect(apiSource).not.toContain("window.location.replace('/login')");
   });
 });
