@@ -104,7 +104,7 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
 
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [location.pathname, location.search]);
+  }, []);
 
   useEffect(() => {
     if (!showAvatarMenu) return;

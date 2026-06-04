@@ -166,7 +166,7 @@ describe('AdminLayout legacy dark mode behavior', () => {
     );
   });
 
-  it('scrolls back to top when the route changes', async () => {
+  it('does not scroll again when the route changes without remounting', async () => {
     await renderLayout();
     scrollTo.mockClear();
 
@@ -176,8 +176,7 @@ describe('AdminLayout legacy dark mode behavior', () => {
       await Promise.resolve();
     });
 
-    expect(scrollTo).toHaveBeenCalledTimes(1);
-    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 
   it('requests user info on mount even without a local authorization token', async () => {
