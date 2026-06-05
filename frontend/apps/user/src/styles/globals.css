@@ -1511,6 +1511,10 @@ a.block.block-link-shadow:active {
   border-radius: 0 4px 0 0;
 }
 
+.ant-table-fixed-right a[disabled] {
+  pointer-events: auto;
+}
+
 .ant-table-fixed-left .ant-table-thead > tr > th:last-child {
   border-top-right-radius: 0;
 }

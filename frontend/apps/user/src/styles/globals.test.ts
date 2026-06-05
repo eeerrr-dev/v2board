@@ -31,6 +31,7 @@ describe('legacy antd table CSS', () => {
     );
     expect(globals).toContain('background: #e6f6ff;');
     expect(globals).toContain('.ant-table-fixed-right {\n  position: absolute;\n  top: 0;\n  right: 0;\n  z-index: auto;');
+    expect(globals).toContain('.ant-table-fixed-right a[disabled] {\n  pointer-events: auto;\n}');
     expect(globals).toContain('.ant-table-pagination.ant-pagination {\n  float: right;\n  margin: 16px !important;');
   });
 });
