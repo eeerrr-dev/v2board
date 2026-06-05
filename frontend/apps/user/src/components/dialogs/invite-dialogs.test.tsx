@@ -45,7 +45,8 @@ vi.mock('react-i18next', () => ({
         'invite.withdraw_button': '推广佣金提现',
         'invite.withdraw_method': '提现方式',
         'invite.withdraw_method_placeholder': '请选择提现方式',
-        'invite.withdraw_submit': '确认',
+        'invite.withdraw_submit': '提交提现',
+        'profile.confirm': '确认',
       };
       return (labels[key] ?? key)
         .replace('{{title}}', String(values?.title ?? ''))
@@ -164,6 +165,11 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     expect(document.body.innerHTML).toContain('推广佣金划转至余额');
     expect(document.body.innerHTML).toContain('划转后的余额仅用于V2Board消费使用');
     expect(document.body.innerHTML).toContain('当前推广佣金余额');
+    expect(
+      document.body.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')
+        ?.textContent?.replace(/\s/g, ''),
+    ).toBe('确认');
+    expect(document.body.innerHTML).not.toContain('提交提现');
     expect(document.body.querySelector<HTMLInputElement>('input[disabled]')!.value).toBe('123.45');
 
     const amount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
@@ -259,6 +265,10 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     expect(document.body.innerHTML).toContain('申请提现');
     expect(document.body.innerHTML).toContain('提现方式');
     expect(document.body.innerHTML).toContain('提现账号');
+    expect(
+      document.body.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')
+        ?.textContent?.replace(/\s/g, ''),
+    ).toBe('提交提现');
 
     await act(async () => {
       const method = document.body.querySelector<HTMLSelectElement>('select')!;

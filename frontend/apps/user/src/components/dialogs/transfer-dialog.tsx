@@ -56,7 +56,7 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           title={t('dashboard.transfer_to_balance')}
-          okText={t('invite.withdraw_submit')}
+          okText={t('profile.confirm')}
           cancelText={t('common.cancel')}
           onOk={() => void onSubmit()}
         >
