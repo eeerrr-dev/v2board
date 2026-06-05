@@ -193,14 +193,7 @@ function elementIsEmpty(element: HTMLElement | null): boolean {
 }
 
 function appIsEmpty(root: HTMLElement | null): boolean {
-  if (elementIsEmpty(root)) return true;
-
-  // Route mismatches can leave the OneUI chrome mounted while the routed main
-  // panel is empty. Treat that as a white screen too; the user sees a blank app
-  // even though the sidebar/header text keeps #root from being technically empty.
-  const main = root?.querySelector<HTMLElement>('#main-container');
-  if (!main) return false;
-  return elementIsEmpty(main);
+  return elementIsEmpty(root);
 }
 
 function stableRecoveryKey(url: URL): string {

@@ -401,7 +401,7 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
-  it('recovers when the legacy layout chrome remains but routed main content is blank', () => {
+  it('does not recover while the legacy layout chrome remains during a route transition', () => {
     vi.useFakeTimers();
     window.localStorage.setItem('authorization', 'jwt');
     document.body.innerHTML =
@@ -410,16 +410,13 @@ describe('normalizeLegacyHashRoute', () => {
     const replace = vi.fn();
     const dispose = installLegacyWhiteScreenRecovery(options, {
       delay: 10,
-      now: () => 321,
       replace,
     });
 
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     vi.advanceTimersByTime(10);
 
-    const expected = new URL(window.location.href);
-    expected.searchParams.set('__v2board_recover', '321');
-    expect(replace).toHaveBeenCalledWith(expected.toString());
+    expect(replace).not.toHaveBeenCalled();
     dispose();
   });
 
