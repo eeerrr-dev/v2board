@@ -246,7 +246,6 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
   };
 
   const current = ticket.data;
-  const emptyDetailText = ticket.isFetching ? '加载中...' : '工单不存在或已被删除';
   useAdminUserInfo(current?.user_id);
 
   return (
@@ -290,7 +289,6 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
             </div>
           ),
         )}
-        {!current && <div className="text-center text-muted py-5">{emptyDetailText}</div>}
       </div>
       <div className="js-chat-form block-content p-2 bg-body-dark input___1j_ND">
         <input
