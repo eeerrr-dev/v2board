@@ -273,23 +273,14 @@ export function installLegacyWhiteScreenRecovery(
   const now = config.now ?? (() => Date.now());
   const replace = config.replace ?? ((url: string) => window.location.replace(url));
   let timer: number | undefined;
-  let blankLegacyMainSeen = false;
 
   const recoverIfEmpty = () => {
     const root = document.getElementById('root');
     const current = new URL(window.location.href);
     const key = `${storageKey}:${stableRecoveryKey(current)}`;
-    const legacyMainIsEmpty = legacyMainContentIsEmpty(root);
-    const rootIsEmpty = appIsEmpty(root, blankLegacyMainSeen);
-
-    if (legacyMainIsEmpty && !blankLegacyMainSeen && !elementIsEmpty(root)) {
-      blankLegacyMainSeen = true;
-      schedule();
-      return;
-    }
+    const rootIsEmpty = appIsEmpty(root);
 
     if (!rootIsEmpty) {
-      blankLegacyMainSeen = false;
       window.sessionStorage.removeItem(key);
       return;
     }

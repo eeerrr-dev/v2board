@@ -118,14 +118,11 @@ describe('admin legacy entrypoint', () => {
     expect(indexSource).toContain("var storageKey = 'v2board:dev-entry-recovery';");
     expect(indexSource).toContain("text.indexOf('outdated optimize dep') !== -1");
     expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1");
-    expect(indexSource).toContain('function legacyMainEmpty(root)');
-    expect(indexSource).toContain("root.querySelector('#main-container .content')");
-    expect(indexSource).toContain('var blankLegacyMainSeen = false;');
-    expect(indexSource).toContain(
-      'return elementEmpty(root) || (includeLegacyMain && legacyMainEmpty(root));',
-    );
-    expect(indexSource).toContain('if (mainEmpty && !blankLegacyMainSeen && !elementEmpty(root))');
-    expect(indexSource).toContain('if (appEmpty(blankLegacyMainSeen)) recover();');
+    expect(indexSource).not.toContain('function legacyMainEmpty(root)');
+    expect(indexSource).not.toContain("root.querySelector('#main-container .content')");
+    expect(indexSource).not.toContain('var blankLegacyMainSeen = false;');
+    expect(indexSource).toContain('return elementEmpty(root);');
+    expect(indexSource).toContain('if (appEmpty()) recover();');
     expect(indexSource).toContain("window.addEventListener('hashchange', schedule);");
     expect(indexSource).toContain("window.addEventListener('popstate', schedule);");
     expect(indexSource).toContain('new MutationObserver(schedule).observe(observerTarget');
@@ -133,7 +130,7 @@ describe('admin legacy entrypoint', () => {
     expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
     expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery';")).toBeLessThan(
       indexSource.indexOf(
-        '<script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-6"',
+        '<script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-7"',
       ),
     );
   });

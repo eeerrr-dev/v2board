@@ -416,12 +416,13 @@ describe('normalizeLegacyHashRoute', () => {
 
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     vi.advanceTimersByTime(10);
+    vi.advanceTimersByTime(10);
 
     expect(replace).not.toHaveBeenCalled();
     dispose();
   });
 
-  it('recovers a persistent blank legacy layout main container after an extra grace check', () => {
+  it('does not recover a persistent blank legacy layout main container', () => {
     vi.useFakeTimers();
     window.localStorage.setItem('authorization', 'jwt');
     document.body.innerHTML =
@@ -440,9 +441,7 @@ describe('normalizeLegacyHashRoute', () => {
 
     vi.advanceTimersByTime(10);
 
-    const expected = new URL(window.location.href);
-    expected.searchParams.set('__v2board_recover', '125');
-    expect(replace).toHaveBeenCalledWith(expected.toString());
+    expect(replace).not.toHaveBeenCalled();
     dispose();
   });
 
@@ -595,7 +594,7 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
-  it('renders the visible fallback inside a persistently blank legacy main container', () => {
+  it('does not render the visible fallback inside a persistently blank legacy main container', () => {
     vi.useFakeTimers();
     document.body.innerHTML =
       '<div id="root"><div id="page-container"><nav>仪表盘</nav><header>admin@local</header><main id="main-container"><div class="content content-full"></div></main></div></div>';
@@ -613,8 +612,8 @@ describe('normalizeLegacyHashRoute', () => {
 
     expect(replace).not.toHaveBeenCalled();
     expect(document.querySelector('#page-container')).not.toBeNull();
-    expect(document.querySelector('#main-container')?.textContent).toContain('页面加载失败');
-    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).not.toBeNull();
+    expect(document.querySelector('#main-container')?.textContent).not.toContain('页面加载失败');
+    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).toBeNull();
     dispose();
   });
 

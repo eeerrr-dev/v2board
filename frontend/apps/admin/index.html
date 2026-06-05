@@ -37,7 +37,6 @@
         var delay = 2500;
         var clearDelay = 3000;
         var timer;
-        var blankLegacyMainSeen = false;
 
         function textOf(value, seen) {
           if (value === null || value === undefined) return '';
@@ -108,16 +107,9 @@
           );
         }
 
-        function legacyMainEmpty(root) {
-          if (!root || !root.querySelector('#page-container')) return false;
-          var main =
-            root.querySelector('#main-container .content') || root.querySelector('#main-container');
-          return !!main && elementEmpty(main);
-        }
-
-        function appEmpty(includeLegacyMain) {
+        function appEmpty() {
           var root = document.getElementById('root');
-          return elementEmpty(root) || (includeLegacyMain && legacyMainEmpty(root));
+          return elementEmpty(root);
         }
 
         function renderFallback() {
@@ -153,19 +145,11 @@
         }
 
         function checkEmptyRoot() {
-          var root = document.getElementById('root');
-          var mainEmpty = legacyMainEmpty(root);
-          if (mainEmpty && !blankLegacyMainSeen && !elementEmpty(root)) {
-            blankLegacyMainSeen = true;
-            schedule();
-            return;
-          }
-          if (appEmpty(blankLegacyMainSeen)) recover();
+          if (appEmpty()) recover();
         }
 
         function clearRenderedAttempt() {
-          if (!appEmpty(true)) {
-            blankLegacyMainSeen = false;
+          if (!appEmpty()) {
             window.sessionStorage.removeItem(recoveryKey(new URL(window.location.href)));
           }
         }
@@ -195,6 +179,6 @@
         schedule();
       })();
     </script>
-    <script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-6"></script>
+    <script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-7"></script>
   </body>
 </html>
