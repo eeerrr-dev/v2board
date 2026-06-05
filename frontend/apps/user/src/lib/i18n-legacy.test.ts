@@ -298,7 +298,16 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('dashboard.copy_subscribe')).toBe('複製訂閲位址');
     expect(i18n.t('order.processing')).toBe('訂單系統正在進行處理，請稍等 1-3 分鐘。');
     expect(i18n.t('plan.pick_best_for_you')).toBe('選擇最適合您的計劃');
+    expect(i18n.t('nav.node')).toBe('節點狀態');
+    expect(i18n.t('node.simple_name')).toBe('名稱');
+    expect(i18n.t('node.status')).toBe('狀態');
+    expect(i18n.t('node.rate')).toBe('倍率');
+    expect(i18n.t('node.tags')).toBe('標籤');
+    expect(i18n.t('node.no_available')).toBe('沒有可用節點，如果您未訂閱或已過期請');
+    expect(i18n.t('node.renew')).toBe('續費');
+    expect(i18n.t('node.subscribe')).toBe('訂閱');
     expect(i18n.t('node.status_tip')).toBe('五分鐘內節點線上情況');
+    expect(i18n.t('node.rate_tip')).toBe('使用的流量將乘以倍率進行扣除');
     expect(i18n.t('traffic.notice')).toBe('流量明細僅保留近一個月資料以供查詢。');
     expect(i18n.t('traffic.record_at')).toBe('記錄時間');
     expect(i18n.t('traffic.actual_upload')).toBe('實際上行');
@@ -370,7 +379,20 @@ describe('legacy i18n dictionaries', () => {
       'Hệ thống đang xử lý đơn hàng, vui lòng đợi 1-3p.',
     );
     expect(i18n.t('plan.pick_best_for_you')).toBe('Chọn kế hoạch phù hợp với bạn nhất');
+    expect(i18n.t('nav.node')).toBe('Trạng thái node');
+    expect(i18n.t('node.simple_name')).toBe('Tên');
+    expect(i18n.t('node.status')).toBe('Trạng thái');
+    expect(i18n.t('node.rate')).toBe('Bội số');
+    expect(i18n.t('node.tags')).toBe('Nhãn');
+    expect(i18n.t('node.no_available')).toBe(
+      'Chưa có node khả dụng, nếu bạn chưa mua gói hoặc đã hết hạn hãy',
+    );
+    expect(i18n.t('node.renew')).toBe('Gia hạn');
+    expect(i18n.t('node.subscribe')).toBe('Gói Dịch Vụ');
     expect(i18n.t('node.status_tip')).toBe('Node trạng thái online trong vòng 5 phút');
+    expect(i18n.t('node.rate_tip')).toBe(
+      'Dung lượng sử dụng nhân với bội số rồi khấu trừ',
+    );
     expect(i18n.t('traffic.notice')).toBe(
       'Chi tiết dung lượng chỉ lưu dữ liệu của những tháng gần đây để truy vấn.',
     );
