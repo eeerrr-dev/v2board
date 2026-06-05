@@ -32,11 +32,32 @@
     <div id="root"></div>
     <script>
       (function () {
-        var storageKey = 'v2board:dev-entry-recovery';
+        var recoveryVersion = 'white-screen-recovery-9';
+        var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;
         var maxAttempts = 3;
         var delay = 2500;
         var clearDelay = 3000;
         var timer;
+
+        function clearOldRecoveryState() {
+          var prefixes = [
+            'v2board:dev-entry-recovery:',
+            'v2board:white-screen-recovery:',
+            'v2board:dev-module-recovery:',
+          ];
+          for (var index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+            var key = window.sessionStorage.key(index);
+            if (!key || key.indexOf(':' + recoveryVersion + ':') !== -1) continue;
+            for (var prefixIndex = 0; prefixIndex < prefixes.length; prefixIndex += 1) {
+              if (key.indexOf(prefixes[prefixIndex]) === 0) {
+                window.sessionStorage.removeItem(key);
+                break;
+              }
+            }
+          }
+        }
+
+        clearOldRecoveryState();
 
         function textOf(value, seen) {
           if (value === null || value === undefined) return '';
@@ -187,6 +208,6 @@
         schedule();
       })();
     </script>
-    <script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-8"></script>
+    <script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-9"></script>
   </body>
 </html>

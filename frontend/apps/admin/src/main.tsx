@@ -28,15 +28,25 @@ const legacyHashRouteOptions = {
   publicRoutes: ['/', '/login'],
   routes: ADMIN_LEGACY_ROUTE_PATHS,
 } as const;
+const legacyRecoveryVersion = 'white-screen-recovery-9';
+const legacyWhiteScreenRecoveryConfig = {
+  storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`,
+} as const;
+const legacyDevModuleRecoveryConfig = {
+  storageKey: `v2board:dev-module-recovery:${legacyRecoveryVersion}`,
+} as const;
 
 normalizeLegacyHashRoute(legacyHashRouteOptions);
 installLegacyHashRouteNormalizer(legacyHashRouteOptions);
 if (import.meta.env.DEV) {
-  installLegacyDevModuleRecovery();
-  installLegacyWhiteScreenRecovery(legacyHashRouteOptions, { delay: 1000 });
+  installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);
+  installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {
+    ...legacyWhiteScreenRecoveryConfig,
+    delay: 1000,
+  });
   installLegacyDevWhiteScreenFallback({ delay: 5000 });
 } else {
-  installLegacyWhiteScreenRecovery(legacyHashRouteOptions);
+  installLegacyWhiteScreenRecovery(legacyHashRouteOptions, legacyWhiteScreenRecoveryConfig);
 }
 applyAdminLegacySettings();
 applyInitialDarkMode();
