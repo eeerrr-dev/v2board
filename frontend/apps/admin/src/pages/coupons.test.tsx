@@ -131,6 +131,7 @@ describe('CouponsPage legacy routes', () => {
     expect(html).toContain('SAVE10');
     expect(html).toContain('金额');
     expect(html).toContain('无限');
+    expect(html).toContain('ant-tag');
     expect(html).toContain(range);
     expect(html).toContain('编辑');
     expect(html).toContain('删除');
@@ -150,6 +151,7 @@ describe('CouponsPage legacy routes', () => {
     expect(html).toContain('套餐');
     expect(html).toContain('余额卡');
     expect(html).toContain('CARD10');
+    expect(html).toContain('ant-tag');
     expect(html).toContain('10.00 ¥');
     expect(html).toContain('VIP');
     expect(html).toContain('字符串套餐卡');
@@ -284,17 +286,29 @@ describe('CouponsPage legacy routes', () => {
   it('uses the old copy helper for coupon and giftcard code copying', () => {
     expect(source).toContain("import { legacyCopyText } from '@/lib/legacy-copy';");
     expect(source).toContain('legacyCopyText(text)');
-    expect(source.match(/<span style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g)).toHaveLength(2);
+    expect(
+      source.match(/<Tag style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g),
+    ).toHaveLength(2);
+    expect(source).toContain(
+      "import { App, Button, DatePicker, Input, Modal, Select, Switch, Table, Tag } from 'antd';",
+    );
     expect(source).not.toContain('Typography.Text');
     expect(source).not.toContain("Typography } from 'antd'");
     expect(source).not.toContain('navigator.clipboard?.writeText');
   });
 
-  it('keeps coupon and giftcard limit-use cells as old plain table text', () => {
+  it('keeps coupon and giftcard limit-use cells wrapped in the old antd Tag', () => {
     expect(
-      source.match(/render: \(value: number \| null\) => \(value !== null \? value : '无限'\),/g),
+      source.match(
+        /render: \(value: number \| null\) => <Tag>\{value !== null \? value : '无限'\}<\/Tag>,/g,
+      ),
     ).toHaveLength(2);
-    expect(source).not.toContain('<Typography.Text>{value !== null ? value : \'无限\'}</Typography.Text>');
+    expect(source).not.toContain(
+      "render: (value: number | null) => (value !== null ? value : '无限'),",
+    );
+    expect(source).not.toContain(
+      "<Typography.Text>{value !== null ? value : '无限'}</Typography.Text>",
+    );
   });
 
   it('keeps the original strict giftcard plan lookup', () => {
@@ -308,8 +322,8 @@ describe('CouponsPage legacy routes', () => {
     expect(source).toContain('value={submit.limit_use_with_user as string | number | undefined}');
     expect(source).toContain('value={submit.plan_id as string | number | undefined}');
     expect(source).toContain("mode={'single' as 'multiple'}");
-    expect(source).toContain(
-      "plan_id: ((value as string).length ? value : null) as GiftcardSubmit['plan_id']",
+    expect(source).toMatch(
+      /plan_id:\s*\(\(value as string\)\.length\s*\?\s*value\s*:\s*null\) as GiftcardSubmit\['plan_id'\]/,
     );
     expect(source).not.toContain('checked={Boolean(value)}');
     expect(source).not.toContain('submit.limit_use ?? undefined');
@@ -350,7 +364,8 @@ describe('CouponsPage legacy routes', () => {
 
   it('keeps the original add-button spacing for coupon and giftcard pages', () => {
     expect(source).toContain('<PlusOutlined /> 添加优惠券');
-    expect(source).toContain('<PlusOutlined />添加礼品卡');
+    expect(source).toContain("{'添加礼品卡'}");
+    expect(source).not.toContain('<PlusOutlined /> 添加礼品卡');
     expect(source).not.toContain('<PlusOutlined />\n                添加礼品卡');
   });
 

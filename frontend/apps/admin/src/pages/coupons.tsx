@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App, Button, DatePicker, Input, Modal, Select, Switch, Table } from 'antd';
+import { App, Button, DatePicker, Input, Modal, Select, Switch, Table, Tag } from 'antd';
 import type { TablePaginationConfig, TableProps } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
 import { PlusOutlined } from '@ant-design/icons';
@@ -209,16 +209,16 @@ function CouponPage() {
       dataIndex: 'code',
       key: 'code',
       render: (value: string) => (
-        <span style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
+        <Tag style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
           {value}
-        </span>
+        </Tag>
       ),
     },
     {
       title: '剩余次数',
       dataIndex: 'limit_use',
       key: 'limit_use',
-      render: (value: number | null) => (value !== null ? value : '无限'),
+      render: (value: number | null) => <Tag>{value !== null ? value : '无限'}</Tag>,
     },
     {
       title: '有效期',
@@ -548,16 +548,16 @@ function GiftcardPage() {
       dataIndex: 'code',
       key: 'code',
       render: (value: string) => (
-        <span style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
+        <Tag style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
           {value}
-        </span>
+        </Tag>
       ),
     },
     {
       title: '剩余次数',
       dataIndex: 'limit_use',
       key: 'limit_use',
-      render: (value: number | null) => (value !== null ? value : '无限'),
+      render: (value: number | null) => <Tag>{value !== null ? value : '无限'}</Tag>,
     },
     {
       title: '有效期',
@@ -614,7 +614,8 @@ function GiftcardPage() {
           <div className="bg-white">
             <div style={{ padding: 15 }}>
               <Button onClick={modalVisible}>
-                <PlusOutlined />添加礼品卡
+                <PlusOutlined />
+                {'添加礼品卡'}
               </Button>
             </div>
             <Table<Giftcard>
