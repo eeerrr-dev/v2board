@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { AnchorHTMLAttributes } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -22,6 +23,10 @@ const LEVELS: { value: TicketLevel; labelKey: string }[] = [
   { value: 1, labelKey: 'ticket.level_medium' },
   { value: 2, labelKey: 'ticket.level_high' },
 ];
+
+function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTMLAnchorElement> {
+  return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;
+}
 
 export default function TicketsPage() {
   const { t } = useTranslation();
@@ -257,7 +262,7 @@ export default function TicketsPage() {
                                   <div className="ant-divider ant-divider-vertical" />
                                   <a
                                     ref={legacyHref()}
-                                    {...(ticket.status ? { disabled: true } : {})}
+                                    {...legacyDisabledAnchorProps(ticket.status)}
                                     onClick={() => void closeTicket(ticket.id)}
                                   >
                                     {t('ticket.close_ticket')}
@@ -320,7 +325,7 @@ export default function TicketsPage() {
                                   <div className="ant-divider ant-divider-vertical" />
                                   <a
                                     ref={legacyHref()}
-                                    {...(ticket.status ? { disabled: true } : {})}
+                                    {...legacyDisabledAnchorProps(ticket.status)}
                                     onClick={() => void closeTicket(ticket.id)}
                                   >
                                     {t('ticket.close_ticket')}

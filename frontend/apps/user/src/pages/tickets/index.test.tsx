@@ -591,6 +591,12 @@ describe('TicketsPage legacy interactions', () => {
   });
 
   it('keeps the closed-ticket close anchor disabled attribute without suppressing the legacy click', async () => {
+    expect(source).toContain("import type { AnchorHTMLAttributes } from 'react';");
+    expect(source).toContain('function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTMLAnchorElement>');
+    expect(source).toContain('return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;');
+    expect(source).toContain('{...legacyDisabledAnchorProps(ticket.status)}');
+    expect(source).not.toContain("...(ticket.status ? { disabled: true } : {})");
+
     await act(async () => {
       root!.render(<TicketsPage />);
       await Promise.resolve();
