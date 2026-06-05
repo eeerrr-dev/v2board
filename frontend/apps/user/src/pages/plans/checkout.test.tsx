@@ -247,7 +247,13 @@ describe('PlanCheckoutPage bundled-theme markup', () => {
 
   it('keeps the bundled-theme direct selected period in the order payload', () => {
     expect(checkoutSource).toContain('period: currentPeriod,');
+    expect(checkoutSource).toContain('useState<PlanPeriod | undefined>()');
+    expect(checkoutSource).toContain('function getDefaultPeriod(plan: Plan): PlanPeriod | undefined');
     expect(checkoutSource).not.toContain('period: currentPeriod ?? undefined');
+    expect(checkoutSource).not.toContain('useState<PlanPeriod | null>');
+    expect(checkoutSource).not.toContain(
+      'const currentPeriod = (period ?? getDefaultPeriod(planQuery.data)) as PlanPeriod;',
+    );
   });
 
   it('keeps the bundled-theme direct coupon input value for coupon checks', () => {
@@ -367,6 +373,41 @@ describe('PlanCheckoutPage bundled-theme behavior', () => {
       coupon_code: 'SAVE',
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE123');
+  });
+
+  it('keeps the original undefined period payload when no price period exists', async () => {
+    const plan = mocks.plan as Plan;
+    plan.month_price = null;
+    plan.year_price = null;
+    plan.onetime_price = null;
+    plan.reset_price = null;
+    mocks.saveOrder.mockResolvedValue('TRADE-NO-PERIOD');
+
+    await act(async () => {
+      root.render(<PlanCheckoutPage />);
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Legacy Plan x ');
+    expect(container.textContent).toContain('¥NaN');
+    expect(container.textContent).toContain('¥ NaN CNY');
+
+    const submitButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('下单'),
+    )!;
+
+    await act(async () => {
+      submitButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
+      plan_id: 1,
+      period: undefined,
+      coupon_code: undefined,
+    });
+    expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-NO-PERIOD');
   });
 
   it('confirms and cancels the first unfinished order before creating a new one', async () => {

@@ -55,7 +55,7 @@ export default function PlanCheckoutPage() {
   const { data: info } = useUserInfo({ refetchOnMount: false });
   const { data: subscribe } = useSubscribe({ enabled: false });
   const cancelOrder = useCancelOrderMutation();
-  const [period, setPeriod] = useState<PlanPeriod | null>(null);
+  const [period, setPeriod] = useState<PlanPeriod | undefined>();
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const couponRef = useRef<HTMLInputElement>(null);
@@ -101,7 +101,7 @@ export default function PlanCheckoutPage() {
 
   const saveOrder = async () => {
     if (!planQuery.data) return;
-    const currentPeriod = (period ?? getDefaultPeriod(planQuery.data)) as PlanPeriod;
+    const currentPeriod = period ?? getDefaultPeriod(planQuery.data);
     setSubmitting(true);
     try {
       const tradeNo = await user.saveOrder(apiClient, {
@@ -372,8 +372,8 @@ export default function PlanCheckoutPage() {
   );
 }
 
-function getDefaultPeriod(plan: Plan): PlanPeriod | null {
-  let period: PlanPeriod | null = null;
+function getDefaultPeriod(plan: Plan): PlanPeriod | undefined {
+  let period: PlanPeriod | undefined;
   for (const key of Object.keys(plan).reverse()) {
     if (key in PERIOD_LABELS && plan[key as PlanPeriod] !== null) {
       period = key as PlanPeriod;
