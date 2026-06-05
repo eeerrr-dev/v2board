@@ -146,8 +146,9 @@ describe('PaymentsPage legacy payment config', () => {
   it('keeps the legacy payment table without an explicit rowKey', () => {
     expect(source).toContain('tableLayout="auto"');
     expect(source).toContain('pagination={false}');
-    expect(source).toContain('data-sort-index');
+    expect(source).toContain('<LegacyPaymentDragSort');
     expect(source).not.toContain('data-row-key');
+    expect(source).not.toContain('data-sort-index');
     expect(source).not.toContain('rowKey="id"');
   });
 
@@ -175,19 +176,26 @@ describe('PaymentsPage legacy payment config', () => {
     expect(source).not.toContain('onOk: () => drop.mutateAsync(row.id)');
   });
 
-  it('uses the original drag-index sorting flow instead of business row keys', () => {
-    expect(source).toContain('<MenuOutlined\n            draggable');
-    expect(source).toContain("onDragStart={() => {\n              dragIndex.current = index;");
-    expect(source).not.toContain('<span\n            draggable');
-    expect(source).toContain('const to = Number(props[\'data-sort-index\']);');
-    expect(source).toContain('if (from < to) {');
-    expect(source).toContain('next.splice(to + 1, 0, moved);');
-    expect(source).toContain('next.splice(from, 1);');
-    expect(source).toContain('next.splice(to, 0, moved);');
-    expect(source).toContain('next.splice(from + 1, 1);');
+  it('uses the original drag-sort wrapper instead of business row keys', () => {
+    expect(source).toContain('function LegacyPaymentDragSort({');
+    expect(source).toContain('LEGACY_DRAG_LINE_STYLE');
+    expect(source).toContain('<div role="presentation" onMouseDown={onMouseDown} ref={dragList}>');
+    expect(source).toContain('nodeSelector="tr"');
+    expect(source).toContain('handleSelector="i"');
+    expect(source).toContain('handle.setAttribute(\'draggable\', \'false\');');
+    expect(source).toContain('dragNode.setAttribute(\'draggable\', \'true\');');
+    expect(source).toContain('<i aria-label="icon: menu" className="anticon anticon-menu">');
+    expect(source).not.toContain('<MenuOutlined');
+    expect(source).not.toContain('dragIndex.current');
+    expect(source).not.toContain('onDrop={onDrop}');
+    expect(source).toContain('if (fromIndex < toIndex) {');
+    expect(source).toContain('next.splice(toIndex + 1, 0, moved);');
+    expect(source).toContain('next.splice(fromIndex, 1);');
+    expect(source).toContain('next.splice(toIndex, 0, moved);');
+    expect(source).toContain('next.splice(fromIndex + 1, 1);');
     expect(source).toContain('sort.mutate(next.map((payment) => payment.id),');
     expect(source).toContain(
-      'onSuccess: () => {\n                void payments.refetch().finally(() => {\n                  setLegacySortLoading(false);\n                });\n              },',
+      'onSuccess: () => {\n        void payments.refetch().finally(() => {\n          setLegacySortLoading(false);\n        });\n      },',
     );
   });
 
