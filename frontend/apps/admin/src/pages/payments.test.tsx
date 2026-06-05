@@ -6,6 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 import PaymentsPage from './payments';
 
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'payments.tsx'), 'utf8');
+const legacyDragSortSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../components/legacy-drag-sort.tsx'),
+  'utf8',
+);
 const queriesSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'),
   'utf8',
@@ -146,7 +150,7 @@ describe('PaymentsPage legacy payment config', () => {
   it('keeps the legacy payment table without an explicit rowKey', () => {
     expect(source).toContain('tableLayout="auto"');
     expect(source).toContain('pagination={false}');
-    expect(source).toContain('<LegacyPaymentDragSort');
+    expect(source).toContain('<LegacyDragSort');
     expect(source).not.toContain('data-row-key');
     expect(source).not.toContain('data-sort-index');
     expect(source).not.toContain('rowKey="id"');
@@ -177,14 +181,18 @@ describe('PaymentsPage legacy payment config', () => {
   });
 
   it('uses the original drag-sort wrapper instead of business row keys', () => {
-    expect(source).toContain('function LegacyPaymentDragSort({');
-    expect(source).toContain('LEGACY_DRAG_LINE_STYLE');
-    expect(source).toContain('<div role="presentation" onMouseDown={onMouseDown} ref={dragList}>');
+    expect(source).toContain("import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';");
+    expect(source).toContain('<LegacyDragSort');
+    expect(source).toContain('<LegacyMenuIcon />');
+    expect(source).not.toContain('function LegacyPaymentDragSort({');
+    expect(legacyDragSortSource).toContain('export function LegacyDragSort({');
+    expect(legacyDragSortSource).toContain('LEGACY_DRAG_LINE_STYLE');
+    expect(legacyDragSortSource).toContain('<div role="presentation" onMouseDown={onMouseDown} ref={dragList}>');
     expect(source).toContain('nodeSelector="tr"');
     expect(source).toContain('handleSelector="i"');
-    expect(source).toContain('handle.setAttribute(\'draggable\', \'false\');');
-    expect(source).toContain('dragNode.setAttribute(\'draggable\', \'true\');');
-    expect(source).toContain('<i aria-label="icon: menu" className="anticon anticon-menu">');
+    expect(legacyDragSortSource).toContain('handle.setAttribute(\'draggable\', \'false\');');
+    expect(legacyDragSortSource).toContain('dragNode.setAttribute(\'draggable\', \'true\');');
+    expect(legacyDragSortSource).toContain('<i aria-label="图标: menu" className="anticon anticon-menu">');
     expect(source).not.toContain('<MenuOutlined');
     expect(source).not.toContain('dragIndex.current');
     expect(source).not.toContain('onDrop={onDrop}');
