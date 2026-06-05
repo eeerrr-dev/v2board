@@ -179,6 +179,22 @@ function getFallbackHash(options: LegacyHashRouteOptions, hasAuth = hasLegacyAut
   return `#${hasAuth ? options.authenticatedFallback : options.guestFallback}`;
 }
 
+function normalizeEmptyRootUrl(current: URL, options: LegacyHashRouteOptions): boolean {
+  const rawHash = current.hash.startsWith('#') ? current.hash.slice(1) : '';
+  const routeSource = rawHash || current.pathname;
+  const nextHash = `#${getNormalizedLegacyHashPath(routeSource, options)}`;
+  const nextPathname =
+    options.canonicalPath === undefined
+      ? current.pathname
+      : normalizeCanonicalPath(options.canonicalPath);
+
+  if (current.pathname === nextPathname && current.hash === nextHash) return false;
+
+  current.pathname = nextPathname;
+  current.hash = nextHash;
+  return true;
+}
+
 export function installLegacyWhiteScreenRecovery(
   options: LegacyHashRouteOptions,
   config: LegacyWhiteScreenRecoveryConfig = {},
@@ -203,25 +219,30 @@ export function installLegacyWhiteScreenRecovery(
     const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
     const hasAuth = hasLegacyAuth(options);
     const fallbackHash = getFallbackHash(options, hasAuth);
+    current.searchParams.set('__v2board_recover', String(now()));
+
+    if (normalizeEmptyRootUrl(current, options)) {
+      window.sessionStorage.setItem(key, String(attempts + 1));
+      replace(current.toString());
+      return;
+    }
+
     if (attempts >= 2) {
       if (current.hash === fallbackHash) {
         if (!hasAuth || fallbackHash !== `#${options.authenticatedFallback}`) return;
         window.localStorage.removeItem(getAuthStorageKey(options));
         window.sessionStorage.setItem(key, String(attempts + 1));
-        current.searchParams.set('__v2board_recover', String(now()));
         current.hash = `#${options.guestFallback}`;
         replace(current.toString());
         return;
       }
       window.sessionStorage.setItem(key, String(attempts + 1));
-      current.searchParams.set('__v2board_recover', String(now()));
       current.hash = fallbackHash;
       replace(current.toString());
       return;
     }
 
     window.sessionStorage.setItem(key, String(attempts + 1));
-    current.searchParams.set('__v2board_recover', String(now()));
 
     if (attempts > 0) {
       current.hash = fallbackHash;

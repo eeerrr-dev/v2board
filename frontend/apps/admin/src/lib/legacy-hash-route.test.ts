@@ -309,10 +309,31 @@ describe('normalizeLegacyHashRoute', () => {
     expect(window.location.hash).toBe('#/login/dashboard');
   });
 
-  it('reloads once when the React root is empty after a route change', () => {
+  it('normalizes a broken empty route before reloading the same blank URL', () => {
     vi.useFakeTimers();
     document.body.innerHTML = '<div id="root"></div>';
     setUrl('/#/login/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      now: () => 123,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_recover', '123');
+    expected.hash = '#/login';
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
+  it('reloads once when the React root is empty on an already normalized route', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<div id="root"></div>';
+    setUrl('/#/login');
     const replace = vi.fn();
     const dispose = installLegacyWhiteScreenRecovery(options, {
       delay: 10,
