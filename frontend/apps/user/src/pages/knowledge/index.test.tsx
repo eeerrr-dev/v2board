@@ -276,6 +276,20 @@ describe('KnowledgePage legacy interactions', () => {
     expect(mocks.knowledgeArgs).toContainEqual({ language: 'zh-CN', keyword: 'router' });
   });
 
+  it('shows the legacy list spinner only after the mount fetch dispatch equivalent', async () => {
+    mocks.fetching = true;
+
+    await act(async () => {
+      root!.render(<KnowledgePage />);
+      await Promise.resolve();
+    });
+
+    expect(container.innerHTML).toContain('v2board-knowledge-search-bar');
+    expect(container.innerHTML).toContain('spinner-grow text-primary');
+    expect(container.innerHTML).toContain('Loading...');
+    expect(container.innerHTML).not.toContain('block block-rounded ');
+  });
+
   it('opens the article drawer from the URL id and locks body scrolling', async () => {
     mocks.searchParams = new URLSearchParams('id=2');
 
@@ -371,5 +385,31 @@ describe('KnowledgePage legacy interactions', () => {
     });
 
     expect(mocks.detailRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the previous article title while a legacy jump fetch is loading', async () => {
+    await act(async () => {
+      root!.render(<KnowledgePage />);
+      await Promise.resolve();
+    });
+
+    const item = container.querySelector('.list-group-item') as HTMLElement;
+    await act(async () => {
+      item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(document.body.innerHTML).toContain('Copy Article');
+
+    mocks.detailFetching = true;
+    await act(async () => {
+      window.jump?.(2);
+      root!.render(<KnowledgePage />);
+      await Promise.resolve();
+    });
+
+    expect(document.body.innerHTML).toContain('Copy Article');
+    expect(document.body.innerHTML).not.toContain('Router Guide');
+    expect(document.body.innerHTML).toContain('anticon anticon-loading');
   });
 });
