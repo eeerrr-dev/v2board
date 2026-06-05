@@ -345,6 +345,7 @@ describe('ConfigPage legacy theme config', () => {
     expect(html).toContain('站点名称');
     expect(html).toContain('用于显示需要站点名称的地方。');
     expect(html).toContain('class="form-control"');
+    expect(html).toContain('<textarea rows="4" type="text" class="form-control"');
     expect(html).toContain('v2board-config-children');
     expect(html).not.toContain('ant-card');
     expect(html).not.toContain('ant-typography');
@@ -507,6 +508,7 @@ describe('ConfigPage legacy theme config', () => {
 
     expect(source).toContain('defaultValue={toText(value)}');
     expect(source).not.toContain('value={toText(value)}');
+    expect(source).toContain("{...{ type: 'text' }}");
     expect(source).toContain(
       "defaultValue={legacySelectValue(value('frontend', 'frontend_theme_color'))}",
     );

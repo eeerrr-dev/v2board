@@ -1349,6 +1349,7 @@ function LegacyTextarea({
   return (
     <textarea
       rows={rows}
+      {...{ type: 'text' }}
       className="form-control"
       placeholder={placeholder}
       defaultValue={toText(value)}
