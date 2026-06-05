@@ -81,12 +81,17 @@ describe('admin api legacy path resolution', () => {
     }
   });
 
-  it('clears auth and redirects the current admin entry pathname on 403', () => {
+  it('clears auth and redirects once to the hash login route on 403', () => {
     expect(apiSource).toContain('logout();');
+    expect(apiSource).toContain('let redirectingToLogin = false;');
+    expect(apiSource).toContain('if (redirectingToLogin) return;');
+    expect(apiSource).toContain('redirectingToLogin = true;');
     expect(apiSource).toContain(
+      'window.location.href = `${window.location.origin}${window.location.pathname}#/login`;',
+    );
+    expect(apiSource).not.toContain(
       'window.location.href = window.location.origin + window.location.pathname;',
     );
-    expect(apiSource).not.toContain('redirectingToLogin');
     expect(apiSource).not.toContain('window.location.replace');
   });
 });

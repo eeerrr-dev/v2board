@@ -9,6 +9,14 @@ export function bindMessageApi(api: ReturnType<typeof App.useApp>['message']): v
   messageApi = api;
 }
 
+let redirectingToLogin = false;
+
+function redirectToLegacyLogin(): void {
+  if (redirectingToLogin) return;
+  redirectingToLogin = true;
+  window.location.href = `${window.location.origin}${window.location.pathname}#/login`;
+}
+
 export const apiClient = createApiClient({
   baseURL: getAdminApiBaseUrl(),
   getAuthData: () => getAuthData(),
@@ -16,7 +24,7 @@ export const apiClient = createApiClient({
   nullFormValue: 'empty',
   onUnauthorized: () => {
     logout();
-    window.location.href = window.location.origin + window.location.pathname;
+    redirectToLegacyLogin();
   },
   onError: (error) => {
     if (error.status === 0 || error.status >= 500) {
