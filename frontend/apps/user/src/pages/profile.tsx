@@ -22,6 +22,7 @@ import { legacyConfirm } from '@/components/legacy-confirm';
 import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
 import { legacyCopyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/legacy-toast';
+import { logout } from '@/lib/auth';
 
 export default function ProfilePage() {
   const { t } = useTranslation();
@@ -97,6 +98,7 @@ export default function ProfilePage() {
     try {
       await changePassword.mutateAsync({ oldPassword, newPassword });
       toast.success('修改成功，请重新登陆');
+      logout();
       navigate('/login');
     } catch {}
   };

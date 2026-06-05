@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   legacyConfirm: vi.fn(),
   saveOrder: vi.fn(),
   copyText: vi.fn(),
+  logout: vi.fn(),
   userInfo: {
     balance: 0,
     auto_renewal: 0,
@@ -172,6 +173,10 @@ vi.mock('@/lib/legacy-toast', () => ({
   },
 }));
 
+vi.mock('@/lib/auth', () => ({
+  logout: mocks.logout,
+}));
+
 vi.mock('@/lib/api', () => ({
   apiClient: {},
 }));
@@ -203,6 +208,7 @@ describe('ProfilePage legacy gift card flow', () => {
     mocks.legacyConfirm.mockReset();
     mocks.saveOrder.mockReset();
     mocks.copyText.mockClear();
+    mocks.logout.mockClear();
     mocks.userInfo = {
       balance: 0,
       auto_renewal: 0,
@@ -402,6 +408,56 @@ describe('ProfilePage legacy gift card flow', () => {
     expect(source).not.toContain("newPasswordRef.current?.value ?? ''");
     expect(source).not.toContain("confirmPasswordRef.current?.value ?? ''");
     expect(source).not.toContain("giftCardRef.current?.value ?? ''");
+  });
+
+  it('clears the invalidated local auth before navigating to login after password change', async () => {
+    mocks.changePassword.mockResolvedValue(true);
+
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    const passwordInputs = container.querySelectorAll<HTMLInputElement>('input[type="password"]');
+    expect(passwordInputs).toHaveLength(3);
+
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        passwordInputs[0],
+        'old-password',
+      );
+      passwordInputs[0]!.dispatchEvent(new Event('input', { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        passwordInputs[1],
+        'new-password',
+      );
+      passwordInputs[1]!.dispatchEvent(new Event('input', { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        passwordInputs[2],
+        'new-password',
+      );
+      passwordInputs[2]!.dispatchEvent(new Event('input', { bubbles: true }));
+      const saveButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === '保存',
+      );
+      saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.changePassword).toHaveBeenCalledWith({
+      oldPassword: 'old-password',
+      newPassword: 'new-password',
+    });
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('修改成功，请重新登陆');
+    expect(mocks.logout).toHaveBeenCalledTimes(1);
+    expect(mocks.navigate).toHaveBeenCalledWith('/login');
+    expect(mocks.toastSuccess.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.logout.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.logout.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.navigate.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('submits the legacy deposit order payload from the confirm-style modal', async () => {
