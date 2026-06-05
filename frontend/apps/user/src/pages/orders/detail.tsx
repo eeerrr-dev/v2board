@@ -64,6 +64,7 @@ export default function OrderDetailPage() {
   // result clears the timer, hides the QR modal and refetches the detail. A ref keeps this to
   // one start per trade_no so the refetch (which re-runs this effect) cannot restart the poll.
   const checkedRef = useRef<string | null>(null);
+  const previousOrderStatusRef = useRef<{ tradeNo?: string; status?: number }>({});
   useEffect(() => {
     if (!tradeNo || !hasLoadedOrder) return;
     if (checkedRef.current === tradeNo) return;
@@ -103,9 +104,23 @@ export default function OrderDetailPage() {
   }, [methodId, orderQuery.data, paymentMethods]);
 
   useEffect(() => {
-    if (orderQuery.data?.status !== 0) {
+    const status = orderQuery.data?.status;
+    const previous =
+      previousOrderStatusRef.current.tradeNo === tradeNo
+        ? previousOrderStatusRef.current.status
+        : undefined;
+
+    if (status !== 0) {
       setQrcodeVisible(false);
     }
+    if (previous === 0 && status !== 0) {
+      // The bundled poll success refetches order/detail without re-running
+      // getPaymentMethod/changePaymentMethod, so the locally injected
+      // pre_handling_amount disappears unless the fresh detail includes it.
+      setPreHandlingAmount(undefined);
+    }
+
+    previousOrderStatusRef.current = { tradeNo, status };
   }, [orderQuery.data?.status, tradeNo]);
 
   useEffect(
@@ -158,7 +173,7 @@ export default function OrderDetailPage() {
   const legacyPreHandlingAmount =
     preHandlingAmount ??
     order.pre_handling_amount ??
-    calculatePreHandlingAmount(order, selectedPayment);
+    (methodId === undefined ? calculatePreHandlingAmount(order, selectedPayment) : 0);
   const grandTotal = order.total_amount + (legacyPreHandlingAmount || 0);
 
   const onPay = async () => {

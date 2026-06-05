@@ -370,6 +370,39 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     expect(document.querySelector('.v2board-payment-qrcode svg')).not.toBeNull();
   });
 
+  it('drops the locally injected payment fee after the paid poll detail refresh replaces the order', async () => {
+    paymentState.data = [
+      {
+        id: 9,
+        name: 'Fee Pay',
+        payment: 'LegacyPay',
+        handling_fee_fixed: 150,
+        handling_fee_percent: 10,
+      },
+    ];
+
+    await act(async () => {
+      root.render(<OrderDetailPage />);
+    });
+
+    expect(document.body.textContent).toContain('order.handling_fee');
+    expect(document.body.textContent).toContain('2.50');
+
+    orderState.data = {
+      ...orderState.data!,
+      status: 3,
+    };
+
+    await act(async () => {
+      root.render(<OrderDetailPage />);
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).not.toContain('order.handling_fee');
+    expect(orderDetailSource).toContain('previous === 0 && status !== 0');
+    expect(orderDetailSource).toContain('setPreHandlingAmount(undefined);');
+  });
+
   it('keeps polling after the pending order detail object refreshes', async () => {
     checkOrder.mockResolvedValue(0);
 
