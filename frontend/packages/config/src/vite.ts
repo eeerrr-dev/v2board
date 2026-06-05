@@ -105,6 +105,74 @@ export function stripViteClientPlugin(): Plugin {
   };
 }
 
+const VITE_CLIENT_RUNTIME_STUB = `
+const styles = new Map();
+
+export function updateStyle(id, content) {
+  let style = styles.get(id);
+  if (!style) {
+    style = document.createElement('style');
+    style.setAttribute('data-vite-dev-id', id);
+    document.head.appendChild(style);
+    styles.set(id, style);
+  }
+  style.textContent = content;
+}
+
+export function removeStyle(id) {
+  const style = styles.get(id);
+  if (!style) return;
+  style.remove();
+  styles.delete(id);
+}
+
+export function createHotContext() {
+  const hot = {
+    accept() {},
+    decline() {},
+    dispose() {},
+    invalidate() {},
+    off() {},
+    on() {},
+    prune() {},
+    send() {},
+    data: {},
+  };
+  return hot;
+}
+
+export function injectQuery(url, queryToInject) {
+  if (url[0] !== '.' && url[0] !== '/') return url;
+  const pathname = url.replace(/[?#].*$/, '');
+  const parsed = new URL(url, 'http://vite.dev');
+  return pathname + '?' + queryToInject + (parsed.search ? '&' + parsed.search.slice(1) : '') + (parsed.hash || '');
+}
+
+export class ErrorOverlay extends HTMLElement {}
+
+export default {};
+`;
+
+export function legacyViteClientStubPlugin(): Plugin {
+  return {
+    name: 'legacy-vite-client-stub',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const pathname = (req.url ?? '').split('?')[0];
+        if (pathname !== '/@vite/client') {
+          next();
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+        res.end(VITE_CLIENT_RUNTIME_STUB);
+      });
+    },
+  };
+}
+
 export function buildAppViteConfig(options: AppViteOptions): UserConfig {
   const apiTarget = options.apiTarget ?? process.env.VITE_API_BASE ?? 'http://127.0.0.1:8000';
   return {

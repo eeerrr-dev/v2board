@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import {
   buildAppViteConfig,
+  legacyViteClientStubPlugin,
   legacyThemePlugin,
   stripViteClientPlugin,
 } from '@v2board/config/vite';
@@ -10,7 +11,7 @@ import {
 export default defineConfig({
   ...buildAppViteConfig({ port: 5173 }),
   cacheDir: '../../node_modules/.vite/user',
-  plugins: [react(), stripViteClientPlugin(), legacyThemePlugin()],
+  plugins: [legacyViteClientStubPlugin(), react(), stripViteClientPlugin(), legacyThemePlugin()],
   optimizeDeps: {
     include: [
       '@tanstack/react-query',

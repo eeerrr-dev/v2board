@@ -16,6 +16,7 @@ describe('user Vite dev optimizer', () => {
   it('keeps user optimized deps isolated and fully declared for stable page clicks', () => {
     expect(viteConfigSource).toContain("cacheDir: '../../node_modules/.vite/user'");
     expect(viteConfigSource).toContain('optimizeDeps: {');
+    expect(viteConfigSource).toContain('legacyViteClientStubPlugin()');
     expect(viteConfigSource).toContain('stripViteClientPlugin()');
     expect(viteConfigSource).toContain("'react-dom'");
     expect(viteConfigSource).toContain("'react/jsx-dev-runtime'");
@@ -28,6 +29,11 @@ describe('user Vite dev optimizer', () => {
     expect(sharedViteConfigSource).toContain('hmr: false');
     expect(sharedViteConfigSource).not.toContain('overlay: false');
     expect(sharedViteConfigSource).toContain('export function stripViteClientPlugin()');
+    expect(sharedViteConfigSource).toContain('export function legacyViteClientStubPlugin()');
+    expect(sharedViteConfigSource).toContain('export function updateStyle');
+    expect(sharedViteConfigSource).toContain('export function createHotContext');
+    expect(sharedViteConfigSource).toContain('export function injectQuery');
+    expect(sharedViteConfigSource).toContain('export class ErrorOverlay');
     expect(sharedViteConfigSource).toContain('/@vite\\/client');
   });
 });

@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
   buildAppViteConfig,
   legacyAdminAssetsPlugin,
+  legacyViteClientStubPlugin,
   localHorizonStatsPlugin,
   stripViteClientPlugin,
 } from '@v2board/config/vite';
@@ -11,7 +12,13 @@ import {
 export default defineConfig({
   ...buildAppViteConfig({ port: 5174 }),
   cacheDir: '../../node_modules/.vite/admin',
-  plugins: [react(), stripViteClientPlugin(), legacyAdminAssetsPlugin(), localHorizonStatsPlugin()],
+  plugins: [
+    legacyViteClientStubPlugin(),
+    react(),
+    stripViteClientPlugin(),
+    legacyAdminAssetsPlugin(),
+    localHorizonStatsPlugin(),
+  ],
   optimizeDeps: {
     include: [
       '@ant-design/icons',
