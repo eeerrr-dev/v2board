@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
-import { App, Badge, Input, Radio, Table, Tooltip } from 'antd';
+import { App, Badge, Empty, Input, Radio, Table, Tooltip } from 'antd';
 import type { TablePaginationConfig, TableProps } from 'antd';
 import type { ColumnType, FilterValue } from 'antd/es/table/interface';
 import dayjs from 'dayjs';
@@ -247,6 +247,14 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
 
   const current = ticket.data;
   useAdminUserInfo(current?.user_id);
+
+  if (ticket.isError && !current) {
+    return (
+      <div className="bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1">
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
+      </div>
+    );
+  }
 
   return (
     <div>

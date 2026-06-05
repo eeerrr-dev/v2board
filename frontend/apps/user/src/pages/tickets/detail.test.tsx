@@ -5,11 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import TicketDetailPage from './detail';
 
-const state = vi.hoisted(() => ({
-  refetch: vi.fn(),
-  replyMutateAsync: vi.fn(),
-  replyPending: false,
-  ticket: {
+const state = vi.hoisted(() => {
+  const makeTicket = () => ({
     subject: 'Need help',
     message: [
       {
@@ -31,8 +28,17 @@ const state = vi.hoisted(() => ({
         updated_at: 1_700_000_060,
       },
     ],
-  },
-}));
+  });
+
+  return {
+    makeTicket,
+    refetch: vi.fn(),
+    replyMutateAsync: vi.fn(),
+    replyPending: false,
+    ticket: makeTicket() as ReturnType<typeof makeTicket> | undefined,
+    ticketError: false,
+  };
+});
 
 const toastMocks = vi.hoisted(() => ({
   loading: vi.fn(),
@@ -49,12 +55,16 @@ vi.mock('react-router-dom', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => labels[key] ?? key }),
+  useTranslation: () => ({
+    i18n: { language: 'zh-CN' },
+    t: (key: string) => labels[key] ?? key,
+  }),
 }));
 
 vi.mock('@/lib/queries', () => ({
   useTicket: () => ({
     data: state.ticket,
+    isError: state.ticketError,
     refetch: state.refetch,
   }),
   useReplyTicketMutation: () => ({
@@ -69,6 +79,11 @@ vi.mock('@/lib/legacy-toast', () => ({
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
+
+afterEach(() => {
+  state.ticket = state.makeTicket();
+  state.ticketError = false;
+});
 
 describe('TicketDetailPage bundled-theme chat view', () => {
   it('keeps the bundled-theme route ticket id as the fetch and reply input', () => {
@@ -116,6 +131,17 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     expect(html).toContain('js-chat-form block-content p-2 bg-body-dark input___1j_ND');
     expect(html).toContain('js-chat-input bg-body-dark border-0 form-control form-control-alt');
     expect(html).toContain('placeholder="输入内容回复工单..."');
+  });
+
+  it('shows the legacy empty state instead of a blank popup when the ticket fetch fails', () => {
+    state.ticket = undefined;
+    state.ticketError = true;
+
+    const html = renderToStaticMarkup(<TicketDetailPage />);
+
+    expect(html).toContain('class="ant-empty ant-empty-normal"');
+    expect(html).toContain('暂无数据');
+    expect(html).not.toContain('js-chat-input');
   });
 });
 

@@ -14,13 +14,50 @@ const queriesSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)),
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-const mocks = vi.hoisted(() => ({
-  params: {} as Record<string, string>,
-  closeTicketMutate: vi.fn(),
-  ticketRefetch: vi.fn(),
-  ticketQueries: [] as Array<Record<string, unknown>>,
-  adminUserInfoIds: [] as Array<number | null | undefined>,
-}));
+const mocks = vi.hoisted(() => {
+  const makeAdminTicket = () => ({
+    id: 1,
+    user_id: 1,
+    subject: '支付问题',
+    level: 2,
+    status: 0,
+    reply_status: 0,
+    last_reply_user_id: null,
+    created_at: 1700000000,
+    updated_at: 1700086400,
+    message: [
+      {
+        id: 1,
+        user_id: 1,
+        ticket_id: 1,
+        message: '用户消息',
+        is_me: false,
+        created_at: 1700000000,
+        updated_at: 1700000000,
+      },
+      {
+        id: 2,
+        user_id: 1,
+        ticket_id: 1,
+        message: '客服回复',
+        is_me: true,
+        created_at: 1700086400,
+        updated_at: 1700086400,
+      },
+    ],
+  });
+
+  return {
+    makeAdminTicket,
+    params: {} as Record<string, string>,
+    closeTicketMutate: vi.fn(),
+    ticketRefetch: vi.fn(),
+    ticketQueries: [] as Array<Record<string, unknown>>,
+    adminUserInfoIds: [] as Array<number | null | undefined>,
+    adminTicket: makeAdminTicket() as ReturnType<typeof makeAdminTicket> | undefined,
+    adminTicketError: false,
+  };
+});
 
 vi.mock('react-router-dom', () => ({
   useParams: () => mocks.params,
@@ -67,37 +104,8 @@ vi.mock('@/lib/queries', () => ({
   }),
   useAdminTicket: () => ({
     refetch: mocks.ticketRefetch,
-    data: {
-      id: 1,
-      user_id: 1,
-      subject: '支付问题',
-      level: 2,
-      status: 0,
-      reply_status: 0,
-      last_reply_user_id: null,
-      created_at: 1700000000,
-      updated_at: 1700086400,
-      message: [
-        {
-          id: 1,
-          user_id: 1,
-          ticket_id: 1,
-          message: '用户消息',
-          is_me: false,
-          created_at: 1700000000,
-          updated_at: 1700000000,
-        },
-        {
-          id: 2,
-          user_id: 1,
-          ticket_id: 1,
-          message: '客服回复',
-          is_me: true,
-          created_at: 1700086400,
-          updated_at: 1700086400,
-        },
-      ],
-    },
+    data: mocks.adminTicket,
+    isError: mocks.adminTicketError,
   }),
   useReplyTicketMutation: () => ({
     isPending: false,
@@ -145,6 +153,8 @@ beforeEach(() => {
   mocks.ticketRefetch.mockClear();
   mocks.ticketQueries = [];
   mocks.adminUserInfoIds = [];
+  mocks.adminTicket = mocks.makeAdminTicket();
+  mocks.adminTicketError = false;
 });
 
 afterEach(() => {
@@ -378,6 +388,19 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(ticketsSource).toContain('messageApi.destroy()');
     expect(html).not.toContain('ant-drawer');
     expect(html).not.toContain('ant-card');
+  });
+
+  it('shows an empty state instead of a blank admin chat window when ticket fetch fails', () => {
+    mocks.params = { ticket_id: '1' };
+    mocks.adminTicket = undefined;
+    mocks.adminTicketError = true;
+
+    const html = renderToStaticMarkup(<TicketsPage />);
+
+    expect(html).toContain('ant-empty');
+    expect(html).toContain('暂无数据');
+    expect(html).not.toContain('js-chat-input');
+    expect(mocks.adminUserInfoIds).toContain(undefined);
   });
 
   it('keeps the old chat reply message state lifetime', () => {
