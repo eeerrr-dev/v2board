@@ -304,6 +304,14 @@ describe('legacy i18n dictionaries', () => {
       '已用 1 GB / 總計 10 GB',
     );
     expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('當前已用流量達 80%');
+    expect(i18n.t('dashboard.transfer_to_balance')).toBe('推廣佣金劃轉至餘額');
+    expect(i18n.t('invite.manage')).toBe('邀請碼管理');
+    expect(i18n.t('invite.generate')).toBe('生成邀請碼');
+    expect(i18n.t('invite.withdraw')).toBe('申請提現');
+    expect(i18n.t('invite.withdraw_account_placeholder')).toBe('請輸入提現賬號');
+    expect(i18n.t('invite.current_commission_balance')).toBe('當前推廣佣金餘額');
+    expect(i18n.t('invite.transfer_placeholder')).toBe('請輸入需要劃轉到餘額的金額');
+    expect(i18n.t('invite.withdraw_button')).toBe('推廣佣金提現');
     expect(i18n.t('invite.transfer_notice', { title: 'V2Board' })).toBe(
       '劃轉后的餘額僅用於 V2Board 消費使用',
     );
@@ -352,6 +360,20 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe(
       'Dữ liệu hiện đang sử dụng lên đến 80%',
     );
+    expect(i18n.t('dashboard.transfer_to_balance')).toBe(
+      'Chuyển khoản hoa hồng giới thiệu đến số dư',
+    );
+    expect(i18n.t('invite.manage')).toBe('Quản lý mã mời');
+    expect(i18n.t('invite.generate')).toBe('Tạo mã mời');
+    expect(i18n.t('invite.withdraw')).toBe('Yêu cầu rút tiền');
+    expect(i18n.t('invite.withdraw_account_placeholder')).toBe('Hãy chọn tài khoản rút tiền');
+    expect(i18n.t('invite.current_commission_balance')).toBe(
+      'Số dư hoa hồng giới thiệu hiện tại',
+    );
+    expect(i18n.t('invite.transfer_placeholder')).toBe(
+      'Hãy nhậo số tiền muốn chuyển đến số dư',
+    );
+    expect(i18n.t('invite.withdraw_button')).toBe('Rút tiền hoa hồng giới thiệu');
     expect(i18n.t('invite.transfer_notice', { title: 'V2Board' })).toBe(
       'Số dư sau khi chuyển khoản chỉ dùng để tiêu dùng V2Board',
     );
