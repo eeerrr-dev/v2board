@@ -15,7 +15,7 @@ const sharedViteConfigSource = readFileSync(
 describe('user Vite dev optimizer', () => {
   it('keeps user optimized deps isolated and fully declared for stable page clicks', () => {
     expect(viteConfigSource).toContain(
-      "cacheDir: '../../node_modules/.vite/user-white-screen-recovery-14'",
+      "cacheDir: '../../node_modules/.vite/user-white-screen-recovery-15'",
     );
     expect(viteConfigSource).toContain('optimizeDeps: {');
     expect(viteConfigSource).toContain('legacyViteClientStubPlugin()');
@@ -23,7 +23,7 @@ describe('user Vite dev optimizer', () => {
     expect(viteConfigSource).toContain("'react-dom'");
     expect(viteConfigSource).toContain("'react/jsx-dev-runtime'");
     expect(viteConfigSource).toContain("'react/jsx-runtime'");
-    expect(viteConfigSource).toContain('holdUntilCrawlEnd: false');
+    expect(viteConfigSource).toContain('holdUntilCrawlEnd: true');
     expect(viteConfigSource).toContain('noDiscovery: true');
   });
 

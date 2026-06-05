@@ -11,7 +11,7 @@ import {
 
 export default defineConfig({
   ...buildAppViteConfig({ port: 5174 }),
-  cacheDir: '../../node_modules/.vite/admin-white-screen-recovery-14',
+  cacheDir: '../../node_modules/.vite/admin-white-screen-recovery-15',
   plugins: [
     legacyViteClientStubPlugin(),
     react(),
@@ -39,7 +39,7 @@ export default defineConfig({
       'react-i18next',
       'react-router-dom',
     ],
-    holdUntilCrawlEnd: false,
+    holdUntilCrawlEnd: true,
     noDiscovery: true,
   },
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },

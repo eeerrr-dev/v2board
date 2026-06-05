@@ -10,7 +10,7 @@ import {
 
 export default defineConfig({
   ...buildAppViteConfig({ port: 5173 }),
-  cacheDir: '../../node_modules/.vite/user-white-screen-recovery-14',
+  cacheDir: '../../node_modules/.vite/user-white-screen-recovery-15',
   plugins: [legacyViteClientStubPlugin(), react(), stripViteClientPlugin(), legacyThemePlugin()],
   optimizeDeps: {
     include: [
@@ -29,7 +29,7 @@ export default defineConfig({
       'react-router-dom',
       'tailwind-merge',
     ],
-    holdUntilCrawlEnd: false,
+    holdUntilCrawlEnd: true,
     noDiscovery: true,
   },
   resolve: {
