@@ -891,5 +891,5 @@ function legacyDaysUntil(timestamp: number | string | null | undefined) {
 
 function isLegacyRenewable(subscribe: ReturnType<typeof useSubscribe>['data']) {
   if (!subscribe?.plan?.renew) return false;
-  return Boolean(subscribe.plan.show || !isLegacyExpired(subscribe.expired_at));
+  return Boolean(!subscribe.plan.show || !isLegacyExpired(subscribe.expired_at));
 }

@@ -442,6 +442,73 @@ describe('DashboardPage bundled-theme actions', () => {
     expect(source).not.toContain('footer={null}');
   });
 
+  it('keeps expired visible renewed plans on the bundled buy-subscribe route', async () => {
+    mocks.subscribe = baseSubscribe({
+      expired_at: 1,
+      plan: { name: 'Pro', renew: true, reset_price: 100, show: true },
+    });
+
+    await renderDashboard();
+
+    expect(container.innerHTML).toContain('nav-main-link-icon si si-bag');
+    expect(container.innerHTML).not.toContain('续费订阅');
+    const shortcut = Array.from(container.querySelectorAll('.v2board-shortcuts-item')).find(
+      (item) => item.textContent?.includes('购买订阅'),
+    )!;
+    const expiredButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '购买订阅',
+    )!;
+
+    await act(async () => {
+      shortcut.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(mocks.navigate).toHaveBeenLastCalledWith('/plan');
+
+    await act(async () => {
+      expiredButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(mocks.navigate).toHaveBeenLastCalledWith('/plan');
+  });
+
+  it('keeps expired hidden renewed plans on the bundled renew route', async () => {
+    mocks.subscribe = baseSubscribe({
+      expired_at: 1,
+      plan: { name: 'Pro', renew: true, reset_price: 100, show: false },
+    });
+
+    await renderDashboard();
+
+    expect(container.innerHTML).toContain('nav-main-link-icon si si-clock');
+    expect(container.innerHTML).toContain('续费订阅');
+    const shortcut = Array.from(container.querySelectorAll('.v2board-shortcuts-item')).find(
+      (item) => item.textContent?.includes('续费订阅'),
+    )!;
+    const expiredButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '续费订阅',
+    )!;
+
+    await act(async () => {
+      shortcut.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(mocks.navigate).toHaveBeenLastCalledWith('/plan/1');
+
+    await act(async () => {
+      expiredButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(mocks.navigate).toHaveBeenLastCalledWith('/plan/1');
+  });
+
+  it('keeps the bundled-theme renewable helper formula', () => {
+    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
+
+    expect(source).toContain('!subscribe.plan.show || !isLegacyExpired(subscribe.expired_at)');
+    expect(source).not.toContain('return Boolean(subscribe.plan.show || !isLegacyExpired');
+  });
+
   it('creates the reset-traffic order with the original confirm options', async () => {
     await renderDashboard();
 
