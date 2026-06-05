@@ -24,7 +24,6 @@ const mocks = vi.hoisted(() => ({
   legacyConfirm: vi.fn(),
   saveOrder: vi.fn(),
   copyText: vi.fn(),
-  logout: vi.fn(),
   userInfo: {
     balance: 0,
     auto_renewal: 0,
@@ -173,10 +172,6 @@ vi.mock('@/lib/legacy-toast', () => ({
   },
 }));
 
-vi.mock('@/lib/auth', () => ({
-  logout: mocks.logout,
-}));
-
 vi.mock('@/lib/api', () => ({
   apiClient: {},
 }));
@@ -208,7 +203,6 @@ describe('ProfilePage legacy gift card flow', () => {
     mocks.legacyConfirm.mockReset();
     mocks.saveOrder.mockReset();
     mocks.copyText.mockClear();
-    mocks.logout.mockClear();
     mocks.userInfo = {
       balance: 0,
       auto_renewal: 0,
@@ -410,7 +404,7 @@ describe('ProfilePage legacy gift card flow', () => {
     expect(source).not.toContain("giftCardRef.current?.value ?? ''");
   });
 
-  it('clears the invalidated local auth before navigating to login after password change', async () => {
+  it('keeps the old password-change success flow without clearing local auth', async () => {
     mocks.changePassword.mockResolvedValue(true);
 
     await act(async () => {
@@ -450,14 +444,12 @@ describe('ProfilePage legacy gift card flow', () => {
       newPassword: 'new-password',
     });
     expect(mocks.toastSuccess).toHaveBeenCalledWith('修改成功，请重新登陆');
-    expect(mocks.logout).toHaveBeenCalledTimes(1);
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
     expect(mocks.toastSuccess.mock.invocationCallOrder[0]!).toBeLessThan(
-      mocks.logout.mock.invocationCallOrder[0]!,
-    );
-    expect(mocks.logout.mock.invocationCallOrder[0]!).toBeLessThan(
       mocks.navigate.mock.invocationCallOrder[0]!,
     );
+    expect(source).not.toContain("import { logout } from '@/lib/auth';");
+    expect(source).not.toContain('logout();');
   });
 
   it('submits the legacy deposit order payload from the confirm-style modal', async () => {
