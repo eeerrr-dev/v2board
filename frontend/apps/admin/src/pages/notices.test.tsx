@@ -66,7 +66,7 @@ describe('NoticesPage legacy notice manager', () => {
     expect(html).not.toContain('ant-typography');
   });
 
-  it('keeps the original notice save callback order after the page fetch', () => {
+  it('keeps the original notice save callback order without waiting for the page fetch', () => {
     const saveBlock = source.slice(
       source.indexOf('const saveNotice = async () => {'),
       source.indexOf('const columns: TableProps<Notice>'),
@@ -77,15 +77,15 @@ describe('NoticesPage legacy notice manager', () => {
     );
 
     expect(saveBlock).toContain('await save.mutateAsync({ ...submit });');
-    expect(saveBlock).toContain('await notices.refetch();');
+    expect(saveBlock).toContain('void notices.refetch();');
     expect(saveBlock).toContain('modalVisible();');
     expect(saveBlock.indexOf('await save.mutateAsync({ ...submit });')).toBeLessThan(
-      saveBlock.indexOf('await notices.refetch();'),
+      saveBlock.indexOf('void notices.refetch();'),
     );
-    expect(saveBlock.indexOf('await notices.refetch();')).toBeLessThan(
+    expect(saveBlock.indexOf('void notices.refetch();')).toBeLessThan(
       saveBlock.indexOf('modalVisible();'),
     );
-    expect(saveBlock).not.toContain('void notices.refetch();\n    modalVisible();');
+    expect(saveBlock).not.toContain('await notices.refetch();');
     expect(mutationBlock).not.toContain("queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })");
     expect(source).toContain("import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';");
     expect(source).toContain('const [saveLoading] = useState<boolean | undefined>(undefined);');
