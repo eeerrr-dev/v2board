@@ -117,15 +117,26 @@
           return storageKey + ':' + stableKey(url);
         }
 
-        function rootEmpty() {
-          var root = document.getElementById('root');
+        function elementEmpty(element) {
           return (
-            !root ||
-            (!root.textContent.trim() &&
-              !root.querySelector(
+            !element ||
+            (!element.textContent.trim() &&
+              !element.querySelector(
                 'a,button,input,select,textarea,img,svg,canvas,iframe,video,[role],[aria-label],.fa,.si,.ant-spin,[class*="loading"],[class*="spinner"]',
               ))
           );
+        }
+
+        function legacyMainEmpty(root) {
+          if (!root || !root.querySelector('#page-container')) return false;
+          var main =
+            root.querySelector('#main-container .content') || root.querySelector('#main-container');
+          return !!main && elementEmpty(main);
+        }
+
+        function appEmpty() {
+          var root = document.getElementById('root');
+          return elementEmpty(root) || legacyMainEmpty(root);
         }
 
         function renderFallback() {
@@ -161,11 +172,11 @@
         }
 
         function checkEmptyRoot() {
-          if (rootEmpty()) recover();
+          if (appEmpty()) recover();
         }
 
         function clearRenderedAttempt() {
-          if (!rootEmpty()) {
+          if (!appEmpty()) {
             window.sessionStorage.removeItem(recoveryKey(new URL(window.location.href)));
           }
         }
@@ -179,8 +190,19 @@
         window.addEventListener('vite:preloadError', recoverStaleModule);
         window.addEventListener('error', recoverStaleModule, true);
         window.addEventListener('unhandledrejection', recoverStaleModule);
+        window.addEventListener('hashchange', schedule);
+        window.addEventListener('popstate', schedule);
         document.addEventListener('DOMContentLoaded', schedule);
         window.addEventListener('load', schedule);
+        if (typeof MutationObserver !== 'undefined') {
+          var observerTarget = document.getElementById('root');
+          if (observerTarget) {
+            new MutationObserver(schedule).observe(observerTarget, {
+              childList: true,
+              subtree: true,
+            });
+          }
+        }
         schedule();
       })();
     </script>

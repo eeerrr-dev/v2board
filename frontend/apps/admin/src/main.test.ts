@@ -118,6 +118,12 @@ describe('admin legacy entrypoint', () => {
     expect(indexSource).toContain("var storageKey = 'v2board:dev-entry-recovery';");
     expect(indexSource).toContain("text.indexOf('outdated optimize dep') !== -1");
     expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1");
+    expect(indexSource).toContain('function legacyMainEmpty(root)');
+    expect(indexSource).toContain("root.querySelector('#main-container .content')");
+    expect(indexSource).toContain('return elementEmpty(root) || legacyMainEmpty(root);');
+    expect(indexSource).toContain("window.addEventListener('hashchange', schedule);");
+    expect(indexSource).toContain("window.addEventListener('popstate', schedule);");
+    expect(indexSource).toContain('new MutationObserver(schedule).observe(observerTarget');
     expect(indexSource).toContain("current.searchParams.set('__v2board_entry_recover'");
     expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
     expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery';")).toBeLessThan(
