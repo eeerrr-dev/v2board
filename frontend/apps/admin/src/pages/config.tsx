@@ -736,6 +736,7 @@ function SystemConfigPage() {
               <select
                 className="form-control"
                 value={legacySelectValue(value('subscribe', 'show_subscribe_method'))}
+                placeholder="请选择"
                 onChange={(event) =>
                   setConfigValue('subscribe', 'show_subscribe_method', event.target.value)
                 }
@@ -1376,6 +1377,7 @@ function OrderEventSelect({
       <select
         className="form-control"
         value={legacySelectValue(value)}
+        placeholder="请选择事件"
         onChange={(event) => onChange(event.target.value)}
       >
         <option value={0}>不执行任何动作</option>
