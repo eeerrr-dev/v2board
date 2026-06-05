@@ -93,6 +93,15 @@ describe('Admin LoginPage legacy behavior', () => {
     expect(html).not.toContain('Secure path');
   });
 
+  it('uses the bundled admin background_url short-circuit expression', () => {
+    expect(loginSource).toContain(
+      'const legacyBackgroundImage = (backgroundUrl && `url(${backgroundUrl})`) as string;',
+    );
+    expect(loginSource).not.toContain(
+      'backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined',
+    );
+  });
+
   it('keeps the original forgot-password modal options', () => {
     expect(loginSource).toContain("title: '忘记密码'");
     expect(loginSource).toContain("okText: '我知道了'");

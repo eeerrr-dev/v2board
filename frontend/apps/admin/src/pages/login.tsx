@@ -46,6 +46,7 @@ export default function LoginPage() {
   const logo = getAdminLogo();
   const title = getAdminTitle();
   const backgroundUrl = getAdminBackgroundUrl();
+  const legacyBackgroundImage = (backgroundUrl && `url(${backgroundUrl})`) as string;
   const redirectParam = params.get('redirect');
   const redirect = normalizeRedirectTarget(redirectParam);
 
@@ -95,7 +96,7 @@ export default function LoginPage() {
       <main id="main-container">
         <div
           className="v2board-background"
-          style={{ backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined }}
+          style={{ backgroundImage: legacyBackgroundImage }}
         />
         <div className="no-gutters v2board-auth-box">
           <div className="" style={{ maxWidth: 450, width: '100%', margin: 'auto' }}>

@@ -1,11 +1,23 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { GuestLayout } from './guest-layout';
 
+const guestLayoutSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'guest-layout.tsx'),
+  'utf8',
+);
+
+const mocks = vi.hoisted(() => ({
+  backgroundUrl: 'https://cdn.example.test/bg.jpg',
+}));
+
 vi.mock('@/lib/legacy-settings', () => ({
   getLegacySettings: () => ({
-    background_url: 'https://cdn.example.test/bg.jpg',
+    background_url: mocks.backgroundUrl,
   }),
 }));
 
@@ -24,7 +36,17 @@ function renderGuest(path: string) {
 }
 
 describe('GuestLayout bundled-theme auth shell', () => {
+  it('uses the bundled background_url short-circuit expression', () => {
+    expect(guestLayoutSource).toContain(
+      'const legacyBackgroundImage = (backgroundUrl && `url(${backgroundUrl})`) as string;',
+    );
+    expect(guestLayoutSource).not.toContain(
+      'backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined',
+    );
+  });
+
   it('renders the old auth page container, background, centered box, and child outlet', () => {
+    mocks.backgroundUrl = 'https://cdn.example.test/bg.jpg';
     const html = renderGuest('/register');
 
     expect(html).toContain('id="page-container"');
@@ -38,6 +60,7 @@ describe('GuestLayout bundled-theme auth shell', () => {
   });
 
   it('keeps the old empty class attribute for register and forgetpassword auth boxes only', () => {
+    mocks.backgroundUrl = 'https://cdn.example.test/bg.jpg';
     expect(renderGuest('/register')).toContain('<div class="" style="max-width:450px;width:100%;margin:auto">');
     expect(renderGuest('/forgetpassword')).toContain('<div class="" style="max-width:450px;width:100%;margin:auto">');
     expect(renderGuest('/login')).not.toContain('<div class="" style="max-width:450px;width:100%;margin:auto">');

@@ -5,6 +5,7 @@ import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 export function GuestLayout() {
   const { pathname } = useLocation();
   const backgroundUrl = getLegacySettings().background_url;
+  const legacyBackgroundImage = (backgroundUrl && `url(${backgroundUrl})`) as string;
   const hasEmptyContainerClass = pathname === '/register' || pathname === '/forgetpassword';
   return (
     <div id="page-container">
@@ -12,7 +13,7 @@ export function GuestLayout() {
         <div
           className="v2board-background"
           style={{
-            backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined,
+            backgroundImage: legacyBackgroundImage,
           }}
         />
         <div className="no-gutters v2board-auth-box">
