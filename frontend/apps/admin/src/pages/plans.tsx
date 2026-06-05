@@ -2,7 +2,6 @@ import {
   cloneElement,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type HTMLAttributes,
@@ -31,7 +30,6 @@ import {
   DeleteOutlined,
   EditOutlined,
   InfoCircleOutlined,
-  MenuOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
   UserOutlined,
@@ -49,6 +47,7 @@ import {
 import { i18nGet } from '@/lib/errors';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 
 type EditablePlan = {
   [K in keyof Omit<Plan, 'id'>]?: Plan[K] | string | null;
@@ -347,7 +346,6 @@ export default function PlansPage() {
   const [contextRecord, setContextRecord] = useState<Plan | undefined>();
   const [contextMenu, setContextMenu] = useState<{ top: number; left: number } | null>(null);
   const orderRef = useRef(order);
-  const dragIndex = useRef<number | null>(null);
   orderRef.current = order;
 
   useEffect(() => {
@@ -373,31 +371,19 @@ export default function PlansPage() {
     });
   };
 
-  const components = useMemo(
-    () => ({
-      body: {
-        row: (props: HTMLAttributes<HTMLTableRowElement> & { 'data-sort-index'?: number }) => {
-          const onDrop = () => {
-            const from = dragIndex.current;
-            const to = Number(props['data-sort-index']);
-            dragIndex.current = null;
-            if (from == null || !Number.isFinite(to) || from === to) return;
-            const next = [...orderRef.current];
-            if (from < to) {
-              next.splice(to + 1, 0, next[from] as Plan);
-              next.splice(from, 1);
-            } else {
-              next.splice(to, 0, next[from] as Plan);
-              next.splice(from + 1, 1);
-            }
-            persistSort(next);
-          };
-          return <tr {...props} onDragOver={(event) => event.preventDefault()} onDrop={onDrop} />;
-        },
-      },
-    }),
-    [sort],
-  );
+  const sortPlan = (fromIndex: number, toIndex: number) => {
+    const next = [...orderRef.current];
+    const moved = next[fromIndex];
+    if (!moved) return;
+    if (fromIndex < toIndex) {
+      next.splice(toIndex + 1, 0, moved);
+      next.splice(fromIndex, 1);
+    } else {
+      next.splice(toIndex, 0, moved);
+      next.splice(fromIndex + 1, 1);
+    }
+    persistSort(next);
+  };
 
   const savePlan = async (payload: SavePlanPayload) => {
     await save.mutateAsync(payload);
@@ -435,15 +421,7 @@ export default function PlansPage() {
       title: '排序',
       dataIndex: 'sort',
       key: 'sort',
-      render: (_value, _record, index) => (
-        <MenuOutlined
-          draggable
-          style={{ cursor: 'move' }}
-          onDragStart={() => {
-            dragIndex.current = index;
-          }}
-        />
-      ),
+      render: () => <LegacyMenuIcon />,
     },
     {
       title: '销售状态',
@@ -594,25 +572,29 @@ export default function PlansPage() {
                 </Button>
               </PlanEditor>
             </div>
-            <Table<Plan>
-              onRow={(record, index) => {
-                const rowEvents = {
-                  onClick: () => setContextMenu(null),
-                  onContextMenu: (event) => {
-                    event.preventDefault();
-                    setContextRecord(record);
-                    setContextMenu({ top: event.clientY, left: event.clientX });
-                  },
-                } satisfies HTMLAttributes<HTMLElement>;
-                return { ...rowEvents, 'data-sort-index': index } as HTMLAttributes<HTMLElement>;
-              }}
-              tableLayout="auto"
-              dataSource={order}
-              columns={columns}
-              components={components}
-              pagination={false}
-              scroll={{ x: 1300 }}
-            />
+            <LegacyDragSort
+              onDragEnd={(fromIndex, toIndex) => sortPlan(fromIndex, toIndex)}
+              nodeSelector="tr"
+              handleSelector="i"
+            >
+              <Table<Plan>
+                onRow={(record) =>
+                  ({
+                    onClick: () => setContextMenu(null),
+                    onContextMenu: (event) => {
+                      event.preventDefault();
+                      setContextRecord(record);
+                      setContextMenu({ top: event.clientY, left: event.clientX });
+                    },
+                  }) satisfies HTMLAttributes<HTMLElement>
+                }
+                tableLayout="auto"
+                dataSource={order}
+                columns={columns}
+                pagination={false}
+                scroll={{ x: 1300 }}
+              />
+            </LegacyDragSort>
             <div
               id="v2board-table-dropdown"
               className="ant-dropdown ant-dropdown-placement-bottomLeft"

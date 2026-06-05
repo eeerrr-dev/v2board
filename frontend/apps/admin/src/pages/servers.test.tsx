@@ -478,7 +478,11 @@ describe('ServersPage legacy server group route', () => {
     );
 
     expect(managePageSource).toContain('tableLayout="auto"');
-    expect(managePageSource).toContain('data-sort-index');
+    expect(managePageSource).toContain('<LegacyDragSort');
+    expect(managePageSource).toContain('nodeSelector="tr"');
+    expect(managePageSource).toContain('handleSelector="i"');
+    expect(managePageSource).toContain('<LegacyMenuIcon />');
+    expect(managePageSource).not.toContain('data-sort-index');
     expect(managePageSource).not.toContain('data-row-key');
     expect(managePageSource).not.toContain('rowKey=');
   });
@@ -1263,7 +1267,12 @@ describe('ServersPage legacy server group route', () => {
     expect(moveServerNodeByLegacyDragIndexes(nodes, 2, 0).map((node) => node.id)).toEqual([
       3, 1, 2,
     ]);
-    expect(serversSource).toContain('components={sortMode ? sortComponents : undefined}');
-    expect(serversSource).toContain('moveServerNodeByLegacyDragIndexes(orderRef.current, from, to)');
+    expect(serversSource).toContain(
+      'onDragEnd={(fromIndex, toIndex) => sortServerNodes(fromIndex, toIndex)}',
+    );
+    expect(serversSource).toContain(
+      'setOrderedNodes(moveServerNodeByLegacyDragIndexes(orderRef.current, fromIndex, toIndex));',
+    );
+    expect(serversSource).not.toContain('components={sortMode ? sortComponents : undefined}');
   });
 });

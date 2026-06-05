@@ -26,7 +26,6 @@ import {
   FormOutlined,
   LinkOutlined,
   LoadingOutlined,
-  MenuOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
   ReadOutlined,
@@ -54,6 +53,7 @@ import { legacyCopyText } from '@/lib/legacy-copy';
 import { formatDateTime } from '@v2board/config/format';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 
 const SERVER_TYPES: admin.ServerTypeName[] = [
   'v2node',
@@ -899,7 +899,6 @@ function ServerManagePage() {
   const [contextRecord, setContextRecord] = useState<admin.ServerNode | null>(null);
   const [contextMenu, setContextMenu] = useState<{ top: number; left: number } | null>(null);
   const orderRef = useRef(orderedNodes);
-  const dragIndex = useRef<number | null>(null);
   const mobile = isLegacyMobile();
 
   useEffect(() => {
@@ -917,25 +916,9 @@ function ServerManagePage() {
       ? orderedNodes.filter((node) => JSON.stringify(node).includes(searchKey))
       : orderedNodes;
 
-  const sortComponents = useMemo(
-    () => ({
-      body: {
-        row: (
-          props: HTMLAttributes<HTMLTableRowElement> & { 'data-sort-index'?: number },
-        ) => {
-          const onDrop = () => {
-            const from = dragIndex.current;
-            const to = Number(props['data-sort-index']);
-            dragIndex.current = null;
-            if (from == null || !Number.isFinite(to) || from === to) return;
-            setOrderedNodes(moveServerNodeByLegacyDragIndexes(orderRef.current, from, to));
-          };
-          return <tr {...props} onDragOver={(event) => event.preventDefault()} onDrop={onDrop} />;
-        },
-      },
-    }),
-    [],
-  );
+  const sortServerNodes = (fromIndex: number, toIndex: number) => {
+    setOrderedNodes(moveServerNodeByLegacyDragIndexes(orderRef.current, fromIndex, toIndex));
+  };
 
   const groupName = (ids: admin.ServerNode['group_id']) =>
     ids
@@ -1039,14 +1022,11 @@ function ServerManagePage() {
           key: 'sort',
           align: 'left',
           width: 100,
-          render: (_value, _row, index) => (
-            <div
-              draggable
-              onDragStart={() => {
-                dragIndex.current = index;
-              }}
-            >
-              <MenuOutlined style={{ cursor: 'move' }} title="拖动排序" />
+          render: () => (
+            <div>
+              <span style={{ cursor: 'move' }} title="拖动排序">
+                <LegacyMenuIcon />
+              </span>
             </div>
           ),
         },
@@ -1316,37 +1296,42 @@ function ServerManagePage() {
               )}
             />
           ) : (
-            <Table<admin.ServerNode>
-              tableLayout="auto"
-              dataSource={filteredNodes}
-              columns={columns}
-              components={sortMode ? sortComponents : undefined}
-              onRow={(record, index) =>
-                sortMode
-                  ? ({ 'data-sort-index': index } as HTMLAttributes<HTMLElement>)
-                  : {
-                      onClick: () => setContextMenu(null),
-                      onContextMenu: (event) => {
-                        event.preventDefault();
-                        setContextRecord(record);
-                        setContextMenu({ top: event.clientY, left: event.clientX });
-                      },
-                    }
-              }
-              pagination={
-                !sortMode && {
-                  pageSize,
-                  pageSizeOptions: ['10', '50', '100', '500'],
-                  showSizeChanger: true,
-                  onShowSizeChange: (_current, size) => {
-                    setPageSize(size);
-                    writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, size);
-                  },
+            <LegacyDragSort
+              onDragEnd={(fromIndex, toIndex) => sortServerNodes(fromIndex, toIndex)}
+              nodeSelector="tr"
+              handleSelector="i"
+            >
+              <Table<admin.ServerNode>
+                tableLayout="auto"
+                dataSource={filteredNodes}
+                columns={columns}
+                onRow={(record) =>
+                  sortMode
+                    ? {}
+                    : ({
+                        onClick: () => setContextMenu(null),
+                        onContextMenu: (event) => {
+                          event.preventDefault();
+                          setContextRecord(record);
+                          setContextMenu({ top: event.clientY, left: event.clientX });
+                        },
+                      } satisfies HTMLAttributes<HTMLElement>)
                 }
-              }
-              scroll={{ x: 1300 }}
-              rowClassName={(row) => (row.parent_id ? 'child_node' : '')}
-            />
+                pagination={
+                  !sortMode && {
+                    pageSize,
+                    pageSizeOptions: ['10', '50', '100', '500'],
+                    showSizeChanger: true,
+                    onShowSizeChange: (_current, size) => {
+                      setPageSize(size);
+                      writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, size);
+                    },
+                  }
+                }
+                scroll={{ x: 1300 }}
+                rowClassName={(row) => (row.parent_id ? 'child_node' : '')}
+              />
+            </LegacyDragSort>
           )}
           <div
             id="v2board-table-dropdown"

@@ -122,7 +122,11 @@ describe('PlansPage legacy subscription management', () => {
   it('keeps the legacy plan table without an explicit rowKey', () => {
     expect(plansSource).toContain('tableLayout="auto"');
     expect(plansSource).toContain('pagination={false}');
-    expect(plansSource).toContain('data-sort-index');
+    expect(plansSource).toContain('<LegacyDragSort');
+    expect(plansSource).toContain('nodeSelector="tr"');
+    expect(plansSource).toContain('handleSelector="i"');
+    expect(plansSource).toContain('<LegacyMenuIcon />');
+    expect(plansSource).not.toContain('data-sort-index');
     expect(plansSource).not.toContain('data-row-key');
     expect(plansSource).not.toContain('rowKey="id"');
   });
@@ -134,7 +138,9 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).not.toContain('loading={plans.isFetching || sort.isPending}');
     expect(plansSource).not.toContain('plans.isLoading');
     expect(plansSource).not.toContain('loading={Boolean(');
-    expect(plansSource).toContain('const to = Number(props[\'data-sort-index\']);');
+    expect(plansSource).toContain('const sortPlan = (fromIndex: number, toIndex: number) => {');
+    expect(plansSource).toContain('next.splice(toIndex + 1, 0, moved);');
+    expect(plansSource).toContain('next.splice(fromIndex + 1, 1);');
     expect(plansSource).not.toContain("next.force_update = next.force_update ? 1 : 0");
     expect(plansSource).toContain('force_update?: boolean');
     expect(plansSource).toContain("onChange={(event) => change('force_update', event.target.checked)}");

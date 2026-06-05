@@ -4,12 +4,11 @@ import {
   useMemo,
   useRef,
   useState,
-  type HTMLAttributes,
   type ReactElement,
 } from 'react';
 import { App, Button, Drawer, Input, Modal, Select, Switch, Table } from 'antd';
 import type { TableProps } from 'antd';
-import { LoadingOutlined, MenuOutlined, PlusOutlined } from '@ant-design/icons';
+import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import MarkdownIt from 'markdown-it';
 import { admin } from '@v2board/api-client';
@@ -25,6 +24,7 @@ import {
 } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 
 type SaveKnowledgePayload = Parameters<typeof admin.saveKnowledge>[1];
 
@@ -331,7 +331,6 @@ export default function KnowledgePage() {
   const [orderedKnowledge, setOrderedKnowledge] = useState<KnowledgeSummary[]>(() => list.data ?? []);
   const [sortingLoading, setSortingLoading] = useState(false);
   const orderRef = useRef(orderedKnowledge);
-  const dragIndex = useRef<number | null>(null);
 
   useEffect(() => {
     if (list.data) {
@@ -342,42 +341,25 @@ export default function KnowledgePage() {
 
   orderRef.current = orderedKnowledge;
 
-  const components = useMemo(
-    () => ({
-      body: {
-        row: (
-          props: HTMLAttributes<HTMLTableRowElement> & { 'data-sort-index'?: number },
-        ) => {
-          const onDrop = () => {
-            const from = dragIndex.current;
-            const current = orderRef.current;
-            const to = Number(props['data-sort-index']);
-            dragIndex.current = null;
-            if (from == null || !Number.isFinite(to) || from === to) return;
-
-            const next = [...current];
-            if (from < to) {
-              next.splice(to + 1, 0, next[from] as KnowledgeSummary);
-              next.splice(from, 1);
-            } else {
-              next.splice(to, 0, next[from] as KnowledgeSummary);
-              next.splice(from + 1, 1);
-            }
-            setOrderedKnowledge(next);
-            setSortingLoading(true);
-            sort.mutate(next.map((knowledge) => knowledge.id), {
-              onSuccess: () => {
-                void list.refetch();
-              },
-            });
-          };
-
-          return <tr {...props} onDragOver={(event) => event.preventDefault()} onDrop={onDrop} />;
-        },
+  const sortKnowledge = (fromIndex: number, toIndex: number) => {
+    const next = [...orderRef.current];
+    const moved = next[fromIndex];
+    if (!moved) return;
+    if (fromIndex < toIndex) {
+      next.splice(toIndex + 1, 0, moved);
+      next.splice(fromIndex, 1);
+    } else {
+      next.splice(toIndex, 0, moved);
+      next.splice(fromIndex + 1, 1);
+    }
+    setOrderedKnowledge(next);
+    setSortingLoading(true);
+    sort.mutate(next.map((knowledge) => knowledge.id), {
+      onSuccess: () => {
+        void list.refetch();
       },
-    }),
-    [list, sort],
-  );
+    });
+  };
 
   const saveKnowledge = (payload: SaveKnowledgePayload) => save.mutateAsync(payload);
   const refetchKnowledge = () => list.refetch();
@@ -387,15 +369,7 @@ export default function KnowledgePage() {
       title: '排序',
       dataIndex: 'sort',
       key: 'sort',
-      render: (_value, _row, index) => (
-        <MenuOutlined
-          draggable
-          onDragStart={() => {
-            dragIndex.current = index;
-          }}
-          style={{ cursor: 'move' }}
-        />
-      ),
+      render: () => <LegacyMenuIcon />,
     },
     {
       title: '文章ID',
@@ -492,17 +466,19 @@ export default function KnowledgePage() {
               </Button>
             </KnowledgeEditor>
           </div>
-          <Table<KnowledgeSummary>
-            tableLayout="auto"
-            dataSource={orderedKnowledge}
-            pagination={false}
-            columns={columns}
-            components={components}
-            onRow={(_record, index) =>
-              ({ 'data-sort-index': index } as HTMLAttributes<HTMLElement>)
-            }
-            scroll={{ x: 750 }}
-          />
+          <LegacyDragSort
+            onDragEnd={(fromIndex, toIndex) => sortKnowledge(fromIndex, toIndex)}
+            nodeSelector="tr"
+            handleSelector="i"
+          >
+            <Table<KnowledgeSummary>
+              tableLayout="auto"
+              dataSource={orderedKnowledge}
+              pagination={false}
+              columns={columns}
+              scroll={{ x: 750 }}
+            />
+          </LegacyDragSort>
         </div>
       </div>
     </LegacySpin>

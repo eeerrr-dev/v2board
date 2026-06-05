@@ -152,9 +152,13 @@ describe('KnowledgePage legacy knowledge manager', () => {
   it('keeps the legacy table keying and delete-confirm behavior', () => {
     expect(source).toContain('tableLayout="auto"');
     expect(source).toContain('pagination={false}');
-    expect(source).toContain('data-sort-index');
-    expect(source).toContain('<MenuOutlined\n          draggable');
-    expect(source).toContain("onDragStart={() => {\n            dragIndex.current = index;");
+    expect(source).toContain('<LegacyDragSort');
+    expect(source).toContain('nodeSelector="tr"');
+    expect(source).toContain('handleSelector="i"');
+    expect(source).toContain('<LegacyMenuIcon />');
+    expect(source).not.toContain('data-sort-index');
+    expect(source).not.toContain('<MenuOutlined');
+    expect(source).not.toContain('dragIndex.current');
     expect(source).not.toContain('<span\n          draggable');
     expect(source).not.toContain('data-row-key');
     expect(source).not.toContain('rowKey="id"');
@@ -172,9 +176,9 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('useAdminKnowledgeCategories();');
     expect(source).toContain('setSortingLoading(true)');
     expect(source).toContain('setSortingLoading(false)');
-    expect(source).toContain('const to = Number(props[\'data-sort-index\']);');
-    expect(source).toContain('next.splice(to + 1, 0, next[from] as KnowledgeSummary);');
-    expect(source).toContain('next.splice(from + 1, 1);');
+    expect(source).toContain('const sortKnowledge = (fromIndex: number, toIndex: number) => {');
+    expect(source).toContain('next.splice(toIndex + 1, 0, moved);');
+    expect(source).toContain('next.splice(fromIndex + 1, 1);');
     expect(source).toContain('sort.mutate(next.map((knowledge) => knowledge.id),');
     expect(source).toContain('onSuccess: () => {\n                void list.refetch();\n              },');
   });
