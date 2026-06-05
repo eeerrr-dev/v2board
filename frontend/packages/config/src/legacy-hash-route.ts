@@ -203,6 +203,23 @@ function legacyMainIsEmpty(root: HTMLElement | null): boolean {
   return elementIsEmpty(main);
 }
 
+function renderLegacyWhiteScreenFallback(root: HTMLElement | null): void {
+  if (!root) return;
+  const target =
+    root.querySelector<HTMLElement>('#main-container .content') ??
+    root.querySelector<HTMLElement>('#main-container') ??
+    root;
+  target.innerHTML = [
+    '<div class="block block-rounded" data-v2board-white-screen-fallback="1">',
+    '<div class="block-content text-center py-5">',
+    '<h3 class="font-w400 text-danger mb-2">页面加载失败</h3>',
+    '<p class="text-muted mb-4">请刷新页面后重试。</p>',
+    '<button type="button" class="btn btn-primary" onclick="window.location.reload()">刷新页面</button>',
+    '</div>',
+    '</div>',
+  ].join('');
+}
+
 function stableRecoveryKey(url: URL): string {
   const search = new URLSearchParams(url.search);
   search.delete('__v2board_recover');
@@ -293,7 +310,10 @@ export function installLegacyWhiteScreenRecovery(
 
     if (attempts >= 2) {
       if (current.hash === fallbackHash) {
-        if (!hasAuth || fallbackHash !== `#${options.authenticatedFallback}`) return;
+        if (!hasAuth || fallbackHash !== `#${options.authenticatedFallback}`) {
+          renderLegacyWhiteScreenFallback(root);
+          return;
+        }
         window.localStorage.removeItem(getAuthStorageKey(options));
         window.sessionStorage.setItem(key, String(attempts + 1));
         current.hash = `#${options.guestFallback}`;

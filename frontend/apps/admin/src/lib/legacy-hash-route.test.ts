@@ -574,6 +574,48 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
+  it('renders a visible fallback when the guest fallback remains empty', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<div id="root"></div>';
+    setUrl('/#/login');
+    window.sessionStorage.setItem('v2board:white-screen-recovery:/#/login', '2');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+
+    expect(replace).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('页面加载失败');
+    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).not.toBeNull();
+    dispose();
+  });
+
+  it('renders the visible fallback inside a blank legacy main container', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML =
+      '<div id="root"><div id="page-container"><nav>仪表盘</nav><header>admin@local</header><main id="main-container"><div class="content content-full"></div></main></div></div>';
+    setUrl('/#/login');
+    window.sessionStorage.setItem('v2board:white-screen-recovery:/#/login', '2');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+    vi.advanceTimersByTime(10);
+
+    expect(replace).not.toHaveBeenCalled();
+    expect(document.querySelector('#page-container')).not.toBeNull();
+    expect(document.querySelector('#main-container')?.textContent).toContain('页面加载失败');
+    dispose();
+  });
+
   it('does not recover when the React root has rendered content', () => {
     vi.useFakeTimers();
     document.body.innerHTML = '<div id="root"><main>仪表盘</main></div>';
