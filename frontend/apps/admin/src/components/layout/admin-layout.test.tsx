@@ -28,7 +28,30 @@ vi.mock('@/lib/api', () => ({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
+function installLocalStorageStub() {
+  const store = new Map<string, string>();
+  const storage = {
+    clear: () => store.clear(),
+    getItem: (key: string) => store.get(key) ?? null,
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+  };
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: storage,
+  });
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  });
+}
+
 function resetAdminLayoutMocks() {
+  installLocalStorageStub();
   mocks.location = { pathname: '/dashboard' };
   mocks.navigate.mockReset();
   vi.mocked(user.info).mockReset();
@@ -214,7 +237,7 @@ describe('AdminLayout legacy dark mode behavior', () => {
     expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
   });
 
-  it('keeps the legacy brand href while routing the click inside the hash app', async () => {
+  it('keeps the legacy brand link as a plain root href without route interception', async () => {
     await renderLayout();
 
     const brand = container.querySelector<HTMLAnchorElement>(
@@ -228,8 +251,8 @@ describe('AdminLayout legacy dark mode behavior', () => {
     });
 
     expect(brand.getAttribute('href')).toBe('/');
-    expect(click.defaultPrevented).toBe(true);
-    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
+    expect(click.defaultPrevented).toBe(false);
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it('renders and controls the bundled header search overlay when search props are passed', async () => {
