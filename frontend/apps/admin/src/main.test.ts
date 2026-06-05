@@ -128,7 +128,7 @@ describe('admin legacy entrypoint', () => {
     expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
     expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery';")).toBeLessThan(
       indexSource.indexOf(
-        '<script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-5"',
+        '<script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-6"',
       ),
     );
   });
