@@ -455,7 +455,7 @@ function ServerGroupModal({
 
   const saveGroup = async () => {
     await save.mutateAsync({ ...submit });
-    await groups.refetch();
+    void groups.refetch();
     setVisible(false);
   };
 
@@ -616,7 +616,7 @@ function ServerRouteModal({
       payload.match = [];
     }
     await save.mutateAsync(payload);
-    await routes.refetch();
+    void routes.refetch();
     setVisible(false);
   };
 
@@ -1443,7 +1443,7 @@ function NodeEditDrawer({
           try {
             const payload = prepareLegacyServerPayload(type, values, id);
             await admin.saveServer(apiClient, type, payload);
-            await onSaved?.();
+            void onSaved?.();
             onClose();
           } catch (e) {
             if (e instanceof SyntaxError) {

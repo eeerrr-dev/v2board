@@ -203,14 +203,14 @@ describe('ServersPage legacy server group route', () => {
     expect(groupModalSource).toContain('const groups = useServerGroups()');
     expect(groupModalSource).toContain('if (groups.isFetching) return;');
     expect(groupModalSource).toContain('await save.mutateAsync({ ...submit });');
-    expect(groupModalSource).toContain('await groups.refetch();');
+    expect(groupModalSource).toContain('void groups.refetch();');
     expect(groupModalSource.indexOf('await save.mutateAsync({ ...submit });')).toBeLessThan(
-      groupModalSource.indexOf('await groups.refetch();'),
+      groupModalSource.indexOf('void groups.refetch();'),
     );
-    expect(groupModalSource.indexOf('await groups.refetch();')).toBeLessThan(
+    expect(groupModalSource.indexOf('void groups.refetch();')).toBeLessThan(
       groupModalSource.indexOf('setVisible(false);'),
     );
-    expect(groupModalSource).not.toContain('void groups.refetch();\n    setVisible(false);');
+    expect(groupModalSource).not.toContain('await groups.refetch();');
     expect(groupModalSource).toContain(
       "okText={groups.isFetching ? <LoadingOutlined /> : '提交'}",
     );
@@ -227,14 +227,14 @@ describe('ServersPage legacy server group route', () => {
     expect(routeModalSource).toContain('const routes = useServerRoutes()');
     expect(routeModalSource).toContain('if (routes.isFetching) return;');
     expect(routeModalSource).toContain('await save.mutateAsync(payload);');
-    expect(routeModalSource).toContain('await routes.refetch();');
+    expect(routeModalSource).toContain('void routes.refetch();');
     expect(routeModalSource.indexOf('await save.mutateAsync(payload);')).toBeLessThan(
-      routeModalSource.indexOf('await routes.refetch();'),
+      routeModalSource.indexOf('void routes.refetch();'),
     );
-    expect(routeModalSource.indexOf('await routes.refetch();')).toBeLessThan(
+    expect(routeModalSource.indexOf('void routes.refetch();')).toBeLessThan(
       routeModalSource.indexOf('setVisible(false);'),
     );
-    expect(routeModalSource).not.toContain('void routes.refetch();\n    setVisible(false);');
+    expect(routeModalSource).not.toContain('await routes.refetch();');
     expect(routeModalSource).toContain(
       "okText={routes.isFetching ? <LoadingOutlined /> : '提交'}",
     );
@@ -898,14 +898,15 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain("message.error('传输协议配置格式有误')");
     expect(serversSource).toContain('const payload = prepareLegacyServerPayload(type, values, id);');
     expect(nodeDrawerSource).toContain('await admin.saveServer(apiClient, type, payload);');
-    expect(nodeDrawerSource).toContain('await onSaved?.();');
+    expect(nodeDrawerSource).toContain('void onSaved?.();');
     expect(nodeDrawerSource).toContain('onClose();');
     expect(nodeDrawerSource.indexOf('await admin.saveServer(apiClient, type, payload);')).toBeLessThan(
-      nodeDrawerSource.indexOf('await onSaved?.();'),
+      nodeDrawerSource.indexOf('void onSaved?.();'),
     );
-    expect(nodeDrawerSource.indexOf('await onSaved?.();')).toBeLessThan(
+    expect(nodeDrawerSource.indexOf('void onSaved?.();')).toBeLessThan(
       nodeDrawerSource.indexOf('onClose();'),
     );
+    expect(nodeDrawerSource).not.toContain('await onSaved?.();');
     expect(serversSource).toContain('onSaved?: () => void | Promise<unknown>;');
     expect(serversSource).toContain('onSaved: () => void | Promise<unknown>;');
     expect(serversSource.match(/onSaved=\{\(\) => nodes\.refetch\(\)\}/g)).toHaveLength(3);
