@@ -79,8 +79,9 @@ vi.mock('@/lib/legacy-toast', () => ({
   toast: toastMocks,
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 afterEach(() => {
   state.ticket = state.makeTicket();
@@ -122,11 +123,15 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     );
     expect(html).toContain('font-size-sm text-muted my-2 text-right');
     expect(html).toContain('text-right ml-4');
-    expect(html).toContain('d-inline-block bg-gray-lighter px-3 py-2 mb-2 mw-100 rounded text-left');
+    expect(html).toContain(
+      'd-inline-block bg-gray-lighter px-3 py-2 mb-2 mw-100 rounded text-left',
+    );
     expect(html).toContain('My message');
     expect(html).toContain('font-size-sm text-muted my-2');
     expect(html).toContain('mr-4');
-    expect(html).toContain('d-inline-block bg-success-lighter px-3 py-2 mb-2 mw-100 rounded text-left');
+    expect(html).toContain(
+      'd-inline-block bg-success-lighter px-3 py-2 mb-2 mw-100 rounded text-left',
+    );
     expect(html).toContain('Support reply');
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_060));
@@ -135,18 +140,19 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     expect(html).toContain('placeholder="输入内容回复工单..."');
   });
 
-  it('renders a visible failure block instead of a textless chat shell when the ticket fetch fails', () => {
+  it('keeps the old optional chat shell when the ticket fetch fails', () => {
     state.ticket = undefined;
     state.ticketError = true;
 
     const html = renderToStaticMarkup(<TicketDetailPage />);
 
-    expect(html).toContain('页面加载失败');
-    expect(html).toContain('刷新页面');
-    expect(html).not.toContain(
+    expect(html).toContain(
       'bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1',
     );
-    expect(html).not.toContain('js-chat-form block-content p-2 bg-body-dark input___1j_ND');
+    expect(html).toContain('js-chat-form block-content p-2 bg-body-dark input___1j_ND');
+    expect(html).toContain('placeholder="输入内容回复工单..."');
+    expect(html).not.toContain('页面加载失败');
+    expect(html).not.toContain('刷新页面');
     expect(html).not.toContain('Need help');
   });
 });
