@@ -22,6 +22,10 @@ export interface LegacyDevModuleRecoveryConfig {
   replace?: (url: string) => void;
 }
 
+export interface LegacyDevWhiteScreenFallbackConfig {
+  delay?: number;
+}
+
 function normalizePath(path: string): string {
   const next = path.trim();
   if (!next || next === '#') return '/';
@@ -447,5 +451,47 @@ export function installLegacyDevModuleRecovery(
     window.removeEventListener('vite:error', recover);
     window.removeEventListener('error', recover, true);
     window.removeEventListener('unhandledrejection', recover);
+  };
+}
+
+export function installLegacyDevWhiteScreenFallback(
+  config: LegacyDevWhiteScreenFallbackConfig = {},
+): () => void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return () => undefined;
+
+  const delay = config.delay ?? 2500;
+  let timer: number | undefined;
+
+  const renderIfEmpty = () => {
+    const root = document.getElementById('root');
+    if (!appIsEmpty(root)) return;
+    renderLegacyWhiteScreenFallback(root);
+  };
+
+  const schedule = () => {
+    if (timer !== undefined) window.clearTimeout(timer);
+    timer = window.setTimeout(renderIfEmpty, delay);
+  };
+
+  const root = document.getElementById('root');
+  const observer =
+    root && typeof MutationObserver !== 'undefined'
+      ? new MutationObserver(schedule)
+      : undefined;
+
+  observer?.observe(root as HTMLElement, { childList: true, subtree: true });
+  window.addEventListener('hashchange', schedule);
+  window.addEventListener('popstate', schedule);
+  window.addEventListener('error', schedule);
+  window.addEventListener('unhandledrejection', schedule);
+  schedule();
+
+  return () => {
+    if (timer !== undefined) window.clearTimeout(timer);
+    observer?.disconnect();
+    window.removeEventListener('hashchange', schedule);
+    window.removeEventListener('popstate', schedule);
+    window.removeEventListener('error', schedule);
+    window.removeEventListener('unhandledrejection', schedule);
   };
 }

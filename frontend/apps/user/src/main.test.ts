@@ -14,6 +14,7 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('installLegacyHashRouteNormalizer');
     expect(mainSource).toContain('installLegacyWhiteScreenRecovery');
     expect(mainSource).toContain('installLegacyDevModuleRecovery');
+    expect(mainSource).toContain('installLegacyDevWhiteScreenFallback');
     expect(mainSource).toContain('normalizeLegacyHashRoute');
     expect(mainSource).toContain('getNormalizedLegacyHashPath');
     expect(mainSource).toContain('const legacyHashRouteOptions = {');
@@ -28,10 +29,14 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
     expect(mainSource).toContain('installLegacyWhiteScreenRecovery(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyDevModuleRecovery();');
+    expect(mainSource).toContain('installLegacyDevWhiteScreenFallback();');
     expect(mainSource.indexOf('if (import.meta.env.DEV) {')).toBeLessThan(
       mainSource.indexOf('installLegacyDevModuleRecovery();'),
     );
     expect(mainSource.indexOf('installLegacyDevModuleRecovery();')).toBeLessThan(
+      mainSource.indexOf('installLegacyDevWhiteScreenFallback();'),
+    );
+    expect(mainSource.indexOf('installLegacyDevWhiteScreenFallback();')).toBeLessThan(
       mainSource.indexOf('installLegacyWhiteScreenRecovery(legacyHashRouteOptions);'),
     );
     expect(mainSource).toContain("import { useEffect, type ReactNode } from 'react';");

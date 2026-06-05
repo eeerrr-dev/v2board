@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getNormalizedLegacyHashPath,
   installLegacyDevModuleRecovery,
+  installLegacyDevWhiteScreenFallback,
   installLegacyHashRouteNormalizer,
   installLegacyWhiteScreenRecovery,
   normalizeLegacyHashRoute,
@@ -805,6 +806,32 @@ describe('normalizeLegacyHashRoute', () => {
     );
 
     expect(replace).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  it('renders a visible dev fallback when the React root stays empty', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<div id="root"></div>';
+    setUrl('/#/dashboard');
+    const dispose = installLegacyDevWhiteScreenFallback({ delay: 10 });
+
+    vi.advanceTimersByTime(10);
+
+    expect(document.body.textContent).toContain('页面加载失败');
+    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).not.toBeNull();
+    dispose();
+  });
+
+  it('does not render the dev fallback once the React root has content', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<div id="root"><main>仪表盘</main></div>';
+    setUrl('/#/dashboard');
+    const dispose = installLegacyDevWhiteScreenFallback({ delay: 10 });
+
+    vi.advanceTimersByTime(10);
+
+    expect(document.body.textContent).not.toContain('页面加载失败');
+    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).toBeNull();
     dispose();
   });
 });

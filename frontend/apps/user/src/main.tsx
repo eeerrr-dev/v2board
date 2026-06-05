@@ -6,6 +6,7 @@ import { createI18n } from '@v2board/i18n';
 import {
   getNormalizedLegacyHashPath,
   installLegacyDevModuleRecovery,
+  installLegacyDevWhiteScreenFallback,
   installLegacyHashRouteNormalizer,
   installLegacyWhiteScreenRecovery,
   normalizeLegacyHashRoute,
@@ -32,6 +33,7 @@ normalizeLegacyHashRoute(legacyHashRouteOptions);
 installLegacyHashRouteNormalizer(legacyHashRouteOptions);
 if (import.meta.env.DEV) {
   installLegacyDevModuleRecovery();
+  installLegacyDevWhiteScreenFallback();
 } else {
   installLegacyWhiteScreenRecovery(legacyHashRouteOptions);
 }
