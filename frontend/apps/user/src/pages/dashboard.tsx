@@ -75,7 +75,7 @@ export default function DashboardPage() {
     // The try/catch mirrors the dva saga that swallowed the TypeError thrown when a
     // notice has null tags (v2_notice.tags is `varchar(255) DEFAULT NULL`), so the
     // dashboard stays up — exactly as the original behaved (no popup, no crash).
-    const list = notices.data?.data;
+    const list = notices.data;
     if (!list?.length) return;
     try {
       const popup = list.find((notice) => notice.tags!.indexOf('弹窗') !== -1);
@@ -88,7 +88,7 @@ export default function DashboardPage() {
   }, [notices.data]);
 
   useEffect(() => {
-    const count = notices.data?.data.length ?? 0;
+    const count = notices.data?.length ?? 0;
     // Reset to the first real slide whenever the notice set changes (re-init parity).
     setSlidePos(1);
     if (count <= 1) return;
@@ -98,7 +98,7 @@ export default function DashboardPage() {
       setSlidePos((pos) => pos + 1);
     }, 3000);
     return () => window.clearInterval(id);
-  }, [notices.data?.data.length]);
+  }, [notices.data?.length]);
 
   // After advancing onto the clone, the transition is disabled for the reset to the
   // real first slide; re-enable it on the next frame so the snap stays invisible.
@@ -138,7 +138,7 @@ export default function DashboardPage() {
       usedPctRounded >= 100 &&
       !expired,
   );
-  const noticeList = notices.data?.data ?? [];
+  const noticeList = notices.data ?? [];
   // Map the track position back to the real slide the dots highlight (positions 0 and
   // n+1 are the clones of the last and first slides respectively).
   const activeDotIndex =

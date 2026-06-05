@@ -131,7 +131,7 @@ vi.mock('@/lib/queries', () => ({
     mutateAsync: mocks.newPeriodMutateAsync,
   }),
   useNotices: () => ({
-    data: { data: mocks.notices },
+    data: mocks.notices,
   }),
   useSubscribe: () => ({
     data: mocks.subscribe,
@@ -417,6 +417,14 @@ describe('DashboardPage bundled-theme actions', () => {
     expect(source).toContain('noticeList.map((notice, index) => (');
     expect(slideSource).toContain("style={{ outline: 'none', width: slideWidth || undefined }}\n                          key={Math.random()}");
     expect(slideSource).not.toContain('key={notice.id}');
+  });
+
+  it('reads bundled notice model state as a direct notices array', () => {
+    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
+
+    expect(source).toContain('const list = notices.data;');
+    expect(source).toContain('const noticeList = notices.data ?? [];');
+    expect(source).not.toContain('notices.data?.data');
   });
 
   it('keeps the bundled-theme notice modal mask and false footer props explicit', () => {

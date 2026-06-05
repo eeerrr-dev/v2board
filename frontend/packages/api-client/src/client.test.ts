@@ -60,14 +60,16 @@ describe('createApiClient', () => {
     const mock = new AxiosMockAdapter(client.axios);
     mock.onGet('/user/notice/fetch').reply(200, { data: [], total: 99 });
 
-    await expect(userEndpoints.fetchNotices(client)).resolves.toEqual({ data: [] });
+    await expect(userEndpoints.fetchNotices(client)).resolves.toEqual([]);
   });
 
   it('does not synthesize a user notice total absent from the bundled notice model', () => {
     const source = readFileSync(new URL('./endpoints/user.ts', import.meta.url), 'utf8');
 
-    expect(source).toContain('return { data: env.data };');
+    expect(source).toContain('export const fetchNotices = (client: ApiClient) =>');
+    expect(source).toContain("client.request<Notice[]>({ url: '/user/notice/fetch', method: 'GET' });");
     expect(source).not.toContain('total: env.total ?? 0');
+    expect(source).not.toContain('NoticePage');
   });
 
   it('exposes the original tutorial fetch endpoints and parses detail steps like the old model', async () => {

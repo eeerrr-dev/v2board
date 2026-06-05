@@ -7,7 +7,6 @@ import type {
   Knowledge,
   KnowledgeCategory,
   Notice,
-  NoticePage,
   Order,
   OrderCheckoutPayload,
   OrderCheckoutResult,
@@ -151,13 +150,8 @@ export const inviteDetails = async (
   return { data: env.data, total: env.total };
 };
 
-export const fetchNotices = async (client: ApiClient): Promise<NoticePage> => {
-  const env = await client.requestEnvelope<Notice[]>({
-    url: '/user/notice/fetch',
-    method: 'GET',
-  });
-  return { data: env.data };
-};
+export const fetchNotices = (client: ApiClient) =>
+  client.request<Notice[]>({ url: '/user/notice/fetch', method: 'GET' });
 
 export const fetchTickets = (client: ApiClient) =>
   client.request<Ticket[]>({ url: '/user/ticket/fetch', method: 'GET' });

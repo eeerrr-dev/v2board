@@ -8,8 +8,3 @@ export interface Notice {
   created_at: number;
   updated_at: number;
 }
-
-export interface NoticePage {
-  data: Notice[];
-  total?: number;
-}
