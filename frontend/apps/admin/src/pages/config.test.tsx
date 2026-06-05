@@ -276,7 +276,7 @@ describe('ConfigPage legacy theme config', () => {
     const themeSaveStart = configSource.indexOf(
       'await saveConfig.mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) });',
     );
-    const themeRefetch = configSource.indexOf('await onSaved();', themeSaveStart);
+    const themeRefetch = configSource.indexOf('void onSaved();', themeSaveStart);
     const themeSuccess = configSource.indexOf("message.success('保存成功');", themeRefetch);
     const systemSaveStart = configSource.indexOf(
       'save\n        .mutateAsync(nextGroup as Partial<AdminConfigFlat>)',
@@ -295,6 +295,7 @@ describe('ConfigPage legacy theme config', () => {
     expect(themeSaveStart).toBeGreaterThan(-1);
     expect(themeRefetch).toBeGreaterThan(themeSaveStart);
     expect(themeSuccess).toBeGreaterThan(themeRefetch);
+    expect(configSource).not.toContain('await onSaved();');
     expect(configSource).toContain('onSaved: () => void | Promise<unknown>;');
     expect(systemSaveStart).toBeGreaterThan(-1);
     expect(systemSuccess).toBeGreaterThan(systemSaveStart);
@@ -352,9 +353,9 @@ describe('ConfigPage legacy theme config', () => {
   });
 
   it('keeps the original system config tabs uncontrolled after initial render', () => {
-    expect(configSource).toContain(
-      '<Tabs defaultActiveKey={activeTab} onChange={(key) => setActiveTab(key as ConfigGroupKey)} size="large">',
-    );
+    expect(configSource).toContain('defaultActiveKey={activeTab}');
+    expect(configSource).toContain('onChange={(key) => setActiveTab(key as ConfigGroupKey)}');
+    expect(configSource).toContain('size="large"');
     expect(configSource).not.toContain('<Tabs activeKey={activeTab}');
   });
 

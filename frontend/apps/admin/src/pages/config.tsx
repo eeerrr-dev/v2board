@@ -139,7 +139,7 @@ function ThemeSettingsButton({
   const save = async () => {
     try {
       await saveConfig.mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) });
-      await onSaved();
+      void onSaved();
       message.success('保存成功');
     } catch (error) {
       showError(message, error);
