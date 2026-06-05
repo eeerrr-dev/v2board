@@ -307,9 +307,10 @@ describe('OrdersPage legacy order manager', () => {
 
   it('keeps pagination updates on the table onChange path only', () => {
     expect(ordersSource).toContain('onChange={(pagination: TablePaginationConfig) =>');
-    expect(ordersSource).toContain('current: pagination.current ?? state.current');
-    expect(ordersSource).toContain('pageSize: pagination.pageSize ?? state.pageSize');
-    expect(ordersSource).toContain('total: pagination.total');
+    expect(ordersSource).toContain('...pagination,');
+    expect(ordersSource).not.toContain('current: pagination.current ?? state.current');
+    expect(ordersSource).not.toContain('pageSize: pagination.pageSize ?? state.pageSize');
+    expect(ordersSource).not.toContain('total: pagination.total');
     expect(ordersSource).not.toContain(
       'onChange: (current: number, pageSize: number) =>',
     );

@@ -575,9 +575,7 @@ export default function OrdersPage() {
               onChange={(pagination: TablePaginationConfig) =>
                 setQuery((state) => ({
                   ...state,
-                  current: pagination.current ?? state.current,
-                  pageSize: pagination.pageSize ?? state.pageSize,
-                  total: pagination.total,
+                  ...pagination,
                 }))
               }
             />
