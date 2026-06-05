@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const mainSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'main.tsx'), 'utf8');
+const indexSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../index.html'),
+  'utf8',
+);
 const antdCompatSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'styles/antd-v5-compat.css'),
   'utf8',
@@ -108,5 +112,18 @@ describe('admin legacy entrypoint', () => {
     expect(antdCompatSource).toContain('.ant-table-wrapper > .ant-spin');
     expect(antdCompatSource).toContain('display: block;');
     expect(antdCompatSource).not.toMatch(/^\.ant-spin\s*\{/m);
+  });
+
+  it('installs dev entry recovery before the Vite module graph loads', () => {
+    expect(indexSource).toContain("var storageKey = 'v2board:dev-entry-recovery';");
+    expect(indexSource).toContain("text.indexOf('outdated optimize dep') !== -1");
+    expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1");
+    expect(indexSource).toContain("current.searchParams.set('__v2board_entry_recover'");
+    expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
+    expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery';")).toBeLessThan(
+      indexSource.indexOf(
+        '<script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-5"',
+      ),
+    );
   });
 });

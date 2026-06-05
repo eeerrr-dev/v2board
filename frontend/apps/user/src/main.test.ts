@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const mainSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'main.tsx'), 'utf8');
+const indexSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../index.html'),
+  'utf8',
+);
 const configIndexSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../../../packages/config/src/index.ts'),
   'utf8',
@@ -80,5 +84,18 @@ describe('user legacy entrypoint', () => {
     expect(configIndexSource).toContain("export * from './format';");
     expect(configIndexSource).toContain("export * from './legacy-hash-route';");
     expect(configIndexSource).not.toContain("export * from './vite';");
+  });
+
+  it('installs dev entry recovery before the Vite module graph loads', () => {
+    expect(indexSource).toContain("var storageKey = 'v2board:dev-entry-recovery';");
+    expect(indexSource).toContain("text.indexOf('outdated optimize dep') !== -1");
+    expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1");
+    expect(indexSource).toContain("current.searchParams.set('__v2board_entry_recover'");
+    expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
+    expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery';")).toBeLessThan(
+      indexSource.indexOf(
+        '<script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-5"',
+      ),
+    );
   });
 });
