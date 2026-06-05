@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type AnchorHTMLAttributes } from 'react';
+import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
 import {
   App,
   Badge,
@@ -6,13 +6,14 @@ import {
   DatePicker,
   Dropdown,
   Input,
+  Menu,
   Modal,
   Select,
   Table,
   Tag,
   Tooltip,
 } from 'antd';
-import type { ButtonProps, TablePaginationConfig, TableProps } from 'antd';
+import type { ButtonProps, DropdownProps, TablePaginationConfig, TableProps } from 'antd';
 import {
   AccountBookOutlined,
   CaretDownOutlined,
@@ -145,6 +146,18 @@ function writeLegacyHabit(key: string, value: unknown) {
 
 function legacyDisabledAnchorProps(disabled: boolean): AnchorHTMLAttributes<HTMLAnchorElement> {
   return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;
+}
+
+type LegacyDropdownProps = Omit<DropdownProps, 'popupRender' | 'trigger'> & {
+  overlay: ReactNode;
+  trigger?: DropdownProps['trigger'] | 'click';
+};
+
+const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];
+
+function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps) {
+  const nextTrigger = Array.isArray(trigger) ? trigger : trigger ? [trigger] : undefined;
+  return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;
 }
 
 function readLegacyUserPageSize() {
@@ -463,28 +476,41 @@ export default function UsersPage() {
         align: 'right',
         fixed: 'right',
         render: (_: unknown, row) => (
-          <Dropdown
-            trigger={['click']}
-            menu={{
-              items: [
-                { key: 'edit', label: <a><EditOutlined /> 编辑</a> },
-                { key: 'assign', label: <a><PlusOutlined /> 分配订单</a> },
-                { key: 'copy', label: <a><CopyOutlined /> 复制订阅URL</a> },
-                { key: 'reset', label: <a><ReloadOutlined /> 重置UUID及订阅URL</a> },
-                { key: 'orders', label: <a><AccountBookOutlined /> TA的订单</a> },
-                { key: 'invite', label: <a><UsergroupAddOutlined /> TA的邀请</a> },
-                { key: 'traffic', label: <a><SolutionOutlined /> TA的流量记录</a> },
-                { key: 'delete', label: <a><DeleteOutlined /> 删除用户</a> },
-              ],
-              onClick: ({ key }) => {
-                runUserAction(String(key), row);
-              },
-            }}
+          <LegacyDropdown
+            trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+            overlay={(
+              <Menu>
+                <Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>
+                  <a onClick={() => runUserAction('edit', row)}><EditOutlined /> 编辑</a>
+                </Menu.Item>
+                <Menu.Item key="assign" onContextMenu={(event) => event.stopPropagation()}>
+                  <a onClick={() => runUserAction('assign', row)}><PlusOutlined /> 分配订单</a>
+                </Menu.Item>
+                <Menu.Item key="copy">
+                  <a onClick={() => runUserAction('copy', row)}><CopyOutlined /> 复制订阅URL</a>
+                </Menu.Item>
+                <Menu.Item key="reset">
+                  <a onClick={() => runUserAction('reset', row)}><ReloadOutlined /> 重置UUID及订阅URL</a>
+                </Menu.Item>
+                <Menu.Item key="orders" onClick={() => runUserAction('orders', row)}>
+                  <a><AccountBookOutlined /> TA的订单</a>
+                </Menu.Item>
+                <Menu.Item key="invite" onClick={() => runUserAction('invite', row)}>
+                  <a><UsergroupAddOutlined /> TA的邀请</a>
+                </Menu.Item>
+                <Menu.Item key="traffic" onContextMenu={(event) => event.stopPropagation()}>
+                  <a onClick={() => runUserAction('traffic', row)}><SolutionOutlined /> TA的流量记录</a>
+                </Menu.Item>
+                <Menu.Item key="delete">
+                  <a onClick={() => runUserAction('delete', row)}><DeleteOutlined /> 删除用户</a>
+                </Menu.Item>
+              </Menu>
+            )}
           >
             <a ref={legacyHref()}>
               操作 <CaretDownOutlined />
             </a>
-          </Dropdown>
+          </LegacyDropdown>
         ),
       },
     ],
@@ -509,73 +535,81 @@ export default function UsersPage() {
                       <FilterOutlined /> 过滤器
                     </Button>
                   </LegacyFilterDrawer>
-                  <Dropdown
-                    menu={{
-                      items: [
-                        { key: 'csv', label: <a><FileExcelOutlined /> 导出CSV</a> },
-                        { key: 'mail', label: <a><MailOutlined /> 发送邮件</a> },
-                        {
-                          key: 'ban',
-                          label: <a {...legacyDisabledAnchorProps(!query.filter.length)}><StopOutlined /> 批量封禁</a>,
-                          disabled: !query.filter.length,
-                        },
-                        {
-                          key: 'delete',
-                          label: <a {...legacyDisabledAnchorProps(!query.filter.length)}><DeleteOutlined /> 批量删除</a>,
-                          disabled: !query.filter.length,
-                        },
-                      ],
-                      onClick: ({ key }) => {
-                        if (key === 'csv') {
-                          message.loading('导出中');
-                          void dumpCsv
-                            .mutateAsync(query.filter)
-                            .then((response) => {
-                              message.destroy();
-                              downloadText(`${formatDateTime(Date.now() / 1000)}.csv`, response.buffer);
-                            })
-                            .catch((error) => {
-                              message.destroy();
-                              showError(message, error);
-                            });
-                        }
-                        if (key === 'mail') setMailOpen(true);
-                        if (key === 'ban') {
-                          modal.confirm({
-                            title: '提醒',
-                            content: '确定要进行封禁吗？',
-                            onOk: () => {
-                              void banUsers
+                  <LegacyDropdown
+                    overlay={(
+                      <Menu>
+                        <Menu.Item key="csv">
+                          <a
+                            onClick={() => {
+                              message.loading('导出中');
+                              void dumpCsv
                                 .mutateAsync(query.filter)
-                                .then(() => {
-                                  void users.refetch();
+                                .then((response) => {
+                                  message.destroy();
+                                  downloadText(`${formatDateTime(Date.now() / 1000)}.csv`, response.buffer);
                                 })
-                                .catch((error) => showError(message, error));
-                            },
-                          });
-                        }
-                        if (key === 'delete') {
-                          modal.confirm({
-                            title: '提醒',
-                            content: '确定要进行删除吗？',
-                            onOk: () => {
-                              void deleteAll
-                                .mutateAsync(query.filter)
-                                .then(() => {
-                                  void users.refetch();
-                                })
-                                .catch((error) => showError(message, error));
-                            },
-                          });
-                        }
-                      },
-                    }}
+                                .catch((error) => {
+                                  message.destroy();
+                                  showError(message, error);
+                                });
+                            }}
+                          >
+                            <FileExcelOutlined /> 导出CSV
+                          </a>
+                        </Menu.Item>
+                        <Menu.Item key="mail">
+                          <a onClick={() => setMailOpen(true)}><MailOutlined /> 发送邮件</a>
+                        </Menu.Item>
+                        <Menu.Item key="ban" disabled={!query.filter.length}>
+                          <a
+                            {...legacyDisabledAnchorProps(!query.filter.length)}
+                            onClick={() => {
+                              modal.confirm({
+                                title: '提醒',
+                                content: '确定要进行封禁吗？',
+                                onOk: () => {
+                                  void banUsers
+                                    .mutateAsync(query.filter)
+                                    .then(() => {
+                                      void users.refetch();
+                                    })
+                                    .catch((error) => showError(message, error));
+                                },
+                              });
+                            }}
+                          >
+                            <StopOutlined /> 批量封禁
+                          </a>
+                        </Menu.Item>
+                        <Menu.Item key="delete" disabled={!query.filter.length}>
+                          <a
+                            {...legacyDisabledAnchorProps(!query.filter.length)}
+                            onClick={() => {
+                              modal.confirm({
+                                title: '提醒',
+                                content: '确定要进行删除吗？',
+                                onOk: () => {
+                                  void deleteAll
+                                    .mutateAsync(query.filter)
+                                    .then(() => {
+                                      void users.refetch();
+                                    })
+                                    .catch((error) => showError(message, error));
+                                },
+                              });
+                            }}
+                          >
+                            <DeleteOutlined /> 批量删除
+                          </a>
+                        </Menu.Item>
+                      </Menu>
+                    )}
                   >
                     <Button>
                       <SelectOutlined />
                       操作
                     </Button>
-                  </Dropdown>
+                  </LegacyDropdown>
                 </Button.Group>
               </Tooltip>
               <span className="float-right">

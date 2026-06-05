@@ -489,28 +489,44 @@ describe('UsersPage legacy user manager', () => {
       usersSource.indexOf('<span className="float-right">'),
     );
 
-    expect(rowActionSource).toContain("{ key: 'edit', label: <a><EditOutlined /> 编辑</a> }");
-    expect(rowActionSource).toContain("{ key: 'assign', label: <a><PlusOutlined /> 分配订单</a> }");
-    expect(rowActionSource).toContain("{ key: 'copy', label: <a><CopyOutlined /> 复制订阅URL</a> }");
-    expect(rowActionSource).toContain("{ key: 'reset', label: <a><ReloadOutlined /> 重置UUID及订阅URL</a> }");
-    expect(rowActionSource).toContain("{ key: 'orders', label: <a><AccountBookOutlined /> TA的订单</a> }");
-    expect(rowActionSource).toContain("{ key: 'invite', label: <a><UsergroupAddOutlined /> TA的邀请</a> }");
-    expect(rowActionSource).toContain("{ key: 'traffic', label: <a><SolutionOutlined /> TA的流量记录</a> }");
-    expect(rowActionSource).toContain("{ key: 'delete', label: <a><DeleteOutlined /> 删除用户</a> }");
+    expect(usersSource).toContain('function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)');
+    expect(usersSource).toContain('return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;');
+    expect(rowActionSource).toContain('<LegacyDropdown');
+    expect(rowActionSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
+    expect(rowActionSource).toContain('overlay={(');
+    expect(rowActionSource).toContain('<Menu>');
+    expect(rowActionSource).toContain('<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>');
+    expect(rowActionSource).toContain("<a onClick={() => runUserAction('edit', row)}><EditOutlined /> 编辑</a>");
+    expect(rowActionSource).toContain("<a onClick={() => runUserAction('assign', row)}><PlusOutlined /> 分配订单</a>");
+    expect(rowActionSource).toContain("<a onClick={() => runUserAction('copy', row)}><CopyOutlined /> 复制订阅URL</a>");
+    expect(rowActionSource).toContain("<a onClick={() => runUserAction('reset', row)}><ReloadOutlined /> 重置UUID及订阅URL</a>");
+    expect(rowActionSource).toContain("<Menu.Item key=\"orders\" onClick={() => runUserAction('orders', row)}>");
+    expect(rowActionSource).toContain('<a><AccountBookOutlined /> TA的订单</a>');
+    expect(rowActionSource).toContain("<Menu.Item key=\"invite\" onClick={() => runUserAction('invite', row)}>");
+    expect(rowActionSource).toContain('<a><UsergroupAddOutlined /> TA的邀请</a>');
+    expect(rowActionSource).toContain("<a onClick={() => runUserAction('traffic', row)}><SolutionOutlined /> TA的流量记录</a>");
+    expect(rowActionSource).toContain("<a onClick={() => runUserAction('delete', row)}><DeleteOutlined /> 删除用户</a>");
     expect(rowActionSource).not.toContain('label: <span>');
+    expect(rowActionSource).not.toContain('menu={{');
+    expect(rowActionSource).not.toContain('items: [');
 
     expect(usersSource).toContain('type AnchorHTMLAttributes');
     expect(usersSource).toContain('function legacyDisabledAnchorProps(disabled: boolean): AnchorHTMLAttributes<HTMLAnchorElement>');
     expect(usersSource).toContain('return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;');
-    expect(toolbarSource).toContain("{ key: 'csv', label: <a><FileExcelOutlined /> 导出CSV</a> }");
-    expect(toolbarSource).toContain("{ key: 'mail', label: <a><MailOutlined /> 发送邮件</a> }");
+    expect(toolbarSource).toContain('<LegacyDropdown');
+    expect(toolbarSource).toContain('overlay={(');
+    expect(toolbarSource).toContain('<Menu>');
+    expect(toolbarSource).toContain('<FileExcelOutlined /> 导出CSV');
+    expect(toolbarSource).toContain('<a onClick={() => setMailOpen(true)}><MailOutlined /> 发送邮件</a>');
+    expect(toolbarSource).toContain('<Menu.Item key="ban" disabled={!query.filter.length}>');
     expect(toolbarSource).toContain(
-      'label: <a {...legacyDisabledAnchorProps(!query.filter.length)}><StopOutlined /> 批量封禁</a>',
+      '{...legacyDisabledAnchorProps(!query.filter.length)}',
     );
-    expect(toolbarSource).toContain(
-      'label: <a {...legacyDisabledAnchorProps(!query.filter.length)}><DeleteOutlined /> 批量删除</a>',
-    );
+    expect(toolbarSource).toContain('<StopOutlined /> 批量封禁');
+    expect(toolbarSource).toContain('<DeleteOutlined /> 批量删除');
     expect(toolbarSource).not.toContain('label: <span>');
+    expect(toolbarSource).not.toContain('menu={{');
+    expect(toolbarSource).not.toContain('items: [');
   });
 
   it('keeps the toolbar operation dropdown on the original default trigger', () => {
@@ -519,8 +535,9 @@ describe('UsersPage legacy user manager', () => {
       usersSource.indexOf('<span className="float-right">'),
     );
 
-    expect(toolbarSource).toContain('<Dropdown');
+    expect(toolbarSource).toContain('<LegacyDropdown');
     expect(toolbarSource).not.toContain("trigger={['click']}");
+    expect(toolbarSource).not.toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
   });
 
   it('keeps the original refetch loading mask around the whole user table block', () => {
@@ -533,8 +550,9 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).not.toContain('rowKey="id"');
     expect(usersSource).toContain('onOk: () => {\n        void resetSecret');
     expect(usersSource).toContain('onOk: () => {\n        void remove');
-    expect(usersSource).toContain('void banUsers\n                                .mutateAsync(query.filter)');
-    expect(usersSource).toContain('void deleteAll\n                                .mutateAsync(query.filter)');
+    expect(usersSource).toContain('void banUsers');
+    expect(usersSource).toContain('void deleteAll');
+    expect(usersSource).toContain('.mutateAsync(query.filter)');
     expect(usersSource).not.toContain('onOk: () =>\n        resetSecret');
     expect(usersSource).not.toContain('onOk: () =>\n        remove');
     expect(usersSource).not.toContain('onOk: () => banUsers.mutateAsync(query.filter)');
@@ -567,17 +585,19 @@ describe('UsersPage legacy user manager', () => {
   });
 
   it('keeps bulk ban and delete-all fetching after the request succeeds', () => {
-    const banStart = usersSource.indexOf('void banUsers\n                                .mutateAsync(query.filter)');
-    const banRefetch = usersSource.indexOf('void users.refetch();', banStart);
-    const deleteAllStart = usersSource.indexOf(
-      'void deleteAll\n                                .mutateAsync(query.filter)',
-    );
-    const deleteAllRefetch = usersSource.indexOf('void users.refetch();', deleteAllStart);
+    const banStart = usersSource.indexOf('void banUsers');
+    const banMutate = usersSource.indexOf('.mutateAsync(query.filter)', banStart);
+    const banRefetch = usersSource.indexOf('void users.refetch();', banMutate);
+    const deleteAllStart = usersSource.indexOf('void deleteAll');
+    const deleteAllMutate = usersSource.indexOf('.mutateAsync(query.filter)', deleteAllStart);
+    const deleteAllRefetch = usersSource.indexOf('void users.refetch();', deleteAllMutate);
 
     expect(banStart).toBeGreaterThan(-1);
-    expect(banRefetch).toBeGreaterThan(banStart);
+    expect(banMutate).toBeGreaterThan(banStart);
+    expect(banRefetch).toBeGreaterThan(banMutate);
     expect(deleteAllStart).toBeGreaterThan(-1);
-    expect(deleteAllRefetch).toBeGreaterThan(deleteAllStart);
+    expect(deleteAllMutate).toBeGreaterThan(deleteAllStart);
+    expect(deleteAllRefetch).toBeGreaterThan(deleteAllMutate);
 
     const banUsersHook = adminQueriesSource.slice(
       adminQueriesSource.indexOf('export function useBanUsersMutation()'),
