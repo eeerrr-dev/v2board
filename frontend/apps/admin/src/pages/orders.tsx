@@ -296,7 +296,7 @@ function OrderDetailModal({
   const inviteUser = useAdminUserInfo(order.data?.invite_user_id);
   const detail = order.data;
   const planName = plans.find((plan) => plan.id === detail?.plan_id)?.name;
-  const loaded = Boolean(detail && user.data?.email && (!detail.invite_user_id || inviteUser.data?.email));
+  const loaded = Boolean(detail && user.data?.email && (!detail.invite_user_id || inviteUser.data));
 
   return (
     <Modal open={open} title="订单信息" onCancel={onClose} footer={false}>

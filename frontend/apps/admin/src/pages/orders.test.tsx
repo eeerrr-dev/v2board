@@ -338,9 +338,10 @@ describe('OrdersPage legacy order manager', () => {
 
   it('waits for invite user details before showing invited order detail content', () => {
     expect(ordersSource).toContain(
-      "const loaded = Boolean(detail && user.data?.email && (!detail.invite_user_id || inviteUser.data?.email));",
+      'const loaded = Boolean(detail && user.data?.email && (!detail.invite_user_id || inviteUser.data));',
     );
     expect(ordersSource).not.toContain('const loaded = Boolean(detail && user.data?.email);');
+    expect(ordersSource).not.toContain('inviteUser.data?.email));');
   });
 
   it('keeps the original false footer on the order detail modal', () => {
