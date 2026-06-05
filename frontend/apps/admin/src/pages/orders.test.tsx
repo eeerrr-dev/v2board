@@ -226,17 +226,29 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).toContain("<Badge status={COMMISSION_STATUS_BADGE[value]} />");
     expect(ordersSource).not.toContain("ORDER_STATUS_BADGE[value] ?? 'default'");
     expect(ordersSource).not.toContain("COMMISSION_STATUS_BADGE[value] ?? 'default'");
-    expect(ordersSource).toContain("{ key: '1', label: '已支付' }");
-    expect(ordersSource).toContain("{ key: '2', label: '取消' }");
-    expect(ordersSource).toContain("key === '1'");
+    expect(ordersSource).toContain(
+      "const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];",
+    );
+    expect(ordersSource).toContain('function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)');
+    expect(ordersSource).toContain('return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;');
+    expect(ordersSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
+    expect(ordersSource).toContain('overlay={(');
+    expect(ordersSource).toContain('<Menu>');
+    expect(ordersSource).toContain('<Menu.Item key="1" onClick={() => updateOrderStatus(row.trade_no, \'1\')}>');
+    expect(ordersSource).toContain('<Menu.Item key="2" onClick={() => updateOrderStatus(row.trade_no, \'2\')}>');
+    expect(ordersSource).toContain('updateOrderStatus(row.trade_no, \'1\')');
+    expect(ordersSource).not.toContain('menu={{');
+    expect(ordersSource).not.toContain("{ key: '1', label: '已支付' }");
+    expect(ordersSource).not.toContain("{ key: '2', label: '取消' }");
+    expect(ordersSource).not.toContain("key === '1'");
     expect(ordersSource).not.toContain("key === 'paid'");
   });
 
   it('keeps order action refetches after successful mutation requests', () => {
-    const paidStart = ordersSource.indexOf('paid.mutateAsync(row.trade_no)');
-    const cancelStart = ordersSource.indexOf('cancel.mutateAsync(row.trade_no)');
+    const paidStart = ordersSource.indexOf("status === '1' ? paid.mutateAsync(tradeNo)");
+    const cancelStart = ordersSource.indexOf(': cancel.mutateAsync(tradeNo);');
     const sharedRefetch = ordersSource.indexOf('void orders.refetch();', paidStart);
-    const updateStart = ordersSource.indexOf('updateOrder\n                      .mutateAsync({');
+    const updateStart = ordersSource.indexOf('updateOrder\n      .mutateAsync({');
     const updateRefetch = ordersSource.indexOf('void orders.refetch();', updateStart);
 
     expect(paidStart).toBeGreaterThan(-1);
@@ -267,7 +279,10 @@ describe('OrdersPage legacy order manager', () => {
 
   it('keeps the original commission display text separate from menu text', () => {
     expect(ordersSource).toContain("3: '已驳回'");
-    expect(ordersSource).toContain("{ key: '3', label: '无效', disabled: value === 3 }");
+    expect(ordersSource).toContain('key="3"');
+    expect(ordersSource).toContain('disabled={value === 3}');
+    expect(ordersSource).toContain('onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}');
+    expect(ordersSource).toContain('无效');
     expect(ordersSource).not.toContain("3: '无效'");
   });
 

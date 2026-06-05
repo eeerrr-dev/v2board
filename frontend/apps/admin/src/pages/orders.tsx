@@ -8,6 +8,7 @@ import {
   Divider,
   Dropdown,
   Input,
+  Menu,
   Modal,
   Row,
   Select,
@@ -15,7 +16,7 @@ import {
   Tag,
   Tooltip,
 } from 'antd';
-import type { ButtonProps, TablePaginationConfig, TableProps } from 'antd';
+import type { ButtonProps, DropdownProps, TablePaginationConfig, TableProps } from 'antd';
 import {
   CaretDownOutlined,
   FilterOutlined,
@@ -79,6 +80,19 @@ const COMMISSION_STATUS_TEXT: Record<number, string> = {
 
 const ORDER_STATUS_BADGE = ['error', 'processing', 'default', 'success', 'default'] as const;
 const COMMISSION_STATUS_BADGE = ['default', 'processing', 'success', 'error'] as const;
+
+type LegacyDropdownProps = Omit<DropdownProps, 'popupRender' | 'trigger'> & {
+  trigger?: DropdownProps['trigger'] | 'click';
+  overlay: ReactNode;
+};
+
+const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];
+
+function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps) {
+  const nextTrigger = Array.isArray(trigger) ? trigger : trigger ? [trigger] : undefined;
+
+  return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;
+}
 
 const ORDER_FILTER_KEYS: LegacyFilterKey[] = [
   { key: 'trade_no', title: '订单号', condition: ['模糊', '='] },
@@ -374,6 +388,28 @@ export default function OrdersPage() {
   const setFilter = (filter: AdminFilter[]) =>
     setQuery((state) => ({ ...state, current: 1, filter }));
 
+  const updateOrderStatus = (tradeNo: string, status: '1' | '2') => {
+    const request = status === '1' ? paid.mutateAsync(tradeNo) : cancel.mutateAsync(tradeNo);
+    request
+      .then(() => {
+        void orders.refetch();
+      })
+      .catch((error) => showError(message, error));
+  };
+
+  const updateCommissionStatus = (tradeNo: string, value: string) => {
+    updateOrder
+      .mutateAsync({
+        tradeNo,
+        key: 'commission_status',
+        value,
+      })
+      .then(() => {
+        void orders.refetch();
+      })
+      .catch((error) => showError(message, error));
+  };
+
   const userFilter = (key: string, condition: string, value: string | number) => {
     window.sessionStorage.setItem(
       'v2board-admin-user-filter',
@@ -431,26 +467,19 @@ export default function OrdersPage() {
         key: 'status',
         render: (value: number, row) => (
           <div>
-            <Dropdown
+            <LegacyDropdown
               disabled={value !== 0}
-              trigger={['click']}
-              menu={{
-                items: [
-                  { key: '1', label: '已支付' },
-                  { key: '2', label: '取消' },
-                ],
-                onClick: ({ key }) => {
-                  const request =
-                    key === '1'
-                      ? paid.mutateAsync(row.trade_no)
-                      : cancel.mutateAsync(row.trade_no);
-                  request
-                    .then(() => {
-                      void orders.refetch();
-                    })
-                    .catch((error) => showError(message, error));
-                },
-              }}
+              trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+              overlay={(
+                <Menu>
+                  <Menu.Item key="1" onClick={() => updateOrderStatus(row.trade_no, '1')}>
+                    已支付
+                  </Menu.Item>
+                  <Menu.Item key="2" onClick={() => updateOrderStatus(row.trade_no, '2')}>
+                    取消
+                  </Menu.Item>
+                </Menu>
+              )}
             >
               <div>
                 <Badge status={ORDER_STATUS_BADGE[value]} />
@@ -461,7 +490,7 @@ export default function OrdersPage() {
                   </a>
                 ) : null}
               </div>
-            </Dropdown>
+            </LegacyDropdown>
           </div>
         ),
       },
@@ -496,26 +525,33 @@ export default function OrdersPage() {
           }
           return (
             <div>
-              <Dropdown
-                trigger={['click']}
-                menu={{
-                  items: [
-                    { key: '0', label: '待确认', disabled: value === 0 },
-                    { key: '1', label: '有效', disabled: value === 1 },
-                    { key: '3', label: '无效', disabled: value === 3 },
-                  ],
-                  onClick: ({ key }) =>
-                    updateOrder
-                      .mutateAsync({
-                        tradeNo: row.trade_no,
-                        key: 'commission_status',
-                        value: key,
-                      })
-                      .then(() => {
-                        void orders.refetch();
-                      })
-                      .catch((error) => showError(message, error)),
-                }}
+              <LegacyDropdown
+                trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+                overlay={(
+                  <Menu>
+                    <Menu.Item
+                      key="0"
+                      disabled={value === 0}
+                      onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
+                    >
+                      待确认
+                    </Menu.Item>
+                    <Menu.Item
+                      key="1"
+                      disabled={value === 1}
+                      onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
+                    >
+                      有效
+                    </Menu.Item>
+                    <Menu.Item
+                      key="3"
+                      disabled={value === 3}
+                      onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
+                    >
+                      无效
+                    </Menu.Item>
+                  </Menu>
+                )}
               >
                 <div>
                   <Badge status={COMMISSION_STATUS_BADGE[value]} />
@@ -524,7 +560,7 @@ export default function OrdersPage() {
                     标记为 <CaretDownOutlined />
                   </a>
                 </div>
-              </Dropdown>
+              </LegacyDropdown>
             </div>
           );
         },
