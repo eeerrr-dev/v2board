@@ -30,9 +30,10 @@ const legacyHashRouteOptions = {
 
 normalizeLegacyHashRoute(legacyHashRouteOptions);
 installLegacyHashRouteNormalizer(legacyHashRouteOptions);
-installLegacyWhiteScreenRecovery(legacyHashRouteOptions);
 if (import.meta.env.DEV) {
   installLegacyDevModuleRecovery();
+} else {
+  installLegacyWhiteScreenRecovery(legacyHashRouteOptions);
 }
 applyLegacySettings();
 const i18n = createI18n();

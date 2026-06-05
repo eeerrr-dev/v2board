@@ -145,7 +145,7 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
   const fallback = options.fallback ?? 'zh-CN';
   if (typeof window !== 'undefined') {
     const bootstrapLocale = getLegacyBootstrapLocale();
-    if (bootstrapLocale) legacySetLocale(bootstrapLocale);
+    if (bootstrapLocale) legacySetLocale(bootstrapLocale, false);
   }
   const lng = getLegacyProviderLocale(fallback);
   if (typeof window !== 'undefined') {

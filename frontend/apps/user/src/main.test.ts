@@ -28,11 +28,11 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
     expect(mainSource).toContain('installLegacyWhiteScreenRecovery(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyDevModuleRecovery();');
-    expect(
-      mainSource.indexOf('installLegacyWhiteScreenRecovery(legacyHashRouteOptions);'),
-    ).toBeLessThan(mainSource.indexOf('if (import.meta.env.DEV) {'));
     expect(mainSource.indexOf('if (import.meta.env.DEV) {')).toBeLessThan(
       mainSource.indexOf('installLegacyDevModuleRecovery();'),
+    );
+    expect(mainSource.indexOf('installLegacyDevModuleRecovery();')).toBeLessThan(
+      mainSource.indexOf('installLegacyWhiteScreenRecovery(legacyHashRouteOptions);'),
     );
     expect(mainSource).toContain("import { useEffect, type ReactNode } from 'react';");
     expect(mainSource).toContain('function LegacyRouteGate({ children }: { children: ReactNode })');

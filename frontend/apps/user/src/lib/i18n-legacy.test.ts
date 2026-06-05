@@ -1,7 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createI18n, legacyGetLocale } from '@v2board/i18n';
 
 const originalNavigatorLanguage = window.navigator.language;
+
+function installLocalStorageStub() {
+  const store = new Map<string, string>();
+  const storage = {
+    clear: () => store.clear(),
+    getItem: (key: string) => store.get(key) ?? null,
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+  };
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: storage,
+  });
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  });
+}
 
 function setLegacyLocale(locale: string) {
   document.cookie = `i18n=${locale};path=/`;
@@ -18,6 +40,7 @@ function setLegacyI18n(
 
 describe('legacy i18n dictionaries', () => {
   beforeEach(() => {
+    installLocalStorageStub();
     document.cookie = 'i18n=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     window.localStorage.clear();
     window.settings = undefined;
@@ -489,12 +512,14 @@ describe('legacy i18n dictionaries', () => {
   it('normalizes old underscore i18n cookies before bootstrapping the provider', () => {
     Object.defineProperty(window.navigator, 'language', { value: 'fr-FR', configurable: true });
     document.cookie = 'i18n=zh_CN;path=/';
+    const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => undefined);
 
     const i18n = createI18n();
 
     expect(i18n.language).toBe('zh-CN');
     expect(window.localStorage.getItem('umi_locale')).toBe('zh-CN');
     expect(window.g_lang).toBe('zh-CN');
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it('ignores invalid i18n cookies instead of throwing before the app mounts', () => {

@@ -196,13 +196,6 @@ function appIsEmpty(root: HTMLElement | null): boolean {
   return elementIsEmpty(root);
 }
 
-function legacyMainIsEmpty(root: HTMLElement | null): boolean {
-  const page = root?.querySelector<HTMLElement>('#page-container');
-  const main = page?.querySelector<HTMLElement>('#main-container');
-  if (!page || !main) return false;
-  return elementIsEmpty(main);
-}
-
 function renderLegacyWhiteScreenFallback(root: HTMLElement | null): void {
   if (!root) return;
   const target =
@@ -262,39 +255,21 @@ export function installLegacyWhiteScreenRecovery(
 ): () => void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return () => undefined;
 
-  const delay = config.delay ?? 1200;
+  const delay = config.delay ?? 5000;
   const storageKey = config.storageKey ?? 'v2board:white-screen-recovery';
   const now = config.now ?? (() => Date.now());
   const replace = config.replace ?? ((url: string) => window.location.replace(url));
   let timer: number | undefined;
-  let emptyShellKey = '';
-  let emptyShellChecks = 0;
 
   const recoverIfEmpty = () => {
     const root = document.getElementById('root');
     const current = new URL(window.location.href);
     const key = `${storageKey}:${stableRecoveryKey(current)}`;
     const rootIsEmpty = appIsEmpty(root);
-    const shellMainIsEmpty = !rootIsEmpty && legacyMainIsEmpty(root);
 
-    if (!rootIsEmpty && !shellMainIsEmpty) {
+    if (!rootIsEmpty) {
       window.sessionStorage.removeItem(key);
-      emptyShellKey = '';
-      emptyShellChecks = 0;
       return;
-    }
-
-    if (shellMainIsEmpty) {
-      const currentShellKey = stableRecoveryKey(current);
-      if (emptyShellKey !== currentShellKey) {
-        emptyShellKey = currentShellKey;
-        emptyShellChecks = 0;
-      }
-      emptyShellChecks += 1;
-      if (emptyShellChecks < 3) {
-        timer = window.setTimeout(recoverIfEmpty, delay);
-        return;
-      }
     }
 
     const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
