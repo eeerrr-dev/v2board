@@ -214,6 +214,24 @@ describe('AdminLayout legacy dark mode behavior', () => {
     expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
   });
 
+  it('keeps the legacy brand href while routing the click inside the hash app', async () => {
+    await renderLayout();
+
+    const brand = container.querySelector<HTMLAnchorElement>(
+      '#sidebar .content-header > a.link-fx',
+    )!;
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+
+    await act(async () => {
+      brand.dispatchEvent(click);
+      await Promise.resolve();
+    });
+
+    expect(brand.getAttribute('href')).toBe('/');
+    expect(click.defaultPrevented).toBe(true);
+    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
+  });
+
   it('renders and controls the bundled header search overlay when search props are passed', async () => {
     const onChange = vi.fn();
     await act(async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
@@ -133,6 +133,12 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
     closeMobileNav();
   };
 
+  const handleBrandClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    navigate('/dashboard');
+    closeMobileNav();
+  };
+
   return (
     <div id="page-container" className={pageClassName}>
       <div
@@ -144,7 +150,7 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
       <nav id="sidebar">
         <div className="smini-hidden bg-header-dark">
           <div className="content-header justify-content-lg-center bg-black-10">
-            <a className="link-fx font-size-lg text-white" href="/">
+            <a className="link-fx font-size-lg text-white" href="/" onClick={handleBrandClick}>
               <span className="text-white-75">{getSiteTitle()}</span>
             </a>
             <div className="d-lg-none">

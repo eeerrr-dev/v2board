@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LanguageMenu } from './language-menu';
@@ -107,6 +107,12 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
     setOpen(false);
   };
 
+  const handleBrandClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    navigate('/dashboard');
+    setOpen(false);
+  };
+
   const toggleNav = () => setOpen((value) => !value);
 
   useEffect(() => {
@@ -139,7 +145,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
       <nav id="sidebar">
         <div className="smini-hidden bg-header-dark">
           <div className="content-header justify-content-lg-center bg-white-10">
-            <a className="font-size-lg text-white" href="/">
+            <a className="font-size-lg text-white" href="/" onClick={handleBrandClick}>
               <span className="text-white-75">{siteTitle}</span>
             </a>
             <div className="d-lg-none">
