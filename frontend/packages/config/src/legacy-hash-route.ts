@@ -323,9 +323,34 @@ export function installLegacyWhiteScreenRecovery(
   };
 }
 
-function errorText(value: unknown): string {
+function errorText(value: unknown, seen = new Set<unknown>()): string {
   if (value === null || value === undefined) return '';
-  return value instanceof Error ? `${value.message}\n${value.stack ?? ''}` : String(value);
+  if (value instanceof Error) return `${value.message}\n${value.stack ?? ''}`;
+  if (typeof value !== 'object') return String(value);
+  if (seen.has(value)) return '';
+  seen.add(value);
+
+  const record = value as Record<string, unknown>;
+  const fields = [
+    'message',
+    'stack',
+    'name',
+    'code',
+    'url',
+    'id',
+    'file',
+    'filename',
+    'plugin',
+    'frame',
+    'error',
+    'err',
+    'reason',
+    'detail',
+    'data',
+    'payload',
+  ];
+
+  return fields.map((field) => errorText(record[field], seen)).join('\n');
 }
 
 function isStaleViteModuleText(value: unknown): boolean {
@@ -348,13 +373,18 @@ function isStaleViteModuleText(value: unknown): boolean {
 }
 
 function isStaleViteModuleEvent(event: Event): boolean {
-  const maybeError = event as ErrorEvent & { payload?: unknown; reason?: unknown };
+  const maybeError = event as ErrorEvent & {
+    detail?: unknown;
+    payload?: unknown;
+    reason?: unknown;
+  };
   return isStaleViteModuleText(
     [
       errorText(maybeError.message),
       errorText(maybeError.filename),
       errorText(maybeError.error),
       errorText(maybeError.reason),
+      errorText(maybeError.detail),
       errorText(maybeError.payload),
     ].join('\n'),
   );
@@ -385,11 +415,13 @@ export function installLegacyDevModuleRecovery(
   };
 
   window.addEventListener('vite:preloadError', recover);
+  window.addEventListener('vite:error', recover);
   window.addEventListener('error', recover, true);
   window.addEventListener('unhandledrejection', recover);
 
   return () => {
     window.removeEventListener('vite:preloadError', recover);
+    window.removeEventListener('vite:error', recover);
     window.removeEventListener('error', recover, true);
     window.removeEventListener('unhandledrejection', recover);
   };

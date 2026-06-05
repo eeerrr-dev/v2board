@@ -610,6 +610,57 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
+  it('recovers stale Vite preload errors carried in CustomEvent detail', () => {
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyDevModuleRecovery({
+      maxAttempts: 1,
+      now: () => 765,
+      replace,
+    });
+
+    window.dispatchEvent(
+      new CustomEvent('vite:preloadError', {
+        detail: new Error(
+          'Failed to fetch dynamically imported module: http://127.0.0.1:5174/src/pages/orders.tsx?t=old',
+        ),
+      }),
+    );
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_dev_recover', '765');
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
+  it('recovers stale optimized module errors carried in Vite error details', () => {
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyDevModuleRecovery({
+      maxAttempts: 1,
+      now: () => 876,
+      replace,
+    });
+
+    window.dispatchEvent(
+      new CustomEvent('vite:error', {
+        detail: {
+          err: {
+            message:
+              "The requested module '/node_modules/.vite/deps/antd.js?v=old' does not provide an export named 'App'",
+          },
+        },
+      }),
+    );
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_dev_recover', '876');
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
   it('does not reload for ordinary runtime errors', () => {
     setUrl('/#/dashboard');
     const replace = vi.fn();
