@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { ConfigProvider, App as AntdApp, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -49,6 +49,10 @@ function LegacyRouteGate({ children }: { children: ReactNode }) {
   const location = useLocation();
   const current = `${location.pathname}${location.search}`;
   const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);
+
+  useEffect(() => {
+    normalizeLegacyHashRoute(legacyHashRouteOptions);
+  }, [location.hash, location.pathname, location.search]);
 
   return normalized !== current ? <Navigate to={normalized} replace /> : <>{children}</>;
 }

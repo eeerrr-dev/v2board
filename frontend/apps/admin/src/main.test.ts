@@ -34,9 +34,12 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource.indexOf('if (import.meta.env.DEV) {')).toBeLessThan(
       mainSource.indexOf('installLegacyDevModuleRecovery();'),
     );
-    expect(mainSource).toContain("import type { ReactNode } from 'react';");
+    expect(mainSource).toContain("import { useEffect, type ReactNode } from 'react';");
     expect(mainSource).toContain('function LegacyRouteGate({ children }: { children: ReactNode })');
     expect(mainSource).toContain('const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);');
+    expect(mainSource).toContain('useEffect(() => {');
+    expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
+    expect(mainSource).toContain('}, [location.hash, location.pathname, location.search]);');
     expect(mainSource).toContain('return normalized !== current ? <Navigate to={normalized} replace /> : <>{children}</>;');
   });
 
