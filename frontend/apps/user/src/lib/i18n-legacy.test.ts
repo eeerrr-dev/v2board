@@ -304,6 +304,19 @@ describe('legacy i18n dictionaries', () => {
       '已用 1 GB / 總計 10 GB',
     );
     expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe('當前已用流量達 80%');
+    expect(i18n.t('ticket.new')).toBe('新的工單');
+    expect(i18n.t('ticket.subject')).toBe('主題');
+    expect(i18n.t('ticket.level')).toBe('工單級別');
+    expect(i18n.t('ticket.level_form')).toBe('工單等級');
+    expect(i18n.t('ticket.status')).toBe('工單狀態');
+    expect(i18n.t('ticket.closed')).toBe('已關閉');
+    expect(i18n.t('ticket.last_reply_col')).toBe('最新回復');
+    expect(i18n.t('ticket.message_placeholder')).toBe('請描述您遇到的問題');
+    expect(i18n.t('ticket.reply_placeholder')).toBe('輸入内容回復工單…');
+    expect(i18n.t('ticket.subject_placeholder')).toBe('請輸入工單主題');
+    expect(i18n.t('ticket.level_placeholder')).toBe('請選擇工單等級');
+    expect(i18n.t('ticket.history')).toBe('工單歷史');
+    expect(i18n.t('ticket.view')).toBe('檢視');
     expect(i18n.t('dashboard.transfer_to_balance')).toBe('推廣佣金劃轉至餘額');
     expect(i18n.t('invite.manage')).toBe('邀請碼管理');
     expect(i18n.t('invite.generate')).toBe('生成邀請碼');
@@ -360,6 +373,19 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('dashboard.alert_traffic_rate', { rate: 80 })).toBe(
       'Dữ liệu hiện đang sử dụng lên đến 80%',
     );
+    expect(i18n.t('ticket.new')).toBe('Việc mới');
+    expect(i18n.t('ticket.subject')).toBe('Chủ Đề');
+    expect(i18n.t('ticket.level')).toBe('Cấp độ');
+    expect(i18n.t('ticket.level_form')).toBe('Cấp độ công việc');
+    expect(i18n.t('ticket.status')).toBe('Trạng thái');
+    expect(i18n.t('ticket.closed')).toBe('Đã đóng');
+    expect(i18n.t('ticket.last_reply_col')).toBe('Trả lời gần đây');
+    expect(i18n.t('ticket.message_placeholder')).toBe('Hãy mô tả vấn đề gặp phải');
+    expect(i18n.t('ticket.reply_placeholder')).toBe('Nhập nội dung trả lời công việc...');
+    expect(i18n.t('ticket.subject_placeholder')).toBe('Hãy nhập chủ đề công việc');
+    expect(i18n.t('ticket.level_placeholder')).toBe('Hãy chọn cấp độ công việc');
+    expect(i18n.t('ticket.history')).toBe('Lịch sử đơn hàng');
+    expect(i18n.t('ticket.view')).toBe('Xem');
     expect(i18n.t('dashboard.transfer_to_balance')).toBe(
       'Chuyển khoản hoa hồng giới thiệu đến số dư',
     );

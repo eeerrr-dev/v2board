@@ -435,6 +435,114 @@ describe('TicketsPage legacy interactions', () => {
     });
   });
 
+  it('clears saveData after a successful new-ticket save while the old modal DOM stays mounted', async () => {
+    const originalConsoleError = console.error;
+    const consoleError = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      const messageText = String(args[0] ?? '');
+      if (
+        messageText.includes('changing an uncontrolled input to be controlled') ||
+        messageText.includes('changing a controlled input to be uncontrolled')
+      ) {
+        return;
+      }
+      originalConsoleError(...args);
+    });
+
+    try {
+      await act(async () => {
+        root!.render(<TicketsPage />);
+        await Promise.resolve();
+      });
+
+      const newButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === '新的工单',
+      );
+      expect(newButton).toBeDefined();
+
+      await act(async () => {
+        newButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await Promise.resolve();
+      });
+
+      const subject = document.body.querySelector(
+        'input[placeholder="请输入工单主题"]',
+      ) as HTMLInputElement;
+      const level = document.body.querySelector('.legacy-select-probe') as HTMLSelectElement;
+      const message = document.body.querySelector(
+        'textarea[placeholder="请描述您遇到的问题"]',
+      ) as HTMLTextAreaElement;
+
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+          subject,
+          'Saved subject',
+        );
+        subject.dispatchEvent(new Event('input', { bubbles: true }));
+        level.value = '2';
+        level.dispatchEvent(new Event('change', { bubbles: true }));
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
+          message,
+          'Saved body',
+        );
+        message.dispatchEvent(new Event('input', { bubbles: true }));
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        document.body
+          .querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+          .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mocks.saveMutateAsync).toHaveBeenLastCalledWith({
+        subject: 'Saved subject',
+        level: 2,
+        message: 'Saved body',
+      });
+
+      await act(async () => {
+        newButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await Promise.resolve();
+      });
+
+      expect(
+        document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!.value,
+      ).toBe('Saved subject');
+      expect(document.body.querySelector<HTMLSelectElement>('.legacy-select-probe')!.value).toBe(
+        '',
+      );
+      expect(
+        document.body.querySelector<HTMLTextAreaElement>(
+          'textarea[placeholder="请描述您遇到的问题"]',
+        )!.value,
+      ).toBe('Saved body');
+
+      await act(async () => {
+        document.body
+          .querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+          .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mocks.saveMutateAsync).toHaveBeenLastCalledWith({
+        subject: undefined,
+        level: undefined,
+        message: undefined,
+      });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('keeps the bundled ticket level select value as the direct payload value', () => {
     expect(source).toContain('const levelLabel = LEVELS[ticket.level]?.labelKey;');
     expect(source).toContain('onChange={(nextLevel) => setLevel(nextLevel as TicketLevel)}');
