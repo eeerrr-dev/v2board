@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { useReplyTicketMutation, useTicket } from '@/lib/queries';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { toast } from '@/lib/legacy-toast';
-import { LegacyEmpty } from '@/components/legacy-empty';
 
 function legacyTicketMessageLength(data?: { message?: unknown[] }) {
   return data?.message!.length;
@@ -64,14 +63,6 @@ export default function TicketDetailPage() {
 
   const data = ticket.data;
   assumeLegacyTicketMessages(data);
-
-  if (ticket.isError && !data) {
-    return (
-      <div className="bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1">
-        <LegacyEmpty />
-      </div>
-    );
-  }
 
   return (
     <div>

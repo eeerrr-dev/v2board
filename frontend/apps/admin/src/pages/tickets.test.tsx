@@ -390,17 +390,27 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).not.toContain('ant-card');
   });
 
-  it('shows an empty state instead of a blank admin chat window when ticket fetch fails', () => {
+  it('keeps the bundled blank admin chat shell when ticket fetch fails', () => {
     mocks.params = { ticket_id: '1' };
     mocks.adminTicket = undefined;
     mocks.adminTicketError = true;
 
     const html = renderToStaticMarkup(<TicketsPage />);
 
-    expect(html).toContain('ant-empty');
-    expect(html).toContain('暂无数据');
-    expect(html).not.toContain('js-chat-input');
+    expect(html).toContain('block-content-full bg-gray-lighter p-3');
+    expect(html).toContain('tag___12_9H');
+    expect(html).toContain('ctrl___UqDJ7');
+    expect(html).toContain('js-chat-messages');
+    expect(html).toContain('content___DW5w1');
+    expect(html).toContain('js-chat-form');
+    expect(html).toContain('input___1j_ND');
+    expect(html).toContain('js-chat-input bg-body-dark border-0 form-control form-control-alt');
+    expect(html).toContain('输入内容回复工单...');
+    expect(html).not.toContain('ant-empty');
+    expect(html).not.toContain('暂无数据');
+    expect(html).not.toContain('支付问题');
     expect(mocks.adminUserInfoIds).toContain(undefined);
+    expect(ticketsSource).not.toContain("if (ticket.isError && !current)");
   });
 
   it('keeps the old chat reply message state lifetime', () => {

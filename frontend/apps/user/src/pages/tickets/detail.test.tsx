@@ -133,15 +133,23 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     expect(html).toContain('placeholder="输入内容回复工单..."');
   });
 
-  it('shows the legacy empty state instead of a blank popup when the ticket fetch fails', () => {
+  it('keeps the bundled blank chat shell when the ticket fetch fails', () => {
     state.ticket = undefined;
     state.ticketError = true;
 
     const html = renderToStaticMarkup(<TicketDetailPage />);
 
-    expect(html).toContain('class="ant-empty ant-empty-normal"');
-    expect(html).toContain('暂无数据');
-    expect(html).not.toContain('js-chat-input');
+    expect(html).toContain('block-content-full bg-gray-lighter p-3');
+    expect(html).toContain('class="tag___12_9H"');
+    expect(html).toContain(
+      'bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1',
+    );
+    expect(html).toContain('js-chat-form block-content p-2 bg-body-dark input___1j_ND');
+    expect(html).toContain('js-chat-input bg-body-dark border-0 form-control form-control-alt');
+    expect(html).toContain('placeholder="输入内容回复工单..."');
+    expect(html).not.toContain('class="ant-empty ant-empty-normal"');
+    expect(html).not.toContain('暂无数据');
+    expect(html).not.toContain('Need help');
   });
 });
 
