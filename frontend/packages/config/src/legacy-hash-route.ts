@@ -18,6 +18,7 @@ export interface LegacyWhiteScreenRecoveryConfig {
 export interface LegacyDevModuleRecoveryConfig {
   storageKey?: string;
   maxAttempts?: number;
+  clearDelay?: number;
   now?: () => number;
   replace?: (url: string) => void;
 }
@@ -441,15 +442,28 @@ export function installLegacyDevModuleRecovery(
 
   const storageKey = config.storageKey ?? 'v2board:dev-module-recovery';
   const maxAttempts = config.maxAttempts ?? 3;
+  const clearDelay = config.clearDelay ?? 2500;
   const now = config.now ?? (() => Date.now());
   const replace = config.replace ?? ((url: string) => window.location.replace(url));
+  let clearTimer: number | undefined;
+
+  const recoveryKey = (url: URL) => `${storageKey}:${stableRecoveryKey(url)}`;
+  const clearRenderedRouteAttempt = () => {
+    const root = document.getElementById('root');
+    if (appIsEmpty(root, true)) return;
+    window.sessionStorage.removeItem(recoveryKey(new URL(window.location.href)));
+  };
+  const scheduleRenderedRouteClear = () => {
+    if (clearTimer !== undefined) window.clearTimeout(clearTimer);
+    clearTimer = window.setTimeout(clearRenderedRouteAttempt, clearDelay);
+  };
 
   const recover = (event: Event) => {
     if (!isStaleViteModuleEvent(event)) return;
     event.preventDefault();
 
     const current = new URL(window.location.href);
-    const key = `${storageKey}:${stableRecoveryKey(current)}`;
+    const key = recoveryKey(current);
     const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
     if (attempts >= maxAttempts) return;
 
@@ -458,12 +472,22 @@ export function installLegacyDevModuleRecovery(
     replace(current.toString());
   };
 
+  const root = document.getElementById('root');
+  const observer =
+    root && typeof MutationObserver !== 'undefined'
+      ? new MutationObserver(scheduleRenderedRouteClear)
+      : undefined;
+
+  observer?.observe(root as HTMLElement, { childList: true, subtree: true });
+  scheduleRenderedRouteClear();
   window.addEventListener('vite:preloadError', recover);
   window.addEventListener('vite:error', recover);
   window.addEventListener('error', recover, true);
   window.addEventListener('unhandledrejection', recover);
 
   return () => {
+    if (clearTimer !== undefined) window.clearTimeout(clearTimer);
+    observer?.disconnect();
     window.removeEventListener('vite:preloadError', recover);
     window.removeEventListener('vite:error', recover);
     window.removeEventListener('error', recover, true);

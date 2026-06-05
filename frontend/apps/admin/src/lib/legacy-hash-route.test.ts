@@ -793,6 +793,59 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
+  it('clears stale Vite module recovery attempts after route content renders', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<div id="root"><main>仪表盘</main></div>';
+    setUrl('/#/dashboard');
+    window.sessionStorage.setItem('v2board:dev-module-recovery:/#/dashboard', '3');
+
+    const dispose = installLegacyDevModuleRecovery({ clearDelay: 10 });
+    vi.advanceTimersByTime(10);
+
+    expect(window.sessionStorage.getItem('v2board:dev-module-recovery:/#/dashboard')).toBeNull();
+    dispose();
+  });
+
+  it('keeps stale Vite module recovery attempts while the route is still blank', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<div id="root"></div>';
+    setUrl('/#/dashboard');
+    window.sessionStorage.setItem('v2board:dev-module-recovery:/#/dashboard', '3');
+
+    const dispose = installLegacyDevModuleRecovery({ clearDelay: 10 });
+    vi.advanceTimersByTime(10);
+
+    expect(window.sessionStorage.getItem('v2board:dev-module-recovery:/#/dashboard')).toBe('3');
+    dispose();
+  });
+
+  it('recovers stale Vite modules again after a successful render clears old attempts', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<div id="root"><main>仪表盘</main></div>';
+    setUrl('/#/dashboard');
+    window.sessionStorage.setItem('v2board:dev-module-recovery:/#/dashboard', '3');
+    const replace = vi.fn();
+    const dispose = installLegacyDevModuleRecovery({
+      clearDelay: 10,
+      now: () => 159,
+      replace,
+    });
+
+    vi.advanceTimersByTime(10);
+    window.dispatchEvent(
+      new ErrorEvent('error', {
+        message: 'Outdated Optimize Dep',
+        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/antd.js?v=old',
+      }),
+    );
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_dev_recover', '159');
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
   it('does not reload for ordinary runtime errors', () => {
     setUrl('/#/dashboard');
     const replace = vi.fn();
