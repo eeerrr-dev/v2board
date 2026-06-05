@@ -661,6 +661,51 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
+  it('recovers browser-specific dynamic import failures from promise rejections', () => {
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyDevModuleRecovery({
+      maxAttempts: 1,
+      now: () => 246,
+      replace,
+    });
+    const event = Object.assign(new Event('unhandledrejection'), {
+      reason: new Error(
+        'error loading dynamically imported module: http://127.0.0.1:5174/src/pages/users.tsx?t=old',
+      ),
+    });
+
+    window.dispatchEvent(event);
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_dev_recover', '246');
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
+  it('recovers chunk and export mismatch failures nested under error causes', () => {
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyDevModuleRecovery({
+      maxAttempts: 1,
+      now: () => 357,
+      replace,
+    });
+    const error = new Error('ChunkLoadError: Loading chunk admin-users failed');
+    (error as Error & { cause?: Error }).cause = new Error(
+      "The requested module '/assets/index-old.js' doesn't provide an export named 'default'",
+    );
+
+    window.dispatchEvent(new ErrorEvent('error', { error }));
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_dev_recover', '357');
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
   it('does not reload for ordinary runtime errors', () => {
     setUrl('/#/dashboard');
     const replace = vi.fn();

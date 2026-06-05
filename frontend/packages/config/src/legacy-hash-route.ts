@@ -342,6 +342,7 @@ function errorText(value: unknown, seen = new Set<unknown>()): string {
     'filename',
     'plugin',
     'frame',
+    'cause',
     'error',
     'err',
     'reason',
@@ -361,8 +362,15 @@ function isStaleViteModuleText(value: unknown): boolean {
     text.includes('Outdated Optimize Dep') ||
     text.includes('504 (Outdated Optimize Dep)') ||
     text.includes('Failed to fetch dynamically imported module') ||
+    lower.includes('error loading dynamically imported module') ||
     text.includes('Importing a module script failed') ||
     text.includes('Failed to load module script') ||
+    lower.includes('failed to import module script') ||
+    lower.includes('chunkloaderror') ||
+    lower.includes('loading chunk') ||
+    (lower.includes('requested module') &&
+      (lower.includes('does not provide an export') ||
+        lower.includes("doesn't provide an export"))) ||
     text.includes('/node_modules/.vite/deps/') ||
     (text.includes('/node_modules/.vite/') &&
       (lower.includes('does not provide an export named') ||
