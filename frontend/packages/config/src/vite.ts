@@ -89,6 +89,22 @@ export function localHorizonStatsPlugin(): Plugin {
   };
 }
 
+export function stripViteClientPlugin(): Plugin {
+  return {
+    name: 'strip-vite-client',
+    apply: 'serve',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html) {
+        return html.replace(
+          /\n?\s*<script\s+type="module"\s+src="[^"]*\/@vite\/client"><\/script>\n?/g,
+          '\n',
+        );
+      },
+    },
+  };
+}
+
 export function buildAppViteConfig(options: AppViteOptions): UserConfig {
   const apiTarget = options.apiTarget ?? process.env.VITE_API_BASE ?? 'http://127.0.0.1:8000';
   return {
@@ -96,12 +112,11 @@ export function buildAppViteConfig(options: AppViteOptions): UserConfig {
     server: {
       port: options.port,
       host: '0.0.0.0',
-      hmr: {
-        // The packaged theme never had Vite's runtime error overlay. Keep local
-        // dev from covering the legacy UI with a blank/error pane; errors still
-        // stay visible in the console and route boundaries.
-        overlay: false,
-      },
+      // The packaged theme never had Vite's HMR/React Refresh runtime. Disable
+      // it in local dev so an open legacy page is not half-updated while code is
+      // changing or the container recompiles; manual refreshes still load the
+      // latest source, and runtime errors stay visible in the console/boundary.
+      hmr: false,
       headers: {
         'Cache-Control': 'no-store, max-age=0',
       },

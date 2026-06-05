@@ -7,11 +7,16 @@ const viteConfigSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../vite.config.ts'),
   'utf8',
 );
+const sharedViteConfigSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../../../packages/config/src/vite.ts'),
+  'utf8',
+);
 
 describe('admin Vite dev optimizer', () => {
   it('keeps admin optimized deps isolated and fully declared for stable page clicks', () => {
     expect(viteConfigSource).toContain("cacheDir: '../../node_modules/.vite/admin'");
     expect(viteConfigSource).toContain('optimizeDeps: {');
+    expect(viteConfigSource).toContain('stripViteClientPlugin()');
     expect(viteConfigSource).toContain("'axios'");
     expect(viteConfigSource).toContain("'echarts/theme/vintage'");
     expect(viteConfigSource).toContain("'react-dom'");
@@ -19,5 +24,12 @@ describe('admin Vite dev optimizer', () => {
     expect(viteConfigSource).toContain("'react/jsx-runtime'");
     expect(viteConfigSource).toContain('holdUntilCrawlEnd: false');
     expect(viteConfigSource).toContain('noDiscovery: true');
+  });
+
+  it('disables Vite HMR so open legacy pages are not half-refreshed while clicking', () => {
+    expect(sharedViteConfigSource).toContain('hmr: false');
+    expect(sharedViteConfigSource).not.toContain('overlay: false');
+    expect(sharedViteConfigSource).toContain('export function stripViteClientPlugin()');
+    expect(sharedViteConfigSource).toContain('/@vite\\/client');
   });
 });

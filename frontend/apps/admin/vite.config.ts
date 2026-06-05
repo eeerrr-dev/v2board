@@ -5,12 +5,13 @@ import {
   buildAppViteConfig,
   legacyAdminAssetsPlugin,
   localHorizonStatsPlugin,
+  stripViteClientPlugin,
 } from '@v2board/config/vite';
 
 export default defineConfig({
   ...buildAppViteConfig({ port: 5174 }),
   cacheDir: '../../node_modules/.vite/admin',
-  plugins: [react(), legacyAdminAssetsPlugin(), localHorizonStatsPlugin()],
+  plugins: [react(), stripViteClientPlugin(), legacyAdminAssetsPlugin(), localHorizonStatsPlugin()],
   optimizeDeps: {
     include: [
       '@ant-design/icons',
