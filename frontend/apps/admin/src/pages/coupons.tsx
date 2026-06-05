@@ -154,7 +154,7 @@ function CouponPage() {
     if (payload.type === 1) payload.value = 100 * Number(payload.value);
     const response = await generate.mutateAsync(payload);
     if (payload.generate_count) downloadGeneratedCsv('COUPON', response.buffer);
-    await coupons.refetch();
+    void coupons.refetch();
     modalVisible();
   };
 
@@ -469,7 +469,7 @@ function GiftcardPage() {
     if (payload.type === 1) payload.value = 100 * Number(payload.value);
     const response = await generate.mutateAsync(payload);
     if (payload.generate_count) downloadGeneratedCsv('GIFTCARD', response.buffer);
-    await giftcards.refetch();
+    void giftcards.refetch();
     modalVisible();
   };
 
