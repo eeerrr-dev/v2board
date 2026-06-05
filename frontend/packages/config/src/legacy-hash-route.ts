@@ -8,6 +8,13 @@ export interface LegacyHashRouteOptions {
   nestedPrefixes?: readonly string[];
 }
 
+export interface LegacyWhiteScreenRecoveryConfig {
+  delay?: number;
+  storageKey?: string;
+  now?: () => number;
+  replace?: (url: string) => void;
+}
+
 function normalizePath(path: string): string {
   const next = path.trim();
   if (!next || next === '#') return '/';
@@ -145,5 +152,79 @@ export function installLegacyHashRouteNormalizer(options: LegacyHashRouteOptions
     }
     window.removeEventListener('hashchange', normalize);
     window.removeEventListener('popstate', normalize);
+  };
+}
+
+function rootIsEmpty(root: HTMLElement | null): boolean {
+  if (!root) return true;
+  return root.childElementCount === 0 && !root.textContent?.trim();
+}
+
+function stableRecoveryKey(url: URL): string {
+  const search = new URLSearchParams(url.search);
+  search.delete('__v2board_recover');
+  const query = search.toString();
+  return `${url.pathname}${query ? `?${query}` : ''}${url.hash}`;
+}
+
+export function installLegacyWhiteScreenRecovery(
+  options: LegacyHashRouteOptions,
+  config: LegacyWhiteScreenRecoveryConfig = {},
+): () => void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return () => undefined;
+
+  const delay = config.delay ?? 1200;
+  const storageKey = config.storageKey ?? 'v2board:white-screen-recovery';
+  const now = config.now ?? (() => Date.now());
+  const replace = config.replace ?? ((url: string) => window.location.replace(url));
+  let timer: number | undefined;
+
+  const recoverIfEmpty = () => {
+    const root = document.getElementById('root');
+    if (!rootIsEmpty(root)) return;
+
+    const current = new URL(window.location.href);
+    const key = `${storageKey}:${stableRecoveryKey(current)}`;
+    const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
+    if (attempts >= 2) return;
+
+    window.sessionStorage.setItem(key, String(attempts + 1));
+    current.searchParams.set('__v2board_recover', String(now()));
+
+    if (attempts > 0) {
+      const hasAuth = Boolean(
+        window.localStorage.getItem(options.authStorageKey ?? 'authorization'),
+      );
+      current.hash = `#${hasAuth ? options.authenticatedFallback : options.guestFallback}`;
+    }
+
+    replace(current.toString());
+  };
+
+  const schedule = () => {
+    if (timer !== undefined) window.clearTimeout(timer);
+    timer = window.setTimeout(recoverIfEmpty, delay);
+  };
+
+  const root = document.getElementById('root');
+  const observer =
+    root && typeof MutationObserver !== 'undefined'
+      ? new MutationObserver(schedule)
+      : undefined;
+
+  observer?.observe(root as HTMLElement, { childList: true });
+  window.addEventListener('hashchange', schedule);
+  window.addEventListener('popstate', schedule);
+  window.addEventListener('error', schedule);
+  window.addEventListener('unhandledrejection', schedule);
+  schedule();
+
+  return () => {
+    if (timer !== undefined) window.clearTimeout(timer);
+    observer?.disconnect();
+    window.removeEventListener('hashchange', schedule);
+    window.removeEventListener('popstate', schedule);
+    window.removeEventListener('error', schedule);
+    window.removeEventListener('unhandledrejection', schedule);
   };
 }

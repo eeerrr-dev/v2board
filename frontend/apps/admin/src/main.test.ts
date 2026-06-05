@@ -12,6 +12,7 @@ const antdCompatSource = readFileSync(
 describe('admin legacy entrypoint', () => {
   it('normalizes broken hash routes before rendering the admin router', () => {
     expect(mainSource).toContain('installLegacyHashRouteNormalizer');
+    expect(mainSource).toContain('installLegacyWhiteScreenRecovery');
     expect(mainSource).toContain('normalizeLegacyHashRoute');
     expect(mainSource).toContain('getNormalizedLegacyHashPath');
     expect(mainSource).toContain('const legacyHashRouteOptions = {');
@@ -23,6 +24,7 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('routes: ADMIN_LEGACY_ROUTE_PATHS');
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
+    expect(mainSource).toContain('if (import.meta.env.DEV) installLegacyWhiteScreenRecovery(legacyHashRouteOptions);');
     expect(mainSource).toContain("import type { ReactNode } from 'react';");
     expect(mainSource).toContain('function LegacyRouteGate({ children }: { children: ReactNode })');
     expect(mainSource).toContain('const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);');

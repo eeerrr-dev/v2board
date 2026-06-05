@@ -8,6 +8,7 @@ import { createI18n } from '@v2board/i18n';
 import {
   getNormalizedLegacyHashPath,
   installLegacyHashRouteNormalizer,
+  installLegacyWhiteScreenRecovery,
   normalizeLegacyHashRoute,
 } from '@v2board/config';
 import { HashRouter, Navigate, useLocation } from 'react-router-dom';
@@ -28,6 +29,7 @@ const legacyHashRouteOptions = {
 
 normalizeLegacyHashRoute(legacyHashRouteOptions);
 installLegacyHashRouteNormalizer(legacyHashRouteOptions);
+if (import.meta.env.DEV) installLegacyWhiteScreenRecovery(legacyHashRouteOptions);
 applyAdminLegacySettings();
 applyInitialDarkMode();
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getNormalizedLegacyHashPath,
   installLegacyHashRouteNormalizer,
+  installLegacyWhiteScreenRecovery,
   normalizeLegacyHashRoute,
 } from '@v2board/config';
 
@@ -41,7 +42,10 @@ describe('normalizeLegacyHashRoute', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     window.localStorage.clear();
+    window.sessionStorage.clear();
+    document.body.innerHTML = '';
     setUrl('/');
   });
 
@@ -303,5 +307,66 @@ describe('normalizeLegacyHashRoute', () => {
     window.dispatchEvent(new HashChangeEvent('hashchange'));
 
     expect(window.location.hash).toBe('#/login/dashboard');
+  });
+
+  it('reloads once when the React root is empty after a route change', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<div id="root"></div>';
+    setUrl('/#/login/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      now: () => 123,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_recover', '123');
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
+  it('falls back to the authenticated route when the same empty route is recovered twice', () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem('authorization', 'jwt');
+    document.body.innerHTML = '<div id="root"></div>';
+    setUrl('/#/login/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      now: () => 456,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_recover', '456');
+    expected.hash = '#/dashboard';
+    expect(replace).toHaveBeenLastCalledWith(expected.toString());
+    dispose();
+  });
+
+  it('does not recover when the React root has rendered content', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<div id="root"><main>仪表盘</main></div>';
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+
+    expect(replace).not.toHaveBeenCalled();
+    dispose();
   });
 });
