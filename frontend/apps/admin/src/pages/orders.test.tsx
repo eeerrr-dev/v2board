@@ -166,6 +166,16 @@ describe('OrdersPage legacy order manager', () => {
   });
 
   it('submits the legacy assigned-order modal state without default replacements', () => {
+    expect(ordersSource).toContain('interface AssignOrderSubmit');
+    expect(ordersSource).toContain('function assignOrderSubmit(): AssignOrderSubmit');
+    expect(ordersSource).toContain('email: undefined');
+    expect(ordersSource).toContain('plan_id: undefined');
+    expect(ordersSource).toContain('period: undefined');
+    expect(ordersSource).toContain('total_amount: undefined');
+    expect(ordersSource).toContain('useState<AssignOrderSubmit>(() => assignOrderSubmit())');
+    expect(ordersSource).toContain('setSubmit(assignOrderSubmit());');
+    expect(ordersSource).not.toContain('useState<AssignOrderSubmit>({})');
+    expect(ordersSource).not.toContain('setSubmit({});');
     expect(ordersSource).toContain('.mutateAsync(submit)');
     expect(ordersSource).toContain('await onAssigned();\n      close();');
     expect(ordersSource).not.toContain('onAssigned();\n              close();');

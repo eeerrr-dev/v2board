@@ -164,6 +164,22 @@ function showError(message: ReturnType<typeof App.useApp>['message'], error: unk
   if (error instanceof Error) message.error(i18nGet(error.message));
 }
 
+interface AssignOrderSubmit {
+  email?: string;
+  plan_id?: number;
+  period?: PlanPeriod;
+  total_amount?: string;
+}
+
+function assignOrderSubmit(): AssignOrderSubmit {
+  return {
+    email: undefined,
+    plan_id: undefined,
+    period: undefined,
+    total_amount: undefined,
+  };
+}
+
 function OrderDetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <Row gutter={[16, 16]} style={detailRowStyle}>
@@ -183,16 +199,11 @@ function AssignOrderButton({
   const { message } = App.useApp();
   const assign = useAssignOrderMutation();
   const [open, setOpen] = useState(false);
-  const [submit, setSubmit] = useState<{
-    email?: string;
-    plan_id?: number;
-    period?: PlanPeriod;
-    total_amount?: string;
-  }>({});
+  const [submit, setSubmit] = useState<AssignOrderSubmit>(() => assignOrderSubmit());
 
   const close = () => {
     setOpen(false);
-    setSubmit({});
+    setSubmit(assignOrderSubmit());
   };
 
   const assignOrder = async () => {
