@@ -424,6 +424,9 @@ export const fetchCoupons = async (
   query: AdminPageQuery = {},
 ): Promise<PageResult<Coupon>> => {
   const env = await adminGetEnvelope<Coupon[]>(client, '/coupon/fetch', { ...query });
+  env.data.forEach((coupon) => {
+    if (coupon.type === 1) coupon.value = coupon.value / 100;
+  });
   return { data: env.data, total: env.total };
 };
 
@@ -461,6 +464,9 @@ export const fetchGiftcards = async (
   query: AdminPageQuery = {},
 ): Promise<PageResult<Giftcard>> => {
   const env = await adminGetEnvelope<Giftcard[]>(client, '/giftcard/fetch', { ...query });
+  env.data.forEach((giftcard) => {
+    if (giftcard.type === 1) giftcard.value = giftcard.value / 100;
+  });
   return { data: env.data, total: env.total };
 };
 

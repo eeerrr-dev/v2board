@@ -167,9 +167,7 @@ function CouponPage() {
     });
   };
 
-  const data = (coupons.data?.data ?? []).map((coupon) =>
-    coupon.type === 1 ? { ...coupon, value: coupon.value / 100 } : coupon,
-  );
+  const data = coupons.data?.data ?? [];
 
   const columns: TableProps<Coupon>['columns'] = [
     {
@@ -484,9 +482,7 @@ function GiftcardPage() {
     });
   };
 
-  const data = (giftcards.data?.data ?? []).map((giftcard) =>
-    giftcard.type === 1 ? { ...giftcard, value: giftcard.value / 100 } : giftcard,
-  );
+  const data = giftcards.data?.data ?? [];
 
   const columns: TableProps<Giftcard>['columns'] = [
     {

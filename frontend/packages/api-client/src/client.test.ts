@@ -348,6 +348,36 @@ describe('createApiClient', () => {
     await expect(statUser(client, { user_id: 1 })).resolves.toEqual({ data: [], total: undefined });
   });
 
+  it('normalizes fetched coupon and giftcard amount values to legacy model units', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    const couponRows = [
+      { id: 1, type: 1, value: 1234 },
+      { id: 2, type: 2, value: 30 },
+    ];
+    const giftcardRows = [
+      { id: 1, type: 1, value: 5678 },
+      { id: 2, type: 3, value: 100 },
+    ];
+    mock.onGet('/admin-path/coupon/fetch').reply(200, { data: couponRows, total: 2 });
+    mock.onGet('/admin-path/giftcard/fetch').reply(200, { data: giftcardRows, total: 2 });
+
+    await expect(fetchAdminCoupons(client)).resolves.toEqual({
+      data: [
+        { id: 1, type: 1, value: 12.34 },
+        { id: 2, type: 2, value: 30 },
+      ],
+      total: 2,
+    });
+    await expect(fetchAdminGiftcards(client)).resolves.toEqual({
+      data: [
+        { id: 1, type: 1, value: 56.78 },
+        { id: 2, type: 3, value: 100 },
+      ],
+      total: 2,
+    });
+  });
+
   it('requests legacy admin user traffic records with pagination', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);

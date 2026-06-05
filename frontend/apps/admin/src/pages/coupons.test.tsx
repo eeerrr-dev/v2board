@@ -34,7 +34,7 @@ vi.mock('@/lib/queries', () => ({
           code: 'SAVE10',
           name: '十元优惠',
           type: 1,
-          value: 1000,
+          value: 10,
           show: 1,
           limit_use: null,
           limit_use_with_user: null,
@@ -60,7 +60,7 @@ vi.mock('@/lib/queries', () => ({
           name: '余额卡',
           code: 'CARD10',
           type: 1,
-          value: 1000,
+          value: 10,
           plan_id: 1,
           limit_use: null,
           used_user_ids: null,
@@ -256,6 +256,13 @@ describe('CouponsPage legacy routes', () => {
     expect(source).toContain('if (payload.type === 1) payload.value = 100 * Number(payload.value)');
     expect(source).not.toContain('payload.type === 1 && payload.value != null');
     expect(source.match(/payload\.value = 100 \* Number\(payload\.value\)/g)).toHaveLength(2);
+  });
+
+  it('uses already-normalized legacy model data instead of re-scaling table rows during render', () => {
+    expect(source).toContain('const data = coupons.data?.data ?? [];');
+    expect(source).toContain('const data = giftcards.data?.data ?? [];');
+    expect(source).not.toContain('coupon.value / 100');
+    expect(source).not.toContain('giftcard.value / 100');
   });
 
   it('keeps the original direct date range indexing for coupon and giftcard forms', () => {
