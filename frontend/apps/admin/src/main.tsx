@@ -7,6 +7,7 @@ import { I18nextProvider } from 'react-i18next';
 import { createI18n } from '@v2board/i18n';
 import {
   getNormalizedLegacyHashPath,
+  installLegacyDevModuleRecovery,
   installLegacyHashRouteNormalizer,
   installLegacyWhiteScreenRecovery,
   normalizeLegacyHashRoute,
@@ -29,7 +30,10 @@ const legacyHashRouteOptions = {
 
 normalizeLegacyHashRoute(legacyHashRouteOptions);
 installLegacyHashRouteNormalizer(legacyHashRouteOptions);
-if (import.meta.env.DEV) installLegacyWhiteScreenRecovery(legacyHashRouteOptions);
+if (import.meta.env.DEV) {
+  installLegacyWhiteScreenRecovery(legacyHashRouteOptions);
+  installLegacyDevModuleRecovery();
+}
 applyAdminLegacySettings();
 applyInitialDarkMode();
 

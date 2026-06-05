@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getNormalizedLegacyHashPath,
+  installLegacyDevModuleRecovery,
   installLegacyHashRouteNormalizer,
   installLegacyWhiteScreenRecovery,
   normalizeLegacyHashRoute,
@@ -490,6 +491,50 @@ describe('normalizeLegacyHashRoute', () => {
 
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     vi.advanceTimersByTime(10);
+
+    expect(replace).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  it('reloads once when a stale Vite optimized dependency fails to load', () => {
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyDevModuleRecovery({
+      now: () => 654,
+      replace,
+    });
+
+    window.dispatchEvent(
+      new ErrorEvent('error', {
+        message: 'Outdated Optimize Dep',
+        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-router-dom.js?v=old',
+      }),
+    );
+    window.dispatchEvent(
+      new ErrorEvent('error', {
+        message: 'Outdated Optimize Dep',
+        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-router-dom.js?v=old',
+      }),
+    );
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_dev_recover', '654');
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
+  it('does not reload for ordinary runtime errors', () => {
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyDevModuleRecovery({ replace });
+
+    window.dispatchEvent(
+      new ErrorEvent('error', {
+        message: 'Cannot read properties of undefined',
+        filename: 'http://127.0.0.1:5174/src/pages/dashboard.tsx',
+      }),
+    );
 
     expect(replace).not.toHaveBeenCalled();
     dispose();

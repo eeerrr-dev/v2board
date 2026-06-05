@@ -15,6 +15,12 @@ export interface LegacyWhiteScreenRecoveryConfig {
   replace?: (url: string) => void;
 }
 
+export interface LegacyDevModuleRecoveryConfig {
+  storageKey?: string;
+  now?: () => number;
+  replace?: (url: string) => void;
+}
+
 function normalizePath(path: string): string {
   const next = path.trim();
   if (!next || next === '#') return '/';
@@ -184,6 +190,7 @@ function rootIsEmpty(root: HTMLElement | null): boolean {
 function stableRecoveryKey(url: URL): string {
   const search = new URLSearchParams(url.search);
   search.delete('__v2board_recover');
+  search.delete('__v2board_dev_recover');
   const query = search.toString();
   return `${url.pathname}${query ? `?${query}` : ''}${url.hash}`;
 }
@@ -297,5 +304,62 @@ export function installLegacyWhiteScreenRecovery(
     window.removeEventListener('popstate', schedule);
     window.removeEventListener('error', schedule);
     window.removeEventListener('unhandledrejection', schedule);
+  };
+}
+
+function isStaleViteModuleText(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  const text = value instanceof Error ? `${value.message}\n${value.stack ?? ''}` : String(value);
+  return (
+    text.includes('Outdated Optimize Dep') ||
+    text.includes('Failed to fetch dynamically imported module') ||
+    text.includes('Importing a module script failed') ||
+    text.includes('Failed to load module script') ||
+    text.includes('/node_modules/.vite/deps/')
+  );
+}
+
+function isStaleViteModuleEvent(event: Event): boolean {
+  const maybeError = event as ErrorEvent & { payload?: unknown; reason?: unknown };
+  return (
+    isStaleViteModuleText(maybeError.message) ||
+    isStaleViteModuleText(maybeError.filename) ||
+    isStaleViteModuleText(maybeError.error) ||
+    isStaleViteModuleText(maybeError.reason) ||
+    isStaleViteModuleText(maybeError.payload)
+  );
+}
+
+export function installLegacyDevModuleRecovery(
+  config: LegacyDevModuleRecoveryConfig = {},
+): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+
+  const storageKey = config.storageKey ?? 'v2board:dev-module-recovery';
+  const now = config.now ?? (() => Date.now());
+  const replace = config.replace ?? ((url: string) => window.location.replace(url));
+
+  const recover = (event: Event) => {
+    if (!isStaleViteModuleEvent(event)) return;
+    event.preventDefault();
+
+    const current = new URL(window.location.href);
+    const key = `${storageKey}:${stableRecoveryKey(current)}`;
+    const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
+    if (attempts > 0) return;
+
+    window.sessionStorage.setItem(key, String(attempts + 1));
+    current.searchParams.set('__v2board_dev_recover', String(now()));
+    replace(current.toString());
+  };
+
+  window.addEventListener('vite:preloadError', recover);
+  window.addEventListener('error', recover, true);
+  window.addEventListener('unhandledrejection', recover);
+
+  return () => {
+    window.removeEventListener('vite:preloadError', recover);
+    window.removeEventListener('error', recover, true);
+    window.removeEventListener('unhandledrejection', recover);
   };
 }
