@@ -195,6 +195,16 @@ describe('PlansPage legacy list markup', () => {
     expect(html).toContain('¥ NaN');
     expect(html).toContain('立即订阅');
   });
+
+  it('shows the original loading spinner for an empty plan list', () => {
+    mocks.plans = [];
+
+    const html = renderToStaticMarkup(<PlansPage />);
+
+    expect(html).toContain('class="spinner-grow text-primary"');
+    expect(html).toContain('<span class="sr-only">Loading...</span>');
+    expect(html).not.toContain('block block-link-pop block-rounded m-3 mx-xl-0');
+  });
 });
 
 describe('PlansPage legacy list behavior', () => {

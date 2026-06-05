@@ -45,6 +45,27 @@ describe('PlanContent bundled-theme quirks', () => {
     expect(html).toContain('<p>Raw HTML</p>');
   });
 
+  it('keeps the plan-list JSON null crash from the original typeof-object guard', () => {
+    expect(() =>
+      renderToStaticMarkup(<PlanContent content="null" className="mb-3" />),
+    ).toThrow();
+  });
+
+  it('keeps the checkout JSON null fallback as raw HTML', () => {
+    const html = renderToStaticMarkup(
+      <PlanContent
+        content="null"
+        className="v2board-plan-content px-3"
+        htmlClassName="v2board-plan-content"
+        guardNull
+      />,
+    );
+
+    expect(html).toContain('class="v2board-plan-content"');
+    expect(html).not.toContain('class="v2board-plan-content px-3"');
+    expect(html).toContain('>null</div>');
+  });
+
   it('keeps the bundled-theme raw HTML handoff without an empty-string fallback', () => {
     expect(planContentSource).toContain('dangerouslySetInnerHTML={{ __html: content as string }}');
     expect(planContentSource).not.toContain("dangerouslySetInnerHTML={{ __html: content ?? '' }}");

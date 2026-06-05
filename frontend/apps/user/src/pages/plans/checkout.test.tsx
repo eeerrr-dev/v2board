@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Plan } from '@v2board/types';
 import PlanCheckoutPage from './checkout';
 
 const checkoutSource = readFileSync(`${process.cwd()}/src/pages/plans/checkout.tsx`, 'utf8');
@@ -71,6 +72,36 @@ const labels: Record<string, string> = {
   'plan.confirm_cancel_previous': '确定取消',
   'plan.return_orders': '返回我的订单',
 };
+
+function resetPlan() {
+  mocks.planId = '1';
+  Object.assign(mocks.plan, {
+    id: 1,
+    group_id: 1,
+    transfer_enable: 100,
+    device_limit: null,
+    speed_limit: null,
+    reset_traffic_method: null,
+    name: 'Legacy Plan',
+    show: 1,
+    sort: 0,
+    renew: 1,
+    content: JSON.stringify([{ feature: 'Feature A', support: true }]),
+    month_price: 1000,
+    quarter_price: null,
+    half_year_price: null,
+    year_price: 9000,
+    two_year_price: null,
+    three_year_price: null,
+    onetime_price: 50000,
+    reset_price: null,
+    capacity_limit: null,
+    created_at: 0,
+    updated_at: 0,
+  });
+  mocks.planError = null;
+  mocks.planFetching = false;
+}
 
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ plan_id: mocks.planId }),
@@ -142,6 +173,7 @@ vi.mock('@/lib/queries', () => ({
 
 describe('PlanCheckoutPage bundled-theme markup', () => {
   beforeEach(() => {
+    resetPlan();
     mocks.plan.renew = 1;
     mocks.info = { plan_id: 1 };
     mocks.orders = [];
@@ -173,6 +205,21 @@ describe('PlanCheckoutPage bundled-theme markup', () => {
     expect(html).toContain('ant-result ant-result-info');
     expect(html).toContain('该订阅无法续费，仅允许新用户购买');
     expect(html).toContain('选择其它订阅');
+  });
+
+  it('keeps reset_price as the old default period without rendering it as a selectable period', () => {
+    const plan = mocks.plan as Plan;
+    plan.month_price = null;
+    plan.year_price = null;
+    plan.onetime_price = null;
+    plan.reset_price = 300;
+
+    const html = renderToStaticMarkup(<PlanCheckoutPage />);
+
+    expect(html).toContain('Legacy Plan x 流量重置包');
+    expect(html).toContain('¥3.00');
+    expect(html).toContain('¥ 3.00 CNY');
+    expect(html).not.toContain('class="v2board-select');
   });
 
   it('keeps the bundled-theme unkeyed period select items', () => {
@@ -237,6 +284,7 @@ describe('PlanCheckoutPage bundled-theme behavior', () => {
   let root: Root;
 
   beforeEach(() => {
+    resetPlan();
     mocks.navigate.mockClear();
     mocks.removeQueries.mockClear();
     mocks.invalidateQueries.mockClear();
