@@ -120,7 +120,12 @@ describe('admin legacy entrypoint', () => {
     expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1");
     expect(indexSource).toContain('function legacyMainEmpty(root)');
     expect(indexSource).toContain("root.querySelector('#main-container .content')");
-    expect(indexSource).toContain('return elementEmpty(root) || legacyMainEmpty(root);');
+    expect(indexSource).toContain('var blankLegacyMainSeen = false;');
+    expect(indexSource).toContain(
+      'return elementEmpty(root) || (includeLegacyMain && legacyMainEmpty(root));',
+    );
+    expect(indexSource).toContain('if (mainEmpty && !blankLegacyMainSeen && !elementEmpty(root))');
+    expect(indexSource).toContain('if (appEmpty(blankLegacyMainSeen)) recover();');
     expect(indexSource).toContain("window.addEventListener('hashchange', schedule);");
     expect(indexSource).toContain("window.addEventListener('popstate', schedule);");
     expect(indexSource).toContain('new MutationObserver(schedule).observe(observerTarget');

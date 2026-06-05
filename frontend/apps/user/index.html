@@ -57,6 +57,7 @@
         var delay = 2500;
         var clearDelay = 3000;
         var timer;
+        var blankLegacyMainSeen = false;
 
         function textOf(value, seen) {
           if (value === null || value === undefined) return '';
@@ -134,9 +135,9 @@
           return !!main && elementEmpty(main);
         }
 
-        function appEmpty() {
+        function appEmpty(includeLegacyMain) {
           var root = document.getElementById('root');
-          return elementEmpty(root) || legacyMainEmpty(root);
+          return elementEmpty(root) || (includeLegacyMain && legacyMainEmpty(root));
         }
 
         function renderFallback() {
@@ -172,11 +173,19 @@
         }
 
         function checkEmptyRoot() {
-          if (appEmpty()) recover();
+          var root = document.getElementById('root');
+          var mainEmpty = legacyMainEmpty(root);
+          if (mainEmpty && !blankLegacyMainSeen && !elementEmpty(root)) {
+            blankLegacyMainSeen = true;
+            schedule();
+            return;
+          }
+          if (appEmpty(blankLegacyMainSeen)) recover();
         }
 
         function clearRenderedAttempt() {
-          if (!appEmpty()) {
+          if (!appEmpty(true)) {
+            blankLegacyMainSeen = false;
             window.sessionStorage.removeItem(recoveryKey(new URL(window.location.href)));
           }
         }
