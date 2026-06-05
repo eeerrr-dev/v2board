@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useReplyTicketMutation, useTicket } from '@/lib/queries';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { toast } from '@/lib/legacy-toast';
+import { RouteErrorFallback } from '@/components/route-error-boundary';
 
 function legacyTicketMessageLength(data?: { message?: unknown[] }) {
   return data?.message!.length;
@@ -60,6 +61,8 @@ export default function TicketDetailPage() {
       toast.destroy();
     }
   };
+
+  if (ticket.isError && !ticket.data) return <RouteErrorFallback />;
 
   const data = ticket.data ?? ({ message: [] } as NonNullable<typeof ticket.data>);
   assumeLegacyTicketMessages(data);

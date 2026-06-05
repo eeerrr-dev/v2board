@@ -135,24 +135,18 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     expect(html).toContain('placeholder="输入内容回复工单..."');
   });
 
-  it('keeps the legacy empty chat model when the ticket fetch fails', () => {
+  it('renders a visible failure block instead of a textless chat shell when the ticket fetch fails', () => {
     state.ticket = undefined;
     state.ticketError = true;
 
     const html = renderToStaticMarkup(<TicketDetailPage />);
 
-    expect(html).toContain('block-content-full bg-gray-lighter p-3');
-    expect(html).toContain('class="tag___12_9H"');
-    expect(html).toContain(
+    expect(html).toContain('页面加载失败');
+    expect(html).toContain('刷新页面');
+    expect(html).not.toContain(
       'bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1',
     );
-    expect(html).toContain('js-chat-form block-content p-2 bg-body-dark input___1j_ND');
-    expect(html).toContain('js-chat-input bg-body-dark border-0 form-control form-control-alt');
-    expect(html).toContain('placeholder="输入内容回复工单..."');
-    expect(html).not.toContain('class="ant-empty ant-empty-normal"');
-    expect(html).not.toContain('暂无数据');
-    expect(html).not.toContain('工单不存在或已被删除');
-    expect(html).not.toContain('加载中...');
+    expect(html).not.toContain('js-chat-form block-content p-2 bg-body-dark input___1j_ND');
     expect(html).not.toContain('Need help');
   });
 });
