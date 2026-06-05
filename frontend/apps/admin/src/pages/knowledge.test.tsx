@@ -172,6 +172,11 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).not.toContain('role="separator"');
   });
 
+  it('keeps the bundled add button text flush against the plus icon', () => {
+    expect(source).toContain('<PlusOutlined />\n                {\'新增\'}');
+    expect(source).not.toContain('<PlusOutlined /> 新增');
+  });
+
   it('keeps the original category request and sort loading cycle', () => {
     expect(source).toContain('useAdminKnowledgeCategories();');
     expect(source).toContain('setSortingLoading(true)');

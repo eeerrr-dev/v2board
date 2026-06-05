@@ -462,7 +462,8 @@ export default function KnowledgePage() {
               saveLoading={save.isPending}
             >
               <Button>
-                <PlusOutlined /> 新增
+                <PlusOutlined />
+                {'新增'}
               </Button>
             </KnowledgeEditor>
           </div>
