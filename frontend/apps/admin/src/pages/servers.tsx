@@ -8,6 +8,7 @@ import {
   Form,
   Input,
   List,
+  Menu,
   Modal,
   Select,
   Space,
@@ -31,7 +32,7 @@ import {
   ReadOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import type { FormInstance, MenuProps, TableProps } from 'antd';
+import type { DropdownProps, FormInstance, TableProps } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
   useCopyServerMutation,
@@ -320,6 +321,18 @@ function writeLegacyHabit(key: string, value: unknown) {
   } catch {
     window.localStorage.setItem(LEGACY_HABIT_KEY, JSON.stringify({ [key]: value }));
   }
+}
+
+type LegacyDropdownProps = Omit<DropdownProps, 'popupRender' | 'trigger'> & {
+  overlay: ReactNode;
+  trigger?: DropdownProps['trigger'] | 'click';
+};
+
+const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];
+
+function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps) {
+  const nextTrigger = Array.isArray(trigger) ? trigger : trigger ? [trigger] : undefined;
+  return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;
 }
 
 function readLegacyServerPageSize() {
@@ -966,53 +979,35 @@ function ServerManagePage() {
     }
   };
 
-  const actionMenu = (row: admin.ServerNode): MenuProps => ({
-    items: [
-      {
-        key: 'edit',
-        label: (
-          <span onContextMenu={(event) => event.stopPropagation()}>
-            <LegacyNodeEditMenuTrigger
-              key={row.id}
-              type={row.type as admin.ServerTypeName}
-              record={row}
-              nodes={nodes.data ?? []}
-              groups={groups.data ?? []}
-              routes={routes.data ?? []}
-              onSaved={() => nodes.refetch()}
-            >
-              <a>
-                <EditOutlined /> 编辑
-              </a>
-            </LegacyNodeEditMenuTrigger>
-          </span>
-        ),
-      },
-      {
-        key: 'copy',
-        label: (
-          <span>
-            <CopyOutlined /> 复制
-          </span>
-        ),
-      },
-      {
-        key: 'delete',
-        label: (
-          <span
-            style={{ color: '#ff4d4f' }}
-          >
-            <DeleteOutlined /> 删除
-          </span>
-        ),
-      },
-    ],
-    onClick: ({ key, domEvent }) => {
-      domEvent.stopPropagation();
-      if (key === 'edit') return;
-      runNodeAction(String(key), row);
-    },
-  });
+  const actionMenu = (row: admin.ServerNode) => (
+    <Menu>
+      <Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>
+        <LegacyNodeEditMenuTrigger
+          key={row.id}
+          type={row.type as admin.ServerTypeName}
+          record={row}
+          nodes={nodes.data ?? []}
+          groups={groups.data ?? []}
+          routes={routes.data ?? []}
+          onSaved={() => nodes.refetch()}
+        >
+          <a>
+            <EditOutlined /> 编辑
+          </a>
+        </LegacyNodeEditMenuTrigger>
+      </Menu.Item>
+      <Menu.Item key="copy" onClick={() => runNodeAction('copy', row)}>
+        <CopyOutlined /> 复制
+      </Menu.Item>
+      <Menu.Item
+        key="delete"
+        style={{ color: '#ff4d4f' }}
+        onClick={() => runNodeAction('delete', row)}
+      >
+        <DeleteOutlined /> 删除
+      </Menu.Item>
+    </Menu>
+  );
 
   const columns: TableProps<admin.ServerNode>['columns'] = sortMode
     ? [
@@ -1176,11 +1171,14 @@ function ServerManagePage() {
           width: 100,
           render: (_: unknown, row) => (
             <div>
-              <Dropdown trigger={['click']} menu={actionMenu(row)}>
+              <LegacyDropdown
+                trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+                overlay={actionMenu(row)}
+              >
                 <a ref={legacyHref()}>
                   操作 <CaretDownOutlined />
                 </a>
-              </Dropdown>
+              </LegacyDropdown>
             </div>
           ),
         },
@@ -1192,31 +1190,32 @@ function ServerManagePage() {
       <div className="block block-bottom v2board-server-manage">
         <div className="bg-white">
           <div className="v2board-table-action" style={{ padding: 15 }}>
-            <Dropdown
-              menu={{
-                items: SERVER_TYPES.map((type) => ({
-                  key: type,
-                  label: (
-                    <LegacyNodeEditMenuTrigger
-                      key={Math.random()}
-                      type={type}
-                      nodes={nodes.data ?? []}
-                      groups={groups.data ?? []}
-                      routes={routes.data ?? []}
-                      onSaved={() => nodes.refetch()}
-                    >
-                      <a ref={legacyHref()}>
-                        {getServerTypeTag(type, SERVER_TYPE_LABELS[type])}
-                      </a>
-                    </LegacyNodeEditMenuTrigger>
-                  ),
-                })),
-              }}
+            <LegacyDropdown
+              overlay={(
+                <Menu>
+                  {SERVER_TYPES.map((type) => (
+                    <Menu.Item key={type}>
+                      <LegacyNodeEditMenuTrigger
+                        key={Math.random()}
+                        type={type}
+                        nodes={nodes.data ?? []}
+                        groups={groups.data ?? []}
+                        routes={routes.data ?? []}
+                        onSaved={() => nodes.refetch()}
+                      >
+                        <a ref={legacyHref()}>
+                          {getServerTypeTag(type, SERVER_TYPE_LABELS[type])}
+                        </a>
+                      </LegacyNodeEditMenuTrigger>
+                    </Menu.Item>
+                  ))}
+                </Menu>
+              )}
             >
               <Button>
                 <PlusOutlined />
               </Button>
-            </Dropdown>
+            </LegacyDropdown>
             <Input
               placeholder="输入任意关键字搜索"
               style={{ width: 200 }}
@@ -1274,11 +1273,14 @@ function ServerManagePage() {
                       />
                       <div className="ant-divider ant-divider-vertical" />
                       <span>
-                        <Dropdown trigger={['click']} menu={actionMenu(node)}>
+                        <LegacyDropdown
+                          trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+                          overlay={actionMenu(node)}
+                        >
                           <a ref={legacyHref()}>
                             操作 <CaretDownOutlined />
                           </a>
-                        </Dropdown>
+                        </LegacyDropdown>
                       </span>
                     </>
                   }

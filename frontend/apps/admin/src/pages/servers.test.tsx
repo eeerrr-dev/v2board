@@ -570,13 +570,44 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('wires the original /server/manage add-node type menu to the node edit drawer', () => {
-    expect(serversSource).toContain('items: SERVER_TYPES.map((type) => ({');
+    const managePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerManagePage'),
+      serversSource.indexOf('function NodeEditDrawer'),
+    );
+
+    expect(serversSource).toContain('function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)');
+    expect(serversSource).toContain('return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;');
+    expect(managePageSource).toContain('<LegacyDropdown');
+    expect(managePageSource).toContain('overlay={(');
+    expect(managePageSource).toContain('<Menu>');
+    expect(managePageSource).toContain('SERVER_TYPES.map((type) => (');
+    expect(managePageSource).toContain('<Menu.Item key={type}>');
     expect(serversSource).toContain('<LegacyNodeEditMenuTrigger');
     expect(serversSource).toContain('key={Math.random()}');
     expect(serversSource).toContain('type={type}');
+    expect(managePageSource).not.toContain('menu={{');
+    expect(managePageSource).not.toContain('items: SERVER_TYPES.map');
     expect(serversSource).not.toContain('onClick: ({ key }) => setEditing({ type: key as admin.ServerTypeName })');
     expect(serversSource).not.toContain('setEditing({ ...row, type: row.type as admin.ServerTypeName })');
     expect(serversSource).toContain('record?: Partial<admin.ServerNode>');
+  });
+
+  it('keeps /server/manage row operation dropdowns on the original overlay menu', () => {
+    const managePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerManagePage'),
+      serversSource.indexOf('function NodeEditDrawer'),
+    );
+
+    expect(managePageSource).toContain('const actionMenu = (row: admin.ServerNode) => (');
+    expect(managePageSource).toContain('<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>');
+    expect(managePageSource).toContain('<Menu.Item key="copy" onClick={() => runNodeAction(\'copy\', row)}>');
+    expect(managePageSource).toContain('style={{ color: \'#ff4d4f\' }}');
+    expect(managePageSource).toContain('<Menu.Item');
+    expect(managePageSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
+    expect(managePageSource).toContain('overlay={actionMenu(row)}');
+    expect(managePageSource).toContain('overlay={actionMenu(node)}');
+    expect(managePageSource).not.toContain('menu={actionMenu');
+    expect(managePageSource).not.toContain('const actionMenu = (row: admin.ServerNode): MenuProps');
   });
 
   it('keeps the original add-node protocol menu order', () => {
