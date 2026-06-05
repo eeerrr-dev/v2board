@@ -336,6 +336,7 @@ describe('ProfilePage legacy gift card flow', () => {
 
     const switches = container.querySelectorAll<HTMLButtonElement>('.ant-switch');
     expect(switches).toHaveLength(3);
+    expect(switches[0]!.getAttribute('aria-checked')).toBe('false');
 
     await act(async () => {
       switches[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -357,6 +358,39 @@ describe('ProfilePage legacy gift card flow', () => {
 
     expect(mocks.updateProfile).toHaveBeenCalledWith({ remind_expire: 1 });
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
+  });
+
+  it('renders the profile switches with rc-switch boolean checked state', async () => {
+    mocks.updateProfile.mockResolvedValue(true);
+    mocks.userInfo = {
+      balance: 0,
+      auto_renewal: 1,
+      remind_expire: 0,
+      remind_traffic: 1,
+      telegram_id: null,
+    };
+
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    const switches = container.querySelectorAll<HTMLButtonElement>('.ant-switch');
+    expect(switches).toHaveLength(3);
+    expect(switches[0]!.getAttribute('aria-checked')).toBe('true');
+    expect(switches[0]!.className).toContain('ant-switch-checked');
+    expect(switches[1]!.getAttribute('aria-checked')).toBe('false');
+    expect(switches[1]!.className).not.toContain('ant-switch-checked');
+    expect(switches[2]!.getAttribute('aria-checked')).toBe('true');
+    expect(switches[2]!.className).toContain('ant-switch-checked');
+
+    await act(async () => {
+      switches[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: 0 });
   });
 
   it('keeps the original profile form values as direct ref reads', () => {

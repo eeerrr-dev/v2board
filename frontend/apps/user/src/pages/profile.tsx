@@ -529,10 +529,11 @@ function LegacySwitch({
   loading?: boolean;
   onChange: (checked: boolean) => void;
 }) {
+  const normalizedChecked = !!checked;
   const className = [
     loading && 'ant-switch-loading',
     'ant-switch',
-    checked && 'ant-switch-checked',
+    normalizedChecked && 'ant-switch-checked',
     loading && 'ant-switch-disabled',
   ]
     .filter(Boolean)
@@ -542,7 +543,7 @@ function LegacySwitch({
     <button
       type="button"
       className={className}
-      aria-checked={checked as boolean}
+      aria-checked={normalizedChecked}
       role="switch"
       disabled={loading}
       onKeyDown={(event) => {
@@ -553,7 +554,7 @@ function LegacySwitch({
       onMouseUp={(event) => event.currentTarget.blur()}
       onClick={(event) => {
         triggerSwitchWave(event.currentTarget);
-        onChange(!checked);
+        onChange(!normalizedChecked);
       }}
     >
       {loading ? <LegacyLoadingIcon className="ant-switch-loading-icon" /> : null}
