@@ -120,7 +120,6 @@ export default function KnowledgePage() {
               type="text"
               className="ant-input ant-input-lg"
               placeholder={t('knowledge.search_placeholder')}
-              value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
             />
             <span className="ant-input-group-addon">

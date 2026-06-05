@@ -213,6 +213,17 @@ describe('KnowledgePage bundled-theme list', () => {
     expect(knowledgeSource).toContain("renderLegacyMarkdown(visibleDetail?.body || '')");
     expect(knowledgeSource).not.toContain("renderLegacyMarkdown(visibleDetail?.body ?? '')");
   });
+
+  it('keeps the bundled search input uncontrolled while debouncing onChange', () => {
+    const searchInputSource = knowledgeSource.slice(
+      knowledgeSource.indexOf('<input'),
+      knowledgeSource.indexOf('<span className="ant-input-group-addon">'),
+    );
+
+    expect(searchInputSource).toContain('onChange={(event) => setSearchValue(event.target.value)}');
+    expect(searchInputSource).not.toContain('value={searchValue}');
+    expect(searchInputSource).not.toContain('defaultValue={searchValue}');
+  });
 });
 
 describe('KnowledgePage legacy interactions', () => {
@@ -408,8 +419,9 @@ describe('KnowledgePage legacy interactions', () => {
       await Promise.resolve();
     });
 
-    expect(document.body.innerHTML).toContain('Copy Article');
-    expect(document.body.innerHTML).not.toContain('Router Guide');
-    expect(document.body.innerHTML).toContain('anticon anticon-loading');
+    const drawerHtml = document.body.querySelector('.ant-drawer')?.innerHTML ?? '';
+    expect(drawerHtml).toContain('Copy Article');
+    expect(drawerHtml).not.toContain('Router Guide');
+    expect(drawerHtml).toContain('anticon anticon-loading');
   });
 });
