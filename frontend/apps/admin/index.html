@@ -32,7 +32,7 @@
     <div id="root"></div>
     <script>
       (function () {
-        var recoveryVersion = 'white-screen-recovery-10';
+        var recoveryVersion = 'white-screen-recovery-11';
         var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;
         var maxAttempts = 3;
         var delay = 2500;
@@ -136,15 +136,27 @@
           );
         }
 
+        function legacyMainEmpty(root) {
+          if (!root || !root.querySelector('#page-container')) return false;
+          return elementEmpty(
+            root.querySelector('#main-container .content') ||
+              root.querySelector('#main-container'),
+          );
+        }
+
         function appEmpty() {
           var root = document.getElementById('root');
-          return elementEmpty(root);
+          return elementEmpty(root) || legacyMainEmpty(root);
         }
 
         function renderFallback() {
           var root = document.getElementById('root');
           if (!root) return;
-          root.innerHTML = [
+          var target =
+            root.querySelector('#main-container .content') ||
+            root.querySelector('#main-container') ||
+            root;
+          target.innerHTML = [
             '<div class="block block-rounded" data-v2board-white-screen-fallback="1">',
             '<div class="block-content text-center py-5">',
             '<h3 class="font-w400 text-danger mb-2">页面加载失败</h3>',
@@ -208,6 +220,6 @@
         schedule();
       })();
     </script>
-    <script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-10"></script>
+    <script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-11"></script>
   </body>
 </html>

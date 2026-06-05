@@ -294,7 +294,7 @@ describe('AppLayout bundled-theme behavior', () => {
     expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
   });
 
-  it('keeps the legacy brand link as a plain root href without route interception', async () => {
+  it('keeps the legacy brand href but routes it through the client app', async () => {
     await renderLayout();
 
     const brand = container.querySelector<HTMLAnchorElement>('#sidebar .content-header > a')!;
@@ -306,8 +306,8 @@ describe('AppLayout bundled-theme behavior', () => {
     });
 
     expect(brand.getAttribute('href')).toBe('/');
-    expect(click.defaultPrevented).toBe(false);
-    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(click.defaultPrevented).toBe(true);
+    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
   });
 
   it('toggles dark mode through the old header button', async () => {
@@ -404,6 +404,22 @@ describe('AppLayout bundled-theme behavior', () => {
 
     expect(profile.getAttribute('href')).toBe('/#/profile');
     expect(logoutLink.getAttribute('href')).toBe('javascript:void(0);');
+
+    const profileClick = new MouseEvent('click', { bubbles: true, cancelable: true });
+    await act(async () => {
+      profile.dispatchEvent(profileClick);
+      await Promise.resolve();
+    });
+
+    expect(profileClick.defaultPrevented).toBe(true);
+    expect(mocks.navigate).toHaveBeenCalledWith('/profile');
+    expect(container.querySelector('.dropdown-menu')!.className).not.toContain('show');
+
+    await act(async () => {
+      userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      await Promise.resolve();
+    });
 
     await act(async () => {
       document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));

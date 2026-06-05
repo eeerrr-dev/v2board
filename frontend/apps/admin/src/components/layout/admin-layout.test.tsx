@@ -241,7 +241,7 @@ describe('AdminLayout legacy dark mode behavior', () => {
     expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
   });
 
-  it('keeps the legacy brand link as a plain root href without route interception', async () => {
+  it('keeps the legacy brand href but routes it through the client app', async () => {
     await renderLayout();
 
     const brand = container.querySelector<HTMLAnchorElement>(
@@ -255,8 +255,8 @@ describe('AdminLayout legacy dark mode behavior', () => {
     });
 
     expect(brand.getAttribute('href')).toBe('/');
-    expect(click.defaultPrevented).toBe(false);
-    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(click.defaultPrevented).toBe(true);
+    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
   });
 
   it('renders and controls the bundled header search overlay when search props are passed', async () => {

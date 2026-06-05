@@ -31,7 +31,7 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
-    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-10';");
+    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-11';");
     expect(mainSource).toContain(
       'storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`',
     );
@@ -93,7 +93,7 @@ describe('user legacy entrypoint', () => {
   });
 
   it('installs dev entry recovery before the Vite module graph loads', () => {
-    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-10';");
+    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-11';");
     expect(indexSource).toContain("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;");
     expect(indexSource).toContain('function clearOldRecoveryState()');
     expect(indexSource).toContain("'v2board:white-screen-recovery:',");
@@ -104,10 +104,9 @@ describe('user legacy entrypoint', () => {
     expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1 &&");
     expect(indexSource).toContain("text.indexOf('module script') !== -1");
     expect(indexSource).not.toContain("text.indexOf('/node_modules/.vite/') !== -1\n          );");
-    expect(indexSource).not.toContain('function legacyMainEmpty(root)');
-    expect(indexSource).not.toContain("root.querySelector('#main-container .content')");
-    expect(indexSource).not.toContain('var blankLegacyMainSeen = false;');
-    expect(indexSource).toContain('return elementEmpty(root);');
+    expect(indexSource).toContain('function legacyMainEmpty(root)');
+    expect(indexSource).toContain("root.querySelector('#main-container .content')");
+    expect(indexSource).toContain('return elementEmpty(root) || legacyMainEmpty(root);');
     expect(indexSource).toContain('if (appEmpty()) recover();');
     expect(indexSource).toContain("window.addEventListener('hashchange', schedule);");
     expect(indexSource).toContain("window.addEventListener('popstate', schedule);");
@@ -116,7 +115,7 @@ describe('user legacy entrypoint', () => {
     expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
     expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;")).toBeLessThan(
       indexSource.indexOf(
-        '<script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-10"',
+        '<script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-11"',
       ),
     );
   });

@@ -273,18 +273,28 @@ export function installLegacyWhiteScreenRecovery(
   const now = config.now ?? (() => Date.now());
   const replace = config.replace ?? ((url: string) => window.location.replace(url));
   let timer: number | undefined;
+  let blankLegacyMainSeen = false;
 
   const recoverIfEmpty = () => {
     const root = document.getElementById('root');
     const current = new URL(window.location.href);
     const key = `${storageKey}:${stableRecoveryKey(current)}`;
     const rootIsEmpty = appIsEmpty(root);
+    const legacyMainIsEmpty = !rootIsEmpty && legacyMainContentIsEmpty(root);
 
-    if (!rootIsEmpty) {
+    if (!rootIsEmpty && !legacyMainIsEmpty) {
+      blankLegacyMainSeen = false;
       window.sessionStorage.removeItem(key);
       return;
     }
 
+    if (legacyMainIsEmpty && !blankLegacyMainSeen) {
+      blankLegacyMainSeen = true;
+      schedule();
+      return;
+    }
+
+    blankLegacyMainSeen = false;
     const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
     const hasAuth = hasLegacyAuth(options);
     const fallbackHash = getFallbackHash(options, hasAuth);
@@ -495,7 +505,7 @@ export function installLegacyDevWhiteScreenFallback(
 
   const renderIfEmpty = () => {
     const root = document.getElementById('root');
-    if (!appIsEmpty(root)) return;
+    if (!appIsEmpty(root, true)) return;
     renderLegacyWhiteScreenFallback(root);
   };
 

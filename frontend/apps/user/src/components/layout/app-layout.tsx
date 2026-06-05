@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LanguageMenu } from './language-menu';
@@ -112,6 +112,17 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
     setOpen(false);
   };
 
+  const handleHomeClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    go('/dashboard');
+  };
+
+  const handleProfileClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    navigate('/profile');
+    setShowAvatarMenu(false);
+  };
+
   const toggleNav = () => setOpen((value) => !value);
 
   useEffect(() => {
@@ -160,7 +171,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
       <nav id="sidebar">
         <div className="smini-hidden bg-header-dark">
           <div className="content-header justify-content-lg-center bg-white-10">
-            <a className="font-size-lg text-white" href="/">
+            <a className="font-size-lg text-white" href="/" onClick={handleHomeClick}>
               <span className="text-white-75">{siteTitle}</span>
             </a>
             <div className="d-lg-none">
@@ -268,7 +279,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
               </button>
               <div className={`dropdown-menu dropdown-menu-right p-0 ${showAvatarMenu && 'show'}`}>
                 <div className="p-2">
-                  <a className="dropdown-item" href="/#/profile">
+                  <a className="dropdown-item" href="/#/profile" onClick={handleProfileClick}>
                     <i className="far fa-fw fa-user mr-1" /> {t('nav.profile')}
                   </a>
                   <a
