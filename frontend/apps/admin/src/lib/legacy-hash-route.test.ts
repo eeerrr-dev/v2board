@@ -861,6 +861,25 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
+  it('does not reload ordinary runtime errors just because the stack points at Vite deps', () => {
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyDevModuleRecovery({ replace });
+
+    window.dispatchEvent(
+      new ErrorEvent('error', {
+        message: 'Cannot read properties of undefined',
+        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-dom_client.js?v=old',
+        error: new Error(
+          'Cannot read properties of undefined\n    at renderWithHooks (http://127.0.0.1:5174/node_modules/.vite/deps/react-dom_client.js?v=old:4213:1)',
+        ),
+      }),
+    );
+
+    expect(replace).not.toHaveBeenCalled();
+    dispose();
+  });
+
   it('renders a visible dev fallback when the React root stays empty', () => {
     vi.useFakeTimers();
     document.body.innerHTML = '<div id="root"></div>';

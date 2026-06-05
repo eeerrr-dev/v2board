@@ -80,7 +80,15 @@
             text.indexOf('failed to load module script') !== -1 ||
             text.indexOf('importing a module script failed') !== -1 ||
             text.indexOf('chunkloaderror') !== -1 ||
-            text.indexOf('/node_modules/.vite/') !== -1
+            text.indexOf('loading chunk') !== -1 ||
+            (text.indexOf('requested module') !== -1 &&
+              (text.indexOf('does not provide an export') !== -1 ||
+                text.indexOf("doesn't provide an export") !== -1)) ||
+            (text.indexOf('/node_modules/.vite/') !== -1 &&
+              (text.indexOf('does not provide an export named') !== -1 ||
+                text.indexOf('mime type') !== -1 ||
+                text.indexOf('module script') !== -1 ||
+                text.indexOf('net::err_aborted') !== -1))
           );
         }
 
@@ -179,6 +187,6 @@
         schedule();
       })();
     </script>
-    <script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-7"></script>
+    <script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-8"></script>
   </body>
 </html>

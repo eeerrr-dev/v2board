@@ -399,7 +399,6 @@ function isStaleViteModuleText(value: unknown): boolean {
     (lower.includes('requested module') &&
       (lower.includes('does not provide an export') ||
         lower.includes("doesn't provide an export"))) ||
-    text.includes('/node_modules/.vite/deps/') ||
     (text.includes('/node_modules/.vite/') &&
       (lower.includes('does not provide an export named') ||
         lower.includes('mime type') ||

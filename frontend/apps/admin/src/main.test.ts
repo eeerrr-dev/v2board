@@ -117,7 +117,9 @@ describe('admin legacy entrypoint', () => {
   it('installs dev entry recovery before the Vite module graph loads', () => {
     expect(indexSource).toContain("var storageKey = 'v2board:dev-entry-recovery';");
     expect(indexSource).toContain("text.indexOf('outdated optimize dep') !== -1");
-    expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1");
+    expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1 &&");
+    expect(indexSource).toContain("text.indexOf('module script') !== -1");
+    expect(indexSource).not.toContain("text.indexOf('/node_modules/.vite/') !== -1\n          );");
     expect(indexSource).not.toContain('function legacyMainEmpty(root)');
     expect(indexSource).not.toContain("root.querySelector('#main-container .content')");
     expect(indexSource).not.toContain('var blankLegacyMainSeen = false;');
@@ -130,7 +132,7 @@ describe('admin legacy entrypoint', () => {
     expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
     expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery';")).toBeLessThan(
       indexSource.indexOf(
-        '<script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-7"',
+        '<script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-8"',
       ),
     );
   });
