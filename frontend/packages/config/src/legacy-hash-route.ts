@@ -156,9 +156,57 @@ export function installLegacyHashRouteNormalizer(options: LegacyHashRouteOptions
     };
   const pushState = wrapStateWriter(originalPushState);
   const replaceState = wrapStateWriter(originalReplaceState);
+  const normalizeLegacyAnchorClick = (event: MouseEvent) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.shiftKey
+    ) {
+      return;
+    }
+
+    const target = event.target instanceof Element ? event.target : null;
+    const anchor = target?.closest<HTMLAnchorElement>('a[href]');
+    if (!anchor) return;
+    if (anchor.target && anchor.target !== '_self') return;
+    if (anchor.hasAttribute('download')) return;
+
+    let url: URL;
+    try {
+      url = new URL(anchor.href, window.location.href);
+    } catch {
+      return;
+    }
+    if (url.origin !== window.location.origin) return;
+
+    const hasLegacyHash = url.hash.startsWith('#/');
+    const canonicalPath =
+      options.canonicalPath === undefined
+        ? window.location.pathname
+        : normalizeCanonicalPath(options.canonicalPath);
+    const hasLegacyPath = url.pathname !== canonicalPath && url.pathname !== '';
+    if (!hasLegacyHash && !hasLegacyPath) return;
+
+    const routeSource = hasLegacyHash ? url.hash.slice(1) : `${url.pathname}${url.search}`;
+    const nextHash = `#${getNormalizedLegacyHashPath(routeSource, options)}`;
+    const nextUrl = `${canonicalPath}${window.location.search}${nextHash}`;
+
+    event.preventDefault();
+    if (`${window.location.pathname}${window.location.search}${window.location.hash}` === nextUrl) {
+      return;
+    }
+
+    window.history.pushState(window.history.state, '', nextUrl);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
 
   window.history.pushState = pushState;
   window.history.replaceState = replaceState;
+  document.addEventListener('click', normalizeLegacyAnchorClick, true);
   window.addEventListener('hashchange', normalize);
   window.addEventListener('popstate', normalize);
   return () => {
@@ -166,6 +214,7 @@ export function installLegacyHashRouteNormalizer(options: LegacyHashRouteOptions
     if (window.history.replaceState === replaceState) {
       window.history.replaceState = originalReplaceState;
     }
+    document.removeEventListener('click', normalizeLegacyAnchorClick, true);
     window.removeEventListener('hashchange', normalize);
     window.removeEventListener('popstate', normalize);
   };

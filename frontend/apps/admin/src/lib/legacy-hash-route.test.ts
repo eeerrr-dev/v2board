@@ -246,6 +246,74 @@ describe('normalizeLegacyHashRoute', () => {
     window.removeEventListener('popstate', listener);
   });
 
+  it('converts same-origin legacy pathname anchors to hash navigation', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    document.body.innerHTML = '<a id="legacy-link" href="/ticket/7/dashboard">Legacy</a>';
+    const listener = vi.fn();
+    window.addEventListener('hashchange', listener);
+    const dispose = installLegacyHashRouteNormalizer({
+      ...options,
+      nestedPrefixes: options.routes,
+    });
+    const anchor = document.getElementById('legacy-link')!;
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+
+    const notCancelled = anchor.dispatchEvent(event);
+
+    expect(notCancelled).toBe(false);
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.hash).toBe('#/dashboard');
+    expect(listener).toHaveBeenCalled();
+    dispose();
+    window.removeEventListener('hashchange', listener);
+  });
+
+  it('converts same-origin hash anchors to the canonical path', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    setUrl('/login/dashboard#/ticket');
+    document.body.innerHTML = '<a id="legacy-link" href="/#/ticket/7">Legacy</a>';
+    const dispose = installLegacyHashRouteNormalizer(options);
+    const anchor = document.getElementById('legacy-link')!;
+
+    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.hash).toBe('#/ticket/7');
+    dispose();
+  });
+
+  it('leaves external and new-window anchors alone', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    document.body.innerHTML = [
+      '<a id="external" href="https://example.com/dashboard">External</a>',
+      '<a id="blank" href="/ticket" target="_blank">Blank</a>',
+    ].join('');
+    const dispose = installLegacyHashRouteNormalizer(options);
+
+    const external = document.getElementById('external')!;
+    const blank = document.getElementById('blank')!;
+    const externalEvent = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    const blankEvent = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+
+    expect(external.dispatchEvent(externalEvent)).toBe(true);
+    expect(blank.dispatchEvent(blankEvent)).toBe(true);
+    expect(window.location.hash).toBe('');
+    dispose();
+  });
+
+  it('stops converting legacy anchor clicks after cleanup', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    document.body.innerHTML = '<a id="legacy-link" href="/ticket">Legacy</a>';
+    const dispose = installLegacyHashRouteNormalizer(options);
+    dispose();
+
+    const anchor = document.getElementById('legacy-link')!;
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+
+    expect(anchor.dispatchEvent(event)).toBe(true);
+    expect(window.location.hash).toBe('');
+  });
+
   it('normalizes router replaceState hash changes after the app has mounted', () => {
     window.localStorage.setItem('authorization', 'jwt');
     const dispose = installLegacyHashRouteNormalizer(options);
