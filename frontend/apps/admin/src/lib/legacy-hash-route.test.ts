@@ -420,6 +420,52 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
+  it('recovers when the legacy layout main container stays blank after a second check', () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem('authorization', 'jwt');
+    document.body.innerHTML =
+      '<div id="root"><div id="page-container"><nav>仪表盘</nav><header>admin@local</header><main id="main-container"><div class="content content-full"></div></main></div></div>';
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      now: () => 2468,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+    expect(replace).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(10);
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_recover', '2468');
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
+  it('cancels blank main recovery when route content appears before the second check', () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem('authorization', 'jwt');
+    document.body.innerHTML =
+      '<div id="root"><div id="page-container"><nav>仪表盘</nav><header>admin@local</header><main id="main-container"><div class="content content-full"></div></main></div></div>';
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+    document.querySelector('#main-container .content')!.textContent = '仪表盘';
+    vi.advanceTimersByTime(10);
+
+    expect(replace).not.toHaveBeenCalled();
+    dispose();
+  });
+
   it('does not recover a legacy main container that still has loading controls', () => {
     vi.useFakeTimers();
     document.body.innerHTML =
