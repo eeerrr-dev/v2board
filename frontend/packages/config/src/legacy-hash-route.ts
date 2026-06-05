@@ -155,9 +155,30 @@ export function installLegacyHashRouteNormalizer(options: LegacyHashRouteOptions
   };
 }
 
+const NON_BLANK_ROOT_SELECTOR = [
+  'a',
+  'button',
+  'input',
+  'select',
+  'textarea',
+  'img',
+  'svg',
+  'canvas',
+  'iframe',
+  'video',
+  '[role]',
+  '[aria-label]',
+  '.fa',
+  '.si',
+  '.ant-spin',
+  '[class*="loading"]',
+  '[class*="spinner"]',
+].join(',');
+
 function rootIsEmpty(root: HTMLElement | null): boolean {
   if (!root) return true;
-  return root.childElementCount === 0 && !root.textContent?.trim();
+  if (root.textContent?.trim()) return false;
+  return !root.querySelector(NON_BLANK_ROOT_SELECTOR);
 }
 
 function stableRecoveryKey(url: URL): string {

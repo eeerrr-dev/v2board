@@ -350,6 +350,44 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
+  it('reloads when React leaves a blank shell in the root', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<div id="root"><div></div></div>';
+    setUrl('/#/login');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      now: () => 124,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_recover', '124');
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
+  it('does not recover icon-only loading or control shells as blank pages', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML =
+      '<div id="root"><button aria-label="loading"></button><i class="fa fa-spinner"></i></div>';
+    setUrl('/#/login');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+
+    expect(replace).not.toHaveBeenCalled();
+    dispose();
+  });
+
   it('falls back to the authenticated route when the same empty route is recovered twice', () => {
     vi.useFakeTimers();
     window.localStorage.setItem('authorization', 'jwt');
