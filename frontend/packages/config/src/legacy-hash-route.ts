@@ -196,8 +196,16 @@ function elementIsEmpty(element: HTMLElement | null): boolean {
   return !element.querySelector(NON_BLANK_ROOT_SELECTOR);
 }
 
-function appIsEmpty(root: HTMLElement | null): boolean {
-  return elementIsEmpty(root);
+function legacyMainContentIsEmpty(root: HTMLElement | null): boolean {
+  if (!root?.querySelector('#page-container')) return false;
+  const main =
+    root.querySelector<HTMLElement>('#main-container .content') ??
+    root.querySelector<HTMLElement>('#main-container');
+  return Boolean(main && elementIsEmpty(main));
+}
+
+function appIsEmpty(root: HTMLElement | null, includeLegacyMain = false): boolean {
+  return elementIsEmpty(root) || (includeLegacyMain && legacyMainContentIsEmpty(root));
 }
 
 function renderLegacyWhiteScreenFallback(root: HTMLElement | null): void {
@@ -264,14 +272,23 @@ export function installLegacyWhiteScreenRecovery(
   const now = config.now ?? (() => Date.now());
   const replace = config.replace ?? ((url: string) => window.location.replace(url));
   let timer: number | undefined;
+  let blankLegacyMainSeen = false;
 
   const recoverIfEmpty = () => {
     const root = document.getElementById('root');
     const current = new URL(window.location.href);
     const key = `${storageKey}:${stableRecoveryKey(current)}`;
-    const rootIsEmpty = appIsEmpty(root);
+    const legacyMainIsEmpty = legacyMainContentIsEmpty(root);
+    const rootIsEmpty = appIsEmpty(root, blankLegacyMainSeen);
+
+    if (legacyMainIsEmpty && !blankLegacyMainSeen && !elementIsEmpty(root)) {
+      blankLegacyMainSeen = true;
+      schedule();
+      return;
+    }
 
     if (!rootIsEmpty) {
+      blankLegacyMainSeen = false;
       window.sessionStorage.removeItem(key);
       return;
     }
