@@ -431,6 +431,7 @@ function SystemConfigPage() {
               <select
                 className="form-control"
                 value={legacySelectValue(value('site', 'try_out_plan_id'))}
+                placeholder="请选择试用订阅"
                 onChange={(event) =>
                   setConfigValue('site', 'try_out_plan_id', event.target.value)
                 }
@@ -665,6 +666,7 @@ function SystemConfigPage() {
               <select
                 className="form-control"
                 value={legacySelectValue(value('subscribe', 'reset_traffic_method'))}
+                placeholder="请选择订阅重置方式"
                 onChange={(event) =>
                   setConfigValue('subscribe', 'reset_traffic_method', event.target.value)
                 }

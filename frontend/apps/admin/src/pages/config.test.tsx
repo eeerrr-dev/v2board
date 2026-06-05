@@ -346,6 +346,7 @@ describe('ConfigPage legacy theme config', () => {
     expect(html).toContain('站点名称');
     expect(html).toContain('用于显示需要站点名称的地方。');
     expect(html).toContain('class="form-control"');
+    expect(html).toContain('placeholder="请选择试用订阅"');
     expect(html).toContain('<textarea rows="4" type="text" class="form-control"');
     expect(html).toContain('v2board-config-children');
     expect(html).not.toContain('ant-card');
@@ -408,6 +409,8 @@ describe('ConfigPage legacy theme config', () => {
 
     expect(source).toContain("value={legacySelectValue(value('site', 'try_out_plan_id'))}");
     expect(source).toContain("value={legacySelectValue(value('subscribe', 'reset_traffic_method'))}");
+    expect(source).toContain('placeholder="请选择试用订阅"');
+    expect(source).toContain('placeholder="请选择订阅重置方式"');
     expect(source).toContain("value={legacySelectValue(value('subscribe', 'show_subscribe_method'))}");
     expect(source).toContain("value={legacySelectValue(value('ticket', 'ticket_status') || 0)}");
     expect(source).toContain("value={legacySelectValue(value('email', 'email_template'))}");
