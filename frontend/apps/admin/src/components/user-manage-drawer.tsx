@@ -135,8 +135,8 @@ export function UserManageDrawer({
     if (!userId || !values) return;
     update
       .mutateAsync(toPayload(values, userId))
-      .then(async () => {
-        await onSaved?.();
+      .then(() => {
+        void onSaved?.();
         hide();
       })
       .catch((error: unknown) => {
