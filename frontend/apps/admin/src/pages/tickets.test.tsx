@@ -106,6 +106,7 @@ vi.mock('@/lib/queries', () => ({
     refetch: mocks.ticketRefetch,
     data: mocks.adminTicket,
     isError: mocks.adminTicketError,
+    isFetching: false,
   }),
   useReplyTicketMutation: () => ({
     isPending: false,
@@ -390,7 +391,7 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).not.toContain('ant-card');
   });
 
-  it('keeps the bundled blank admin chat shell when ticket fetch fails', () => {
+  it('keeps the admin chat shell visible when ticket fetch fails', () => {
     mocks.params = { ticket_id: '1' };
     mocks.adminTicket = undefined;
     mocks.adminTicketError = true;
@@ -406,11 +407,11 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).toContain('input___1j_ND');
     expect(html).toContain('js-chat-input bg-body-dark border-0 form-control form-control-alt');
     expect(html).toContain('输入内容回复工单...');
+    expect(html).toContain('工单不存在或已被删除');
     expect(html).not.toContain('ant-empty');
     expect(html).not.toContain('暂无数据');
     expect(html).not.toContain('支付问题');
     expect(mocks.adminUserInfoIds).toContain(undefined);
-    expect(ticketsSource).not.toContain("if (ticket.isError && !current)");
   });
 
   it('keeps the old chat reply message state lifetime', () => {
