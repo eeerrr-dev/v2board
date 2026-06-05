@@ -167,6 +167,18 @@ function stableRecoveryKey(url: URL): string {
   return `${url.pathname}${query ? `?${query}` : ''}${url.hash}`;
 }
 
+function getAuthStorageKey(options: LegacyHashRouteOptions): string {
+  return options.authStorageKey ?? 'authorization';
+}
+
+function hasLegacyAuth(options: LegacyHashRouteOptions): boolean {
+  return Boolean(window.localStorage.getItem(getAuthStorageKey(options)));
+}
+
+function getFallbackHash(options: LegacyHashRouteOptions, hasAuth = hasLegacyAuth(options)): string {
+  return `#${hasAuth ? options.authenticatedFallback : options.guestFallback}`;
+}
+
 export function installLegacyWhiteScreenRecovery(
   options: LegacyHashRouteOptions,
   config: LegacyWhiteScreenRecoveryConfig = {},
@@ -181,21 +193,38 @@ export function installLegacyWhiteScreenRecovery(
 
   const recoverIfEmpty = () => {
     const root = document.getElementById('root');
-    if (!rootIsEmpty(root)) return;
-
     const current = new URL(window.location.href);
     const key = `${storageKey}:${stableRecoveryKey(current)}`;
+    if (!rootIsEmpty(root)) {
+      window.sessionStorage.removeItem(key);
+      return;
+    }
+
     const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
-    if (attempts >= 2) return;
+    const hasAuth = hasLegacyAuth(options);
+    const fallbackHash = getFallbackHash(options, hasAuth);
+    if (attempts >= 2) {
+      if (current.hash === fallbackHash) {
+        if (!hasAuth || fallbackHash !== `#${options.authenticatedFallback}`) return;
+        window.localStorage.removeItem(getAuthStorageKey(options));
+        window.sessionStorage.setItem(key, String(attempts + 1));
+        current.searchParams.set('__v2board_recover', String(now()));
+        current.hash = `#${options.guestFallback}`;
+        replace(current.toString());
+        return;
+      }
+      window.sessionStorage.setItem(key, String(attempts + 1));
+      current.searchParams.set('__v2board_recover', String(now()));
+      current.hash = fallbackHash;
+      replace(current.toString());
+      return;
+    }
 
     window.sessionStorage.setItem(key, String(attempts + 1));
     current.searchParams.set('__v2board_recover', String(now()));
 
     if (attempts > 0) {
-      const hasAuth = Boolean(
-        window.localStorage.getItem(options.authStorageKey ?? 'authorization'),
-      );
-      current.hash = `#${hasAuth ? options.authenticatedFallback : options.guestFallback}`;
+      current.hash = fallbackHash;
     }
 
     replace(current.toString());
