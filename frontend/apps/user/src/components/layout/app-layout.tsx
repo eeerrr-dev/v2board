@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LanguageMenu } from './language-menu';
@@ -70,6 +70,10 @@ const DETAIL_LABELS: { match: RegExp; labelKey: string }[] = [
   { match: /^\/plan\/[^/]+$/, labelKey: 'plan.checkout_title' },
 ];
 
+function clearLegacyDocumentClick() {
+  document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];
+}
+
 function findActiveLabel(pathname: string): string | undefined {
   for (const d of DETAIL_LABELS) {
     if (d.match.test(pathname)) return d.labelKey;
@@ -93,6 +97,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
+  const avatarDocumentClickTimer = useRef<number | undefined>(undefined);
   const activeLabel = findActiveLabel(location.pathname);
   const legacyTheme = getLegacyTheme();
   const siteTitle = getLegacyTitle();
@@ -114,11 +119,27 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
   }, []);
 
   useEffect(() => {
-    if (!showAvatarMenu) return;
-    const close = () => setShowAvatarMenu(false);
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [showAvatarMenu]);
+    return () => {
+      if (avatarDocumentClickTimer.current !== undefined) {
+        window.clearTimeout(avatarDocumentClickTimer.current);
+      }
+      clearLegacyDocumentClick();
+    };
+  }, []);
+
+  const toggleAvatarMenu = () => {
+    setShowAvatarMenu((value) => !value);
+    if (avatarDocumentClickTimer.current !== undefined) {
+      window.clearTimeout(avatarDocumentClickTimer.current);
+    }
+    avatarDocumentClickTimer.current = window.setTimeout(() => {
+      document.onclick = function legacyAvatarMenuDocumentClick() {
+        setShowAvatarMenu((value) => (value ? false : value));
+        clearLegacyDocumentClick();
+      };
+      avatarDocumentClickTimer.current = undefined;
+    }, 0);
+  };
 
   return (
     <div
@@ -239,10 +260,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
               <button
                 type="button"
                 className={darkHeader ? 'btn btn-primary' : 'btn'}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setShowAvatarMenu((value) => !value);
-                }}
+                onClick={toggleAvatarMenu}
               >
                 <i className="far fa fa-user-circle" />
                 <span className="d-none d-lg-inline ml-1">{user?.email || 'Loading...'}</span>

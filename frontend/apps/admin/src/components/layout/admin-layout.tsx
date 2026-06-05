@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
@@ -81,6 +81,10 @@ function getSiteTitle() {
   return getSettings().title || 'V2Board';
 }
 
+function clearLegacyDocumentClick() {
+  document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];
+}
+
 export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -89,6 +93,7 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [email, setEmail] = useState('');
   const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
+  const avatarDocumentClickTimer = useRef<number | undefined>(undefined);
   const theme = getTheme();
   const title = titleProp ?? ROUTE_TITLES[location.pathname] ?? '';
   const pageClassName =
@@ -107,11 +112,13 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
   }, []);
 
   useEffect(() => {
-    if (!showAvatarMenu) return;
-    const close = () => setShowAvatarMenu(false);
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [showAvatarMenu]);
+    return () => {
+      if (avatarDocumentClickTimer.current !== undefined) {
+        window.clearTimeout(avatarDocumentClickTimer.current);
+      }
+      clearLegacyDocumentClick();
+    };
+  }, []);
 
   const navItems = useMemo(() => LEGACY_NAV, []);
 
@@ -126,6 +133,20 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const toggleAvatarMenu = () => {
+    setShowAvatarMenu((value) => !value);
+    if (avatarDocumentClickTimer.current !== undefined) {
+      window.clearTimeout(avatarDocumentClickTimer.current);
+    }
+    avatarDocumentClickTimer.current = window.setTimeout(() => {
+      document.onclick = function legacyAvatarMenuDocumentClick() {
+        setShowAvatarMenu((value) => (value ? false : value));
+        clearLegacyDocumentClick();
+      };
+      avatarDocumentClickTimer.current = undefined;
+    }, 0);
   };
 
   const handleNavClick = (href: string | undefined) => {
@@ -228,7 +249,7 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
                 data-toggle="dropdown"
                 aria-haspopup="true"
                 aria-expanded="false"
-                onClick={() => setShowAvatarMenu((value) => !value)}
+                onClick={toggleAvatarMenu}
               >
                 <i className="far fa fa-user-circle" />
                 <span className="d-none d-lg-inline ml-1">{email}</span>

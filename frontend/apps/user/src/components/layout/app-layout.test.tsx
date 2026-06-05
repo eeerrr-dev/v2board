@@ -161,6 +161,11 @@ describe('AppLayout bundled-theme markup', () => {
     expect(html).toContain('id="main-container"');
     expect(html).toContain('class="content content-full"');
     expect(html).toContain('Outlet content');
+    const source = readFileSync(`${process.cwd()}/src/components/layout/app-layout.tsx`, 'utf8');
+    expect(source).toContain('document.onclick = function legacyAvatarMenuDocumentClick()');
+    expect(source).toContain("document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];");
+    expect(source).not.toContain("document.addEventListener('click'");
+    expect(source).not.toContain("document.removeEventListener('click'");
   });
 
   it('renders the bundled loading main container when loading is passed', () => {
@@ -384,10 +389,12 @@ describe('AppLayout bundled-theme behavior', () => {
 
     await act(async () => {
       userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
       await Promise.resolve();
     });
 
     expect(container.querySelector('.dropdown-menu')!.className).toContain('show');
+    expect(document.onclick).toBeTypeOf('function');
     const profile = Array.from(container.querySelectorAll('.dropdown-item')).find(
       (item) => item.textContent?.includes('个人中心'),
     ) as HTMLAnchorElement;
@@ -397,6 +404,20 @@ describe('AppLayout bundled-theme behavior', () => {
 
     expect(profile.getAttribute('href')).toBe('/#/profile');
     expect(logoutLink.getAttribute('href')).toBe('javascript:void(0);');
+
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('.dropdown-menu')!.className).not.toContain('show');
+    expect(document.onclick).toBeNull();
+
+    await act(async () => {
+      userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      await Promise.resolve();
+    });
 
     await act(async () => {
       logoutLink.dispatchEvent(new MouseEvent('click', { bubbles: true }));

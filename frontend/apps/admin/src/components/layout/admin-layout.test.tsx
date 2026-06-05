@@ -129,6 +129,10 @@ describe('AdminLayout legacy shell', () => {
     expect(source).toContain(
       "className={`dropdown-menu dropdown-menu-right dropdown-menu-lg p-0 ${showAvatarMenu && 'show'}`}",
     );
+    expect(source).toContain('document.onclick = function legacyAvatarMenuDocumentClick()');
+    expect(source).toContain("document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];");
+    expect(source).not.toContain("document.addEventListener('click'");
+    expect(source).not.toContain("document.removeEventListener('click'");
     expect(source).not.toContain('key={`${item.title}-${index}`}');
     expect(source).not.toContain('key={item.href}');
   });
@@ -340,10 +344,12 @@ describe('AdminLayout legacy dark mode behavior', () => {
 
     await act(async () => {
       userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
       await Promise.resolve();
     });
 
     expect(container.querySelector('.dropdown-menu')!.className).toContain('show');
+    expect(document.onclick).toBeTypeOf('function');
 
     await act(async () => {
       document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -351,6 +357,7 @@ describe('AdminLayout legacy dark mode behavior', () => {
     });
 
     expect(container.querySelector('.dropdown-menu')!.className).not.toContain('show');
+    expect(document.onclick).toBeNull();
   });
 
   it('toggles the original dark_mode cookie and header icon from the old admin button', async () => {
