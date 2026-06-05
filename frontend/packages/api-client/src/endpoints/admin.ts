@@ -379,18 +379,10 @@ export const dropPayment = (client: ApiClient, id: number) =>
 
 export const fetchNotices = async (
   client: ApiClient,
-  query: AdminPageQuery = {},
+  _query: AdminPageQuery = {},
 ): Promise<PageResult<Notice>> => {
-  const env = await adminGetEnvelope<Notice[] | PageResult<Notice>>(client, '/notice/fetch', {
-    ...query,
-  });
-  if (Array.isArray(env.data)) {
-    return { data: env.data, total: env.total ?? env.data.length };
-  }
-  return {
-    data: env.data.data,
-    total: env.data.total ?? env.total ?? env.data.data.length,
-  };
+  const env = await adminGetEnvelope<Notice[]>(client, '/notice/fetch');
+  return { data: env.data, total: env.total };
 };
 
 export const saveNotice = (client: ApiClient, data: Partial<Notice>) =>

@@ -629,10 +629,10 @@ describe('createApiClient', () => {
     expect(result.email_whitelist_suffix).toBe('safe.example');
   });
 
-  it('normalizes legacy admin notice array fetch responses', async () => {
+  it('keeps legacy admin notice fetch as a plain unpaginated array response', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/admin-path/notice/fetch?current=1&pageSize=10').reply(200, {
+    mock.onGet('/admin-path/notice/fetch').reply(200, {
       data: [
         {
           id: 1,
@@ -649,9 +649,9 @@ describe('createApiClient', () => {
 
     await expect(fetchNotices(client, { current: 1, pageSize: 10 })).resolves.toMatchObject({
       data: [{ id: 1, title: '维护通知' }],
-      total: 1,
+      total: undefined,
     });
-    expect(mock.history.get[0]?.url).toBe('/admin-path/notice/fetch?current=1&pageSize=10');
+    expect(mock.history.get[0]?.url).toBe('/admin-path/notice/fetch');
   });
 
   it('sets the telegram webhook with the original empty token payload', async () => {
