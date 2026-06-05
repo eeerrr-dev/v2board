@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, type AnchorHTMLAttributes } from 'react';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
 import { formatLegacyDateTime, formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { legacyConfirm } from '@/components/legacy-confirm';
@@ -29,6 +29,10 @@ const PERIOD_LABEL: Record<string, string> = {
   onetime_price: 'plan.onetime',
   reset_price: 'plan.reset',
 };
+
+function legacyDisabledAnchorProps(disabled: boolean): AnchorHTMLAttributes<HTMLAnchorElement> {
+  return { disabled } as AnchorHTMLAttributes<HTMLAnchorElement>;
+}
 
 export default function OrdersPage() {
   const { t } = useTranslation();
@@ -241,7 +245,7 @@ export default function OrdersPage() {
                                 <div>
                                   <a
                                     ref={legacyHref()}
-                                    {...(order.status === 2 ? { disabled: true } : {})}
+                                    {...legacyDisabledAnchorProps(order.status === 2)}
                                     onClick={() => navigate(`/order/${order.trade_no}`)}
                                   >
                                     {t('order.return')}
@@ -249,7 +253,7 @@ export default function OrdersPage() {
                                   <div className="ant-divider ant-divider-vertical" />
                                   <a
                                     ref={legacyHref()}
-                                    {...(order.status !== 0 ? { disabled: true } : {})}
+                                    {...legacyDisabledAnchorProps(order.status !== 0)}
                                     onClick={() => void onCancelOrder(order.trade_no)}
                                   >
                                     {t('common.cancel')}
@@ -305,7 +309,7 @@ export default function OrdersPage() {
                                 <div>
                                   <a
                                     ref={legacyHref()}
-                                    {...(order.status === 2 ? { disabled: true } : {})}
+                                    {...legacyDisabledAnchorProps(order.status === 2)}
                                     onClick={() => navigate(`/order/${order.trade_no}`)}
                                   >
                                     {t('order.return')}
@@ -313,7 +317,7 @@ export default function OrdersPage() {
                                   <div className="ant-divider ant-divider-vertical" />
                                   <a
                                     ref={legacyHref()}
-                                    {...(order.status !== 0 ? { disabled: true } : {})}
+                                    {...legacyDisabledAnchorProps(order.status !== 0)}
                                     onClick={() => void onCancelOrder(order.trade_no)}
                                   >
                                     {t('common.cancel')}

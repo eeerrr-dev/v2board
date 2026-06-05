@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { formatLegacyDateTime, formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import OrdersPage from './index';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -131,12 +132,12 @@ describe('OrdersPage bundled-theme table', () => {
     expect(html).toContain('10.00');
     expect(html).toContain('ant-badge-status-error');
     expect(html).toContain('待支付');
-    expect(html).toContain('2023/11/14 22:13');
+    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
     expect(html).toContain('流量重置包');
     expect(html).toContain('2.50');
     expect(html).toContain('ant-badge-status-success');
     expect(html).toContain('已完成');
-    expect(html).toContain('1970/01/01 00:00');
+    expect(html).toContain(formatLegacyDateMinuteSlash(0));
     expect(html.match(/ant-divider ant-divider-vertical/g)).toHaveLength(4);
     expect(html).not.toContain('role="separator"');
     expect(html).not.toContain('data-row-key');
@@ -151,7 +152,7 @@ describe('OrdersPage bundled-theme table', () => {
     expect(html).toContain('class="am-list-body"');
     expect(html).toContain('class="am-list-line am-list-line-multiple"');
     expect(html).toContain('Legacy Plan');
-    expect(html).toContain('2023-11-14 22:13:20');
+    expect(html).toContain(formatLegacyDateTime(1_700_000_000));
     expect(html).toContain('10.00');
     expect(html).toContain('ant-badge-status-error');
     expect(html).toContain('待支付');
@@ -263,6 +264,15 @@ describe('OrdersPage legacy cancel action', () => {
   });
 
   it('keeps legacy disabled action links clickable because the bundle only stamps the attribute', async () => {
+    expect(ordersSource).toContain(
+      'function legacyDisabledAnchorProps(disabled: boolean): AnchorHTMLAttributes<HTMLAnchorElement>',
+    );
+    expect(ordersSource).toContain('return { disabled } as AnchorHTMLAttributes<HTMLAnchorElement>;');
+    expect(ordersSource).toContain('{...legacyDisabledAnchorProps(order.status === 2)}');
+    expect(ordersSource).toContain('{...legacyDisabledAnchorProps(order.status !== 0)}');
+    expect(ordersSource).not.toContain("...(order.status === 2 ? { disabled: true } : {})");
+    expect(ordersSource).not.toContain("...(order.status !== 0 ? { disabled: true } : {})");
+
     mocks.orders = [
       mocks.orders[0]!,
       {
