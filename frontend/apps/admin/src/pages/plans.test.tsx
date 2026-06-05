@@ -113,9 +113,21 @@ describe('PlansPage legacy subscription management', () => {
   });
 
   it('keeps the legacy action dropdown delete color on the menu item', () => {
-    expect(plansSource).toContain("key: 'delete',");
-    expect(plansSource).toContain("style: { color: '#ff4d4f' },");
+    expect(plansSource).toContain(
+      "const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];",
+    );
+    expect(plansSource).toContain('function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)');
+    expect(plansSource).toContain('return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;');
+    expect(plansSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
+    expect(plansSource).toContain('overlay={(');
+    expect(plansSource).toContain('<Menu>');
+    expect(plansSource).toContain('<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>');
+    expect(plansSource).toContain('key="delete"');
+    expect(plansSource).toContain("style={{ color: '#ff4d4f' }}");
+    expect(plansSource).toContain('onClick={() => dropPlan(record.id)}');
     expect(plansSource).toContain('<DeleteOutlined /> 删除');
+    expect(plansSource).not.toContain("key: 'delete',");
+    expect(plansSource).not.toContain('menu={{');
     expect(plansSource).not.toContain("<span style={{ color: '#ff4d4f' }}>");
   });
 
@@ -191,7 +203,7 @@ describe('PlansPage legacy subscription management', () => {
     );
     expect(plansSource).not.toContain('setSubmit({ ...(record ?? emptyPlan()) });');
     expect(plansSource).not.toContain('[record, visible]');
-    expect(plansSource).toContain('<PlanEditor\n                    key={record.id}');
+    expect(plansSource).toContain('key={record.id}');
   });
 
   it('keeps the original editor-mounted config and server-group fetches', () => {

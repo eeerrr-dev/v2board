@@ -16,6 +16,7 @@ import {
   Drawer,
   Dropdown,
   Input,
+  Menu,
   Row,
   Col,
   Select,
@@ -24,7 +25,7 @@ import {
   Tag,
   Tooltip,
 } from 'antd';
-import type { TableProps } from 'antd';
+import type { DropdownProps, TableProps } from 'antd';
 import {
   CaretDownOutlined,
   DeleteOutlined,
@@ -57,6 +58,19 @@ type EditablePlan = {
 };
 
 type SavePlanPayload = EditablePlan;
+
+type LegacyDropdownProps = Omit<DropdownProps, 'popupRender' | 'trigger'> & {
+  trigger?: DropdownProps['trigger'] | 'click';
+  overlay: ReactNode;
+};
+
+const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];
+
+function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps) {
+  const nextTrigger = Array.isArray(trigger) ? trigger : trigger ? [trigger] : undefined;
+
+  return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;
+}
 
 function emptyPlan(): EditablePlan {
   return {
@@ -507,48 +521,39 @@ export default function PlansPage() {
       fixed: 'right',
       align: 'right',
       render: (_value, record) => (
-        <Dropdown
-          trigger={['click']}
-          menu={{
-            items: [
-              {
-                key: 'edit',
-                label: (
-                  <PlanEditor
-                    key={record.id}
-                    record={record}
-                    groups={groups.data ?? []}
-                    currencySymbol={config.data?.site?.currency_symbol}
-                    saveLoading={save.isPending}
-                    onSave={savePlan}
-                    onLegacyMount={refetchPlanEditorDependencies}
-                  >
-                    <a>
-                      <EditOutlined /> 编辑
-                    </a>
-                  </PlanEditor>
-                ),
-              },
-              {
-                key: 'delete',
-                style: { color: '#ff4d4f' },
-                label: (
-                  <>
-                    <DeleteOutlined /> 删除
-                  </>
-                ),
-              },
-            ],
-            onClick: ({ key, domEvent }) => {
-              domEvent.stopPropagation();
-              if (key === 'delete') dropPlan(record.id);
-            },
-          }}
+        <LegacyDropdown
+          trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+          overlay={(
+            <Menu>
+              <Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>
+                <PlanEditor
+                  key={record.id}
+                  record={record}
+                  groups={groups.data ?? []}
+                  currencySymbol={config.data?.site?.currency_symbol}
+                  saveLoading={save.isPending}
+                  onSave={savePlan}
+                  onLegacyMount={refetchPlanEditorDependencies}
+                >
+                  <a>
+                    <EditOutlined /> 编辑
+                  </a>
+                </PlanEditor>
+              </Menu.Item>
+              <Menu.Item
+                key="delete"
+                style={{ color: '#ff4d4f' }}
+                onClick={() => dropPlan(record.id)}
+              >
+                <DeleteOutlined /> 删除
+              </Menu.Item>
+            </Menu>
+          )}
         >
           <a ref={legacyHref()}>
             操作 <CaretDownOutlined />
           </a>
-        </Dropdown>
+        </LegacyDropdown>
       ),
     },
   ];
