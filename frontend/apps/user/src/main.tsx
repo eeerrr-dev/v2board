@@ -33,7 +33,8 @@ normalizeLegacyHashRoute(legacyHashRouteOptions);
 installLegacyHashRouteNormalizer(legacyHashRouteOptions);
 if (import.meta.env.DEV) {
   installLegacyDevModuleRecovery();
-  installLegacyDevWhiteScreenFallback();
+  installLegacyWhiteScreenRecovery(legacyHashRouteOptions, { delay: 1000 });
+  installLegacyDevWhiteScreenFallback({ delay: 5000 });
 } else {
   installLegacyWhiteScreenRecovery(legacyHashRouteOptions);
 }

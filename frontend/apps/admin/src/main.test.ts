@@ -29,23 +29,37 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
     expect(mainSource).toContain('installLegacyWhiteScreenRecovery(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyDevModuleRecovery();');
-    expect(mainSource).toContain('installLegacyDevWhiteScreenFallback();');
+    expect(mainSource).toContain(
+      'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, { delay: 1000 });',
+    );
+    expect(mainSource).toContain('installLegacyDevWhiteScreenFallback({ delay: 5000 });');
+    expect(mainSource).toContain(
+      '} else {\n  installLegacyWhiteScreenRecovery(legacyHashRouteOptions);',
+    );
     expect(mainSource.indexOf('if (import.meta.env.DEV) {')).toBeLessThan(
       mainSource.indexOf('installLegacyDevModuleRecovery();'),
     );
     expect(mainSource.indexOf('installLegacyDevModuleRecovery();')).toBeLessThan(
-      mainSource.indexOf('installLegacyDevWhiteScreenFallback();'),
+      mainSource.indexOf(
+        'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, { delay: 1000 });',
+      ),
     );
-    expect(mainSource.indexOf('installLegacyDevWhiteScreenFallback();')).toBeLessThan(
-      mainSource.indexOf('installLegacyWhiteScreenRecovery(legacyHashRouteOptions);'),
-    );
+    expect(
+      mainSource.indexOf(
+        'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, { delay: 1000 });',
+      ),
+    ).toBeLessThan(mainSource.indexOf('installLegacyDevWhiteScreenFallback({ delay: 5000 });'));
     expect(mainSource).toContain("import { useEffect, type ReactNode } from 'react';");
     expect(mainSource).toContain('function LegacyRouteGate({ children }: { children: ReactNode })');
-    expect(mainSource).toContain('const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);');
+    expect(mainSource).toContain(
+      'const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);',
+    );
     expect(mainSource).toContain('useEffect(() => {');
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('}, [location.hash, location.pathname, location.search]);');
-    expect(mainSource).toContain('return normalized !== current ? <Navigate to={normalized} replace /> : <>{children}</>;');
+    expect(mainSource).toContain(
+      'return normalized !== current ? <Navigate to={normalized} replace /> : <>{children}</>;',
+    );
   });
 
   it('initializes legacy settings and dark mode before rendering', () => {
@@ -68,7 +82,9 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('HashRouter');
     expect(mainSource).toContain('useLocation');
     expect(mainSource).toContain('Navigate');
-    expect(mainSource).toContain("import { RouteBoundaryElement } from './components/route-error-boundary';");
+    expect(mainSource).toContain(
+      "import { RouteBoundaryElement } from './components/route-error-boundary';",
+    );
     expect(mainSource).toContain('<HashRouter>');
     expect(mainSource).toContain('<LegacyRouteGate>');
     expect(mainSource).toContain('</LegacyRouteGate>');
@@ -84,7 +100,7 @@ describe('admin legacy entrypoint', () => {
   it('keeps the admin Ant Design locale fixed to zh_CN like the bundled admin app', () => {
     expect(mainSource).toContain("import zhCN from 'antd/locale/zh_CN';");
     expect(mainSource).toContain('locale={zhCN}');
-    expect(mainSource).not.toContain("antd/locale/en_US");
+    expect(mainSource).not.toContain('antd/locale/en_US');
   });
 
   it('keeps Ant Design 5 table spin wrappers visible under the legacy admin stylesheet', () => {
