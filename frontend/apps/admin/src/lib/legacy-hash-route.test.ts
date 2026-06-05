@@ -401,6 +401,46 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
+  it('recovers when the legacy layout chrome remains but routed main content is blank', () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem('authorization', 'jwt');
+    document.body.innerHTML =
+      '<div id="root"><div id="page-container"><nav>仪表盘</nav><header>admin@local</header><main id="main-container"><div class="content content-full"></div></main></div></div>';
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      now: () => 321,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('__v2board_recover', '321');
+    expect(replace).toHaveBeenCalledWith(expected.toString());
+    dispose();
+  });
+
+  it('does not recover a legacy main container that still has loading controls', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML =
+      '<div id="root"><main id="main-container"><div class="spinner-grow text-primary"><span class="sr-only">Loading...</span></div></main></div>';
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyWhiteScreenRecovery(options, {
+      delay: 10,
+      replace,
+    });
+
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    vi.advanceTimersByTime(10);
+
+    expect(replace).not.toHaveBeenCalled();
+    dispose();
+  });
+
   it('falls back to the authenticated route when the same empty route is recovered twice', () => {
     vi.useFakeTimers();
     window.localStorage.setItem('authorization', 'jwt');

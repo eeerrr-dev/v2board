@@ -186,10 +186,21 @@ const NON_BLANK_ROOT_SELECTOR = [
   '[class*="spinner"]',
 ].join(',');
 
-function rootIsEmpty(root: HTMLElement | null): boolean {
-  if (!root) return true;
-  if (root.textContent?.trim()) return false;
-  return !root.querySelector(NON_BLANK_ROOT_SELECTOR);
+function elementIsEmpty(element: HTMLElement | null): boolean {
+  if (!element) return true;
+  if (element.textContent?.trim()) return false;
+  return !element.querySelector(NON_BLANK_ROOT_SELECTOR);
+}
+
+function appIsEmpty(root: HTMLElement | null): boolean {
+  if (elementIsEmpty(root)) return true;
+
+  // Route mismatches can leave the OneUI chrome mounted while the routed main
+  // panel is empty. Treat that as a white screen too; the user sees a blank app
+  // even though the sidebar/header text keeps #root from being technically empty.
+  const main = root?.querySelector<HTMLElement>('#main-container');
+  if (!main) return false;
+  return elementIsEmpty(main);
 }
 
 function stableRecoveryKey(url: URL): string {
@@ -244,7 +255,7 @@ export function installLegacyWhiteScreenRecovery(
     const root = document.getElementById('root');
     const current = new URL(window.location.href);
     const key = `${storageKey}:${stableRecoveryKey(current)}`;
-    if (!rootIsEmpty(root)) {
+    if (!appIsEmpty(root)) {
       window.sessionStorage.removeItem(key);
       return;
     }
@@ -295,7 +306,7 @@ export function installLegacyWhiteScreenRecovery(
       ? new MutationObserver(schedule)
       : undefined;
 
-  observer?.observe(root as HTMLElement, { childList: true });
+  observer?.observe(root as HTMLElement, { childList: true, subtree: true });
   window.addEventListener('hashchange', schedule);
   window.addEventListener('popstate', schedule);
   window.addEventListener('error', schedule);
