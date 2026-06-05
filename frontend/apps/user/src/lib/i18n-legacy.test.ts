@@ -300,6 +300,13 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('plan.pick_best_for_you')).toBe('選擇最適合您的計劃');
     expect(i18n.t('node.status_tip')).toBe('五分鐘內節點線上情況');
     expect(i18n.t('traffic.notice')).toBe('流量明細僅保留近一個月資料以供查詢。');
+    expect(i18n.t('traffic.record_at')).toBe('記錄時間');
+    expect(i18n.t('traffic.actual_upload')).toBe('實際上行');
+    expect(i18n.t('traffic.actual_download')).toBe('實際下行');
+    expect(i18n.t('traffic.deduct_rate')).toBe('扣費倍率');
+    expect(i18n.t('traffic.total_formula')).toBe(
+      '公式：(實際上行 + 實際下行) x 扣費倍率 = 扣除流量',
+    );
     expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
       '已用 1 GB / 總計 10 GB',
     );
@@ -366,6 +373,13 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('node.status_tip')).toBe('Node trạng thái online trong vòng 5 phút');
     expect(i18n.t('traffic.notice')).toBe(
       'Chi tiết dung lượng chỉ lưu dữ liệu của những tháng gần đây để truy vấn.',
+    );
+    expect(i18n.t('traffic.record_at')).toBe('Thời gian ghi');
+    expect(i18n.t('traffic.actual_upload')).toBe('Upload thực tế');
+    expect(i18n.t('traffic.actual_download')).toBe('Download thực tế');
+    expect(i18n.t('traffic.deduct_rate')).toBe('Tỷ lệ khấu trừ');
+    expect(i18n.t('traffic.total_formula')).toBe(
+      'Công thức: (upload thực tế + download thực tế) x bội số trừ phí = Dung lượng khấu trừ',
     );
     expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
       'Đã sử dụng 1 GB / Tổng dung lượng 10 GB',
