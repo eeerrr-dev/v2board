@@ -248,7 +248,7 @@ function KnowledgeEditor({
 
   const save = async () => {
     await onSave({ ...knowledge });
-    await onSaved();
+    void onSaved();
     message.success('保存成功');
   };
 

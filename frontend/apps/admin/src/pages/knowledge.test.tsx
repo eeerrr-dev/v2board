@@ -119,12 +119,12 @@ describe('KnowledgePage legacy knowledge manager', () => {
     );
 
     expect(editorSaveBlock).toContain("await onSave({ ...knowledge });");
-    expect(editorSaveBlock).toContain('await onSaved();');
+    expect(editorSaveBlock).toContain('void onSaved();');
     expect(editorSaveBlock).toContain("message.success('保存成功');");
     expect(editorSaveBlock.indexOf("await onSave({ ...knowledge });")).toBeLessThan(
-      editorSaveBlock.indexOf('await onSaved();'),
+      editorSaveBlock.indexOf('void onSaved();'),
     );
-    expect(editorSaveBlock.indexOf('await onSaved();')).toBeLessThan(
+    expect(editorSaveBlock.indexOf('void onSaved();')).toBeLessThan(
       editorSaveBlock.indexOf("message.success('保存成功');"),
     );
     expect(source).toContain(
@@ -133,7 +133,8 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('const refetchKnowledge = () => list.refetch();');
     expect(source).toContain("message.success('保存成功');");
     expect(source).toContain('onSaved: () => void | Promise<unknown>;');
-    expect(source).toContain('    await onSaved();\n    message.success');
+    expect(source).toContain('    void onSaved();\n    message.success');
+    expect(source).not.toContain('await onSaved();');
     expect(source).toContain('saveLoading?: boolean;');
     expect(source).toContain('saveLoading={save.isPending}');
     expect(source).not.toContain('const [saveLoading, setSaveLoading] = useState(false);');
@@ -194,7 +195,7 @@ describe('KnowledgePage legacy knowledge manager', () => {
     );
     const saveRefetch = source.indexOf('const refetchKnowledge = () => list.refetch();', saveStart);
     const editorSaveStart = source.indexOf("await onSave({ ...knowledge });");
-    const editorRefetch = source.indexOf('await onSaved();', editorSaveStart);
+    const editorRefetch = source.indexOf('void onSaved();', editorSaveStart);
     const sortStart = source.indexOf('sort.mutate(next.map((knowledge) => knowledge.id),');
     const sortRefetch = source.indexOf('void list.refetch();', sortStart);
     const showStart = source.indexOf('show.mutate(row.id, {');
