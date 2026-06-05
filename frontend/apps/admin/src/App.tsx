@@ -116,7 +116,13 @@ const ADMIN_ROUTE_ELEMENTS: Record<AdminLegacyRoutePath, ReactNode> = {
 
 export default function App() {
   const { message } = AntdApp.useApp();
+  const location = useLocation();
+  const current = `${location.pathname}${location.search}`;
+  const normalized = getNormalizedLegacyHashPath(current, ADMIN_LEGACY_ROUTE_OPTIONS);
+
   useEffect(() => bindMessageApi(message), [message]);
+
+  if (normalized !== current) return <Navigate to={normalized} replace />;
 
   return (
     <Routes>

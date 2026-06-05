@@ -94,6 +94,12 @@ function LegacyUnknownRouteRedirect() {
 }
 
 export default function App() {
+  const location = useLocation();
+  const current = `${location.pathname}${location.search}`;
+  const normalized = getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS);
+
+  if (normalized !== current) return <Navigate to={normalized} replace />;
+
   return (
     <Routes>
       <Route
