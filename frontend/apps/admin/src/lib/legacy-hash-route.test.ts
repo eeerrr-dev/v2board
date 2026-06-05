@@ -205,6 +205,18 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
+  it('preserves router history state when correcting pushed legacy hashes', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const dispose = installLegacyHashRouteNormalizer(options);
+    const routerState = { idx: 3, key: 'legacy', usr: null };
+
+    window.history.pushState(routerState, '', '/#/login/dashboard');
+
+    expect(window.location.hash).toBe('#/dashboard');
+    expect(window.history.state).toEqual(routerState);
+    dispose();
+  });
+
   it('notifies listeners when a pushState URL is corrected after mount', () => {
     window.localStorage.setItem('authorization', 'jwt');
     const listener = vi.fn();
@@ -496,11 +508,13 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
-  it('reloads once when a stale Vite optimized dependency fails to load', () => {
+  it('retries stale Vite optimized dependency reloads up to the configured limit', () => {
     setUrl('/#/dashboard');
     const replace = vi.fn();
+    let timestamp = 654;
     const dispose = installLegacyDevModuleRecovery({
-      now: () => 654,
+      maxAttempts: 2,
+      now: () => timestamp++,
       replace,
     });
 
@@ -516,9 +530,41 @@ describe('normalizeLegacyHashRoute', () => {
         filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-router-dom.js?v=old',
       }),
     );
+    window.dispatchEvent(
+      new ErrorEvent('error', {
+        message: 'Outdated Optimize Dep',
+        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-router-dom.js?v=old',
+      }),
+    );
+
+    const first = new URL(window.location.href);
+    first.searchParams.set('__v2board_dev_recover', '654');
+    const second = new URL(window.location.href);
+    second.searchParams.set('__v2board_dev_recover', '655');
+    expect(replace).toHaveBeenCalledTimes(2);
+    expect(replace).toHaveBeenNthCalledWith(1, first.toString());
+    expect(replace).toHaveBeenNthCalledWith(2, second.toString());
+    dispose();
+  });
+
+  it('recovers Vite optimized module export mismatch errors', () => {
+    setUrl('/#/dashboard');
+    const replace = vi.fn();
+    const dispose = installLegacyDevModuleRecovery({
+      maxAttempts: 1,
+      now: () => 432,
+      replace,
+    });
+
+    window.dispatchEvent(
+      new ErrorEvent('error', {
+        message:
+          "The requested module '/node_modules/.vite/deps/antd.js?v=old' does not provide an export named 'App'",
+      }),
+    );
 
     const expected = new URL(window.location.href);
-    expected.searchParams.set('__v2board_dev_recover', '654');
+    expected.searchParams.set('__v2board_dev_recover', '432');
     expect(replace).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith(expected.toString());
     dispose();

@@ -17,6 +17,7 @@ export interface LegacyWhiteScreenRecoveryConfig {
 
 export interface LegacyDevModuleRecoveryConfig {
   storageKey?: string;
+  maxAttempts?: number;
   now?: () => number;
   replace?: (url: string) => void;
 }
@@ -116,7 +117,11 @@ export function normalizeLegacyHashRoute(options: LegacyHashRouteOptions): void 
       ? window.location.pathname
       : normalizeCanonicalPath(options.canonicalPath);
   if (rawHash !== nextHash || window.location.pathname !== nextPathname) {
-    window.history.replaceState(null, '', `${nextPathname}${window.location.search}#${nextHash}`);
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${nextPathname}${window.location.search}#${nextHash}`,
+    );
   }
 }
 
@@ -307,26 +312,40 @@ export function installLegacyWhiteScreenRecovery(
   };
 }
 
+function errorText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return value instanceof Error ? `${value.message}\n${value.stack ?? ''}` : String(value);
+}
+
 function isStaleViteModuleText(value: unknown): boolean {
-  if (value === null || value === undefined) return false;
-  const text = value instanceof Error ? `${value.message}\n${value.stack ?? ''}` : String(value);
+  const text = errorText(value);
+  if (!text) return false;
+  const lower = text.toLowerCase();
   return (
     text.includes('Outdated Optimize Dep') ||
+    text.includes('504 (Outdated Optimize Dep)') ||
     text.includes('Failed to fetch dynamically imported module') ||
     text.includes('Importing a module script failed') ||
     text.includes('Failed to load module script') ||
-    text.includes('/node_modules/.vite/deps/')
+    text.includes('/node_modules/.vite/deps/') ||
+    (text.includes('/node_modules/.vite/') &&
+      (lower.includes('does not provide an export named') ||
+        lower.includes('mime type') ||
+        lower.includes('module script') ||
+        lower.includes('net::err_aborted')))
   );
 }
 
 function isStaleViteModuleEvent(event: Event): boolean {
   const maybeError = event as ErrorEvent & { payload?: unknown; reason?: unknown };
-  return (
-    isStaleViteModuleText(maybeError.message) ||
-    isStaleViteModuleText(maybeError.filename) ||
-    isStaleViteModuleText(maybeError.error) ||
-    isStaleViteModuleText(maybeError.reason) ||
-    isStaleViteModuleText(maybeError.payload)
+  return isStaleViteModuleText(
+    [
+      errorText(maybeError.message),
+      errorText(maybeError.filename),
+      errorText(maybeError.error),
+      errorText(maybeError.reason),
+      errorText(maybeError.payload),
+    ].join('\n'),
   );
 }
 
@@ -336,6 +355,7 @@ export function installLegacyDevModuleRecovery(
   if (typeof window === 'undefined') return () => undefined;
 
   const storageKey = config.storageKey ?? 'v2board:dev-module-recovery';
+  const maxAttempts = config.maxAttempts ?? 3;
   const now = config.now ?? (() => Date.now());
   const replace = config.replace ?? ((url: string) => window.location.replace(url));
 
@@ -346,7 +366,7 @@ export function installLegacyDevModuleRecovery(
     const current = new URL(window.location.href);
     const key = `${storageKey}:${stableRecoveryKey(current)}`;
     const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
-    if (attempts > 0) return;
+    if (attempts >= maxAttempts) return;
 
     window.sessionStorage.setItem(key, String(attempts + 1));
     current.searchParams.set('__v2board_dev_recover', String(now()));
