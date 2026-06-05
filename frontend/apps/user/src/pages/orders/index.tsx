@@ -9,6 +9,7 @@ import { isLegacyMobile } from '@/lib/legacy-settings';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
 import { legacyHref } from '@/lib/legacy-href';
+import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
 const STATUS_LABEL: Record<number, { key: string; status: string }> = {
   0: { key: 'order.status_unpaid', status: 'error' },
@@ -34,6 +35,7 @@ export default function OrdersPage() {
   const navigate = useNavigate();
   const ordersQuery = useOrders();
   const { data, isFetching } = ordersQuery;
+  const loading = useLegacyFetchLoading(isFetching);
   const cancel = useCancelOrderMutation();
   const orders = data ?? [];
   const [hoverKey, setHoverKey] = useState<number | null>(null);
@@ -64,7 +66,7 @@ export default function OrdersPage() {
     // The original builds this as `"block block-rounded  ".concat(...)` — note the
     // DOUBLE space before the loading class (umi.js @2306135), so the rendered class
     // attribute has two spaces; reproduced verbatim.
-    <div className={`block block-rounded  ${isFetching ? 'block-mode-loading' : ''}`}>
+    <div className={`block block-rounded  ${loading ? 'block-mode-loading' : ''}`}>
       <div className="bg-white">
         {mobile ? (
           <div className="am-list">

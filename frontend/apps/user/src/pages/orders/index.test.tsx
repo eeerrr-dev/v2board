@@ -170,12 +170,13 @@ describe('OrdersPage bundled-theme table', () => {
     expect(ordersSource).not.toContain('data-row-key');
   });
 
-  it('applies the original block loading class directly from order fetchLoading', () => {
+  it('does not apply the list loading class before the mount fetch dispatch equivalent', () => {
     mocks.fetching = true;
 
     const html = renderToStaticMarkup(<OrdersPage />);
 
-    expect(html).toContain('block block-rounded  block-mode-loading');
+    expect(html).toContain('block block-rounded  ');
+    expect(html).not.toContain('block-mode-loading');
   });
 });
 
@@ -311,7 +312,7 @@ describe('OrdersPage legacy cancel action', () => {
     expect(mocks.cancelMutateAsync).toHaveBeenCalledWith('ORDER456');
   });
 
-  it('keeps the original block loading class while orders are fetching', async () => {
+  it('keeps the original block loading class after the mount fetch dispatch equivalent', async () => {
     mocks.fetching = true;
 
     await act(async () => {
