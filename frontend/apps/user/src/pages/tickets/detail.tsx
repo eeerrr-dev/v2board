@@ -61,9 +61,8 @@ export default function TicketDetailPage() {
     }
   };
 
-  const data = ticket.data;
+  const data = ticket.data ?? ({ message: [] } as NonNullable<typeof ticket.data>);
   assumeLegacyTicketMessages(data);
-  const emptyDetailText = ticket.isFetching ? '加载中...' : '工单不存在或已被删除';
 
   return (
     <div>
@@ -99,7 +98,6 @@ export default function TicketDetailPage() {
             </div>
           ),
         )}
-        {!data && <div className="text-center text-muted py-5">{emptyDetailText}</div>}
       </div>
       <div className="js-chat-form block-content p-2 bg-body-dark input___1j_ND">
         <input

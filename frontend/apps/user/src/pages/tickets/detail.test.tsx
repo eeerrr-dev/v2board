@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import TicketDetailPage from './detail';
 
 const state = vi.hoisted(() => {
@@ -127,14 +128,14 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     expect(html).toContain('mr-4');
     expect(html).toContain('d-inline-block bg-success-lighter px-3 py-2 mb-2 mw-100 rounded text-left');
     expect(html).toContain('Support reply');
-    expect(html).toContain('2023/11/14 22:13');
-    expect(html).toContain('2023/11/14 22:14');
+    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
+    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_060));
     expect(html).toContain('js-chat-form block-content p-2 bg-body-dark input___1j_ND');
     expect(html).toContain('js-chat-input bg-body-dark border-0 form-control form-control-alt');
     expect(html).toContain('placeholder="输入内容回复工单..."');
   });
 
-  it('keeps the chat shell visible when the ticket fetch fails', () => {
+  it('keeps the legacy empty chat model when the ticket fetch fails', () => {
     state.ticket = undefined;
     state.ticketError = true;
 
@@ -148,9 +149,10 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     expect(html).toContain('js-chat-form block-content p-2 bg-body-dark input___1j_ND');
     expect(html).toContain('js-chat-input bg-body-dark border-0 form-control form-control-alt');
     expect(html).toContain('placeholder="输入内容回复工单..."');
-    expect(html).toContain('工单不存在或已被删除');
     expect(html).not.toContain('class="ant-empty ant-empty-normal"');
     expect(html).not.toContain('暂无数据');
+    expect(html).not.toContain('工单不存在或已被删除');
+    expect(html).not.toContain('加载中...');
     expect(html).not.toContain('Need help');
   });
 });

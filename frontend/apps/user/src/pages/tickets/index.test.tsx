@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import TicketsPage from './index';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -178,8 +179,8 @@ describe('TicketsPage bundled-theme table', () => {
     expect(html).toContain('待处理');
     expect(html).toContain('ant-badge-status-success');
     expect(html).toContain('已关闭');
-    expect(html).toContain('2023/11/14 22:13');
-    expect(html).toContain('1970/01/01 00:01');
+    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
+    expect(html).toContain(formatLegacyDateMinuteSlash(60));
     expect(html.match(/ant-divider ant-divider-vertical/g)).toHaveLength(6);
     expect(html).not.toContain('role="separator"');
     expect(html).not.toContain('data-row-key');
