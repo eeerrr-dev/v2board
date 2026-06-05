@@ -14,7 +14,7 @@ let redirectingToLogin = false;
 function redirectToLegacyLogin(): void {
   if (redirectingToLogin) return;
   redirectingToLogin = true;
-  window.location.href = `${window.location.origin}${window.location.pathname}#/login`;
+  window.location.href = `${window.location.origin}/#/login`;
 }
 
 export const apiClient = createApiClient({

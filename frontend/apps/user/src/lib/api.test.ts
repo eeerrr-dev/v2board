@@ -12,8 +12,9 @@ describe('user api unauthorized handling', () => {
     expect(apiSource).toContain('if (redirectingToLogin) return;');
     expect(apiSource).toContain('redirectingToLogin = true;');
     expect(apiSource).toContain(
-      'window.location.href = `${window.location.origin}${window.location.pathname}#/login`;',
+      'window.location.href = `${window.location.origin}/#/login`;',
     );
+    expect(apiSource).not.toContain('window.location.pathname}#/login');
     expect(apiSource).not.toContain("window.location.href = '/';");
     expect(apiSource).not.toContain("window.location.replace('/#/login');");
   });
