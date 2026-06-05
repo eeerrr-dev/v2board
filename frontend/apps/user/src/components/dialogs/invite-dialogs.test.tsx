@@ -45,7 +45,7 @@ vi.mock('react-i18next', () => ({
         'invite.withdraw_button': '推广佣金提现',
         'invite.withdraw_method': '提现方式',
         'invite.withdraw_method_placeholder': '请选择提现方式',
-        'invite.withdraw_submit': '提交提现',
+        'invite.withdraw_submit': '确认',
         'profile.confirm': '确认',
       };
       return (labels[key] ?? key)
@@ -268,7 +268,8 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     expect(
       document.body.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')
         ?.textContent?.replace(/\s/g, ''),
-    ).toBe('提交提现');
+    ).toBe('确认');
+    expect(document.body.innerHTML).not.toContain('提交提现');
 
     await act(async () => {
       const method = document.body.querySelector<HTMLSelectElement>('select')!;

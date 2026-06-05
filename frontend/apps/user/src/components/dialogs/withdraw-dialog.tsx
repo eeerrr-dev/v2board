@@ -62,7 +62,7 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           title={t('invite.withdraw')}
-          okText={t('invite.withdraw_submit')}
+          okText={t('profile.confirm')}
           cancelText={t('common.cancel')}
           onOk={() => void onSubmit()}
         >
