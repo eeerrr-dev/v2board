@@ -24,7 +24,6 @@ import {
   DatabaseOutlined,
   DeleteOutlined,
   EditOutlined,
-  FormOutlined,
   LinkOutlined,
   LoadingOutlined,
   PlusOutlined,
@@ -59,11 +58,14 @@ import { LegacyButton } from '@/components/legacy-button';
 import {
   LegacyCaretDownIcon,
   LegacyCaretUpIcon,
+  LegacyCopyIcon,
+  LegacyDeleteIcon,
   LegacyFilterIcon,
+  LegacyFormIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
 } from '@/components/legacy-ant-icon';
-import { LegacyInput } from '@/components/legacy-input';
+import { LegacyCheckboxInput, LegacyInput } from '@/components/legacy-input';
 import { LegacyEmpty } from '@/components/legacy-empty';
 
 const SERVER_TYPES: admin.ServerTypeName[] = [
@@ -1074,6 +1076,52 @@ function ServerManagePage() {
       </div>
     </span>
   );
+  const contextDropdown = (
+    <div
+      id="v2board-table-dropdown"
+      className="ant-dropdown ant-dropdown-placement-bottomLeft"
+      style={{
+        display: contextMenu && !sortMode ? 'unset' : 'none',
+        position: 'fixed',
+        top: contextMenu?.top ?? 0,
+        left: contextMenu?.left ?? 0,
+      }}
+      onClick={() => setContextMenu(null)}
+    >
+      <ul className="ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical">
+        <li className="ant-dropdown-menu-item">
+          {contextRecord ? (
+            <LegacyNodeEditMenuTrigger
+              key={Math.random()}
+              type={contextRecord.type as admin.ServerTypeName}
+              record={contextRecord}
+              nodes={nodes.data ?? []}
+              groups={groups.data ?? []}
+              routes={routes.data ?? []}
+              onSaved={() => nodes.refetch()}
+            >
+              <a>
+                <LegacyFormIcon /> 编辑
+              </a>
+            </LegacyNodeEditMenuTrigger>
+          ) : null}
+        </li>
+        <li className="ant-dropdown-menu-item">
+          <a onClick={() => contextRecord && runNodeAction('copy', contextRecord)}>
+            <LegacyCopyIcon /> 复制
+          </a>
+        </li>
+        <li className="ant-dropdown-menu-item">
+          <a
+            style={{ color: '#ff4d4f' }}
+            onClick={() => contextRecord && runNodeAction('delete', contextRecord)}
+          >
+            <LegacyDeleteIcon /> 删除
+          </a>
+        </li>
+      </ul>
+    </div>
+  );
 
   return (
     <LegacySpin loading={nodes.isFetching || sortingLoading}>
@@ -1420,38 +1468,40 @@ function ServerManagePage() {
                                 </div>
                               </div>
                             </div>
-                            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%' }}>
-                              <div>
-                                <div className="ant-dropdown  ant-dropdown-placement-bottomRight  ant-dropdown-hidden">
-                                  <div className="ant-table-filter-dropdown">
-                                    <ul
-                                      className="ant-dropdown-menu ant-dropdown-menu-without-submenu ant-dropdown-menu-root ant-dropdown-menu-vertical"
-                                      role="menu"
-                                      tabIndex={0}
-                                    >
-                                      {(groups.data ?? []).map((group) => (
-                                        <li className="ant-dropdown-menu-item" role="menuitem" key={group.id}>
-                                          <label className="ant-checkbox-wrapper">
-                                            <span className="ant-checkbox">
-                                              <input type="checkbox" className="ant-checkbox-input" value="" />
-                                              <span className="ant-checkbox-inner" />
-                                            </span>
-                                          </label>
-                                          <span>{group.name}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                    <div className="ant-table-filter-dropdown-btns">
-                                      <a className="ant-table-filter-dropdown-link confirm">确定</a>
-                                      <a className="ant-table-filter-dropdown-link clear">重置</a>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
                           </>
                         )}
                       </div>
+                      {!sortMode && (
+                        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%' }}>
+                          <div>
+                            <div className="ant-dropdown  ant-dropdown-placement-bottomRight  ant-dropdown-hidden">
+                              <div className="ant-table-filter-dropdown">
+                                <ul
+                                  className="ant-dropdown-menu ant-dropdown-menu-without-submenu ant-dropdown-menu-root ant-dropdown-menu-vertical"
+                                  role="menu"
+                                  tabIndex={0}
+                                >
+                                  {(groups.data ?? []).map((group) => (
+                                    <li className="ant-dropdown-menu-item" role="menuitem" key={group.id}>
+                                      <label className="ant-checkbox-wrapper">
+                                        <span className="ant-checkbox">
+                                          <LegacyCheckboxInput className="ant-checkbox-input" value="" />
+                                          <span className="ant-checkbox-inner" />
+                                        </span>
+                                      </label>
+                                      <span>{group.name}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                                <div className="ant-table-filter-dropdown-btns">
+                                  <a className="ant-table-filter-dropdown-link confirm">确定</a>
+                                  <a className="ant-table-filter-dropdown-link clear">重置</a>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1470,52 +1520,9 @@ function ServerManagePage() {
                   </select>
                 </div>
               )}
+              {contextDropdown}
             </LegacyDragSort>
           )}
-          <div
-            id="v2board-table-dropdown"
-            className="ant-dropdown ant-dropdown-placement-bottomLeft"
-            style={{
-              display: contextMenu && !sortMode ? 'unset' : 'none',
-              position: 'fixed',
-              top: contextMenu?.top ?? 0,
-              left: contextMenu?.left ?? 0,
-            }}
-            onClick={() => setContextMenu(null)}
-          >
-            <ul className="ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical">
-              <li className="ant-dropdown-menu-item">
-                {contextRecord ? (
-                  <LegacyNodeEditMenuTrigger
-                    key={Math.random()}
-                    type={contextRecord.type as admin.ServerTypeName}
-                    record={contextRecord}
-                    nodes={nodes.data ?? []}
-                    groups={groups.data ?? []}
-                    routes={routes.data ?? []}
-                    onSaved={() => nodes.refetch()}
-                  >
-                    <a>
-                      <FormOutlined /> 编辑
-                    </a>
-                  </LegacyNodeEditMenuTrigger>
-                ) : null}
-              </li>
-              <li className="ant-dropdown-menu-item">
-                <a onClick={() => contextRecord && runNodeAction('copy', contextRecord)}>
-                  <CopyOutlined /> 复制
-                </a>
-              </li>
-              <li className="ant-dropdown-menu-item">
-                <a
-                  style={{ color: '#ff4d4f' }}
-                  onClick={() => contextRecord && runNodeAction('delete', contextRecord)}
-                >
-                  <DeleteOutlined /> 删除
-                </a>
-              </li>
-            </ul>
-          </div>
         </div>
       </div>
     </LegacySpin>

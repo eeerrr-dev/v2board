@@ -477,6 +477,30 @@ describe('ServersPage legacy server group route', () => {
     expect(html).not.toContain('ant-tabs');
   });
 
+  it('keeps the legacy server manage hidden filter dropdown outside table content', () => {
+    mocks.pathname = '/server/manage';
+    document.body.innerHTML = renderToStaticMarkup(<ServersPage />);
+
+    const table = document.querySelector('.ant-table');
+    const directChildren = Array.from(table?.children ?? []).map((child) => ({
+      className: child.getAttribute('class') ?? '',
+      position: (child as HTMLElement).style.position,
+    }));
+
+    expect(directChildren).toEqual([
+      { className: 'ant-table-content', position: '' },
+      { className: '', position: 'absolute' },
+    ]);
+    expect(document.querySelector('.ant-table-content > [style*="position:absolute"]')).toBeNull();
+    expect(Array.from(document.querySelector('.bg-white')?.children ?? []).map((child) => child.id)).toEqual([
+      '',
+      '',
+    ]);
+    expect(document.querySelector('#v2board-table-dropdown')?.parentElement).toBe(
+      document.querySelector('.ant-table-wrapper')?.parentElement,
+    );
+  });
+
   it('keeps the legacy server manage table without an explicit rowKey', () => {
     const managePageSource = serversSource.slice(
       serversSource.indexOf('function ServerManagePage'),
@@ -1139,7 +1163,11 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('event.clientY');
     expect(serversSource).toContain('event.clientX');
     expect(serversSource).toContain("display: contextMenu && !sortMode ? 'unset' : 'none'");
-    expect(serversSource).toContain('<FormOutlined /> 编辑');
+    expect(serversSource).toContain('<LegacyFormIcon /> 编辑');
+    expect(serversSource).toContain('<LegacyCopyIcon /> 复制');
+    expect(serversSource).toContain('<LegacyDeleteIcon /> 删除');
+    expect(serversSource).toContain('{contextDropdown}\n            </LegacyDragSort>');
+    expect(serversSource).not.toContain('<FormOutlined /> 编辑');
     expect(serversSource).toContain("runNodeAction('copy', contextRecord)");
     expect(serversSource).toContain("runNodeAction('delete', contextRecord)");
   });

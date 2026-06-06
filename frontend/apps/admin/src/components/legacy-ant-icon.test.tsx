@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   LegacyCaretDownIcon,
   LegacyCaretUpIcon,
+  LegacyCopyIcon,
+  LegacyDeleteIcon,
   LegacyFilterIcon,
+  LegacyFormIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
 } from './legacy-ant-icon';
@@ -33,6 +36,9 @@ describe('LegacyPlusIcon', () => {
         <LegacyQuestionCircleIcon />
         <LegacyCaretUpIcon className="ant-table-column-sorter-up off" />
         <LegacyCaretDownIcon className="ant-table-column-sorter-down off" />
+        <LegacyFormIcon />
+        <LegacyCopyIcon />
+        <LegacyDeleteIcon />
       </>,
     );
 
@@ -41,6 +47,9 @@ describe('LegacyPlusIcon', () => {
     expect(html).toContain('data-icon="question-circle"');
     expect(html).toContain('class="anticon anticon-caret-up ant-table-column-sorter-up off"');
     expect(html).toContain('class="anticon anticon-caret-down ant-table-column-sorter-down off"');
+    expect(html).toContain('aria-label="图标: form"');
+    expect(html).toContain('aria-label="图标: copy"');
+    expect(html).toContain('aria-label="图标: delete"');
     expect(html).not.toContain('role="img"');
   });
 });

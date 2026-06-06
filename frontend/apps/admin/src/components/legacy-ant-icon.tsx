@@ -33,6 +33,25 @@ const LEGACY_ANT_ICONS = {
       'M840.4 300H183.6c-19.7 0-30.7 20.8-18.5 35l328.4 380.8c9.4 10.9 27.5 10.9 37 0L858.9 335c12.2-14.2 1.2-35-18.5-35z',
     ],
   },
+  form: {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M904 512h-56c-4.4 0-8 3.6-8 8v320H160V160h320c4.4 0 8-3.6 8-8V96c0-4.4-3.6-8-8-8H144c-17.7 0-32 14.3-32 32v736c0 17.7 14.3 32 32 32h736c17.7 0 32-14.3 32-32V520c0-4.4-3.6-8-8-8z',
+      'M355.9 534.9L354 653.8c-.1 8.9 7.1 16.2 16 16.2h.4l118-2.9c2-.1 4-.9 5.4-2.3l415.9-415c3.1-3.1 3.1-8.2 0-11.3L785.4 114.3c-1.6-1.6-3.6-2.3-5.7-2.3s-4.1.8-5.7 2.3l-415.8 415a8.3 8.3 0 0 0-2.3 5.6zm63.5 23.6L779.7 199l39.6 39.6-360.2 359.3-40.7 1z',
+    ],
+  },
+  copy: {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M832 64H296c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h496v688c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V96c0-17.7-14.3-32-32-32zM704 192H192c-17.7 0-32 14.3-32 32v530.7c0 8.5 3.4 16.6 9.4 22.6l173.3 173.3c2.2 2.2 4.7 4 7.4 5.5v1.9h4.2c3.5 1.3 7.2 2 11 2H704c17.7 0 32-14.3 32-32V224c0-17.7-14.3-32-32-32zM350 856.2L263.9 770H350v86.2zM664 888H414V746c0-22.1-17.9-40-40-40H232V264h432v624z',
+    ],
+  },
+  delete: {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M360 184h-8c4.4 0 8-3.6 8-8v8h304v-8c0 4.4 3.6 8 8 8h-8v72h72v-80c0-35.3-28.7-64-64-64H352c-35.3 0-64 28.7-64 64v80h72v-72zm504 72H160c-17.7 0-32 14.3-32 32v32c0 4.4 3.6 8 8 8h60.4l24.7 523c1.6 34.1 29.8 61 63.9 61h454c34.2 0 62.3-26.8 63.9-61l24.7-523H888c4.4 0 8-3.6 8-8v-32c0-17.7-14.3-32-32-32zM731.3 840H292.7l-24.2-512h487l-24.2 512z',
+    ],
+  },
 } as const;
 
 type LegacyAntIconName = keyof typeof LEGACY_ANT_ICONS;
@@ -87,4 +106,13 @@ export const LegacyCaretUpIcon = (props: LegacyAntIconProps) => (
 );
 export const LegacyCaretDownIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="caret-down" {...props} />
+);
+export const LegacyFormIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="form" {...props} />
+);
+export const LegacyCopyIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="copy" {...props} />
+);
+export const LegacyDeleteIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="delete" {...props} />
 );

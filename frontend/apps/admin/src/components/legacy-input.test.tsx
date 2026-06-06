@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { LegacyInput } from './legacy-input';
+import { LegacyCheckboxInput, LegacyInput } from './legacy-input';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -53,6 +53,16 @@ describe('LegacyInput', () => {
 
     expect(container.querySelector('input')?.outerHTML).toBe(
       '<input placeholder="输入任意关键字搜索" class="ant-input ml-2" type="text" value="" style="width: 200px;">',
+    );
+  });
+
+  it('keeps the old runtime checkbox attribute order after mount', async () => {
+    await act(async () => {
+      root.render(<LegacyCheckboxInput className="ant-checkbox-input" value="" />);
+    });
+
+    expect(container.querySelector('input')?.outerHTML).toBe(
+      '<input type="checkbox" class="ant-checkbox-input" value="">',
     );
   });
 });

@@ -41,3 +41,34 @@ export const LegacyInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTML
     );
   },
 );
+
+export const LegacyCheckboxInput = forwardRef<
+  HTMLInputElement,
+  Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>
+>(function LegacyCheckboxInput({ className, value = '', ...rest }, ref) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useImperativeHandle(ref, () => inputRef.current as HTMLInputElement, []);
+
+  useLayoutEffect(() => {
+    const node = inputRef.current;
+    if (!node) return;
+
+    const valueAttr = node.getAttribute('value') ?? '';
+    node.removeAttribute('type');
+    node.removeAttribute('class');
+    node.removeAttribute('value');
+    node.setAttribute('type', 'checkbox');
+    if (className) node.setAttribute('class', className);
+    node.setAttribute('value', valueAttr);
+  }, [className]);
+
+  return (
+    <input
+      ref={inputRef}
+      type="checkbox"
+      className={className || undefined}
+      value={value}
+      {...rest}
+    />
+  );
+});
