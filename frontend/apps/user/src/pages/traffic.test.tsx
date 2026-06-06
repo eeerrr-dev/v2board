@@ -125,8 +125,9 @@ describe('TrafficPage bundled-theme table', () => {
     expect(html).toContain('block block-rounded  ');
     expect(html).toContain('ant-table-wrapper');
     expect(html).toContain('style="border-top:1px solid #e8e8e8"');
-    expect(html).toContain('class="ant-table-fixed" style="width:800px;table-layout:auto"');
-    expect(html).toContain('class="ant-table-fixed" style="table-layout:auto"');
+    expect(html).toContain('class="ant-table-fixed" style="width:800px"');
+    expect(html).toContain('<table class="ant-table-fixed"><colgroup>');
+    expect(html).toContain('<th class=""><span class="ant-table-header-column">');
     expect(html).toContain('ant-table-fixed-right');
     expect(html).toContain('记录时间');
     expect(html).toContain('实际上行');

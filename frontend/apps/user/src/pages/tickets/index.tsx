@@ -122,12 +122,12 @@ export default function TicketsPage() {
                 <div className="ant-table-scroll">
                   <div
                     ref={bodyRef}
-                    className="ant-table-body"
                     tabIndex={-1}
+                    className="ant-table-body"
                     style={{ overflowX: 'scroll', WebkitTransform: 'translate3d (0, 0, 0)' }}
                     onScroll={onScroll}
                   >
-                    <table ref={mainTableRef} className="ant-table-fixed" style={{ width: 900, tableLayout: 'auto' }}>
+                    <table ref={mainTableRef} className="ant-table-fixed" style={{ width: 900 }}>
                       <colgroup>
                         <col />
                         <col />
@@ -139,7 +139,7 @@ export default function TicketsPage() {
                       </colgroup>
                       <thead className="ant-table-thead">
                         <tr>
-                          <th>
+                          <th className="">
                             <span className="ant-table-header-column">
                               <div>
                                 <span className="ant-table-column-title">{t('ticket.col_id')}</span>
@@ -147,7 +147,7 @@ export default function TicketsPage() {
                               </div>
                             </span>
                           </th>
-                          <th>
+                          <th className="">
                             <span className="ant-table-header-column">
                               <div>
                                 <span className="ant-table-column-title">{t('ticket.subject')}</span>
@@ -155,7 +155,7 @@ export default function TicketsPage() {
                               </div>
                             </span>
                           </th>
-                          <th>
+                          <th className="">
                             <span className="ant-table-header-column">
                               <div>
                                 <span className="ant-table-column-title">{t('ticket.level')}</span>
@@ -163,7 +163,7 @@ export default function TicketsPage() {
                               </div>
                             </span>
                           </th>
-                          <th>
+                          <th className="">
                             <span className="ant-table-header-column">
                               <div>
                                 <span className="ant-table-column-title">{t('ticket.status')}</span>
@@ -171,7 +171,7 @@ export default function TicketsPage() {
                               </div>
                             </span>
                           </th>
-                          <th>
+                          <th className="">
                             <span className="ant-table-header-column">
                               <div>
                                 <span className="ant-table-column-title">{t('ticket.created_at_col')}</span>
@@ -179,7 +179,7 @@ export default function TicketsPage() {
                               </div>
                             </span>
                           </th>
-                          <th>
+                          <th className="">
                             <span className="ant-table-header-column">
                               <div>
                                 <span className="ant-table-column-title">{t('ticket.last_reply_col')}</span>
@@ -288,7 +288,7 @@ export default function TicketsPage() {
                     style={{ WebkitTransform: 'translate3d (0, 0, 0)' }}
                   >
                     <div className="ant-table-body-inner">
-                      <table ref={fixedTableRef} className="ant-table-fixed" style={{ tableLayout: 'auto' }}>
+                      <table ref={fixedTableRef} className="ant-table-fixed">
                         <colgroup>
                           <col />
                         </colgroup>

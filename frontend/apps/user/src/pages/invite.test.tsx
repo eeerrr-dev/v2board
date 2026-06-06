@@ -181,7 +181,9 @@ describe('InvitePage bundled-theme markup', () => {
     expect(html).toContain('¥ 23.45');
     expect(html).toContain('邀请码管理');
     expect(html).toContain('生成邀请码');
-    expect(html.match(/<table style="table-layout:auto">/g)).toHaveLength(2);
+    expect(html).toContain('ant-table-scroll-position-left');
+    expect(html.match(/<table class="">/g)).toHaveLength(2);
+    expect(html).toContain('<th class=""><span class="ant-table-header-column">');
     expect(html).toContain('ABC123');
     expect(html).toContain('复制链接');
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));

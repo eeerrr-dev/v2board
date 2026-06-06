@@ -157,8 +157,9 @@ describe('TicketsPage bundled-theme table', () => {
     expect(html).toContain('btn btn-primary btn-sm btn-primary btn-rounded px-3');
     expect(html).toContain('新的工单');
     expect(html).toContain('ant-table-wrapper');
-    expect(html).toContain('class="ant-table-fixed" style="width:900px;table-layout:auto"');
-    expect(html).toContain('class="ant-table-fixed" style="table-layout:auto"');
+    expect(html).toContain('class="ant-table-fixed" style="width:900px"');
+    expect(html).toContain('<table class="ant-table-fixed"><colgroup>');
+    expect(html).toContain('<th class=""><span class="ant-table-header-column">');
     expect(html).toContain('ant-table-fixed-right');
     expect(html).toContain('<span class="ant-table-column-title">#</span>');
     expect(html).toContain('主题');

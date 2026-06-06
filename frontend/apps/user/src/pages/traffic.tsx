@@ -45,12 +45,12 @@ export default function TrafficPage() {
                   <div className="ant-table-scroll">
                     <div
                       ref={bodyRef}
-                      className="ant-table-body"
                       tabIndex={-1}
+                      className="ant-table-body"
                       style={{ overflowX: 'scroll', WebkitTransform: 'translate3d (0, 0, 0)' }}
                       onScroll={onScroll}
                     >
-                      <table ref={mainTableRef} className="ant-table-fixed" style={{ width: 800, tableLayout: 'auto' }}>
+                      <table ref={mainTableRef} className="ant-table-fixed" style={{ width: 800 }}>
                         <colgroup>
                           <col />
                           <col />
@@ -65,7 +65,7 @@ export default function TrafficPage() {
                             (components.async.js @799377). */}
                         <thead className="ant-table-thead">
                           <tr>
-                            <th>
+                            <th className="">
                               <span className="ant-table-header-column">
                                 <div>
                                   <span className="ant-table-column-title">
@@ -175,7 +175,7 @@ export default function TrafficPage() {
                       style={{ WebkitTransform: 'translate3d (0, 0, 0)' }}
                     >
                       <div className="ant-table-body-inner">
-                        <table ref={fixedTableRef} className="ant-table-fixed" style={{ tableLayout: 'auto' }}>
+                        <table ref={fixedTableRef} className="ant-table-fixed">
                           <colgroup>
                             <col />
                           </colgroup>

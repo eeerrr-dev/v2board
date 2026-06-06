@@ -209,18 +209,19 @@ export default function InvitePage() {
                         'ant-table',
                         'ant-table-default',
                         codes.length ? '' : 'ant-table-empty',
+                        'ant-table-scroll-position-left',
                       ].filter(Boolean).join(' ')}
                     >
                       <div className="ant-table-content">
                         <div className="ant-table-body">
-                          <table style={{ tableLayout: 'auto' }}>
+                          <table className="">
                             <colgroup>
                               <col />
                               <col />
                             </colgroup>
                             <thead className="ant-table-thead">
                               <tr>
-                                <th>
+                                <th className="">
                                   <span className="ant-table-header-column">
                                     <div>
                                       <span className="ant-table-column-title">{t('invite.code_col')}</span>
@@ -248,7 +249,7 @@ export default function InvitePage() {
                                   data-row-key={index}
                                   key={index}
                                 >
-                                  <td>
+                                  <td className="">
                                     <span>{code.code}</span>
                                     <a
                                       style={{ marginLeft: 5 }}
@@ -258,7 +259,7 @@ export default function InvitePage() {
                                       {t('invite.invite_link')}
                                     </a>
                                   </td>
-                                  <td style={{ textAlign: 'right' }}>
+                                  <td className="" style={{ textAlign: 'right' }}>
                                     {formatLegacyDateMinuteSlash(code.created_at)}
                                   </td>
                                 </tr>
@@ -310,18 +311,19 @@ export default function InvitePage() {
                         'ant-table',
                         'ant-table-default',
                         detailRows.length ? '' : 'ant-table-empty',
+                        'ant-table-scroll-position-left',
                       ].filter(Boolean).join(' ')}
                     >
                       <div className="ant-table-content">
                         <div className="ant-table-body">
-                          <table style={{ tableLayout: 'auto' }}>
+                          <table className="">
                             <colgroup>
                               <col />
                               <col />
                             </colgroup>
                             <thead className="ant-table-thead">
                               <tr>
-                                <th>
+                                <th className="">
                                   <span className="ant-table-header-column">
                                     <div>
                                       <span className="ant-table-column-title">{t('invite.issued_at')}</span>
@@ -349,10 +351,10 @@ export default function InvitePage() {
                                   data-row-key={index}
                                   key={index}
                                 >
-                                  <td>
+                                  <td className="">
                                     {formatLegacyDateMinuteSlash(row.created_at)}
                                   </td>
-                                  <td style={{ textAlign: 'right' }}>
+                                  <td className="" style={{ textAlign: 'right' }}>
                                     {(row.get_amount / 100).toFixed(2)}
                                   </td>
                                 </tr>

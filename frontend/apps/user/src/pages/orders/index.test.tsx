@@ -118,8 +118,9 @@ describe('OrdersPage bundled-theme table', () => {
 
     expect(html).toContain('block block-rounded  ');
     expect(html).toContain('ant-table-wrapper');
-    expect(html).toContain('class="ant-table-fixed" style="width:900px;table-layout:auto"');
-    expect(html).toContain('class="ant-table-fixed" style="table-layout:auto"');
+    expect(html).toContain('class="ant-table-fixed" style="width:900px"');
+    expect(html).toContain('<table class="ant-table-fixed"><colgroup>');
+    expect(html).toContain('<th class=""><span class="ant-table-header-column">');
     expect(html).toContain('ant-table-fixed-right');
     expect(html).toContain('# 订单号');
     expect(html).toContain('周期');
@@ -139,7 +140,7 @@ describe('OrdersPage bundled-theme table', () => {
     expect(html).toContain('已完成');
     expect(html).toContain(formatLegacyDateMinuteSlash(0));
     expect(html.match(/ant-divider ant-divider-vertical/g)).toHaveLength(4);
-    expect(html).not.toContain('role="separator"');
+    expect(html.match(/role="separator"/g)).toHaveLength(4);
     expect(html.match(/data-row-key="0"/g)).toHaveLength(2);
     expect(html.match(/data-row-key="1"/g)).toHaveLength(2);
   });

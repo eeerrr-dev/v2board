@@ -34,6 +34,7 @@ function AntIcon({ name, className, ...rest }: AntIconProps & { name: AntIconNam
       <svg
         viewBox={viewBox}
         focusable="false"
+        className=""
         data-icon={name}
         width="1em"
         height="1em"

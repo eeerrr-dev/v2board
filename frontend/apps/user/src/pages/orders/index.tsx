@@ -128,15 +128,15 @@ export default function OrdersPage() {
                 <div className="ant-table-scroll">
                   <div
                     ref={bodyRef}
-                    className="ant-table-body"
                     tabIndex={-1}
+                    className="ant-table-body"
                     style={{ overflowX: 'scroll', WebkitTransform: 'translate3d (0, 0, 0)' }}
                     onScroll={onScroll}
                   >
                     <table
                       ref={mainTableRef}
                       className="ant-table-fixed"
-                      style={{ width: 900, tableLayout: 'auto' }}
+                      style={{ width: 900 }}
                     >
                       <colgroup>
                         <col />
@@ -148,7 +148,7 @@ export default function OrdersPage() {
                       </colgroup>
                       <thead className="ant-table-thead">
                         <tr>
-                          <th>
+                          <th className="">
                             <span className="ant-table-header-column">
                               <div>
                                 <span className="ant-table-column-title">{t('order.trade_no_col')}</span>
@@ -172,7 +172,7 @@ export default function OrdersPage() {
                               </div>
                             </span>
                           </th>
-                          <th>
+                          <th className="">
                             <span className="ant-table-header-column">
                               <div>
                                 <span className="ant-table-column-title">{t('order.status')}</span>
@@ -180,7 +180,7 @@ export default function OrdersPage() {
                               </div>
                             </span>
                           </th>
-                          <th>
+                          <th className="">
                             <span className="ant-table-header-column">
                               <div>
                                 <span className="ant-table-column-title">{t('order.created_at')}</span>
@@ -214,7 +214,7 @@ export default function OrdersPage() {
                               onMouseEnter={() => setHoverKey(index)}
                               onMouseLeave={() => setHoverKey(null)}
                             >
-                              <td>
+                              <td className="">
                                 <a
                                   ref={legacyHref()}
                                   onClick={() => navigate(`/order/${order.trade_no}`)}
@@ -222,13 +222,13 @@ export default function OrdersPage() {
                                   {order.trade_no}
                                 </a>
                               </td>
-                              <td style={{ textAlign: 'center' }}>
+                              <td className="" style={{ textAlign: 'center' }}>
                                 <span className="ant-tag">{periodLabel}</span>
                               </td>
-                              <td style={{ textAlign: 'right' }}>
+                              <td className="" style={{ textAlign: 'right' }}>
                                 {(order.total_amount / 100).toFixed(2)}
                               </td>
-                              <td>
+                              <td className="">
                                 <div>
                                   <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
                                     <span className={`ant-badge-status-dot${status ? ` ant-badge-status-${status.status}` : ''}`} />
@@ -237,7 +237,7 @@ export default function OrdersPage() {
                                   {status ? t(status.key) : ''}
                                 </div>
                               </td>
-                              <td>{formatLegacyDateMinuteSlash(order.created_at)}</td>
+                              <td className="">{formatLegacyDateMinuteSlash(order.created_at)}</td>
                               <td
                                 className="ant-table-fixed-columns-in-body"
                                 style={{ textAlign: 'right' }}
@@ -250,7 +250,7 @@ export default function OrdersPage() {
                                   >
                                     {t('order.return')}
                                   </a>
-                                  <div className="ant-divider ant-divider-vertical" />
+                                  <div className="ant-divider ant-divider-vertical" role="separator" />
                                   <a
                                     ref={legacyHref()}
                                     {...legacyDisabledAnchorProps(order.status !== 0)}
@@ -278,7 +278,7 @@ export default function OrdersPage() {
                     style={{ WebkitTransform: 'translate3d (0, 0, 0)' }}
                   >
                     <div className="ant-table-body-inner">
-                      <table ref={fixedTableRef} className="ant-table-fixed" style={{ tableLayout: 'auto' }}>
+                      <table ref={fixedTableRef} className="ant-table-fixed">
                         <colgroup>
                           <col />
                         </colgroup>
@@ -306,7 +306,7 @@ export default function OrdersPage() {
                               onMouseEnter={() => setHoverKey(index)}
                               onMouseLeave={() => setHoverKey(null)}
                             >
-                              <td style={{ textAlign: 'right' }}>
+                              <td className="" style={{ textAlign: 'right' }}>
                                 <div>
                                   <a
                                     ref={legacyHref()}
@@ -315,7 +315,7 @@ export default function OrdersPage() {
                                   >
                                     {t('order.return')}
                                   </a>
-                                  <div className="ant-divider ant-divider-vertical" />
+                                  <div className="ant-divider ant-divider-vertical" role="separator" />
                                   <a
                                     ref={legacyHref()}
                                     {...legacyDisabledAnchorProps(order.status !== 0)}
