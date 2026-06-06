@@ -102,13 +102,15 @@ export default function PlanCheckoutPage() {
   const saveOrder = async () => {
     if (!planQuery.data) return;
     const currentPeriod = period ?? getDefaultPeriod(planQuery.data);
+    const payload: Parameters<typeof user.saveOrder>[1] = {
+      plan_id: planQuery.data.id,
+      period: currentPeriod,
+    };
+    if (appliedCoupon?.name) payload.coupon_code = appliedCoupon.code;
+
     setSubmitting(true);
     try {
-      const tradeNo = await user.saveOrder(apiClient, {
-        plan_id: planQuery.data.id,
-        period: currentPeriod,
-        coupon_code: appliedCoupon?.name ? appliedCoupon.code : undefined,
-      });
+      const tradeNo = await user.saveOrder(apiClient, payload);
       navigate(`/order/${tradeNo}`);
     } catch {
     } finally {

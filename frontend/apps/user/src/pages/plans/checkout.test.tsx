@@ -247,9 +247,11 @@ describe('PlanCheckoutPage bundled-theme markup', () => {
 
   it('keeps the bundled-theme direct selected period in the order payload', () => {
     expect(checkoutSource).toContain('period: currentPeriod,');
+    expect(checkoutSource).toContain("if (appliedCoupon?.name) payload.coupon_code = appliedCoupon.code;");
     expect(checkoutSource).toContain('useState<PlanPeriod | undefined>()');
     expect(checkoutSource).toContain('function getDefaultPeriod(plan: Plan): PlanPeriod | undefined');
     expect(checkoutSource).not.toContain('period: currentPeriod ?? undefined');
+    expect(checkoutSource).not.toContain('coupon_code: appliedCoupon?.name ? appliedCoupon.code : undefined');
     expect(checkoutSource).not.toContain('useState<PlanPeriod | null>');
     expect(checkoutSource).not.toContain(
       'const currentPeriod = (period ?? getDefaultPeriod(planQuery.data)) as PlanPeriod;',
@@ -405,7 +407,6 @@ describe('PlanCheckoutPage bundled-theme behavior', () => {
     expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
       plan_id: 1,
       period: undefined,
-      coupon_code: undefined,
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-NO-PERIOD');
   });
@@ -459,7 +460,6 @@ describe('PlanCheckoutPage bundled-theme behavior', () => {
     expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
       plan_id: 1,
       period: 'month_price',
-      coupon_code: undefined,
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE456');
   });
@@ -499,7 +499,6 @@ describe('PlanCheckoutPage bundled-theme behavior', () => {
     expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
       plan_id: 1,
       period: 'month_price',
-      coupon_code: undefined,
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE789');
   });
@@ -528,7 +527,6 @@ describe('PlanCheckoutPage bundled-theme behavior', () => {
     expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
       plan_id: 1,
       period: 'month_price',
-      coupon_code: undefined,
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE999');
   });
