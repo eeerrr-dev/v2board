@@ -11,7 +11,19 @@ const LEGACY_ANT_ICONS = {
   filter: {
     viewBox: '64 64 896 896',
     paths: [
-      'M349 838c0 17.7 14.2 32 31.8 32h262.4c17.6 0 31.8-14.3 31.8-32V642H349v196zm531.1-684H143.9c-24.5 0-39.8 26.7-27.5 48l221.3 376h348.8l221.3-376c12.1-21.3-3.2-48-27.7-48z',
+      'M880.1 154H143.9c-24.5 0-39.8 26.7-27.5 48L349 597.4V838c0 17.7 14.2 32 31.8 32h262.4c17.6 0 31.8-14.3 31.8-32V597.4L907.7 202c12.2-21.3-3.1-48-27.6-48zM603.4 798H420.6V642h182.9v156zm9.6-236.6l-9.5 16.6h-183l-9.5-16.6L212.7 226h598.6L613 561.4z',
+    ],
+  },
+  left: {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M724 218.3V141c0-6.7-7.7-10.4-12.9-6.3L260.3 486.8a31.86 31.86 0 0 0 0 50.3l450.8 352.1c5.3 4.1 12.9.4 12.9-6.3v-77.3c0-4.9-2.3-9.6-6.1-12.6l-360-281 360-281.1c3.8-3 6.1-7.7 6.1-12.6z',
+    ],
+  },
+  right: {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M765.7 486.8L314.9 134.7A7.97 7.97 0 0 0 302 141v77.3c0 4.9 2.3 9.6 6.1 12.6l360 281.1-360 281.1c-3.9 3-6.1 7.7-6.1 12.6V883c0 6.7 7.7 10.4 12.9 6.3l450.8-352.1a31.96 31.96 0 0 0 0-50.4z',
     ],
   },
   'question-circle': {
@@ -111,6 +123,12 @@ export const LegacyPlusIcon = (props: LegacyAntIconProps) => (
 );
 export const LegacyFilterIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="filter" {...props} />
+);
+export const LegacyLeftIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="left" {...props} />
+);
+export const LegacyRightIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="right" {...props} />
 );
 export const LegacyQuestionCircleIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="question-circle" {...props} />

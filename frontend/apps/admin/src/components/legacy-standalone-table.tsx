@@ -1,10 +1,13 @@
 import type { ReactNode } from 'react';
+import { LegacyLeftIcon, LegacyRightIcon } from './legacy-ant-icon';
 import { LegacyEmpty } from './legacy-empty';
 
 const LEGACY_ROW_KEY_ATTRIBUTE = `data-${'row-key'}`;
+const LEGACY_UNSELECTABLE_ATTRIBUTE = { unselectable: 'unselectable' } as Record<string, string>;
 
 export type LegacyStandaloneTableHeader = {
   title: ReactNode;
+  alignCenter?: boolean;
   alignLeft?: boolean;
   alignRight?: boolean;
   className?: string;
@@ -25,6 +28,7 @@ function legacyHeaderClassName(
   const classes = [
     header.className,
     header.fixedRight && !fixedRightTable ? 'ant-table-fixed-columns-in-body' : undefined,
+    header.alignCenter ? 'ant-table-align-center' : undefined,
     header.alignLeft ? 'ant-table-align-left' : undefined,
     header.alignRight ? 'ant-table-align-right' : undefined,
     index === count - 1 ? 'ant-table-row-cell-last' : undefined,
@@ -64,7 +68,9 @@ function LegacyStandaloneTableHead({
                 ? { textAlign: 'right' }
                 : header.alignLeft
                   ? { textAlign: 'left' }
-                  : undefined
+                  : header.alignCenter
+                    ? { textAlign: 'center' }
+                    : undefined
             }
           >
             <LegacyStandaloneTableHeaderCell title={header.title} />
@@ -73,6 +79,70 @@ function LegacyStandaloneTableHead({
         ))}
       </tr>
     </thead>
+  );
+}
+
+export interface LegacyTablePaginationChange {
+  current: number;
+  pageSize: number;
+  total?: number;
+}
+
+export function LegacyTablePagination({
+  current,
+  pageSize,
+  total,
+  onChange,
+}: {
+  current: number;
+  pageSize: number;
+  total?: number;
+  onChange?: (pagination: LegacyTablePaginationChange) => void;
+}) {
+  const pageCount = Math.max(1, Math.ceil((total ?? 0) / pageSize));
+  const currentPage = Math.min(Math.max(current || 1, 1), pageCount);
+  const previousDisabled = currentPage <= 1;
+  const nextDisabled = currentPage >= pageCount;
+  const changePage = (next: number) => {
+    const bounded = Math.min(Math.max(next, 1), pageCount);
+    if (bounded === currentPage) return;
+    onChange?.({ current: bounded, pageSize, total });
+  };
+
+  return (
+    <ul className="ant-pagination ant-table-pagination mini" {...LEGACY_UNSELECTABLE_ATTRIBUTE}>
+      <li
+        title="上一页"
+        className={`${previousDisabled ? 'ant-pagination-disabled ' : ''}ant-pagination-prev`}
+        aria-disabled={previousDisabled}
+      >
+        <a className="ant-pagination-item-link" onClick={() => changePage(currentPage - 1)}>
+          <LegacyLeftIcon />
+        </a>
+      </li>
+      {Array.from({ length: pageCount }, (_, index) => index + 1).map((page) => (
+        <li
+          key={page}
+          title={String(page)}
+          className={`ant-pagination-item ant-pagination-item-${page}${
+            page === currentPage ? ' ant-pagination-item-active' : ''
+          }`}
+          tabIndex={0}
+          onClick={() => changePage(page)}
+        >
+          <a>{page}</a>
+        </li>
+      ))}
+      <li
+        title="下一页"
+        className={`${nextDisabled ? 'ant-pagination-disabled ' : ''}ant-pagination-next`}
+        aria-disabled={nextDisabled}
+      >
+        <a className="ant-pagination-item-link" onClick={() => changePage(currentPage + 1)}>
+          <LegacyRightIcon />
+        </a>
+      </li>
+    </ul>
   );
 }
 
@@ -149,6 +219,7 @@ export function LegacyStandaloneTable({
   isEmpty,
   children,
   fixedRightChildren,
+  pagination,
   scrollPositionRight = true,
   scrollX,
 }: {
@@ -156,6 +227,7 @@ export function LegacyStandaloneTable({
   isEmpty: boolean;
   children: ReactNode;
   fixedRightChildren?: ReactNode;
+  pagination?: ReactNode;
   scrollPositionRight?: boolean;
   scrollX?: number;
 }) {
@@ -206,6 +278,7 @@ export function LegacyStandaloneTable({
               )}
             </div>
           </div>
+          {pagination}
         </div>
       </div>
     </div>

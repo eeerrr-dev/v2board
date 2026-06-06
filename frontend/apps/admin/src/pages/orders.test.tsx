@@ -6,7 +6,10 @@ import dayjs from 'dayjs';
 import { describe, expect, it, vi } from 'vitest';
 import OrdersPage from './orders';
 
-const ordersSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'orders.tsx'), 'utf8');
+const ordersSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'orders.tsx'),
+  'utf8',
+);
 const legacyFilterDrawerSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../components/legacy-filter-drawer.tsx'),
   'utf8',
@@ -117,6 +120,15 @@ describe('OrdersPage legacy order manager', () => {
     expect(html).toContain('class="d-flex justify-content-between align-items-center"');
     expect(html).toContain('class="block block-rounded"');
     expect(html).toContain('class="bg-white"');
+    expect(html).toContain('class="ant-btn-group"');
+    expect(html).toContain('class="ant-btn"');
+    expect(html).toContain('aria-label="图标: filter"');
+    expect(html).toContain('aria-label="图标: plus"');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain('class="ant-table-fixed" style="width:1050px"');
+    expect(html).toContain('class="ant-table-align-center" style="text-align:center"');
+    expect(html).toContain('class="ant-table-align-right" style="text-align:right"');
+    expect(html).toContain('class="ant-pagination ant-table-pagination mini"');
     expect(html).toContain('过滤器');
     expect(html).toContain('添加订单');
     expect(html).toContain('# 订单号');
@@ -134,6 +146,8 @@ describe('OrdersPage legacy order manager', () => {
     expect(html).toContain('12.00');
     expect(html).toContain('待支付');
     expect(html).toContain('标记为');
+    expect(html).toContain('class="ant-tag"');
+    expect(html).toContain('class="ant-badge ant-badge-status ant-badge-not-a-wrapper"');
     expect(html).toContain('续费');
     expect(html).toContain('年付');
     expect(html).toContain('88.00');
@@ -142,6 +156,8 @@ describe('OrdersPage legacy order manager', () => {
     expect(html).toContain('发放中');
     expect(html).toContain(dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm'));
     expect(html).not.toContain('ant-card');
+    expect(html).not.toContain('ant-table-cell');
+    expect(html).not.toContain('css-dev-only');
     expect(html).not.toContain('ant-typography');
     expect(html).not.toContain('ant-descriptions');
   });
@@ -149,9 +165,12 @@ describe('OrdersPage legacy order manager', () => {
   it('uses the original drawer-style multi-condition filter with select status values', () => {
     expect(ordersSource).not.toContain('function LegacyFilterButton');
     expect(ordersSource).toContain('<LegacyFilterDrawer');
-    expect(ordersSource).toContain('function filterButtonType(active: boolean)');
-    expect(ordersSource).toContain("return active ? 'primary' : ('' as ButtonProps['type']);");
-    expect(ordersSource).toContain('type={filterButtonType(query.filter.length > 0)}');
+    expect(ordersSource).toContain('function filterButtonClassName(active: boolean)');
+    expect(ordersSource).toContain("return `ant-btn${active ? ' ant-btn-primary' : ''}`;");
+    expect(ordersSource).toContain('className={filterButtonClassName(query.filter.length > 0)}');
+    expect(ordersSource).toContain('<div className="ant-btn-group">');
+    expect(ordersSource).toContain('<LegacyFilterIcon />');
+    expect(ordersSource).toContain('<span> 过滤器</span>');
     expect(ordersSource).not.toContain("type={query.filter.length > 0 ? 'primary' : 'default'}");
     expect(ordersSource).toContain("key: 'status'");
     expect(ordersSource).toContain("type: 'select'");
@@ -228,30 +247,50 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).toContain("import { useQueryClient } from '@tanstack/react-query';");
     expect(ordersSource).toContain('const queryClient = useQueryClient();');
     expect(ordersSource).toContain("queryClient.removeQueries({ queryKey: ['admin', 'orders'] });");
-    expect(ordersSource).not.toContain("queryClient.removeQueries({ queryKey: adminKeys.orders(query) });");
+    expect(ordersSource).not.toContain(
+      'queryClient.removeQueries({ queryKey: adminKeys.orders(query) });',
+    );
   });
 
   it('keeps the original direct badge status mapping and order action menu keys', () => {
-    expect(ordersSource).toContain("<Badge status={ORDER_STATUS_BADGE[value]} />");
-    expect(ordersSource).toContain("<Badge status={COMMISSION_STATUS_BADGE[value]} />");
+    expect(ordersSource).toContain('<LegacyBadge status={ORDER_STATUS_BADGE[value]} />');
+    expect(ordersSource).toContain('<LegacyBadge status={COMMISSION_STATUS_BADGE[value]} />');
+    expect(ordersSource).toContain(
+      'function LegacyBadge({ status }: { status: LegacyBadgeStatus })',
+    );
+    expect(ordersSource).toContain(
+      'className="ant-badge ant-badge-status ant-badge-not-a-wrapper"',
+    );
+    expect(ordersSource).toContain('className={`ant-badge-status-dot ant-badge-status-${status}`}');
+    expect(ordersSource).toContain('className="ant-badge-status-text"');
     expect(ordersSource).not.toContain("ORDER_STATUS_BADGE[value] ?? 'default'");
     expect(ordersSource).not.toContain("COMMISSION_STATUS_BADGE[value] ?? 'default'");
     expect(ordersSource).toContain(
       "const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];",
     );
-    expect(ordersSource).toContain('function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)');
-    expect(ordersSource).toContain('return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;');
+    expect(ordersSource).toContain(
+      'function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)',
+    );
+    expect(ordersSource).toContain(
+      'return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;',
+    );
     expect(ordersSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
-    expect(ordersSource).toContain('overlay={(');
+    expect(ordersSource).toContain('overlay={');
     expect(ordersSource).toContain('<Menu>');
-    expect(ordersSource).toContain('<Menu.Item key="1" onClick={() => updateOrderStatus(row.trade_no, \'1\')}>');
-    expect(ordersSource).toContain('<Menu.Item key="2" onClick={() => updateOrderStatus(row.trade_no, \'2\')}>');
-    expect(ordersSource).toContain('updateOrderStatus(row.trade_no, \'1\')');
+    expect(ordersSource).toContain(
+      '<Menu.Item key="1" onClick={() => updateOrderStatus(row.trade_no, \'1\')}>',
+    );
+    expect(ordersSource).toContain(
+      '<Menu.Item key="2" onClick={() => updateOrderStatus(row.trade_no, \'2\')}>',
+    );
+    expect(ordersSource).toContain("updateOrderStatus(row.trade_no, '1')");
     expect(ordersSource).not.toContain('menu={{');
     expect(ordersSource).not.toContain("{ key: '1', label: '已支付' }");
     expect(ordersSource).not.toContain("{ key: '2', label: '取消' }");
     expect(ordersSource).not.toContain("key === '1'");
     expect(ordersSource).not.toContain("key === 'paid'");
+    expect(ordersSource).not.toContain('<Badge');
+    expect(ordersSource).not.toContain('<CaretDownOutlined');
   });
 
   it('keeps order action refetches after successful mutation requests', () => {
@@ -291,7 +330,9 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).toContain("3: '已驳回'");
     expect(ordersSource).toContain('key="3"');
     expect(ordersSource).toContain('disabled={value === 3}');
-    expect(ordersSource).toContain('onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}');
+    expect(ordersSource).toContain(
+      'onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}',
+    );
     expect(ordersSource).toContain('无效');
     expect(ordersSource).not.toContain("3: '无效'");
   });
@@ -309,8 +350,10 @@ describe('OrdersPage legacy order manager', () => {
 
   it('keeps the original wrapper click target for opening order details', () => {
     expect(ordersSource).toContain('<div onClick={() => setDetailId(row.id)}>');
-    expect(ordersSource).toContain('<a ref={legacyHref()}>{shortTradeNo(value)}</a>');
-    expect(ordersSource).not.toContain('<a ref={legacyHref()} onClick={() => setDetailId(row.id)}>');
+    expect(ordersSource).toContain('<a ref={legacyHref()}>{shortTradeNo(row.trade_no)}</a>');
+    expect(ordersSource).not.toContain(
+      '<a ref={legacyHref()} onClick={() => setDetailId(row.id)}>',
+    );
   });
 
   it('keeps the original top placement for order status tooltips', () => {
@@ -331,14 +374,18 @@ describe('OrdersPage legacy order manager', () => {
   });
 
   it('keeps pagination updates on the table onChange path only', () => {
-    expect(ordersSource).toContain('onChange={(pagination: TablePaginationConfig) =>');
+    expect(ordersSource).toContain('type LegacyTablePaginationChange');
+    expect(ordersSource).toContain(
+      'const updateTablePagination = (pagination: LegacyTablePaginationChange) =>',
+    );
+    expect(ordersSource).toContain('<LegacyTablePagination');
+    expect(ordersSource).toContain('onChange={updateTablePagination}');
     expect(ordersSource).toContain('...pagination,');
     expect(ordersSource).not.toContain('current: pagination.current ?? state.current');
     expect(ordersSource).not.toContain('pageSize: pagination.pageSize ?? state.pageSize');
     expect(ordersSource).not.toContain('total: pagination.total');
-    expect(ordersSource).not.toContain(
-      'onChange: (current: number, pageSize: number) =>',
-    );
+    expect(ordersSource).not.toContain('onChange={(pagination: TablePaginationConfig) =>');
+    expect(ordersSource).not.toContain('onChange: (current: number, pageSize: number) =>');
   });
 
   it('keeps the bundled order pagination total as the direct response field', () => {
@@ -364,9 +411,18 @@ describe('OrdersPage legacy order manager', () => {
   });
 
   it('keeps the original table row identity and detail fallback behavior', () => {
+    expect(ordersSource).toContain('<LegacyStandaloneTable');
+    expect(ordersSource).toContain('scrollX={1050}');
+    expect(ordersSource).toContain('scrollPositionRight={false}');
+    expect(ordersSource).toContain('{...legacyTableRowKey(index)}');
+    expect(ordersSource).toContain('function LegacyTag');
+    expect(ordersSource).not.toContain('<Table<AdminOrderRow>');
     expect(ordersSource).not.toContain('rowKey="id"');
+    expect(ordersSource).not.toContain('tableLayout="auto"');
+    expect(ordersSource).not.toContain('dataSource={orders.data?.data ?? []}');
+    expect(ordersSource).not.toContain('<Tag>');
     expect(ordersSource).toContain(
-      "const planName = plans.find((plan) => plan.id === detail?.plan_id)?.name;",
+      'const planName = plans.find((plan) => plan.id === detail?.plan_id)?.name;',
     );
     expect(ordersSource).not.toContain('detail?.plan_name');
     expect(ordersSource).not.toContain('PERIOD_TEXT[detail.period] ?? detail.period');

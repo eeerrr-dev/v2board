@@ -1,29 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import {
-  App,
-  Badge,
-  Button,
-  Col,
-  Divider,
-  Dropdown,
-  Input,
-  Menu,
-  Modal,
-  Row,
-  Select,
-  Table,
-  Tag,
-  Tooltip,
-} from 'antd';
-import type { ButtonProps, DropdownProps, TablePaginationConfig, TableProps } from 'antd';
-import {
-  CaretDownOutlined,
-  FilterOutlined,
-  LoadingOutlined,
-  PlusOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons';
+import { App, Col, Divider, Dropdown, Input, Menu, Modal, Row, Select, Tooltip } from 'antd';
+import type { DropdownProps } from 'antd';
+import { LoadingOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminFilter } from '@v2board/api-client';
@@ -43,6 +22,20 @@ import { i18nGet } from '@/lib/errors';
 import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-filter-drawer';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { LegacyButton } from '@/components/legacy-button';
+import {
+  LegacyCaretDownIcon,
+  LegacyFilterIcon,
+  LegacyPlusIcon,
+  LegacyQuestionCircleIcon,
+} from '@/components/legacy-ant-icon';
+import {
+  LegacyStandaloneTable,
+  legacyTableRowKey,
+  LegacyTablePagination,
+  type LegacyStandaloneTableHeader,
+  type LegacyTablePaginationChange,
+} from '@/components/legacy-standalone-table';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -80,6 +73,9 @@ const COMMISSION_STATUS_TEXT: Record<number, string> = {
 
 const ORDER_STATUS_BADGE = ['error', 'processing', 'default', 'success', 'default'] as const;
 const COMMISSION_STATUS_BADGE = ['default', 'processing', 'success', 'error'] as const;
+type LegacyBadgeStatus =
+  | (typeof ORDER_STATUS_BADGE)[number]
+  | (typeof COMMISSION_STATUS_BADGE)[number];
 
 type LegacyDropdownProps = Omit<DropdownProps, 'popupRender' | 'trigger'> & {
   trigger?: DropdownProps['trigger'] | 'click';
@@ -156,12 +152,25 @@ function shortTradeNo(value: string) {
   return `${value.substr(0, 3)}...${value.substr(-3)}`;
 }
 
-function filterButtonType(active: boolean): ButtonProps['type'] {
-  return active ? 'primary' : ('' as ButtonProps['type']);
+function filterButtonClassName(active: boolean) {
+  return `ant-btn${active ? ' ant-btn-primary' : ''}`;
 }
 
 function showError(message: ReturnType<typeof App.useApp>['message'], error: unknown) {
   if (error instanceof Error) message.error(i18nGet(error.message));
+}
+
+function LegacyBadge({ status }: { status: LegacyBadgeStatus }) {
+  return (
+    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
+      <span className={`ant-badge-status-dot ant-badge-status-${status}`} />
+      <span className="ant-badge-status-text" />
+    </span>
+  );
+}
+
+function LegacyTag({ children }: { children: ReactNode }) {
+  return <span className="ant-tag">{children}</span>;
 }
 
 interface AssignOrderSubmit {
@@ -218,9 +227,10 @@ function AssignOrderButton({
 
   return (
     <>
-      <Button style={{ marginLeft: 10 }} onClick={() => setOpen(true)}>
-        <PlusOutlined /> 添加订单
-      </Button>
+      <LegacyButton className="ant-btn" style={{ marginLeft: 10 }} onClick={() => setOpen(true)}>
+        <LegacyPlusIcon />
+        <span> 添加订单</span>
+      </LegacyButton>
       <Modal
         title="订单分配"
         open={open}
@@ -429,163 +439,133 @@ export default function OrdersPage() {
     navigate('/user');
   };
 
-  const columns = useMemo<TableProps<AdminOrderRow>['columns']>(
-    () => [
-      {
-        title: '# 订单号',
-        dataIndex: 'trade_no',
-        key: 'trade_no',
-        render: (value: string, row) => (
-          <div onClick={() => setDetailId(row.id)}>
-            <a ref={legacyHref()}>{shortTradeNo(value)}</a>
-          </div>
-        ),
-      },
-      {
-        title: '类型',
-        dataIndex: 'type',
-        key: 'type',
-        render: (value: number) => ORDER_TYPE_TEXT[value],
-      },
-      {
-        title: '订阅计划',
-        dataIndex: 'plan_name',
-        key: 'plan_name',
-      },
-      {
-        title: '周期',
-        dataIndex: 'period',
-        key: 'period',
-        align: 'center',
-        render: (value: string) => <Tag>{PERIOD_TEXT[value]}</Tag>,
-      },
-      {
-        title: '支付金额',
-        dataIndex: 'total_amount',
-        key: 'total_amount',
-        align: 'right',
-        render: (value: number) => cents(value),
-      },
-      {
-        title: (
-          <span>
-            <Tooltip placement="top" title="标记为[已支付]后将会由系统进行开通后并完成">
-              订单状态 <QuestionCircleOutlined />
-            </Tooltip>
-          </span>
-        ),
-        dataIndex: 'status',
-        key: 'status',
-        render: (value: number, row) => (
-          <div>
-            <LegacyDropdown
-              disabled={value !== 0}
-              trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
-              overlay={(
-                <Menu>
-                  <Menu.Item key="1" onClick={() => updateOrderStatus(row.trade_no, '1')}>
-                    已支付
-                  </Menu.Item>
-                  <Menu.Item key="2" onClick={() => updateOrderStatus(row.trade_no, '2')}>
-                    取消
-                  </Menu.Item>
-                </Menu>
-              )}
-            >
-              <div>
-                <Badge status={ORDER_STATUS_BADGE[value]} />
-                <span>{ORDER_STATUS_TEXT[value]} </span>
-                {value === 0 ? (
-                  <a ref={legacyHref()}>
-                    标记为 <CaretDownOutlined />
-                  </a>
-                ) : null}
-              </div>
-            </LegacyDropdown>
-          </div>
-        ),
-      },
-      {
-        title: '佣金金额',
-        dataIndex: 'commission_balance',
-        key: 'commission_balance',
-        align: 'right',
-        render: (value: number, row) =>
-          row.status === 0 || row.status === 2 ? '-' : value ? cents(value) : '-',
-      },
-      {
-        title: (
-          <span>
-            佣金状态{' '}
-            <Tooltip placement="top" title="标记为[有效]后将会由系统处理后发放到用户并完成">
-              <QuestionCircleOutlined />
-            </Tooltip>
-          </span>
-        ),
-        dataIndex: 'commission_status',
-        key: 'commission_status',
-        render: (value: number, row) => {
-          if (row.status === 0 || row.status === 2 || !row.commission_balance) return '-';
-          if (row.commission_status === 2) {
-            return (
-              <div>
-                <Badge status={COMMISSION_STATUS_BADGE[value]} />
-                <span>{COMMISSION_STATUS_TEXT[value]} </span>
-              </div>
-            );
+  const headers: LegacyStandaloneTableHeader[] = [
+    { title: '# 订单号' },
+    { title: '类型' },
+    { title: '订阅计划' },
+    { title: '周期', alignCenter: true },
+    { title: '支付金额', alignRight: true },
+    {
+      title: (
+        <span>
+          <Tooltip placement="top" title="标记为[已支付]后将会由系统进行开通后并完成">
+            <span>
+              订单状态 <LegacyQuestionCircleIcon />
+            </span>
+          </Tooltip>
+        </span>
+      ),
+    },
+    { title: '佣金金额', alignRight: true },
+    {
+      title: (
+        <span>
+          佣金状态{' '}
+          <Tooltip placement="top" title="标记为[有效]后将会由系统处理后发放到用户并完成">
+            <LegacyQuestionCircleIcon />
+          </Tooltip>
+        </span>
+      ),
+    },
+    { title: '创建时间', alignRight: true },
+  ];
+
+  const renderOrderStatus = (row: AdminOrderRow) => {
+    const value = row.status;
+    return (
+      <div>
+        <LegacyDropdown
+          disabled={value !== 0}
+          trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+          overlay={
+            <Menu>
+              <Menu.Item key="1" onClick={() => updateOrderStatus(row.trade_no, '1')}>
+                已支付
+              </Menu.Item>
+              <Menu.Item key="2" onClick={() => updateOrderStatus(row.trade_no, '2')}>
+                取消
+              </Menu.Item>
+            </Menu>
           }
-          return (
-            <div>
-              <LegacyDropdown
-                trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
-                overlay={(
-                  <Menu>
-                    <Menu.Item
-                      key="0"
-                      disabled={value === 0}
-                      onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
-                    >
-                      待确认
-                    </Menu.Item>
-                    <Menu.Item
-                      key="1"
-                      disabled={value === 1}
-                      onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
-                    >
-                      有效
-                    </Menu.Item>
-                    <Menu.Item
-                      key="3"
-                      disabled={value === 3}
-                      onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
-                    >
-                      无效
-                    </Menu.Item>
-                  </Menu>
-                )}
+        >
+          <div>
+            <LegacyBadge status={ORDER_STATUS_BADGE[value]} />
+            <span>{ORDER_STATUS_TEXT[value]} </span>
+            {value === 0 ? (
+              <a ref={legacyHref()}>
+                标记为 <LegacyCaretDownIcon />
+              </a>
+            ) : null}
+          </div>
+        </LegacyDropdown>
+      </div>
+    );
+  };
+
+  const renderCommissionStatus = (row: AdminOrderRow) => {
+    const value = row.commission_status;
+    if (row.status === 0 || row.status === 2 || !row.commission_balance) return '-';
+    if (row.commission_status === 2) {
+      return (
+        <div>
+          <LegacyBadge status={COMMISSION_STATUS_BADGE[value]} />
+          <span>{COMMISSION_STATUS_TEXT[value]} </span>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <LegacyDropdown
+          trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+          overlay={
+            <Menu>
+              <Menu.Item
+                key="0"
+                disabled={value === 0}
+                onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
               >
-                <div>
-                  <Badge status={COMMISSION_STATUS_BADGE[value]} />
-                  <span>{COMMISSION_STATUS_TEXT[value]} </span>
-                  <a ref={legacyHref()}>
-                    标记为 <CaretDownOutlined />
-                  </a>
-                </div>
-              </LegacyDropdown>
-            </div>
-          );
-        },
-      },
-      {
-        title: '创建时间',
-        dataIndex: 'created_at',
-        key: 'created_at',
-        align: 'right',
-        render: (value: number) => formatDateMinuteSlash(value),
-      },
-    ],
-    [cancel, message, orders, paid, updateOrder],
-  );
+                待确认
+              </Menu.Item>
+              <Menu.Item
+                key="1"
+                disabled={value === 1}
+                onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
+              >
+                有效
+              </Menu.Item>
+              <Menu.Item
+                key="3"
+                disabled={value === 3}
+                onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
+              >
+                无效
+              </Menu.Item>
+            </Menu>
+          }
+        >
+          <div>
+            <LegacyBadge status={COMMISSION_STATUS_BADGE[value]} />
+            <span>{COMMISSION_STATUS_TEXT[value]} </span>
+            <a ref={legacyHref()}>
+              标记为 <LegacyCaretDownIcon />
+            </a>
+          </div>
+        </LegacyDropdown>
+      </div>
+    );
+  };
+
+  const tableData = orders.data?.data ?? [];
+  const tablePagination = {
+    current: query.current || 1,
+    pageSize: query.pageSize,
+    total: orders.data?.total,
+  };
+  const updateTablePagination = (pagination: LegacyTablePaginationChange) =>
+    setQuery((state) => ({
+      ...state,
+      ...pagination,
+    }));
 
   return (
     <>
@@ -594,38 +574,70 @@ export default function OrdersPage() {
         <div className="block block-rounded">
           <div className="bg-white">
             <div style={{ padding: 15 }}>
-              <LegacyFilterDrawer
-                value={query.filter}
-                keys={ORDER_FILTER_KEYS}
-                onChange={setFilter}
-              >
-                <Button type={filterButtonType(query.filter.length > 0)}>
-                  <FilterOutlined /> 过滤器
-                </Button>
-              </LegacyFilterDrawer>
-              <AssignOrderButton
-                plans={plans.data ?? []}
-                onAssigned={() => orders.refetch()}
-              />
+              <div className="ant-btn-group">
+                <LegacyFilterDrawer
+                  value={query.filter}
+                  keys={ORDER_FILTER_KEYS}
+                  onChange={setFilter}
+                >
+                  <LegacyButton className={filterButtonClassName(query.filter.length > 0)}>
+                    <LegacyFilterIcon />
+                    <span> 过滤器</span>
+                  </LegacyButton>
+                </LegacyFilterDrawer>
+              </div>
+              <AssignOrderButton plans={plans.data ?? []} onAssigned={() => orders.refetch()} />
             </div>
-            <Table<AdminOrderRow>
-              tableLayout="auto"
-              dataSource={orders.data?.data ?? []}
-              pagination={{
-                current: query.current || 1,
-                pageSize: query.pageSize,
-                total: orders.data?.total,
-                size: 'small',
-              }}
-              columns={columns}
-              scroll={{ x: 1050 }}
-              onChange={(pagination: TablePaginationConfig) =>
-                setQuery((state) => ({
-                  ...state,
-                  ...pagination,
-                }))
+            <LegacyStandaloneTable
+              headers={headers}
+              isEmpty={tableData.length === 0}
+              scrollX={1050}
+              scrollPositionRight={false}
+              pagination={
+                <LegacyTablePagination
+                  current={tablePagination.current}
+                  pageSize={tablePagination.pageSize}
+                  total={tablePagination.total}
+                  onChange={updateTablePagination}
+                />
               }
-            />
+            >
+              {tableData.map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyTableRowKey(index)}
+                >
+                  <td className="">
+                    <div>
+                      <div onClick={() => setDetailId(row.id)}>
+                        <a ref={legacyHref()}>{shortTradeNo(row.trade_no)}</a>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="">{ORDER_TYPE_TEXT[row.type]}</td>
+                  <td className="">{row.plan_name}</td>
+                  <td className="" style={{ textAlign: 'center' }}>
+                    <LegacyTag>{PERIOD_TEXT[row.period]}</LegacyTag>
+                  </td>
+                  <td className="" style={{ textAlign: 'right' }}>
+                    {cents(row.total_amount)}
+                  </td>
+                  <td className="">{renderOrderStatus(row)}</td>
+                  <td className="" style={{ textAlign: 'right' }}>
+                    {row.status === 0 || row.status === 2
+                      ? '-'
+                      : row.commission_balance
+                        ? cents(row.commission_balance)
+                        : '-'}
+                  </td>
+                  <td className="">{renderCommissionStatus(row)}</td>
+                  <td className="" style={{ textAlign: 'right' }}>
+                    {formatDateMinuteSlash(row.created_at)}
+                  </td>
+                </tr>
+              ))}
+            </LegacyStandaloneTable>
           </div>
         </div>
       </LegacySpin>
