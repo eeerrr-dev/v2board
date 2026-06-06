@@ -35,6 +35,10 @@ const legacyFilterDrawerSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../components/legacy-filter-drawer.tsx'),
   'utf8',
 );
+const legacyDatePickerSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../components/legacy-date-picker.tsx'),
+  'utf8',
+);
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
@@ -515,13 +519,15 @@ describe('UsersPage legacy user manager', () => {
     );
     expect(legacyFilterDrawerSource).not.toContain('<Select.Option');
     expect(legacyFilterDrawerSource).not.toContain("import { App, Button, DatePicker, Divider, Drawer, Input, Select } from 'antd';");
+    expect(legacyFilterDrawerSource).not.toContain("import { App, DatePicker } from 'antd';");
     expect(legacyFilterDrawerSource).not.toContain('@ant-design/icons');
     expect(legacyFilterDrawerSource).not.toContain('legacy-filter-key');
     expect(legacyFilterDrawerSource).not.toContain('legacy-filter-condition');
     expect(legacyFilterDrawerSource).not.toContain('legacy-filter-value');
     expect(legacyFilterDrawerSource).not.toContain('htmlFor={`legacy-filter');
     expect(legacyFilterDrawerSource).not.toContain('label: option.label');
-    expect(legacyFilterDrawerSource).toContain('<DatePicker');
+    expect(legacyFilterDrawerSource).toContain('<LegacyDatePicker');
+    expect(legacyFilterDrawerSource).not.toContain('<DatePicker');
     expect(legacyFilterDrawerSource).toContain('添加条件');
     expect(legacyFilterDrawerSource).toContain('欲检索内容不能为空');
     expect(legacyFilterDrawerSource).toContain('v2board-drawer-action');
@@ -545,7 +551,10 @@ describe('UsersPage legacy user manager', () => {
       'filters.some((filter) => isBlank(filter.value))',
     );
     expect(legacyFilterDrawerSource).toContain('defaultValue={filter.value || undefined}');
-    expect(legacyFilterDrawerSource).toContain("date && date.format('X')");
+    expect(legacyFilterDrawerSource).toContain(
+      'onChange={(value) => update(index, { value })}',
+    );
+    expect(legacyDatePickerSource).toContain("onChange(date.format('X'))");
     expect(legacyFilterDrawerSource).not.toContain("date ? date.format('X') : ''");
     expect(legacyFilterDrawerSource).not.toContain('keys[keyIndex]?.condition');
   });

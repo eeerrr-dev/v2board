@@ -69,6 +69,12 @@ const LEGACY_ANT_ICONS = {
       'M563.8 512l262.5-312.9c4.4-5.2.7-13.1-6.1-13.1h-79.8c-4.7 0-9.2 2.1-12.3 5.7L511.6 449.8 295.1 191.7c-3-3.6-7.5-5.7-12.3-5.7H203c-6.8 0-10.5 7.9-6.1 13.1L459.4 512 196.9 824.9A7.95 7.95 0 0 0 203 838h79.8c4.7 0 9.2-2.1 12.3-5.7l216.5-258.1 216.5 258.1c3 3.6 7.5 5.7 12.3 5.7h79.8c6.8 0 10.5-7.9 6.1-13.1L563.8 512z',
     ],
   },
+  calendar: {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M880 184H712v-64c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v64H384v-64c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v64H144c-17.7 0-32 14.3-32 32v664c0 17.7 14.3 32 32 32h736c17.7 0 32-14.3 32-32V216c0-17.7-14.3-32-32-32zm-40 656H184V460h656v380zM184 392V256h128v48c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8v-48h256v48c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8v-48h128v136H184z',
+    ],
+  },
   form: {
     viewBox: '64 64 896 896',
     paths: [
@@ -222,6 +228,9 @@ export const LegacyDownIcon = (props: LegacyAntIconProps) => (
 );
 export const LegacyCloseIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="close" {...props} />
+);
+export const LegacyCalendarIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="calendar" {...props} />
 );
 export const LegacyFormIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="form" {...props} />

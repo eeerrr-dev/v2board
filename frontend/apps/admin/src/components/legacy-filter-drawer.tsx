@@ -1,8 +1,8 @@
 import { Fragment, cloneElement, useState, type ReactElement, type ReactNode } from 'react';
-import { App, DatePicker } from 'antd';
-import dayjs from 'dayjs';
+import { App } from 'antd';
 import type { AdminFilter } from '@v2board/api-client';
 import { LegacyButton } from './legacy-button';
+import { LegacyDatePicker } from './legacy-date-picker';
 import { LegacyDeleteIcon, LegacyPlusIcon } from './legacy-ant-icon';
 import { LegacyDrawer } from './legacy-drawer';
 import { LegacyInput } from './legacy-input';
@@ -171,10 +171,9 @@ export function LegacyFilterDrawer({
                     />
                   ) : null}
                   {selected.type === 'date' ? (
-                    <DatePicker
+                    <LegacyDatePicker
                       style={{ width: '100%' }}
-                      showTime={{ defaultValue: dayjs().startOf('day') }}
-                      onChange={(date) => update(index, { value: date && date.format('X') })}
+                      onChange={(value) => update(index, { value })}
                     />
                   ) : null}
                   {!selected.type ? (

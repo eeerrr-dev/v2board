@@ -11,7 +11,7 @@ import {
 
 export default defineConfig({
   ...buildAppViteConfig({ port: 5174 }),
-  cacheDir: '../../node_modules/.vite/admin-white-screen-recovery-28',
+  cacheDir: '../../node_modules/.vite/admin-white-screen-recovery-29',
   plugins: [
     legacyViteClientStubPlugin(),
     react(),
