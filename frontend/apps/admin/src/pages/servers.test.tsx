@@ -835,9 +835,10 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain(
       "type === 'vmess' || type === 'vless' ? <ReadOutlined /> : '更多解答'",
     );
-    expect(serversSource).toContain(
-      "import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';",
-    );
+    expect(serversSource).toContain("} from '@/components/legacy-select';");
+    expect(serversSource).toContain('LegacySelect,');
+    expect(serversSource).toContain('type LegacySelectOption,');
+    expect(serversSource).toContain('type LegacySelectValue,');
     expect(serversSource).toContain('const parentOptions: LegacySelectOption[] = [');
     expect(serversSource).toContain("{ value: '', label: '无' }");
     expect(serversSource).toContain(
@@ -1202,15 +1203,41 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('uses the original TLS and encryption child drawer forms instead of raw textareas', () => {
+    const tlsSettingsSource = serversSource.slice(
+      serversSource.indexOf('function LegacyTlsSettingsField'),
+      serversSource.indexOf('function LegacyEncryptionSettingsField'),
+    );
+    const encryptionSettingsSource = serversSource.slice(
+      serversSource.indexOf('function LegacyEncryptionSettingsField'),
+      serversSource.indexOf('function TrojanAllowInsecureField'),
+    );
+
     expect(serversSource).toContain('LEGACY_TLS_SETTINGS_DEFAULTS');
     expect(serversSource).toContain('LEGACY_ENCRYPTION_SETTINGS_DEFAULTS');
+    expect(serversSource).toContain('const LEGACY_TLS_CERT_MODE_OPTIONS: LegacySelectOption[] = [');
+    expect(serversSource).toContain(
+      'const LEGACY_PROXY_PROTOCOL_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_TLS_FINGERPRINT_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain('const LEGACY_ECH_MODE_OPTIONS: LegacySelectOption[] = [');
+    expect(serversSource).toContain(
+      'const LEGACY_ENCRYPTION_MODE_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_ENCRYPTION_RTT_OPTIONS: LegacySelectOption[] = [',
+    );
     expect(serversSource).toContain('function LegacyTlsSettingsField');
+    expect(tlsSettingsSource).toContain('<LegacySelect');
+    expect(tlsSettingsSource).not.toContain('<Select');
     expect(serversSource).toContain("field === 'tls_settings' || field === 'tlsSettings'");
     expect(serversSource).toContain("certApply={field === 'tls_settings'}");
     expect(serversSource).toContain('Server Name(SNI)');
     expect(serversSource).toContain('REALITY必填，与后端保持一致');
     expect(serversSource).toContain('证书模式Cert Mode');
     expect(serversSource).toContain("value={legacySelectValue(value.cert_mode ?? 'self')}");
+    expect(tlsSettingsSource).toContain('options={LEGACY_TLS_CERT_MODE_OPTIONS}');
     expect(serversSource).not.toContain("legacyText(value.cert_mode) || 'self'");
     expect(serversSource).toContain('HTTP申请');
     expect(serversSource).toContain('DNS申请');
@@ -1221,22 +1248,30 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('证书私钥文件地址Key File Path');
     expect(serversSource).toContain('Server Address');
     expect(serversSource).toContain('Proxy Protocol');
+    expect(tlsSettingsSource).toContain('options={LEGACY_PROXY_PROTOCOL_OPTIONS}');
     expect(serversSource).toContain('Private Key');
     expect(serversSource).toContain('Public Key');
     expect(serversSource).toContain('ShortId');
     expect(serversSource).toContain('FingerPrint');
+    expect(tlsSettingsSource).toContain('value={legacySelectValue(value.fingerprint)}');
+    expect(tlsSettingsSource).toContain('options={LEGACY_TLS_FINGERPRINT_OPTIONS}');
     expect(serversSource).toContain('Reject unknown sni');
     expect(serversSource).toContain('Allow Insecure');
     expect(serversSource).toContain('ECH (Encrypted Client Hello)');
+    expect(tlsSettingsSource).toContain('options={LEGACY_ECH_MODE_OPTIONS}');
     expect(serversSource).toContain('Cloudflare 托管 ECH');
     expect(serversSource).toContain('ECH Server Name (伪装域名/外层SNI)');
     expect(serversSource).toContain('function LegacyEncryptionSettingsField');
+    expect(encryptionSettingsSource).toContain('<LegacySelect');
+    expect(encryptionSettingsSource).not.toContain('<Select');
     expect(serversSource).toContain("field === 'encryption_settings'");
     expect(serversSource).toContain('form.setFieldsValue({ encryption_settings: value });');
     expect(serversSource).toContain('Mode');
+    expect(encryptionSettingsSource).toContain('options={LEGACY_ENCRYPTION_MODE_OPTIONS}');
     expect(serversSource).toContain('xorpub');
     expect(serversSource).toContain('random');
     expect(serversSource).toContain('RTT');
+    expect(encryptionSettingsSource).toContain('options={LEGACY_ENCRYPTION_RTT_OPTIONS}');
     expect(serversSource).toContain('Ticket time');
     expect(serversSource).toContain('Server Padding');
     expect(serversSource).toContain('Client Padding');

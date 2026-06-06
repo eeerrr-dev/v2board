@@ -51,7 +51,11 @@ import { LegacyCheckboxInput, LegacyInput } from '@/components/legacy-input';
 import { LegacyEmpty } from '@/components/legacy-empty';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyModal } from '@/components/legacy-modal';
-import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';
+import {
+  LegacySelect,
+  type LegacySelectOption,
+  type LegacySelectValue,
+} from '@/components/legacy-select';
 import {
   LegacyStandaloneTable,
   legacyTableRowKey as legacyRowKey,
@@ -146,6 +150,41 @@ const LEGACY_TLS_SUPPORT_OPTIONS: LegacySelectOption[] = [
 const LEGACY_SECURITY_NONE_OPTION: LegacySelectOption = { value: 0, label: '无' };
 const LEGACY_SECURITY_TLS_OPTION: LegacySelectOption = { value: 1, label: 'TLS' };
 const LEGACY_SECURITY_REALITY_OPTION: LegacySelectOption = { value: 2, label: 'Reality' };
+const LEGACY_TLS_CERT_MODE_OPTIONS: LegacySelectOption[] = [
+  { value: 'self', label: '自签名' },
+  { value: 'http', label: 'HTTP申请' },
+  { value: 'dns', label: 'DNS申请' },
+  { value: 'none', label: '无证书(关闭TLS)' },
+];
+const LEGACY_PROXY_PROTOCOL_OPTIONS: LegacySelectOption[] = [
+  { value: 0, label: '0' },
+  { value: 1, label: '1' },
+  { value: 2, label: '2' },
+];
+const LEGACY_TLS_FINGERPRINT_OPTIONS: LegacySelectOption[] = [
+  { value: 'chrome', label: 'Chrome' },
+  { value: 'firefox', label: 'Firefox' },
+  { value: 'safari', label: 'Safari' },
+  { value: 'ios', label: 'IOS' },
+  { value: 'android', label: 'Android' },
+  { value: 'edge', label: 'Edge' },
+  { value: '360', label: '360' },
+  { value: 'qq', label: 'QQ' },
+];
+const LEGACY_ECH_MODE_OPTIONS: LegacySelectOption[] = [
+  { value: '', label: '无' },
+  { value: 'cloudflare', label: 'Cloudflare' },
+  { value: 'custom', label: '自定义 SNI' },
+];
+const LEGACY_ENCRYPTION_MODE_OPTIONS: LegacySelectOption[] = [
+  { value: 'native', label: 'native' },
+  { value: 'xorpub', label: 'xorpub' },
+  { value: 'random', label: 'random' },
+];
+const LEGACY_ENCRYPTION_RTT_OPTIONS: LegacySelectOption[] = [
+  { value: '0rtt', label: '0rtt' },
+  { value: '1rtt', label: '1rtt' },
+];
 
 const LEGACY_HABIT_KEY = 'habit';
 const LEGACY_SERVER_PAGE_SIZE_KEY = 'server_manage_page_size';
@@ -2169,8 +2208,9 @@ function legacyText(value: unknown) {
   return value == null ? '' : String(value);
 }
 
-function legacySelectValue(value: unknown) {
-  return value as string | number | readonly string[] | undefined;
+function legacySelectValue(value: unknown): LegacySelectValue | undefined {
+  if (value == null) return undefined;
+  return typeof value === 'number' || typeof value === 'string' ? value : String(value);
 }
 
 function legacyInputValue(value: unknown) {
@@ -2286,16 +2326,12 @@ function LegacyTlsSettingsField({
       {tlsValue === 1 && certApply ? (
         <div className="form-group">
           <label>证书模式Cert Mode</label>
-          <Select
+          <LegacySelect
             value={legacySelectValue(value.cert_mode ?? 'self')}
             style={{ width: '100%' }}
+            options={LEGACY_TLS_CERT_MODE_OPTIONS}
             onChange={(next) => change('cert_mode', next)}
-          >
-            <Select.Option value="self">自签名</Select.Option>
-            <Select.Option value="http">HTTP申请</Select.Option>
-            <Select.Option value="dns">DNS申请</Select.Option>
-            <Select.Option value="none">无证书(关闭TLS)</Select.Option>
-          </Select>
+          />
         </div>
       ) : null}
       {value.cert_mode === 'dns' && certApply ? (
@@ -2370,21 +2406,12 @@ function LegacyTlsSettingsField({
       {tlsValue === 2 ? (
         <div className="form-group">
           <label>Proxy Protocol</label>
-          <Select
+          <LegacySelect
             value={parseInt(String(value.xver ?? 0), 10) || 0}
             style={{ width: '100%' }}
+            options={LEGACY_PROXY_PROTOCOL_OPTIONS}
             onChange={(next) => change('xver', next)}
-          >
-            <Select.Option key={0} value={0}>
-              0
-            </Select.Option>
-            <Select.Option key={1} value={1}>
-              1
-            </Select.Option>
-            <Select.Option key={2} value={2}>
-              2
-            </Select.Option>
-          </Select>
+          />
         </div>
       ) : null}
       {tlsValue === 2 ? (
@@ -2419,37 +2446,13 @@ function LegacyTlsSettingsField({
       ) : null}
       <div className="form-group">
         <label>FingerPrint</label>
-        <Select
-          value={value.fingerprint}
+        <LegacySelect
+          value={legacySelectValue(value.fingerprint)}
           style={{ width: '100%' }}
+          options={LEGACY_TLS_FINGERPRINT_OPTIONS}
           onChange={(next) => change('fingerprint', next)}
           placeholder="TLS指纹默认Chrome"
-        >
-          <Select.Option key={0} value="chrome">
-            Chrome
-          </Select.Option>
-          <Select.Option key={1} value="firefox">
-            Firefox
-          </Select.Option>
-          <Select.Option key={2} value="safari">
-            Safari
-          </Select.Option>
-          <Select.Option key={3} value="ios">
-            IOS
-          </Select.Option>
-          <Select.Option key={4} value="android">
-            Android
-          </Select.Option>
-          <Select.Option key={5} value="edge">
-            Edge
-          </Select.Option>
-          <Select.Option key={6} value="360">
-            360
-          </Select.Option>
-          <Select.Option key={7} value="qq">
-            QQ
-          </Select.Option>
-        </Select>
+        />
       </div>
       {tlsValue === 1 && certApply ? (
         <div className="form-group">
@@ -2473,22 +2476,13 @@ function LegacyTlsSettingsField({
       </div>
       <div className="form-group">
         <label>ECH (Encrypted Client Hello)</label>
-        <Select
+        <LegacySelect
           value={legacyText(value.ech)}
           style={{ width: '100%' }}
+          options={LEGACY_ECH_MODE_OPTIONS}
           onChange={(next) => change('ech', next)}
           placeholder="选择 ECH 模式"
-        >
-          <Select.Option key={0} value="">
-            无
-          </Select.Option>
-          <Select.Option key={1} value="cloudflare">
-            Cloudflare
-          </Select.Option>
-          <Select.Option key={2} value="custom">
-            自定义 SNI
-          </Select.Option>
-        </Select>
+        />
       </div>
       {value.ech === 'cloudflare' ? (
         <div
@@ -2563,37 +2557,22 @@ function LegacyEncryptionSettingsField({
     <div>
       <div className="form-group">
         <label>Mode</label>
-        <Select
+        <LegacySelect
           value={legacyText(value.mode) || 'native'}
           style={{ width: '100%' }}
+          options={LEGACY_ENCRYPTION_MODE_OPTIONS}
           onChange={(next) => change('mode', next)}
-        >
-          <Select.Option key={0} value="native">
-            native
-          </Select.Option>
-          <Select.Option key={1} value="xorpub">
-            xorpub
-          </Select.Option>
-          <Select.Option key={2} value="random">
-            random
-          </Select.Option>
-        </Select>
+        />
       </div>
       <div className="row">
         <div className="form-group col-md-6 col-xs-12">
           <label>RTT</label>
-          <Select
+          <LegacySelect
             value={legacyText(value.rtt) || '0rtt'}
             style={{ width: '100%' }}
+            options={LEGACY_ENCRYPTION_RTT_OPTIONS}
             onChange={(next) => change('rtt', next)}
-          >
-            <Select.Option key={0} value="0rtt">
-              0rtt
-            </Select.Option>
-            <Select.Option key={1} value="1rtt">
-              1rtt
-            </Select.Option>
-          </Select>
+          />
         </div>
         {value.rtt === '0rtt' ? (
           <div className="form-group col-md-6 col-xs-12">
