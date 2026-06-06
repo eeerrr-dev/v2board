@@ -1735,6 +1735,14 @@ function NodeEditDrawer({
     { value: '', label: '无' },
     ...parentCandidates.map((node) => ({ value: node.id, label: node.name })),
   ];
+  const groupOptions: LegacySelectOption[] = groups.map((group) => ({
+    value: group.id,
+    label: group.name,
+  }));
+  const routeOptions: LegacySelectOption[] = routes.map((route) => ({
+    value: route.id,
+    label: route.remarks,
+  }));
 
   const showChildDrawer = (title?: string, field?: string) => {
     setChildDrawer((current) => ({
@@ -1793,8 +1801,18 @@ function NodeEditDrawer({
           </div>
           <div className="form-group">
             <label>节点标签</label>
-            <Form.Item noStyle name="tags" getValueFromEvent={normalizeLegacyNullableArray}>
-              <Select mode="tags" style={{ width: '100%' }} placeholder="输入后回车添加标签" />
+            <Form.Item
+              noStyle
+              name="tags"
+              getValueFromEvent={normalizeLegacyNullableArray}
+              getValueProps={(value) => ({ value: Array.isArray(value) ? value : [] })}
+            >
+              <LegacySelect
+                mode="tags"
+                style={{ width: '100%' }}
+                placeholder="输入后回车添加标签"
+                options={[]}
+              />
             </Form.Item>
           </div>
           <div className="form-group">
@@ -1805,11 +1823,12 @@ function NodeEditDrawer({
               </Tooltip>
             </label>
             <Form.Item noStyle name="group_id">
-              <Select mode="multiple" placeholder="请选择权限组" style={{ width: '100%' }}>
-                {groups.map((group) => (
-                  <Select.Option key={group.id}>{group.name}</Select.Option>
-                ))}
-              </Select>
+              <LegacySelect
+                mode="multiple"
+                placeholder="请选择权限组"
+                style={{ width: '100%' }}
+                options={groupOptions}
+              />
             </Form.Item>
           </div>
           {type === 'v2node' ? (
@@ -1919,12 +1938,18 @@ function NodeEditDrawer({
         </div>
         <div className="form-group">
           <label>路由组</label>
-          <Form.Item noStyle name="route_id" getValueFromEvent={normalizeLegacyNullableArray}>
-            <Select mode="multiple" placeholder="请选择路由组" style={{ width: '100%' }}>
-              {routes.map((route) => (
-                <Select.Option key={route.id}>{route.remarks}</Select.Option>
-              ))}
-            </Select>
+          <Form.Item
+            noStyle
+            name="route_id"
+            getValueFromEvent={normalizeLegacyNullableArray}
+            getValueProps={(value) => ({ value: Array.isArray(value) ? value : [] })}
+          >
+            <LegacySelect
+              mode="multiple"
+              placeholder="请选择路由组"
+              style={{ width: '100%' }}
+              options={routeOptions}
+            />
           </Form.Item>
         </div>
         <Form.Item noStyle name="show">

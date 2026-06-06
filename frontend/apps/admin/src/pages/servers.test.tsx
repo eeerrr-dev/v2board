@@ -800,6 +800,11 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('输入后回车添加标签');
     expect(serversSource).toContain('function normalizeLegacyNullableArray');
     expect(serversSource).toContain('getValueFromEvent={normalizeLegacyNullableArray}');
+    expect(serversSource).toContain('mode="tags"');
+    expect(serversSource).toContain('options={[]}');
+    expect(serversSource).toContain(
+      'getValueProps={(value) => ({ value: Array.isArray(value) ? value : [] })}',
+    );
     expect(serversSource).toContain('权限组');
     expect(serversSource).toContain('添加权限组');
     expect(serversSource).toContain('<Form.Item noStyle name="group_id">');
@@ -834,6 +839,8 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain(
       '...parentCandidates.map((node) => ({ value: node.id, label: node.name })),',
     );
+    expect(serversSource).toContain('const groupOptions: LegacySelectOption[] = groups.map');
+    expect(serversSource).toContain('const routeOptions: LegacySelectOption[] = routes.map');
     expect(serversSource).toContain("getValueProps={(value) => ({ value: value || '' })}");
     expect(serversSource).toContain(
       "<LegacySelect style={{ width: '100%' }} options={parentOptions} />",
@@ -841,8 +848,13 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('路由组');
     expect(serversSource).toContain('请选择路由组');
     expect(serversSource).toContain('name="route_id"');
-    expect(serversSource).toContain('<Select.Option key={group.id}>');
-    expect(serversSource).toContain('<Select.Option key={route.id}>');
+    expect(serversSource).toContain('options={groupOptions}');
+    expect(serversSource).toContain('options={routeOptions}');
+    expect(serversSource).not.toContain('<Select mode="tags"');
+    expect(serversSource).not.toContain('<Select mode="multiple" placeholder="请选择权限组"');
+    expect(serversSource).not.toContain('<Select mode="multiple" placeholder="请选择路由组"');
+    expect(serversSource).not.toContain('<Select.Option key={group.id}>');
+    expect(serversSource).not.toContain('<Select.Option key={route.id}>');
     expect(serversSource).not.toContain('<Select.Option key={Math.random()} value={node.id}>');
     expect(serversSource).not.toContain('key={`${node.type}-${node.id}`}');
     expect(serversSource).not.toContain('<Select.Option key={group.id} value={group.id}>');

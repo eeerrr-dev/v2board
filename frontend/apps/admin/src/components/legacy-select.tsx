@@ -4,22 +4,24 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { LegacyDownIcon } from './legacy-ant-icon';
+import { LegacyCloseIcon, LegacyDownIcon } from './legacy-ant-icon';
 import { LegacyEmpty } from './legacy-empty';
 
 export type LegacySelectValue = string | number | null;
+type LegacyMultipleSelectValue = Array<string | number>;
+type LegacySelectMode = 'multiple' | 'tags';
 
 export interface LegacySelectOption {
   value: LegacySelectValue;
   label: string;
 }
 
-interface LegacySelectProps {
+interface LegacySelectBaseProps {
   id?: string;
-  value?: LegacySelectValue;
   options: LegacySelectOption[];
   placeholder?: string;
   required?: boolean;
@@ -28,8 +30,21 @@ interface LegacySelectProps {
   getPopupContainer?: (trigger: HTMLElement) => HTMLElement | null;
   className?: string;
   style?: CSSProperties;
+}
+
+interface LegacySelectSingleProps extends LegacySelectBaseProps {
+  mode?: undefined;
+  value?: LegacySelectValue;
   onChange?: (value: LegacySelectValue) => void;
 }
+
+interface LegacySelectMultipleProps extends LegacySelectBaseProps {
+  mode: LegacySelectMode;
+  value?: LegacyMultipleSelectValue;
+  onChange?: (value: LegacyMultipleSelectValue) => void;
+}
+
+type LegacySelectProps = LegacySelectSingleProps | LegacySelectMultipleProps;
 
 interface DropdownCoords {
   container: HTMLElement;
@@ -96,10 +111,27 @@ function estimateDropdownHeight(optionCount: number) {
   return Math.min(Math.max(optionCount, 1) * 32 + 8, 258);
 }
 
+function normalizeLegacyMultipleValue(
+  value: LegacySelectValue | LegacyMultipleSelectValue | undefined,
+): LegacyMultipleSelectValue {
+  return Array.isArray(value)
+    ? value.filter((item): item is string | number => item !== null && item !== undefined)
+    : [];
+}
+
+function legacySelectValuesEqual(left: LegacySelectValue, right: LegacySelectValue) {
+  return left === right;
+}
+
+function getLegacySelectedOptionLabel(options: LegacySelectOption[], value: string | number) {
+  return options.find((item) => legacySelectValuesEqual(item.value, value))?.label ?? String(value);
+}
+
 export function LegacySelect({
   id,
   value,
   options,
+  mode,
   placeholder,
   required,
   size,
@@ -111,16 +143,27 @@ export function LegacySelect({
 }: LegacySelectProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const selectionRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const blurTimer = useRef<number | undefined>(undefined);
   const [ariaId, setAriaId] = useState('');
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
   const [activeValue, setActiveValue] = useState<LegacySelectValue | null>(null);
   const [coords, setCoords] = useState<DropdownCoords | null>(null);
   const dropdownStatus = useLegacyTransitionStatus(open, 230, 30);
-  const selected = options.find((item) => item.value === value);
-  const selectedLabel = selected ? selected.label : value == null ? null : String(value);
+  const multiple = mode === 'multiple' || mode === 'tags';
+  const singleValue = multiple ? undefined : (value as LegacySelectValue | undefined);
+  const multipleValues = normalizeLegacyMultipleValue(
+    multiple ? (value as LegacyMultipleSelectValue | undefined) : undefined,
+  );
+  const selected = multiple ? undefined : options.find((item) => item.value === singleValue);
+  const selectedLabel = selected
+    ? selected.label
+    : singleValue == null
+      ? null
+      : String(singleValue);
   const initialActiveValue = selected?.value ?? options[0]?.value ?? null;
   const isEmpty = options.length === 0;
 
@@ -187,8 +230,37 @@ export function LegacySelect({
   }, [open, reposition]);
 
   const selectOption = (nextValue: LegacySelectValue) => {
-    onChange?.(nextValue);
+    (onChange as ((value: LegacySelectValue) => void) | undefined)?.(nextValue);
     setOpen(false);
+  };
+
+  const selectMultipleOption = (nextValue: LegacySelectValue) => {
+    if (nextValue === null) return;
+    const selected = multipleValues.some((item) => legacySelectValuesEqual(item, nextValue));
+    (onChange as ((value: LegacyMultipleSelectValue) => void) | undefined)?.(
+      selected
+        ? multipleValues.filter((item) => !legacySelectValuesEqual(item, nextValue))
+        : [...multipleValues, nextValue],
+    );
+    setSearchValue('');
+  };
+
+  const removeMultipleOption = (nextValue: string | number) => {
+    (onChange as ((value: LegacyMultipleSelectValue) => void) | undefined)?.(
+      multipleValues.filter((item) => !legacySelectValuesEqual(item, nextValue)),
+    );
+  };
+
+  const addTagValue = (nextValue: string) => {
+    const trimmed = nextValue.trim();
+    if (!trimmed) return;
+    if (!multipleValues.some((item) => legacySelectValuesEqual(item, trimmed))) {
+      (onChange as ((value: LegacyMultipleSelectValue) => void) | undefined)?.([
+        ...multipleValues,
+        trimmed,
+      ]);
+    }
+    setSearchValue('');
   };
 
   const moveActiveOption = (direction: 1 | -1) => {
@@ -206,7 +278,12 @@ export function LegacySelect({
     });
   };
 
-  const toggleOpen = () => setOpen((current) => !current);
+  const toggleOpen = () => {
+    setOpen((current) => !current);
+    window.setTimeout(() => {
+      if (multiple) searchInputRef.current?.focus();
+    }, 0);
+  };
 
   const toggleFromArrow = (event: ReactMouseEvent<HTMLSpanElement>) => {
     event.preventDefault();
@@ -223,7 +300,9 @@ export function LegacySelect({
           <div
             ref={dropdownRef}
             className={classNames(
-              'ant-select-dropdown ant-select-dropdown--single',
+              multiple
+                ? 'ant-select-dropdown ant-select-dropdown--multiple'
+                : 'ant-select-dropdown ant-select-dropdown--single',
               coords.placement === 'topLeft' && 'ant-select-dropdown-placement-topLeft',
               coords.placement === 'bottomLeft' && 'ant-select-dropdown-placement-bottomLeft',
               isEmpty && 'ant-select-dropdown--empty',
@@ -252,25 +331,35 @@ export function LegacySelect({
                     <LegacyEmpty />
                   </li>
                 ) : (
-                  options.map((item) => (
-                    <li
-                      key={item.value}
-                      role="option"
-                      aria-selected={value === item.value}
-                      unselectable="on"
-                      style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
-                      className={classNames(
-                        'ant-select-dropdown-menu-item',
-                        activeValue === item.value && 'ant-select-dropdown-menu-item-active',
-                        value === item.value && 'ant-select-dropdown-menu-item-selected',
-                      )}
-                      onMouseEnter={() => setActiveValue(item.value)}
-                      onMouseLeave={() => setActiveValue(null)}
-                      onClick={() => selectOption(item.value)}
-                    >
-                      {item.label}
-                    </li>
-                  ))
+                  options.map((item) => {
+                    const itemSelected = multiple
+                      ? multipleValues.some((selectedValue) =>
+                          legacySelectValuesEqual(selectedValue, item.value),
+                        )
+                      : legacySelectValuesEqual(singleValue ?? null, item.value);
+
+                    return (
+                      <li
+                        key={item.value}
+                        role="option"
+                        aria-selected={itemSelected}
+                        unselectable="on"
+                        style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                        className={classNames(
+                          'ant-select-dropdown-menu-item',
+                          activeValue === item.value && 'ant-select-dropdown-menu-item-active',
+                          itemSelected && 'ant-select-dropdown-menu-item-selected',
+                        )}
+                        onMouseEnter={() => setActiveValue(item.value)}
+                        onMouseLeave={() => setActiveValue(null)}
+                        onClick={() =>
+                          multiple ? selectMultipleOption(item.value) : selectOption(item.value)
+                        }
+                      >
+                        {item.label}
+                      </li>
+                    );
+                  })
                 )}
               </ul>
             </div>
@@ -278,6 +367,183 @@ export function LegacySelect({
           coords.container,
         )
       : null;
+
+  const handleMultipleSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (mode === 'tags') addTagValue(searchValue);
+      return;
+    }
+    if (event.key === 'Backspace' && !searchValue && multipleValues.length) {
+      removeMultipleOption(multipleValues[multipleValues.length - 1]!);
+      return;
+    }
+    if (event.key === 'Escape' && open) {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+    }
+  };
+
+  const renderMultipleSelection = () => (
+    <div
+      ref={selectionRef}
+      className={`ant-select-selection
+            ant-select-selection--multiple`}
+      aria-required={required}
+      role="combobox"
+      aria-autocomplete="list"
+      aria-haspopup="true"
+      aria-controls={ariaId}
+      aria-expanded={open}
+      onClick={toggleOpen}
+    >
+      <div className="ant-select-selection__rendered">
+        <ul>
+          {multipleValues.map((item) => {
+            const label = getLegacySelectedOptionLabel(options, item);
+            return (
+              <li
+                key={item}
+                unselectable="on"
+                className="ant-select-selection__choice"
+                title={label}
+                style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <div className="ant-select-selection__choice__content">{label}</div>
+                <span
+                  className="ant-select-selection__choice__remove"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    removeMultipleOption(item);
+                  }}
+                >
+                  <LegacyCloseIcon />
+                </span>
+              </li>
+            );
+          })}
+          <li className="ant-select-search ant-select-search--inline">
+            <div className="ant-select-search__field__wrap">
+              <input
+                ref={searchInputRef}
+                value={searchValue}
+                className="ant-select-search__field"
+                style={{ width: searchValue ? `${searchValue.length + 0.75}em` : '0.75em' }}
+                onChange={(event) => setSearchValue(event.target.value)}
+                onFocus={() => setFocused(true)}
+                onKeyDown={handleMultipleSearchKeyDown}
+              />
+              <span className="ant-select-search__field__mirror">{searchValue || '\u00a0'}</span>
+            </div>
+          </li>
+        </ul>
+        {placeholder ? (
+          <div
+            unselectable="on"
+            className="ant-select-selection__placeholder"
+            style={{
+              display: multipleValues.length || searchValue ? 'none' : 'block',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+            }}
+            onMouseDown={(event) => event.preventDefault()}
+          >
+            {placeholder}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  const renderSingleSelection = () => (
+    <div
+      ref={selectionRef}
+      className={`ant-select-selection
+            ant-select-selection--single`}
+      aria-required={required}
+      role="combobox"
+      aria-autocomplete="list"
+      aria-haspopup="true"
+      aria-controls={ariaId}
+      aria-expanded={open}
+      tabIndex={0}
+      onClick={toggleOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (!open) {
+            setOpen(true);
+            return;
+          }
+          if (activeValue !== null) selectOption(activeValue);
+          return;
+        }
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          if (!open) {
+            setOpen(true);
+            return;
+          }
+          moveActiveOption(1);
+          return;
+        }
+        if (event.key === 'ArrowUp') {
+          if (!open) return;
+          event.preventDefault();
+          moveActiveOption(-1);
+          return;
+        }
+        if (event.key === ' ') {
+          if (open) return;
+          event.preventDefault();
+          setOpen(true);
+          return;
+        }
+        if (event.key === 'Escape' && open) {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <div className="ant-select-selection__rendered">
+        {placeholder ? (
+          <div
+            unselectable="on"
+            className="ant-select-selection__placeholder"
+            style={{
+              display: selectedLabel === null ? 'block' : 'none',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+            }}
+            onMouseDown={(event) => event.preventDefault()}
+          >
+            {placeholder}
+          </div>
+        ) : null}
+        {selectedLabel !== null ? (
+          <div
+            className="ant-select-selection-selected-value"
+            title={selectedLabel}
+            style={{ display: 'block', opacity: 1 }}
+          >
+            {selectedLabel}
+          </div>
+        ) : null}
+      </div>
+      <span
+        className="ant-select-arrow"
+        unselectable="on"
+        style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+        onClick={toggleFromArrow}
+      >
+        <LegacyDownIcon className="ant-select-arrow-icon" />
+      </span>
+    </div>
+  );
 
   return (
     <>
@@ -306,90 +572,7 @@ export function LegacySelect({
           }, 10);
         }}
       >
-        <div
-          ref={selectionRef}
-          className={`ant-select-selection
-            ant-select-selection--single`}
-          aria-required={required}
-          role="combobox"
-          aria-autocomplete="list"
-          aria-haspopup="true"
-          aria-controls={ariaId}
-          aria-expanded={open}
-          tabIndex={0}
-          onClick={toggleOpen}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              if (!open) {
-                setOpen(true);
-                return;
-              }
-              if (activeValue !== null) selectOption(activeValue);
-              return;
-            }
-            if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              if (!open) {
-                setOpen(true);
-                return;
-              }
-              moveActiveOption(1);
-              return;
-            }
-            if (event.key === 'ArrowUp') {
-              if (!open) return;
-              event.preventDefault();
-              moveActiveOption(-1);
-              return;
-            }
-            if (event.key === ' ') {
-              if (open) return;
-              event.preventDefault();
-              setOpen(true);
-              return;
-            }
-            if (event.key === 'Escape' && open) {
-              event.preventDefault();
-              event.stopPropagation();
-              setOpen(false);
-            }
-          }}
-        >
-          <div className="ant-select-selection__rendered">
-            {placeholder ? (
-              <div
-                unselectable="on"
-                className="ant-select-selection__placeholder"
-                style={{
-                  display: selectedLabel === null ? 'block' : 'none',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                }}
-                onMouseDown={(event) => event.preventDefault()}
-              >
-                {placeholder}
-              </div>
-            ) : null}
-            {selectedLabel !== null ? (
-              <div
-                className="ant-select-selection-selected-value"
-                title={selectedLabel}
-                style={{ display: 'block', opacity: 1 }}
-              >
-                {selectedLabel}
-              </div>
-            ) : null}
-          </div>
-          <span
-            className="ant-select-arrow"
-            unselectable="on"
-            style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
-            onClick={toggleFromArrow}
-          >
-            <LegacyDownIcon className="ant-select-arrow-icon" />
-          </span>
-        </div>
+        {multiple ? renderMultipleSelection() : renderSingleSelection()}
       </div>
       {dropdown}
     </>

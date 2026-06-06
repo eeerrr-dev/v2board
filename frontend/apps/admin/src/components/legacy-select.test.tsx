@@ -65,4 +65,39 @@ describe('LegacySelect', () => {
     expect(html).toContain('title="无"');
     expect(html).toContain('无');
   });
+
+  it('renders the old rc-select multiple choice and search markup', () => {
+    const html = renderToStaticMarkup(
+      <LegacySelect
+        mode="multiple"
+        value={[7]}
+        placeholder="请选择权限组"
+        options={[
+          { value: 7, label: 'Default Group' },
+          { value: 8, label: 'VIP Group' },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('ant-select-selection--multiple');
+    expect(html).toContain('class="ant-select-selection__choice"');
+    expect(html).toContain('class="ant-select-selection__choice__content"');
+    expect(html).toContain('Default Group');
+    expect(html).toContain('class="ant-select-selection__choice__remove"');
+    expect(html).toContain('class="ant-select-search ant-select-search--inline"');
+    expect(html).toContain('class="ant-select-search__field"');
+    expect(html).not.toContain('ant-select-selector');
+    expect(html).not.toContain('ant-select-selection-item');
+  });
+
+  it('renders tags mode with the old inline search placeholder', () => {
+    const html = renderToStaticMarkup(
+      <LegacySelect mode="tags" value={[]} placeholder="输入后回车添加标签" options={[]} />,
+    );
+
+    expect(html).toContain('ant-select-selection--multiple');
+    expect(html).toContain('class="ant-select-selection__placeholder"');
+    expect(html).toContain('输入后回车添加标签');
+    expect(html).toContain('class="ant-select-search__field__wrap"');
+  });
 });
