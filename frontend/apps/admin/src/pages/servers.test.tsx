@@ -157,6 +157,8 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('class="d-flex justify-content-between align-items-center"');
     expect(html).toContain('class="block block-rounded"');
     expect(html).toContain('class="bg-white"');
+    expect(html).toContain('<button type="button" class="ant-btn">');
+    expect(html).toContain('aria-label="图标: plus"');
     expect(html).toContain('添加权限组');
     expect(html).toContain('组ID');
     expect(html).toContain('组名称');
@@ -178,6 +180,8 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('class="d-flex justify-content-between align-items-center"');
     expect(html).toContain('class="block block-rounded"');
     expect(html).toContain('class="bg-white"');
+    expect(html).toContain('<button type="button" class="ant-btn">');
+    expect(html).toContain('aria-label="图标: plus"');
     expect(html).toContain('添加路由');
     expect(html).toContain('ID');
     expect(html).toContain('备注');

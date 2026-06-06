@@ -26,7 +26,6 @@ import {
   EditOutlined,
   LinkOutlined,
   LoadingOutlined,
-  PlusOutlined,
   QuestionCircleOutlined,
   ReadOutlined,
   UserOutlined,
@@ -437,9 +436,10 @@ function ServerGroupPage() {
           <div className="bg-white">
             <div style={{ padding: 15 }}>
               <ServerGroupModal>
-                <Button>
-                  <PlusOutlined /> 添加权限组
-                </Button>
+                <LegacyButton className="ant-btn">
+                  <LegacyPlusIcon />
+                  <span> 添加权限组</span>
+                </LegacyButton>
               </ServerGroupModal>
             </div>
             <Table<admin.ServerGroup>
@@ -590,9 +590,10 @@ function ServerRoutePage() {
           <div className="bg-white">
             <div style={{ padding: 15 }}>
               <ServerRouteModal>
-                <Button>
-                  <PlusOutlined /> 添加路由
-                </Button>
+                <LegacyButton className="ant-btn">
+                  <LegacyPlusIcon />
+                  <span> 添加路由</span>
+                </LegacyButton>
               </ServerRouteModal>
             </div>
             <Table<admin.ServerRoute>
