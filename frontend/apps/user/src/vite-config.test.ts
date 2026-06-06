@@ -15,7 +15,7 @@ const sharedViteConfigSource = readFileSync(
 describe('user Vite dev optimizer', () => {
   it('keeps user optimized deps isolated and fully declared for stable page clicks', () => {
     expect(viteConfigSource).toContain(
-      "cacheDir: '../../node_modules/.vite/user-white-screen-recovery-17'",
+      "cacheDir: '../../node_modules/.vite/user-white-screen-recovery-18'",
     );
     expect(viteConfigSource).toContain('optimizeDeps: {');
     expect(viteConfigSource).toContain('legacyViteClientStubPlugin()');

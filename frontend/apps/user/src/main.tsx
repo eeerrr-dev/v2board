@@ -28,7 +28,7 @@ const legacyHashRouteOptions = {
   publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
   routes: USER_LEGACY_ROUTE_PATHS,
 } as const;
-const legacyRecoveryVersion = 'white-screen-recovery-17';
+const legacyRecoveryVersion = 'white-screen-recovery-18';
 const legacyWhiteScreenRecoveryConfig = {
   storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`,
 } as const;
