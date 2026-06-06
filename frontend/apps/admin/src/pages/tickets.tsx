@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
-import { App, Badge, Input, Radio, Table, Tooltip } from 'antd';
-import type { TablePaginationConfig, TableProps } from 'antd';
-import type { ColumnType, FilterValue } from 'antd/es/table/interface';
+import { createPortal } from 'react-dom';
+import { App, Tooltip } from 'antd';
+import type { FilterValue } from 'antd/es/table/interface';
 import dayjs from 'dayjs';
 import type { Ticket } from '@v2board/types';
 import { SolutionOutlined, UserOutlined } from '@ant-design/icons';
@@ -18,6 +18,12 @@ import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { LegacyFilterIcon } from '@/components/legacy-ant-icon';
+import {
+  LegacyStandaloneTable,
+  legacyTableRowKey,
+  type LegacyStandaloneTableHeader,
+} from '@/components/legacy-standalone-table';
 
 type TicketQuery = AdminPageQuery & {
   total?: number;
@@ -32,6 +38,116 @@ function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTML
 
 function formatMinute(value: number) {
   return dayjs(1000 * value).format('YYYY/MM/DD HH:mm');
+}
+
+function ticketLevelName(value: number) {
+  return ['低', '中', '高'][value];
+}
+
+function LegacyBadgeStatus({ status }: { status: 'success' | 'processing' | 'error' }) {
+  return (
+    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
+      <span className={`ant-badge-status-dot ant-badge-status-${status}`} />
+    </span>
+  );
+}
+
+function legacyTicketToolbarHtml(status?: number) {
+  const openChecked = status === 0 ? ' checked=""' : '';
+  const closedChecked = status === 1 ? ' checked=""' : '';
+
+  return [
+    '<div class="ant-radio-group ant-radio-group-outline">',
+    `<label class="ant-radio-button-wrapper${status === 0 ? ' ant-radio-button-wrapper-checked' : ''}">`,
+    `<span class="ant-radio-button${status === 0 ? ' ant-radio-button-checked' : ''}">`,
+    `<input type="radio" class="ant-radio-button-input" value="0"${openChecked}>`,
+    '<span class="ant-radio-button-inner"></span>',
+    '</span>',
+    '<span>已开启</span>',
+    '</label>',
+    `<label class="ant-radio-button-wrapper${status === 1 ? ' ant-radio-button-wrapper-checked' : ''}">`,
+    `<span class="ant-radio-button${status === 1 ? ' ant-radio-button-checked' : ''}">`,
+    `<input type="radio" class="ant-radio-button-input" value="1"${closedChecked}>`,
+    '<span class="ant-radio-button-inner"></span>',
+    '</span>',
+    '<span>已关闭</span>',
+    '</label>',
+    '</div>',
+    '<div style="float: right;"><input placeholder="输入邮箱搜索" type="text" class="ant-input" value=""></div>',
+  ].join('');
+}
+
+function filterValueIncludes(value: FilterValue | null | undefined, option: number) {
+  return Array.isArray(value) && value.includes(option);
+}
+
+function LegacyTicketReplyStatusFilterDropdown({
+  open,
+  value,
+  onClear,
+  onConfirm,
+  onToggle,
+}: {
+  open: boolean;
+  value: FilterValue | null | undefined;
+  onClear: () => void;
+  onConfirm: () => void;
+  onToggle: (value: number) => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted || typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      className={`ant-dropdown  ant-dropdown-placement-bottomRight ${open ? '' : ' ant-dropdown-hidden'}`}
+    >
+      <div className="ant-table-filter-dropdown">
+        <ul
+          className="ant-dropdown-menu ant-dropdown-menu-without-submenu ant-dropdown-menu-root ant-dropdown-menu-vertical"
+          role="menu"
+          tabIndex={0}
+        >
+          {[
+            { label: '已回复', value: 1 },
+            { label: '待回复', value: 0 },
+          ].map((item) => {
+            const checked = filterValueIncludes(value, item.value);
+            return (
+              <li key={item.value} className="ant-dropdown-menu-item" role="menuitem">
+                <label className="ant-checkbox-wrapper">
+                  <span className={`ant-checkbox${checked ? ' ant-checkbox-checked' : ''}`}>
+                    <input
+                      type="checkbox"
+                      className="ant-checkbox-input"
+                      value=""
+                      checked={checked}
+                      onChange={() => onToggle(item.value)}
+                    />
+                    <span className="ant-checkbox-inner" />
+                  </span>
+                </label>
+                <span>{item.label}</span>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="ant-table-filter-dropdown-btns">
+          <a className="ant-table-filter-dropdown-link confirm" onClick={onConfirm}>
+            确定
+          </a>
+          <a className="ant-table-filter-dropdown-link clear" onClick={onClear}>
+            重置
+          </a>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 export function startLegacyTicketPolling(refetch: () => unknown) {
@@ -59,7 +175,12 @@ function TicketListPage() {
   const tickets = useAdminTickets(query);
   const closeTicket = useCloseTicketMutation();
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const levels = ['低', '中', '高'];
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const data = tickets.data?.data ?? [];
+  const [replyStatusFilterOpen, setReplyStatusFilterOpen] = useState(false);
+  const [replyStatusFilterValue, setReplyStatusFilterValue] = useState<FilterValue | null>(
+    query.reply_status ?? null,
+  );
 
   const filter = (key: keyof TicketQuery, value: TicketQuery[keyof TicketQuery]) => {
     setQuery((current) => ({
@@ -74,6 +195,50 @@ function TicketListPage() {
     clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => filter(key, value), 300);
   };
+
+  const toggleReplyStatusFilterValue = (value: number) => {
+    setReplyStatusFilterValue((current) => {
+      const values = Array.isArray(current) ? current : [];
+      const next = filterValueIncludes(values, value)
+        ? values.filter((item) => item !== value)
+        : [...values, value];
+      return next.length ? next : null;
+    });
+  };
+
+  const confirmReplyStatusFilter = () => {
+    setReplyStatusFilterOpen(false);
+    filter('reply_status', replyStatusFilterValue);
+  };
+
+  const clearReplyStatusFilter = () => {
+    setReplyStatusFilterOpen(false);
+    setReplyStatusFilterValue(null);
+    filter('reply_status', null);
+  };
+
+  useEffect(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return undefined;
+
+    const handleChange = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || target.type !== 'radio') return;
+      filter('status', Number(target.value));
+    };
+    const handleInput = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || target.type !== 'text') return;
+      onSearch('email', target.value);
+    };
+
+    toolbar.addEventListener('change', handleChange);
+    toolbar.addEventListener('input', handleInput);
+    return () => {
+      toolbar.removeEventListener('change', handleChange);
+      toolbar.removeEventListener('input', handleInput);
+    };
+  });
 
   const toChat = (id: number) => {
     const url = `${window.location.origin}${window.location.pathname}#/ticket/${id}`;
@@ -90,122 +255,119 @@ function TicketListPage() {
     window.location.href = url;
   };
 
-  const columns: TableProps<Ticket>['columns'] = [
-    {
-      title: '#',
-      dataIndex: 'id',
-      key: 'id',
-    },
-    {
-      title: '主题',
-      dataIndex: 'subject',
-      key: 'subject',
-    },
-    {
-      title: '工单级别',
-      dataIndex: 'level',
-      key: 'level',
-      render: (value: number) => levels[value],
-    },
+  const headers: LegacyStandaloneTableHeader[] = [
+    { title: '#' },
+    { title: '主题' },
+    { title: '工单级别' },
     {
       title: '工单状态',
-      dataIndex: 'reply_status',
-      key: 'reply_status',
-      filters: (query.status !== 1 && [
-        { text: '已回复', value: 1 },
-        { text: '待回复', value: 0 },
-      ]) as ColumnType<Ticket>['filters'],
-      render: (value: 0 | 1, row) =>
-        row.status === 1 ? (
-          <span>
-            <Badge status="success" /> 已关闭
-          </span>
-        ) : (
-          <span>
-            <Badge status={value ? 'processing' : 'error'} /> {value ? '已回复' : '待回复'}
-          </span>
-        ),
+      className:
+        query.status !== 1
+          ? 'ant-table-column-has-actions ant-table-column-has-filters'
+          : undefined,
+      suffix:
+        query.status !== 1 ? (
+          <LegacyFilterIcon
+            title="筛选"
+            tabIndex={-1}
+            className="ant-dropdown-trigger"
+            onClick={() => setReplyStatusFilterOpen((current) => !current)}
+          />
+        ) : undefined,
     },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (value: number) => formatMinute(value),
-    },
-    {
-      title: '最后回复',
-      dataIndex: 'updated_at',
-      key: 'updated_at',
-      render: (value: number) => formatMinute(value),
-    },
-    {
-      title: '操作',
-      dataIndex: 'action',
-      key: 'action',
-      align: 'right',
-      fixed: 'right',
-      render: (_value, row) => (
-        <div>
-          <a ref={legacyHref()} onClick={() => toChat(row.id)}>
-            查看
-          </a>
-          <div className="ant-divider ant-divider-vertical" />
-          <a
-            {...legacyDisabledAnchorProps(row.status)}
-            ref={legacyHref()}
-            onClick={() =>
-              closeTicket.mutate(row.id, {
-                onSuccess: () => {
-                  void tickets.refetch();
-                },
-              })
-            }
-          >
-            关闭
-          </a>
-        </div>
-      ),
-    },
+    { title: '创建时间' },
+    { title: '最后回复' },
+    { title: '操作', alignRight: true, fixedRight: true },
   ];
+
+  const renderTicketStatus = (value: 0 | 1, row: Ticket) =>
+    row.status === 1 ? (
+      <span>
+        <LegacyBadgeStatus status="success" /> 已关闭
+      </span>
+    ) : (
+      <span>
+        <LegacyBadgeStatus status={value ? 'processing' : 'error'} /> {value ? '已回复' : '待回复'}
+      </span>
+    );
+
+  const renderTicketActions = (row: Ticket) => (
+    <div>
+      <a ref={legacyHref()} onClick={() => toChat(row.id)}>
+        查看
+      </a>
+      <div className="ant-divider ant-divider-vertical" />
+      <a
+        {...legacyDisabledAnchorProps(row.status)}
+        ref={legacyHref()}
+        onClick={() =>
+          closeTicket.mutate(row.id, {
+            onSuccess: () => {
+              void tickets.refetch();
+            },
+          })
+        }
+      >
+        关闭
+      </a>
+    </div>
+  );
 
   return (
     <LegacySpin loading={tickets.isFetching}>
       <div className="block border-bottom">
         <div className="bg-white">
-          <div className="p-3">
-            <Radio.Group value={query.status} onChange={(event) => filter('status', event.target.value)}>
-              <Radio.Button value={0}>已开启</Radio.Button>
-              <Radio.Button value={1}>已关闭</Radio.Button>
-            </Radio.Group>
-            <div style={{ float: 'right' }}>
-              <Input
-                placeholder="输入邮箱搜索"
-                onChange={(event) => onSearch('email', event.target.value)}
-              />
-            </div>
-          </div>
-          <Table<Ticket>
-            tableLayout="auto"
-            dataSource={tickets.data?.data ?? []}
-            pagination={{
-              current: query.current,
-              pageSize: query.pageSize,
-              total: tickets.data?.total,
-              size: 'small',
-            }}
-            columns={columns}
-            scroll={{ x: 900 }}
-            onChange={(
-              pagination: TablePaginationConfig,
-              filters: Record<string, FilterValue | null>,
-            ) => {
-              setQuery((current) => ({
-                ...current,
-                ...pagination,
-                ...filters,
-              }));
-            }}
+          <div
+            className="p-3"
+            ref={toolbarRef}
+            dangerouslySetInnerHTML={{ __html: legacyTicketToolbarHtml(query.status) }}
           />
+          <LegacyStandaloneTable
+            headers={headers}
+            isEmpty={data.length === 0}
+            scrollX={900}
+            fixedRightChildren={data.map((row, index) => (
+              <tr
+                key={index}
+                className="ant-table-row ant-table-row-level-0"
+                {...legacyTableRowKey(index)}
+              >
+                <td className="ant-table-row-cell-last" style={{ textAlign: 'right' }}>
+                  {renderTicketActions(row)}
+                </td>
+              </tr>
+            ))}
+          >
+            {data.map((row, index) => (
+              <tr
+                key={index}
+                className="ant-table-row ant-table-row-level-0"
+                {...legacyTableRowKey(index)}
+              >
+                <td className="">{row.id}</td>
+                <td className="">{row.subject}</td>
+                <td className="">{ticketLevelName(row.level)}</td>
+                <td className="">{renderTicketStatus(row.reply_status, row)}</td>
+                <td className="">{formatMinute(row.created_at)}</td>
+                <td className="">{formatMinute(row.updated_at)}</td>
+                <td
+                  className="ant-table-fixed-columns-in-body ant-table-row-cell-last"
+                  style={{ textAlign: 'right' }}
+                >
+                  {renderTicketActions(row)}
+                </td>
+              </tr>
+            ))}
+          </LegacyStandaloneTable>
+          {query.status !== 1 ? (
+            <LegacyTicketReplyStatusFilterDropdown
+              open={replyStatusFilterOpen}
+              value={replyStatusFilterValue}
+              onToggle={toggleReplyStatusFilterValue}
+              onConfirm={confirmReplyStatusFilter}
+              onClear={clearReplyStatusFilter}
+            />
+          ) : null}
         </div>
       </div>
     </LegacySpin>

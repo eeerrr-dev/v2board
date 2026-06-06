@@ -7,7 +7,9 @@ export type LegacyStandaloneTableHeader = {
   title: ReactNode;
   alignLeft?: boolean;
   alignRight?: boolean;
+  className?: string;
   fixedRight?: boolean;
+  suffix?: ReactNode;
 };
 
 export function legacyTableRowKey(value: number) {
@@ -21,6 +23,7 @@ function legacyHeaderClassName(
   fixedRightTable = false,
 ) {
   const classes = [
+    header.className,
     header.fixedRight && !fixedRightTable ? 'ant-table-fixed-columns-in-body' : undefined,
     header.alignLeft ? 'ant-table-align-left' : undefined,
     header.alignRight ? 'ant-table-align-right' : undefined,
@@ -65,6 +68,7 @@ function LegacyStandaloneTableHead({
             }
           >
             <LegacyStandaloneTableHeaderCell title={header.title} />
+            {header.suffix}
           </th>
         ))}
       </tr>

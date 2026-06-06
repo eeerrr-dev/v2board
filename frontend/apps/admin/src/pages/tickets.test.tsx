@@ -8,11 +8,18 @@ import dayjs from 'dayjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import TicketsPage, { startLegacyTicketPolling } from './tickets';
 
-const ticketsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'tickets.tsx'), 'utf8');
-const queriesSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'), 'utf8');
+const ticketsSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'tickets.tsx'),
+  'utf8',
+);
+const queriesSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'),
+  'utf8',
+);
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const mocks = vi.hoisted(() => {
   const makeAdminTicket = () => ({
@@ -169,6 +176,19 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).toContain('class="block border-bottom"');
     expect(html).toContain('class="bg-white"');
     expect(html).toContain('class="p-3"');
+    expect(html).toContain('class="ant-radio-group ant-radio-group-outline"');
+    expect(html).toContain('class="ant-radio-button-inner"');
+    expect(html).toContain('class="ant-input"');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain(
+      'class="ant-table ant-table-default ant-table-scroll-position-left ant-table-scroll-position-right"',
+    );
+    expect(html).toContain('class="ant-table-scroll"');
+    expect(html).toContain('tabindex="-1" class="ant-table-body" style="overflow-x:scroll"');
+    expect(html).toContain('class="ant-table-fixed" style="width:900px"');
+    expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain('ant-table-column-has-actions ant-table-column-has-filters');
+    expect(html).toContain('aria-label="图标: filter"');
     expect(html).toContain('已开启');
     expect(html).toContain('已关闭');
     expect(html).toContain('输入邮箱搜索');
@@ -186,6 +206,8 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).toContain('关闭');
     expect(html).not.toContain('ant-drawer');
     expect(html).not.toContain('ant-card');
+    expect(html).not.toContain('ant-table-cell');
+    expect(html).not.toContain('css-dev-only');
     expect(html).not.toContain('ant-typography');
   });
 
@@ -202,7 +224,7 @@ describe('TicketsPage legacy ticket manager', () => {
     const closeLinks = Array.from(container.querySelectorAll('a')).filter(
       (link) => link.textContent === '关闭',
     );
-    expect(closeLinks).toHaveLength(2);
+    expect(closeLinks).toHaveLength(4);
 
     await act(async () => {
       closeLinks[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -236,7 +258,9 @@ describe('TicketsPage legacy ticket manager', () => {
     });
 
     mocks.ticketQueries = [];
-    const emailInput = container.querySelector<HTMLInputElement>('input[placeholder="输入邮箱搜索"]')!;
+    const emailInput = container.querySelector<HTMLInputElement>(
+      'input[placeholder="输入邮箱搜索"]',
+    )!;
 
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
@@ -276,14 +300,72 @@ describe('TicketsPage legacy ticket manager', () => {
     container.remove();
   });
 
-  it('keeps the bundled anchor disabled prop shape for ticket close links', () => {
-    expect(ticketsSource).toContain('type AnchorHTMLAttributes');
-    expect(ticketsSource).toContain('function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTMLAnchorElement>');
-    expect(ticketsSource).toContain('return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;');
-    expect(ticketsSource).toContain('{...legacyDisabledAnchorProps(row.status)}');
-    expect(ticketsSource).not.toContain("...(row.status ? { disabled: true } : {})");
+  it('keeps the legacy reply-status filter dropdown wired to ticket queries', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    let root: Root | null = createRoot(container);
+
+    await act(async () => {
+      root!.render(<TicketsPage />);
+      await Promise.resolve();
+    });
+
+    const dropdown = document.body.querySelector<HTMLElement>('.ant-dropdown');
+    expect(dropdown?.className).toContain('ant-dropdown-hidden');
+
+    const filterIcon = container.querySelector<HTMLElement>('i.anticon-filter')!;
+
+    await act(async () => {
+      filterIcon.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(dropdown?.className).not.toContain('ant-dropdown-hidden');
+
+    const checkedInput = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('.ant-checkbox-input'),
+    )[0]!;
+
+    await act(async () => {
+      checkedInput.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    mocks.ticketQueries = [];
+    const confirm = document.body.querySelector<HTMLElement>(
+      '.ant-table-filter-dropdown-link.confirm',
+    )!;
+
+    await act(async () => {
+      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(mocks.ticketQueries[mocks.ticketQueries.length - 1]).toMatchObject({
+      current: 1,
+      pageSize: 10,
+      status: 0,
+      reply_status: [1],
+    });
+
+    await act(async () => {
+      root?.unmount();
+      root = null;
+    });
+    container.remove();
   });
 
+  it('keeps the bundled anchor disabled prop shape for ticket close links', () => {
+    expect(ticketsSource).toContain('type AnchorHTMLAttributes');
+    expect(ticketsSource).toContain(
+      'function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTMLAnchorElement>',
+    );
+    expect(ticketsSource).toContain(
+      'return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;',
+    );
+    expect(ticketsSource).toContain('{...legacyDisabledAnchorProps(row.status)}');
+    expect(ticketsSource).not.toContain('...(row.status ? { disabled: true } : {})');
+  });
 
   it('uses the original fetchLoading-style page spinner for ticket refetches', () => {
     expect(ticketsSource).toContain('<LegacySpin loading={tickets.isFetching}>');
@@ -292,7 +374,9 @@ describe('TicketsPage legacy ticket manager', () => {
 
   it('keeps ticket list and chat queries on the shared legacy admin query defaults', () => {
     expect(queriesSource).toContain('queryFn: () => admin.fetchTickets(apiClient, query),');
-    expect(queriesSource).toContain('queryFn: () => admin.ticketDetail(apiClient, id as number | string),');
+    expect(queriesSource).toContain(
+      'queryFn: () => admin.ticketDetail(apiClient, id as number | string),',
+    );
     expect(queriesSource).not.toContain('legacyTicketQueryOptions');
     expect(queriesSource).not.toContain('staleTime: 30_000');
     expect(queriesSource).not.toContain('refetchOnMount: false');
@@ -302,9 +386,9 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(ticketsSource).toContain(
       'const url = `${window.location.origin}${window.location.pathname}#/ticket/${id}`;',
     );
-    expect(ticketsSource).toContain("const userAgent = window.navigator.userAgent.toLowerCase();");
+    expect(ticketsSource).toContain('const userAgent = window.navigator.userAgent.toLowerCase();');
     expect(ticketsSource).toContain("!userAgent.includes('mobile') && !userAgent.includes('ipad')");
-    expect(ticketsSource).toContain("window.open(");
+    expect(ticketsSource).toContain('window.open(');
     expect(ticketsSource).toContain("'_blank'");
     expect(ticketsSource).toContain(
       "'height=600,width=800,top=0,left=0,toolbar=no,menubar=no,scrollbars=no,resizable=no,location=no,status=no'",
@@ -324,36 +408,53 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(closeStart).toBeGreaterThan(-1);
     expect(closeRefetch).toBeGreaterThan(closeStart);
     expect(closeBlock).not.toContain('onSuccess');
-    expect(closeBlock).not.toContain("queryClient.invalidateQueries({ queryKey: ['admin', 'tickets'] })");
+    expect(closeBlock).not.toContain(
+      "queryClient.invalidateQueries({ queryKey: ['admin', 'tickets'] })",
+    );
   });
 
   it('keeps the legacy ticket table without an explicit rowKey', () => {
-    expect(ticketsSource).toContain('tableLayout="auto"');
-    expect(ticketsSource).toContain("size: 'small'");
+    expect(ticketsSource).toContain('<LegacyStandaloneTable');
+    expect(ticketsSource).toContain('scrollX={900}');
+    expect(ticketsSource).toContain('{...legacyTableRowKey(index)}');
+    expect(ticketsSource).not.toContain('<Table<Ticket>');
+    expect(ticketsSource).not.toContain('tableLayout="auto"');
     expect(ticketsSource).not.toContain('rowKey="id"');
   });
 
-  it('keeps the original full pagination merge on ticket table changes', () => {
+  it('keeps the original ticket query shape without AntD5 pagination prop rewrites', () => {
     expect(ticketsSource).toContain('total?: number;');
-    expect(ticketsSource).toContain('...pagination,');
+    expect(ticketsSource).toContain('[key]: value,');
+    expect(ticketsSource).toContain('current: 1,');
+    expect(ticketsSource).toContain('pageSize: 10,');
+    expect(ticketsSource).not.toContain('...pagination,');
     expect(ticketsSource).not.toContain('current: pagination.current');
     expect(ticketsSource).not.toContain('pageSize: pagination.pageSize');
   });
 
-  it('keeps the bundled ticket pagination total as the direct response field', () => {
-    expect(ticketsSource).toContain('total: tickets.data?.total,');
+  it('renders the bundled ticket table empty state without AntD5 pagination totals', () => {
+    expect(ticketsSource).toContain('isEmpty={data.length === 0}');
+    expect(ticketsSource).not.toContain('total: tickets.data?.total,');
     expect(ticketsSource).not.toContain('total: tickets.data?.total ?? 0');
+    expect(ticketsSource).not.toContain('pagination={{');
   });
 
-  it('uses the bundled reply-status filter expression shape', () => {
-    expect(ticketsSource).toContain('filters: (query.status !== 1 && [');
-    expect(ticketsSource).toContain("]) as ColumnType<Ticket>['filters'],");
-    expect(ticketsSource).not.toContain('query.status !== 1\n          ?');
-    expect(ticketsSource).not.toContain(': undefined');
+  it('uses the bundled reply-status filter header and dropdown shape', () => {
+    expect(ticketsSource).toContain("'ant-table-column-has-actions ant-table-column-has-filters'");
+    expect(ticketsSource).toContain('<LegacyFilterIcon');
+    expect(ticketsSource).toContain('title="筛选"');
+    expect(ticketsSource).toContain('className="ant-dropdown-trigger"');
+    expect(ticketsSource).toContain('ant-table-filter-dropdown');
+    expect(ticketsSource).toContain('ant-table-filter-dropdown-link confirm');
+    expect(ticketsSource).toContain("filter('reply_status', replyStatusFilterValue)");
+    expect(ticketsSource).not.toContain('filters: (query.status !== 1 && [');
+    expect(ticketsSource).not.toContain("]) as ColumnType<Ticket>['filters'],");
   });
 
   it('keeps the original vertical divider markup in ticket action columns', () => {
-    expect(ticketsSource.match(/<div className="ant-divider ant-divider-vertical" \/>/g)).toHaveLength(2);
+    expect(
+      ticketsSource.match(/<div className="ant-divider ant-divider-vertical" \/>/g),
+    ).toHaveLength(2);
     expect(ticketsSource).not.toContain('<span className="ant-divider ant-divider-vertical"');
     expect(ticketsSource).not.toContain('role="separator"');
   });
@@ -377,13 +478,21 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).toContain('输入内容回复工单...');
     expect(ticketsSource).toContain('setUserOpen(true)');
     expect(ticketsSource).toContain('<UserManageDrawer');
-    expect(ticketsSource).toContain('<UserOutlined onClick={() => current?.user_id && setUserOpen(true)} />');
-    expect(ticketsSource).not.toContain('<span onClick={() => current?.user_id && setUserOpen(true)}>');
+    expect(ticketsSource).toContain(
+      '<UserOutlined onClick={() => current?.user_id && setUserOpen(true)} />',
+    );
+    expect(ticketsSource).not.toContain(
+      '<span onClick={() => current?.user_id && setUserOpen(true)}>',
+    );
     expect(mocks.adminUserInfoIds).toContain(1);
     expect(ticketsSource).toContain('setTrafficOpen(true)');
     expect(ticketsSource).toContain('<UserTrafficModal');
-    expect(ticketsSource).toContain('<SolutionOutlined onClick={() => current?.user_id && setTrafficOpen(true)} />');
-    expect(ticketsSource).not.toContain('<span onClick={() => current?.user_id && setTrafficOpen(true)}>');
+    expect(ticketsSource).toContain(
+      '<SolutionOutlined onClick={() => current?.user_id && setTrafficOpen(true)} />',
+    );
+    expect(ticketsSource).not.toContain(
+      '<span onClick={() => current?.user_id && setTrafficOpen(true)}>',
+    );
     expect(ticketsSource).toContain('key={current?.user_id}');
     expect(ticketsSource).toContain("messageApi.loading('发送中')");
     expect(ticketsSource).toContain('messageApi.destroy()');
@@ -440,28 +549,33 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(ticketsSource).toContain(
       'const [message, setMessage] = useState<string | undefined>(undefined);',
     );
-    expect(replyBlock).toContain("await reply.mutateAsync({ id: ticketId, message });");
+    expect(replyBlock).toContain('await reply.mutateAsync({ id: ticketId, message });');
     expect(replyBlock).toContain('messageApi.destroy();');
     expect(replyBlock).toContain('void ticket.refetch();');
-    expect(replyBlock).toContain('if (inputRef.current) inputRef.current.value = \'\';');
-    expect(replyBlock.indexOf("await reply.mutateAsync({ id: ticketId, message });")).toBeLessThan(
+    expect(replyBlock).toContain("if (inputRef.current) inputRef.current.value = '';");
+    expect(replyBlock.indexOf('await reply.mutateAsync({ id: ticketId, message });')).toBeLessThan(
       replyBlock.indexOf('messageApi.destroy();'),
     );
     expect(replyBlock.indexOf('messageApi.destroy();')).toBeLessThan(
       replyBlock.indexOf('void ticket.refetch();'),
     );
     expect(replyBlock.indexOf('void ticket.refetch();')).toBeLessThan(
-      replyBlock.indexOf('if (inputRef.current) inputRef.current.value = \'\';'),
+      replyBlock.indexOf("if (inputRef.current) inputRef.current.value = '';"),
     );
     expect(ticketsSource).not.toContain("setMessage('');");
     expect(ticketsSource).not.toContain('await ticket.refetch().catch(() => undefined);');
-    expect(mutationBlock).not.toContain("queryClient.invalidateQueries({ queryKey: ['admin', 'tickets'] })");
+    expect(mutationBlock).not.toContain(
+      "queryClient.invalidateQueries({ queryKey: ['admin', 'tickets'] })",
+    );
   });
 
   it('keeps the old unkeyed ticket message map from the bundled chat component', () => {
     const messageSource = ticketsSource.slice(
       ticketsSource.indexOf('{current?.message!.map((item) =>'),
-      ticketsSource.indexOf('<div className="js-chat-form', ticketsSource.indexOf('{current?.message!.map((item) =>')),
+      ticketsSource.indexOf(
+        '<div className="js-chat-form',
+        ticketsSource.indexOf('{current?.message!.map((item) =>'),
+      ),
     );
 
     expect(messageSource).toContain('{current?.message!.map((item) =>');
