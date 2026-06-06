@@ -92,6 +92,26 @@ describe('LegacyDrawer', () => {
     );
   });
 
+  it('can hide the close button for legacy child drawers', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyDrawer
+          closable={false}
+          id="server"
+          open
+          title="编辑安全性配置"
+          width="80%"
+          onClose={vi.fn()}
+        >
+          <div>子抽屉</div>
+        </LegacyDrawer>,
+      );
+    });
+
+    expect(document.querySelector('#server .ant-drawer-title')?.textContent).toBe('编辑安全性配置');
+    expect(document.querySelector('#server .ant-drawer-close')).toBeNull();
+  });
+
   it('closes from the old mask and close button interactions', async () => {
     const onClose = vi.fn();
     await act(async () => {

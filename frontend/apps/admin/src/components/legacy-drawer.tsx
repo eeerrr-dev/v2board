@@ -6,6 +6,7 @@ interface LegacyDrawerProps {
   cancelText?: string;
   children: ReactNode;
   className?: string;
+  closable?: boolean;
   footer?: ReactNode;
   id?: string;
   maskClosable?: boolean;
@@ -28,6 +29,7 @@ export function LegacyDrawer({
   cancelText,
   children,
   className,
+  closable = true,
   footer,
   id,
   maskClosable = true,
@@ -71,9 +73,11 @@ export function LegacyDrawer({
           <div className="ant-drawer-wrapper-body">
             <div className="ant-drawer-header">
               <div className="ant-drawer-title">{title}</div>
-              <button aria-label="Close" className="ant-drawer-close" onClick={onClose}>
-                <LegacyCloseIcon />
-              </button>
+              {closable ? (
+                <button aria-label="Close" className="ant-drawer-close" onClick={onClose}>
+                  <LegacyCloseIcon />
+                </button>
+              ) : null}
             </div>
             <div className="ant-drawer-body">{children}</div>
           </div>

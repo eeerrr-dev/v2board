@@ -1,20 +1,6 @@
 import { cloneElement, useEffect, useMemo, useRef, useState } from 'react';
 import type { HTMLAttributes, MouseEvent as ReactMouseEvent, ReactElement, ReactNode } from 'react';
-import {
-  App,
-  Button,
-  Drawer,
-  Dropdown,
-  Form,
-  Input,
-  List,
-  Menu,
-  Select,
-  Space,
-  Tag,
-  Badge,
-  Tooltip,
-} from 'antd';
+import { App, Dropdown, Form, Input, List, Menu, Select, Space, Tag, Badge, Tooltip } from 'antd';
 import {
   CaretDownOutlined,
   CopyOutlined,
@@ -50,6 +36,7 @@ import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
+import { LegacyDrawer } from '@/components/legacy-drawer';
 import {
   LegacyCaretDownIcon,
   LegacyCaretUpIcon,
@@ -110,6 +97,25 @@ const AVAILABLE_STATUS: Record<number, 'error' | 'warning' | 'processing'> = {
   1: 'warning',
   2: 'processing',
 };
+
+function LegacyServerButtonLoadingIcon() {
+  return (
+    <i aria-label="图标: loading" className="anticon anticon-loading">
+      <svg
+        className="anticon-spin"
+        viewBox="0 0 1024 1024"
+        focusable="false"
+        data-icon="loading"
+        width="1em"
+        height="1em"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3.1 19.9-16 36-35.9 36z" />
+      </svg>
+    </i>
+  );
+}
 
 const ROUTE_ACTION_TEXT: Record<string, string> = {
   block: '禁止访问(域名目标)',
@@ -1544,7 +1550,7 @@ function NodeEditDrawer({
   const initialValues = getLegacyServerInitialValues(type, record);
 
   return (
-    <Drawer
+    <LegacyDrawer
       id="server"
       maskClosable
       open={open}
@@ -1748,7 +1754,7 @@ function NodeEditDrawer({
           </div>
         ) : null}
         {childDrawer.field ? (
-          <Drawer
+          <LegacyDrawer
             closable={false}
             id="server"
             width="80%"
@@ -1757,18 +1763,22 @@ function NodeEditDrawer({
             onClose={() => showChildDrawer()}
           >
             <ServerChildDrawerField type={type} field={childDrawer.field} form={form} />
-          </Drawer>
+          </LegacyDrawer>
         ) : null}
       </Form>
       <div className="v2board-drawer-action">
-        <Button style={{ marginRight: 8 }} onClick={onClose}>
+        <LegacyButton className="ant-btn" style={{ marginRight: 8 }} onClick={onClose}>
           取消
-        </Button>
-        <Button loading={saving} onClick={() => form.submit()} type="primary">
+        </LegacyButton>
+        <LegacyButton
+          className={`ant-btn ant-btn-primary${saving ? ' ant-btn-loading' : ''}`}
+          onClick={() => form.submit()}
+        >
+          {saving ? <LegacyServerButtonLoadingIcon /> : null}
           提交
-        </Button>
+        </LegacyButton>
       </div>
-    </Drawer>
+    </LegacyDrawer>
   );
 }
 

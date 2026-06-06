@@ -746,16 +746,24 @@ describe('ServersPage legacy server group route', () => {
 
   it('uses the original server drawer shell for node editing', () => {
     expect(serversSource).toContain('function NodeEditDrawer');
-    expect(serversSource).toContain('<Drawer');
+    expect(serversSource).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
+    expect(serversSource).toContain('<LegacyDrawer');
     expect(serversSource).toContain('id="server"');
     expect(serversSource).toContain('maskClosable');
     expect(serversSource).toContain("title={id ? '编辑节点' : '新建节点'}");
     expect(serversSource).toContain('width="80%"');
+    expect(serversSource).toContain('closable={false}');
     expect(serversSource).toContain('className="v2board-drawer-action"');
+    expect(serversSource).toContain('<LegacyButton className="ant-btn"');
+    expect(serversSource).toContain(
+      "className={`ant-btn ant-btn-primary${saving ? ' ant-btn-loading' : ''}`}",
+    );
+    expect(serversSource).toContain('{saving ? <LegacyServerButtonLoadingIcon /> : null}');
     expect(serversSource).toContain('提交');
     expect(serversSource).toContain('取消');
     expect(serversSource).not.toContain('function NodeEditModal');
     expect(serversSource).not.toContain('width={720}');
+    expect(serversSource).not.toContain('import {\\n  App,\\n  Button,\\n  Drawer,');
   });
 
   it('keeps the original node edit drawer mounted after close', () => {
