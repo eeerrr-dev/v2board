@@ -554,7 +554,7 @@ export function installLegacyDevWhiteScreenFallback(
 
   const renderIfEmpty = () => {
     const root = document.getElementById('root');
-    if (!appIsEmpty(root, true)) return;
+    if (!appIsEmpty(root)) return;
     renderLegacyWhiteScreenFallback(root);
   };
 

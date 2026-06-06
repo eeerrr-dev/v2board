@@ -31,7 +31,7 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
-    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-18';");
+    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-19';");
     expect(mainSource).toContain(
       'storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`',
     );
@@ -40,7 +40,7 @@ describe('user legacy entrypoint', () => {
     );
     expect(mainSource).toContain('installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);');
     expect(mainSource).toContain(
-      'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {\n    ...legacyWhiteScreenRecoveryConfig,\n    delay: 1000,\n  });',
+      'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {\n    ...legacyWhiteScreenRecoveryConfig,\n    delay: 3000,\n  });',
     );
     expect(mainSource).toContain('installLegacyDevWhiteScreenFallback({ delay: 5000 });');
     expect(mainSource).toContain(
@@ -51,12 +51,12 @@ describe('user legacy entrypoint', () => {
     );
     expect(mainSource.indexOf('installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);')).toBeLessThan(
       mainSource.indexOf(
-        'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {\n    ...legacyWhiteScreenRecoveryConfig,\n    delay: 1000,\n  });',
+        'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {\n    ...legacyWhiteScreenRecoveryConfig,\n    delay: 3000,\n  });',
       ),
     );
     expect(
       mainSource.indexOf(
-        'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {\n    ...legacyWhiteScreenRecoveryConfig,\n    delay: 1000,\n  });',
+        'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {\n    ...legacyWhiteScreenRecoveryConfig,\n    delay: 3000,\n  });',
       ),
     ).toBeLessThan(mainSource.indexOf('installLegacyDevWhiteScreenFallback({ delay: 5000 });'));
     expect(mainSource).toContain("import { useEffect, type ReactNode } from 'react';");
@@ -93,7 +93,7 @@ describe('user legacy entrypoint', () => {
   });
 
   it('installs dev entry recovery before the Vite module graph loads', () => {
-    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-18';");
+    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-19';");
     expect(indexSource).toContain("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;");
     expect(indexSource).toContain('function clearOldRecoveryState()');
     expect(indexSource).toContain("'v2board:white-screen-recovery:',");
@@ -107,9 +107,8 @@ describe('user legacy entrypoint', () => {
     expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1 &&");
     expect(indexSource).toContain("text.indexOf('module script') !== -1");
     expect(indexSource).not.toContain("text.indexOf('/node_modules/.vite/') !== -1\n          );");
-    expect(indexSource).toContain('function legacyMainEmpty(root)');
-    expect(indexSource).toContain("root.querySelector('#main-container .content')");
-    expect(indexSource).toContain('return elementEmpty(root) || legacyMainEmpty(root);');
+    expect(indexSource).not.toContain('function legacyMainEmpty(root)');
+    expect(indexSource).toContain('return elementEmpty(root);');
     expect(indexSource).toContain('if (appEmpty()) recover();');
     expect(indexSource).toContain("window.addEventListener('hashchange', schedule);");
     expect(indexSource).toContain("window.addEventListener('popstate', schedule);");
@@ -118,7 +117,7 @@ describe('user legacy entrypoint', () => {
     expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
     expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;")).toBeLessThan(
       indexSource.indexOf(
-        '<script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-18"',
+        '<script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-19"',
       ),
     );
   });

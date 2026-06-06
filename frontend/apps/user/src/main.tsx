@@ -28,7 +28,7 @@ const legacyHashRouteOptions = {
   publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
   routes: USER_LEGACY_ROUTE_PATHS,
 } as const;
-const legacyRecoveryVersion = 'white-screen-recovery-18';
+const legacyRecoveryVersion = 'white-screen-recovery-19';
 const legacyWhiteScreenRecoveryConfig = {
   storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`,
 } as const;
@@ -42,7 +42,7 @@ if (import.meta.env.DEV) {
   installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);
   installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {
     ...legacyWhiteScreenRecoveryConfig,
-    delay: 1000,
+    delay: 3000,
   });
   installLegacyDevWhiteScreenFallback({ delay: 5000 });
 } else {

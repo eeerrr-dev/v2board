@@ -962,7 +962,7 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
-  it('renders a visible dev fallback when only the legacy main container stays empty', () => {
+  it('does not render the dev fallback when only the legacy main container stays empty', () => {
     vi.useFakeTimers();
     document.body.innerHTML =
       '<div id="root"><div id="page-container"><nav>仪表盘</nav><header>admin@local</header><main id="main-container"><div class="content content-full"></div></main></div></div>';
@@ -972,8 +972,8 @@ describe('normalizeLegacyHashRoute', () => {
     vi.advanceTimersByTime(10);
 
     expect(document.querySelector('#page-container')).not.toBeNull();
-    expect(document.querySelector('#main-container')?.textContent).toContain('页面加载失败');
-    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).not.toBeNull();
+    expect(document.querySelector('#main-container')?.textContent).not.toContain('页面加载失败');
+    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).toBeNull();
     dispose();
   });
 
