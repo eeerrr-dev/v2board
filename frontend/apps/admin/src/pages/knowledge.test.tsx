@@ -107,6 +107,21 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).not.toContain("value={knowledge.body ?? ''}");
   });
 
+  it('uses legacy form controls in the knowledge drawer', () => {
+    expect(source).toContain("import { LegacyInput } from '@/components/legacy-input';");
+    expect(source).toContain("import { LegacySelect } from '@/components/legacy-select';");
+    expect(source).toContain('<LegacyInput');
+    expect(source).toContain('className="ant-input"');
+    expect(source).toContain('defaultValue={knowledge.title}');
+    expect(source).toContain('defaultValue={knowledge.category}');
+    expect(source).toContain('<LegacySelect');
+    expect(source).not.toContain('Input,');
+    expect(source).not.toContain(" Input } from 'antd'");
+    expect(source).not.toContain('<Input');
+    expect(source).not.toContain('value={knowledge.title}');
+    expect(source).not.toContain('value={knowledge.category}');
+  });
+
   it('keeps the full bundled markdown navigation toolbar', () => {
     const toolbarStart = source.indexOf('<div className="navigation-nav left">');
     const toolbarEnd = source.indexOf('<div className="navigation-nav right">', toolbarStart);
@@ -204,15 +219,21 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain("'ko-KR': '한국어'");
     expect(source).toContain('Object.keys(LEGACY_KNOWLEDGE_I18N_TEXT) as LegacyKnowledgeLocale[]');
     expect(source).toContain(').sort();');
-    expect(source).toContain('LEGACY_KNOWLEDGE_LOCALES.map((locale)');
-    expect(source).toContain('<Select.Option value={locale}>');
-    expect(source).toContain('{LEGACY_KNOWLEDGE_I18N_TEXT[locale]}');
-    expect(source).toContain('defaultValue={knowledge.language}');
+    expect(source).toContain(
+      'const LEGACY_KNOWLEDGE_LOCALE_OPTIONS = LEGACY_KNOWLEDGE_LOCALES.map',
+    );
+    expect(source).toContain('label: LEGACY_KNOWLEDGE_I18N_TEXT[locale]');
+    expect(source).toContain('<LegacySelect');
+    expect(source).toContain('options={LEGACY_KNOWLEDGE_LOCALE_OPTIONS}');
+    expect(source).toContain("import { LegacySelect } from '@/components/legacy-select';");
+    expect(source).not.toContain("Select } from 'antd'");
+    expect(source).not.toContain('<Select');
+    expect(source).not.toContain('<Select.Option');
+    expect(source).not.toContain('defaultValue={knowledge.language}');
     expect(source).not.toContain('defaultValue={knowledge.language || 1}');
     expect(source).not.toContain('@v2board/i18n');
     expect(source).not.toContain('SUPPORTED_LOCALES');
     expect(source).not.toContain('fa-IR');
-    expect(source).not.toContain('<Select.Option key={locale} value={locale}>');
   });
 
   it('uses the original fetchLoading-style page spinner for knowledge refetches', () => {

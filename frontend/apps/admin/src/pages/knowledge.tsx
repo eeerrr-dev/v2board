@@ -1,5 +1,5 @@
 import { cloneElement, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { App, Button, Drawer, Input, Modal, Select } from 'antd';
+import { App, Button, Drawer, Modal } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import MarkdownIt from 'markdown-it';
@@ -19,6 +19,8 @@ import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
 import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
+import { LegacySelect } from '@/components/legacy-select';
+import { LegacyInput } from '@/components/legacy-input';
 import {
   LegacyStandaloneTable,
   legacyTableRowKey,
@@ -40,6 +42,10 @@ type LegacyKnowledgeLocale = keyof typeof LEGACY_KNOWLEDGE_I18N_TEXT;
 const LEGACY_KNOWLEDGE_LOCALES = (
   Object.keys(LEGACY_KNOWLEDGE_I18N_TEXT) as LegacyKnowledgeLocale[]
 ).sort();
+const LEGACY_KNOWLEDGE_LOCALE_OPTIONS = LEGACY_KNOWLEDGE_LOCALES.map((locale) => ({
+  value: locale,
+  label: LEGACY_KNOWLEDGE_I18N_TEXT[locale],
+}));
 
 function renderLegacyAdminMarkdown(markdown: string) {
   return legacyAdminMarkdown.render(markdown);
@@ -508,33 +514,33 @@ function KnowledgeEditor({
           <div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">标题</label>
-              <Input
+              <LegacyInput
+                key={`title-${editorKey}`}
+                className="ant-input"
                 placeholder="请输入知识标题"
-                value={knowledge.title}
+                defaultValue={knowledge.title}
                 onChange={(event) => formChange('title', event.target.value)}
               />
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">分类</label>
-              <Input
+              <LegacyInput
+                key={`category-${editorKey}`}
+                className="ant-input"
                 placeholder="请输入分类，分类将会自动归集"
-                value={knowledge.category}
+                defaultValue={knowledge.category}
                 onChange={(event) => formChange('category', event.target.value)}
               />
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">语言</label>
-              <Select
+              <LegacySelect
                 placeholder="请选择知识语言"
-                defaultValue={knowledge.language}
                 style={{ width: '100%' }}
                 value={knowledge.language}
+                options={LEGACY_KNOWLEDGE_LOCALE_OPTIONS}
                 onChange={(value) => formChange('language', value)}
-              >
-                {LEGACY_KNOWLEDGE_LOCALES.map((locale) => (
-                  <Select.Option value={locale}>{LEGACY_KNOWLEDGE_I18N_TEXT[locale]}</Select.Option>
-                ))}
-              </Select>
+              />
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">内容</label>
