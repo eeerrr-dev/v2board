@@ -6,7 +6,10 @@ import dayjs from 'dayjs';
 import { describe, expect, it, vi } from 'vitest';
 import UsersPage from './users';
 
-const usersSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'users.tsx'), 'utf8');
+const usersSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'users.tsx'),
+  'utf8',
+);
 const generateUserModalSource = usersSource.slice(
   usersSource.indexOf('function GenerateUserModal'),
   usersSource.indexOf('function SendMailModal'),
@@ -197,16 +200,20 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain('<UserTrafficModal');
     expect(userTrafficModalSource).toContain('useAdminUserTraffic');
     expect(userTrafficModalSource).toContain('title="流量记录"');
-    expect(userTrafficModalSource).toContain("styles={{ body: { padding: 0 } }}");
+    expect(userTrafficModalSource).toContain('styles={{ body: { padding: 0 } }}');
     expect(userTrafficModalSource).toContain('footer={false}');
     expect(userTrafficModalSource).not.toContain('footer={null}');
-    expect(userTrafficModalSource).toContain("import { LegacySpin } from '@/components/legacy-spin';");
+    expect(userTrafficModalSource).toContain(
+      "import { LegacySpin } from '@/components/legacy-spin';",
+    );
     expect(userTrafficModalSource).toContain('<LegacySpin loading={records.isFetching}>');
     expect(userTrafficModalSource).not.toContain('<Spin');
     expect(userTrafficModalSource).toContain('page: 1');
     expect(userTrafficModalSource).toContain('total: 0');
     expect(userTrafficModalSource).toContain('pagination,');
-    expect(userTrafficModalSource).toContain('const lastUserIdRef = useRef<number | null | undefined>(undefined);');
+    expect(userTrafficModalSource).toContain(
+      'const lastUserIdRef = useRef<number | null | undefined>(undefined);',
+    );
     expect(userTrafficModalSource).toContain('if (!open || userId == null) return;');
     expect(userTrafficModalSource).toContain(
       'lastUserIdRef.current !== undefined && lastUserIdRef.current !== userId',
@@ -214,9 +221,11 @@ describe('UsersPage legacy user manager', () => {
     expect(userTrafficModalSource).toContain('lastUserIdRef.current = userId;');
     expect(userTrafficModalSource).toContain('total: records.data?.total,');
     expect(userTrafficModalSource).toContain('total?: number;');
-    expect(userTrafficModalSource).toContain('key: \'d\'');
+    expect(userTrafficModalSource).toContain("key: 'd'");
     expect(userTrafficModalSource).not.toContain('page: pagination.current');
-    expect(userTrafficModalSource).not.toContain('if (open) setPagination({ page: 1, pageSize: 10, total: 0 });');
+    expect(userTrafficModalSource).not.toContain(
+      'if (open) setPagination({ page: 1, pageSize: 10, total: 0 });',
+    );
     expect(userTrafficModalSource).not.toContain('records.data?.total ?? pagination.total');
     expect(userTrafficModalSource).not.toContain('<Table\n          loading={records.isFetching}');
     expect(userTrafficModalSource).not.toContain('rowKey={(record)');
@@ -235,20 +244,32 @@ describe('UsersPage legacy user manager', () => {
     expect(userManageDrawerSource).toContain('function LegacyDrawerLoadingIcon');
     expect(userManageDrawerSource).toContain('className="anticon anticon-loading"');
     expect(userManageDrawerSource).toContain("color: '#415A94'");
-    expect(userManageDrawerSource).toContain('transfer_enable: user.transfer_enable as unknown as number');
+    expect(userManageDrawerSource).toContain(
+      'transfer_enable: user.transfer_enable as unknown as number',
+    );
     expect(userManageDrawerSource).toContain('balance: user.balance as unknown as number');
     expect(userManageDrawerSource).toContain('expired_at: user.expired_at');
     expect(userManageDrawerSource).toContain('is_admin: user.is_admin');
     expect(userManageDrawerSource).toContain('is_staff: user.is_staff');
-    expect(userManageDrawerSource).toContain('function legacyExpiredAtDefaultValue(value: UserManageFormValues');
+    expect(userManageDrawerSource).toContain(
+      'function legacyExpiredAtDefaultValue(value: UserManageFormValues',
+    );
     expect(userManageDrawerSource).toContain('value !== null && dayjs(1000 * Number(value))');
     expect(userManageDrawerSource).toContain('checked={values.is_admin as unknown as boolean}');
-    expect(userManageDrawerSource).toContain("onChange={(value) => formChange('is_admin', value ? 1 : 0)}");
+    expect(userManageDrawerSource).toContain(
+      "onChange={(value) => formChange('is_admin', value ? 1 : 0)}",
+    );
     expect(userManageDrawerSource).toContain('checked={values.is_staff as unknown as boolean}');
-    expect(userManageDrawerSource).toContain("onChange={(value) => formChange('is_staff', value ? 1 : 0)}");
-    expect(userManageDrawerSource).toContain('transfer_enable: scaled(values.transfer_enable, BYTE_GB)');
+    expect(userManageDrawerSource).toContain(
+      "onChange={(value) => formChange('is_staff', value ? 1 : 0)}",
+    );
+    expect(userManageDrawerSource).toContain(
+      'transfer_enable: scaled(values.transfer_enable, BYTE_GB)',
+    );
     expect(userManageDrawerSource).toContain('function scaled(value: unknown, multiplier: number)');
-    expect(userManageDrawerSource).not.toContain('transfer_enable: scaledRounded(values.transfer_enable, BYTE_GB)');
+    expect(userManageDrawerSource).not.toContain(
+      'transfer_enable: scaledRounded(values.transfer_enable, BYTE_GB)',
+    );
     expect(userManageDrawerSource).toContain('u: scaledRounded(values.u, BYTE_GB)');
     expect(userManageDrawerSource).toContain('d: scaledRounded(values.d, BYTE_GB)');
     expect(userManageDrawerSource).toContain('balance: scaledRounded(values.balance, 100)');
@@ -267,8 +288,12 @@ describe('UsersPage legacy user manager', () => {
     expect(userManageDrawerSource).toContain(
       'defaultValue={legacyDefaultValue(values.device_limit)}',
     );
-    expect(userManageDrawerSource).toContain('defaultValue={legacyExpiredAtDefaultValue(values.expired_at)}');
-    expect(userManageDrawerSource).toContain("onChange={(value) => formChange('expired_at', value ? value.format('X') : null)}");
+    expect(userManageDrawerSource).toContain(
+      'defaultValue={legacyExpiredAtDefaultValue(values.expired_at)}',
+    );
+    expect(userManageDrawerSource).toContain(
+      "onChange={(value) => formChange('expired_at', value ? value.format('X') : null)}",
+    );
     expect(userManageDrawerSource).toContain('defaultValue={values.plan_id || null}');
     expect(userManageDrawerSource).toContain('defaultValue={values.banned ? 1 : 0}');
     expect(userManageDrawerSource).toContain(
@@ -285,19 +310,29 @@ describe('UsersPage legacy user manager', () => {
     expect(userManageDrawerSource).not.toContain('value={values.email}');
     expect(userManageDrawerSource).not.toContain('value={values.password ??');
     expect(userManageDrawerSource).not.toContain('value={values.plan_id || null}');
-    expect(userManageDrawerSource).not.toContain('defaultValue={Number(values.commission_type ?? 0)}');
-    expect(userManageDrawerSource).not.toContain('defaultValue={values.invite_user_email ?? undefined}');
+    expect(userManageDrawerSource).not.toContain(
+      'defaultValue={Number(values.commission_type ?? 0)}',
+    );
+    expect(userManageDrawerSource).not.toContain(
+      'defaultValue={values.invite_user_email ?? undefined}',
+    );
     expect(userManageDrawerSource).not.toContain('defaultValue={values.device_limit ?? undefined}');
     expect(userManageDrawerSource).not.toContain('expiredAt ? expiredAt.unix() : null');
-    expect(userManageDrawerSource).not.toContain('expired_at: user.expired_at == null ? null : dayjs');
-    expect(userManageDrawerSource).not.toContain('defaultValue={values.commission_rate ?? undefined}');
+    expect(userManageDrawerSource).not.toContain(
+      'expired_at: user.expired_at == null ? null : dayjs',
+    );
+    expect(userManageDrawerSource).not.toContain(
+      'defaultValue={values.commission_rate ?? undefined}',
+    );
     expect(userManageDrawerSource).not.toContain('defaultValue={values.discount ?? undefined}');
     expect(userManageDrawerSource).not.toContain('defaultValue={values.speed_limit ?? undefined}');
     expect(userManageDrawerSource).not.toContain('defaultValue={values.remarks ?? undefined}');
     expect(userManageDrawerSource).toContain(
       'if ((payload as Record<string, unknown>).invite_user) {',
     );
-    expect(userManageDrawerSource).toContain('delete (payload as Record<string, unknown>).invite_user');
+    expect(userManageDrawerSource).toContain(
+      'delete (payload as Record<string, unknown>).invite_user',
+    );
     expect(userManageDrawerSource).toContain('<Select.Option key={Math.random()} value={plan.id}>');
     expect(userManageDrawerSource).not.toContain('<Select.Option key={plan.id} value={plan.id}>');
     expect(userManageDrawerSource).not.toContain('<Form');
@@ -335,8 +370,12 @@ describe('UsersPage legacy user manager', () => {
     expect(assignOrderModalSource).toContain('setSubmit(assignOrderSubmit(user?.email));');
     expect(assignOrderModalSource).not.toContain('setSubmit({ email: user.email });');
     expect(assignOrderModalSource).toContain('.mutateAsync(submit)');
-    expect(assignOrderModalSource).toContain('<label htmlFor="example-text-input-alt">请选择订阅</label>');
-    expect(assignOrderModalSource).toContain('<Select.Option value={plan.value} key={Math.random()}>');
+    expect(assignOrderModalSource).toContain(
+      '<label htmlFor="example-text-input-alt">请选择订阅</label>',
+    );
+    expect(assignOrderModalSource).toContain(
+      '<Select.Option value={plan.value} key={Math.random()}>',
+    );
     expect(assignOrderModalSource).toContain('<Select.Option value={period} key={Math.random()}>');
     expect(assignOrderModalSource).not.toContain('options={plans}');
     expect(assignOrderModalSource).not.toContain('options={Object.entries(PERIOD_TEXT)');
@@ -352,12 +391,22 @@ describe('UsersPage legacy user manager', () => {
     expect(generateUserModalSource).toContain('!submit.generate_count');
     expect(generateUserModalSource).toContain('!submit.email_prefix');
     expect(generateUserModalSource).toContain('<DatePicker');
-    expect(generateUserModalSource).toContain('defaultValue={submit.expired_at ? dayjs(1000 * Number(submit.expired_at)) : undefined}');
-    expect(generateUserModalSource).not.toContain('value={submit.expired_at ? dayjs(1000 * Number(submit.expired_at)) : null}');
-    expect(generateUserModalSource).toContain('<label htmlFor="example-text-input-alt">订阅计划</label>');
+    expect(generateUserModalSource).toContain(
+      'defaultValue={submit.expired_at ? dayjs(1000 * Number(submit.expired_at)) : undefined}',
+    );
+    expect(generateUserModalSource).not.toContain(
+      'value={submit.expired_at ? dayjs(1000 * Number(submit.expired_at)) : null}',
+    );
+    expect(generateUserModalSource).toContain(
+      '<label htmlFor="example-text-input-alt">订阅计划</label>',
+    );
     expect(generateUserModalSource).toContain('<Select.Option value={null}>无</Select.Option>');
-    expect(generateUserModalSource).toContain('<Select.Option key={Math.random()} value={plan.value}>');
-    expect(generateUserModalSource).not.toContain("options={[{ value: null, label: '无' }, ...plans]}");
+    expect(generateUserModalSource).toContain(
+      '<Select.Option key={Math.random()} value={plan.value}>',
+    );
+    expect(generateUserModalSource).not.toContain(
+      "options={[{ value: null, label: '无' }, ...plans]}",
+    );
     expect(generateUserModalSource).not.toContain('id="generate-user-plan"');
     expect(generateUserModalSource).not.toContain('<Form');
     expect(generateUserModalSource).not.toContain('rules={[{ required: true }]}');
@@ -389,7 +438,9 @@ describe('UsersPage legacy user manager', () => {
     expect(sendMailModalSource).toContain('收件人');
     expect(sendMailModalSource).toContain('<label htmlFor="example-text-input-alt">收件人</label>');
     expect(sendMailModalSource).toContain('<label htmlFor="example-text-input-alt">主题</label>');
-    expect(sendMailModalSource).toContain('<label htmlFor="example-text-input-alt">发送内容</label>');
+    expect(sendMailModalSource).toContain(
+      '<label htmlFor="example-text-input-alt">发送内容</label>',
+    );
     expect(sendMailModalSource).toContain("filter.length ? '过滤用户' : '全部用户'");
     expect(sendMailModalSource).toContain('placeholder="请输入邮件主题"');
     expect(sendMailModalSource).toContain('rows={12}');
@@ -407,7 +458,9 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).not.toContain('function LegacyFilterButton');
     expect(usersSource).toContain('<LegacyFilterDrawer');
     expect(usersSource).toContain('key={query.filter.length}');
-    expect(usersSource).toContain("type={query.filter.length > 0 ? 'primary' : ('' as ButtonProps['type'])}");
+    expect(usersSource).toContain(
+      "className={`ant-btn${query.filter.length > 0 ? ' ant-btn-primary' : ''}`}",
+    );
     expect(usersSource).not.toContain("type={query.filter.length > 0 ? 'primary' : 'default'}");
     expect(usersSource).toContain("key: 'expired_at'");
     expect(usersSource).toContain("type: 'date'");
@@ -433,7 +486,9 @@ describe('UsersPage legacy user manager', () => {
     expect(legacyFilterDrawerSource).toContain('selected.options!.map');
     expect(legacyFilterDrawerSource).not.toContain('keys[keyIndex]?.condition ?? []');
     expect(legacyFilterDrawerSource).not.toContain('selected.options ?? []');
-    expect(legacyFilterDrawerSource).toContain('<Select.Option value={option.value}>{option.key}</Select.Option>');
+    expect(legacyFilterDrawerSource).toContain(
+      '<Select.Option value={option.value}>{option.key}</Select.Option>',
+    );
     expect(legacyFilterDrawerSource).not.toContain('legacy-filter-key');
     expect(legacyFilterDrawerSource).not.toContain('legacy-filter-condition');
     expect(legacyFilterDrawerSource).not.toContain('legacy-filter-value');
@@ -471,8 +526,10 @@ describe('UsersPage legacy user manager', () => {
 
   it('preserves the original row right-click action menu', () => {
     expect(usersSource).toContain('id="v2board-table-dropdown"');
-    expect(usersSource).toContain('ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical');
-    expect(usersSource).toContain('onContextMenu: (event) =>');
+    expect(usersSource).toContain(
+      'ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical',
+    );
+    expect(usersSource).toContain('onContextMenu={(event) =>');
     expect(usersSource).toContain('event.preventDefault()');
     expect(usersSource).toContain('event.clientY');
     expect(usersSource).toContain('event.clientX');
@@ -482,50 +539,70 @@ describe('UsersPage legacy user manager', () => {
   });
 
   it('keeps the original anchor labels in user operation dropdowns', () => {
+    const rowActionStart = usersSource.indexOf('const renderUserActions');
     const rowActionSource = usersSource.slice(
-      usersSource.indexOf("title: '操作'"),
-      usersSource.indexOf('[groupMap, runUserAction]'),
+      rowActionStart,
+      usersSource.indexOf('return (', rowActionStart),
     );
     const toolbarSource = usersSource.slice(
       usersSource.indexOf('className="v2board-table-action"'),
-      usersSource.indexOf('<span className="float-right">'),
+      usersSource.indexOf('<LegacyButton className="ant-btn ml-2"'),
     );
 
-    expect(usersSource).toContain('function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)');
-    expect(usersSource).toContain('return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;');
+    expect(usersSource).toContain(
+      'function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)',
+    );
+    expect(usersSource).toContain(
+      'return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;',
+    );
     expect(rowActionSource).toContain('<LegacyDropdown');
     expect(rowActionSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
-    expect(rowActionSource).toContain('overlay={(');
+    expect(rowActionSource).toContain('overlay={');
     expect(rowActionSource).toContain('<Menu>');
-    expect(rowActionSource).toContain('<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>');
-    expect(rowActionSource).toContain("<a onClick={() => runUserAction('edit', row)}><EditOutlined /> 编辑</a>");
-    expect(rowActionSource).toContain("<a onClick={() => runUserAction('assign', row)}><PlusOutlined /> 分配订单</a>");
-    expect(rowActionSource).toContain("<a onClick={() => runUserAction('copy', row)}><CopyOutlined /> 复制订阅URL</a>");
-    expect(rowActionSource).toContain("<a onClick={() => runUserAction('reset', row)}><ReloadOutlined /> 重置UUID及订阅URL</a>");
-    expect(rowActionSource).toContain("<Menu.Item key=\"orders\" onClick={() => runUserAction('orders', row)}>");
-    expect(rowActionSource).toContain('<a><AccountBookOutlined /> TA的订单</a>');
-    expect(rowActionSource).toContain("<Menu.Item key=\"invite\" onClick={() => runUserAction('invite', row)}>");
-    expect(rowActionSource).toContain('<a><UsergroupAddOutlined /> TA的邀请</a>');
-    expect(rowActionSource).toContain("<a onClick={() => runUserAction('traffic', row)}><SolutionOutlined /> TA的流量记录</a>");
-    expect(rowActionSource).toContain("<a onClick={() => runUserAction('delete', row)}><DeleteOutlined /> 删除用户</a>");
+    expect(rowActionSource).toContain(
+      '<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>',
+    );
+    expect(rowActionSource).toContain("runUserAction('edit', row)");
+    expect(rowActionSource).toContain('<LegacyEditIcon /> 编辑');
+    expect(rowActionSource).toContain("runUserAction('assign', row)");
+    expect(rowActionSource).toContain('<LegacyPlusIcon /> 分配订单');
+    expect(rowActionSource).toContain("runUserAction('copy', row)");
+    expect(rowActionSource).toContain('<LegacyCopyIcon /> 复制订阅URL');
+    expect(rowActionSource).toContain("runUserAction('reset', row)");
+    expect(rowActionSource).toContain('<LegacyReloadIcon /> 重置UUID及订阅URL');
+    expect(rowActionSource).toContain(
+      '<Menu.Item key="orders" onClick={() => runUserAction(\'orders\', row)}>',
+    );
+    expect(rowActionSource).toContain('<LegacyAccountBookIcon /> TA的订单');
+    expect(rowActionSource).toContain(
+      '<Menu.Item key="invite" onClick={() => runUserAction(\'invite\', row)}>',
+    );
+    expect(rowActionSource).toContain('<LegacyUsergroupAddIcon /> TA的邀请');
+    expect(rowActionSource).toContain("runUserAction('traffic', row)");
+    expect(rowActionSource).toContain('<LegacySolutionIcon /> TA的流量记录');
+    expect(rowActionSource).toContain("runUserAction('delete', row)");
+    expect(rowActionSource).toContain('<LegacyDeleteIcon /> 删除用户');
     expect(rowActionSource).not.toContain('label: <span>');
     expect(rowActionSource).not.toContain('menu={{');
     expect(rowActionSource).not.toContain('items: [');
 
     expect(usersSource).toContain('type AnchorHTMLAttributes');
-    expect(usersSource).toContain('function legacyDisabledAnchorProps(disabled: boolean): AnchorHTMLAttributes<HTMLAnchorElement>');
-    expect(usersSource).toContain('return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;');
-    expect(toolbarSource).toContain('<LegacyDropdown');
-    expect(toolbarSource).toContain('overlay={(');
-    expect(toolbarSource).toContain('<Menu>');
-    expect(toolbarSource).toContain('<FileExcelOutlined /> 导出CSV');
-    expect(toolbarSource).toContain('<a onClick={() => setMailOpen(true)}><MailOutlined /> 发送邮件</a>');
-    expect(toolbarSource).toContain('<Menu.Item key="ban" disabled={!query.filter.length}>');
-    expect(toolbarSource).toContain(
-      '{...legacyDisabledAnchorProps(!query.filter.length)}',
+    expect(usersSource).toContain(
+      'function legacyDisabledAnchorProps(disabled: boolean): AnchorHTMLAttributes<HTMLAnchorElement>',
     );
-    expect(toolbarSource).toContain('<StopOutlined /> 批量封禁');
-    expect(toolbarSource).toContain('<DeleteOutlined /> 批量删除');
+    expect(usersSource).toContain(
+      'return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;',
+    );
+    expect(toolbarSource).toContain('<LegacyDropdown');
+    expect(toolbarSource).toContain('overlay={');
+    expect(toolbarSource).toContain('<Menu>');
+    expect(toolbarSource).toContain('<LegacyFileExcelIcon /> 导出CSV');
+    expect(toolbarSource).toContain('onClick={() => setMailOpen(true)}');
+    expect(toolbarSource).toContain('<LegacyMailIcon /> 发送邮件');
+    expect(toolbarSource).toContain('<Menu.Item key="ban" disabled={!query.filter.length}>');
+    expect(toolbarSource).toContain('{...legacyDisabledAnchorProps(!query.filter.length)}');
+    expect(toolbarSource).toContain('<LegacyStopIcon /> 批量封禁');
+    expect(toolbarSource).toContain('<LegacyDeleteIcon /> 批量删除');
     expect(toolbarSource).not.toContain('label: <span>');
     expect(toolbarSource).not.toContain('menu={{');
     expect(toolbarSource).not.toContain('items: [');
@@ -616,19 +693,28 @@ describe('UsersPage legacy user manager', () => {
   });
 
   it('uses the old online badge calculation from the row t field only', () => {
-    expect(usersSource).toContain("const legacyOnlineAt = (row as AdminUserRow & { t?: number | null }).t");
+    expect(usersSource).toContain(
+      'const legacyOnlineAt = (row as AdminUserRow & { t?: number | null }).t',
+    );
     expect(usersSource).toContain('Date.now() / 1000 - 600 > Number(legacyOnlineAt)');
-    expect(usersSource).toContain("legacyOnlineAt ? `最后在线${formatDateTime(Number(legacyOnlineAt))}` : '从未在线'");
-    expect(usersSource).toContain("<Badge status={online ? 'success' : 'default'} />{email}");
+    expect(usersSource).toContain(
+      "legacyOnlineAt ? `最后在线${formatDateTime(Number(legacyOnlineAt))}` : '从未在线'",
+    );
+    expect(usersSource).toContain('<LegacyUserStatusBadge online={online} />');
+    expect(usersSource).toContain('ant-badge ant-badge-status ant-badge-not-a-wrapper');
+    expect(usersSource).toContain(
+      "ant-badge-status-dot ant-badge-status-${online ? 'success' : 'default'}",
+    );
     expect(usersSource).not.toContain("<Badge status={online ? 'success' : 'default'} /> {email}");
     expect(usersSource).not.toContain('row.last_login_at ?? 0');
   });
 
   it('keeps the legacy device-count null handling and sorter', () => {
-    expect(usersSource).toContain("key: 'updated_at'");
-    expect(usersSource).toContain("sorter: (a, b) => (a.alive_ip as number) - (b.alive_ip as number)");
+    expect(usersSource).toContain("sortableHeader('设备数', 'updated_at')");
     expect(usersSource).toContain('const deviceCount = row.alive_ip !== null ? row.alive_ip : 0;');
-    expect(usersSource).toContain("const deviceLimit = row.device_limit !== null ? row.device_limit : '∞';");
+    expect(usersSource).toContain(
+      "const deviceLimit = row.device_limit !== null ? row.device_limit : '∞';",
+    );
     expect(usersSource).not.toContain('row.alive_ip ?? 0');
     expect(usersSource).not.toContain("value ?? '∞'");
   });
@@ -638,8 +724,12 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain("const LEGACY_USER_PAGE_SIZE_KEY = 'user_manage_page_size'");
     expect(usersSource).toContain('function readLegacyUserPageSize()');
     expect(usersSource).toContain('pageSize: readLegacyUserPageSize()');
-    expect(usersSource).toContain('writeLegacyHabit(LEGACY_USER_PAGE_SIZE_KEY, pagination.pageSize)');
-    expect(usersSource).toContain('const legacyHabit = stored as unknown as Record<string, unknown>;');
+    expect(usersSource).toContain(
+      'writeLegacyHabit(LEGACY_USER_PAGE_SIZE_KEY, pagination.pageSize)',
+    );
+    expect(usersSource).toContain(
+      'const legacyHabit = stored as unknown as Record<string, unknown>;',
+    );
     expect(usersSource).toContain('legacyHabit[key] = value;');
     expect(usersSource).toContain(
       'window.localStorage.setItem(LEGACY_HABIT_KEY, JSON.stringify(legacyHabit));',
@@ -656,20 +746,22 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain('const queryClient = useQueryClient();');
     expect(usersSource).toContain("queryClient.removeQueries({ queryKey: ['admin', 'users'] });");
     expect(usersSource).toContain("queryClient.removeQueries({ queryKey: ['admin', 'user'] });");
-    expect(usersSource).toContain('...pagination,');
-    expect(usersSource).toContain("sort_type: singleSorter?.order === 'ascend' ? 'ASC' : 'DESC'");
+    expect(usersSource).toContain('return { ...state, ...pagination };');
+    expect(usersSource).toContain(
+      "sort_type: state.sort === sort && state.sort_type === 'ASC' ? 'DESC' : 'ASC'",
+    );
     expect(usersSource).not.toContain('current: pagination.current ?? state.current');
     expect(usersSource).not.toContain('const nextPageSize = pagination.pageSize ?? state.pageSize');
   });
 
   it('keeps the bundled user pagination total as the direct response field', () => {
-    expect(usersSource).toContain('total: users.data?.total,');
+    expect(usersSource).toContain('total={users.data?.total}');
     expect(usersSource).not.toContain('total: users.data?.total ?? 0');
   });
 
   it('keeps the legacy user toolbar button group spacing', () => {
-    expect(usersSource).toContain('<Button.Group>');
-    expect(usersSource).toContain('</Button.Group>');
+    expect(usersSource).toContain('<div className="ant-btn-group">');
+    expect(usersSource).toContain('</div>');
     expect(usersSource).not.toContain('<Space>');
     expect(usersSource).not.toContain('  Space,');
   });
@@ -685,8 +777,8 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain('message.destroy()');
     expect(usersSource).toContain("type: 'text/plain,charset=UTF-8'");
     expect(usersSource).not.toContain("type: 'text/plain;charset=UTF-8'");
-    expect(usersSource).toContain('downloadText(`${formatDateTime(Date.now() / 1000)}.csv`');
-    expect(usersSource).toContain('downloadText(`${formatDateTime(Date.now() / 1000)}.csv`, response.buffer)');
+    expect(usersSource).toContain('`${formatDateTime(Date.now() / 1000)}.csv`');
+    expect(usersSource).toContain('response.buffer');
     expect(usersSource).toContain('new Blob([buffer as BlobPart]');
     expect(usersSource).not.toContain("String(text ?? '')");
     expect(usersSource).not.toContain('payload.buffer ?? payload.data');

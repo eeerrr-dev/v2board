@@ -1,37 +1,7 @@
 import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
-import {
-  App,
-  Badge,
-  Button,
-  DatePicker,
-  Dropdown,
-  Input,
-  Menu,
-  Modal,
-  Select,
-  Table,
-  Tag,
-  Tooltip,
-} from 'antd';
-import type { ButtonProps, DropdownProps, TablePaginationConfig, TableProps } from 'antd';
-import {
-  AccountBookOutlined,
-  CaretDownOutlined,
-  CopyOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  FileExcelOutlined,
-  FilterOutlined,
-  LoadingOutlined,
-  MailOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  SelectOutlined,
-  SolutionOutlined,
-  StopOutlined,
-  UserAddOutlined,
-  UsergroupAddOutlined,
-} from '@ant-design/icons';
+import { App, DatePicker, Dropdown, Input, Menu, Modal, Select, Tooltip } from 'antd';
+import type { DropdownProps } from 'antd';
+import { LoadingOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -58,10 +28,36 @@ import { UserTrafficModal } from '@/components/user-traffic-modal';
 import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-filter-drawer';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { LegacyButton } from '@/components/legacy-button';
+import {
+  LegacyAccountBookIcon,
+  LegacyCaretDownIcon,
+  LegacyCopyIcon,
+  LegacyDeleteIcon,
+  LegacyEditIcon,
+  LegacyFileExcelIcon,
+  LegacyFilterIcon,
+  LegacyMailIcon,
+  LegacyPlusIcon,
+  LegacyReloadIcon,
+  LegacySelectIcon,
+  LegacySolutionIcon,
+  LegacyStopIcon,
+  LegacyUserAddIcon,
+  LegacyUsergroupAddIcon,
+} from '@/components/legacy-ant-icon';
+import {
+  LegacyStandaloneTable,
+  LegacyTablePagination,
+  legacyTableRowKey,
+  type LegacyStandaloneTableHeader,
+  type LegacyTablePaginationChange,
+} from '@/components/legacy-standalone-table';
 
-type QueryState = TablePaginationConfig & {
+type QueryState = {
   current: number;
   pageSize: number;
+  total?: number;
   filter: AdminFilter[];
   sort?: string;
   sort_type?: 'ASC' | 'DESC';
@@ -201,6 +197,25 @@ function downloadGeneratedUserCsv(buffer: unknown) {
   anchor.download = `USER ${dayjs().format('YYYY-MM-DD HH:mm:ss')}.csv`;
   anchor.click();
   window.URL.revokeObjectURL(url);
+}
+
+const LEGACY_SORTABLE_CELL_CLASS = 'ant-table-column-has-actions ant-table-column-has-sorters';
+
+function LegacyUserStatusBadge({ online }: { online: boolean }) {
+  return (
+    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
+      <span className={`ant-badge-status-dot ant-badge-status-${online ? 'success' : 'default'}`} />
+      <span className="ant-badge-status-text" />
+    </span>
+  );
+}
+
+function LegacyTag({ children, color }: { children: ReactNode; color: 'green' | 'red' }) {
+  return <span className={`ant-tag ant-tag-${color}`}>{children}</span>;
+}
+
+function userRowKey(index: number) {
+  return legacyTableRowKey(index);
 }
 
 export default function UsersPage() {
@@ -360,161 +375,129 @@ export default function UsersPage() {
     if (key === 'delete') deleteUser(row);
   };
 
-  const columns = useMemo<TableProps<AdminUserRow>['columns']>(
-    () => [
-      { title: 'ID', dataIndex: 'id', key: 'id', sorter: true },
-      {
-        title: '邮箱',
-        dataIndex: 'email',
-        key: 'email',
-        render: (email: string, row) => {
-          const legacyOnlineAt = (row as AdminUserRow & { t?: number | null }).t;
-          const online = !(Date.now() / 1000 - 600 > Number(legacyOnlineAt));
-          return (
-            <Tooltip
-              placement="top"
-              title={
-                legacyOnlineAt ? `最后在线${formatDateTime(Number(legacyOnlineAt))}` : '从未在线'
-              }
-            >
-              <Badge status={online ? 'success' : 'default'} />{email}
-            </Tooltip>
-          );
-        },
-      },
-      {
-        title: '状态',
-        dataIndex: 'banned',
-        key: 'banned',
-        sorter: true,
-        render: (banned: 0 | 1) => (
-          <Tag color={banned ? 'red' : 'green'}>{banned ? '封禁' : '正常'}</Tag>
-        ),
-      },
-      {
-        title: '订阅',
-        dataIndex: 'plan_name',
-        key: 'plan_id',
-        sorter: true,
-        render: (value: string | null) => value || '-',
-      },
-      {
-        title: '权限组',
-        dataIndex: 'group_id',
-        key: 'group_id',
-        sorter: true,
-        render: (value: number | null) => (value != null ? groupMap.get(value) ?? '-' : '-'),
-      },
-      {
-        title: '已用(G)',
-        dataIndex: 'total_used',
-        key: 'total_used',
-        sorter: true,
-        render: (value: number | string, row) => {
-          const usedOverLimit =
-            parseFloat(String(value)) > parseFloat(String(row.transfer_enable));
-          return (
-            <Tag color={usedOverLimit ? 'red' : 'green'}>
-              {value}
-            </Tag>
-          );
-        },
-      },
-      {
-        title: '流量(G)',
-        dataIndex: 'transfer_enable',
-        key: 'transfer_enable',
-        sorter: true,
-      },
-      {
-        title: '设备数',
-        dataIndex: 'device_limit',
-        key: 'updated_at',
-        sorter: (a, b) => (a.alive_ip as number) - (b.alive_ip as number),
-        render: (value: number | null, row) => {
-          const deviceCount = row.alive_ip !== null ? row.alive_ip : 0;
-          const deviceLimit = row.device_limit !== null ? row.device_limit : '∞';
-          const text = `${deviceCount} / ${deviceLimit}`;
-          return row.ips ? (
-            <Tooltip placement="top" title={row.ips}>
-              {text}
-            </Tooltip>
-          ) : (
-            text
-          );
-        },
-      },
-      {
-        title: '到期时间',
-        dataIndex: 'expired_at',
-        key: 'expired_at',
-        sorter: true,
-        render: (value: number | null) => (
-          <Tag color={value !== null && value < Date.now() / 1000 ? 'red' : 'green'}>
-            {value ? formatDateMinuteSlash(value) : value === null ? '长期有效' : '-'}
-          </Tag>
-        ),
-      },
-      { title: '余额', dataIndex: 'balance', key: 'balance', sorter: true },
-      {
-        title: '佣金',
-        dataIndex: 'commission_balance',
-        key: 'commission_balance',
-        sorter: true,
-      },
-      {
-        title: '加入时间',
-        dataIndex: 'created_at',
-        key: 'created_at',
-        sorter: true,
-        render: (value: number) => formatDateMinuteSlash(value),
-      },
-      {
-        title: '操作',
-        dataIndex: 'action',
-        key: 'action',
-        align: 'right',
-        fixed: 'right',
-        render: (_: unknown, row) => (
-          <LegacyDropdown
-            trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
-            overlay={(
-              <Menu>
-                <Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>
-                  <a onClick={() => runUserAction('edit', row)}><EditOutlined /> 编辑</a>
-                </Menu.Item>
-                <Menu.Item key="assign" onContextMenu={(event) => event.stopPropagation()}>
-                  <a onClick={() => runUserAction('assign', row)}><PlusOutlined /> 分配订单</a>
-                </Menu.Item>
-                <Menu.Item key="copy">
-                  <a onClick={() => runUserAction('copy', row)}><CopyOutlined /> 复制订阅URL</a>
-                </Menu.Item>
-                <Menu.Item key="reset">
-                  <a onClick={() => runUserAction('reset', row)}><ReloadOutlined /> 重置UUID及订阅URL</a>
-                </Menu.Item>
-                <Menu.Item key="orders" onClick={() => runUserAction('orders', row)}>
-                  <a><AccountBookOutlined /> TA的订单</a>
-                </Menu.Item>
-                <Menu.Item key="invite" onClick={() => runUserAction('invite', row)}>
-                  <a><UsergroupAddOutlined /> TA的邀请</a>
-                </Menu.Item>
-                <Menu.Item key="traffic" onContextMenu={(event) => event.stopPropagation()}>
-                  <a onClick={() => runUserAction('traffic', row)}><SolutionOutlined /> TA的流量记录</a>
-                </Menu.Item>
-                <Menu.Item key="delete">
-                  <a onClick={() => runUserAction('delete', row)}><DeleteOutlined /> 删除用户</a>
-                </Menu.Item>
-              </Menu>
-            )}
-          >
-            <a ref={legacyHref()}>
-              操作 <CaretDownOutlined />
+  const data = users.data?.data ?? [];
+  const sortUserTable = (sort: string) =>
+    setQuery((state) => ({
+      ...state,
+      current: 1,
+      sort,
+      sort_type: state.sort === sort && state.sort_type === 'ASC' ? 'DESC' : 'ASC',
+    }));
+  const sortableHeader = (title: string, sort: string): LegacyStandaloneTableHeader => ({
+    title,
+    className: LEGACY_SORTABLE_CELL_CLASS,
+    onClick: () => sortUserTable(sort),
+    sortable: true,
+  });
+  const headers: LegacyStandaloneTableHeader[] = [
+    sortableHeader('ID', 'id'),
+    { title: '邮箱' },
+    sortableHeader('状态', 'banned'),
+    sortableHeader('订阅', 'plan_id'),
+    sortableHeader('权限组', 'group_id'),
+    sortableHeader('已用(G)', 'total_used'),
+    sortableHeader('流量(G)', 'transfer_enable'),
+    sortableHeader('设备数', 'updated_at'),
+    sortableHeader('到期时间', 'expired_at'),
+    sortableHeader('余额', 'balance'),
+    sortableHeader('佣金', 'commission_balance'),
+    sortableHeader('加入时间', 'created_at'),
+    { title: '操作', alignRight: true, fixedRight: true },
+  ];
+
+  const updateTablePagination = (pagination: LegacyTablePaginationChange) =>
+    setQuery((state) => {
+      writeLegacyHabit(LEGACY_USER_PAGE_SIZE_KEY, pagination.pageSize);
+      return { ...state, ...pagination };
+    });
+
+  const renderUserEmail = (row: AdminUserRow) => {
+    const legacyOnlineAt = (row as AdminUserRow & { t?: number | null }).t;
+    const online = !(Date.now() / 1000 - 600 > Number(legacyOnlineAt));
+    return (
+      <Tooltip
+        placement="top"
+        title={legacyOnlineAt ? `最后在线${formatDateTime(Number(legacyOnlineAt))}` : '从未在线'}
+      >
+        <span>
+          <LegacyUserStatusBadge online={online} />
+          {row.email}
+        </span>
+      </Tooltip>
+    );
+  };
+
+  const renderUserDeviceLimit = (row: AdminUserRow) => {
+    const deviceCount = row.alive_ip !== null ? row.alive_ip : 0;
+    const deviceLimit = row.device_limit !== null ? row.device_limit : '∞';
+    const text = `${deviceCount} / ${deviceLimit}`;
+    return row.ips ? (
+      <Tooltip placement="top" title={row.ips}>
+        {text}
+      </Tooltip>
+    ) : (
+      text
+    );
+  };
+
+  const renderUserExpiredAt = (value: number | null) => (
+    <LegacyTag color={value !== null && value < Date.now() / 1000 ? 'red' : 'green'}>
+      {value ? formatDateMinuteSlash(value) : value === null ? '长期有效' : '-'}
+    </LegacyTag>
+  );
+
+  const renderUserActions = (row: AdminUserRow) => (
+    <LegacyDropdown
+      trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+      overlay={
+        <Menu>
+          <Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>
+            <a onClick={() => runUserAction('edit', row)}>
+              <LegacyEditIcon /> 编辑
             </a>
-          </LegacyDropdown>
-        ),
-      },
-    ],
-    [groupMap, runUserAction],
+          </Menu.Item>
+          <Menu.Item key="assign" onContextMenu={(event) => event.stopPropagation()}>
+            <a onClick={() => runUserAction('assign', row)}>
+              <LegacyPlusIcon /> 分配订单
+            </a>
+          </Menu.Item>
+          <Menu.Item key="copy">
+            <a onClick={() => runUserAction('copy', row)}>
+              <LegacyCopyIcon /> 复制订阅URL
+            </a>
+          </Menu.Item>
+          <Menu.Item key="reset">
+            <a onClick={() => runUserAction('reset', row)}>
+              <LegacyReloadIcon /> 重置UUID及订阅URL
+            </a>
+          </Menu.Item>
+          <Menu.Item key="orders" onClick={() => runUserAction('orders', row)}>
+            <a>
+              <LegacyAccountBookIcon /> TA的订单
+            </a>
+          </Menu.Item>
+          <Menu.Item key="invite" onClick={() => runUserAction('invite', row)}>
+            <a>
+              <LegacyUsergroupAddIcon /> TA的邀请
+            </a>
+          </Menu.Item>
+          <Menu.Item key="traffic" onContextMenu={(event) => event.stopPropagation()}>
+            <a onClick={() => runUserAction('traffic', row)}>
+              <LegacySolutionIcon /> TA的流量记录
+            </a>
+          </Menu.Item>
+          <Menu.Item key="delete">
+            <a onClick={() => runUserAction('delete', row)}>
+              <LegacyDeleteIcon /> 删除用户
+            </a>
+          </Menu.Item>
+        </Menu>
+      }
+    >
+      <a ref={legacyHref()}>
+        操作 <LegacyCaretDownIcon />
+      </a>
+    </LegacyDropdown>
   );
 
   return (
@@ -523,20 +506,26 @@ export default function UsersPage() {
         <div className="block border-bottom">
           <div className="bg-white">
             <div className="v2board-table-action" style={{ padding: 15 }}>
-              <Tooltip title="Tips：可以使用过滤器过滤后再使用操作对过滤的用户进行操作。" placement="right">
-                <Button.Group>
+              <Tooltip
+                title="Tips：可以使用过滤器过滤后再使用操作对过滤的用户进行操作。"
+                placement="right"
+              >
+                <div className="ant-btn-group">
                   <LegacyFilterDrawer
                     key={query.filter.length}
                     value={query.filter}
                     keys={filterKeys}
                     onChange={setFilter}
                   >
-                    <Button type={query.filter.length > 0 ? 'primary' : ('' as ButtonProps['type'])}>
-                      <FilterOutlined /> 过滤器
-                    </Button>
+                    <LegacyButton
+                      className={`ant-btn${query.filter.length > 0 ? ' ant-btn-primary' : ''}`}
+                    >
+                      <LegacyFilterIcon />
+                      <span> 过滤器</span>
+                    </LegacyButton>
                   </LegacyFilterDrawer>
                   <LegacyDropdown
-                    overlay={(
+                    overlay={
                       <Menu>
                         <Menu.Item key="csv">
                           <a
@@ -546,7 +535,10 @@ export default function UsersPage() {
                                 .mutateAsync(query.filter)
                                 .then((response) => {
                                   message.destroy();
-                                  downloadText(`${formatDateTime(Date.now() / 1000)}.csv`, response.buffer);
+                                  downloadText(
+                                    `${formatDateTime(Date.now() / 1000)}.csv`,
+                                    response.buffer,
+                                  );
                                 })
                                 .catch((error) => {
                                   message.destroy();
@@ -554,11 +546,13 @@ export default function UsersPage() {
                                 });
                             }}
                           >
-                            <FileExcelOutlined /> 导出CSV
+                            <LegacyFileExcelIcon /> 导出CSV
                           </a>
                         </Menu.Item>
                         <Menu.Item key="mail">
-                          <a onClick={() => setMailOpen(true)}><MailOutlined /> 发送邮件</a>
+                          <a onClick={() => setMailOpen(true)}>
+                            <LegacyMailIcon /> 发送邮件
+                          </a>
                         </Menu.Item>
                         <Menu.Item key="ban" disabled={!query.filter.length}>
                           <a
@@ -578,7 +572,7 @@ export default function UsersPage() {
                               });
                             }}
                           >
-                            <StopOutlined /> 批量封禁
+                            <LegacyStopIcon /> 批量封禁
                           </a>
                         </Menu.Item>
                         <Menu.Item key="delete" disabled={!query.filter.length}>
@@ -599,59 +593,99 @@ export default function UsersPage() {
                               });
                             }}
                           >
-                            <DeleteOutlined /> 批量删除
+                            <LegacyDeleteIcon /> 批量删除
                           </a>
                         </Menu.Item>
                       </Menu>
-                    )}
+                    }
                   >
-                    <Button>
-                      <SelectOutlined />
+                    <LegacyButton className="ant-btn">
+                      <LegacySelectIcon />
                       操作
-                    </Button>
+                    </LegacyButton>
                   </LegacyDropdown>
-                </Button.Group>
+                </div>
               </Tooltip>
-              <span className="float-right">
-                <Button className="ml-2" onClick={() => setCreating(true)}>
-                  <UserAddOutlined />
-                </Button>
-              </span>
+              <LegacyButton className="ant-btn ml-2" onClick={() => setCreating(true)}>
+                <LegacyUserAddIcon />
+              </LegacyButton>
             </div>
-            <Table<AdminUserRow>
+            <LegacyStandaloneTable
               className="v2board-table"
-              tableLayout="auto"
-              dataSource={users.data?.data ?? []}
-              pagination={{
-                current: query.current,
-                pageSize: query.pageSize,
-                total: users.data?.total,
-                size: 'small',
-                showSizeChanger: true,
-                pageSizeOptions: [10, 50, 100, 150],
-              }}
-              columns={columns}
-              scroll={{ x: 1500 }}
-              onRow={(record) => ({
-                onClick: () => setContextMenu(null),
-                onContextMenu: (event) => {
-                  event.preventDefault();
-                  setContextMenu({ user: record, top: event.clientY, left: event.clientX });
-                },
+              headers={headers}
+              isEmpty={data.length === 0}
+              scrollX={1500}
+              scrollPositionRight={false}
+              fixedRightRowHeight={54}
+              pagination={
+                <LegacyTablePagination
+                  current={query.current}
+                  pageSize={query.pageSize}
+                  total={users.data?.total}
+                  pageSizeOptions={[10, 50, 100, 150]}
+                  onChange={updateTablePagination}
+                />
+              }
+              fixedRightChildren={data.map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  style={{ height: 54 }}
+                  {...userRowKey(index)}
+                >
+                  <td className="" style={{ textAlign: 'right' }}>
+                    {renderUserActions(row)}
+                  </td>
+                </tr>
+              ))}
+            >
+              {data.map((row, index) => {
+                const usedOverLimit =
+                  parseFloat(String(row.total_used)) > parseFloat(String(row.transfer_enable));
+                return (
+                  <tr
+                    key={index}
+                    className="ant-table-row ant-table-row-level-0"
+                    onClick={() => setContextMenu(null)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setContextMenu({ user: row, top: event.clientY, left: event.clientX });
+                    }}
+                    {...userRowKey(index)}
+                  >
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{row.id}</td>
+                    <td className="">{renderUserEmail(row)}</td>
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>
+                      <LegacyTag color={row.banned ? 'red' : 'green'}>
+                        {row.banned ? '封禁' : '正常'}
+                      </LegacyTag>
+                    </td>
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{row.plan_name || '-'}</td>
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>
+                      {row.group_id != null ? (groupMap.get(row.group_id) ?? '-') : '-'}
+                    </td>
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>
+                      <LegacyTag color={usedOverLimit ? 'red' : 'green'}>
+                        {row.total_used}
+                      </LegacyTag>
+                    </td>
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{row.transfer_enable}</td>
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{renderUserDeviceLimit(row)}</td>
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>
+                      {renderUserExpiredAt(row.expired_at)}
+                    </td>
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{row.balance}</td>
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{row.commission_balance}</td>
+                    <td className={LEGACY_SORTABLE_CELL_CLASS}>
+                      {formatDateMinuteSlash(row.created_at)}
+                    </td>
+                    <td className="ant-table-fixed-columns-in-body" style={{ textAlign: 'right' }}>
+                      {renderUserActions(row)}
+                    </td>
+                  </tr>
+                );
               })}
-              onChange={(pagination: TablePaginationConfig, _filters, sorter) => {
-                const singleSorter = Array.isArray(sorter) ? sorter[0] : sorter;
-                setQuery((state) => {
-                  writeLegacyHabit(LEGACY_USER_PAGE_SIZE_KEY, pagination.pageSize);
-                  return {
-                    ...state,
-                    ...pagination,
-                    sort: typeof singleSorter?.columnKey === 'string' ? singleSorter.columnKey : undefined,
-                    sort_type: singleSorter?.order === 'ascend' ? 'ASC' : 'DESC',
-                  } as QueryState;
-                });
-              }}
-            />
+            </LegacyStandaloneTable>
             <div
               id="v2board-table-dropdown"
               className="ant-dropdown ant-dropdown-placement-bottomLeft"
@@ -666,17 +700,17 @@ export default function UsersPage() {
               <ul className="ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical">
                 <li className="ant-dropdown-menu-item">
                   <a onClick={() => contextMenu && runUserAction('edit', contextMenu.user)}>
-                    <EditOutlined /> 编辑
+                    <LegacyEditIcon /> 编辑
                   </a>
                 </li>
                 <li className="ant-dropdown-menu-item">
                   <a onClick={() => contextMenu && runUserAction('assign', contextMenu.user)}>
-                    <PlusOutlined /> 分配订单
+                    <LegacyPlusIcon /> 分配订单
                   </a>
                 </li>
                 <li className="ant-dropdown-menu-item">
                   <a onClick={() => contextMenu && runUserAction('copy', contextMenu.user)}>
-                    <CopyOutlined /> 复制订阅URL
+                    <LegacyCopyIcon /> 复制订阅URL
                   </a>
                 </li>
                 <li className="ant-dropdown-menu-item">
@@ -684,27 +718,27 @@ export default function UsersPage() {
                     style={{ color: '#ff4d4f' }}
                     onClick={() => contextMenu && runUserAction('reset', contextMenu.user)}
                   >
-                    <ReloadOutlined /> 重置UUID及订阅URL
+                    <LegacyReloadIcon /> 重置UUID及订阅URL
                   </a>
                 </li>
                 <li className="ant-dropdown-menu-item">
                   <a onClick={() => contextMenu && runUserAction('orders', contextMenu.user)}>
-                    <AccountBookOutlined /> TA的订单
+                    <LegacyAccountBookIcon /> TA的订单
                   </a>
                 </li>
                 <li className="ant-dropdown-menu-item">
                   <a onClick={() => contextMenu && runUserAction('invite', contextMenu.user)}>
-                    <UsergroupAddOutlined /> TA的邀请
+                    <LegacyUsergroupAddIcon /> TA的邀请
                   </a>
                 </li>
                 <li className="ant-dropdown-menu-item">
                   <a onClick={() => contextMenu && runUserAction('traffic', contextMenu.user)}>
-                    <SolutionOutlined /> TA的流量记录
+                    <LegacySolutionIcon /> TA的流量记录
                   </a>
                 </li>
                 <li className="ant-dropdown-menu-item">
                   <a onClick={() => contextMenu && runUserAction('delete', contextMenu.user)}>
-                    <DeleteOutlined /> 删除用户
+                    <LegacyDeleteIcon /> 删除用户
                   </a>
                 </li>
               </ul>
@@ -753,11 +787,7 @@ export default function UsersPage() {
         }
       />
 
-      <AssignOrderModal
-        user={assigning}
-        plans={planOptions}
-        onClose={() => setAssigning(null)}
-      />
+      <AssignOrderModal user={assigning} plans={planOptions} onClose={() => setAssigning(null)} />
 
       <UserTrafficModal
         userId={trafficUser?.id}
@@ -824,11 +854,7 @@ function GenerateUserModal({
                 onChange={(event) => setSubmitField('email_prefix', event.target.value)}
               />
             )}
-            <Input
-              placeholder="@"
-              style={{ width: '10%', textAlign: 'center' }}
-              disabled
-            />
+            <Input placeholder="@" style={{ width: '10%', textAlign: 'center' }} disabled />
             <Input
               placeholder="域"
               style={{ width: '45%' }}
@@ -911,19 +937,14 @@ function SendMailModal({
     >
       <div className="form-group">
         <label htmlFor="example-text-input-alt">收件人</label>
-        <Input
-          disabled
-          value={filter.length ? '过滤用户' : '全部用户'}
-        />
+        <Input disabled value={filter.length ? '过滤用户' : '全部用户'} />
       </div>
       <div className="form-group">
         <label htmlFor="example-text-input-alt">主题</label>
         <Input
           placeholder="请输入邮件主题"
           value={submit.subject}
-          onChange={(event) =>
-            setSubmit((state) => ({ ...state, subject: event.target.value }))
-          }
+          onChange={(event) => setSubmit((state) => ({ ...state, subject: event.target.value }))}
         />
       </div>
       <div className="form-group">
@@ -932,9 +953,7 @@ function SendMailModal({
           rows={12}
           value={submit.content}
           placeholder="请输入邮件内容"
-          onChange={(event) =>
-            setSubmit((state) => ({ ...state, content: event.target.value }))
-          }
+          onChange={(event) => setSubmit((state) => ({ ...state, content: event.target.value }))}
         />
       </div>
     </Modal>

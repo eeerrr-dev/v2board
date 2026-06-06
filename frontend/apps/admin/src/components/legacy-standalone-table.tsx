@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react';
-import { LegacyLeftIcon, LegacyRightIcon } from './legacy-ant-icon';
+import {
+  LegacyCaretDownIcon,
+  LegacyCaretUpIcon,
+  LegacyDownIcon,
+  LegacyLeftIcon,
+  LegacyRightIcon,
+} from './legacy-ant-icon';
 import { LegacyEmpty } from './legacy-empty';
 
 const LEGACY_ROW_KEY_ATTRIBUTE = `data-${'row-key'}`;
@@ -12,6 +18,8 @@ export type LegacyStandaloneTableHeader = {
   alignRight?: boolean;
   className?: string;
   fixedRight?: boolean;
+  onClick?: () => void;
+  sortable?: boolean;
   suffix?: ReactNode;
 };
 
@@ -36,12 +44,30 @@ function legacyHeaderClassName(
   return classes.join(' ');
 }
 
-function LegacyStandaloneTableHeaderCell({ title }: { title: ReactNode }) {
+function LegacyStandaloneTableHeaderCell({
+  sortable,
+  title,
+}: {
+  sortable?: boolean;
+  title: ReactNode;
+}) {
   return (
     <span className="ant-table-header-column">
-      <div>
+      <div className={sortable ? 'ant-table-column-sorters' : undefined}>
         <span className="ant-table-column-title">{title}</span>
-        <span className="ant-table-column-sorter" />
+        {sortable ? (
+          <span className="ant-table-column-sorter">
+            <div
+              title="排序"
+              className="ant-table-column-sorter-inner ant-table-column-sorter-inner-full"
+            >
+              <LegacyCaretUpIcon className="ant-table-column-sorter-up off" />
+              <LegacyCaretDownIcon className="ant-table-column-sorter-down off" />
+            </div>
+          </span>
+        ) : (
+          <span className="ant-table-column-sorter" />
+        )}
       </div>
     </span>
   );
@@ -63,6 +89,7 @@ function LegacyStandaloneTableHead({
           <th
             key={index}
             className={legacyHeaderClassName(header, index, headers.length, fixedRightTable)}
+            onClick={header.onClick}
             style={
               header.alignRight
                 ? { textAlign: 'right' }
@@ -73,7 +100,7 @@ function LegacyStandaloneTableHead({
                     : undefined
             }
           >
-            <LegacyStandaloneTableHeaderCell title={header.title} />
+            <LegacyStandaloneTableHeaderCell sortable={header.sortable} title={header.title} />
             {header.suffix}
           </th>
         ))}
@@ -90,11 +117,13 @@ export interface LegacyTablePaginationChange {
 
 export function LegacyTablePagination({
   current,
+  pageSizeOptions,
   pageSize,
   total,
   onChange,
 }: {
   current: number;
+  pageSizeOptions?: number[];
   pageSize: number;
   total?: number;
   onChange?: (pagination: LegacyTablePaginationChange) => void;
@@ -142,6 +171,35 @@ export function LegacyTablePagination({
           <LegacyRightIcon />
         </a>
       </li>
+      {pageSizeOptions ? (
+        <li className="ant-pagination-options">
+          <div className="ant-select-sm ant-pagination-options-size-changer ant-select ant-select-enabled">
+            <div
+              className={`ant-select-selection
+            ant-select-selection--single`}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-haspopup="true"
+              aria-controls="legacy-pagination-size"
+              aria-expanded="false"
+              tabIndex={0}
+            >
+              <div className="ant-select-selection__rendered">
+                <div
+                  className="ant-select-selection-selected-value"
+                  title={String(pageSize)}
+                  style={{ display: 'block', opacity: 1 }}
+                >
+                  {pageSize}
+                </div>
+              </div>
+              <span className="ant-select-arrow" unselectable="on" style={{ userSelect: 'none' }}>
+                <LegacyDownIcon className="ant-select-arrow-icon" />
+              </span>
+            </div>
+          </div>
+        </li>
+      ) : null}
     </ul>
   );
 }
@@ -217,6 +275,7 @@ function LegacyStandaloneTableFixedRight({
 }
 
 export function LegacyStandaloneTable({
+  className,
   headers,
   isEmpty,
   children,
@@ -226,6 +285,7 @@ export function LegacyStandaloneTable({
   scrollPositionRight = true,
   scrollX,
 }: {
+  className?: string;
   headers: LegacyStandaloneTableHeader[];
   isEmpty: boolean;
   children: ReactNode;
@@ -245,7 +305,7 @@ export function LegacyStandaloneTable({
         : 'ant-table-scroll-position-left';
 
   return (
-    <div className="ant-table-wrapper">
+    <div className={['ant-table-wrapper', className].filter(Boolean).join(' ')}>
       <div className="ant-spin-nested-loading">
         <div className="ant-spin-container">
           <div

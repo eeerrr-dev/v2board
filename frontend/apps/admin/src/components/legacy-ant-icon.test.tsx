@@ -1,19 +1,29 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
+  LegacyAccountBookIcon,
   LegacyCaretDownIcon,
   LegacyCaretUpIcon,
   LegacyCopyIcon,
   LegacyDatabaseIcon,
   LegacyDeleteIcon,
+  LegacyDownIcon,
   LegacyEditIcon,
+  LegacyFileExcelIcon,
   LegacyFilterIcon,
   LegacyFormIcon,
   LegacyLeftIcon,
+  LegacyMailIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
+  LegacyReloadIcon,
   LegacyRightIcon,
+  LegacySelectIcon,
+  LegacySolutionIcon,
+  LegacyStopIcon,
   LegacyUserIcon,
+  LegacyUserAddIcon,
+  LegacyUsergroupAddIcon,
 } from './legacy-ant-icon';
 
 describe('LegacyPlusIcon', () => {
@@ -34,14 +44,24 @@ describe('LegacyPlusIcon', () => {
     const html = renderToStaticMarkup(
       <>
         <LegacyFilterIcon title="筛选" tabIndex={-1} className="ant-dropdown-trigger" />
+        <LegacySelectIcon />
+        <LegacyUserAddIcon />
         <LegacyQuestionCircleIcon />
         <LegacyLeftIcon />
         <LegacyRightIcon />
+        <LegacyDownIcon className="ant-select-arrow-icon" />
         <LegacyCaretUpIcon className="ant-table-column-sorter-up off" />
         <LegacyCaretDownIcon className="ant-table-column-sorter-down off" />
         <LegacyEditIcon />
         <LegacyFormIcon />
         <LegacyCopyIcon />
+        <LegacyReloadIcon />
+        <LegacyAccountBookIcon />
+        <LegacyUsergroupAddIcon />
+        <LegacySolutionIcon />
+        <LegacyFileExcelIcon />
+        <LegacyMailIcon />
+        <LegacyStopIcon />
         <LegacyDeleteIcon />
         <LegacyUserIcon style={{ cursor: 'move' }} />
         <LegacyDatabaseIcon style={{ cursor: 'move' }} />
@@ -53,14 +73,24 @@ describe('LegacyPlusIcon', () => {
     expect(html).toContain(
       'd="M880.1 154H143.9c-24.5 0-39.8 26.7-27.5 48L349 597.4V838c0 17.7 14.2 32 31.8 32h262.4c17.6 0 31.8-14.3 31.8-32V597.4L907.7 202c12.2-21.3-3.1-48-27.6-48zM603.4 798H420.6V642h182.9v156zm9.6-236.6l-9.5 16.6h-183l-9.5-16.6L212.7 226h598.6L613 561.4z"',
     );
+    expect(html).toContain('aria-label="图标: select"');
+    expect(html).toContain('aria-label="图标: user-add"');
     expect(html).toContain('data-icon="question-circle"');
     expect(html).toContain('aria-label="图标: left"');
     expect(html).toContain('aria-label="图标: right"');
+    expect(html).toContain('class="anticon anticon-down ant-select-arrow-icon"');
     expect(html).toContain('class="anticon anticon-caret-up ant-table-column-sorter-up off"');
     expect(html).toContain('class="anticon anticon-caret-down ant-table-column-sorter-down off"');
     expect(html).toContain('aria-label="图标: edit"');
     expect(html).toContain('aria-label="图标: form"');
     expect(html).toContain('aria-label="图标: copy"');
+    expect(html).toContain('aria-label="图标: reload"');
+    expect(html).toContain('aria-label="图标: account-book"');
+    expect(html).toContain('aria-label="图标: usergroup-add"');
+    expect(html).toContain('aria-label="图标: solution"');
+    expect(html).toContain('aria-label="图标: file-excel"');
+    expect(html).toContain('aria-label="图标: mail"');
+    expect(html).toContain('aria-label="图标: stop"');
     expect(html).toContain('aria-label="图标: delete"');
     expect(html).toContain('aria-label="图标: user"');
     expect(html).toContain('class="anticon anticon-user" style="cursor:move"');
