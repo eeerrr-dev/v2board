@@ -391,13 +391,14 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).not.toContain('ant-card');
   });
 
-  it('keeps the old optional admin chat shell when ticket fetch fails', () => {
+  it('keeps the old admin chat shell visible when ticket fetch fails', () => {
     mocks.params = { ticket_id: '1' };
     mocks.adminTicket = undefined;
     mocks.adminTicketError = true;
 
     const html = renderToStaticMarkup(<TicketsPage />);
 
+    expect(html).toContain('工单不存在');
     expect(html).toContain('block-content-full bg-gray-lighter p-3');
     expect(html).toContain('tag___12_9H');
     expect(html).toContain('ctrl___UqDJ7');
@@ -407,12 +408,23 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).toContain('input___1j_ND');
     expect(html).toContain('js-chat-input bg-body-dark border-0 form-control form-control-alt');
     expect(html).toContain('输入内容回复工单...');
-    expect(html).not.toContain('工单不存在或已被删除');
     expect(html).not.toContain('加载中...');
     expect(html).not.toContain('ant-empty');
     expect(html).not.toContain('暂无数据');
     expect(html).not.toContain('支付问题');
     expect(mocks.adminUserInfoIds).toContain(undefined);
+  });
+
+  it('renders visible loading text before the admin ticket fetch resolves', () => {
+    mocks.params = { ticket_id: '1' };
+    mocks.adminTicket = undefined;
+    mocks.adminTicketError = false;
+
+    const html = renderToStaticMarkup(<TicketsPage />);
+
+    expect(html).toContain('加载中...');
+    expect(html).toContain('tag___12_9H');
+    expect(html).toContain('font-size-sm text-muted my-2 text-center');
   });
 
   it('keeps the old chat reply message state lifetime', () => {

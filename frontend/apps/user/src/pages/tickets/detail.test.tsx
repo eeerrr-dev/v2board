@@ -48,6 +48,8 @@ const toastMocks = vi.hoisted(() => ({
 }));
 
 const labels: Record<string, string> = {
+  'Ticket does not exist': '工单不存在',
+  'common.loading': '加载中...',
   'ticket.reply_placeholder': '输入内容回复工单...',
 };
 
@@ -140,12 +142,13 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     expect(html).toContain('placeholder="输入内容回复工单..."');
   });
 
-  it('keeps the old optional chat shell when the ticket fetch fails', () => {
+  it('keeps the old chat shell visible when the ticket fetch fails', () => {
     state.ticket = undefined;
     state.ticketError = true;
 
     const html = renderToStaticMarkup(<TicketDetailPage />);
 
+    expect(html).toContain('工单不存在');
     expect(html).toContain(
       'bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1',
     );
@@ -154,6 +157,17 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     expect(html).not.toContain('页面加载失败');
     expect(html).not.toContain('刷新页面');
     expect(html).not.toContain('Need help');
+  });
+
+  it('renders visible loading text before the ticket fetch resolves', () => {
+    state.ticket = undefined;
+    state.ticketError = false;
+
+    const html = renderToStaticMarkup(<TicketDetailPage />);
+
+    expect(html).toContain('加载中...');
+    expect(html).toContain('class="tag___12_9H"');
+    expect(html).toContain('font-size-sm text-muted my-2 text-center');
   });
 });
 

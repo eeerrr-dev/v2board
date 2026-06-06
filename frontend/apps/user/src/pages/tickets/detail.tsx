@@ -63,11 +63,16 @@ export default function TicketDetailPage() {
 
   const data = ticket.data ?? ({ message: [] } as NonNullable<typeof ticket.data>);
   assumeLegacyTicketMessages(data);
+  const emptyNotice = ticket.data
+    ? undefined
+    : ticket.isError
+      ? t('Ticket does not exist')
+      : t('common.loading');
 
   return (
     <div>
       <div className="block-content-full bg-gray-lighter p-3">
-        <span className="tag___12_9H">{data?.subject}</span>
+        <span className="tag___12_9H">{data?.subject ?? emptyNotice}</span>
       </div>
       <div
         className="bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1"
@@ -98,6 +103,9 @@ export default function TicketDetailPage() {
             </div>
           ),
         )}
+        {emptyNotice ? (
+          <div className="font-size-sm text-muted my-2 text-center">{emptyNotice}</div>
+        ) : null}
       </div>
       <div className="js-chat-form block-content p-2 bg-body-dark input___1j_ND">
         <input

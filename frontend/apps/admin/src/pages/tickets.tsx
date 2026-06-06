@@ -246,12 +246,13 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
   };
 
   const current = ticket.data;
+  const emptyNotice = current ? undefined : ticket.isError ? '工单不存在' : '加载中...';
   useAdminUserInfo(current?.user_id);
 
   return (
     <div>
       <div className="block-content-full bg-gray-lighter p-3">
-        <span className="tag___12_9H">{current?.subject}</span>
+        <span className="tag___12_9H">{current?.subject ?? emptyNotice}</span>
         <div className="ctrl___UqDJ7">
           <Tooltip title="用户管理" placement="left">
             <UserOutlined onClick={() => current?.user_id && setUserOpen(true)} />
@@ -289,6 +290,9 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
             </div>
           ),
         )}
+        {emptyNotice ? (
+          <div className="font-size-sm text-muted my-2 text-center">{emptyNotice}</div>
+        ) : null}
       </div>
       <div className="js-chat-form block-content p-2 bg-body-dark input___1j_ND">
         <input
