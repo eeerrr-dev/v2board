@@ -143,9 +143,9 @@ describe('normalizeLegacyHashRoute', () => {
     );
     expect(getNormalizedLegacyHashPath('/plan/8', appOptions)).toBe('/plan/8');
     expect(getNormalizedLegacyHashPath('/ticket/7', appOptions)).toBe('/ticket/7');
-    expect(getNormalizedLegacyHashPath('/order/2026060408061914022260977/profile', appOptions)).toBe(
-      '/profile',
-    );
+    expect(
+      getNormalizedLegacyHashPath('/order/2026060408061914022260977/profile', appOptions),
+    ).toBe('/profile');
   });
 
   it('recovers known pages that would otherwise be swallowed by dynamic detail routes', () => {
@@ -488,7 +488,7 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
-  it('waits one extra check before recovering an empty legacy layout main container', () => {
+  it('does not recover an empty legacy layout main container while the app shell is rendered', () => {
     vi.useFakeTimers();
     window.localStorage.setItem('authorization', 'jwt');
     document.body.innerHTML =
@@ -502,12 +502,14 @@ describe('normalizeLegacyHashRoute', () => {
 
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     vi.advanceTimersByTime(10);
+    vi.advanceTimersByTime(10);
 
     expect(replace).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).toBeNull();
     dispose();
   });
 
-  it('renders a visible fallback for a persistent blank legacy layout main container', () => {
+  it('leaves a persistent blank legacy layout main container under React control', () => {
     vi.useFakeTimers();
     window.localStorage.setItem('authorization', 'jwt');
     document.body.innerHTML =
@@ -527,8 +529,8 @@ describe('normalizeLegacyHashRoute', () => {
     vi.advanceTimersByTime(10);
 
     expect(replace).not.toHaveBeenCalled();
-    expect(document.querySelector('#main-container')?.textContent).toContain('页面加载失败');
-    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).not.toBeNull();
+    expect(document.querySelector('#main-container')?.textContent).not.toContain('页面加载失败');
+    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).toBeNull();
     dispose();
   });
 
@@ -681,7 +683,7 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
-  it('renders the visible fallback inside a persistently blank legacy main container', () => {
+  it('does not render a visible fallback inside a blank mounted legacy main container', () => {
     vi.useFakeTimers();
     document.body.innerHTML =
       '<div id="root"><div id="page-container"><nav>仪表盘</nav><header>admin@local</header><main id="main-container"><div class="content content-full"></div></main></div></div>';
@@ -699,8 +701,8 @@ describe('normalizeLegacyHashRoute', () => {
 
     expect(replace).not.toHaveBeenCalled();
     expect(document.querySelector('#page-container')).not.toBeNull();
-    expect(document.querySelector('#main-container')?.textContent).toContain('页面加载失败');
-    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).not.toBeNull();
+    expect(document.querySelector('#main-container')?.textContent).not.toContain('页面加载失败');
+    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).toBeNull();
     dispose();
   });
 
@@ -980,7 +982,7 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
-  it('renders the dev fallback when only the legacy main container stays empty', () => {
+  it('does not render the dev fallback when only the legacy main container stays empty', () => {
     vi.useFakeTimers();
     document.body.innerHTML =
       '<div id="root"><div id="page-container"><nav>仪表盘</nav><header>admin@local</header><main id="main-container"><div class="content content-full"></div></main></div></div>';
@@ -990,8 +992,8 @@ describe('normalizeLegacyHashRoute', () => {
     vi.advanceTimersByTime(10);
 
     expect(document.querySelector('#page-container')).not.toBeNull();
-    expect(document.querySelector('#main-container')?.textContent).toContain('页面加载失败');
-    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).not.toBeNull();
+    expect(document.querySelector('#main-container')?.textContent).not.toContain('页面加载失败');
+    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).toBeNull();
     dispose();
   });
 

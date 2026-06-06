@@ -127,12 +127,9 @@ describe('user legacy entrypoint', () => {
     expect(indexSource).toContain('function patchConsoleRecovery(method)');
     expect(indexSource).toContain("patchConsoleRecovery('error');");
     expect(indexSource).toContain("patchConsoleRecovery('warn');");
-    expect(indexSource).toContain('function legacyMainEmpty(root)');
-    expect(indexSource).toContain(
-      "if (!root || !root.querySelector('#page-container')) return false;",
-    );
-    expect(indexSource).toContain("root.querySelector('#main-container .content') ||");
-    expect(indexSource).toContain('return elementEmpty(root) || legacyMainEmpty(root);');
+    expect(indexSource).not.toContain('function legacyMainEmpty(root)');
+    expect(indexSource).toContain('return elementEmpty(root);');
+    expect(indexSource).not.toContain('legacyMainEmpty(root)');
     expect(indexSource).toContain('if (appEmpty()) recover();');
     expect(indexSource).toContain("window.addEventListener('hashchange', schedule);");
     expect(indexSource).toContain("window.addEventListener('popstate', schedule);");

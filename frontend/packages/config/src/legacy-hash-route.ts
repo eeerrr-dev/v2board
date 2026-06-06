@@ -39,9 +39,7 @@ function normalizeCanonicalPath(path: string): string {
 }
 
 function routePattern(route: string): RegExp {
-  const escaped = route
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/:[^/]+/g, '[^/]+');
+  const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[^/]+/g, '[^/]+');
   return new RegExp(`^${escaped}$`);
 }
 
@@ -51,15 +49,15 @@ function routePrefixLength(path: string, route: string): number | null {
     return path.startsWith(`${route}/`) ? route.length : null;
   }
 
-  const escaped = route
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/:[^/]+/g, '[^/]+');
+  const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[^/]+/g, '[^/]+');
   const match = new RegExp(`^(${escaped})(?=/)`).exec(path);
   return match?.[1]?.length ?? null;
 }
 
 function isKnownRoute(path: string, routes: readonly string[]): boolean {
-  return routes.some((route) => route === path || (route.includes(':') && routePattern(route).test(path)));
+  return routes.some(
+    (route) => route === path || (route.includes(':') && routePattern(route).test(path)),
+  );
 }
 
 function recoverNestedPrefix(
@@ -256,16 +254,8 @@ function elementIsEmpty(element: HTMLElement | null): boolean {
   return !element.querySelector(NON_BLANK_ROOT_SELECTOR);
 }
 
-function legacyMainContentIsEmpty(root: HTMLElement | null): boolean {
-  if (!root?.querySelector('#page-container')) return false;
-  const main =
-    root.querySelector<HTMLElement>('#main-container .content') ??
-    root.querySelector<HTMLElement>('#main-container');
-  return Boolean(main && elementIsEmpty(main));
-}
-
-function appIsEmpty(root: HTMLElement | null, includeLegacyMain = false): boolean {
-  return elementIsEmpty(root) || (includeLegacyMain && legacyMainContentIsEmpty(root));
+function appIsEmpty(root: HTMLElement | null): boolean {
+  return elementIsEmpty(root);
 }
 
 function renderLegacyWhiteScreenFallback(root: HTMLElement | null): void {
@@ -301,7 +291,10 @@ function hasLegacyAuth(options: LegacyHashRouteOptions): boolean {
   return Boolean(window.localStorage.getItem(getAuthStorageKey(options)));
 }
 
-function getFallbackHash(options: LegacyHashRouteOptions, hasAuth = hasLegacyAuth(options)): string {
+function getFallbackHash(
+  options: LegacyHashRouteOptions,
+  hasAuth = hasLegacyAuth(options),
+): string {
   return `#${hasAuth ? options.authenticatedFallback : options.guestFallback}`;
 }
 
@@ -332,34 +325,18 @@ export function installLegacyWhiteScreenRecovery(
   const now = config.now ?? (() => Date.now());
   const replace = config.replace ?? ((url: string) => window.location.replace(url));
   let timer: number | undefined;
-  let blankLegacyMainSeen = false;
 
   const recoverIfEmpty = () => {
     const root = document.getElementById('root');
     const current = new URL(window.location.href);
     const key = `${storageKey}:${stableRecoveryKey(current)}`;
     const rootIsEmpty = appIsEmpty(root);
-    const legacyMainIsEmpty = !rootIsEmpty && legacyMainContentIsEmpty(root);
 
-    if (!rootIsEmpty && !legacyMainIsEmpty) {
-      blankLegacyMainSeen = false;
+    if (!rootIsEmpty) {
       window.sessionStorage.removeItem(key);
       return;
     }
 
-    if (legacyMainIsEmpty && !blankLegacyMainSeen) {
-      blankLegacyMainSeen = true;
-      schedule();
-      return;
-    }
-
-    if (legacyMainIsEmpty) {
-      blankLegacyMainSeen = false;
-      renderLegacyWhiteScreenFallback(root);
-      return;
-    }
-
-    blankLegacyMainSeen = false;
     const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
     const hasAuth = hasLegacyAuth(options);
     const fallbackHash = getFallbackHash(options, hasAuth);
@@ -405,9 +382,7 @@ export function installLegacyWhiteScreenRecovery(
 
   const root = document.getElementById('root');
   const observer =
-    root && typeof MutationObserver !== 'undefined'
-      ? new MutationObserver(schedule)
-      : undefined;
+    root && typeof MutationObserver !== 'undefined' ? new MutationObserver(schedule) : undefined;
 
   observer?.observe(root as HTMLElement, { childList: true, subtree: true });
   window.addEventListener('hashchange', schedule);
@@ -515,7 +490,7 @@ export function installLegacyDevModuleRecovery(
   const recoveryKey = (url: URL) => `${storageKey}:${stableRecoveryKey(url)}`;
   const clearRenderedRouteAttempt = () => {
     const root = document.getElementById('root');
-    if (appIsEmpty(root, true)) return;
+    if (appIsEmpty(root)) return;
     window.sessionStorage.removeItem(recoveryKey(new URL(window.location.href)));
   };
   const scheduleRenderedRouteClear = () => {
@@ -570,7 +545,7 @@ export function installLegacyDevWhiteScreenFallback(
 
   const renderIfEmpty = () => {
     const root = document.getElementById('root');
-    if (!appIsEmpty(root, true)) return;
+    if (!appIsEmpty(root)) return;
     renderLegacyWhiteScreenFallback(root);
   };
 
@@ -581,9 +556,7 @@ export function installLegacyDevWhiteScreenFallback(
 
   const root = document.getElementById('root');
   const observer =
-    root && typeof MutationObserver !== 'undefined'
-      ? new MutationObserver(schedule)
-      : undefined;
+    root && typeof MutationObserver !== 'undefined' ? new MutationObserver(schedule) : undefined;
 
   observer?.observe(root as HTMLElement, { childList: true, subtree: true });
   window.addEventListener('hashchange', schedule);

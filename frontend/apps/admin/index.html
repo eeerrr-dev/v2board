@@ -247,16 +247,9 @@
           );
         }
 
-        function legacyMainEmpty(root) {
-          if (!root || !root.querySelector('#page-container')) return false;
-          var main =
-            root.querySelector('#main-container .content') || root.querySelector('#main-container');
-          return !!main && elementEmpty(main);
-        }
-
         function appEmpty() {
           var root = document.getElementById('root');
-          return elementEmpty(root) || legacyMainEmpty(root);
+          return elementEmpty(root);
         }
 
         function renderFallback() {
@@ -283,7 +276,7 @@
           var key = recoveryKey(current);
           var attempts = Number(window.sessionStorage.getItem(key) || '0');
           if (attempts >= maxAttempts) {
-            renderFallback();
+            if (appEmpty()) renderFallback();
             return;
           }
           window.sessionStorage.setItem(key, String(attempts + 1));
