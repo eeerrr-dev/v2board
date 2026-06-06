@@ -133,6 +133,20 @@ const ROUTE_ACTION_TEXT: RouteActionTextMap = {
   default_out: '自定义默认出站',
 };
 
+const LEGACY_BINARY_SELECT_OPTIONS: LegacySelectOption[] = [
+  { value: 0, label: '否' },
+  { value: 1, label: '是' },
+];
+
+const LEGACY_TLS_SUPPORT_OPTIONS: LegacySelectOption[] = [
+  { value: 0, label: '不支持' },
+  { value: 1, label: '支持' },
+];
+
+const LEGACY_SECURITY_NONE_OPTION: LegacySelectOption = { value: 0, label: '无' };
+const LEGACY_SECURITY_TLS_OPTION: LegacySelectOption = { value: 1, label: 'TLS' };
+const LEGACY_SECURITY_REALITY_OPTION: LegacySelectOption = { value: 2, label: 'Reality' };
+
 const LEGACY_HABIT_KEY = 'habit';
 const LEGACY_SERVER_PAGE_SIZE_KEY = 'server_manage_page_size';
 const LEGACY_SERVER_SORT_PROMPT = '节点排序还没有保存，是否离开';
@@ -2102,6 +2116,19 @@ export function getLegacyV2nodeSecurityValue(protocol: unknown, tls: unknown) {
   return protocolValue && LEGACY_V2NODE_SECURITY_FALLBACK_PROTOCOLS.includes(protocolValue) ? 1 : 0;
 }
 
+function getLegacyV2nodeSecurityOptions(protocol: unknown): LegacySelectOption[] {
+  const protocolValue = protocol == null ? null : String(protocol);
+  return [
+    ...(protocolValue === 'vless' || protocolValue === 'vmess'
+      ? [LEGACY_SECURITY_NONE_OPTION]
+      : []),
+    LEGACY_SECURITY_TLS_OPTION,
+    ...(protocolValue === 'vless' || protocolValue === 'anytls'
+      ? [LEGACY_SECURITY_REALITY_OPTION]
+      : []),
+  ];
+}
+
 export function getLegacyNumericSelectValue(value: unknown, fallback = 0) {
   return parseInt(String(value ?? fallback), 10) || fallback;
 }
@@ -2629,14 +2656,11 @@ function TrojanAllowInsecureField() {
         initialValue={0}
         getValueProps={legacyBinarySelectValueProps}
       >
-        <Select placeholder="允许不安全" style={{ width: '100%' }}>
-          <Select.Option key={0} value={0}>
-            否
-          </Select.Option>
-          <Select.Option key={1} value={1}>
-            是
-          </Select.Option>
-        </Select>
+        <LegacySelect
+          placeholder="允许不安全"
+          style={{ width: '100%' }}
+          options={LEGACY_BINARY_SELECT_OPTIONS}
+        />
       </Form.Item>
     </div>
   );
@@ -2656,14 +2680,11 @@ function ServerInsecureField() {
         initialValue={0}
         getValueProps={legacyBinarySelectValueProps}
       >
-        <Select placeholder="允许不安全" style={{ width: '100%' }}>
-          <Select.Option key={0} value={0}>
-            否
-          </Select.Option>
-          <Select.Option key={1} value={1}>
-            是
-          </Select.Option>
-        </Select>
+        <LegacySelect
+          placeholder="允许不安全"
+          style={{ width: '100%' }}
+          options={LEGACY_BINARY_SELECT_OPTIONS}
+        />
       </Form.Item>
     </div>
   );
@@ -2683,14 +2704,11 @@ function VmessTlsField({
         </a>
       </label>
       <Form.Item noStyle name="tls" initialValue={0} getValueProps={legacyBinarySelectValueProps}>
-        <Select placeholder="是否支持TLS" style={{ width: '100%' }}>
-          <Select.Option key={0} value={0}>
-            不支持
-          </Select.Option>
-          <Select.Option key={1} value={1}>
-            支持
-          </Select.Option>
-        </Select>
+        <LegacySelect
+          placeholder="是否支持TLS"
+          style={{ width: '100%' }}
+          options={LEGACY_TLS_SUPPORT_OPTIONS}
+        />
       </Form.Item>
     </div>
   );
@@ -2716,17 +2734,14 @@ function VlessSecurityField({
         ) : null}
       </label>
       <Form.Item noStyle name="tls" initialValue={0} getValueProps={legacyNumericSelectValueProps}>
-        <Select style={{ width: '100%' }}>
-          <Select.Option key={0} value={0}>
-            无
-          </Select.Option>
-          <Select.Option key={1} value={1}>
-            TLS
-          </Select.Option>
-          <Select.Option key={2} value={2}>
-            Reality
-          </Select.Option>
-        </Select>
+        <LegacySelect
+          style={{ width: '100%' }}
+          options={[
+            LEGACY_SECURITY_NONE_OPTION,
+            LEGACY_SECURITY_TLS_OPTION,
+            LEGACY_SECURITY_REALITY_OPTION,
+          ]}
+        />
       </Form.Item>
     </div>
   );
@@ -2805,21 +2820,10 @@ function V2nodeFields({
                 value: getLegacyV2nodeSecurityValue(protocolValue, value),
               })}
             >
-              <Select style={{ width: '100%' }}>
-                {protocolValue === 'vless' || protocolValue === 'vmess' ? (
-                  <Select.Option key={0} value={0}>
-                    无
-                  </Select.Option>
-                ) : null}
-                <Select.Option key={1} value={1}>
-                  TLS
-                </Select.Option>
-                {protocolValue === 'vless' || protocolValue === 'anytls' ? (
-                  <Select.Option key={2} value={2}>
-                    Reality
-                  </Select.Option>
-                ) : null}
-              </Select>
+              <LegacySelect
+                style={{ width: '100%' }}
+                options={getLegacyV2nodeSecurityOptions(protocolValue)}
+              />
             </Form.Item>
           </div>
         ) : null}

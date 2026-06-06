@@ -948,6 +948,8 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain(
       "const LEGACY_V2NODE_SECURITY_FALLBACK_PROTOCOLS = ['hysteria2', 'trojan', 'tuic']",
     );
+    expect(serversSource).toContain('function getLegacyV2nodeSecurityOptions');
+    expect(serversSource).toContain('options={getLegacyV2nodeSecurityOptions(protocolValue)}');
     expect(serversSource).toContain('getValueProps={(value) => ({');
   });
 
@@ -965,6 +967,11 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain(
       'getValueProps={(value) => legacyNumericSelectValueProps(value, 1)}',
     );
+    expect(serversSource).toContain('const LEGACY_BINARY_SELECT_OPTIONS: LegacySelectOption[] = [');
+    expect(serversSource).toContain('const LEGACY_TLS_SUPPORT_OPTIONS: LegacySelectOption[] = [');
+    expect(serversSource).toContain('const LEGACY_SECURITY_NONE_OPTION: LegacySelectOption');
+    expect(serversSource).toContain('const LEGACY_SECURITY_TLS_OPTION: LegacySelectOption');
+    expect(serversSource).toContain('const LEGACY_SECURITY_REALITY_OPTION: LegacySelectOption');
   });
 
   it('uses the original Shadowsocks-specific drawer fields', () => {
@@ -1104,6 +1111,11 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('uses the original Trojan-specific drawer fields and child config drawer', () => {
+    const trojanAllowInsecureSource = serversSource.slice(
+      serversSource.indexOf('function TrojanAllowInsecureField'),
+      serversSource.indexOf('function ServerInsecureField'),
+    );
+
     expect(serversSource).toContain('showChildDrawer');
     expect(serversSource).toContain('childDrawer.field');
     expect(serversSource).toContain('closable={false}');
@@ -1119,6 +1131,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('允许不安全');
     expect(serversSource).toContain('使用自签名证书需要允许不安全，用户才可以连接');
     expect(serversSource).toContain('placeholder="允许不安全"');
+    expect(trojanAllowInsecureSource).toContain('<LegacySelect');
+    expect(trojanAllowInsecureSource).toContain('options={LEGACY_BINARY_SELECT_OPTIONS}');
+    expect(trojanAllowInsecureSource).not.toContain('<Select');
     expect(serversSource).toContain('服务器名称指示(sni)');
     expect(serversSource).toContain('当节点地址与证书不一致时用于证书验证');
     expect(serversSource).toContain('传输协议');
@@ -1132,6 +1147,11 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('uses the original VMess-specific TLS and protocol drawer fields', () => {
+    const vmessTlsSource = serversSource.slice(
+      serversSource.indexOf('function VmessTlsField'),
+      serversSource.indexOf('function VlessSecurityField'),
+    );
+
     expect(serversSource).toContain("type === 'vmess' ? (");
     expect(serversSource).toContain('function VmessTlsField');
     expect(serversSource).toContain('className="form-group col-md-8 col-xs-12"');
@@ -1140,6 +1160,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('placeholder="是否支持TLS"');
     expect(serversSource).toContain('不支持');
     expect(serversSource).toContain('支持');
+    expect(vmessTlsSource).toContain('<LegacySelect');
+    expect(vmessTlsSource).toContain('options={LEGACY_TLS_SUPPORT_OPTIONS}');
+    expect(vmessTlsSource).not.toContain('<Select');
     expect(serversSource).toContain("showChildDrawer('编辑协议配置', 'networkSettings')");
     expect(serversSource).toContain('<Select.Option value="kcp">mKCP</Select.Option>');
     expect(serversSource).toContain(
@@ -1149,11 +1172,20 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('uses the original VLess-specific security, protocol, encryption, and flow fields', () => {
+    const vlessSecuritySource = serversSource.slice(
+      serversSource.indexOf('function VlessSecurityField'),
+      serversSource.indexOf('function V2nodeFields'),
+    );
+
     expect(serversSource).toContain("type === 'vmess' || type === 'vless' ? (");
     expect(serversSource).toContain('function VlessSecurityField');
     expect(serversSource).toContain('安全性');
     expect(serversSource).toContain("showChildDrawer('编辑安全性配置', 'tls_settings')");
-    expect(serversSource).toContain('<Select.Option key={0} value={0}>');
+    expect(vlessSecuritySource).toContain('<LegacySelect');
+    expect(vlessSecuritySource).toContain('LEGACY_SECURITY_NONE_OPTION');
+    expect(vlessSecuritySource).toContain('LEGACY_SECURITY_TLS_OPTION');
+    expect(vlessSecuritySource).toContain('LEGACY_SECURITY_REALITY_OPTION');
+    expect(vlessSecuritySource).not.toContain('<Select');
     expect(serversSource).toContain('Reality');
     expect(serversSource).toContain("showChildDrawer('编辑协议配置', 'network_settings')");
     expect(serversSource).toContain('加密方式');
@@ -1212,12 +1244,20 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('uses the original Hysteria-specific version, insecure, obfs, and bandwidth fields', () => {
+    const serverInsecureSource = serversSource.slice(
+      serversSource.indexOf('function ServerInsecureField'),
+      serversSource.indexOf('function VmessTlsField'),
+    );
+
     expect(serversSource).toContain("type === 'hysteria' ||");
     expect(serversSource).toContain("type === 'tuic' ||");
     expect(serversSource).toContain("type === 'anytls' ? (");
     expect(serversSource).toContain('function ServerInsecureField');
     expect(serversSource).toContain('name="insecure"');
     expect(serversSource).toContain('getValueProps={legacyBinarySelectValueProps}');
+    expect(serverInsecureSource).toContain('<LegacySelect');
+    expect(serverInsecureSource).toContain('options={LEGACY_BINARY_SELECT_OPTIONS}');
+    expect(serverInsecureSource).not.toContain('<Select');
     expect(serversSource).toContain('HYSTERIA版本');
     expect(serversSource).toContain('<Select.Option key={0} value={1}>');
     expect(serversSource).toContain('v1');
