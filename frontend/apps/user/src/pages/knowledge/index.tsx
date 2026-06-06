@@ -114,18 +114,19 @@ export default function KnowledgePage() {
   return (
     <>
       <div className="v2board-knowledge-search-bar">
-        <span className="ant-input-search ant-input-search-enter-button ant-input-search-large ant-input-group-wrapper ant-input-group-wrapper-lg mb-3">
+        <span className="ant-input-search mb-3 ant-input-search-enter-button ant-input-search-large ant-input-group-wrapper ant-input-group-wrapper-lg">
           <span className="ant-input-wrapper ant-input-group">
             <input
-              type="text"
-              className="ant-input ant-input-lg"
               placeholder={t('knowledge.search_placeholder')}
+              className="ant-input ant-input-lg"
+              type="text"
+              defaultValue=""
               onChange={(event) => setSearchValue(event.target.value)}
             />
             <span className="ant-input-group-addon">
               <AntBtn
                 type="button"
-                className="ant-btn ant-btn-primary ant-input-search-button ant-btn-lg"
+                className="ant-btn ant-input-search-button ant-btn-primary ant-btn-lg"
               >
                 <SearchIcon />
               </AntBtn>

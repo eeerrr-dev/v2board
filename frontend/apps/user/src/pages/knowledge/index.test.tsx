@@ -164,8 +164,11 @@ describe('KnowledgePage bundled-theme list', () => {
     const html = renderToStaticMarkup(<KnowledgePage />);
 
     expect(html).toContain('v2board-knowledge-search-bar');
-    expect(html).toContain('ant-input-search ant-input-search-enter-button ant-input-search-large');
-    expect(html).toContain('placeholder="搜索文档"');
+    expect(html).toContain(
+      'ant-input-search mb-3 ant-input-search-enter-button ant-input-search-large ant-input-group-wrapper ant-input-group-wrapper-lg',
+    );
+    expect(html).toContain('placeholder="搜索文档" class="ant-input ant-input-lg" type="text" value=""');
+    expect(html).toContain('ant-btn ant-input-search-button ant-btn-primary ant-btn-lg');
     expect(html).not.toContain('spinner-grow');
   });
 
@@ -221,6 +224,7 @@ describe('KnowledgePage bundled-theme list', () => {
     );
 
     expect(searchInputSource).toContain('onChange={(event) => setSearchValue(event.target.value)}');
+    expect(searchInputSource).toContain('defaultValue=""');
     expect(searchInputSource).not.toContain('value={searchValue}');
     expect(searchInputSource).not.toContain('defaultValue={searchValue}');
   });
