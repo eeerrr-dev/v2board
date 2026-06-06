@@ -358,11 +358,12 @@ describe('CouponsPage legacy routes', () => {
     expect(
       source.match(/<Tag style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g),
     ).toHaveLength(2);
-    expect(source).toContain(
-      "import { App, DatePicker, Input, Modal, Select, Switch, Tag } from 'antd';",
-    );
+    expect(source).toContain("import { App, Input, Modal, Select, Switch, Tag } from 'antd';");
     expect(source).toContain("import { LegacyButton } from '@/components/legacy-button';");
     expect(source).toContain("import { LegacyPlusIcon } from '@/components/legacy-ant-icon';");
+    expect(source).toContain(
+      "import { LegacyRangePicker } from '@/components/legacy-range-picker';",
+    );
     expect(source).toContain(
       'LegacyStandaloneTable,\n  legacyTableRowKey,\n  type LegacyStandaloneTableHeader,',
     );
@@ -372,6 +373,19 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain('Typography.Text');
     expect(source).not.toContain("Typography } from 'antd'");
     expect(source).not.toContain('navigator.clipboard?.writeText');
+  });
+
+  it('uses the old Ant Design range picker shell for coupon and giftcard validity forms', () => {
+    expect(source.match(/<LegacyRangePicker/g)).toHaveLength(2);
+    expect(source.match(/showTime=\{\{ format: 'HH:mm' \}\}/g)).toHaveLength(2);
+    expect(source.match(/format="YYYY-MM-DD HH:mm"/g)).toHaveLength(2);
+    expect(source.match(/placeholder=\{\['Start Time', 'End Time'\]\}/g)).toHaveLength(2);
+    expect(
+      source.match(/value=\{rangeValue\(submit\.started_at, submit\.ended_at\)\}/g),
+    ).toHaveLength(2);
+    expect(source.match(/onOk=\{onRangeChange\}/g)).toHaveLength(2);
+    expect(source).not.toContain('<DatePicker.RangePicker');
+    expect(source).not.toContain("DatePicker } from 'antd'");
   });
 
   it('keeps coupon and giftcard limit-use cells wrapped in the old antd Tag', () => {

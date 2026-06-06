@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App, DatePicker, Input, Modal, Select, Switch, Tag } from 'antd';
+import { App, Input, Modal, Select, Switch, Tag } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useLocation } from 'react-router-dom';
@@ -25,6 +25,7 @@ import {
   legacyTableRowKey,
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
+import { LegacyRangePicker } from '@/components/legacy-range-picker';
 
 type AdminPageQuery = admin.AdminPageQuery;
 
@@ -352,7 +353,7 @@ function CouponPage() {
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">优惠券有效期</label>
-            <DatePicker.RangePicker
+            <LegacyRangePicker
               style={{ width: '100%' }}
               showTime={{ format: 'HH:mm' }}
               format="YYYY-MM-DD HH:mm"
@@ -713,7 +714,7 @@ function GiftcardPage() {
           ) : null}
           <div className="form-group">
             <label htmlFor="example-text-input-alt">礼品卡有效期</label>
-            <DatePicker.RangePicker
+            <LegacyRangePicker
               style={{ width: '100%' }}
               showTime={{ format: 'HH:mm' }}
               format="YYYY-MM-DD HH:mm"
