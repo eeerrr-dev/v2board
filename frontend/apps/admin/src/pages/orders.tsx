@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { App, Col, Divider, Dropdown, Input, Menu, Row, Tooltip } from 'antd';
 import type { DropdownProps } from 'antd';
-import { LoadingOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminFilter } from '@v2board/api-client';
@@ -26,6 +25,7 @@ import { LegacyButton } from '@/components/legacy-button';
 import {
   LegacyCaretDownIcon,
   LegacyFilterIcon,
+  LegacyLoadingIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
 } from '@/components/legacy-ant-icon';
@@ -249,7 +249,7 @@ function AssignOrderButton({
       <LegacyModal
         title="订单分配"
         visible={open}
-        okText={assign.isPending ? <LoadingOutlined /> : '确定'}
+        okText={assign.isPending ? <LegacyLoadingIcon /> : '确定'}
         cancelText="取消"
         onCancel={close}
         onOk={() => {
@@ -386,7 +386,7 @@ function OrderDetailModal({
           ) : null}
         </div>
       ) : (
-        <LoadingOutlined style={{ fontSize: 24, color: '#415A94' }} />
+        <LegacyLoadingIcon style={{ fontSize: 24, color: '#415A94' }} />
       )}
     </LegacyModal>
   );

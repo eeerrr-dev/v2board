@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
 import { App, Dropdown, Input, Menu, Tooltip } from 'antd';
 import type { DropdownProps } from 'antd';
-import { LoadingOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -38,6 +37,7 @@ import {
   LegacyEditIcon,
   LegacyFileExcelIcon,
   LegacyFilterIcon,
+  LegacyLoadingIcon,
   LegacyMailIcon,
   LegacyPlusIcon,
   LegacyReloadIcon,
@@ -1009,7 +1009,7 @@ function AssignOrderModal({
       title="订单分配"
       visible={Boolean(user)}
       onCancel={close}
-      okText={assign.isPending ? <LoadingOutlined /> : '确定'}
+      okText={assign.isPending ? <LegacyLoadingIcon /> : '确定'}
       cancelText="取消"
       onOk={() => {
         assign

@@ -1,6 +1,5 @@
 import { cloneElement, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { App, Modal } from 'antd';
-import { LoadingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import MarkdownIt from 'markdown-it';
 import { admin } from '@v2board/api-client';
@@ -18,7 +17,7 @@ import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
-import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
+import { LegacyLoadingIcon, LegacyPlusIcon } from '@/components/legacy-ant-icon';
 import { LegacySelect } from '@/components/legacy-select';
 import { LegacyInput } from '@/components/legacy-input';
 import { LegacyDrawer } from '@/components/legacy-drawer';
@@ -510,7 +509,7 @@ function KnowledgeEditor({
         onClose={hide}
       >
         {loading ? (
-          <LoadingOutlined />
+          <LegacyLoadingIcon />
         ) : (
           <div>
             <div className="form-group">

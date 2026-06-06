@@ -107,11 +107,14 @@ describe('NoticesPage legacy notice manager', () => {
     expect(mutationBlock).not.toContain(
       "queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })",
     );
-    expect(source).toContain("import { LoadingOutlined } from '@ant-design/icons';");
-    expect(source).toContain("import { LegacyPlusIcon } from '@/components/legacy-ant-icon';");
+    expect(source).not.toContain('LoadingOutlined');
+    expect(source).not.toContain('@ant-design/icons');
+    expect(source).toContain(
+      "import { LegacyLoadingIcon, LegacyPlusIcon } from '@/components/legacy-ant-icon';",
+    );
     expect(source).toContain('const [saveLoading] = useState<boolean | undefined>(undefined);');
     expect(source).toContain('saveLoading || void saveNotice();');
-    expect(source).toContain("okText={saveLoading ? <LoadingOutlined /> : '提交'}");
+    expect(source).toContain("okText={saveLoading ? <LegacyLoadingIcon /> : '提交'}");
     expect(source).not.toContain('onOk={() => void saveNotice()}');
     expect(source).not.toContain('okText="提交"');
     expect(source).not.toContain('save.isPending');
@@ -130,7 +133,7 @@ describe('NoticesPage legacy notice manager', () => {
     expect(modalStart).toBeGreaterThan(-1);
     expect(modalBlock).toContain("title={`${submit.id ? '编辑公告' : '新建公告'}`}");
     expect(modalBlock).toContain('visible={visible}');
-    expect(modalBlock).toContain("okText={saveLoading ? <LoadingOutlined /> : '提交'}");
+    expect(modalBlock).toContain("okText={saveLoading ? <LegacyLoadingIcon /> : '提交'}");
     expect(modalBlock).toContain('cancelText="取消"');
     expect(source).not.toContain('<Modal');
     expect(source).not.toContain('open={visible}');

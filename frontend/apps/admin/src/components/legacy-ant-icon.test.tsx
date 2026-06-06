@@ -14,6 +14,7 @@ import {
   LegacyFormIcon,
   LegacyInfoCircleIcon,
   LegacyLeftIcon,
+  LegacyLoadingIcon,
   LegacyMailIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
@@ -49,6 +50,7 @@ describe('LegacyPlusIcon', () => {
         <LegacyUserAddIcon />
         <LegacyQuestionCircleIcon />
         <LegacyInfoCircleIcon />
+        <LegacyLoadingIcon />
         <LegacyLeftIcon />
         <LegacyRightIcon />
         <LegacyDownIcon className="ant-select-arrow-icon" />
@@ -83,6 +85,13 @@ describe('LegacyPlusIcon', () => {
     expect(html).toContain('data-icon="info-circle"');
     expect(html).toContain(
       'd="M464 336a48 48 0 1096 0 48 48 0 10-96 0zm72 112h-48c-4.4 0-8 3.6-8 8v272c0 4.4 3.6 8 8 8h48c4.4 0 8-3.6 8-8V456c0-4.4-3.6-8-8-8z"',
+    );
+    expect(html).toContain('aria-label="图标: loading"');
+    expect(html).toContain('class="anticon anticon-loading"');
+    expect(html).toContain('class="anticon-spin"');
+    expect(html).toContain('data-icon="loading"');
+    expect(html).toContain(
+      'd="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3.1 19.9-16 36-35.9 36z"',
     );
     expect(html).toContain('aria-label="图标: left"');
     expect(html).toContain('aria-label="图标: right"');

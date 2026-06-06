@@ -219,11 +219,13 @@ describe('OrdersPage legacy order manager', () => {
     expect(block).toContain('<LegacyModal');
     expect(block).toContain('title="订单分配"');
     expect(block).toContain('visible={open}');
-    expect(block).toContain("okText={assign.isPending ? <LoadingOutlined /> : '确定'}");
+    expect(block).toContain("okText={assign.isPending ? <LegacyLoadingIcon /> : '确定'}");
     expect(block).toContain('cancelText="取消"');
     expect(block).not.toContain('<Modal');
     expect(block).not.toContain('open={open}');
     expect(ordersSource).not.toContain('Menu, Modal, Row');
+    expect(ordersSource).not.toContain('LoadingOutlined');
+    expect(ordersSource).not.toContain('@ant-design/icons');
     expect(ordersSource).not.toContain('okButtonProps={{ loading: assign.isPending }}');
   });
 

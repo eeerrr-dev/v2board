@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Input } from 'antd';
-import { LoadingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Notice } from '@v2board/types';
 import {
@@ -13,7 +12,7 @@ import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyButton } from '@/components/legacy-button';
 import { LegacyModal } from '@/components/legacy-modal';
-import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
+import { LegacyLoadingIcon, LegacyPlusIcon } from '@/components/legacy-ant-icon';
 import {
   LegacyStandaloneTable,
   legacyTableRowKey,
@@ -154,7 +153,7 @@ export default function NoticesPage() {
         onOk={() => {
           saveLoading || void saveNotice();
         }}
-        okText={saveLoading ? <LoadingOutlined /> : '提交'}
+        okText={saveLoading ? <LegacyLoadingIcon /> : '提交'}
         cancelText="取消"
       >
         <div>

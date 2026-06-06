@@ -244,7 +244,10 @@ describe('ServersPage legacy server group route', () => {
       groupModalSource.indexOf('setVisible(false);'),
     );
     expect(groupModalSource).not.toContain('await groups.refetch();');
-    expect(groupModalSource).toContain("okText={groups.isFetching ? <LoadingOutlined /> : '提交'}");
+    expect(groupModalSource).toContain(
+      "okText={groups.isFetching ? <LegacyLoadingIcon /> : '提交'}",
+    );
+    expect(groupModalSource).not.toContain('LoadingOutlined');
     expect(groupModalSource).not.toContain(
       'save.mutateAsync({ id: submit.id, name: submit.name })',
     );
@@ -274,7 +277,10 @@ describe('ServersPage legacy server group route', () => {
       routeModalSource.indexOf('setVisible(false);'),
     );
     expect(routeModalSource).not.toContain('await routes.refetch();');
-    expect(routeModalSource).toContain("okText={routes.isFetching ? <LoadingOutlined /> : '提交'}");
+    expect(routeModalSource).toContain(
+      "okText={routes.isFetching ? <LegacyLoadingIcon /> : '提交'}",
+    );
+    expect(routeModalSource).not.toContain('LoadingOutlined');
     expect(routeModalSource).not.toContain('okText={save.isPending');
   });
 
@@ -765,7 +771,8 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain(
       "className={`ant-btn ant-btn-primary${saving ? ' ant-btn-loading' : ''}`}",
     );
-    expect(serversSource).toContain('{saving ? <LegacyServerButtonLoadingIcon /> : null}');
+    expect(serversSource).toContain('{saving ? <LegacyLoadingIcon /> : null}');
+    expect(serversSource).not.toContain('LegacyServerButtonLoadingIcon');
     expect(serversSource).toContain('提交');
     expect(serversSource).toContain('取消');
     expect(serversSource).not.toContain('function NodeEditModal');

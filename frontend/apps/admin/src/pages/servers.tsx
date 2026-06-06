@@ -8,7 +8,7 @@ import type {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { App, Form, Input, List, Space, Badge, Tooltip } from 'antd';
-import { LinkOutlined, LoadingOutlined, ReadOutlined } from '@ant-design/icons';
+import { LinkOutlined, ReadOutlined } from '@ant-design/icons';
 import type { FormInstance } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
@@ -43,6 +43,7 @@ import {
   LegacyEditIcon,
   LegacyFilterIcon,
   LegacyFormIcon,
+  LegacyLoadingIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
   LegacyUserIcon,
@@ -100,25 +101,6 @@ const AVAILABLE_STATUS: Record<number, 'error' | 'warning' | 'processing'> = {
   1: 'warning',
   2: 'processing',
 };
-
-function LegacyServerButtonLoadingIcon() {
-  return (
-    <i aria-label="图标: loading" className="anticon anticon-loading">
-      <svg
-        className="anticon-spin"
-        viewBox="0 0 1024 1024"
-        focusable="false"
-        data-icon="loading"
-        width="1em"
-        height="1em"
-        fill="currentColor"
-        aria-hidden="true"
-      >
-        <path d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3.1 19.9-16 36-35.9 36z" />
-      </svg>
-    </i>
-  );
-}
 
 type RouteActionTextMap = Record<string, string> &
   Record<
@@ -800,7 +782,7 @@ function ServerGroupModal({
           if (groups.isFetching) return;
           void saveGroup();
         }}
-        okText={groups.isFetching ? <LoadingOutlined /> : '提交'}
+        okText={groups.isFetching ? <LegacyLoadingIcon /> : '提交'}
         cancelText="取消"
       >
         <div>
@@ -956,7 +938,7 @@ function ServerRouteModal({
           if (routes.isFetching) return;
           void saveRoute();
         }}
-        okText={routes.isFetching ? <LoadingOutlined /> : '提交'}
+        okText={routes.isFetching ? <LegacyLoadingIcon /> : '提交'}
         cancelText="取消"
       >
         <div>
@@ -2124,7 +2106,7 @@ function NodeEditDrawer({
           className={`ant-btn ant-btn-primary${saving ? ' ant-btn-loading' : ''}`}
           onClick={() => form.submit()}
         >
-          {saving ? <LegacyServerButtonLoadingIcon /> : null}
+          {saving ? <LegacyLoadingIcon /> : null}
           提交
         </LegacyButton>
       </div>

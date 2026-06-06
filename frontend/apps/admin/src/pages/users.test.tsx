@@ -407,7 +407,9 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain('type LegacySelectValue,');
     expect(assignOrderModalSource).toContain('<LegacyModal');
     expect(assignOrderModalSource).toContain('visible={Boolean(user)}');
-    expect(usersSource).toContain("okText={assign.isPending ? <LoadingOutlined /> : '确定'}");
+    expect(usersSource).toContain("okText={assign.isPending ? <LegacyLoadingIcon /> : '确定'}");
+    expect(usersSource).not.toContain('LoadingOutlined');
+    expect(usersSource).not.toContain('@ant-design/icons');
     expect(usersSource).toContain('function assignOrderSubmit(email?: string): AssignOrderSubmit');
     expect(usersSource).toContain('email: email || undefined');
     expect(usersSource).toContain('plan_id: undefined');
