@@ -29,7 +29,7 @@ describe('LegacyDatePicker', () => {
 
   it('renders the old Ant Design date picker input shell', () => {
     const html = renderToStaticMarkup(
-      <LegacyDatePicker style={{ width: '100%' }} onChange={() => undefined} />,
+      <LegacyDatePicker showTime style={{ width: '100%' }} onChange={() => undefined} />,
     );
 
     expect(html).toContain(
@@ -41,7 +41,9 @@ describe('LegacyDatePicker', () => {
 
   it('opens the old Ant Design calendar-time popup shell instead of a native datetime input', async () => {
     await act(async () => {
-      root.render(<LegacyDatePicker style={{ width: '100%' }} onChange={() => undefined} />);
+      root.render(
+        <LegacyDatePicker showTime style={{ width: '100%' }} onChange={() => undefined} />,
+      );
     });
 
     await act(async () => {
@@ -72,7 +74,7 @@ describe('LegacyDatePicker', () => {
     const target = dayjs().date(15).hour(0).minute(0).second(0).millisecond(0);
 
     await act(async () => {
-      root.render(<LegacyDatePicker style={{ width: '100%' }} onChange={onChange} />);
+      root.render(<LegacyDatePicker showTime style={{ width: '100%' }} onChange={onChange} />);
     });
     await act(async () => {
       container
@@ -87,7 +89,7 @@ describe('LegacyDatePicker', () => {
       dayCell?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(onChange).toHaveBeenLastCalledWith(target.format('X'));
+    expect(onChange.mock.lastCall?.[0]?.format('X')).toBe(target.format('X'));
     expect(container.querySelector<HTMLInputElement>('.ant-calendar-picker-input')?.value).toBe(
       target.format('YYYY-MM-DD HH:mm:ss'),
     );
@@ -116,6 +118,54 @@ describe('LegacyDatePicker', () => {
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
+    expect(document.querySelector('.ant-calendar-picker-container')).toBeNull();
+  });
+
+  it('renders date-only mode like the old user drawer picker', async () => {
+    const onChange = vi.fn();
+    const target = dayjs().date(15).hour(0).minute(0).second(0).millisecond(0);
+
+    await act(async () => {
+      root.render(
+        <LegacyDatePicker
+          placeholder="长期有效"
+          defaultValue={target}
+          style={{ width: '100%' }}
+          onChange={onChange}
+        />,
+      );
+    });
+
+    expect(container.querySelector('.ant-calendar-picker')?.getAttribute('style')).toBe(
+      'width: 100%;',
+    );
+    expect(container.querySelector<HTMLInputElement>('.ant-calendar-picker-input')?.value).toBe(
+      target.format('YYYY-MM-DD'),
+    );
+
+    await act(async () => {
+      container
+        .querySelector('.ant-calendar-picker-input')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const popup = document.querySelector('.ant-calendar-picker-container');
+    expect(popup?.querySelector('.ant-calendar-time')).toBeNull();
+    expect(popup?.querySelector('.ant-calendar-time-picker-btn')).toBeNull();
+    expect(popup?.querySelector('.ant-calendar-ok-btn')).toBeNull();
+    expect(popup?.querySelector('.ant-calendar-input ')?.getAttribute('placeholder')).toBe(
+      '长期有效',
+    );
+
+    await act(async () => {
+      document
+        .querySelector(`.ant-calendar-cell[title="${target.year()}年${target.month() + 1}月16日"]`)
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onChange.mock.lastCall?.[0]?.format('YYYY-MM-DD')).toBe(
+      target.date(16).format('YYYY-MM-DD'),
+    );
     expect(document.querySelector('.ant-calendar-picker-container')).toBeNull();
   });
 });

@@ -172,8 +172,9 @@ export function LegacyFilterDrawer({
                   ) : null}
                   {selected.type === 'date' ? (
                     <LegacyDatePicker
+                      showTime
                       style={{ width: '100%' }}
-                      onChange={(value) => update(index, { value })}
+                      onChange={(date) => update(index, { value: date && date.format('X') })}
                     />
                   ) : null}
                   {!selected.type ? (

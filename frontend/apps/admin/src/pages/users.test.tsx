@@ -311,6 +311,11 @@ describe('UsersPage legacy user manager', () => {
     expect(userManageDrawerSource).toContain(
       "onChange={(value) => formChange('expired_at', value ? value.format('X') : null)}",
     );
+    expect(userManageDrawerSource).toContain('<LegacyDatePicker');
+    expect(userManageDrawerSource).not.toContain('<DatePicker');
+    expect(userManageDrawerSource).not.toContain(
+      "import { App, DatePicker, Tooltip } from 'antd';",
+    );
     expect(userManageDrawerSource).toContain(
       'value={(values.plan_id || null) as LegacySelectValue}',
     );
@@ -506,9 +511,11 @@ describe('UsersPage legacy user manager', () => {
     expect(legacyFilterDrawerSource).toContain('<LegacyDivider>');
     expect(legacyFilterDrawerSource).toContain('<LegacyDeleteIcon');
     expect(legacyFilterDrawerSource).toContain('<LegacySelect');
-    expect(legacyFilterDrawerSource).toContain('options={keys.map((item) => ({ value: item.key, label: item.title }))}');
     expect(legacyFilterDrawerSource).toContain(
-      "onChange={(key) => update(index, { key: key as string })}",
+      'options={keys.map((item) => ({ value: item.key, label: item.title }))}',
+    );
+    expect(legacyFilterDrawerSource).toContain(
+      'onChange={(key) => update(index, { key: key as string })}',
     );
     expect(legacyFilterDrawerSource).toContain('keys[keyIndex]!.condition.map');
     expect(legacyFilterDrawerSource).toContain('selected.options!.map');
@@ -518,7 +525,9 @@ describe('UsersPage legacy user manager', () => {
       'label: String(option.key ?? option.label ?? option.value)',
     );
     expect(legacyFilterDrawerSource).not.toContain('<Select.Option');
-    expect(legacyFilterDrawerSource).not.toContain("import { App, Button, DatePicker, Divider, Drawer, Input, Select } from 'antd';");
+    expect(legacyFilterDrawerSource).not.toContain(
+      "import { App, Button, DatePicker, Divider, Drawer, Input, Select } from 'antd';",
+    );
     expect(legacyFilterDrawerSource).not.toContain("import { App, DatePicker } from 'antd';");
     expect(legacyFilterDrawerSource).not.toContain('@ant-design/icons');
     expect(legacyFilterDrawerSource).not.toContain('legacy-filter-key');
@@ -552,9 +561,10 @@ describe('UsersPage legacy user manager', () => {
     );
     expect(legacyFilterDrawerSource).toContain('defaultValue={filter.value || undefined}');
     expect(legacyFilterDrawerSource).toContain(
-      'onChange={(value) => update(index, { value })}',
+      "onChange={(date) => update(index, { value: date && date.format('X') })}",
     );
-    expect(legacyDatePickerSource).toContain("onChange(date.format('X'))");
+    expect(legacyFilterDrawerSource).toContain('showTime');
+    expect(legacyDatePickerSource).toContain('onChange(date);');
     expect(legacyFilterDrawerSource).not.toContain("date ? date.format('X') : ''");
     expect(legacyFilterDrawerSource).not.toContain('keys[keyIndex]?.condition');
   });

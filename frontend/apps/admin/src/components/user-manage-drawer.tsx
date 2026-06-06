@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App, DatePicker, Tooltip } from 'antd';
+import { App, Tooltip } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { AdminUserRow, AdminUserUpdatePayload } from '@v2board/types';
 import { BYTE_GB } from '@v2board/config/format';
@@ -9,6 +9,7 @@ import { LegacyButton } from './legacy-button';
 import { LegacyDrawer } from './legacy-drawer';
 import { LegacyInput, LegacyInputGroup, LegacyTextArea } from './legacy-input';
 import { LegacyQuestionCircleIcon } from './legacy-ant-icon';
+import { LegacyDatePicker } from './legacy-date-picker';
 import { LegacySelect, type LegacySelectOption, type LegacySelectValue } from './legacy-select';
 
 type UserManageFormValues = Omit<Partial<AdminUserRow>, 'expired_at' | 'is_admin' | 'is_staff'> & {
@@ -34,7 +35,7 @@ function legacyDefaultValue(value: unknown) {
 }
 
 function legacyExpiredAtDefaultValue(value: UserManageFormValues['expired_at']) {
-  return (value !== null && dayjs(1000 * Number(value))) as unknown as Dayjs;
+  return (value !== null && dayjs(1000 * Number(value))) as Dayjs | false;
 }
 
 function toFormValues(user: Partial<AdminUserRow> & Record<string, unknown>): UserManageFormValues {
@@ -296,7 +297,7 @@ export function UserManageDrawer({
             <div className="form-group">
               <label htmlFor="example-text-input-alt">到期时间</label>
               <div>
-                <DatePicker
+                <LegacyDatePicker
                   placeholder="长期有效"
                   defaultValue={legacyExpiredAtDefaultValue(values.expired_at)}
                   style={{ width: '100%' }}

@@ -4,7 +4,10 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { LegacyCalendarIcon } from './legacy-ant-icon';
 
 interface LegacyDatePickerProps {
-  onChange: (value: string | null) => void;
+  defaultValue?: Dayjs | false | null;
+  onChange: (value: Dayjs | null) => void;
+  placeholder?: string;
+  showTime?: boolean;
   style?: CSSProperties;
 }
 
@@ -29,6 +32,15 @@ function formatDateTitle(date: Dayjs) {
 
 function formatDateTime(date: Dayjs) {
   return date.format('YYYY-MM-DD HH:mm:ss');
+}
+
+function formatDisplayValue(date: Dayjs, showTime: boolean) {
+  return showTime ? formatDateTime(date) : date.format('YYYY-MM-DD');
+}
+
+function normalizeDefaultValue(value: LegacyDatePickerProps['defaultValue']) {
+  if (!value) return null;
+  return value.isValid() ? value : null;
 }
 
 function getCalendarRows(viewMonth: Dayjs): CalendarCell[][] {
@@ -76,18 +88,29 @@ function TimeColumn({
   );
 }
 
-export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
+export function LegacyDatePicker({
+  defaultValue,
+  onChange,
+  placeholder = '请选择日期',
+  showTime = false,
+  style,
+}: LegacyDatePickerProps) {
   const rootRef = useRef<HTMLSpanElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
-  const [showTime, setShowTime] = useState(false);
-  const [viewMonth, setViewMonth] = useState(() => dayjs().startOf('month'));
-  const [selected, setSelected] = useState<Dayjs | null>(null);
-  const [value, setValue] = useState('');
+  const [showTimeOpen, setShowTimeOpen] = useState(false);
+  const [viewMonth, setViewMonth] = useState(() =>
+    (normalizeDefaultValue(defaultValue) ?? dayjs()).startOf('month'),
+  );
+  const [selected, setSelected] = useState<Dayjs | null>(() => normalizeDefaultValue(defaultValue));
+  const [value, setValue] = useState(() => {
+    const initial = normalizeDefaultValue(defaultValue);
+    return initial ? formatDisplayValue(initial, showTime) : '';
+  });
   const [popupStyle, setPopupStyle] = useState<CSSProperties>({});
   const today = dayjs();
   const activeDate = selected ?? today;
-  const headerDate = showTime ? activeDate : viewMonth;
+  const headerDate = showTimeOpen ? activeDate : viewMonth;
 
   useEffect(() => {
     if (!open) return;
@@ -116,9 +139,9 @@ export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
       return;
     }
     setSelected(date);
-    setValue(formatDateTime(date));
+    setValue(formatDisplayValue(date, showTime));
     setViewMonth(date.startOf('month'));
-    onChange(date.format('X'));
+    onChange(date);
   };
 
   const selectDate = (date: Dayjs) => {
@@ -126,6 +149,9 @@ export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
       ? date.hour(selected.hour()).minute(selected.minute()).second(selected.second())
       : date.hour(0).minute(0).second(0);
     applyValue(next);
+    if (!showTime) {
+      setOpen(false);
+    }
   };
 
   const selectTime = (unit: 'hour' | 'minute' | 'second', nextValue: number) => {
@@ -140,7 +166,7 @@ export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
   const closeWithValue = () => {
     if (!selected) return;
     setOpen(false);
-    setShowTime(false);
+    setShowTimeOpen(false);
   };
 
   const openPicker = () => {
@@ -151,14 +177,14 @@ export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
   const rows = getCalendarRows(viewMonth);
 
   useEffect(() => {
-    if (!open) setShowTime(false);
+    if (!open) setShowTimeOpen(false);
   }, [open]);
 
   useEffect(() => {
     if (selected) {
       setViewMonth(selected.startOf('month'));
     } else {
-      setShowTime(false);
+      setShowTimeOpen(false);
     }
   }, [selected]);
 
@@ -168,13 +194,13 @@ export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
       className="ant-calendar-picker-container ant-calendar-picker-container-placement-bottomLeft"
       style={popupStyle}
     >
-      <div className="ant-calendar ant-calendar-time" tabIndex={0}>
+      <div className={`ant-calendar${showTime ? ' ant-calendar-time' : ''}`} tabIndex={0}>
         <div className="ant-calendar-panel">
           <div className="ant-calendar-input-wrap">
             <div className="ant-calendar-date-input-wrap">
               <input
                 className="ant-calendar-input "
-                placeholder="请选择日期"
+                placeholder={placeholder}
                 value={value}
                 onChange={() => undefined}
               />
@@ -186,7 +212,7 @@ export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
           <div tabIndex={0} className="ant-calendar-date-panel">
             <div className="ant-calendar-header">
               <div style={{ position: 'relative' }}>
-                {showTime ? null : (
+                {showTimeOpen ? null : (
                   <>
                     <a
                       className="ant-calendar-prev-year-btn"
@@ -204,26 +230,26 @@ export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
                 )}
                 <span className="ant-calendar-ym-select">
                   <a
-                    className={`ant-calendar-year-select${showTime ? ' ant-calendar-time-status' : ''}`}
+                    className={`ant-calendar-year-select${showTimeOpen ? ' ant-calendar-time-status' : ''}`}
                     role="button"
-                    title={showTime ? undefined : '选择年份'}
+                    title={showTimeOpen ? undefined : '选择年份'}
                   >
                     {headerDate.year()}年
                   </a>
                   <a
-                    className={`ant-calendar-month-select${showTime ? ' ant-calendar-time-status' : ''}`}
+                    className={`ant-calendar-month-select${showTimeOpen ? ' ant-calendar-time-status' : ''}`}
                     role="button"
-                    title={showTime ? undefined : '选择月份'}
+                    title={showTimeOpen ? undefined : '选择月份'}
                   >
                     {headerDate.month() + 1}月
                   </a>
-                  {showTime ? (
+                  {showTimeOpen ? (
                     <a className="ant-calendar-day-select ant-calendar-time-status" role="button">
                       {activeDate.date()}日
                     </a>
                   ) : null}
                 </span>
-                {showTime ? null : (
+                {showTimeOpen ? null : (
                   <>
                     <a
                       className="ant-calendar-next-month-btn"
@@ -239,7 +265,7 @@ export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
                 )}
               </div>
             </div>
-            {showTime ? (
+            {showTimeOpen ? (
               <div className="ant-calendar-time-picker">
                 <div className="ant-calendar-time-picker-panel">
                   <div className="ant-calendar-time-picker-column-3 ant-calendar-time-picker-inner">
@@ -359,20 +385,24 @@ export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
                 >
                   此刻
                 </a>
-                <a
-                  className={`ant-calendar-time-picker-btn${selected ? '' : ' ant-calendar-time-picker-btn-disabled'}`}
-                  role="button"
-                  onClick={() => selected && setShowTime((value) => !value)}
-                >
-                  {showTime ? '选择日期' : '选择时间'}
-                </a>
-                <a
-                  className={`ant-calendar-ok-btn${selected ? '' : ' ant-calendar-ok-btn-disabled'}`}
-                  role="button"
-                  onClick={closeWithValue}
-                >
-                  确 定
-                </a>
+                {showTime ? (
+                  <>
+                    <a
+                      className={`ant-calendar-time-picker-btn${selected ? '' : ' ant-calendar-time-picker-btn-disabled'}`}
+                      role="button"
+                      onClick={() => selected && setShowTimeOpen((value) => !value)}
+                    >
+                      {showTimeOpen ? '选择日期' : '选择时间'}
+                    </a>
+                    <a
+                      className={`ant-calendar-ok-btn${selected ? '' : ' ant-calendar-ok-btn-disabled'}`}
+                      role="button"
+                      onClick={closeWithValue}
+                    >
+                      确 定
+                    </a>
+                  </>
+                ) : null}
               </span>
             </div>
           </div>
@@ -390,13 +420,13 @@ export function LegacyDatePicker({ onChange, style }: LegacyDatePickerProps) {
       <span
         ref={rootRef}
         className="ant-calendar-picker"
-        style={{ minWidth: 195, ...style }}
+        style={{ ...(showTime ? { minWidth: 195 } : {}), ...style }}
         onClick={openPicker}
       >
         <div>
           <input
             readOnly
-            placeholder="请选择日期"
+            placeholder={placeholder}
             className="ant-calendar-picker-input ant-input"
             value={value}
           />
