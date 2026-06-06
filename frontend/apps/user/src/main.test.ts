@@ -31,7 +31,7 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
-    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-24';");
+    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-25';");
     expect(mainSource).toContain(
       'storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`',
     );
@@ -93,7 +93,7 @@ describe('user legacy entrypoint', () => {
   });
 
   it('installs dev entry recovery before the Vite module graph loads', () => {
-    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-24';");
+    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-25';");
     expect(indexSource).toContain("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;");
     expect(indexSource).toContain('function clearOldRecoveryState()');
     expect(indexSource).toContain("'v2board:white-screen-recovery:',");
@@ -125,7 +125,7 @@ describe('user legacy entrypoint', () => {
     expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
     expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;")).toBeLessThan(
       indexSource.indexOf(
-        '<script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-24"',
+        '<script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-25"',
       ),
     );
   });
