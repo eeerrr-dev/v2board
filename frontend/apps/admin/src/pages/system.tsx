@@ -1,9 +1,12 @@
-import { Table } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
 import { useEffect } from 'react';
 import type { QueueWorkloadItem } from '@v2board/types';
 import { useQueueStats, useQueueWorkload } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
+import {
+  LegacyStandaloneTable,
+  legacyTableRowKey,
+  type LegacyStandaloneTableHeader,
+} from '@/components/legacy-standalone-table';
 
 const QUEUE_NAMES: Record<string, string> = {
   order_handle: '订单队列',
@@ -14,30 +17,11 @@ const QUEUE_NAMES: Record<string, string> = {
   traffic_fetch: '流量消费队列',
 };
 
-const columns: ColumnsType<QueueWorkloadItem> = [
-  {
-    title: '队列名称',
-    dataIndex: 'name',
-    key: 'name',
-    render: (value: string) => QUEUE_NAMES[value],
-  },
-  {
-    title: '作业量',
-    dataIndex: 'processes',
-    key: 'processes',
-  },
-  {
-    title: '任务量',
-    dataIndex: 'length',
-    key: 'length',
-  },
-  {
-    title: '占用时间',
-    dataIndex: 'wait',
-    key: 'wait',
-    align: 'right',
-    render: (value: number) => `${value}s`,
-  },
+const headers: LegacyStandaloneTableHeader[] = [
+  { title: '队列名称' },
+  { title: '作业量' },
+  { title: '任务量' },
+  { title: '占用时间', alignRight: true },
 ];
 
 export function startLegacyQueuePolling(
@@ -64,10 +48,7 @@ export default function SystemPage() {
   const stats = queueStats.data;
   const workload = queueWorkload.data?.filter((item) => item.name !== 'default');
 
-  useEffect(
-    () => startLegacyQueuePolling(queueStats.refetch, queueWorkload.refetch),
-    [],
-  );
+  useEffect(() => startLegacyQueuePolling(queueStats.refetch, queueWorkload.refetch), []);
 
   return (
     <>
@@ -99,7 +80,9 @@ export default function SystemPage() {
               <div className="col-lg-6 col-xl-3 p-4 border-bottom overflow-hidden">
                 <div>
                   <div>状态</div>
-                  <div className="mt-4 font-size-h3">{stats ? (stats.status ? '运行中' : '未启动') : null}</div>
+                  <div className="mt-4 font-size-h3">
+                    {stats ? (stats.status ? '运行中' : '未启动') : null}
+                  </div>
                   {stats ? (
                     stats.status ? (
                       <i
@@ -126,11 +109,22 @@ export default function SystemPage() {
             <h3 className="block-title">当前作业详情</h3>
           </div>
           <div className="block-content p-0">
-            <Table<QueueWorkloadItem>
-              columns={columns}
-              dataSource={workload}
-              pagination={false}
-            />
+            <LegacyStandaloneTable headers={headers} isEmpty={(workload ?? []).length === 0}>
+              {(workload ?? []).map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyTableRowKey(index)}
+                >
+                  <td className="">{QUEUE_NAMES[row.name]}</td>
+                  <td className="">{row.processes}</td>
+                  <td className="">{row.length}</td>
+                  <td className="" style={{ textAlign: 'right' }}>
+                    {row.wait}s
+                  </td>
+                </tr>
+              ))}
+            </LegacyStandaloneTable>
           </div>
         </div>
       </LegacySpin>

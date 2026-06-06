@@ -5,7 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import SystemPage, { startLegacyQueuePolling } from './system';
 
-const systemSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'system.tsx'), 'utf8');
+const systemSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'system.tsx'),
+  'utf8',
+);
 const queriesSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'),
   'utf8',
@@ -41,6 +44,13 @@ describe('SystemPage legacy queue monitor', () => {
     expect(html).toContain('运行中');
     expect(html).toContain('si si-check text-success');
     expect(html).toContain('当前作业详情');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain('class="ant-table ant-table-default ant-table-scroll-position-left"');
+    expect(html).toContain('class="ant-table-body"');
+    expect(html).toContain('<table class="">');
+    expect(html).toContain(
+      'class="ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
+    );
     expect(html).toContain('队列名称');
     expect(html).toContain('作业量');
     expect(html).toContain('任务量');
@@ -48,10 +58,15 @@ describe('SystemPage legacy queue monitor', () => {
     expect(html).toContain('订单队列');
     expect(html).toContain('流量消费队列');
     expect(html).not.toContain('data-row-key="default"');
+    expect(html).not.toContain('ant-table-cell');
+    expect(html).not.toContain('css-dev-only');
   });
 
   it('keeps the legacy workload table without an explicit rowKey', () => {
-    expect(systemSource).toContain('pagination={false}');
+    expect(systemSource).toContain('<LegacyStandaloneTable headers={headers}');
+    expect(systemSource).toContain('{...legacyTableRowKey(index)}');
+    expect(systemSource).not.toContain('<Table<QueueWorkloadItem>');
+    expect(systemSource).not.toContain('pagination={false}');
     expect(systemSource).not.toContain('rowKey="name"');
   });
 
@@ -73,18 +88,15 @@ describe('SystemPage legacy queue monitor', () => {
       if (typeof handler === 'function') timeoutHandlers.push(handler);
       return timeoutIds[timeoutHandlers.length - 1] ?? timeoutIds[0]!;
     });
-    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout').mockImplementation(() => undefined);
+    const clearTimeoutSpy = vi
+      .spyOn(globalThis, 'clearTimeout')
+      .mockImplementation(() => undefined);
 
     try {
       const stopPolling = startLegacyQueuePolling(refetchStats, refetchWorkload);
 
       expect(systemSource).toContain(
-        [
-          'useEffect(',
-          '    () => startLegacyQueuePolling(queueStats.refetch, queueWorkload.refetch),',
-          '    [],',
-          '  );',
-        ].join('\n'),
+        'useEffect(() => startLegacyQueuePolling(queueStats.refetch, queueWorkload.refetch), []);',
       );
       expect(systemSource).toContain('3000');
       expect(systemSource).toContain('timer = setTimeout(() =>');
