@@ -360,14 +360,19 @@ describe('CouponsPage legacy routes', () => {
     expect(
       source.match(/<Tag style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g),
     ).toHaveLength(2);
-    expect(source).toContain("import { App, Input, Modal, Select, Tag } from 'antd';");
+    expect(source).toContain("import { App, Input, Modal, Tag } from 'antd';");
     expect(source).toContain("import { LegacyButton } from '@/components/legacy-button';");
     expect(source).toContain("import { LegacyPlusIcon } from '@/components/legacy-ant-icon';");
     expect(source).toContain(
       "import { LegacyRangePicker } from '@/components/legacy-range-picker';",
     );
     expect(source).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
+    expect(source).toContain("} from '@/components/legacy-select';");
+    expect(source).toContain('LegacySelect,');
+    expect(source).toContain('type LegacySelectOption,');
+    expect(source).toContain('type LegacySelectValue,');
     expect(source).toContain('<LegacySwitch');
+    expect(source.match(/<LegacySelect/g)).toHaveLength(5);
     expect(source).toContain(
       'LegacyStandaloneTable,\n  legacyTableRowKey,\n  type LegacyStandaloneTableHeader,',
     );
@@ -376,6 +381,9 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain('Table, Tag');
     expect(source).not.toContain('Typography.Text');
     expect(source).not.toContain("Typography } from 'antd'");
+    expect(source).not.toContain('Modal, Select');
+    expect(source).not.toContain('<Select');
+    expect(source).not.toContain('Select.Option');
     expect(source).not.toContain('<Switch');
     expect(source).not.toContain('Switch, Tag');
     expect(source).not.toContain('navigator.clipboard?.writeText');
@@ -436,15 +444,16 @@ describe('CouponsPage legacy routes', () => {
     expect(source).toContain('checked={value as unknown as boolean}');
     expect(source).toContain('value={submit.limit_use as string | number | undefined}');
     expect(source).toContain('value={submit.limit_use_with_user as string | number | undefined}');
-    expect(source).toContain('value={submit.plan_id as string | number | undefined}');
-    expect(source).toContain("mode={'single' as 'multiple'}");
+    expect(source).toContain('value={submit.plan_id as LegacySelectValue | undefined}');
+    expect(source.match(/mode="multiple"/g)).toHaveLength(2);
     expect(source).toMatch(
-      /plan_id:\s*\(\(value as string\)\.length\s*\?\s*value\s*:\s*null\) as GiftcardSubmit\['plan_id'\]/,
+      /plan_id:\s*\(String\(value \?\? ''\)\.length\s*\?\s*value\s*:\s*null\) as GiftcardSubmit\['plan_id'\]/,
     );
     expect(source).not.toContain('checked={Boolean(value)}');
     expect(source).not.toContain('submit.limit_use ?? undefined');
     expect(source).not.toContain('submit.limit_use_with_user ?? undefined');
     expect(source).not.toContain('submit.plan_id ?? undefined');
+    expect(source).not.toContain("mode={'single' as 'multiple'}");
   });
 
   it('keeps the bundled giftcard value unit switch', () => {
@@ -463,8 +472,28 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain("submit.type === 2 || submit.type === 5 ? '天'");
   });
 
-  it('keeps the original random keys for dynamic coupon and giftcard select options', () => {
-    expect(source.match(/key=\{Math\.random\(\)\}/g)).toHaveLength(3);
+  it('keeps the original coupon and giftcard select option values', () => {
+    expect(source).toContain('const COUPON_TYPE_OPTIONS: LegacySelectOption[] = [');
+    expect(source).toContain("{ value: 1, label: '按金额优惠' }");
+    expect(source).toContain("{ value: 2, label: '按比例优惠' }");
+    expect(source).toContain('const GIFTCARD_TYPE_OPTIONS: LegacySelectOption[] = [');
+    expect(source).toContain("{ value: 1, label: '增加账户余额' }");
+    expect(source).toContain("{ value: 2, label: '增加订阅时长' }");
+    expect(source).toContain("{ value: 3, label: '增加套餐流量' }");
+    expect(source).toContain("{ value: 4, label: '重置套餐流量' }");
+    expect(source).toContain("{ value: 5, label: '兑换订阅套餐' }");
+    expect(source).toContain(
+      'const PERIOD_OPTIONS: LegacySelectOption[] = Object.keys(PERIOD_TEXT).map',
+    );
+    expect(source).toContain(
+      'function planOptions(plans: Plan[] | undefined): LegacySelectOption[]',
+    );
+    expect(source).toContain('value: `${plan.id}`');
+    expect(source).toContain('label: plan.name');
+    expect(source).toContain('options={COUPON_TYPE_OPTIONS}');
+    expect(source).toContain('options={GIFTCARD_TYPE_OPTIONS}');
+    expect(source).toContain('options={planOptions(plans.data)}');
+    expect(source).toContain('options={PERIOD_OPTIONS}');
     expect(source).not.toContain('key={plan.id}');
     expect(source).not.toContain('key={period}');
   });

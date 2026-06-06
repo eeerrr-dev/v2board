@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App, Input, Modal, Select, Tag } from 'antd';
+import { App, Input, Modal, Tag } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useLocation } from 'react-router-dom';
@@ -28,6 +28,11 @@ import {
 import { LegacyRangePicker } from '@/components/legacy-range-picker';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyModal } from '@/components/legacy-modal';
+import {
+  LegacySelect,
+  type LegacySelectOption,
+  type LegacySelectValue,
+} from '@/components/legacy-select';
 
 type AdminPageQuery = admin.AdminPageQuery;
 
@@ -69,6 +74,31 @@ const PERIOD_TEXT: Record<string, string> = {
   onetime_price: '一次性',
   reset_price: '流量重置包',
 };
+
+const COUPON_TYPE_OPTIONS: LegacySelectOption[] = [
+  { value: 1, label: '按金额优惠' },
+  { value: 2, label: '按比例优惠' },
+];
+
+const GIFTCARD_TYPE_OPTIONS: LegacySelectOption[] = [
+  { value: 1, label: '增加账户余额' },
+  { value: 2, label: '增加订阅时长' },
+  { value: 3, label: '增加套餐流量' },
+  { value: 4, label: '重置套餐流量' },
+  { value: 5, label: '兑换订阅套餐' },
+];
+
+const PERIOD_OPTIONS: LegacySelectOption[] = Object.keys(PERIOD_TEXT).map((period) => ({
+  value: period,
+  label: PERIOD_TEXT[period] ?? period,
+}));
+
+function planOptions(plans: Plan[] | undefined): LegacySelectOption[] {
+  return (plans ?? []).map((plan) => ({
+    value: `${plan.id}`,
+    label: plan.name,
+  }));
+}
 
 function legacyDateRange(startedAt?: number | string | null, endedAt?: number | string | null) {
   return `${dayjs(1000 * Number(startedAt)).format('YYYY/MM/DD HH:mm')} ~ ${dayjs(
@@ -338,14 +368,12 @@ function CouponPage() {
             <Input
               type="number"
               addonBefore={
-                <Select
+                <LegacySelect
                   style={{ width: 120 }}
                   value={submit.type}
-                  onChange={(type) => setSubmit({ ...submit, type })}
-                >
-                  <Select.Option value={1}>按金额优惠</Select.Option>
-                  <Select.Option value={2}>按比例优惠</Select.Option>
-                </Select>
+                  options={COUPON_TYPE_OPTIONS}
+                  onChange={(type) => setSubmit({ ...submit, type: type as CouponSubmit['type'] })}
+                />
               }
               addonAfter={submit.type === 1 ? '¥' : '%'}
               placeholder="请输入值"
@@ -386,7 +414,7 @@ function CouponPage() {
           <div className="form-group">
             <label htmlFor="example-text-input-alt">指定订阅</label>
             <div>
-              <Select
+              <LegacySelect
                 value={submit.limit_plan_ids || []}
                 onChange={(value) =>
                   setSubmit({ ...submit, limit_plan_ids: value.length ? value : null })
@@ -394,33 +422,26 @@ function CouponPage() {
                 mode="multiple"
                 placeholder="限制指定订阅可以使用优惠(为空则不限制)"
                 style={{ width: '100%' }}
-              >
-                {(plans.data ?? []).map((plan) => (
-                  <Select.Option key={Math.random()} value={`${plan.id}`}>
-                    {plan.name}
-                  </Select.Option>
-                ))}
-              </Select>
+                options={planOptions(plans.data)}
+              />
             </div>
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">指定周期</label>
             <div>
-              <Select
+              <LegacySelect
                 value={submit.limit_period || []}
                 onChange={(value) =>
-                  setSubmit({ ...submit, limit_period: value.length ? value : null })
+                  setSubmit({
+                    ...submit,
+                    limit_period: (value.length ? value : null) as CouponSubmit['limit_period'],
+                  })
                 }
                 mode="multiple"
                 placeholder="限制指定周期可以使用优惠(为空则不限制)"
                 style={{ width: '100%' }}
-              >
-                {Object.keys(PERIOD_TEXT).map((period) => (
-                  <Select.Option key={Math.random()} value={period}>
-                    {PERIOD_TEXT[period]}
-                  </Select.Option>
-                ))}
-              </Select>
+                options={PERIOD_OPTIONS}
+              />
             </div>
           </div>
           {!submit.code && !submit.id ? (
@@ -668,17 +689,14 @@ function GiftcardPage() {
             <Input
               type="number"
               addonBefore={
-                <Select
+                <LegacySelect
                   style={{ width: 140 }}
                   value={submit.type}
-                  onChange={(type) => setSubmit({ ...submit, type })}
-                >
-                  <Select.Option value={1}>增加账户余额</Select.Option>
-                  <Select.Option value={2}>增加订阅时长</Select.Option>
-                  <Select.Option value={3}>增加套餐流量</Select.Option>
-                  <Select.Option value={4}>重置套餐流量</Select.Option>
-                  <Select.Option value={5}>兑换订阅套餐</Select.Option>
-                </Select>
+                  options={GIFTCARD_TYPE_OPTIONS}
+                  onChange={(type) =>
+                    setSubmit({ ...submit, type: type as GiftcardSubmit['type'] })
+                  }
+                />
               }
               addonAfter={legacyGiftcardValueAddon(submit.type)}
               disabled={submit.type === 4}
@@ -691,26 +709,20 @@ function GiftcardPage() {
             <div className="form-group">
               <label htmlFor="example-text-input-alt">指定订阅</label>
               <div>
-                <Select
-                  value={submit.plan_id as string | number | undefined}
+                <LegacySelect
+                  value={submit.plan_id as LegacySelectValue | undefined}
                   onChange={(value) =>
                     setSubmit({
                       ...submit,
-                      plan_id: ((value as string).length
+                      plan_id: (String(value ?? '').length
                         ? value
                         : null) as GiftcardSubmit['plan_id'],
                     })
                   }
-                  mode={'single' as 'multiple'}
                   placeholder="指定订阅"
                   style={{ width: '100%' }}
-                >
-                  {(plans.data ?? []).map((plan) => (
-                    <Select.Option key={Math.random()} value={`${plan.id}`}>
-                      {plan.name}
-                    </Select.Option>
-                  ))}
-                </Select>
+                  options={planOptions(plans.data)}
+                />
               </div>
             </div>
           ) : null}
