@@ -68,6 +68,8 @@ describe('NoticesPage legacy notice manager', () => {
       'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"',
     );
     expect(html).toContain('data-row-key="0"');
+    expect(html).toContain('class="ant-switch-small ant-switch ant-switch-checked"');
+    expect(html).toContain('class="ant-switch-inner"');
     expect(html).toContain('#');
     expect(html).toContain('显示');
     expect(html).toContain('标题');
@@ -125,11 +127,15 @@ describe('NoticesPage legacy notice manager', () => {
   });
 
   it('keeps the original direct notice show and image value bindings', () => {
+    expect(source).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
+    expect(source).toContain('<LegacySwitch');
     expect(source).toContain('checked={value as unknown as boolean}');
     expect(source).toContain('show.mutate(row.id, {');
     expect(source).toContain('void notices.refetch();');
     expect(source).toContain('value={submit.img_url as string | undefined}');
     expect(source).not.toContain('checked={Boolean(value)}');
+    expect(source).not.toContain('<Switch');
+    expect(source).not.toContain("Switch } from 'antd'");
     expect(source).not.toContain('submit.img_url ?? undefined');
   });
 

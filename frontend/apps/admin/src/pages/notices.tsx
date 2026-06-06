@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Input, Modal, Select, Switch } from 'antd';
+import { Input, Modal, Select } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Notice } from '@v2board/types';
@@ -18,6 +18,7 @@ import {
   legacyTableRowKey,
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
+import { LegacySwitch } from '@/components/legacy-switch';
 
 export default function NoticesPage() {
   const notices = useAdminNotices({});
@@ -52,7 +53,7 @@ export default function NoticesPage() {
   ];
 
   const renderNoticeShowSwitch = (value: 0 | 1, row: Notice) => (
-    <Switch
+    <LegacySwitch
       size="small"
       onChange={() =>
         show.mutate(row.id, {

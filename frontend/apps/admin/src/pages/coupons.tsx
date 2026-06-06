@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App, Input, Modal, Select, Switch, Tag } from 'antd';
+import { App, Input, Modal, Select, Tag } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useLocation } from 'react-router-dom';
@@ -26,6 +26,7 @@ import {
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
 import { LegacyRangePicker } from '@/components/legacy-range-picker';
+import { LegacySwitch } from '@/components/legacy-switch';
 
 type AdminPageQuery = admin.AdminPageQuery;
 
@@ -187,7 +188,7 @@ function CouponPage() {
   ];
 
   const renderCouponShowSwitch = (value: 0 | 1, row: Coupon) => (
-    <Switch
+    <LegacySwitch
       size="small"
       onChange={() =>
         show.mutate(row.id, {

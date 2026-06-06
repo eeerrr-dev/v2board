@@ -136,6 +136,8 @@ describe('CouponsPage legacy routes', () => {
     expect(html).toContain(
       'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
     );
+    expect(html).toContain('class="ant-switch-small ant-switch ant-switch-checked"');
+    expect(html).toContain('class="ant-switch-inner"');
     expect(html).toContain('启用');
     expect(html).toContain('券名称');
     expect(html).toContain('类型');
@@ -358,12 +360,14 @@ describe('CouponsPage legacy routes', () => {
     expect(
       source.match(/<Tag style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g),
     ).toHaveLength(2);
-    expect(source).toContain("import { App, Input, Modal, Select, Switch, Tag } from 'antd';");
+    expect(source).toContain("import { App, Input, Modal, Select, Tag } from 'antd';");
     expect(source).toContain("import { LegacyButton } from '@/components/legacy-button';");
     expect(source).toContain("import { LegacyPlusIcon } from '@/components/legacy-ant-icon';");
     expect(source).toContain(
       "import { LegacyRangePicker } from '@/components/legacy-range-picker';",
     );
+    expect(source).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
+    expect(source).toContain('<LegacySwitch');
     expect(source).toContain(
       'LegacyStandaloneTable,\n  legacyTableRowKey,\n  type LegacyStandaloneTableHeader,',
     );
@@ -372,6 +376,8 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain('Table, Tag');
     expect(source).not.toContain('Typography.Text');
     expect(source).not.toContain("Typography } from 'antd'");
+    expect(source).not.toContain('<Switch');
+    expect(source).not.toContain('Switch, Tag');
     expect(source).not.toContain('navigator.clipboard?.writeText');
   });
 
