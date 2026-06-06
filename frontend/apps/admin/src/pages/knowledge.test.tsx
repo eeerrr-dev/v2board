@@ -110,11 +110,21 @@ describe('KnowledgePage legacy knowledge manager', () => {
   it('uses legacy form controls in the knowledge drawer', () => {
     expect(source).toContain("import { LegacyInput } from '@/components/legacy-input';");
     expect(source).toContain("import { LegacySelect } from '@/components/legacy-select';");
+    expect(source).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
     expect(source).toContain('<LegacyInput');
     expect(source).toContain('className="ant-input"');
     expect(source).toContain('defaultValue={knowledge.title}');
     expect(source).toContain('defaultValue={knowledge.category}');
     expect(source).toContain('<LegacySelect');
+    expect(source).toContain('<LegacyDrawer');
+    expect(source).toContain('<LegacyButton className="ant-btn" style={{ marginRight: 8 }}');
+    expect(source).toContain(
+      "className={`ant-btn ant-btn-primary${saveLoading ? ' ant-btn-loading' : ''}`}",
+    );
+    expect(source).not.toContain('<Drawer');
+    expect(source).not.toContain('<Button');
+    expect(source).not.toContain(' Button,');
+    expect(source).not.toContain(' Drawer,');
     expect(source).not.toContain('Input,');
     expect(source).not.toContain(" Input } from 'antd'");
     expect(source).not.toContain('<Input');

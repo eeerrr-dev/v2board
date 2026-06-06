@@ -1,5 +1,5 @@
 import { cloneElement, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { App, Button, Drawer, Modal } from 'antd';
+import { App, Modal } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import MarkdownIt from 'markdown-it';
@@ -21,6 +21,7 @@ import { LegacyButton } from '@/components/legacy-button';
 import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
 import { LegacySelect } from '@/components/legacy-select';
 import { LegacyInput } from '@/components/legacy-input';
+import { LegacyDrawer } from '@/components/legacy-drawer';
 import {
   LegacyStandaloneTable,
   legacyTableRowKey,
@@ -501,7 +502,7 @@ function KnowledgeEditor({
   return (
     <>
       {cloneElement(children, { onClick: show })}
-      <Drawer
+      <LegacyDrawer
         width="80%"
         id="knowledge"
         open={visible}
@@ -553,14 +554,17 @@ function KnowledgeEditor({
           </div>
         )}
         <div className="v2board-drawer-action">
-          <Button style={{ marginRight: 8 }} onClick={hide}>
+          <LegacyButton className="ant-btn" style={{ marginRight: 8 }} onClick={hide}>
             取消
-          </Button>
-          <Button loading={saveLoading} onClick={() => void save()} type="primary">
+          </LegacyButton>
+          <LegacyButton
+            className={`ant-btn ant-btn-primary${saveLoading ? ' ant-btn-loading' : ''}`}
+            onClick={() => void save()}
+          >
             提交
-          </Button>
+          </LegacyButton>
         </div>
-      </Drawer>
+      </LegacyDrawer>
     </>
   );
 }
