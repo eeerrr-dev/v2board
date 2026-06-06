@@ -11,9 +11,9 @@ describe('LegacySpin', () => {
     );
 
     expect(idle).toContain('class="ant-spin-nested-loading"');
-    expect(idle).toContain('class="ant-spin" style="display:none"');
     expect(idle).toContain('class="ant-spin-container"');
-    expect(idle).toContain('class="spinner-grow text-primary"');
+    expect(idle).not.toContain('class="ant-spin"');
+    expect(idle).not.toContain('class="spinner-grow text-primary"');
     expect(idle).toContain('<button type="button">编辑排序</button>');
     expect(idle).not.toContain('css-dev-only-do-not-override');
 

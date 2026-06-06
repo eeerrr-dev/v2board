@@ -453,7 +453,7 @@ describe('ServersPage legacy server group route', () => {
     mocks.pathname = '/server/manage';
     const html = renderToStaticMarkup(<ServersPage />);
 
-    expect(html).toContain('class="block block-bottom v2board-server-manage"');
+    expect(html).toContain('class="block block-bottom undefined"');
     expect(html).toContain('class="v2board-table-action"');
     expect(html).toContain('输入任意关键字搜索');
     expect(html).toContain('编辑排序');
@@ -1228,7 +1228,7 @@ describe('ServersPage legacy server group route', () => {
     mocks.pathname = '/server/manage';
     const html = renderToStaticMarkup(<ServersPage />);
 
-    expect(html).toContain('v2board-server-manage');
+    expect(html).toContain('block block-bottom undefined');
     expect(serversSource).toContain("const LEGACY_SERVER_SORT_PROMPT = '节点排序还没有保存，是否离开'");
     expect(serversSource).toContain('<LegacyServerSortPrompt when={sortMode} />');
     expect(serversSource).toContain('installLegacyServerSortPrompt()');
@@ -1245,11 +1245,8 @@ describe('ServersPage legacy server group route', () => {
     navLink.appendChild(document.createElement('span'));
     document.body.appendChild(navLink);
 
-    const page = document.createElement('div');
-    page.className = 'v2board-server-manage';
     const pageButton = document.createElement('button');
-    page.appendChild(pageButton);
-    document.body.appendChild(page);
+    document.body.appendChild(pageButton);
 
     expect(shouldPromptLegacyServerSortClick(navLink.firstElementChild)).toBe(true);
     expect(shouldPromptLegacyServerSortClick(pageButton)).toBe(false);

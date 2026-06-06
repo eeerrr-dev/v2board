@@ -788,7 +788,6 @@ function isLegacyMobile() {
 
 export function shouldPromptLegacyServerSortClick(target: EventTarget | null) {
   if (!(target instanceof Element)) return false;
-  if (target.closest('.v2board-server-manage')) return false;
   if (target.closest('.nav-main-link')) return true;
   if (target.closest('.dropdown-item')) return true;
 
@@ -1187,7 +1186,7 @@ function ServerManagePage() {
   return (
     <LegacySpin loading={nodes.isFetching || sortingLoading}>
       <LegacyServerSortPrompt when={sortMode} />
-      <div className="block block-bottom v2board-server-manage">
+      <div className="block block-bottom undefined">
         <div className="bg-white">
           <div className="v2board-table-action" style={{ padding: 15 }}>
             <LegacyDropdown
