@@ -402,6 +402,24 @@ describe('ConfigPage legacy theme config', () => {
     expect(serverTabBlock).not.toContain('ant-input-outlined');
   });
 
+  it('uses the old Ant Design 3 buttons for config side effects', () => {
+    expect(configSource).toContain("import { LegacyButton } from '@/components/legacy-button';");
+    expect(configSource).toContain('function LegacyButtonLoadingIcon()');
+    expect(configSource).toContain(
+      "className={`ant-btn ant-btn-primary${testMail.isPending ? ' ant-btn-loading' : ''}`}",
+    );
+    expect(configSource).toContain(
+      "className={`ant-btn ant-btn-primary${webhook.isPending ? ' ant-btn-loading' : ''}`}",
+    );
+    expect(configSource).toContain('{testMail.isPending ? <LegacyButtonLoadingIcon /> : null}');
+    expect(configSource).toContain('{webhook.isPending ? <LegacyButtonLoadingIcon /> : null}');
+    expect(configSource).not.toContain("Button, Input, Modal, Select } from 'antd'");
+    expect(configSource).not.toContain('<Button loading={testMail.isPending}');
+    expect(configSource).not.toContain('loading={webhook.isPending}');
+    expect(configSource).not.toContain('ant-btn-color-primary');
+    expect(configSource).not.toContain('css-dev-only-do-not-override');
+  });
+
   it('keeps the original split read and save keys for system config fields', () => {
     const source = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), 'config.tsx'),
