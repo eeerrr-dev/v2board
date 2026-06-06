@@ -1,14 +1,6 @@
-import {
-  cloneElement,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactElement,
-} from 'react';
-import { App, Button, Drawer, Input, Modal, Select, Switch, Table } from 'antd';
-import type { TableProps } from 'antd';
-import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';
+import { cloneElement, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { App, Button, Drawer, Input, Modal, Select } from 'antd';
+import { LoadingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import MarkdownIt from 'markdown-it';
 import { admin } from '@v2board/api-client';
@@ -25,6 +17,13 @@ import {
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
+import { LegacyButton } from '@/components/legacy-button';
+import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
+import {
+  LegacyStandaloneTable,
+  legacyTableRowKey,
+  type LegacyStandaloneTableHeader,
+} from '@/components/legacy-standalone-table';
 
 type SaveKnowledgePayload = Parameters<typeof admin.saveKnowledge>[1];
 
@@ -44,6 +43,22 @@ const LEGACY_KNOWLEDGE_LOCALES = (
 
 function renderLegacyAdminMarkdown(markdown: string) {
   return legacyAdminMarkdown.render(markdown);
+}
+
+function LegacyKnowledgeSwitch({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  const enabled = Boolean(checked);
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      className={`ant-switch-small ant-switch${enabled ? ' ant-switch-checked' : ''}`}
+      onClick={onChange}
+    >
+      <span className="ant-switch-inner" />
+    </button>
+  );
 }
 
 function LegacyMarkdownEditor({
@@ -292,9 +307,7 @@ function KnowledgeEditor({
                 onChange={(value) => formChange('language', value)}
               >
                 {LEGACY_KNOWLEDGE_LOCALES.map((locale) => (
-                  <Select.Option value={locale}>
-                    {LEGACY_KNOWLEDGE_I18N_TEXT[locale]}
-                  </Select.Option>
+                  <Select.Option value={locale}>{LEGACY_KNOWLEDGE_I18N_TEXT[locale]}</Select.Option>
                 ))}
               </Select>
             </div>
@@ -328,7 +341,9 @@ export default function KnowledgePage() {
   const drop = useDropKnowledgeMutation();
   const show = useShowKnowledgeMutation();
   const sort = useSortKnowledgeMutation();
-  const [orderedKnowledge, setOrderedKnowledge] = useState<KnowledgeSummary[]>(() => list.data ?? []);
+  const [orderedKnowledge, setOrderedKnowledge] = useState<KnowledgeSummary[]>(
+    () => list.data ?? [],
+  );
   const [sortingLoading, setSortingLoading] = useState(false);
   const orderRef = useRef(orderedKnowledge);
 
@@ -354,102 +369,73 @@ export default function KnowledgePage() {
     }
     setOrderedKnowledge(next);
     setSortingLoading(true);
-    sort.mutate(next.map((knowledge) => knowledge.id), {
-      onSuccess: () => {
-        void list.refetch();
+    sort.mutate(
+      next.map((knowledge) => knowledge.id),
+      {
+        onSuccess: () => {
+          void list.refetch();
+        },
       },
-    });
+    );
   };
 
   const saveKnowledge = (payload: SaveKnowledgePayload) => save.mutateAsync(payload);
   const refetchKnowledge = () => list.refetch();
 
-  const columns: TableProps<KnowledgeSummary>['columns'] = [
-    {
-      title: '排序',
-      dataIndex: 'sort',
-      key: 'sort',
-      render: () => <LegacyMenuIcon />,
-    },
-    {
-      title: '文章ID',
-      dataIndex: 'id',
-      key: 'id',
-    },
-    {
-      title: '显示',
-      dataIndex: 'show',
-      key: 'show',
-      render: (value: 0 | 1 | undefined, row) => (
-        <Switch
-          size="small"
-          onChange={() =>
-            show.mutate(row.id, {
-              onSuccess: () => {
-                void list.refetch();
-              },
-            })
-          }
-          checked={value as unknown as boolean}
-        />
-      ),
-    },
-    {
-      title: '标题',
-      dataIndex: 'title',
-      key: 'title',
-    },
-    {
-      title: '分类',
-      dataIndex: 'category',
-      key: 'category',
-    },
-    {
-      title: '更新时间',
-      dataIndex: 'updated_at',
-      key: 'updated_at',
-      align: 'right',
-      render: (value: number) => dayjs(1000 * value).format('YYYY/MM/DD HH:mm'),
-    },
-    {
-      title: '操作',
-      dataIndex: 'action',
-      key: 'action',
-      align: 'right',
-      fixed: 'right',
-      render: (_value, row) => (
-        <>
-          <KnowledgeEditor
-            id={row.id}
-            onSave={saveKnowledge}
-            onSaved={refetchKnowledge}
-            saveLoading={save.isPending}
-          >
-            <a ref={legacyHref()}>编辑</a>
-          </KnowledgeEditor>
-          <div className="ant-divider ant-divider-vertical" />
-          <a
-            ref={legacyHref()}
-            onClick={() => {
-              Modal.confirm({
-                title: '警告',
-                content: '确定要删除该条项目吗？',
-                onOk: () => {
-                  void drop.mutateAsync(row.id).then(() => {
-                    void list.refetch();
-                  });
-                },
-                okText: '确定',
-                cancelText: '取消',
-              });
-            }}
-          >
-            删除
-          </a>
-        </>
-      ),
-    },
+  const headers: LegacyStandaloneTableHeader[] = [
+    { title: '排序' },
+    { title: '文章ID' },
+    { title: '显示' },
+    { title: '标题' },
+    { title: '分类' },
+    { title: '更新时间', alignRight: true },
+    { title: '操作', alignRight: true, fixedRight: true },
   ];
+
+  const renderKnowledgeShowSwitch = (value: 0 | 1 | undefined, row: KnowledgeSummary) => (
+    <LegacyKnowledgeSwitch
+      onChange={() =>
+        show.mutate(row.id, {
+          onSuccess: () => {
+            void list.refetch();
+          },
+        })
+      }
+      checked={value as unknown as boolean}
+    />
+  );
+
+  const renderKnowledgeActions = (row: KnowledgeSummary) => (
+    <>
+      <KnowledgeEditor
+        id={row.id}
+        onSave={saveKnowledge}
+        onSaved={refetchKnowledge}
+        saveLoading={save.isPending}
+      >
+        <a ref={legacyHref()}>编辑</a>
+      </KnowledgeEditor>
+      <div className="ant-divider ant-divider-vertical" role="separator" />
+      <a
+        ref={legacyHref()}
+        onClick={() => {
+          Modal.confirm({
+            title: '警告',
+            content: '确定要删除该条项目吗？',
+            onOk: () => {
+              void drop.mutateAsync(row.id).then(() => {
+                void list.refetch();
+              });
+            },
+            okText: '确定',
+            cancelText: '取消',
+          });
+        }}
+      >
+        删除
+      </a>
+    </>
+  );
 
   return (
     <LegacySpin loading={list.isFetching || sortingLoading}>
@@ -461,10 +447,10 @@ export default function KnowledgePage() {
               onSaved={refetchKnowledge}
               saveLoading={save.isPending}
             >
-              <Button>
-                <PlusOutlined />
-                {'新增'}
-              </Button>
+              <LegacyButton className="ant-btn">
+                <LegacyPlusIcon />
+                <span>新增</span>
+              </LegacyButton>
             </KnowledgeEditor>
           </div>
           <LegacyDragSort
@@ -472,13 +458,45 @@ export default function KnowledgePage() {
             nodeSelector="tr"
             handleSelector="i"
           >
-            <Table<KnowledgeSummary>
-              tableLayout="auto"
-              dataSource={orderedKnowledge}
-              pagination={false}
-              columns={columns}
-              scroll={{ x: 750 }}
-            />
+            <LegacyStandaloneTable
+              headers={headers}
+              isEmpty={orderedKnowledge.length === 0}
+              scrollX={750}
+              fixedRightChildren={orderedKnowledge.map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  style={{ height: 54 }}
+                  {...legacyTableRowKey(index)}
+                >
+                  <td className="" style={{ textAlign: 'right' }}>
+                    {renderKnowledgeActions(row)}
+                  </td>
+                </tr>
+              ))}
+            >
+              {orderedKnowledge.map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyTableRowKey(index)}
+                >
+                  <td className="">
+                    <LegacyMenuIcon style={{ cursor: 'move' }} />
+                  </td>
+                  <td className="">{row.id}</td>
+                  <td className="">{renderKnowledgeShowSwitch(row.show, row)}</td>
+                  <td className="">{row.title}</td>
+                  <td className="">{row.category}</td>
+                  <td className="" style={{ textAlign: 'right' }}>
+                    {dayjs(1000 * row.updated_at).format('YYYY/MM/DD HH:mm')}
+                  </td>
+                  <td className="ant-table-fixed-columns-in-body" style={{ textAlign: 'right' }}>
+                    {renderKnowledgeActions(row)}
+                  </td>
+                </tr>
+              ))}
+            </LegacyStandaloneTable>
           </LegacyDragSort>
         </div>
       </div>

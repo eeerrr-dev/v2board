@@ -1,6 +1,7 @@
 import {
   useEffect,
   useRef,
+  type ComponentPropsWithoutRef,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
@@ -228,12 +229,13 @@ export function LegacyDragSort({
   );
 }
 
-export function LegacyMenuIcon() {
+export function LegacyMenuIcon(props: ComponentPropsWithoutRef<'i'>) {
   return (
-    <i aria-label="图标: menu" className="anticon anticon-menu">
+    <i aria-label="图标: menu" {...props} className="anticon anticon-menu">
       <svg
         viewBox="64 64 896 896"
         focusable="false"
+        className=""
         data-icon="menu"
         width="1em"
         height="1em"

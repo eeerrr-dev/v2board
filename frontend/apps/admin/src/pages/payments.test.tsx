@@ -190,7 +190,9 @@ describe('PaymentsPage legacy payment config', () => {
 
     expect(saveBlock).toContain('setVisible(false);\n    onSaved();');
     expect(saveBlock.indexOf('setVisible(false);')).toBeLessThan(saveBlock.indexOf('onSaved();'));
-    expect(source.match(/onSaved=\{\(\) => \{\n\s+void payments\.refetch\(\);\n\s+\}\}/g)).toHaveLength(2);
+    expect(
+      source.match(/onSaved=\{\(\) => \{\n\s+void payments\.refetch\(\);\n\s+\}\}/g),
+    ).toHaveLength(2);
   });
 
   it('keeps the original vertical divider markup in the payment action column', () => {
@@ -226,7 +228,7 @@ describe('PaymentsPage legacy payment config', () => {
     expect(legacyDragSortSource).toContain("handle.setAttribute('draggable', 'false');");
     expect(legacyDragSortSource).toContain("dragNode.setAttribute('draggable', 'true');");
     expect(legacyDragSortSource).toContain(
-      '<i aria-label="图标: menu" className="anticon anticon-menu">',
+      '<i aria-label="图标: menu" {...props} className="anticon anticon-menu">',
     );
     expect(source).not.toContain('<MenuOutlined');
     expect(source).not.toContain('dragIndex.current');

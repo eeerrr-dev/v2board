@@ -52,6 +52,17 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(html).toContain('class="block border-bottom"');
     expect(html).toContain('class="bg-white"');
     expect(html).toContain('新增');
+    expect(html).toContain('class="ant-btn"');
+    expect(html).toContain('aria-label="图标: plus"');
+    expect(html).toContain('<span>新增</span>');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain(
+      'class="ant-table ant-table-default ant-table-scroll-position-left ant-table-scroll-position-right"',
+    );
+    expect(html).toContain('tabindex="-1" class="ant-table-body" style="overflow-x:scroll"');
+    expect(html).toContain('class="ant-table-fixed" style="width:750px"');
+    expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain('class="ant-switch-small ant-switch ant-switch-checked"');
     expect(html).toContain('排序');
     expect(html).toContain('文章ID');
     expect(html).toContain('显示');
@@ -66,6 +77,8 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(html).toContain('编辑');
     expect(html).toContain('删除');
     expect(html).not.toContain('ant-card');
+    expect(html).not.toContain('ant-table-cell');
+    expect(html).not.toContain('css-dev-only');
     expect(html).not.toContain('ant-typography');
   });
 
@@ -80,12 +93,12 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('className="section-container input"');
     expect(source).toContain('className="section-container html-wrap"');
     expect(source).toContain('dangerouslySetInnerHTML={{ __html: html }}');
-    expect(source).toContain('const text = value ?? \'\';');
+    expect(source).toContain("const text = value ?? '';");
     expect(source).toContain('value={knowledge.body}');
     expect(source).toContain('const [editorKey, setEditorKey] = useState(Math.random());');
     expect(source).toContain('setEditorKey(Math.random());');
     expect(source).not.toContain('<Input.TextArea');
-    expect(source).not.toContain('value={knowledge.body ?? \'\'}');
+    expect(source).not.toContain("value={knowledge.body ?? ''}");
   });
 
   it('keeps the original sorted locale order in the knowledge editor', () => {
@@ -118,10 +131,10 @@ describe('KnowledgePage legacy knowledge manager', () => {
       source.indexOf('return (', source.indexOf('const save = async () => {')),
     );
 
-    expect(editorSaveBlock).toContain("await onSave({ ...knowledge });");
+    expect(editorSaveBlock).toContain('await onSave({ ...knowledge });');
     expect(editorSaveBlock).toContain('void onSaved();');
     expect(editorSaveBlock).toContain("message.success('保存成功');");
-    expect(editorSaveBlock.indexOf("await onSave({ ...knowledge });")).toBeLessThan(
+    expect(editorSaveBlock.indexOf('await onSave({ ...knowledge });')).toBeLessThan(
       editorSaveBlock.indexOf('void onSaved();'),
     );
     expect(editorSaveBlock.indexOf('void onSaved();')).toBeLessThan(
@@ -141,41 +154,53 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).not.toContain('setSaveLoading(true);');
     expect(source).not.toContain('setSaveLoading(false);');
     expect(source).not.toContain('    onSaved();\n    message.success');
-    expect(source).not.toContain('message.success(\'保存成功\');\n      hide();');
-    expect(source).not.toContain("await onSave(knowledge);");
+    expect(source).not.toContain("message.success('保存成功');\n      hide();");
+    expect(source).not.toContain('await onSave(knowledge);');
     expect(source).not.toContain('await save.mutateAsync(payload);\n    await list.refetch();');
     expect(source).toContain('checked={value as unknown as boolean}');
+    expect(source).toContain('function LegacyKnowledgeSwitch');
+    expect(source).not.toContain('<Switch');
     expect(source).toContain('show.mutate(row.id, {');
     expect(source).toContain('void list.refetch();');
     expect(source).not.toContain('checked={Boolean(value)}');
   });
 
   it('keeps the legacy table keying and delete-confirm behavior', () => {
-    expect(source).toContain('tableLayout="auto"');
-    expect(source).toContain('pagination={false}');
+    expect(source).toContain('<LegacyStandaloneTable');
+    expect(source).toContain('scrollX={750}');
+    expect(source).toContain('{...legacyTableRowKey(index)}');
     expect(source).toContain('<LegacyDragSort');
     expect(source).toContain('nodeSelector="tr"');
     expect(source).toContain('handleSelector="i"');
-    expect(source).toContain('<LegacyMenuIcon />');
+    expect(source).toContain("<LegacyMenuIcon style={{ cursor: 'move' }} />");
+    expect(source).not.toContain('<Table<KnowledgeSummary>');
+    expect(source).not.toContain('tableLayout="auto"');
+    expect(source).not.toContain('pagination={false}');
     expect(source).not.toContain('data-sort-index');
     expect(source).not.toContain('<MenuOutlined');
     expect(source).not.toContain('dragIndex.current');
     expect(source).not.toContain('<span\n          draggable');
     expect(source).not.toContain('data-row-key');
     expect(source).not.toContain('rowKey="id"');
-    expect(source).toContain('onOk: () => {\n                  void drop.mutateAsync(row.id).then(() => {');
+    expect(source).toContain(
+      'onOk: () => {\n              void drop.mutateAsync(row.id).then(() => {',
+    );
     expect(source).not.toContain('onOk: () => drop.mutateAsync(row.id)');
   });
 
   it('keeps the original vertical divider markup in the knowledge action column', () => {
-    expect(source).toContain('<div className="ant-divider ant-divider-vertical" />');
+    expect(source).toContain(
+      '<div className="ant-divider ant-divider-vertical" role="separator" />',
+    );
     expect(source).not.toContain('<span className="ant-divider ant-divider-vertical"');
-    expect(source).not.toContain('role="separator"');
   });
 
   it('keeps the bundled add button text flush against the plus icon', () => {
-    expect(source).toContain('<PlusOutlined />\n                {\'新增\'}');
+    expect(source).toContain('<LegacyPlusIcon />');
+    expect(source).toContain('<span>新增</span>');
+    expect(source).not.toContain('<span> 新增</span>');
     expect(source).not.toContain('<PlusOutlined /> 新增');
+    expect(source).not.toContain('<PlusOutlined />');
   });
 
   it('keeps the original category request and sort loading cycle', () => {
@@ -185,8 +210,8 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('const sortKnowledge = (fromIndex: number, toIndex: number) => {');
     expect(source).toContain('next.splice(toIndex + 1, 0, moved);');
     expect(source).toContain('next.splice(fromIndex + 1, 1);');
-    expect(source).toContain('sort.mutate(next.map((knowledge) => knowledge.id),');
-    expect(source).toContain('onSuccess: () => {\n                void list.refetch();\n              },');
+    expect(source).toContain('sort.mutate(\n      next.map((knowledge) => knowledge.id),');
+    expect(source).toContain('onSuccess: () => {\n          void list.refetch();\n        },');
   });
 
   it('keeps knowledge mutations fetching from the page after successful requests', () => {
@@ -194,9 +219,9 @@ describe('KnowledgePage legacy knowledge manager', () => {
       'const saveKnowledge = (payload: SaveKnowledgePayload) => save.mutateAsync(payload);',
     );
     const saveRefetch = source.indexOf('const refetchKnowledge = () => list.refetch();', saveStart);
-    const editorSaveStart = source.indexOf("await onSave({ ...knowledge });");
+    const editorSaveStart = source.indexOf('await onSave({ ...knowledge });');
     const editorRefetch = source.indexOf('void onSaved();', editorSaveStart);
-    const sortStart = source.indexOf('sort.mutate(next.map((knowledge) => knowledge.id),');
+    const sortStart = source.indexOf('sort.mutate(\n      next.map((knowledge) => knowledge.id),');
     const sortRefetch = source.indexOf('void list.refetch();', sortStart);
     const showStart = source.indexOf('show.mutate(row.id, {');
     const showRefetch = source.indexOf('void list.refetch();', showStart);
@@ -218,7 +243,10 @@ describe('KnowledgePage legacy knowledge manager', () => {
       ['export function useSaveKnowledgeMutation()', 'export function useDropKnowledgeMutation()'],
       ['export function useDropKnowledgeMutation()', 'export function useShowKnowledgeMutation()'],
       ['export function useShowKnowledgeMutation()', 'export function useSortKnowledgeMutation()'],
-      ['export function useSortKnowledgeMutation()', 'export function useSaveServerGroupMutation()'],
+      [
+        'export function useSortKnowledgeMutation()',
+        'export function useSaveServerGroupMutation()',
+      ],
     ] as const) {
       const hook = queriesSource.slice(queriesSource.indexOf(start), queriesSource.indexOf(end));
       expect(hook).not.toContain('onSuccess');
