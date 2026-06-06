@@ -38,7 +38,7 @@ const labels: Record<string, string> = {
   'node.status': '状态',
   'node.rate': '倍率',
   'node.tags': '标签',
-  'node.status_tip': '五分钟内节点在线情况',
+  'node.status_tip': '节点五分钟内节点在线情况',
   'node.rate_tip': '使用的流量将乘以倍率进行扣除',
   'node.no_available': '没有可用节点，如果您未订阅或已过期请',
   'node.subscribe': '订阅',

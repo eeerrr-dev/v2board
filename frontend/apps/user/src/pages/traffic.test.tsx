@@ -20,7 +20,7 @@ const queryState = vi.hoisted(() => ({
 }));
 
 const labels: Record<string, string> = {
-  'traffic.notice': '流量明细仅保留近一个月数据以供查询。',
+  'traffic.notice': '流量明细仅保留近月数据以供查询。',
   'traffic.record_at': '记录时间',
   'traffic.actual_upload': '实际上行',
   'traffic.actual_download': '实际下行',
@@ -81,7 +81,7 @@ describe('TrafficPage legacy loading timing', () => {
   it('does not show block loading until after the mount fetch dispatch equivalent', () => {
     const html = renderToStaticMarkup(<TrafficPage />);
 
-    expect(html).toContain('流量明细仅保留近一个月数据以供查询。');
+    expect(html).toContain('流量明细仅保留近月数据以供查询。');
     expect(html).toContain('ant-table-empty');
     expect(html).not.toContain('block-mode-loading');
   });

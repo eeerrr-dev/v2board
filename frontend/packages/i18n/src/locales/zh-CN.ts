@@ -177,7 +177,7 @@ const zhCN = {
     tags: '标签',
     renew: '续费',
     subscribe: '订阅',
-    status_tip: '五分钟内节点在线情况',
+    status_tip: '节点五分钟内节点在线情况',
     rate_tip: '使用的流量将乘以倍率进行扣除',
     no_available: '没有可用节点，如果您未订阅或已过期请',
   },
@@ -191,7 +191,7 @@ const zhCN = {
     actual_download: '实际下行',
     deduct_rate: '扣费倍率',
     total_charged: '合计',
-    notice: '流量明细仅保留近一个月数据以供查询。',
+    notice: '流量明细仅保留近月数据以供查询。',
     total_formula: '公式：(实际上行 + 实际下行) x 扣费倍率 = 扣除流量',
   },
   plan: {

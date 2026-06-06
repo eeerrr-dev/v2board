@@ -67,7 +67,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('order.credit_card_security')).toBe(
       '您的信用卡信息只会用于当次扣款，系统并不会保存，我们认为这是最安全的。',
     );
-    expect(i18n.t('traffic.notice')).toBe('流量明细仅保留近一个月数据以供查询。');
+    expect(i18n.t('traffic.notice')).toBe('流量明细仅保留近月数据以供查询。');
     expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
       '已用 1 GB / 总计 10 GB',
     );
@@ -90,7 +90,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('auth.tos_html', { url: 'https://example.test' })).toContain(
       'href="{url}"',
     );
-    expect(i18n.t('node.status_tip')).toBe('五分钟内节点在线情况');
+    expect(i18n.t('node.status_tip')).toBe('节点五分钟内节点在线情况');
     expect(i18n.t('ticket.message_placeholder')).toBe('请描述您遇到的问题');
     expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后会到达你的佣金账户。');
     expect(i18n.t('plan.pick_title')).toBe('选择最适合您的计划');
