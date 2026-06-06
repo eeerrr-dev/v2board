@@ -28,7 +28,7 @@ interface LegacySelectProps {
   getPopupContainer?: (trigger: HTMLElement) => HTMLElement | null;
   className?: string;
   style?: CSSProperties;
-  onChange: (value: LegacySelectValue) => void;
+  onChange?: (value: LegacySelectValue) => void;
 }
 
 interface DropdownCoords {
@@ -120,11 +120,7 @@ export function LegacySelect({
   const [coords, setCoords] = useState<DropdownCoords | null>(null);
   const dropdownStatus = useLegacyTransitionStatus(open, 230, 30);
   const selected = options.find((item) => item.value === value);
-  const selectedLabel = selected
-    ? selected.label
-    : value === '' || value == null
-      ? null
-      : String(value);
+  const selectedLabel = selected ? selected.label : value == null ? null : String(value);
   const initialActiveValue = selected?.value ?? options[0]?.value ?? null;
   const isEmpty = options.length === 0;
 
@@ -191,7 +187,7 @@ export function LegacySelect({
   }, [open, reposition]);
 
   const selectOption = (nextValue: LegacySelectValue) => {
-    onChange(nextValue);
+    onChange?.(nextValue);
     setOpen(false);
   };
 

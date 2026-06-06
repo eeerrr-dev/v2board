@@ -51,6 +51,7 @@ import { LegacyCheckboxInput, LegacyInput } from '@/components/legacy-input';
 import { LegacyEmpty } from '@/components/legacy-empty';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyModal } from '@/components/legacy-modal';
+import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';
 import {
   LegacyStandaloneTable,
   legacyTableRowKey as legacyRowKey,
@@ -1730,6 +1731,10 @@ function NodeEditDrawer({
     field?: string;
   }>({ open: false });
   const parentCandidates = nodes.filter((node) => node.type === type && node.id !== id);
+  const parentOptions: LegacySelectOption[] = [
+    { value: '', label: '无' },
+    ...parentCandidates.map((node) => ({ value: node.id, label: node.name })),
+  ];
 
   const showChildDrawer = (title?: string, field?: string) => {
     setChildDrawer((current) => ({
@@ -1908,15 +1913,8 @@ function NodeEditDrawer({
               </a>
             </Tooltip>
           </label>
-          <Form.Item noStyle name="parent_id">
-            <Select style={{ width: '100%' }}>
-              <Select.Option value="">无</Select.Option>
-              {parentCandidates.map((node) => (
-                <Select.Option key={Math.random()} value={node.id}>
-                  {node.name}
-                </Select.Option>
-              ))}
-            </Select>
+          <Form.Item noStyle name="parent_id" getValueProps={(value) => ({ value: value || '' })}>
+            <LegacySelect style={{ width: '100%' }} options={parentOptions} />
           </Form.Item>
         </div>
         <div className="form-group">

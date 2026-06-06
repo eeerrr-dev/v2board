@@ -826,12 +826,24 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain(
       "type === 'vmess' || type === 'vless' ? <ReadOutlined /> : '更多解答'",
     );
+    expect(serversSource).toContain(
+      "import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';",
+    );
+    expect(serversSource).toContain('const parentOptions: LegacySelectOption[] = [');
+    expect(serversSource).toContain("{ value: '', label: '无' }");
+    expect(serversSource).toContain(
+      '...parentCandidates.map((node) => ({ value: node.id, label: node.name })),',
+    );
+    expect(serversSource).toContain("getValueProps={(value) => ({ value: value || '' })}");
+    expect(serversSource).toContain(
+      "<LegacySelect style={{ width: '100%' }} options={parentOptions} />",
+    );
     expect(serversSource).toContain('路由组');
     expect(serversSource).toContain('请选择路由组');
     expect(serversSource).toContain('name="route_id"');
     expect(serversSource).toContain('<Select.Option key={group.id}>');
     expect(serversSource).toContain('<Select.Option key={route.id}>');
-    expect(serversSource).toContain('<Select.Option key={Math.random()} value={node.id}>');
+    expect(serversSource).not.toContain('<Select.Option key={Math.random()} value={node.id}>');
     expect(serversSource).not.toContain('key={`${node.type}-${node.id}`}');
     expect(serversSource).not.toContain('<Select.Option key={group.id} value={group.id}>');
     expect(serversSource).not.toContain('<Select.Option key={route.id} value={route.id}>');

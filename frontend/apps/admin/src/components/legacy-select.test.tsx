@@ -49,4 +49,20 @@ describe('LegacySelect', () => {
     expect(html).toContain('简体中文');
     expect(html).not.toContain('ant-select-selection-item');
   });
+
+  it('can be rendered with form-injected change handling', () => {
+    const html = renderToStaticMarkup(
+      <LegacySelect
+        value=""
+        options={[
+          { value: '', label: '无' },
+          { value: 7, label: '日本节点' },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('class="ant-select-selection-selected-value"');
+    expect(html).toContain('title="无"');
+    expect(html).toContain('无');
+  });
 });
