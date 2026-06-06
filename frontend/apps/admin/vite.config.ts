@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
   buildAppViteConfig,
   legacyAdminAssetsPlugin,
+  legacyNavigationRedirectPlugin,
   legacyViteClientStubPlugin,
   localHorizonStatsPlugin,
   stripViteClientPlugin,
@@ -11,8 +12,9 @@ import {
 
 export default defineConfig({
   ...buildAppViteConfig({ port: 5174 }),
-  cacheDir: '../../node_modules/.vite/admin-white-screen-recovery-32',
+  cacheDir: '../../node_modules/.vite/admin-white-screen-recovery-33',
   plugins: [
+    legacyNavigationRedirectPlugin(),
     legacyViteClientStubPlugin(),
     react(),
     stripViteClientPlugin(),

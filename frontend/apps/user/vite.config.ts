@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import {
   buildAppViteConfig,
+  legacyNavigationRedirectPlugin,
   legacyViteClientStubPlugin,
   legacyThemePlugin,
   stripViteClientPlugin,
@@ -10,8 +11,14 @@ import {
 
 export default defineConfig({
   ...buildAppViteConfig({ port: 5173 }),
-  cacheDir: '../../node_modules/.vite/user-white-screen-recovery-32',
-  plugins: [legacyViteClientStubPlugin(), react(), stripViteClientPlugin(), legacyThemePlugin()],
+  cacheDir: '../../node_modules/.vite/user-white-screen-recovery-33',
+  plugins: [
+    legacyNavigationRedirectPlugin(),
+    legacyViteClientStubPlugin(),
+    react(),
+    stripViteClientPlugin(),
+    legacyThemePlugin(),
+  ],
   optimizeDeps: {
     include: [
       '@tanstack/react-query',

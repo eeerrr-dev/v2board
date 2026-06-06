@@ -70,7 +70,11 @@ export function legacyThemePlugin(): Plugin {
 // Same idea for the admin app: its legacy blade loads `/assets/admin/*.css`
 // before `umi.js`, and the OneUI login/layout classes rely on those files.
 export function legacyAdminAssetsPlugin(): Plugin {
-  return legacyAssetPlugin('serve-legacy-admin-assets', '/assets/admin', '../../../public/assets/admin');
+  return legacyAssetPlugin(
+    'serve-legacy-admin-assets',
+    '/assets/admin',
+    '../../../public/assets/admin',
+  );
 }
 
 // The legacy admin dashboard polls Horizon directly from the current origin.
@@ -84,6 +88,55 @@ export function localHorizonStatsPlugin(): Plugin {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ status: 'running' }));
+      });
+    },
+  };
+}
+
+export function legacyNavigationRedirectPlugin(): Plugin {
+  return {
+    name: 'legacy-navigation-redirect',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          next();
+          return;
+        }
+
+        let url: URL;
+        try {
+          url = new URL(req.url ?? '/', 'http://127.0.0.1');
+        } catch {
+          next();
+          return;
+        }
+
+        const pathname = url.pathname;
+        const isAssetOrApi =
+          pathname === '/' ||
+          pathname === '/api' ||
+          pathname.includes('.') ||
+          pathname.startsWith('/@') ||
+          pathname.startsWith('/api/') ||
+          pathname.startsWith('/assets/') ||
+          pathname.startsWith('/monitor/') ||
+          pathname.startsWith('/node_modules/') ||
+          pathname.startsWith('/src/') ||
+          pathname.startsWith('/theme/');
+
+        if (isAssetOrApi) {
+          next();
+          return;
+        }
+
+        req.resume();
+        res.writeHead(302, {
+          location: `/#${pathname}${url.search}`,
+          'cache-control': 'no-store',
+          'content-length': '0',
+          connection: 'close',
+        });
+        res.end();
       });
     },
   };
