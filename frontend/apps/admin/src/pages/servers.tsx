@@ -55,6 +55,8 @@ import { formatDateTime } from '@v2board/config/format';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
+import { LegacyButton } from '@/components/legacy-button';
+import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
 
 const SERVER_TYPES: admin.ServerTypeName[] = [
   'v2node',
@@ -1211,9 +1213,9 @@ function ServerManagePage() {
                 </Menu>
               )}
             >
-              <Button>
-                <PlusOutlined />
-              </Button>
+              <LegacyButton className="ant-btn">
+                <LegacyPlusIcon />
+              </LegacyButton>
             </LegacyDropdown>
             <Input
               placeholder="输入任意关键字搜索"

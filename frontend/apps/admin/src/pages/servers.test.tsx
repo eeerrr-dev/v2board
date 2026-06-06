@@ -580,6 +580,8 @@ describe('ServersPage legacy server group route', () => {
     expect(managePageSource).toContain('<LegacyDropdown');
     expect(managePageSource).toContain('overlay={(');
     expect(managePageSource).toContain('<Menu>');
+    expect(managePageSource).toContain('<LegacyButton className="ant-btn">');
+    expect(managePageSource).toContain('<LegacyPlusIcon />');
     expect(managePageSource).toContain('SERVER_TYPES.map((type) => (');
     expect(managePageSource).toContain('<Menu.Item key={type}>');
     expect(serversSource).toContain('<LegacyNodeEditMenuTrigger');
@@ -587,6 +589,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('type={type}');
     expect(managePageSource).not.toContain('menu={{');
     expect(managePageSource).not.toContain('items: SERVER_TYPES.map');
+    expect(managePageSource).not.toContain('<Button>\n                <PlusOutlined />\n              </Button>');
     expect(serversSource).not.toContain('onClick: ({ key }) => setEditing({ type: key as admin.ServerTypeName })');
     expect(serversSource).not.toContain('setEditing({ ...row, type: row.type as admin.ServerTypeName })');
     expect(serversSource).toContain('record?: Partial<admin.ServerNode>');
