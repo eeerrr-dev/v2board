@@ -113,7 +113,11 @@ export default function NodePage() {
                               </thead>
                               <tbody className="ant-table-tbody">
                                 {servers.map((s, index) => (
-                                  <tr className="ant-table-row ant-table-row-level-0" key={index}>
+                                  <tr
+                                    className="ant-table-row ant-table-row-level-0"
+                                    data-row-key={index}
+                                    key={index}
+                                  >
                                     <td>{s.name}</td>
                                     <td style={{ textAlign: 'center' }}>
                                       <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">

@@ -169,12 +169,13 @@ describe('NodePage bundled-theme table and empty state', () => {
     expect(html).toContain('IEPL');
     expect(html).toContain('Netflix');
     expect(html).toContain('<td>-</td>');
-    expect(html).not.toContain('data-row-key');
+    expect(html).toContain('data-row-key="0"');
+    expect(html).toContain('data-row-key="1"');
   });
 
-  it('keeps the bundled antd row key as internal-only state', () => {
-    expect(nodeSource).toContain('<tr className="ant-table-row ant-table-row-level-0" key={index}>');
-    expect(nodeSource).not.toContain('data-row-key');
+  it('keeps the bundled antd fallback row key as an index DOM attribute', () => {
+    expect(nodeSource).toContain('data-row-key={index}');
+    expect(nodeSource).not.toContain('data-row-key={s.id}');
   });
 
   it('keeps javascript href anchors and routes empty-state actions like the original', async () => {
