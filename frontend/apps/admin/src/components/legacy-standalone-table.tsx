@@ -5,6 +5,7 @@ const LEGACY_ROW_KEY_ATTRIBUTE = `data-${'row-key'}`;
 
 export type LegacyStandaloneTableHeader = {
   title: ReactNode;
+  alignLeft?: boolean;
   alignRight?: boolean;
   fixedRight?: boolean;
 };
@@ -21,6 +22,7 @@ function legacyHeaderClassName(
 ) {
   const classes = [
     header.fixedRight && !fixedRightTable ? 'ant-table-fixed-columns-in-body' : undefined,
+    header.alignLeft ? 'ant-table-align-left' : undefined,
     header.alignRight ? 'ant-table-align-right' : undefined,
     index === count - 1 ? 'ant-table-row-cell-last' : undefined,
   ].filter(Boolean);
@@ -54,7 +56,13 @@ function LegacyStandaloneTableHead({
           <th
             key={index}
             className={legacyHeaderClassName(header, index, headers.length, fixedRightTable)}
-            style={header.alignRight ? { textAlign: 'right' } : undefined}
+            style={
+              header.alignRight
+                ? { textAlign: 'right' }
+                : header.alignLeft
+                  ? { textAlign: 'left' }
+                  : undefined
+            }
           >
             <LegacyStandaloneTableHeaderCell title={header.title} />
           </th>

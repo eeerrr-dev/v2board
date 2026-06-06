@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
-import { App, Button, DatePicker, Input, Modal, Select, Switch, Table, Tag } from 'antd';
-import type { TablePaginationConfig, TableProps } from 'antd';
+import { App, DatePicker, Input, Modal, Select, Switch, Tag } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
-import { PlusOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useLocation } from 'react-router-dom';
 import type { Coupon, Giftcard, Plan } from '@v2board/types';
@@ -20,6 +18,13 @@ import { admin } from '@v2board/api-client';
 import { legacyCopyText } from '@/lib/legacy-copy';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { LegacyButton } from '@/components/legacy-button';
+import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
+import {
+  LegacyStandaloneTable,
+  legacyTableRowKey,
+  type LegacyStandaloneTableHeader,
+} from '@/components/legacy-standalone-table';
 
 type AdminPageQuery = admin.AdminPageQuery;
 
@@ -169,104 +174,75 @@ function CouponPage() {
 
   const data = coupons.data?.data ?? [];
 
-  const columns: TableProps<Coupon>['columns'] = [
-    {
-      title: '#',
-      dataIndex: 'id',
-      key: 'id',
-    },
-    {
-      title: '启用',
-      dataIndex: 'show',
-      key: 'show',
-      render: (value: 0 | 1, row) => (
-        <Switch
-          size="small"
-          onChange={() =>
-            show.mutate(row.id, {
-              onSuccess: () => {
-                void coupons.refetch();
-              },
-            })
-          }
-          checked={value as unknown as boolean}
-        />
-      ),
-    },
-    {
-      title: '券名称',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: '类型',
-      dataIndex: 'type',
-      key: 'type',
-      render: (value: Coupon['type']) => (value === 1 ? '金额' : '比例'),
-    },
-    {
-      title: '券码',
-      dataIndex: 'code',
-      key: 'code',
-      render: (value: string) => (
-        <Tag style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
-          {value}
-        </Tag>
-      ),
-    },
-    {
-      title: '剩余次数',
-      dataIndex: 'limit_use',
-      key: 'limit_use',
-      render: (value: number | null) => <Tag>{value !== null ? value : '无限'}</Tag>,
-    },
-    {
-      title: '有效期',
-      dataIndex: 'started_at',
-      key: 'started_at',
-      align: 'left',
-      render: (_value, row) => legacyDateRange(row.started_at, row.ended_at),
-    },
-    {
-      title: '操作',
-      dataIndex: 'action',
-      key: 'action',
-      align: 'right',
-      fixed: 'right',
-      render: (_value, row, index) => (
-        <div>
-          <a
-            onClick={() => {
-              setSubmit(data[index] as CouponSubmit);
-              modalVisible();
-            }}
-            ref={legacyHref()}
-          >
-            编辑
-          </a>
-          <div className="ant-divider ant-divider-vertical" />
-          <a
-            onClick={() => {
-              Modal.confirm({
-                title: '警告',
-                content: '确定要删除该条项目吗？',
-                onOk: () => {
-                  void drop.mutateAsync(row.id).then(() => {
-                    void coupons.refetch();
-                  });
-                },
-                okText: '确定',
-                cancelText: '取消',
-              });
-            }}
-            ref={legacyHref()}
-          >
-            删除
-          </a>
-        </div>
-      ),
-    },
+  const headers: LegacyStandaloneTableHeader[] = [
+    { title: '#' },
+    { title: '启用' },
+    { title: '券名称' },
+    { title: '类型' },
+    { title: '券码' },
+    { title: '剩余次数' },
+    { title: '有效期', alignLeft: true },
+    { title: '操作', alignRight: true, fixedRight: true },
   ];
+
+  const renderCouponShowSwitch = (value: 0 | 1, row: Coupon) => (
+    <Switch
+      size="small"
+      onChange={() =>
+        show.mutate(row.id, {
+          onSuccess: () => {
+            void coupons.refetch();
+          },
+        })
+      }
+      checked={value as unknown as boolean}
+    />
+  );
+
+  const renderCouponType = (value: Coupon['type']) => (value === 1 ? '金额' : '比例');
+
+  const renderCouponCode = (value: string) => (
+    <Tag style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
+      {value}
+    </Tag>
+  );
+
+  const renderCouponLimitUse = (value: number | null) => (
+    <Tag>{value !== null ? value : '无限'}</Tag>
+  );
+
+  const renderCouponActions = (row: Coupon, index: number) => (
+    <div>
+      <a
+        onClick={() => {
+          setSubmit(data[index] as CouponSubmit);
+          modalVisible();
+        }}
+        ref={legacyHref()}
+      >
+        编辑
+      </a>
+      <div className="ant-divider ant-divider-vertical" />
+      <a
+        onClick={() => {
+          Modal.confirm({
+            title: '警告',
+            content: '确定要删除该条项目吗？',
+            onOk: () => {
+              void drop.mutateAsync(row.id).then(() => {
+                void coupons.refetch();
+              });
+            },
+            okText: '确定',
+            cancelText: '取消',
+          });
+        }}
+        ref={legacyHref()}
+      >
+        删除
+      </a>
+    </div>
+  );
 
   return (
     <>
@@ -274,31 +250,51 @@ function CouponPage() {
         <div className="block border-bottom">
           <div className="bg-white">
             <div style={{ padding: 15 }}>
-              <Button onClick={modalVisible}>
-                <PlusOutlined /> 添加优惠券
-              </Button>
+              <LegacyButton className="ant-btn" onClick={modalVisible}>
+                <LegacyPlusIcon />
+                <span> 添加优惠券</span>
+              </LegacyButton>
             </div>
-            <Table<Coupon>
-              tableLayout="auto"
-              dataSource={data}
-              columns={columns}
-              scroll={{ x: 1050 }}
-              pagination={{
-                current: query.current,
-                pageSize: query.pageSize,
-                total: coupons.data?.total,
-                size: 'small',
-                showSizeChanger: true,
-                pageSizeOptions: [10, 50, 100, 150],
-              }}
-              onChange={(pagination, _filters, sorter) => {
-                setQuery({
-                  ...query,
-                  ...pagination,
-                  ...tableSort(sorter as SorterResult<unknown>),
-                });
-              }}
-            />
+            <LegacyStandaloneTable
+              headers={headers}
+              isEmpty={data.length === 0}
+              scrollX={1050}
+              fixedRightChildren={data.map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyTableRowKey(index)}
+                >
+                  <td className="ant-table-row-cell-last" style={{ textAlign: 'right' }}>
+                    {renderCouponActions(row, index)}
+                  </td>
+                </tr>
+              ))}
+            >
+              {data.map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyTableRowKey(index)}
+                >
+                  <td className="">{row.id}</td>
+                  <td className="">{renderCouponShowSwitch(row.show, row)}</td>
+                  <td className="">{row.name}</td>
+                  <td className="">{renderCouponType(row.type)}</td>
+                  <td className="">{renderCouponCode(row.code)}</td>
+                  <td className="">{renderCouponLimitUse(row.limit_use)}</td>
+                  <td className="ant-table-align-left" style={{ textAlign: 'left' }}>
+                    {legacyDateRange(row.started_at, row.ended_at)}
+                  </td>
+                  <td
+                    className="ant-table-fixed-columns-in-body ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
+                    {renderCouponActions(row, index)}
+                  </td>
+                </tr>
+              ))}
+            </LegacyStandaloneTable>
           </div>
         </div>
       </LegacySpin>
@@ -389,7 +385,9 @@ function CouponPage() {
             <div>
               <Select
                 value={submit.limit_plan_ids || []}
-                onChange={(value) => setSubmit({ ...submit, limit_plan_ids: value.length ? value : null })}
+                onChange={(value) =>
+                  setSubmit({ ...submit, limit_plan_ids: value.length ? value : null })
+                }
                 mode="multiple"
                 placeholder="限制指定订阅可以使用优惠(为空则不限制)"
                 style={{ width: '100%' }}
@@ -407,7 +405,9 @@ function CouponPage() {
             <div>
               <Select
                 value={submit.limit_period || []}
-                onChange={(value) => setSubmit({ ...submit, limit_period: value.length ? value : null })}
+                onChange={(value) =>
+                  setSubmit({ ...submit, limit_period: value.length ? value : null })
+                }
                 mode="multiple"
                 placeholder="限制指定周期可以使用优惠(为空则不限制)"
                 style={{ width: '100%' }}
@@ -484,128 +484,94 @@ function GiftcardPage() {
 
   const data = giftcards.data?.data ?? [];
 
-  const columns: TableProps<Giftcard>['columns'] = [
-    {
-      title: '#',
-      dataIndex: 'id',
-      key: 'id',
-    },
-    {
-      title: '名称',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: '类型',
-      dataIndex: 'type',
-      key: 'type',
-      render: (value: Giftcard['type']) => {
-        switch (value) {
-          case 1:
-            return '金额';
-          case 2:
-            return '时长';
-          case 3:
-            return '流量';
-          case 4:
-            return '重置';
-          case 5:
-            return '套餐';
-          default:
-            return '';
-        }
-      },
-    },
-    {
-      title: '数值',
-      dataIndex: 'value',
-      key: 'value',
-      render: (value: number, row) => {
-        switch (row.type) {
-          case 1:
-            return `${value.toFixed(2)} ¥`;
-          case 2:
-            return `${value} 天`;
-          case 3:
-            return `${value} GB`;
-          case 4:
-            return '-';
-          case 5:
-            return `${value} 天`;
-          default:
-            return value;
-        }
-      },
-    },
-    {
-      title: '套餐',
-      dataIndex: 'plan_id',
-      key: 'plan_id',
-      render: (value: number | null) => planName(value),
-    },
-    {
-      title: '卡密',
-      dataIndex: 'code',
-      key: 'code',
-      render: (value: string) => (
-        <Tag style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
-          {value}
-        </Tag>
-      ),
-    },
-    {
-      title: '剩余次数',
-      dataIndex: 'limit_use',
-      key: 'limit_use',
-      render: (value: number | null) => <Tag>{value !== null ? value : '无限'}</Tag>,
-    },
-    {
-      title: '有效期',
-      dataIndex: 'started_at',
-      key: 'started_at',
-      align: 'left',
-      render: (_value, row) => legacyDateRange(row.started_at, row.ended_at),
-    },
-    {
-      title: '操作',
-      dataIndex: 'action',
-      key: 'action',
-      align: 'right',
-      fixed: 'right',
-      render: (_value, row, index) => (
-        <div>
-          <a
-            onClick={() => {
-              setSubmit(data[index] as GiftcardSubmit);
-              modalVisible();
-            }}
-            ref={legacyHref()}
-          >
-            编辑
-          </a>
-          <div className="ant-divider ant-divider-vertical" />
-          <a
-            onClick={() => {
-              Modal.confirm({
-                title: '警告',
-                content: '确定要删除该条项目吗？',
-                onOk: () => {
-                  void drop.mutateAsync(row.id).then(() => {
-                    void giftcards.refetch();
-                  });
-                },
-                okText: '确定',
-                cancelText: '取消',
-              });
-            }}
-            ref={legacyHref()}
-          >
-            删除
-          </a>
-        </div>
-      ),
-    },
+  const headers: LegacyStandaloneTableHeader[] = [
+    { title: '#' },
+    { title: '名称' },
+    { title: '类型' },
+    { title: '数值' },
+    { title: '套餐' },
+    { title: '卡密' },
+    { title: '剩余次数' },
+    { title: '有效期', alignLeft: true },
+    { title: '操作', alignRight: true, fixedRight: true },
   ];
+
+  const renderGiftcardType = (value: Giftcard['type']) => {
+    switch (value) {
+      case 1:
+        return '金额';
+      case 2:
+        return '时长';
+      case 3:
+        return '流量';
+      case 4:
+        return '重置';
+      case 5:
+        return '套餐';
+      default:
+        return '';
+    }
+  };
+
+  const renderGiftcardValue = (value: number, row: Giftcard) => {
+    switch (row.type) {
+      case 1:
+        return `${value.toFixed(2)} ¥`;
+      case 2:
+        return `${value} 天`;
+      case 3:
+        return `${value} GB`;
+      case 4:
+        return '-';
+      case 5:
+        return `${value} 天`;
+      default:
+        return value;
+    }
+  };
+
+  const renderGiftcardCode = (value: string) => (
+    <Tag style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
+      {value}
+    </Tag>
+  );
+
+  const renderGiftcardLimitUse = (value: number | null) => (
+    <Tag>{value !== null ? value : '无限'}</Tag>
+  );
+
+  const renderGiftcardActions = (row: Giftcard, index: number) => (
+    <div>
+      <a
+        onClick={() => {
+          setSubmit(data[index] as GiftcardSubmit);
+          modalVisible();
+        }}
+        ref={legacyHref()}
+      >
+        编辑
+      </a>
+      <div className="ant-divider ant-divider-vertical" />
+      <a
+        onClick={() => {
+          Modal.confirm({
+            title: '警告',
+            content: '确定要删除该条项目吗？',
+            onOk: () => {
+              void drop.mutateAsync(row.id).then(() => {
+                void giftcards.refetch();
+              });
+            },
+            okText: '确定',
+            cancelText: '取消',
+          });
+        }}
+        ref={legacyHref()}
+      >
+        删除
+      </a>
+    </div>
+  );
 
   return (
     <>
@@ -613,32 +579,52 @@ function GiftcardPage() {
         <div className="block border-bottom">
           <div className="bg-white">
             <div style={{ padding: 15 }}>
-              <Button onClick={modalVisible}>
-                <PlusOutlined />
-                {'添加礼品卡'}
-              </Button>
+              <LegacyButton className="ant-btn" onClick={modalVisible}>
+                <LegacyPlusIcon />
+                <span>添加礼品卡</span>
+              </LegacyButton>
             </div>
-            <Table<Giftcard>
-              tableLayout="auto"
-              dataSource={data}
-              columns={columns}
-              scroll={{ x: 1050 }}
-              pagination={{
-                current: query.current,
-                pageSize: query.pageSize,
-                total: giftcards.data?.total,
-                size: 'small',
-                showSizeChanger: true,
-                pageSizeOptions: [10, 50, 100, 150],
-              }}
-              onChange={(pagination: TablePaginationConfig, _filters, sorter) => {
-                setQuery({
-                  ...query,
-                  ...pagination,
-                  ...tableSort(sorter as SorterResult<unknown>),
-                });
-              }}
-            />
+            <LegacyStandaloneTable
+              headers={headers}
+              isEmpty={data.length === 0}
+              scrollX={1050}
+              fixedRightChildren={data.map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyTableRowKey(index)}
+                >
+                  <td className="ant-table-row-cell-last" style={{ textAlign: 'right' }}>
+                    {renderGiftcardActions(row, index)}
+                  </td>
+                </tr>
+              ))}
+            >
+              {data.map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyTableRowKey(index)}
+                >
+                  <td className="">{row.id}</td>
+                  <td className="">{row.name}</td>
+                  <td className="">{renderGiftcardType(row.type)}</td>
+                  <td className="">{renderGiftcardValue(row.value, row)}</td>
+                  <td className="">{planName(row.plan_id)}</td>
+                  <td className="">{renderGiftcardCode(row.code)}</td>
+                  <td className="">{renderGiftcardLimitUse(row.limit_use)}</td>
+                  <td className="ant-table-align-left" style={{ textAlign: 'left' }}>
+                    {legacyDateRange(row.started_at, row.ended_at)}
+                  </td>
+                  <td
+                    className="ant-table-fixed-columns-in-body ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
+                    {renderGiftcardActions(row, index)}
+                  </td>
+                </tr>
+              ))}
+            </LegacyStandaloneTable>
           </div>
         </div>
       </LegacySpin>
@@ -707,7 +693,9 @@ function GiftcardPage() {
                   onChange={(value) =>
                     setSubmit({
                       ...submit,
-                      plan_id: ((value as string).length ? value : null) as GiftcardSubmit['plan_id'],
+                      plan_id: ((value as string).length
+                        ? value
+                        : null) as GiftcardSubmit['plan_id'],
                     })
                   }
                   mode={'single' as 'multiple'}

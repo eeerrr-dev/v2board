@@ -121,6 +121,21 @@ describe('CouponsPage legacy routes', () => {
     expect(html).toContain('class="block border-bottom"');
     expect(html).toContain('class="bg-white"');
     expect(html).toContain('添加优惠券');
+    expect(html).toContain('class="ant-btn"');
+    expect(html).toContain('aria-label="图标: plus"');
+    expect(html).toContain('<span> 添加优惠券</span>');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain(
+      'class="ant-table ant-table-default ant-table-scroll-position-left ant-table-scroll-position-right"',
+    );
+    expect(html).toContain('class="ant-table-scroll"');
+    expect(html).toContain('tabindex="-1" class="ant-table-body" style="overflow-x:scroll"');
+    expect(html).toContain('class="ant-table-fixed" style="width:1050px"');
+    expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain('class="ant-table-align-left" style="text-align:left"');
+    expect(html).toContain(
+      'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
+    );
     expect(html).toContain('启用');
     expect(html).toContain('券名称');
     expect(html).toContain('类型');
@@ -137,6 +152,7 @@ describe('CouponsPage legacy routes', () => {
     expect(html).toContain('删除');
     expect(html).not.toContain('ant-tabs');
     expect(html).not.toContain('ant-card');
+    expect(html).not.toContain('ant-table-cell');
     expect(html).not.toContain('ant-typography');
   });
 
@@ -146,6 +162,18 @@ describe('CouponsPage legacy routes', () => {
 
     expect(html).toContain('class="block border-bottom"');
     expect(html).toContain('添加礼品卡');
+    expect(html).toContain('class="ant-btn"');
+    expect(html).toContain('aria-label="图标: plus"');
+    expect(html).toContain('<span>添加礼品卡</span>');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain(
+      'class="ant-table ant-table-default ant-table-scroll-position-left ant-table-scroll-position-right"',
+    );
+    expect(html).toContain('class="ant-table-scroll"');
+    expect(html).toContain('tabindex="-1" class="ant-table-body" style="overflow-x:scroll"');
+    expect(html).toContain('class="ant-table-fixed" style="width:1050px"');
+    expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain('class="ant-table-align-left" style="text-align:left"');
     expect(html).toContain('名称');
     expect(html).toContain('卡密');
     expect(html).toContain('套餐');
@@ -160,14 +188,19 @@ describe('CouponsPage legacy routes', () => {
     expect(html).toContain('删除');
     expect(html).not.toContain('ant-tabs');
     expect(html).not.toContain('ant-card');
+    expect(html).not.toContain('ant-table-cell');
     expect(html).not.toContain('ant-typography');
   });
 
   it('keeps the legacy CSV download for batch coupon and giftcard generation', () => {
     expect(source).toContain("function downloadGeneratedCsv(prefix: 'COUPON' | 'GIFTCARD'");
     expect(source).toContain('window.URL.createObjectURL(blob)');
-    expect(source).toContain("if (payload.generate_count) downloadGeneratedCsv('COUPON', response.buffer)");
-    expect(source).toContain("if (payload.generate_count) downloadGeneratedCsv('GIFTCARD', response.buffer)");
+    expect(source).toContain(
+      "if (payload.generate_count) downloadGeneratedCsv('COUPON', response.buffer)",
+    );
+    expect(source).toContain(
+      "if (payload.generate_count) downloadGeneratedCsv('GIFTCARD', response.buffer)",
+    );
     expect(source).toContain("`${prefix} ${dayjs().format('YYYY-MM-DD HH:mm:ss')}.csv`");
     expect(source).not.toContain('useQueryClient');
 
@@ -215,9 +248,21 @@ describe('CouponsPage legacy routes', () => {
     expect(giftcardDropRefetch).toBeGreaterThan(giftcardDropStart);
 
     for (const [start, end, queryKey] of [
-      ['export function useDropCouponMutation()', 'export function useShowCouponMutation()', "['admin', 'coupons']"],
-      ['export function useShowCouponMutation()', 'export function useGenerateGiftcardMutation()', "['admin', 'coupons']"],
-      ['export function useDropGiftcardMutation()', 'export function useSaveKnowledgeMutation()', "['admin', 'giftcards']"],
+      [
+        'export function useDropCouponMutation()',
+        'export function useShowCouponMutation()',
+        "['admin', 'coupons']",
+      ],
+      [
+        'export function useShowCouponMutation()',
+        'export function useGenerateGiftcardMutation()',
+        "['admin', 'coupons']",
+      ],
+      [
+        'export function useDropGiftcardMutation()',
+        'export function useSaveKnowledgeMutation()',
+        "['admin', 'giftcards']",
+      ],
     ] as const) {
       const hook = queriesSource.slice(queriesSource.indexOf(start), queriesSource.indexOf(end));
       expect(hook).not.toContain('onSuccess');
@@ -226,13 +271,19 @@ describe('CouponsPage legacy routes', () => {
   });
 
   it('keeps the legacy table sort payload when sorting is cleared', () => {
-    expect(source).toContain('sort: current?.columnKey == null ? undefined : String(current.columnKey)');
+    expect(source).toContain(
+      'sort: current?.columnKey == null ? undefined : String(current.columnKey)',
+    );
     expect(source).not.toContain("sort: String(current?.columnKey ?? '')");
   });
 
   it('keeps coupon and giftcard table query state in module scope like the old models', () => {
-    expect(source).toContain('let legacyCouponQuery: AdminPageQuery = { current: 1, pageSize: 10 };');
-    expect(source).toContain('let legacyGiftcardQuery: AdminPageQuery = { current: 1, pageSize: 10 };');
+    expect(source).toContain(
+      'let legacyCouponQuery: AdminPageQuery = { current: 1, pageSize: 10 };',
+    );
+    expect(source).toContain(
+      'let legacyGiftcardQuery: AdminPageQuery = { current: 1, pageSize: 10 };',
+    );
     expect(source).toContain(
       'const [query, setQueryState] = useState<AdminPageQuery>(() => legacyCouponQuery);',
     );
@@ -241,7 +292,7 @@ describe('CouponsPage legacy routes', () => {
     );
     expect(source).toContain('legacyCouponQuery = next;');
     expect(source).toContain('legacyGiftcardQuery = next;');
-    expect(source.match(/\.\.\.pagination,/g)).toHaveLength(2);
+    expect(source.match(/\.\.\.pagination,/g) ?? []).toHaveLength(0);
     expect(source).not.toContain('current: pagination.current');
     expect(source).not.toContain('pageSize: pagination.pageSize');
     expect(source).not.toContain(
@@ -249,11 +300,20 @@ describe('CouponsPage legacy routes', () => {
     );
   });
 
-  it('keeps bundled coupon and giftcard pagination totals as direct response fields', () => {
-    expect(source).toContain('total: coupons.data?.total,');
-    expect(source).toContain('total: giftcards.data?.total,');
-    expect(source).not.toContain('total: coupons.data?.total ?? 0');
-    expect(source).not.toContain('total: giftcards.data?.total ?? 0');
+  it('renders coupon and giftcard lists with the legacy standalone table instead of AntD5 Table props', () => {
+    expect(source.match(/<LegacyStandaloneTable/g)).toHaveLength(2);
+    expect(source.match(/scrollX=\{1050\}/g)).toHaveLength(2);
+    expect(source.match(/fixedRightChildren=\{data\.map/g)).toHaveLength(2);
+    expect(source.match(/\{ title: '有效期', alignLeft: true \}/g)).toHaveLength(2);
+    expect(source.match(/\{ title: '操作', alignRight: true, fixedRight: true \}/g)).toHaveLength(
+      2,
+    );
+    expect(source).toContain('isEmpty={data.length === 0}');
+    expect(source).not.toContain('<Table<Coupon>');
+    expect(source).not.toContain('<Table<Giftcard>');
+    expect(source).not.toContain('total: coupons.data?.total,');
+    expect(source).not.toContain('total: giftcards.data?.total,');
+    expect(source).not.toContain('pagination={{');
   });
 
   it('keeps the old unconditional amount scaling before coupon and giftcard generation', () => {
@@ -270,15 +330,22 @@ describe('CouponsPage legacy routes', () => {
   });
 
   it('keeps the original direct date range indexing for coupon and giftcard forms', () => {
-    expect(source.match(/const range = dates as \[Dayjs \| null, Dayjs \| null\];/g)).toHaveLength(2);
-    expect(source.match(/started_at: range\[0\] \? range\[0\]\.format\('X'\) : null/g)).toHaveLength(2);
-    expect(source.match(/ended_at: range\[1\] \? range\[1\]\.format\('X'\) : null/g)).toHaveLength(2);
+    expect(source.match(/const range = dates as \[Dayjs \| null, Dayjs \| null\];/g)).toHaveLength(
+      2,
+    );
+    expect(
+      source.match(/started_at: range\[0\] \? range\[0\]\.format\('X'\) : null/g),
+    ).toHaveLength(2);
+    expect(source.match(/ended_at: range\[1\] \? range\[1\]\.format\('X'\) : null/g)).toHaveLength(
+      2,
+    );
     expect(source).not.toContain('dates?.[0]');
     expect(source).not.toContain('dates?.[1]');
   });
 
   it('uses the original fetchLoading-style page spinner for coupon and giftcard refetches', () => {
-    const loadingMatches = source.match(/<LegacySpin loading=\{(coupons|giftcards)\.isFetching\}>/g) ?? [];
+    const loadingMatches =
+      source.match(/<LegacySpin loading=\{(coupons|giftcards)\.isFetching\}>/g) ?? [];
 
     expect(loadingMatches).toHaveLength(2);
     expect(source).not.toContain('loading={coupons.isLoading}');
@@ -292,19 +359,25 @@ describe('CouponsPage legacy routes', () => {
       source.match(/<Tag style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g),
     ).toHaveLength(2);
     expect(source).toContain(
-      "import { App, Button, DatePicker, Input, Modal, Select, Switch, Table, Tag } from 'antd';",
+      "import { App, DatePicker, Input, Modal, Select, Switch, Tag } from 'antd';",
     );
+    expect(source).toContain("import { LegacyButton } from '@/components/legacy-button';");
+    expect(source).toContain("import { LegacyPlusIcon } from '@/components/legacy-ant-icon';");
+    expect(source).toContain(
+      'LegacyStandaloneTable,\n  legacyTableRowKey,\n  type LegacyStandaloneTableHeader,',
+    );
+    expect(source).not.toContain("import { PlusOutlined } from '@ant-design/icons';");
+    expect(source).not.toContain('Button, DatePicker');
+    expect(source).not.toContain('Table, Tag');
     expect(source).not.toContain('Typography.Text');
     expect(source).not.toContain("Typography } from 'antd'");
     expect(source).not.toContain('navigator.clipboard?.writeText');
   });
 
   it('keeps coupon and giftcard limit-use cells wrapped in the old antd Tag', () => {
-    expect(
-      source.match(
-        /render: \(value: number \| null\) => <Tag>\{value !== null \? value : '无限'\}<\/Tag>,/g,
-      ),
-    ).toHaveLength(2);
+    expect(source).toContain('const renderCouponLimitUse = (value: number | null) => (');
+    expect(source).toContain('const renderGiftcardLimitUse = (value: number | null) => (');
+    expect(source.match(/<Tag>\{value !== null \? value : '无限'\}<\/Tag>/g)).toHaveLength(2);
     expect(source).not.toContain(
       "render: (value: number | null) => (value !== null ? value : '无限'),",
     );
@@ -362,17 +435,21 @@ describe('CouponsPage legacy routes', () => {
 
   it('keeps the original coupon and giftcard table row identity behavior', () => {
     expect(source).not.toContain('rowKey="id"');
+    expect(source).toContain('{...legacyTableRowKey(index)}');
+    expect(source.match(/className="ant-table-row ant-table-row-level-0"/g)).toHaveLength(4);
   });
 
   it('keeps the original add-button spacing for coupon and giftcard pages', () => {
-    expect(source).toContain('<PlusOutlined /> 添加优惠券');
-    expect(source).toContain("{'添加礼品卡'}");
-    expect(source).not.toContain('<PlusOutlined /> 添加礼品卡');
-    expect(source).not.toContain('<PlusOutlined />\n                添加礼品卡');
+    expect(source).toContain('<LegacyPlusIcon />');
+    expect(source).toContain('<span> 添加优惠券</span>');
+    expect(source).toContain('<span>添加礼品卡</span>');
+    expect(source).not.toContain('<span> 添加礼品卡</span>');
+    expect(source).not.toContain('<PlusOutlined />');
   });
 
   it('keeps the original edit action wired to the table data index', () => {
-    expect(source).toContain('render: (_value, row, index) =>');
+    expect(source).toContain('const renderCouponActions = (row: Coupon, index: number) =>');
+    expect(source).toContain('const renderGiftcardActions = (row: Giftcard, index: number) =>');
     expect(source).toContain('setSubmit(data[index] as CouponSubmit);');
     expect(source).toContain('setSubmit(data[index] as GiftcardSubmit);');
     expect(source).not.toContain('setSubmit(data[index] ?? row)');
