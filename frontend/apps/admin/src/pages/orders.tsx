@@ -36,6 +36,7 @@ import {
   type LegacyStandaloneTableHeader,
   type LegacyTablePaginationChange,
 } from '@/components/legacy-standalone-table';
+import { LegacyModal } from '@/components/legacy-modal';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -320,7 +321,7 @@ function OrderDetailModal({
   const loaded = Boolean(detail && user.data?.email && (!detail.invite_user_id || inviteUser.data));
 
   return (
-    <Modal open={open} title="订单信息" onCancel={onClose} footer={false}>
+    <LegacyModal visible={open} title="订单信息" onCancel={onClose} footer={false}>
       {loaded && detail ? (
         <div>
           <OrderDetailRow label="邮箱">
@@ -376,7 +377,7 @@ function OrderDetailModal({
       ) : (
         <LoadingOutlined style={{ fontSize: 24, color: '#415A94' }} />
       )}
-    </Modal>
+    </LegacyModal>
   );
 }
 

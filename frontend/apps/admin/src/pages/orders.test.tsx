@@ -401,13 +401,19 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).not.toContain('inviteUser.data?.email));');
   });
 
-  it('keeps the original false footer on the order detail modal', () => {
-    expect(ordersSource).toContain(
+  it('keeps the original false footer on the order detail modal using the old modal shell', () => {
+    const start = ordersSource.indexOf('function OrderDetailModal(');
+    const end = ordersSource.indexOf('export default function OrdersPage()', start);
+    const block = ordersSource.slice(start, end);
+
+    expect(ordersSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
+    expect(block).toContain(
+      '<LegacyModal visible={open} title="订单信息" onCancel={onClose} footer={false}>',
+    );
+    expect(block).not.toContain(
       '<Modal open={open} title="订单信息" onCancel={onClose} footer={false}>',
     );
-    expect(ordersSource).not.toContain(
-      '<Modal open={open} title="订单信息" onCancel={onClose} footer={null}>',
-    );
+    expect(block).not.toContain('footer={null}');
   });
 
   it('keeps the original table row identity and detail fallback behavior', () => {
