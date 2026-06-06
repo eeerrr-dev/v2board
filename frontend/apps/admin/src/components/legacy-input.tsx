@@ -3,7 +3,10 @@ import {
   useImperativeHandle,
   useLayoutEffect,
   useRef,
+  type ChangeEvent,
   type InputHTMLAttributes,
+  type ReactNode,
+  type TextareaHTMLAttributes,
 } from 'react';
 
 export const LegacyInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
@@ -17,22 +20,30 @@ export const LegacyInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTML
     useLayoutEffect(() => {
       const node = inputRef.current;
       if (!node) return;
-      const styleAttr = node.getAttribute('style');
-      if (styleAttr === null) return;
-
+      const placeholderAttr = node.getAttribute('placeholder');
+      const typeAttr = node.getAttribute('type') ?? type;
+      const classAttr = node.getAttribute('class');
       const valueAttr = node.getAttribute('value') ?? '';
+      const styleAttr = node.getAttribute('style');
+
+      node.removeAttribute('placeholder');
+      node.removeAttribute('type');
+      node.removeAttribute('class');
       node.removeAttribute('value');
       node.removeAttribute('style');
+      if (placeholderAttr !== null) node.setAttribute('placeholder', placeholderAttr);
+      node.setAttribute('type', typeAttr);
+      if (classAttr) node.setAttribute('class', classAttr);
       node.setAttribute('value', valueAttr);
-      node.setAttribute('style', styleAttr);
-    }, []);
+      if (styleAttr !== null) node.setAttribute('style', styleAttr);
+    }, [type]);
 
     return (
       <input
         ref={inputRef}
         placeholder={placeholder}
-        className={className || undefined}
         type={type}
+        className={className || undefined}
         defaultValue={defaultValue}
         style={style}
         onChange={onChange}
@@ -72,3 +83,54 @@ export const LegacyCheckboxInput = forwardRef<
     />
   );
 });
+
+export const LegacyTextArea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement>
+>(function LegacyTextArea(
+  { className, defaultValue = '', onChange, placeholder, rows, ...rest },
+  ref,
+) {
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  useImperativeHandle(ref, () => textAreaRef.current as HTMLTextAreaElement, []);
+
+  return (
+    <textarea
+      ref={textAreaRef}
+      rows={rows}
+      placeholder={placeholder}
+      className={className || undefined}
+      defaultValue={defaultValue}
+      onChange={onChange}
+      {...rest}
+    />
+  );
+});
+
+export function LegacyInputGroup({
+  addonAfter,
+  className = 'ant-input',
+  onChange,
+  placeholder,
+  value,
+}: {
+  addonAfter: ReactNode;
+  className?: string;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  value?: string | number | readonly string[] | undefined;
+}) {
+  return (
+    <span className="ant-input-group-wrapper">
+      <span className="ant-input-wrapper ant-input-group">
+        <LegacyInput
+          placeholder={placeholder}
+          className={className}
+          value={value}
+          onChange={onChange}
+        />
+        <span className="ant-input-group-addon">{addonAfter}</span>
+      </span>
+    </span>
+  );
+}

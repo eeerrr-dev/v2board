@@ -7,20 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import {
-  App,
-  Button,
-  Checkbox,
-  Divider,
-  Drawer,
-  Dropdown,
-  Input,
-  Menu,
-  Row,
-  Col,
-  Select,
-  Tooltip,
-} from 'antd';
+import { App, Divider, Dropdown, Menu, Row, Col, Tooltip } from 'antd';
 import type { DropdownProps } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import type { Plan, PlanPeriod } from '@v2board/types';
@@ -38,6 +25,14 @@ import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
+import { LegacyDrawer } from '@/components/legacy-drawer';
+import {
+  LegacyCheckboxInput,
+  LegacyInput,
+  LegacyInputGroup,
+  LegacyTextArea,
+} from '@/components/legacy-input';
+import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';
 import {
   LegacyCaretDownIcon,
   LegacyDeleteIcon,
@@ -67,6 +62,14 @@ type LegacyDropdownProps = Omit<DropdownProps, 'popupRender' | 'trigger'> & {
 };
 
 const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];
+const LEGACY_RESET_TRAFFIC_OPTIONS: LegacySelectOption[] = [
+  { value: null, label: '跟随系统设置' },
+  { value: 0, label: '每月1号' },
+  { value: 1, label: '按月重置' },
+  { value: 2, label: '不重置' },
+  { value: 3, label: '每年1月1日' },
+  { value: 4, label: '按年重置' },
+];
 
 function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps) {
   const nextTrigger = Array.isArray(trigger) ? trigger : trigger ? [trigger] : undefined;
@@ -89,6 +92,10 @@ function emptyPlan(): EditablePlan {
     onetime_price: null,
     reset_price: null,
   } as EditablePlan;
+}
+
+function legacyInputValue(value: unknown) {
+  return value === null ? undefined : (value as string | number | readonly string[] | undefined);
 }
 
 function PlanEditor({
@@ -136,7 +143,7 @@ function PlanEditor({
   return (
     <>
       {cloneElement(children, { onClick: () => setVisible(true) })}
-      <Drawer
+      <LegacyDrawer
         id="plan"
         maskClosable
         onClose={() => setVisible(false)}
@@ -147,17 +154,19 @@ function PlanEditor({
         <div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">套餐名称</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="请输入套餐名称"
-              value={submit.name as string | undefined}
+              value={legacyInputValue(submit.name)}
               onChange={(event) => change('name', event.target.value)}
             />
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">套餐描述</label>
-            <Input.TextArea
+            <LegacyTextArea
+              className="ant-input"
               rows={4}
-              value={submit.content as string | undefined}
+              value={legacyInputValue(submit.content)}
               placeholder="请输入套餐描述，支持HTML"
               onChange={(event) => change('content', event.target.value)}
             />
@@ -252,82 +261,71 @@ function PlanEditor({
             <label htmlFor="example-text-input-alt">
               权限组 <a ref={legacyHref('javascript:(0);')}>添加权限组</a>
             </label>
-            <Select
+            <LegacySelect
               placeholder="请选择权限组"
               style={{ width: '100%' }}
-              value={submit.group_id}
+              value={submit.group_id as number | undefined}
+              options={groups.map((group) => ({ value: group.id, label: group.name }))}
               onChange={(value) => change('group_id', value)}
-            >
-              {groups.map((group) => (
-                <Select.Option key={group.id} value={group.id}>
-                  {group.name}
-                </Select.Option>
-              ))}
-            </Select>
+            />
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">流量重置方式</label>
-            <Select
+            <LegacySelect
               placeholder="请选择权限组"
               style={{ width: '100%' }}
-              value={submit.reset_traffic_method}
+              value={submit.reset_traffic_method as number | null | undefined}
+              options={LEGACY_RESET_TRAFFIC_OPTIONS}
               onChange={(value) => change('reset_traffic_method', value)}
-            >
-              <Select.Option key={null} value={null}>
-                跟随系统设置
-              </Select.Option>
-              <Select.Option key={0} value={0}>
-                每月1号
-              </Select.Option>
-              <Select.Option key={1} value={1}>
-                按月重置
-              </Select.Option>
-              <Select.Option key={2} value={2}>
-                不重置
-              </Select.Option>
-              <Select.Option key={3} value={3}>
-                每年1月1日
-              </Select.Option>
-              <Select.Option key={4} value={4}>
-                按年重置
-              </Select.Option>
-            </Select>
-          </div>
-          <PlanInput
-            label="最大容纳用户量"
-            placeholder="留空则不限制"
-            value={submit.capacity_limit}
-            onChange={(value) => change('capacity_limit', value)}
-          />
-          <PlanInput
-            label="限速"
-            addonAfter="Mbps"
-            placeholder="留空则不限制"
-            value={submit.speed_limit}
-            onChange={(value) => change('speed_limit', value)}
-          />
-
-          <div className="v2board-drawer-action">
-            <div style={{ float: 'left', marginTop: 5 }}>
-              <Tooltip title="勾选后变更的流量、限速、权限组将应用到该套餐下的用户" placement="top">
-                <Checkbox onChange={(event) => change('force_update', event.target.checked)}>
-                  强制更新到用户
-                </Checkbox>
-              </Tooltip>
-            </div>
-            <Button style={{ marginRight: 8 }} onClick={() => setVisible(false)}>
-              取消
-            </Button>
-            <Button
-              loading={saveLoading}
-              onClick={() => !saveLoading && void save()}
-              type="primary"
-            >
-              提交
-            </Button>
+            />
           </div>
         </div>
-      </Drawer>
+        <PlanInput
+          label="最大容纳用户量"
+          placeholder="留空则不限制"
+          value={submit.capacity_limit}
+          onChange={(value) => change('capacity_limit', value)}
+        />
+        <PlanInput
+          label="限速"
+          addonAfter="Mbps"
+          placeholder="留空则不限制"
+          value={submit.speed_limit}
+          onChange={(value) => change('speed_limit', value)}
+        />
+
+        <div className="v2board-drawer-action">
+          <div style={{ float: 'left', marginTop: 5 }}>
+            <Tooltip title="勾选后变更的流量、限速、权限组将应用到该套餐下的用户" placement="top">
+              <label className="ant-checkbox-wrapper">
+                <span
+                  className={`ant-checkbox${submit.force_update ? ' ant-checkbox-checked' : ''}`}
+                >
+                  <LegacyCheckboxInput
+                    className="ant-checkbox-input"
+                    onChange={(event) => change('force_update', event.target.checked)}
+                  />
+                  <span className="ant-checkbox-inner" />
+                </span>
+                <span>强制更新到用户</span>
+              </label>
+            </Tooltip>
+          </div>
+          <LegacyButton
+            className="ant-btn"
+            style={{ marginRight: 8 }}
+            onClick={() => setVisible(false)}
+          >
+            取消
+          </LegacyButton>
+          <LegacyButton
+            className={`ant-btn ant-btn-primary${saveLoading ? ' ant-btn-loading' : ''}`}
+            onClick={() => !saveLoading && void save()}
+          >
+            提交
+          </LegacyButton>
+        </div>
+      </LegacyDrawer>
     </>
   );
 }
@@ -348,12 +346,21 @@ function PlanInput({
   return (
     <div className="form-group">
       <label htmlFor="example-text-input-alt">{label}</label>
-      <Input
-        addonAfter={addonAfter}
-        placeholder={placeholder}
-        value={value as string | number | undefined}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {addonAfter ? (
+        <LegacyInputGroup
+          addonAfter={addonAfter}
+          placeholder={placeholder}
+          value={legacyInputValue(value)}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <LegacyInput
+          className="ant-input"
+          placeholder={placeholder}
+          value={legacyInputValue(value)}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
     </div>
   );
 }

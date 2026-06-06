@@ -2,10 +2,11 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { LegacyCheckboxInput, LegacyInput } from './legacy-input';
+import { LegacyCheckboxInput, LegacyInput, LegacyInputGroup, LegacyTextArea } from './legacy-input';
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('LegacyInput', () => {
   let container: HTMLDivElement;
@@ -52,7 +53,36 @@ describe('LegacyInput', () => {
     });
 
     expect(container.querySelector('input')?.outerHTML).toBe(
-      '<input placeholder="输入任意关键字搜索" class="ant-input ml-2" type="text" value="" style="width: 200px;">',
+      '<input placeholder="输入任意关键字搜索" type="text" class="ant-input ml-2" value="" style="width: 200px;">',
+    );
+  });
+
+  it('renders the old runtime textarea shell', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyTextArea rows={4} placeholder="请输入套餐描述，支持HTML" className="ant-input" />,
+      );
+    });
+
+    expect(container.querySelector('textarea')?.outerHTML).toBe(
+      '<textarea rows="4" placeholder="请输入套餐描述，支持HTML" class="ant-input"></textarea>',
+    );
+  });
+
+  it('renders the old runtime input group addon shell', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyInputGroup
+          addonAfter="GB"
+          placeholder="请输入套餐流量"
+          value={undefined}
+          onChange={() => undefined}
+        />,
+      );
+    });
+
+    expect(container.querySelector('.ant-input-group-wrapper')?.outerHTML).toBe(
+      '<span class="ant-input-group-wrapper"><span class="ant-input-wrapper ant-input-group"><input placeholder="请输入套餐流量" type="text" class="ant-input" value=""><span class="ant-input-group-addon">GB</span></span></span>',
     );
   });
 

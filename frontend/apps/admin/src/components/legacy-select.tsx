@@ -10,7 +10,7 @@ import { createPortal } from 'react-dom';
 import { LegacyDownIcon } from './legacy-ant-icon';
 import { LegacyEmpty } from './legacy-empty';
 
-export type LegacySelectValue = string | number;
+export type LegacySelectValue = string | number | null;
 
 export interface LegacySelectOption {
   value: LegacySelectValue;

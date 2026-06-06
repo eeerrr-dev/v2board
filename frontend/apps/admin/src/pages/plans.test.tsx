@@ -259,15 +259,35 @@ describe('PlansPage legacy subscription management', () => {
   });
 
   it('keeps the original direct drawer input bindings', () => {
-    expect(plansSource).toContain('value={submit.name as string | undefined}');
-    expect(plansSource).toContain('value={submit.content as string | undefined}');
+    expect(plansSource).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
+    expect(plansSource).toContain('LegacyInputGroup,');
+    expect(plansSource).toContain('LegacyTextArea,');
+    expect(plansSource).toContain(
+      "import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';",
+    );
+    expect(plansSource).toContain('<LegacyDrawer');
+    expect(plansSource).toContain('<LegacyInput');
+    expect(plansSource).toContain('<LegacyTextArea');
+    expect(plansSource).toContain('<LegacyInputGroup');
+    expect(plansSource).toContain('<LegacySelect');
+    expect(plansSource).toContain('value={legacyInputValue(submit.name)}');
+    expect(plansSource).toContain('value={legacyInputValue(submit.content)}');
     expect(plansSource).toContain(
       'value={submit.month_price !== null ? submit.month_price : undefined}',
     );
     expect(plansSource).toContain('value={submit.transfer_enable}');
     expect(plansSource).toContain('value={submit.device_limit}');
-    expect(plansSource).toContain('value={value as string | number | undefined}');
-    expect(plansSource).not.toContain('function toInputValue');
+    expect(plansSource).toContain('value={legacyInputValue(value)}');
+    expect(plansSource).toContain('function legacyInputValue(value: unknown)');
+    expect(plansSource).toContain('className="ant-btn"');
+    expect(plansSource).toContain(
+      "className={`ant-btn ant-btn-primary${saveLoading ? ' ant-btn-loading' : ''}`}",
+    );
+    expect(plansSource).not.toContain('<Drawer');
+    expect(plansSource).not.toContain('<Input');
+    expect(plansSource).not.toContain('<Button');
+    expect(plansSource).not.toContain('<Select');
+    expect(plansSource).not.toContain('<Checkbox');
   });
 
   it('keeps the original site currency-symbol handoff for plan editors', () => {
@@ -286,9 +306,10 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain('className={`ant-switch-small ant-switch${enabled ?');
     expect(plansSource).not.toContain('<Switch');
     expect(plansSource).not.toContain('checked={Boolean(parseInt(String(value), 10))}');
-    expect(plansSource).toContain('<Select.Option key={null} value={null}>');
+    expect(plansSource).toContain('const LEGACY_RESET_TRAFFIC_OPTIONS: LegacySelectOption[] = [');
+    expect(plansSource).toContain("{ value: null, label: '跟随系统设置' }");
     expect(plansSource).toContain('跟随系统设置');
-    expect(plansSource).toContain('<Select.Option key={4} value={4}>');
+    expect(plansSource).toContain("{ value: 4, label: '按年重置' }");
     expect(plansSource).toContain('按年重置');
   });
 
