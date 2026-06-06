@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { App, Col, Divider, Dropdown, Input, Menu, Modal, Row, Select, Tooltip } from 'antd';
+import { App, Col, Divider, Dropdown, Input, Menu, Row, Select, Tooltip } from 'antd';
 import type { DropdownProps } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -232,9 +232,9 @@ function AssignOrderButton({
         <LegacyPlusIcon />
         <span> 添加订单</span>
       </LegacyButton>
-      <Modal
+      <LegacyModal
         title="订单分配"
-        open={open}
+        visible={open}
         okText={assign.isPending ? <LoadingOutlined /> : '确定'}
         cancelText="取消"
         onCancel={close}
@@ -295,7 +295,7 @@ function AssignOrderButton({
             }
           />
         </div>
-      </Modal>
+      </LegacyModal>
     </>
   );
 }
