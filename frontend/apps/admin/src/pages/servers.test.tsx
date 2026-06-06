@@ -459,6 +459,10 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('class="ant-input ml-2"');
     expect(html).toContain('编辑排序');
     expect(html).toContain('class="ant-btn ant-btn-primary"');
+    expect(html).toContain('class="ant-table ant-table-default');
+    expect(html).toContain('ant-table-scroll-position-left');
+    expect(html).toContain('class="ant-table-fixed"');
+    expect(html).toContain('style="width:1300px"');
     expect(html).toContain('节点ID');
     expect(html).toContain('节点');
     expect(html).toContain('Tokyo');
@@ -479,11 +483,16 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function NodeEditDrawer'),
     );
 
-    expect(managePageSource).toContain('tableLayout="auto"');
+    expect(managePageSource).toContain('<div className="ant-table-wrapper">');
+    expect(managePageSource).toContain('<div className="ant-spin-nested-loading">');
+    expect(managePageSource).toContain('<table className="ant-table-fixed" style={{ width: 1300 }}>');
+    expect(managePageSource).toContain('<LegacyEmpty />');
     expect(managePageSource).toContain('<LegacyDragSort');
     expect(managePageSource).toContain('nodeSelector="tr"');
     expect(managePageSource).toContain('handleSelector="i"');
     expect(managePageSource).toContain('<LegacyMenuIcon />');
+    expect(managePageSource).not.toContain('<Table<admin.ServerNode>');
+    expect(managePageSource).not.toContain('scroll={{ x: 1300 }}');
     expect(managePageSource).not.toContain('data-sort-index');
     expect(managePageSource).not.toContain('data-row-key');
     expect(managePageSource).not.toContain('rowKey=');
@@ -509,7 +518,6 @@ describe('ServersPage legacy server group route', () => {
 
   it('uses the original available_status-only badge mapping', () => {
     expect(serversSource).toContain('function getLegacyAvailableStatus(status?: number | null)');
-    expect(serversSource).toContain('getLegacyAvailableStatus(row.available_status)');
     expect(serversSource).toContain('getLegacyAvailableStatus(node.available_status)');
     expect(serversSource).not.toContain('available_status ??');
   });
@@ -547,10 +555,9 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function NodeEditDrawer'),
     );
 
-    expect(serversSource).toContain(
-      "(row.group_id as unknown[]).indexOf(String(value)) !== -1",
-    );
     expect(serversSource).toContain('<Tag>{name}</Tag>');
+    expect(serversSource).toContain('className="ant-table-filter-dropdown"');
+    expect(serversSource).toContain('<span>{group.name}</span>');
     expect(managePageSource).toContain(
       '.map((id) => groups.data?.find((group) => group.id === Number(id))?.name)',
     );
@@ -1126,8 +1133,8 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('id="v2board-table-dropdown"');
     expect(serversSource).toContain('ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical');
     expect(serversSource).toContain('sortMode');
-    expect(serversSource).toContain('? {}');
-    expect(serversSource).toContain('onContextMenu: (event) =>');
+    expect(serversSource).toContain('sortMode\n      ? {}');
+    expect(serversSource).toContain('onContextMenu: (event: ReactMouseEvent<HTMLTableRowElement>) =>');
     expect(serversSource).toContain('event.preventDefault()');
     expect(serversSource).toContain('event.clientY');
     expect(serversSource).toContain('event.clientX');
@@ -1151,6 +1158,8 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain("const LEGACY_SERVER_PAGE_SIZE_KEY = 'server_manage_page_size'");
     expect(serversSource).toContain('function readLegacyServerPageSize()');
     expect(serversSource).toContain('useState(readLegacyServerPageSize)');
+    expect(serversSource).toContain('const visibleNodes = sortMode ? filteredNodes : filteredNodes.slice(0, pageSize);');
+    expect(serversSource).toContain('const changeServerPageSize = (_current: number, size: number) =>');
     expect(serversSource).toContain('writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, size)');
     expect(serversSource).toContain('const legacyHabit = stored as unknown as Record<string, unknown>;');
     expect(serversSource).toContain('legacyHabit[key] = value;');
@@ -1166,8 +1175,8 @@ describe('ServersPage legacy server group route', () => {
 
   it('uses the old copy helper for server address copying', () => {
     expect(serversSource).toContain("import { legacyCopyText } from '@/lib/legacy-copy';");
-    expect(serversSource).toContain('legacyCopyText(row.host)');
-    expect(serversSource).not.toContain('legacyCopyText(`${row.host}:${row.port}`)');
+    expect(serversSource).toContain('legacyCopyText(node.host)');
+    expect(serversSource).not.toContain('legacyCopyText(`${node.host}:${node.port}`)');
     expect(serversSource).not.toContain('navigator.clipboard?.writeText');
   });
 

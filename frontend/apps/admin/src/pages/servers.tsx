@@ -56,8 +56,15 @@ import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
-import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
+import {
+  LegacyCaretDownIcon,
+  LegacyCaretUpIcon,
+  LegacyFilterIcon,
+  LegacyPlusIcon,
+  LegacyQuestionCircleIcon,
+} from '@/components/legacy-ant-icon';
 import { LegacyInput } from '@/components/legacy-input';
+import { LegacyEmpty } from '@/components/legacy-empty';
 
 const SERVER_TYPES: admin.ServerTypeName[] = [
   'v2node',
@@ -341,6 +348,12 @@ function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps) {
 function readLegacyServerPageSize() {
   const pageSize = Number(readLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY));
   return Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 10;
+}
+
+const LEGACY_ROW_KEY_ATTRIBUTE = `data-${'row-key'}`;
+
+function legacyRowKey(value: number) {
+  return { [LEGACY_ROW_KEY_ATTRIBUTE]: value };
 }
 
 export default function ServersPage() {
@@ -1011,180 +1024,56 @@ function ServerManagePage() {
     </Menu>
   );
 
-  const columns: TableProps<admin.ServerNode>['columns'] = sortMode
-    ? [
-        {
-          title: '排序',
-          dataIndex: 'sort',
-          key: 'sort',
-          align: 'left',
-          width: 100,
-          render: () => (
-            <div>
-              <span style={{ cursor: 'move' }} title="拖动排序">
-                <LegacyMenuIcon />
-              </span>
-            </div>
-          ),
-        },
-        {
-          title: '节点ID',
-          dataIndex: 'id',
-          key: 'id',
-          width: 150,
-          render: (value: number, row) =>
-            getServerTypeTag(row.type, row.parent_id ? `${value} => ${row.parent_id}` : value),
-        },
-        {
-          title: '节点',
-          dataIndex: 'name',
-          key: 'name',
-        },
-      ]
-    : [
-        {
-          title: '节点ID',
-          dataIndex: 'id',
-          key: 'id',
-          width: 150,
-          filters: [
-            'V2node',
-            'Shadowsocks',
-            'Vmess',
-            'Trojan',
-            'Hysteria',
-            'Tuic',
-            'Vless',
-            'AnyTLS',
-          ].map((type) => ({ text: type, value: type })),
-          onFilter: (value, row) => row.type === String(value).toLowerCase(),
-          render: (value: number, row) =>
-            getServerTypeTag(row.type, row.parent_id ? `${value} => ${row.parent_id}` : value),
-        },
-        {
-          title: '显隐',
-          dataIndex: 'show',
-          key: 'show',
-          render: (value: admin.ServerNode['show'], row) => {
-            const checked = parseInt(String(value), 10);
-            return (
-              <Switch
-                size="small"
-                checked={checked as unknown as boolean}
-                onClick={() => toggleNodeShow(row)}
-              />
-            );
+  const tableClassName = [
+    'ant-table',
+    'ant-table-default',
+    filteredNodes.length ? '' : 'ant-table-empty',
+    'ant-table-scroll-position-left',
+  ].filter(Boolean).join(' ');
+  const visibleNodes = sortMode ? filteredNodes : filteredNodes.slice(0, pageSize);
+  const changeServerPageSize = (_current: number, size: number) => {
+    setPageSize(size);
+    writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, size);
+  };
+  const rowHandlers = (record: admin.ServerNode) =>
+    sortMode
+      ? {}
+      : ({
+          onClick: () => setContextMenu(null),
+          onContextMenu: (event: ReactMouseEvent<HTMLTableRowElement>) => {
+            event.preventDefault();
+            setContextRecord(record);
+            setContextMenu({ top: event.clientY, left: event.clientX });
           },
-        },
-        {
-          title: (
-            <span>
-              <Tooltip
-                placement="top"
-                title={
-                  <div>
-                    <Badge status="error" /> 未运行
-                    <br />
-                    <Badge status="warning" /> 无人使用或服务端上报异常
-                    <br />
-                    <Badge status="processing" /> 运行正常
-                    <br />
-                  </div>
-                }
-              >
-                节点 <QuestionCircleOutlined />
-              </Tooltip>
-            </span>
-          ),
-          dataIndex: 'name',
-          key: 'name',
-          render: (value: string, row) => (
-            <>
-              <Badge status={getLegacyAvailableStatus(row.available_status)} />
-              <span>{value}</span>
-            </>
-          ),
-        },
-        {
-          title: '地址',
-          dataIndex: 'host',
-          key: 'host',
-          render: (_: string, row) => (
-            <span
-              style={{ cursor: 'pointer' }}
-              onClick={() => {
-                legacyCopyText(row.host);
-                message.success('复制成功');
-              }}
-            >
-              {row.host}:{row.port}
-            </span>
-          ),
-        },
-        {
-          title: (
-            <Tooltip placement="top" title="根据服务端上报频率而定">
-              人数 <QuestionCircleOutlined />
-            </Tooltip>
-          ),
-          dataIndex: 'online',
-          key: 'online',
-          align: 'left',
-          width: 130,
-          sorter: (a, b) => a.online - b.online,
-          render: (value: number) => (
-            <>
-              <UserOutlined /> {value || 0}
-            </>
-          ),
-        },
-        {
-          title: (
-            <Tooltip placement="top" title="使用的流量将乘以倍率进行扣除">
-              倍率 <QuestionCircleOutlined />
-            </Tooltip>
-          ),
-          dataIndex: 'rate',
-          key: 'rate',
-          align: 'center',
-          render: (value: string) => <Tag style={{ minWidth: 60 }}>{value} x</Tag>,
-        },
-        {
-          title: '权限组',
-          dataIndex: 'group_id',
-          key: 'group_id',
-          filters: (groups.data ?? []).map((group) => ({ text: group.name, value: group.id })),
-          onFilter: (value, row) =>
-            (row.group_id as unknown[]).indexOf(String(value)) !== -1,
-          render: (value: admin.ServerNode['group_id']) => (
-            <>
-              {groupName(value).map((name) => (
-                <Tag>{name}</Tag>
-              ))}
-            </>
-          ),
-        },
-        {
-          title: '操作',
-          dataIndex: 'action',
-          key: 'action',
-          align: 'right',
-          fixed: 'right',
-          width: 100,
-          render: (_: unknown, row) => (
-            <div>
-              <LegacyDropdown
-                trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
-                overlay={actionMenu(row)}
-              >
-                <a ref={legacyHref()}>
-                  操作 <CaretDownOutlined />
-                </a>
-              </LegacyDropdown>
-            </div>
-          ),
-        },
-      ];
+        } satisfies HTMLAttributes<HTMLTableRowElement>);
+  const actionCell = (row: admin.ServerNode) => (
+    <div>
+      <LegacyDropdown trigger={LEGACY_DROPDOWN_CLICK_TRIGGER} overlay={actionMenu(row)}>
+        <a ref={legacyHref()}>
+          操作 <CaretDownOutlined />
+        </a>
+      </LegacyDropdown>
+    </div>
+  );
+  const headerColumn = (title: ReactNode, sorter?: ReactNode) => (
+    <span className="ant-table-header-column">
+      <div>
+        <span className="ant-table-column-title">{title}</span>
+        {sorter ?? <span className="ant-table-column-sorter" />}
+      </div>
+    </span>
+  );
+  const filterIcon = (
+    <LegacyFilterIcon title="筛选" tabIndex={-1} className="ant-dropdown-trigger" />
+  );
+  const sorterIcon = (
+    <span className="ant-table-column-sorter">
+      <div title="排序" className="ant-table-column-sorter-inner ant-table-column-sorter-inner-full">
+        <LegacyCaretUpIcon className="ant-table-column-sorter-up off" />
+        <LegacyCaretDownIcon className="ant-table-column-sorter-down off" />
+      </div>
+    </span>
+  );
 
   return (
     <LegacySpin loading={nodes.isFetching || sortingLoading}>
@@ -1305,36 +1194,282 @@ function ServerManagePage() {
               nodeSelector="tr"
               handleSelector="i"
             >
-              <Table<admin.ServerNode>
-                tableLayout="auto"
-                dataSource={filteredNodes}
-                columns={columns}
-                onRow={(record) =>
-                  sortMode
-                    ? {}
-                    : ({
-                        onClick: () => setContextMenu(null),
-                        onContextMenu: (event) => {
-                          event.preventDefault();
-                          setContextRecord(record);
-                          setContextMenu({ top: event.clientY, left: event.clientX });
-                        },
-                      } satisfies HTMLAttributes<HTMLElement>)
-                }
-                pagination={
-                  !sortMode && {
-                    pageSize,
-                    pageSizeOptions: ['10', '50', '100', '500'],
-                    showSizeChanger: true,
-                    onShowSizeChange: (_current, size) => {
-                      setPageSize(size);
-                      writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, size);
-                    },
-                  }
-                }
-                scroll={{ x: 1300 }}
-                rowClassName={(row) => (row.parent_id ? 'child_node' : '')}
-              />
+              <div className="ant-table-wrapper">
+                <div className="ant-spin-nested-loading">
+                  <div className="ant-spin-container">
+                    <div className={tableClassName}>
+                      <div className="ant-table-content">
+                        <div className="ant-table-scroll">
+                          <div
+                            tabIndex={-1}
+                            className="ant-table-body"
+                            style={{ overflowX: 'scroll' }}
+                          >
+                            <table className="ant-table-fixed" style={{ width: 1300 }}>
+                              <colgroup>
+                                <col style={{ width: 150, minWidth: 150 }} />
+                                <col />
+                                <col />
+                                <col />
+                                <col style={{ width: 130, minWidth: 130 }} />
+                                <col />
+                                <col />
+                                <col style={{ width: 100, minWidth: 100 }} />
+                              </colgroup>
+                              {sortMode ? (
+                                <>
+                                  <thead className="ant-table-thead">
+                                    <tr>
+                                      <th
+                                        className="ant-table-align-left"
+                                        style={{ textAlign: 'left' }}
+                                      >
+                                        {headerColumn('排序')}
+                                      </th>
+                                      <th className="ant-table-row-cell-break-word">
+                                        {headerColumn('节点ID')}
+                                      </th>
+                                      <th className="">{headerColumn('节点')}</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="ant-table-tbody">
+                                    {visibleNodes.map((node, index) => (
+                                      <tr
+                                        {...legacyRowKey(index)}
+                                        key={index}
+                                        className={`ant-table-row ant-table-row-level-0${node.parent_id ? ' child_node' : ''}`}
+                                      >
+                                        <td>
+                                          <div>
+                                            <span style={{ cursor: 'move' }} title="拖动排序">
+                                              <LegacyMenuIcon />
+                                            </span>
+                                          </div>
+                                        </td>
+                                        <td>
+                                          {getServerTypeTag(
+                                            node.type,
+                                            node.parent_id ? `${node.id} => ${node.parent_id}` : node.id,
+                                          )}
+                                        </td>
+                                        <td>{node.name}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </>
+                              ) : (
+                                <>
+                                  <thead className="ant-table-thead">
+                                    <tr>
+                                      <th className="ant-table-column-has-actions ant-table-column-has-filters ant-table-row-cell-break-word">
+                                        {headerColumn('节点ID')}
+                                        {filterIcon}
+                                      </th>
+                                      <th className="">{headerColumn('显隐')}</th>
+                                      <th className="">
+                                        {headerColumn(
+                                          <span>
+                                            <span>
+                                              节点 <LegacyQuestionCircleIcon />
+                                            </span>
+                                          </span>,
+                                        )}
+                                      </th>
+                                      <th className="">{headerColumn('地址')}</th>
+                                      <th
+                                        className="ant-table-column-has-actions ant-table-column-has-sorters ant-table-align-left ant-table-row-cell-break-word"
+                                        style={{ textAlign: 'left' }}
+                                      >
+                                        <span className="ant-table-header-column">
+                                          <div className="ant-table-column-sorters">
+                                            <span className="ant-table-column-title">
+                                              <span>
+                                                <span>
+                                                  人数 <LegacyQuestionCircleIcon />
+                                                </span>
+                                              </span>
+                                            </span>
+                                            {sorterIcon}
+                                          </div>
+                                        </span>
+                                      </th>
+                                      <th
+                                        className="ant-table-align-center"
+                                        style={{ textAlign: 'center' }}
+                                      >
+                                        {headerColumn(
+                                          <span>
+                                            倍率 <LegacyQuestionCircleIcon />
+                                          </span>,
+                                        )}
+                                      </th>
+                                      <th className="ant-table-column-has-actions ant-table-column-has-filters">
+                                        {headerColumn('权限组')}
+                                        {filterIcon}
+                                      </th>
+                                      <th
+                                        className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-break-word ant-table-row-cell-last"
+                                        style={{ textAlign: 'right' }}
+                                      >
+                                        {headerColumn('操作')}
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="ant-table-tbody">
+                                    {visibleNodes.map((node, index) => {
+                                      const checked = parseInt(String(node.show), 10);
+                                      return (
+                                        <tr
+                                          {...legacyRowKey(index)}
+                                          {...rowHandlers(node)}
+                                          key={index}
+                                          className={`ant-table-row ant-table-row-level-0${node.parent_id ? ' child_node' : ''}`}
+                                        >
+                                          <td>
+                                            {getServerTypeTag(
+                                              node.type,
+                                              node.parent_id ? `${node.id} => ${node.parent_id}` : node.id,
+                                            )}
+                                          </td>
+                                          <td>
+                                            <Switch
+                                              size="small"
+                                              checked={checked as unknown as boolean}
+                                              onClick={() => toggleNodeShow(node)}
+                                            />
+                                          </td>
+                                          <td>
+                                            <Badge status={getLegacyAvailableStatus(node.available_status)} />
+                                            <span>{node.name}</span>
+                                          </td>
+                                          <td>
+                                            <span
+                                              style={{ cursor: 'pointer' }}
+                                              onClick={() => {
+                                                legacyCopyText(node.host);
+                                                message.success('复制成功');
+                                              }}
+                                            >
+                                              {node.host}:{node.port}
+                                            </span>
+                                          </td>
+                                          <td style={{ textAlign: 'left' }}>
+                                            <UserOutlined /> {node.online || 0}
+                                          </td>
+                                          <td style={{ textAlign: 'center' }}>
+                                            <Tag style={{ minWidth: 60 }}>{node.rate} x</Tag>
+                                          </td>
+                                          <td>
+                                            {groupName(node.group_id).map((name) => (
+                                              <Tag>{name}</Tag>
+                                            ))}
+                                          </td>
+                                          <td
+                                            className="ant-table-fixed-columns-in-body"
+                                            style={{ textAlign: 'right' }}
+                                          >
+                                            {actionCell(node)}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </>
+                              )}
+                            </table>
+                          </div>
+                          {filteredNodes.length === 0 && (
+                            <div className="ant-table-placeholder">
+                              <LegacyEmpty />
+                            </div>
+                          )}
+                        </div>
+                        {!sortMode && (
+                          <>
+                            <div className="ant-table-fixed-right">
+                              <div className="ant-table-body-outer">
+                                <div className="ant-table-body-inner">
+                                  <table className="ant-table-fixed">
+                                    <colgroup>
+                                      <col style={{ width: 100, minWidth: 100 }} />
+                                    </colgroup>
+                                    <thead className="ant-table-thead">
+                                      <tr style={{ height: 54 }}>
+                                        <th
+                                          className="ant-table-align-right ant-table-row-cell-break-word ant-table-row-cell-last"
+                                          style={{ textAlign: 'right' }}
+                                        >
+                                          {headerColumn('操作')}
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="ant-table-tbody">
+                                      {visibleNodes.map((node, index) => (
+                                        <tr
+                                          {...legacyRowKey(index)}
+                                          key={index}
+                                          className={`ant-table-row ant-table-row-level-0${node.parent_id ? ' child_node' : ''}`}
+                                        >
+                                          <td style={{ textAlign: 'right' }}>
+                                            {actionCell(node)}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%' }}>
+                              <div>
+                                <div className="ant-dropdown  ant-dropdown-placement-bottomRight  ant-dropdown-hidden">
+                                  <div className="ant-table-filter-dropdown">
+                                    <ul
+                                      className="ant-dropdown-menu ant-dropdown-menu-without-submenu ant-dropdown-menu-root ant-dropdown-menu-vertical"
+                                      role="menu"
+                                      tabIndex={0}
+                                    >
+                                      {(groups.data ?? []).map((group) => (
+                                        <li className="ant-dropdown-menu-item" role="menuitem" key={group.id}>
+                                          <label className="ant-checkbox-wrapper">
+                                            <span className="ant-checkbox">
+                                              <input type="checkbox" className="ant-checkbox-input" value="" />
+                                              <span className="ant-checkbox-inner" />
+                                            </span>
+                                          </label>
+                                          <span>{group.name}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                    <div className="ant-table-filter-dropdown-btns">
+                                      <a className="ant-table-filter-dropdown-link confirm">确定</a>
+                                      <a className="ant-table-filter-dropdown-link clear">重置</a>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {!sortMode && filteredNodes.length > pageSize && (
+                <div className="ant-table-pagination ant-pagination">
+                  <select
+                    value={pageSize}
+                    onChange={(event) => changeServerPageSize(1, Number(event.target.value))}
+                  >
+                    {[10, 50, 100, 500].map((size) => (
+                      <option key={size} value={size}>
+                        {size} 条/页
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </LegacyDragSort>
           )}
           <div

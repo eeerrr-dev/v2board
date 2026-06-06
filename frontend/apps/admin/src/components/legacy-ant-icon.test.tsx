@@ -1,6 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { LegacyPlusIcon } from './legacy-ant-icon';
+import {
+  LegacyCaretDownIcon,
+  LegacyCaretUpIcon,
+  LegacyFilterIcon,
+  LegacyPlusIcon,
+  LegacyQuestionCircleIcon,
+} from './legacy-ant-icon';
 
 describe('LegacyPlusIcon', () => {
   it('renders the old Ant Design plus icon DOM used by the bundled admin theme', () => {
@@ -18,5 +24,23 @@ describe('LegacyPlusIcon', () => {
     );
     expect(html).not.toContain('role="img"');
     expect(html).not.toContain('M192 474');
+  });
+
+  it('renders the old Ant Design table helper icons', () => {
+    const html = renderToStaticMarkup(
+      <>
+        <LegacyFilterIcon title="筛选" tabIndex={-1} className="ant-dropdown-trigger" />
+        <LegacyQuestionCircleIcon />
+        <LegacyCaretUpIcon className="ant-table-column-sorter-up off" />
+        <LegacyCaretDownIcon className="ant-table-column-sorter-down off" />
+      </>,
+    );
+
+    expect(html).toContain('aria-label="图标: filter"');
+    expect(html).toContain('class="anticon anticon-filter ant-dropdown-trigger"');
+    expect(html).toContain('data-icon="question-circle"');
+    expect(html).toContain('class="anticon anticon-caret-up ant-table-column-sorter-up off"');
+    expect(html).toContain('class="anticon anticon-caret-down ant-table-column-sorter-down off"');
+    expect(html).not.toContain('role="img"');
   });
 });
