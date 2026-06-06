@@ -489,7 +489,7 @@ describe('normalizeLegacyHashRoute', () => {
     dispose();
   });
 
-  it('recovers a persistent blank legacy layout main container', () => {
+  it('renders a visible fallback for a persistent blank legacy layout main container', () => {
     vi.useFakeTimers();
     window.localStorage.setItem('authorization', 'jwt');
     document.body.innerHTML =
@@ -508,9 +508,9 @@ describe('normalizeLegacyHashRoute', () => {
 
     vi.advanceTimersByTime(10);
 
-    const expected = new URL(window.location.href);
-    expected.searchParams.set('__v2board_recover', '125');
-    expect(replace).toHaveBeenCalledWith(expected.toString());
+    expect(replace).not.toHaveBeenCalled();
+    expect(document.querySelector('#main-container')?.textContent).toContain('页面加载失败');
+    expect(document.querySelector('[data-v2board-white-screen-fallback="1"]')).not.toBeNull();
     dispose();
   });
 

@@ -343,6 +343,12 @@ export function installLegacyWhiteScreenRecovery(
       return;
     }
 
+    if (legacyMainIsEmpty) {
+      blankLegacyMainSeen = false;
+      renderLegacyWhiteScreenFallback(root);
+      return;
+    }
+
     blankLegacyMainSeen = false;
     const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
     const hasAuth = hasLegacyAuth(options);
