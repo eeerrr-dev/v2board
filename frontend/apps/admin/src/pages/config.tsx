@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { App, Button, Input, Modal, Select, Switch, Tabs } from 'antd';
+import { App, Button, Input, Modal, Select, Tabs } from 'antd';
 import { useLocation } from 'react-router-dom';
 import type { AdminConfig, AdminConfigFlat, AdminConfigGroups, Plan } from '@v2board/types';
 import type { AdminThemeField, AdminThemeInfo } from '@v2board/api-client';
+import { LegacySwitch } from '@/components/legacy-switch';
 import {
   useAdminPlans,
   useConfig,
@@ -148,7 +149,11 @@ function ThemeSettingsButton({
 
   return (
     <>
-      <button type="button" className="btn btn-sm rounded-pill btn-outline-light px-3" onClick={show}>
+      <button
+        type="button"
+        className="btn btn-sm rounded-pill btn-outline-light px-3"
+        onClick={show}
+      >
         主题设置
       </button>
       <Modal
@@ -164,9 +169,7 @@ function ThemeSettingsButton({
             <ThemeField
               field={field}
               value={params[field.field_name]}
-              onChange={(value) =>
-                setParams((state) => ({ ...state, [field.field_name]: value }))
-              }
+              onChange={(value) => setParams((state) => ({ ...state, [field.field_name]: value }))}
             />
           </div>
         ))}
@@ -341,10 +344,12 @@ function SystemConfigPage() {
   };
 
   return (
-    <div
-      className={`mb-0 block border-bottom ${config.isFetching ? 'block-mode-loading' : ''}`}
-    >
-      <Tabs defaultActiveKey={activeTab} onChange={(key) => setActiveTab(key as ConfigGroupKey)} size="large">
+    <div className={`mb-0 block border-bottom ${config.isFetching ? 'block-mode-loading' : ''}`}>
+      <Tabs
+        defaultActiveKey={activeTab}
+        onChange={(key) => setActiveTab(key as ConfigGroupKey)}
+        size="large"
+      >
         <Tabs.TabPane tab="站点" key="site">
           <div className="">
             <ConfigItem title="站点名称" description="用于显示需要站点名称的地方。">
@@ -375,7 +380,7 @@ function SystemConfigPage() {
               title="强制HTTPS"
               description="当站点没有使用HTTPS，CDN或反代开启强制HTTPS时需要开启。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('site', 'force_https'))}
                 onChange={(checked) => setConfigValue('site', 'force_https', checked ? 1 : 0)}
               />
@@ -415,11 +420,8 @@ function SystemConfigPage() {
                 onChange={(next) => setConfigValue('site', 'tos_url', next)}
               />
             </ConfigItem>
-            <ConfigItem
-              title="停止新用户注册"
-              description="开启后任何人都将无法进行注册。"
-            >
-              <Switch
+            <ConfigItem title="停止新用户注册" description="开启后任何人都将无法进行注册。">
+              <LegacySwitch
                 checked={isLegacyChecked(value('site', 'stop_register'))}
                 onChange={(checked) => setConfigValue('site', 'stop_register', checked ? 1 : 0)}
               />
@@ -432,9 +434,7 @@ function SystemConfigPage() {
                 className="form-control"
                 value={legacySelectValue(value('site', 'try_out_plan_id'))}
                 placeholder="请选择试用订阅"
-                onChange={(event) =>
-                  setConfigValue('site', 'try_out_plan_id', event.target.value)
-                }
+                onChange={(event) => setConfigValue('site', 'try_out_plan_id', event.target.value)}
               >
                 <option value={0}>关闭</option>
                 {(plans.data ?? []).map((plan: Plan) => (
@@ -478,20 +478,14 @@ function SystemConfigPage() {
 
         <Tabs.TabPane tab="安全" key="safe">
           <div className="">
-            <ConfigItem
-              title="邮箱验证"
-              description="开启后将会强制要求用户进行邮箱验证。"
-            >
-              <Switch
+            <ConfigItem title="邮箱验证" description="开启后将会强制要求用户进行邮箱验证。">
+              <LegacySwitch
                 checked={isLegacyChecked(value('safe', 'email_verify'))}
                 onChange={(checked) => setConfigValue('safe', 'email_verify', checked ? 1 : 0)}
               />
             </ConfigItem>
-            <ConfigItem
-              title="禁止使用Gmail多别名"
-              description="开启后Gmail多别名将无法注册。"
-            >
-              <Switch
+            <ConfigItem title="禁止使用Gmail多别名" description="开启后Gmail多别名将无法注册。">
+              <LegacySwitch
                 checked={isLegacyChecked(value('safe', 'email_gmail_limit_enable'))}
                 onChange={(checked) =>
                   setConfigValue('safe', 'email_gmail_limit_enable', checked ? 1 : 0)
@@ -502,15 +496,12 @@ function SystemConfigPage() {
               title="安全模式"
               description="开启后除了站点URL以外的绑定本站点的域名访问都将会被403。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('safe', 'safe_mode_enable'))}
                 onChange={(checked) => setConfigValue('safe', 'safe_mode_enable', checked ? 1 : 0)}
               />
             </ConfigItem>
-            <ConfigItem
-              title="后台路径"
-              description="后台管理路径，修改后将会改变原有的admin路径"
-            >
+            <ConfigItem title="后台路径" description="后台管理路径，修改后将会改变原有的admin路径">
               <LegacyInput
                 placeholder="admin"
                 value={value('safe', 'secure_path')}
@@ -521,7 +512,7 @@ function SystemConfigPage() {
               title="邮箱后缀白名单"
               description="开启后在名单中的邮箱后缀才允许进行注册。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('safe', 'email_whitelist_enable'))}
                 onChange={(checked) =>
                   setConfigValue('safe', 'email_whitelist_enable', checked ? 1 : 0)
@@ -538,26 +529,21 @@ function SystemConfigPage() {
                   rows={4}
                   placeholder="请输入后缀域名，逗号分割 如：qq.com,gmail.com"
                   value={value('safe', 'email_whitelist_suffix')}
-                  onChange={(next) => setConfigValue('safe', 'email_whitelist_suffix', splitComma(next))}
+                  onChange={(next) =>
+                    setConfigValue('safe', 'email_whitelist_suffix', splitComma(next))
+                  }
                 />
               </ConfigItem>
             ) : null}
-            <ConfigItem
-              title="防机器人"
-              description="开启后将会使用Google reCAPTCHA防止机器人。"
-            >
-              <Switch
+            <ConfigItem title="防机器人" description="开启后将会使用Google reCAPTCHA防止机器人。">
+              <LegacySwitch
                 checked={isLegacyChecked(value('safe', 'recaptcha_enable'))}
                 onChange={(checked) => setConfigValue('safe', 'recaptcha_enable', checked ? 1 : 0)}
               />
             </ConfigItem>
             {value('safe', 'recaptcha_enable') ? (
               <>
-                <ConfigItem
-                  isChildren
-                  title="密钥"
-                  description="在Google reCAPTCHA申请的密钥。"
-                >
+                <ConfigItem isChildren title="密钥" description="在Google reCAPTCHA申请的密钥。">
                   <LegacyInput
                     placeholder="请输入"
                     value={value('safe', 'recaptcha_key')}
@@ -581,7 +567,7 @@ function SystemConfigPage() {
               title="IP注册限制"
               description="开启后如果IP注册账户达到规则要求将会被限制注册，请注意IP判断可能因为CDN或前置代理导致问题。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('safe', 'register_limit_by_ip_enable'))}
                 onChange={(checked) =>
                   setConfigValue('safe', 'register_limit_by_ip_enable', checked ? 1 : 0)
@@ -614,7 +600,7 @@ function SystemConfigPage() {
               title="防爆破限制"
               description="开启后如果该账户尝试登陆失败次数过多将会被限制。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('safe', 'password_limit_enable'))}
                 onChange={(checked) =>
                   setConfigValue('safe', 'password_limit_enable', checked ? 1 : 0)
@@ -652,7 +638,7 @@ function SystemConfigPage() {
               title="允许用户更改订阅"
               description="开启后用户将会可以对订阅计划进行变更。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('subscribe', 'plan_change_enable'))}
                 onChange={(checked) =>
                   setConfigValue('subscribe', 'plan_change_enable', checked ? 1 : 0)
@@ -682,7 +668,7 @@ function SystemConfigPage() {
               title="开启折抵方案"
               description="开启后用户更换订阅将会由系统对原有订阅进行折抵，方案参考文档。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('subscribe', 'surplus_enable'))}
                 onChange={(checked) =>
                   setConfigValue('subscribe', 'surplus_enable', checked ? 1 : 0)
@@ -693,7 +679,7 @@ function SystemConfigPage() {
               title="允许提前开启流量周期"
               description="开启后用户流量用尽时可以选择扣除订阅时长为代价重置流量，按月重置时扣除本周期剩余订阅时长，每月1号重置时扣除整月时间30天。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('subscribe', 'allow_new_period'))}
                 onChange={(checked) =>
                   setConfigValue('subscribe', 'allow_new_period', checked ? 1 : 0)
@@ -722,17 +708,14 @@ function SystemConfigPage() {
               title="在订阅中展示订阅信息"
               description="开启后将会在用户订阅节点时输出订阅信息。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('subscribe', 'show_info_to_server_enable'))}
                 onChange={(checked) =>
                   setConfigValue('subscribe', 'show_info_to_server_enable', checked ? 1 : 0)
                 }
               />
             </ConfigItem>
-            <ConfigItem
-              title="订阅链接生效模式"
-              description="用户获取订阅链接后的有效期。"
-            >
+            <ConfigItem title="订阅链接生效模式" description="用户获取订阅链接后的有效期。">
               <select
                 className="form-control"
                 value={legacySelectValue(value('subscribe', 'show_subscribe_method'))}
@@ -764,10 +747,7 @@ function SystemConfigPage() {
 
         <Tabs.TabPane tab="充值" key="deposit">
           <div className="">
-            <ConfigItem
-              title="充值奖励"
-              description="充值一定金额可以获得的奖励。"
-            >
+            <ConfigItem title="充值奖励" description="充值一定金额可以获得的奖励。">
               <LegacyTextarea
                 rows={2}
                 placeholder={'请输入 充值金额:奖励金额,逗号分割\n如 50:18,100:38, 200:88'}
@@ -796,11 +776,8 @@ function SystemConfigPage() {
 
         <Tabs.TabPane tab="邀请&佣金" key="invite">
           <div className="">
-            <ConfigItem
-              title="开启强制邀请"
-              description="开启后只有被邀请的用户才可以进行注册。"
-            >
-              <Switch
+            <ConfigItem title="开启强制邀请" description="开启后只有被邀请的用户才可以进行注册。">
+              <LegacySwitch
                 checked={isLegacyChecked(value('invite', 'invite_force'))}
                 onChange={(checked) => setConfigValue('invite', 'invite_force', checked ? 1 : 0)}
               />
@@ -830,7 +807,7 @@ function SystemConfigPage() {
               title="邀请码永不失效"
               description="开启后邀请码被使用后将不会失效，否则使用过后即失效。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('invite', 'invite_never_expire'))}
                 onChange={(checked) =>
                   setConfigValue('invite', 'invite_never_expire', checked ? 1 : 0)
@@ -841,7 +818,7 @@ function SystemConfigPage() {
               title="佣金仅首次发放"
               description="开启后被邀请人首次支付时才会产生佣金，可以在用户管理对用户进行单独配置。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('invite', 'commission_first_time_enable'))}
                 onChange={(checked) =>
                   setConfigValue('invite', 'commission_first_time_enable', checked ? 1 : 0)
@@ -852,17 +829,14 @@ function SystemConfigPage() {
               title="佣金自动确认"
               description="开启后佣金将会在订单完成3日后自动进行确认。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('invite', 'commission_auto_check_enable'))}
                 onChange={(checked) =>
                   setConfigValue('invite', 'commission_auto_check_enable', checked ? 1 : 0)
                 }
               />
             </ConfigItem>
-            <ConfigItem
-              title="提现单申请门槛(元)"
-              description="小于门槛金额的提现单将不会被提交。"
-            >
+            <ConfigItem title="提现单申请门槛(元)" description="小于门槛金额的提现单将不会被提交。">
               <LegacyInput
                 placeholder="请输入"
                 value={value('invite', 'commission_withdraw_limit')}
@@ -883,7 +857,7 @@ function SystemConfigPage() {
               title="关闭提现"
               description="关闭后将禁止用户申请提现，且邀请佣金将会直接进入用户余额。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('invite', 'withdraw_close_enable'))}
                 onChange={(checked) =>
                   setConfigValue('invite', 'withdraw_close_enable', checked ? 1 : 0)
@@ -894,7 +868,7 @@ function SystemConfigPage() {
               title="三级分销"
               description="开启后将佣金将按照设置的3成比例进行分成，三成比例合计请不要>100%。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('invite', 'commission_distribution_enable'))}
                 onChange={(checked) =>
                   setConfigValue('invite', 'commission_distribution_enable', checked ? 1 : 0)
@@ -953,7 +927,7 @@ function SystemConfigPage() {
             </div>
             <div className="">
               <ConfigItem title="边栏风格">
-                <Switch
+                <LegacySwitch
                   checkedChildren="亮"
                   unCheckedChildren="暗"
                   checked={value('frontend', 'frontend_theme_sidebar') === 'light'}
@@ -963,7 +937,7 @@ function SystemConfigPage() {
                 />
               </ConfigItem>
               <ConfigItem title="头部风格">
-                <Switch
+                <LegacySwitch
                   checkedChildren="亮"
                   unCheckedChildren="暗"
                   checked={value('frontend', 'frontend_theme_header') === 'light'}
@@ -999,10 +973,7 @@ function SystemConfigPage() {
 
         <Tabs.TabPane tab="节点" key="server">
           <div className="">
-            <ConfigItem
-              title="节点对接API地址"
-              description="v2node节点一键对接专用地址。"
-            >
+            <ConfigItem title="节点对接API地址" description="v2node节点一键对接专用地址。">
               <LegacyInput
                 placeholder="请输入"
                 value={value('server', 'server_api_url')}
@@ -1019,10 +990,7 @@ function SystemConfigPage() {
                 onChange={(next) => setConfigValue('server', 'server_token', next)}
               />
             </ConfigItem>
-            <ConfigItem
-              title="节点拉取动作轮询间隔"
-              description="节点从面板获取数据的间隔频率。"
-            >
+            <ConfigItem title="节点拉取动作轮询间隔" description="节点从面板获取数据的间隔频率。">
               <Input
                 addonAfter="秒"
                 size="large"
@@ -1034,10 +1002,7 @@ function SystemConfigPage() {
                 }
               />
             </ConfigItem>
-            <ConfigItem
-              title="节点推送动作轮询间隔"
-              description="节点推送数据到面板的间隔频率。"
-            >
+            <ConfigItem title="节点推送动作轮询间隔" description="节点推送数据到面板的间隔频率。">
               <Input
                 addonAfter="秒"
                 size="large"
@@ -1083,7 +1048,7 @@ function SystemConfigPage() {
               title="全局设备数限制采用宽松模式"
               description="开启后同一IP地址使用多个节点只统计为一个设备"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('server', 'device_limit_mode'))}
                 onChange={(checked) =>
                   setConfigValue('server', 'device_limit_mode', checked ? 1 : 0)
@@ -1105,10 +1070,7 @@ function SystemConfigPage() {
               </div>
             </div>
             <div className="">
-              <ConfigItem
-                title="SMTP服务器地址"
-                description="由邮件服务商提供的服务地址"
-              >
+              <ConfigItem title="SMTP服务器地址" description="由邮件服务商提供的服务地址">
                 <LegacyInput
                   placeholder="请输入"
                   value={value('email', 'email_host')}
@@ -1153,10 +1115,7 @@ function SystemConfigPage() {
                   onChange={(next) => setConfigValue('email', 'email_from_address', next)}
                 />
               </ConfigItem>
-              <ConfigItem
-                title="邮件模板"
-                description="你可以在文档查看如何自定义邮件模板"
-              >
+              <ConfigItem title="邮件模板" description="你可以在文档查看如何自定义邮件模板">
                 <select
                   className="form-control"
                   value={legacySelectValue(value('email', 'email_template'))}
@@ -1171,10 +1130,7 @@ function SystemConfigPage() {
                   ))}
                 </select>
               </ConfigItem>
-              <ConfigItem
-                title="发送测试邮件"
-                description="邮件将会发送到当前登陆用户邮箱"
-              >
+              <ConfigItem title="发送测试邮件" description="邮件将会发送到当前登陆用户邮箱">
                 <Button loading={testMail.isPending} type="primary" onClick={sendTestMail}>
                   发送测试邮件
                 </Button>
@@ -1185,10 +1141,7 @@ function SystemConfigPage() {
 
         <Tabs.TabPane tab="Telegram" key="telegram">
           <div className="">
-            <ConfigItem
-              title="机器人Token"
-              description="请输入由Botfather提供的token。"
-            >
+            <ConfigItem title="机器人Token" description="请输入由Botfather提供的token。">
               <LegacyInput
                 placeholder="0000000000:xxxxxxxxx_xxxxxxxxxxxxxxx"
                 value={value('telegram', 'telegram_bot_token')}
@@ -1214,7 +1167,7 @@ function SystemConfigPage() {
               title="开启机器人通知"
               description="开启后bot将会对绑定了telegram的管理员和用户进行基础通知。"
             >
-              <Switch
+              <LegacySwitch
                 checked={isLegacyChecked(value('telegram', 'telegram_bot_enable'))}
                 onChange={(checked) =>
                   setConfigValue('telegram', 'telegram_bot_enable', checked ? 1 : 0)

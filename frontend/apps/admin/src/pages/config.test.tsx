@@ -5,7 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import ConfigPage, { isLegacyChecked, parseLegacyInteger } from './config';
 
-const configSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'config.tsx'), 'utf8');
+const configSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'config.tsx'),
+  'utf8',
+);
 const queriesSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'),
   'utf8',
@@ -262,9 +265,7 @@ describe('ConfigPage legacy theme config', () => {
     expect(activateThemeBlock).toContain('mutateAsync({ frontend_theme: name })');
     expect(activateThemeBlock).toContain('void themes.refetch();');
     expect(activateThemeBlock).not.toContain("message.success('保存成功')");
-    expect(configSource).toContain(
-      'onSaved={() => themes.refetch()}',
-    );
+    expect(configSource).toContain('onSaved={() => themes.refetch()}');
   });
 
   it('keeps the original direct theme config data assignment', () => {
@@ -316,7 +317,9 @@ describe('ConfigPage legacy theme config', () => {
     expect(themeCardBlock).not.toContain('key={key}');
     expect(configSource).toContain('{(theme.configs ?? []).map((field) => (');
     expect(configSource).toContain('<div className="form-group">');
-    expect(configSource).toContain('const options = field.select_options as Record<string, string>;');
+    expect(configSource).toContain(
+      'const options = field.select_options as Record<string, string>;',
+    );
     expect(configSource).toContain('{Object.keys(options).map((key) => (');
     expect(configSource).toContain('<Select.Option value={key}>{options[key]}</Select.Option>');
     expect(configSource).toContain("if (field.field_type === 'input') {");
@@ -348,7 +351,11 @@ describe('ConfigPage legacy theme config', () => {
     expect(html).toContain('class="form-control"');
     expect(html).toContain('placeholder="请选择试用订阅"');
     expect(html).toContain('<textarea rows="4" type="text" class="form-control"');
+    expect(html).toContain(
+      '<button type="button" role="switch" aria-checked="true" class="ant-switch ant-switch-checked">',
+    );
     expect(html).toContain('v2board-config-children');
+    expect(html).not.toContain('ant-switch-handle');
     expect(html).not.toContain('ant-card');
     expect(html).not.toContain('ant-typography');
   });
@@ -397,7 +404,9 @@ describe('ConfigPage legacy theme config', () => {
     expect(source).not.toContain("Number(value('subscribe', 'show_subscribe_method') ?? 0) === 2");
     expect(source).not.toContain("{isLegacyChecked(value('safe', 'email_whitelist_enable')) ? (");
     expect(source).not.toContain("{isLegacyChecked(value('safe', 'recaptcha_enable')) ? (");
-    expect(source).not.toContain("{isLegacyChecked(value('safe', 'register_limit_by_ip_enable')) ? (");
+    expect(source).not.toContain(
+      "{isLegacyChecked(value('safe', 'register_limit_by_ip_enable')) ? (",
+    );
     expect(source).not.toContain("{isLegacyChecked(value('safe', 'password_limit_enable')) ? (");
   });
 
@@ -408,10 +417,14 @@ describe('ConfigPage legacy theme config', () => {
     );
 
     expect(source).toContain("value={legacySelectValue(value('site', 'try_out_plan_id'))}");
-    expect(source).toContain("value={legacySelectValue(value('subscribe', 'reset_traffic_method'))}");
+    expect(source).toContain(
+      "value={legacySelectValue(value('subscribe', 'reset_traffic_method'))}",
+    );
     expect(source).toContain('placeholder="请选择试用订阅"');
     expect(source).toContain('placeholder="请选择订阅重置方式"');
-    expect(source).toContain("value={legacySelectValue(value('subscribe', 'show_subscribe_method'))}");
+    expect(source).toContain(
+      "value={legacySelectValue(value('subscribe', 'show_subscribe_method'))}",
+    );
     expect(source).toContain('placeholder="请选择"');
     expect(source).toContain('placeholder="请选择事件"');
     expect(source).toContain("value={legacySelectValue(value('ticket', 'ticket_status') || 0)}");
@@ -419,7 +432,9 @@ describe('ConfigPage legacy theme config', () => {
     expect(source).toContain('value={legacySelectValue(value)}');
     expect(source).not.toContain("value={toText(value('site', 'try_out_plan_id') ?? 0)}");
     expect(source).not.toContain("value={toText(value('subscribe', 'reset_traffic_method') ?? 0)}");
-    expect(source).not.toContain("value={toText(value('subscribe', 'show_subscribe_method') ?? 0)}");
+    expect(source).not.toContain(
+      "value={toText(value('subscribe', 'show_subscribe_method') ?? 0)}",
+    );
     expect(source).not.toContain("value={toText(value('ticket', 'ticket_status') ?? 0)}");
     expect(source).not.toContain("value={toText(value('email', 'email_template'))}");
     expect(source).not.toContain('value={toText(value ?? 0)}');
@@ -449,7 +464,9 @@ describe('ConfigPage legacy theme config', () => {
     );
     expect(source).toContain('const setWebhook = () => {');
     expect(setWebhookBlock).toContain('webhook\n      .mutateAsync()');
-    expect(setWebhookBlock).not.toContain("const token = toText(value('telegram', 'telegram_bot_token'))");
+    expect(setWebhookBlock).not.toContain(
+      "const token = toText(value('telegram', 'telegram_bot_token'))",
+    );
     expect(setWebhookBlock).not.toContain('mutateAsync(token)');
   });
 
@@ -483,7 +500,9 @@ describe('ConfigPage legacy theme config', () => {
       'utf8',
     );
 
-    expect(source).toContain('const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)');
+    expect(source).toContain(
+      'const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)',
+    );
     expect(source).toContain('if (saveTimer.current) clearTimeout(saveTimer.current);');
     expect(source).toContain('saveTimer.current = null;');
     expect(source).not.toContain('saveTimers.current[parentKey]');
@@ -526,6 +545,12 @@ describe('ConfigPage legacy theme config', () => {
   });
 
   it('keeps the original parseInt coercion for switches and invite number fields', () => {
+    expect(configSource).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
+    expect(configSource).toContain('<LegacySwitch');
+    expect(configSource).toContain('checkedChildren="亮"');
+    expect(configSource).toContain('unCheckedChildren="暗"');
+    expect(configSource).not.toContain('<Switch');
+    expect(configSource).not.toContain('Switch, Tabs');
     expect(isLegacyChecked(1)).toBe(true);
     expect(isLegacyChecked('2')).toBe(true);
     expect(isLegacyChecked(0)).toBe(false);

@@ -12,7 +12,6 @@ import {
   Modal,
   Select,
   Space,
-  Switch,
   Tag,
   Badge,
   Tooltip,
@@ -66,6 +65,7 @@ import {
 } from '@/components/legacy-ant-icon';
 import { LegacyCheckboxInput, LegacyInput } from '@/components/legacy-input';
 import { LegacyEmpty } from '@/components/legacy-empty';
+import { LegacySwitch } from '@/components/legacy-switch';
 import {
   LegacyStandaloneTable,
   legacyTableRowKey as legacyRowKey,
@@ -1166,10 +1166,10 @@ function ServerManagePage() {
                   ]}
                   extra={
                     <>
-                      <Switch
+                      <LegacySwitch
                         size="small"
                         checked={parseInt(String(node.show), 10) as unknown as boolean}
-                        onClick={() => toggleNodeShow(node)}
+                        onChange={() => toggleNodeShow(node)}
                       />
                       <div className="ant-divider ant-divider-vertical" />
                       <span>
@@ -1345,10 +1345,10 @@ function ServerManagePage() {
                                             )}
                                           </td>
                                           <td>
-                                            <Switch
+                                            <LegacySwitch
                                               size="small"
                                               checked={checked as unknown as boolean}
-                                              onClick={() => toggleNodeShow(node)}
+                                              onChange={() => toggleNodeShow(node)}
                                             />
                                           </td>
                                           <td>
@@ -2196,7 +2196,7 @@ function LegacyTlsSettingsField({
         <div className="form-group">
           <label>Reject unknown sni</label>
           <div>
-            <Switch
+            <LegacySwitch
               checked={legacyBool(value.reject_unknown_sni)}
               onChange={(checked) => change('reject_unknown_sni', checked ? '1' : '0')}
             />
@@ -2206,7 +2206,7 @@ function LegacyTlsSettingsField({
       <div className="form-group">
         <label>Allow Insecure</label>
         <div>
-          <Switch
+          <LegacySwitch
             checked={legacyBool(value.allow_insecure)}
             onChange={(checked) => change('allow_insecure', checked ? '1' : '0')}
           />

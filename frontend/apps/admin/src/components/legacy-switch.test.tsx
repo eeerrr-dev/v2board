@@ -19,4 +19,16 @@ describe('LegacySwitch', () => {
     expect(unchecked).not.toContain('ant-switch-small');
     expect(unchecked).not.toContain('ant-switch-checked');
   });
+
+  it('renders the original checked and unchecked inner labels', () => {
+    const checked = renderToStaticMarkup(
+      <LegacySwitch checked={1} checkedChildren="亮" unCheckedChildren="暗" />,
+    );
+    const unchecked = renderToStaticMarkup(
+      <LegacySwitch checked={0} checkedChildren="亮" unCheckedChildren="暗" />,
+    );
+
+    expect(checked).toContain('<span class="ant-switch-inner">亮</span>');
+    expect(unchecked).toContain('<span class="ant-switch-inner">暗</span>');
+  });
 });

@@ -15,8 +15,14 @@ import ServersPage, {
   shouldPromptLegacyServerSortClick,
 } from './servers';
 
-const serversSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'servers.tsx'), 'utf8');
-const queriesSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'), 'utf8');
+const serversSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'servers.tsx'),
+  'utf8',
+);
+const queriesSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'),
+  'utf8',
+);
 const defaultUserAgent = window.navigator.userAgent;
 
 const mocks = vi.hoisted(() => ({
@@ -231,10 +237,10 @@ describe('ServersPage legacy server group route', () => {
       groupModalSource.indexOf('setVisible(false);'),
     );
     expect(groupModalSource).not.toContain('await groups.refetch();');
-    expect(groupModalSource).toContain(
-      "okText={groups.isFetching ? <LoadingOutlined /> : '提交'}",
+    expect(groupModalSource).toContain("okText={groups.isFetching ? <LoadingOutlined /> : '提交'}");
+    expect(groupModalSource).not.toContain(
+      'save.mutateAsync({ id: submit.id, name: submit.name })',
     );
-    expect(groupModalSource).not.toContain('save.mutateAsync({ id: submit.id, name: submit.name })');
     expect(groupModalSource).not.toContain('okText={save.isPending');
   });
 
@@ -255,9 +261,7 @@ describe('ServersPage legacy server group route', () => {
       routeModalSource.indexOf('setVisible(false);'),
     );
     expect(routeModalSource).not.toContain('await routes.refetch();');
-    expect(routeModalSource).toContain(
-      "okText={routes.isFetching ? <LoadingOutlined /> : '提交'}",
-    );
+    expect(routeModalSource).toContain("okText={routes.isFetching ? <LoadingOutlined /> : '提交'}");
     expect(routeModalSource).not.toContain('okText={save.isPending');
   });
 
@@ -363,7 +367,9 @@ describe('ServersPage legacy server group route', () => {
 
     expect(groupModalSource).toContain('value={submit.name}');
     expect(routeModalSource).toContain('value={route.remarks}');
-    expect(routeModalSource.match(/value=\{legacyInputValue\(route\.action_value\)\}/g)).toHaveLength(2);
+    expect(
+      routeModalSource.match(/value=\{legacyInputValue\(route\.action_value\)\}/g),
+    ).toHaveLength(2);
     expect(serversSource).toContain('function legacyInputValue(value: unknown)');
     expect(serversSource).toContain("return value?.split(',').join('\\n');");
     expect(groupModalSource).not.toContain("submit.name ?? ''");
@@ -383,7 +389,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).not.toContain(
       "LEGACY_NETWORK_SETTINGS_PLACEHOLDERS[String(network ?? 'tcp')]",
     );
-    expect(serversSource).not.toContain("LEGACY_NETWORK_SETTINGS_PLACEHOLDERS[String(network)] ?? ''");
+    expect(serversSource).not.toContain(
+      "LEGACY_NETWORK_SETTINGS_PLACEHOLDERS[String(network)] ?? ''",
+    );
   });
 
   it('uses the original type-specific transport placeholders', () => {
@@ -396,18 +404,10 @@ describe('ServersPage legacy server group route', () => {
     expect(getLegacyNetworkSettingsPlaceholder('vmess', 'tcp')).not.toContain(
       'acceptProxyProtocol',
     );
-    expect(getLegacyNetworkSettingsPlaceholder('vmess', 'ws')).toContain(
-      '"Host": "v2ray.com"',
-    );
-    expect(getLegacyNetworkSettingsPlaceholder('vmess', 'xhttp')).not.toContain(
-      '"mode": "auto"',
-    );
-    expect(getLegacyNetworkSettingsPlaceholder('vless', 'ws')).toContain(
-      '"security": "auto"',
-    );
-    expect(getLegacyNetworkSettingsPlaceholder('vless', 'xhttp')).toContain(
-      '"mode": "auto"',
-    );
+    expect(getLegacyNetworkSettingsPlaceholder('vmess', 'ws')).toContain('"Host": "v2ray.com"');
+    expect(getLegacyNetworkSettingsPlaceholder('vmess', 'xhttp')).not.toContain('"mode": "auto"');
+    expect(getLegacyNetworkSettingsPlaceholder('vless', 'ws')).toContain('"security": "auto"');
+    expect(getLegacyNetworkSettingsPlaceholder('vless', 'xhttp')).toContain('"mode": "auto"');
     expect(getLegacyNetworkSettingsPlaceholder('trojan', 'tcp')).toBe('');
     expect(getLegacyNetworkSettingsPlaceholder('trojan', 'httpupgrade')).toBe('');
     expect(serversSource).toContain('tcp: LEGACY_VMESS_NETWORK_SETTINGS_PLACEHOLDERS.tcp!,');
@@ -420,9 +420,15 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function ServerGroupPage'),
     );
 
-    expect(serversPageSource).toContain('if (location.pathname === \'/server/group\') return <ServerGroupPage />;');
-    expect(serversPageSource).toContain('if (location.pathname === \'/server/route\') return <ServerRoutePage />;');
-    expect(serversPageSource).toContain('if (location.pathname === \'/server/manage\') return <ServerManagePage />;');
+    expect(serversPageSource).toContain(
+      "if (location.pathname === '/server/group') return <ServerGroupPage />;",
+    );
+    expect(serversPageSource).toContain(
+      "if (location.pathname === '/server/route') return <ServerRoutePage />;",
+    );
+    expect(serversPageSource).toContain(
+      "if (location.pathname === '/server/manage') return <ServerManagePage />;",
+    );
     expect(serversPageSource).toContain('return null;');
     expect(serversSource).not.toContain('function NodesTab');
     expect(serversSource).not.toContain('function GroupsTab');
@@ -479,7 +485,9 @@ describe('ServersPage legacy server group route', () => {
         /<div className="ant-divider ant-divider-vertical" role="separator" \/>/g,
       ),
     ).toHaveLength(2);
-    expect(serversSource.match(/<div className="ant-divider ant-divider-vertical" \/>/g)).toHaveLength(1);
+    expect(
+      serversSource.match(/<div className="ant-divider ant-divider-vertical" \/>/g),
+    ).toHaveLength(1);
     expect(serversSource).not.toContain('<span className="ant-divider ant-divider-vertical"');
   });
 
@@ -501,6 +509,13 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('节点');
     expect(html).toContain('Tokyo');
     expect(html).toContain('显隐');
+    expect(html).toContain(
+      '<button type="button" role="switch" aria-checked="true" class="ant-switch-small ant-switch ant-switch-checked">',
+    );
+    expect(html).toContain(
+      '<button type="button" role="switch" aria-checked="false" class="ant-switch-small ant-switch">',
+    );
+    expect(html).not.toContain('ant-switch-handle');
     expect(html).toContain('地址');
     expect(html).toContain('人数');
     expect(html).toContain('倍率');
@@ -526,10 +541,9 @@ describe('ServersPage legacy server group route', () => {
       { className: '', position: 'absolute' },
     ]);
     expect(document.querySelector('.ant-table-content > [style*="position:absolute"]')).toBeNull();
-    expect(Array.from(document.querySelector('.bg-white')?.children ?? []).map((child) => child.id)).toEqual([
-      '',
-      '',
-    ]);
+    expect(
+      Array.from(document.querySelector('.bg-white')?.children ?? []).map((child) => child.id),
+    ).toEqual(['', '']);
     expect(document.querySelector('#v2board-table-dropdown')?.parentElement).toBe(
       document.querySelector('.ant-table-wrapper')?.parentElement,
     );
@@ -541,9 +555,15 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function NodeEditDrawer'),
     );
 
+    expect(serversSource).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
+    expect(serversSource).toContain('<LegacySwitch');
+    expect(serversSource).not.toContain('<Switch');
+    expect(serversSource).not.toContain('Switch,');
     expect(managePageSource).toContain('<div className="ant-table-wrapper">');
     expect(managePageSource).toContain('<div className="ant-spin-nested-loading">');
-    expect(managePageSource).toContain('<table className="ant-table-fixed" style={{ width: 1300 }}>');
+    expect(managePageSource).toContain(
+      '<table className="ant-table-fixed" style={{ width: 1300 }}>',
+    );
     expect(managePageSource).toContain('<LegacyEmpty />');
     expect(managePageSource).toContain('<LegacyDragSort');
     expect(managePageSource).toContain('nodeSelector="tr"');
@@ -602,8 +622,12 @@ describe('ServersPage legacy server group route', () => {
     expect(managePageSource).toContain("key: 'show',");
     expect(managePageSource).toContain('value: checked ? 0 : 1,');
     expect(managePageSource).not.toContain('show: checked ? 0 : 1');
-    expect(hook).toContain("mutationFn: (vars: { type: admin.ServerTypeName; id: number; key: 'show'; value: 0 | 1 }) =>");
-    expect(hook).toContain('admin.updateServer(apiClient, vars.type, vars.id, vars.key, vars.value)');
+    expect(hook).toContain(
+      "mutationFn: (vars: { type: admin.ServerTypeName; id: number; key: 'show'; value: 0 | 1 }) =>",
+    );
+    expect(hook).toContain(
+      'admin.updateServer(apiClient, vars.type, vars.id, vars.key, vars.value)',
+    );
     expect(hook).not.toContain('vars.show');
   });
 
@@ -642,8 +666,12 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function NodeEditDrawer'),
     );
 
-    expect(serversSource).toContain('function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)');
-    expect(serversSource).toContain('return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;');
+    expect(serversSource).toContain(
+      'function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)',
+    );
+    expect(serversSource).toContain(
+      'return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;',
+    );
     expect(managePageSource).toContain('<LegacyDropdown');
     expect(managePageSource).toContain('overlay={');
     expect(managePageSource).toContain('<Menu>');
@@ -656,9 +684,15 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('type={type}');
     expect(managePageSource).not.toContain('menu={{');
     expect(managePageSource).not.toContain('items: SERVER_TYPES.map');
-    expect(managePageSource).not.toContain('<Button>\n                <PlusOutlined />\n              </Button>');
-    expect(serversSource).not.toContain('onClick: ({ key }) => setEditing({ type: key as admin.ServerTypeName })');
-    expect(serversSource).not.toContain('setEditing({ ...row, type: row.type as admin.ServerTypeName })');
+    expect(managePageSource).not.toContain(
+      '<Button>\n                <PlusOutlined />\n              </Button>',
+    );
+    expect(serversSource).not.toContain(
+      'onClick: ({ key }) => setEditing({ type: key as admin.ServerTypeName })',
+    );
+    expect(serversSource).not.toContain(
+      'setEditing({ ...row, type: row.type as admin.ServerTypeName })',
+    );
     expect(serversSource).toContain('record?: Partial<admin.ServerNode>');
   });
 
@@ -669,9 +703,13 @@ describe('ServersPage legacy server group route', () => {
     );
 
     expect(managePageSource).toContain('const actionMenu = (row: admin.ServerNode) => (');
-    expect(managePageSource).toContain('<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>');
-    expect(managePageSource).toContain('<Menu.Item key="copy" onClick={() => runNodeAction(\'copy\', row)}>');
-    expect(managePageSource).toContain('style={{ color: \'#ff4d4f\' }}');
+    expect(managePageSource).toContain(
+      '<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>',
+    );
+    expect(managePageSource).toContain(
+      '<Menu.Item key="copy" onClick={() => runNodeAction(\'copy\', row)}>',
+    );
+    expect(managePageSource).toContain("style={{ color: '#ff4d4f' }}");
     expect(managePageSource).toContain('<Menu.Item');
     expect(managePageSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
     expect(managePageSource).toContain('overlay={actionMenu(row)}');
@@ -737,9 +775,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('节点标签');
     expect(serversSource).toContain('输入后回车添加标签');
     expect(serversSource).toContain('function normalizeLegacyNullableArray');
-    expect(serversSource).toContain(
-      'getValueFromEvent={normalizeLegacyNullableArray}',
-    );
+    expect(serversSource).toContain('getValueFromEvent={normalizeLegacyNullableArray}');
     expect(serversSource).toContain('权限组');
     expect(serversSource).toContain('添加权限组');
     expect(serversSource).toContain('<Form.Item noStyle name="group_id">');
@@ -882,16 +918,12 @@ describe('ServersPage legacy server group route', () => {
   it('uses the original Shadowsocks-specific drawer fields', () => {
     expect(serversSource).toContain('form: FormInstance');
     expect(serversSource).toContain("Form.useWatch('obfs', form)");
-    expect(getLegacyServerInitialValues('shadowsocks').cipher).toBe(
-      'chacha20-ietf-poly1305',
-    );
+    expect(getLegacyServerInitialValues('shadowsocks').cipher).toBe('chacha20-ietf-poly1305');
     expect(getLegacyServerInitialValues('v2node').cipher).toBeUndefined();
     expect(serversSource).toContain(
       '<Form.Item noStyle name="cipher" initialValue="chacha20-ietf-poly1305">',
     );
-    expect(serversSource).toContain(
-      '<Form.Item noStyle name="cipher" initialValue="aes-128-gcm">',
-    );
+    expect(serversSource).toContain('<Form.Item noStyle name="cipher" initialValue="aes-128-gcm">');
     expect(serversSource).toContain('加密算法');
     expect(serversSource).toContain('aes-128-gcm');
     expect(serversSource).toContain('aes-192-gcm');
@@ -962,17 +994,21 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('function parseLegacyJsonPayloadField');
     expect(serversSource).toContain("parseLegacyJsonPayloadField(payload, 'networkSettings')");
     expect(serversSource).toContain("parseLegacyJsonPayloadField(payload, 'network_settings')");
-    expect(serversSource).toContain("if (type === 'trojan' || type === 'vless' || type === 'v2node')");
+    expect(serversSource).toContain(
+      "if (type === 'trojan' || type === 'vless' || type === 'v2node')",
+    );
     expect(serversSource).toContain("if (type === 'vmess')");
     expect(serversSource).toContain('payload.dnsSettings = null');
     expect(serversSource).toContain("message.error('传输协议配置格式有误')");
-    expect(serversSource).toContain('const payload = prepareLegacyServerPayload(type, values, id);');
+    expect(serversSource).toContain(
+      'const payload = prepareLegacyServerPayload(type, values, id);',
+    );
     expect(nodeDrawerSource).toContain('await admin.saveServer(apiClient, type, payload);');
     expect(nodeDrawerSource).toContain('void onSaved?.();');
     expect(nodeDrawerSource).toContain('onClose();');
-    expect(nodeDrawerSource.indexOf('await admin.saveServer(apiClient, type, payload);')).toBeLessThan(
-      nodeDrawerSource.indexOf('void onSaved?.();'),
-    );
+    expect(
+      nodeDrawerSource.indexOf('await admin.saveServer(apiClient, type, payload);'),
+    ).toBeLessThan(nodeDrawerSource.indexOf('void onSaved?.();'));
     expect(nodeDrawerSource.indexOf('void onSaved?.();')).toBeLessThan(
       nodeDrawerSource.indexOf('onClose();'),
     );
@@ -1022,7 +1058,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('title={childDrawer.title}');
     expect(serversSource).toContain('field={childDrawer.field}');
     expect(serversSource).toContain('name={field}');
-    expect(serversSource).toContain("type === 'trojan' ? <TrojanAllowInsecureField /> : <ServerInsecureField />");
+    expect(serversSource).toContain(
+      "type === 'trojan' ? <TrojanAllowInsecureField /> : <ServerInsecureField />",
+    );
     expect(serversSource).toContain('function TrojanAllowInsecureField');
     expect(serversSource).toContain('className="form-group col-md-4 col-xs-12"');
     expect(serversSource).toContain('placeholder="服务端开放端口"');
@@ -1052,7 +1090,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('支持');
     expect(serversSource).toContain("showChildDrawer('编辑协议配置', 'networkSettings')");
     expect(serversSource).toContain('<Select.Option value="kcp">mKCP</Select.Option>');
-    expect(serversSource).toContain('<Select.Option value="httpupgrade">HTTPUpgrade</Select.Option>');
+    expect(serversSource).toContain(
+      '<Select.Option value="httpupgrade">HTTPUpgrade</Select.Option>',
+    );
     expect(serversSource).toContain('<Select.Option value="xhttp">XHTTP</Select.Option>');
   });
 
@@ -1173,7 +1213,9 @@ describe('ServersPage legacy server group route', () => {
 
   it('uses the original AnyTLS-specific SNI and padding scheme child drawer', () => {
     expect(serversSource).toContain("type === 'anytls'");
-    expect(serversSource).toContain("const anyTlsDefaults = type === 'anytls' ? { insecure: 0 } : {};");
+    expect(serversSource).toContain(
+      "const anyTlsDefaults = type === 'anytls' ? { insecure: 0 } : {};",
+    );
     expect(serversSource).toContain("showChildDrawer('编辑填充方案', 'padding_scheme')");
     expect(serversSource).toContain('编辑填充方案');
     expect(serversSource).toContain('function ServerChildDrawerField');
@@ -1189,10 +1231,14 @@ describe('ServersPage legacy server group route', () => {
 
   it('preserves the original /server/manage row right-click menu outside sort mode', () => {
     expect(serversSource).toContain('id="v2board-table-dropdown"');
-    expect(serversSource).toContain('ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical');
+    expect(serversSource).toContain(
+      'ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical',
+    );
     expect(serversSource).toContain('sortMode');
     expect(serversSource).toContain('sortMode\n      ? {}');
-    expect(serversSource).toContain('onContextMenu: (event: ReactMouseEvent<HTMLTableRowElement>) =>');
+    expect(serversSource).toContain(
+      'onContextMenu: (event: ReactMouseEvent<HTMLTableRowElement>) =>',
+    );
     expect(serversSource).toContain('event.preventDefault()');
     expect(serversSource).toContain('event.clientY');
     expect(serversSource).toContain('event.clientX');
@@ -1217,13 +1263,21 @@ describe('ServersPage legacy server group route', () => {
 
   it('preserves the legacy remembered server table page size habit', () => {
     expect(serversSource).toContain("const LEGACY_HABIT_KEY = 'habit'");
-    expect(serversSource).toContain("const LEGACY_SERVER_PAGE_SIZE_KEY = 'server_manage_page_size'");
+    expect(serversSource).toContain(
+      "const LEGACY_SERVER_PAGE_SIZE_KEY = 'server_manage_page_size'",
+    );
     expect(serversSource).toContain('function readLegacyServerPageSize()');
     expect(serversSource).toContain('useState(readLegacyServerPageSize)');
-    expect(serversSource).toContain('const visibleNodes = sortMode ? filteredNodes : filteredNodes.slice(0, pageSize);');
-    expect(serversSource).toContain('const changeServerPageSize = (_current: number, size: number) =>');
+    expect(serversSource).toContain(
+      'const visibleNodes = sortMode ? filteredNodes : filteredNodes.slice(0, pageSize);',
+    );
+    expect(serversSource).toContain(
+      'const changeServerPageSize = (_current: number, size: number) =>',
+    );
     expect(serversSource).toContain('writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, size)');
-    expect(serversSource).toContain('const legacyHabit = stored as unknown as Record<string, unknown>;');
+    expect(serversSource).toContain(
+      'const legacyHabit = stored as unknown as Record<string, unknown>;',
+    );
     expect(serversSource).toContain('legacyHabit[key] = value;');
     expect(serversSource).toContain(
       'window.localStorage.setItem(LEGACY_HABIT_KEY, JSON.stringify(legacyHabit));',
@@ -1264,7 +1318,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('setOrderedNodes(nodes.data)');
     expect(serversSource).toContain('setSortMode(false)');
     expect(serversSource).toContain("{sortMode ? '保存排序' : '编辑排序'}");
-    expect(serversSource).toContain('onSuccess: () => {\n                      void nodes.refetch();\n                    },');
+    expect(serversSource).toContain(
+      'onSuccess: () => {\n                      void nodes.refetch();\n                    },',
+    );
     expect(serversSource).not.toContain('onSuccess: () => setSortMode(false)');
   });
 
@@ -1294,12 +1350,16 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function NodeEditDrawer'),
     );
 
-    expect(managePageSource).toContain('const [searchKey, setSearchKey] = useState<string | undefined>()');
+    expect(managePageSource).toContain(
+      'const [searchKey, setSearchKey] = useState<string | undefined>()',
+    );
     expect(managePageSource).toContain('<LegacyInput');
     expect(managePageSource).toContain('placeholder="输入任意关键字搜索"');
     expect(managePageSource).toContain('className="ant-input ml-2"');
     expect(managePageSource).toContain('onChange={(event) => setSearchKey(event.target.value)}');
-    expect(managePageSource).not.toContain('<Input\n              placeholder="输入任意关键字搜索"');
+    expect(managePageSource).not.toContain(
+      '<Input\n              placeholder="输入任意关键字搜索"',
+    );
     expect(managePageSource).not.toContain('value={searchKey}');
   });
 
@@ -1308,10 +1368,14 @@ describe('ServersPage legacy server group route', () => {
     const html = renderToStaticMarkup(<ServersPage />);
 
     expect(html).toContain('block block-bottom undefined');
-    expect(serversSource).toContain("const LEGACY_SERVER_SORT_PROMPT = '节点排序还没有保存，是否离开'");
+    expect(serversSource).toContain(
+      "const LEGACY_SERVER_SORT_PROMPT = '节点排序还没有保存，是否离开'",
+    );
     expect(serversSource).toContain('<LegacyServerSortPrompt when={sortMode} />');
     expect(serversSource).toContain('installLegacyServerSortPrompt()');
-    expect(serversSource).toContain("document.addEventListener('click', warnBeforeRouteClick, true)");
+    expect(serversSource).toContain(
+      "document.addEventListener('click', warnBeforeRouteClick, true)",
+    );
     expect(serversSource).toContain("window.addEventListener('hashchange', warnBeforeHashChange)");
     expect(serversSource).toContain("window.addEventListener('beforeunload', warnBeforeUnload)");
     expect(serversSource).toContain('event.returnValue = message');
