@@ -57,6 +57,23 @@ describe('LegacyInput', () => {
     );
   });
 
+  it('keeps the old runtime controlled input attribute order', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyInput
+          placeholder="请输入"
+          className="ant-input"
+          value="default"
+          onChange={() => undefined}
+        />,
+      );
+    });
+
+    expect(container.querySelector('input')?.outerHTML).toBe(
+      '<input placeholder="请输入" type="text" class="ant-input" value="default">',
+    );
+  });
+
   it('renders the old runtime textarea shell', async () => {
     await act(async () => {
       root.render(
@@ -66,6 +83,24 @@ describe('LegacyInput', () => {
 
     expect(container.querySelector('textarea')?.outerHTML).toBe(
       '<textarea rows="4" placeholder="请输入套餐描述，支持HTML" class="ant-input"></textarea>',
+    );
+  });
+
+  it('renders the old controlled textarea shell', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyTextArea
+          rows={5}
+          placeholder="请输入"
+          className="ant-input"
+          value="textarea value"
+          onChange={() => undefined}
+        />,
+      );
+    });
+
+    expect(container.querySelector('textarea')?.outerHTML).toBe(
+      '<textarea rows="5" placeholder="请输入" class="ant-input">textarea value</textarea>',
     );
   });
 

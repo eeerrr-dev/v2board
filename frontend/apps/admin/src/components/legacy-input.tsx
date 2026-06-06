@@ -27,6 +27,7 @@ export const LegacyInput = forwardRef<HTMLInputElement, LegacyInputProps>(functi
   ref,
 ) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const hasControlledValue = Object.prototype.hasOwnProperty.call(rest, 'value');
   useImperativeHandle(ref, () => inputRef.current as HTMLInputElement, []);
 
   useLayoutEffect(() => {
@@ -61,7 +62,7 @@ export const LegacyInput = forwardRef<HTMLInputElement, LegacyInputProps>(functi
       placeholder={placeholder}
       type={type}
       className={className || undefined}
-      defaultValue={defaultValue}
+      defaultValue={hasControlledValue ? undefined : defaultValue}
       style={style}
       onChange={onChange}
       {...rest}
@@ -108,6 +109,7 @@ export const LegacyTextArea = forwardRef<
   ref,
 ) {
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const hasControlledValue = Object.prototype.hasOwnProperty.call(rest, 'value');
   useImperativeHandle(ref, () => textAreaRef.current as HTMLTextAreaElement, []);
 
   return (
@@ -116,7 +118,7 @@ export const LegacyTextArea = forwardRef<
       rows={rows}
       placeholder={placeholder}
       className={className || undefined}
-      defaultValue={defaultValue}
+      defaultValue={hasControlledValue ? undefined : defaultValue}
       onChange={onChange}
       {...rest}
     />
@@ -156,9 +158,9 @@ export function LegacyInputGroup({
           type={type}
           className={inputClassName}
           defaultValue={defaultValue}
-          value={value}
           legacyAttributeOrder={type === 'number' ? 'type-first' : undefined}
           onChange={onChange}
+          {...(value !== undefined ? { value } : {})}
         />
         <span className="ant-input-group-addon">{addonAfter}</span>
       </span>

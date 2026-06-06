@@ -320,14 +320,31 @@ describe('ConfigPage legacy theme config', () => {
     expect(configSource).toContain(
       'const options = field.select_options as Record<string, string>;',
     );
-    expect(configSource).toContain('{Object.keys(options).map((key) => (');
-    expect(configSource).toContain('<Select.Option value={key}>{options[key]}</Select.Option>');
+    expect(configSource).toContain(
+      'const selectOptions: LegacySelectOption[] = Object.keys(options).map((key) => ({',
+    );
+    expect(configSource).toContain('value: key,');
+    expect(configSource).toContain("label: options[key] ?? '',");
+    expect(configSource).toContain('<LegacySelect');
+    expect(configSource).toContain("style={{ width: '100%' }}");
+    expect(configSource).toContain('value={value as LegacySelectValue | undefined}');
+    expect(configSource).toContain('<LegacyAntTextArea');
+    expect(configSource).toContain('rows={5}');
+    expect(configSource).toContain('className="ant-input"');
+    expect(configSource).toContain('<LegacyAntInput');
+    expect(configSource).toContain('value={toText(value)}');
     expect(configSource).toContain("if (field.field_type === 'input') {");
     expect(configSource).toContain('return undefined;');
     expect(configSource).not.toContain('<div className="form-group" key={field.field_name}>');
     expect(configSource).not.toContain('options={Object.entries(field.select_options ?? {}).map');
     expect(configSource).not.toContain('Object.keys(field.select_options ?? {})');
     expect(configSource).not.toContain('field.select_options?.[key]');
+    expect(configSource).not.toContain('<Select');
+    expect(configSource).not.toContain('Select.Option');
+    expect(configSource).not.toContain('<Input');
+    expect(configSource).not.toContain('Input.TextArea');
+    expect(configSource).not.toContain('ant-select-selector');
+    expect(configSource).not.toContain('ant-input-outlined');
   });
 
   it('renders /config/system with the original tabbed auto-save blocks', () => {
@@ -384,7 +401,7 @@ describe('ConfigPage legacy theme config', () => {
       configSource.indexOf('<LegacyTabs.TabPane tab="邮件" key="email">'),
     );
 
-    expect(configSource).toContain("import { LegacyInputGroup } from '@/components/legacy-input';");
+    expect(configSource).toContain('LegacyInputGroup,');
     expect((serverTabBlock.match(/<LegacyInputGroup/g) ?? []).length).toBe(4);
     expect(serverTabBlock).toContain(
       '<LegacyInputGroup\n                addonAfter="秒"\n                size="large"\n                type="number"\n                placeholder="请输入"\n                defaultValue={toText(value(\'server\', \'server_pull_interval\'))}',
@@ -583,10 +600,20 @@ describe('ConfigPage legacy theme config', () => {
       join(dirname(fileURLToPath(import.meta.url)), 'config.tsx'),
       'utf8',
     );
+    const legacyInputBlock = source.slice(
+      source.indexOf('function LegacyInput({'),
+      source.indexOf('function LegacyTextarea({'),
+    );
+    const legacyTextareaBlock = source.slice(
+      source.indexOf('function LegacyTextarea({'),
+      source.indexOf('function OrderEventSelect({'),
+    );
 
-    expect(source).toContain('defaultValue={toText(value)}');
-    expect(source).not.toContain('value={toText(value)}');
-    expect(source).toContain("{...{ type: 'text' }}");
+    expect(legacyInputBlock).toContain('defaultValue={toText(value)}');
+    expect(legacyInputBlock).not.toContain('value={toText(value)}');
+    expect(legacyTextareaBlock).toContain('defaultValue={toText(value)}');
+    expect(legacyTextareaBlock).not.toContain('value={toText(value)}');
+    expect(legacyTextareaBlock).toContain("{...{ type: 'text' }}");
     expect(source).toContain(
       "defaultValue={legacySelectValue(value('frontend', 'frontend_theme_color'))}",
     );

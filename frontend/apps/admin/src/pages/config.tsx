@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { App, Input, Modal, Select } from 'antd';
+import { App, Modal } from 'antd';
 import { useLocation } from 'react-router-dom';
 import type { AdminConfig, AdminConfigFlat, AdminConfigGroups, Plan } from '@v2board/types';
 import type { AdminThemeField, AdminThemeInfo } from '@v2board/api-client';
 import { LegacyButton } from '@/components/legacy-button';
-import { LegacyInputGroup } from '@/components/legacy-input';
+import {
+  LegacyInput as LegacyAntInput,
+  LegacyInputGroup,
+  LegacyTextArea as LegacyAntTextArea,
+} from '@/components/legacy-input';
+import {
+  LegacySelect,
+  type LegacySelectOption,
+  type LegacySelectValue,
+} from '@/components/legacy-select';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyTabs } from '@/components/legacy-tabs';
 import {
@@ -211,36 +220,39 @@ function ThemeField({
 }) {
   if (field.field_type === 'select') {
     const options = field.select_options as Record<string, string>;
+    const selectOptions: LegacySelectOption[] = Object.keys(options).map((key) => ({
+      value: key,
+      label: options[key] ?? '',
+    }));
     return (
       <div>
-        <Select
+        <LegacySelect
           style={{ width: '100%' }}
           placeholder={field.placeholder}
-          value={value as string | undefined}
+          value={value as LegacySelectValue | undefined}
+          options={selectOptions}
           onChange={(next) => onChange(next)}
-        >
-          {Object.keys(options).map((key) => (
-            <Select.Option value={key}>{options[key]}</Select.Option>
-          ))}
-        </Select>
+        />
       </div>
     );
   }
   if (field.field_type === 'textarea') {
     return (
-      <Input.TextArea
+      <LegacyAntTextArea
         rows={5}
+        className="ant-input"
         placeholder={field.placeholder}
-        value={value as string | undefined}
+        value={toText(value)}
         onChange={(event) => onChange(event.target.value)}
       />
     );
   }
   if (field.field_type === 'input') {
     return (
-      <Input
+      <LegacyAntInput
+        className="ant-input"
         placeholder={field.placeholder}
-        value={value as string | undefined}
+        value={toText(value)}
         onChange={(event) => onChange(event.target.value)}
       />
     );
