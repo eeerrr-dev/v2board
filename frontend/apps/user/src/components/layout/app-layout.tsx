@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LanguageMenu } from './language-menu';
@@ -110,12 +110,6 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
   const go = (to: string) => {
     navigate(to);
     setOpen(false);
-  };
-
-  const handleProfileClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
-    navigate('/profile');
-    setShowAvatarMenu(false);
   };
 
   const toggleNav = () => setOpen((value) => !value);
@@ -276,7 +270,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
               </button>
               <div className={`dropdown-menu dropdown-menu-right p-0 ${showAvatarMenu && 'show'}`}>
                 <div className="p-2">
-                  <a className="dropdown-item" href="/#/profile" onClick={handleProfileClick}>
+                  <a className="dropdown-item" href="/#/profile">
                     <i className="far fa-fw fa-user mr-1" /> {t('nav.profile')}
                   </a>
                   <a

@@ -163,7 +163,10 @@ describe('AppLayout bundled-theme markup', () => {
       "document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];",
     );
     expect(source).toContain('<a className="font-size-lg text-white" href="/">');
+    expect(source).toContain('<a className="dropdown-item" href="/#/profile">');
     expect(source).not.toContain('handleHomeClick');
+    expect(source).not.toContain('handleProfileClick');
+    expect(source).not.toContain('onClick={handleProfileClick}');
     expect(source).not.toContain('onClick={handleHomeClick}');
     expect(source).not.toContain("document.addEventListener('click'");
     expect(source).not.toContain("document.removeEventListener('click'");
@@ -412,8 +415,8 @@ describe('AppLayout bundled-theme behavior', () => {
       await Promise.resolve();
     });
 
-    expect(profileClick.defaultPrevented).toBe(true);
-    expect(mocks.navigate).toHaveBeenCalledWith('/profile');
+    expect(profileClick.defaultPrevented).toBe(false);
+    expect(mocks.navigate).not.toHaveBeenCalledWith('/profile');
     expect(container.querySelector('.dropdown-menu')!.className).not.toContain('show');
 
     await act(async () => {
