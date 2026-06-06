@@ -88,9 +88,15 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).not.toContain('size="80%"');
     expect(source).toContain('new MarkdownIt({ html: true, linkify: true, typographer: true })');
     expect(source).toContain('function LegacyMarkdownEditor');
-    expect(source).toContain('rc-md-editor ${fullScreen');
+    expect(source).toContain("className={`rc-md-editor ${fullScreen ? 'full' : ''} `}");
     expect(source).toContain('className="rc-md-navigation visible"');
-    expect(source).toContain('className="section-container input"');
+    expect(source).toContain("className={`drop-wrap ${headerMenuVisible ? 'show' : 'hidden'}`}");
+    expect(source).toContain('className="header-list"');
+    expect(source).toContain("<h1 onClick={() => insertHeader('h1')}>H1</h1>");
+    expect(source).toContain("<h6 onClick={() => insertHeader('h6')}>H6</h6>");
+    expect(source).toContain('rmel-icon-font-size');
+    expect(source).not.toContain('rmel-icon-font"');
+    expect(source).toContain('className="section-container input "');
     expect(source).toContain('className="section-container html-wrap"');
     expect(source).toContain('dangerouslySetInnerHTML={{ __html: html }}');
     expect(source).toContain("const text = value ?? '';");
@@ -99,6 +105,93 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('setEditorKey(Math.random());');
     expect(source).not.toContain('<Input.TextArea');
     expect(source).not.toContain("value={knowledge.body ?? ''}");
+  });
+
+  it('keeps the full bundled markdown navigation toolbar', () => {
+    const toolbarStart = source.indexOf('<div className="navigation-nav left">');
+    const toolbarEnd = source.indexOf('<div className="navigation-nav right">', toolbarStart);
+    const toolbar = source.slice(toolbarStart, toolbarEnd);
+    const orderedButtons = [
+      'button-type-header',
+      'button-type-bold',
+      'button-type-italic',
+      'button-type-underline',
+      'button-type-strikethrough',
+      'button-type-unordered',
+      'button-type-ordered',
+      'button-type-quote',
+      'button-type-wrap',
+      'button-type-code-inline',
+      'button-type-code-block',
+      'button-type-table',
+      'button-type-image',
+      'button-type-link',
+      'button-type-clear',
+      'button-type-undo',
+      'button-type-redo',
+    ];
+
+    expect(toolbarStart).toBeGreaterThan(-1);
+    expect(toolbarEnd).toBeGreaterThan(toolbarStart);
+    for (const button of orderedButtons) {
+      expect(toolbar).toContain(button);
+    }
+    for (let index = 1; index < orderedButtons.length; index += 1) {
+      expect(toolbar.indexOf(orderedButtons[index - 1]!)).toBeLessThan(
+        toolbar.indexOf(orderedButtons[index]!),
+      );
+    }
+
+    expect(toolbar).toContain('title="Underline"');
+    expect(toolbar).toContain('title="Strikethrough"');
+    expect(toolbar).toContain('title="Ordered list"');
+    expect(toolbar).toContain('title="Line break"');
+    expect(toolbar).toContain('title="Inline code"');
+    expect(toolbar).toContain('title="Table"');
+    expect(toolbar).toContain('title="Image"');
+    expect(toolbar).toContain('title="Clear"');
+    expect(toolbar).toContain('title="Undo"');
+    expect(toolbar).toContain('title="Redo"');
+    expect(toolbar).toContain('rmel-icon-underline');
+    expect(toolbar).toContain('rmel-icon-strikethrough');
+    expect(toolbar).toContain('rmel-icon-list-ordered');
+    expect(toolbar).toContain('rmel-icon-wrap');
+    expect(toolbar).toContain('rmel-icon-code-block');
+    expect(toolbar).toContain('rmel-icon-grid');
+    expect(toolbar).toContain('rmel-icon-image');
+    expect(toolbar).toContain('rmel-icon-delete');
+    expect(toolbar).toContain('rmel-icon-undo');
+    expect(toolbar).toContain('rmel-icon-redo');
+    expect(toolbar).not.toContain('button-type-code"');
+    expect(source).not.toContain('className="tool-bar"');
+    expect(source).not.toContain('title="hidden menu"');
+  });
+
+  it('keeps the bundled markdown table, image, mode, and logger details', () => {
+    expect(source).toContain('const LEGACY_TABLE_ROWS = 4;');
+    expect(source).toContain('const LEGACY_TABLE_COLS = 6;');
+    expect(source).toContain('function legacyTableMarkdown(row: number, col: number)');
+    expect(source).toContain("function legacyListMarkdown(type: 'ordered' | 'unordered'");
+    expect(source).toContain('className="table-list wrap"');
+    expect(source).toContain('key={`${row}-${col}`}');
+    expect(source).toContain('onMouseOver={() => setTableHover({ row, col })}');
+    expect(source).toContain('insertTable(row + 1, col + 1);');
+    expect(source).toContain("style={{ position: 'relative' }}");
+    expect(source).toContain("node.setAttribute('type', 'file');");
+    expect(source).toContain("node.setAttribute('accept', '');");
+    expect(source).toContain('position: absolute; z-index: -1; left: 0px; top: 0px;');
+    expect(source).not.toContain('width: LEGACY_TABLE_CELL_SIZE');
+    expect(source).not.toContain('height: LEGACY_TABLE_CELL_SIZE');
+    expect(source).toContain('const [undoStack, setUndoStack] = useState<string[]>([]);');
+    expect(source).toContain('const [redoStack, setRedoStack] = useState<string[]>([]);');
+    expect(source).toContain("title: 'Only display editor'");
+    expect(source).toContain("title: 'Only display preview'");
+    expect(source).toContain("title: 'Display both editor and preview'");
+    expect(source).not.toContain('仅显示编辑器');
+    expect(source).not.toContain('仅显示预览');
+    expect(source).not.toContain('显示编辑器与预览');
+    expect(source).toContain('replaceSelection(`[${selection.selected}]()`');
+    expect(source).not.toContain('](https://)');
   });
 
   it('keeps the original sorted locale order in the knowledge editor', () => {
@@ -114,6 +207,8 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('LEGACY_KNOWLEDGE_LOCALES.map((locale)');
     expect(source).toContain('<Select.Option value={locale}>');
     expect(source).toContain('{LEGACY_KNOWLEDGE_I18N_TEXT[locale]}');
+    expect(source).toContain('defaultValue={knowledge.language}');
+    expect(source).not.toContain('defaultValue={knowledge.language || 1}');
     expect(source).not.toContain('@v2board/i18n');
     expect(source).not.toContain('SUPPORTED_LOCALES');
     expect(source).not.toContain('fa-IR');

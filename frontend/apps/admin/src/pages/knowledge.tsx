@@ -61,6 +61,29 @@ function LegacyKnowledgeSwitch({ checked, onChange }: { checked: boolean; onChan
   );
 }
 
+const LEGACY_TABLE_ROWS = 4;
+const LEGACY_TABLE_COLS = 6;
+const LEGACY_TABLE_CELL_GAP = 3;
+const LEGACY_TABLE_CELL_STEP = 23;
+
+type LegacyMarkdownView = { md: boolean; html: boolean };
+type LegacyHeaderTag = `h${1 | 2 | 3 | 4 | 5 | 6}`;
+type LegacySelection = { start: number; end: number; selected: string };
+
+function legacyTableMarkdown(row: number, col: number) {
+  const cells = (label: string) => Array.from({ length: col }, () => ` ${label} |`).join('');
+  const rows = Array.from({ length: row }, () => `|${cells('Data')}`).join('\n');
+
+  return `\n|${cells('Head')}\n|${cells('---')}\n${rows}\n`;
+}
+
+function legacyListMarkdown(type: 'ordered' | 'unordered', selected: string) {
+  const rows = selected ? selected.split('\n') : [''];
+  return rows
+    .map((line, index) => `${type === 'ordered' ? `${index + 1}. ` : '* '}${line}`)
+    .join('\n');
+}
+
 function LegacyMarkdownEditor({
   value,
   onChange,
@@ -69,102 +92,309 @@ function LegacyMarkdownEditor({
   onChange: (value: string) => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [view, setView] = useState({ md: true, html: true });
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const [view, setView] = useState<LegacyMarkdownView>({ md: true, html: true });
   const [fullScreen, setFullScreen] = useState(false);
+  const [headerMenuVisible, setHeaderMenuVisible] = useState(false);
+  const [tableMenuVisible, setTableMenuVisible] = useState(false);
+  const [tableHover, setTableHover] = useState<{ row: number; col: number } | null>(null);
+  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [redoStack, setRedoStack] = useState<string[]>([]);
   const text = value ?? '';
   const html = useMemo(() => renderLegacyAdminMarkdown(text), [text]);
 
   const nextViewInfo = () => {
     if (view.md && view.html) {
-      return { view: { md: true, html: false }, icon: 'keyboard', title: '仅显示编辑器' };
+      return { view: { md: true, html: false }, icon: 'keyboard', title: 'Only display editor' };
     }
     if (view.md) {
-      return { view: { md: false, html: true }, icon: 'visibility', title: '仅显示预览' };
+      return { view: { md: false, html: true }, icon: 'visibility', title: 'Only display preview' };
     }
-    return { view: { md: true, html: true }, icon: 'view-split', title: '显示编辑器与预览' };
+    return {
+      view: { md: true, html: true },
+      icon: 'view-split',
+      title: 'Display both editor and preview',
+    };
   };
 
-  const replaceSelection = (before: string, after = before, placeholder = '') => {
+  const getSelection = (): LegacySelection => {
     const textarea = textareaRef.current;
-    if (!textarea) {
-      onChange(`${text}${before}${placeholder}${after}`);
-      return;
-    }
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selected = text.slice(start, end) || placeholder;
-    onChange(`${text.slice(0, start)}${before}${selected}${after}${text.slice(end)}`);
+    const start = textarea?.selectionStart ?? text.length;
+    const end = textarea?.selectionEnd ?? text.length;
+    return { start, end, selected: text.slice(start, end) };
   };
 
-  const insertLine = (prefix: string, placeholder: string) => {
-    const textarea = textareaRef.current;
-    const insert = `${prefix}${placeholder}`;
-    if (!textarea) {
-      onChange(`${text}${text ? '\n' : ''}${insert}`);
-      return;
-    }
+  const applyTextChange = (nextText: string) => {
+    if (nextText === text) return;
+    setUndoStack((stack) => [...stack, text].slice(-100));
+    setRedoStack([]);
+    onChange(nextText);
+  };
 
-    const start = textarea.selectionStart;
-    const lineStart = text.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
-    onChange(`${text.slice(0, lineStart)}${insert}${text.slice(lineStart)}`);
+  const replaceSelection = (replacement: string, selection = getSelection()) => {
+    applyTextChange(`${text.slice(0, selection.start)}${replacement}${text.slice(selection.end)}`);
+  };
+
+  const wrapSelection = (before: string, after = before) => {
+    const selection = getSelection();
+    replaceSelection(`${before}${selection.selected}${after}`, selection);
+  };
+
+  const insertMarkdownBlock = (before: string, after = '') => {
+    const selection = getSelection();
+    replaceSelection(`${before}${selection.selected}${after}`, selection);
+  };
+
+  const insertHeader = (tag: LegacyHeaderTag) => {
+    insertMarkdownBlock(`\n${'#'.repeat(Number(tag.slice(1)))} `, '\n');
+    setHeaderMenuVisible(false);
+  };
+
+  const insertTable = (row: number, col: number) => {
+    replaceSelection(legacyTableMarkdown(row, col));
+    setTableMenuVisible(false);
+  };
+
+  const insertImage = (label = '') => {
+    const selection = getSelection();
+    replaceSelection(`![${selection.selected || label}]()`, selection);
+  };
+
+  const bindImageInput = (node: HTMLInputElement | null) => {
+    imageInputRef.current = node;
+    if (!node) return;
+    node.setAttribute('type', 'file');
+    node.setAttribute('accept', '');
+    node.setAttribute(
+      'style',
+      'position: absolute; z-index: -1; left: 0px; top: 0px; width: 0px; height: 0px; opacity: 0;',
+    );
+  };
+
+  const undoMarkdown = () => {
+    setUndoStack((stack) => {
+      const previous = stack[stack.length - 1];
+      if (previous === undefined) return stack;
+      setRedoStack((redo) => [...redo, text].slice(-100));
+      onChange(previous);
+      return stack.slice(0, -1);
+    });
+  };
+
+  const redoMarkdown = () => {
+    setRedoStack((stack) => {
+      const next = stack[stack.length - 1];
+      if (next === undefined) return stack;
+      setUndoStack((undo) => [...undo, text].slice(-100));
+      onChange(next);
+      return stack.slice(0, -1);
+    });
   };
 
   const mode = nextViewInfo();
 
   return (
-    <div className={`rc-md-editor ${fullScreen ? 'full' : ''}`} style={{ height: 500 }}>
+    <div className={`rc-md-editor ${fullScreen ? 'full' : ''} `} style={{ height: 500 }}>
       <div className="rc-md-navigation visible">
         <div className="navigation-nav left">
           <div className="button-wrap">
             <span
               className="button button-type-header"
-              title="标题"
-              onClick={() => insertLine('# ', '标题')}
+              title="Header"
+              onMouseEnter={() => setHeaderMenuVisible(true)}
+              onMouseLeave={() => setHeaderMenuVisible(false)}
             >
-              <i className="rmel-iconfont rmel-icon-font" />
+              <i className="rmel-iconfont rmel-icon-font-size" />
+              <div
+                className={`drop-wrap ${headerMenuVisible ? 'show' : 'hidden'}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setHeaderMenuVisible(false);
+                }}
+              >
+                <ul className="header-list">
+                  <li className="list-item">
+                    <h1 onClick={() => insertHeader('h1')}>H1</h1>
+                  </li>
+                  <li className="list-item">
+                    <h2 onClick={() => insertHeader('h2')}>H2</h2>
+                  </li>
+                  <li className="list-item">
+                    <h3 onClick={() => insertHeader('h3')}>H3</h3>
+                  </li>
+                  <li className="list-item">
+                    <h4 onClick={() => insertHeader('h4')}>H4</h4>
+                  </li>
+                  <li className="list-item">
+                    <h5 onClick={() => insertHeader('h5')}>H5</h5>
+                  </li>
+                  <li className="list-item">
+                    <h6 onClick={() => insertHeader('h6')}>H6</h6>
+                  </li>
+                </ul>
+              </div>
             </span>
             <span
               className="button button-type-bold"
-              title="加粗"
-              onClick={() => replaceSelection('**', '**', '加粗')}
+              title="Bold"
+              onClick={() => wrapSelection('**')}
             >
               <i className="rmel-iconfont rmel-icon-bold" />
             </span>
             <span
               className="button button-type-italic"
-              title="斜体"
-              onClick={() => replaceSelection('*', '*', '斜体')}
+              title="Italic"
+              onClick={() => wrapSelection('*')}
             >
               <i className="rmel-iconfont rmel-icon-italic" />
             </span>
             <span
+              className="button button-type-underline"
+              title="Underline"
+              onClick={() => wrapSelection('++')}
+            >
+              <i className="rmel-iconfont rmel-icon-underline" />
+            </span>
+            <span
+              className="button button-type-strikethrough"
+              title="Strikethrough"
+              onClick={() => wrapSelection('~~')}
+            >
+              <i className="rmel-iconfont rmel-icon-strikethrough" />
+            </span>
+            <span
               className="button button-type-unordered"
-              title="无序列表"
-              onClick={() => insertLine('- ', '列表')}
+              title="Unordered list"
+              onClick={() => {
+                const selection = getSelection();
+                replaceSelection(legacyListMarkdown('unordered', selection.selected), selection);
+              }}
             >
               <i className="rmel-iconfont rmel-icon-list-unordered" />
             </span>
             <span
+              className="button button-type-ordered"
+              title="Ordered list"
+              onClick={() => {
+                const selection = getSelection();
+                replaceSelection(legacyListMarkdown('ordered', selection.selected), selection);
+              }}
+            >
+              <i className="rmel-iconfont rmel-icon-list-ordered" />
+            </span>
+            <span
               className="button button-type-quote"
-              title="引用"
-              onClick={() => insertLine('> ', '引用')}
+              title="Quote"
+              onClick={() => insertMarkdownBlock('\n> ', '\n')}
             >
               <i className="rmel-iconfont rmel-icon-quote" />
             </span>
             <span
-              className="button button-type-code"
-              title="代码块"
-              onClick={() => replaceSelection('```\n', '\n```', 'code')}
+              className="button button-type-wrap"
+              title="Line break"
+              onClick={() => replaceSelection('\n')}
+            >
+              <i className="rmel-iconfont rmel-icon-wrap" />
+            </span>
+            <span
+              className="button button-type-code-inline"
+              title="Inline code"
+              onClick={() => wrapSelection('`')}
             >
               <i className="rmel-iconfont rmel-icon-code" />
             </span>
             <span
+              className="button button-type-code-block"
+              title="Code"
+              onClick={() => insertMarkdownBlock('\n```\n', '\n```\n')}
+            >
+              <i className="rmel-iconfont rmel-icon-code-block" />
+            </span>
+            <span
+              className="button button-type-table"
+              title="Table"
+              onMouseEnter={() => setTableMenuVisible(true)}
+              onMouseLeave={() => setTableMenuVisible(false)}
+            >
+              <i className="rmel-iconfont rmel-icon-grid" />
+              <div className={`drop-wrap ${tableMenuVisible ? 'show' : 'hidden'}`}>
+                <ul
+                  className="table-list wrap"
+                  style={{
+                    width: LEGACY_TABLE_CELL_STEP * LEGACY_TABLE_COLS - LEGACY_TABLE_CELL_GAP,
+                    height: LEGACY_TABLE_CELL_STEP * LEGACY_TABLE_ROWS - LEGACY_TABLE_CELL_GAP,
+                  }}
+                >
+                  {Array.from({ length: LEGACY_TABLE_ROWS }).map((_, row) =>
+                    Array.from({ length: LEGACY_TABLE_COLS }).map((__, col) => (
+                      <li
+                        key={`${row}-${col}`}
+                        className={`list-item ${
+                          tableHover && row <= tableHover.row && col <= tableHover.col
+                            ? 'active'
+                            : ''
+                        }`}
+                        style={{
+                          top: LEGACY_TABLE_CELL_STEP * row,
+                          left: LEGACY_TABLE_CELL_STEP * col,
+                        }}
+                        onMouseOver={() => setTableHover({ row, col })}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          insertTable(row + 1, col + 1);
+                        }}
+                      />
+                    )),
+                  )}
+                </ul>
+              </div>
+            </span>
+            <span
+              className="button button-type-image"
+              title="Image"
+              style={{ position: 'relative' }}
+              onClick={() => insertImage()}
+            >
+              <i className="rmel-iconfont rmel-icon-image" />
+              <input
+                ref={bindImageInput}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) insertImage(file.name);
+                  event.currentTarget.value = '';
+                }}
+              />
+            </span>
+            <span
               className="button button-type-link"
-              title="链接"
-              onClick={() => replaceSelection('[', '](https://)', '链接')}
+              title="Link"
+              onClick={() => {
+                const selection = getSelection();
+                replaceSelection(`[${selection.selected}]()`, selection);
+              }}
             >
               <i className="rmel-iconfont rmel-icon-link" />
+            </span>
+            <span
+              className="button button-type-clear"
+              title="Clear"
+              onClick={() => applyTextChange('')}
+            >
+              <i className="rmel-iconfont rmel-icon-delete" />
+            </span>
+            <span
+              className={`button button-type-undo ${undoStack.length ? '' : 'disabled'}`}
+              title="Undo"
+              onClick={undoMarkdown}
+            >
+              <i className="rmel-iconfont rmel-icon-undo" />
+            </span>
+            <span
+              className={`button button-type-redo ${redoStack.length ? '' : 'disabled'}`}
+              title="Redo"
+              onClick={redoMarkdown}
+            >
+              <i className="rmel-iconfont rmel-icon-redo" />
             </span>
           </div>
         </div>
@@ -179,7 +409,7 @@ function LegacyMarkdownEditor({
             </span>
             <span
               className="button button-type-fullscreen"
-              title={fullScreen ? '退出全屏' : '全屏'}
+              title={fullScreen ? 'Exit full screen' : 'Full screen'}
               onClick={() => setFullScreen((current) => !current)}
             >
               <i
@@ -192,19 +422,14 @@ function LegacyMarkdownEditor({
         </div>
       </div>
       <div className="editor-container">
-        <div className="tool-bar">
-          <span className="button button-type-menu" title="hidden menu">
-            <i className="rmel-iconfont rmel-icon-expand-less" />
-          </span>
-        </div>
         <section className={`section sec-md ${view.md ? 'visible' : 'in-visible'}`}>
           <textarea
             ref={textareaRef}
             name="textarea"
             value={text}
-            className="section-container input"
+            className="section-container input "
             wrap="hard"
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => applyTextChange(event.target.value)}
           />
         </section>
         <section className={`section sec-html ${view.html ? 'visible' : 'in-visible'}`}>
@@ -301,7 +526,7 @@ function KnowledgeEditor({
               <label htmlFor="example-text-input-alt">语言</label>
               <Select
                 placeholder="请选择知识语言"
-                defaultValue={knowledge.language || 1}
+                defaultValue={knowledge.language}
                 style={{ width: '100%' }}
                 value={knowledge.language}
                 onChange={(value) => formChange('language', value)}
