@@ -347,6 +347,22 @@ describe('ConfigPage legacy theme config', () => {
     expect(configSource).not.toContain('ant-input-outlined');
   });
 
+  it('uses the old Ant Design modal shell for theme settings', () => {
+    const start = configSource.indexOf('function ThemeSettingsButton(');
+    const end = configSource.indexOf('function ThemeField(', start);
+    const block = configSource.slice(start, end);
+
+    expect(configSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
+    expect(configSource).not.toContain("import { App, Modal } from 'antd';");
+    expect(block).toContain('<LegacyModal');
+    expect(block).toContain('visible={visible}');
+    expect(block).toContain('onCancel={hide}');
+    expect(block).toContain('okButtonProps={{ loading: saveConfig.isPending }}');
+    expect(block).toContain('onOk={save}');
+    expect(block).not.toContain('<Modal');
+    expect(block).not.toContain('open={visible}');
+  });
+
   it('renders /config/system with the original tabbed auto-save blocks', () => {
     mocks.pathname = '/config/system';
     const html = renderToStaticMarkup(<ConfigPage />);

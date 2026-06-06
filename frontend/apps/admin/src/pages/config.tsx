@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { App, Modal } from 'antd';
+import { App } from 'antd';
 import { useLocation } from 'react-router-dom';
 import type { AdminConfig, AdminConfigFlat, AdminConfigGroups, Plan } from '@v2board/types';
 import type { AdminThemeField, AdminThemeInfo } from '@v2board/api-client';
@@ -14,6 +14,7 @@ import {
   type LegacySelectOption,
   type LegacySelectValue,
 } from '@/components/legacy-select';
+import { LegacyModal } from '@/components/legacy-modal';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyTabs } from '@/components/legacy-tabs';
 import {
@@ -187,9 +188,9 @@ function ThemeSettingsButton({
       >
         主题设置
       </button>
-      <Modal
+      <LegacyModal
         title={`配置${theme.name}主题`}
-        open={visible}
+        visible={visible}
         onCancel={hide}
         okButtonProps={{ loading: saveConfig.isPending }}
         onOk={save}
@@ -204,7 +205,7 @@ function ThemeSettingsButton({
             />
           </div>
         ))}
-      </Modal>
+      </LegacyModal>
     </>
   );
 }
