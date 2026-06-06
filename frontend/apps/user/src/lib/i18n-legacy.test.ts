@@ -92,7 +92,7 @@ describe('legacy i18n dictionaries', () => {
     );
     expect(i18n.t('node.status_tip')).toBe('五分钟内节点在线情况');
     expect(i18n.t('ticket.message_placeholder')).toBe('请描述您遇到的问题');
-    expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后到达您的佣金账户。');
+    expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后会到达你的佣金账户。');
     expect(i18n.t('plan.pick_title')).toBe('选择最适合您的计划');
     expect(i18n.t('plan.pick_best_for_you')).toBe('选择最适合您的计划');
     expect(i18n.t('plan.select_other')).toBe('选择其它订阅');

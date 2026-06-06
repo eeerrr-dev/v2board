@@ -48,7 +48,7 @@ const mocks = vi.hoisted(() => ({
     'invite.issued_at': '发放时间',
     'invite.manage': '邀请码管理',
     'invite.pending_commission': '确认中的佣金',
-    'invite.pending_hint': '佣金将会在确认后到达您的佣金账户。',
+    'invite.pending_hint': '佣金将会在确认后会到达你的佣金账户。',
     'invite.registered': '已注册用户数',
     'invite.title': '我的邀请',
     'invite.transfer': '划转',
