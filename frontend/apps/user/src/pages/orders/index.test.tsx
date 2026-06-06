@@ -140,7 +140,8 @@ describe('OrdersPage bundled-theme table', () => {
     expect(html).toContain(formatLegacyDateMinuteSlash(0));
     expect(html.match(/ant-divider ant-divider-vertical/g)).toHaveLength(4);
     expect(html).not.toContain('role="separator"');
-    expect(html).not.toContain('data-row-key');
+    expect(html.match(/data-row-key="0"/g)).toHaveLength(2);
+    expect(html.match(/data-row-key="1"/g)).toHaveLength(2);
   });
 
   it('renders the legacy mobile list item structure', () => {
@@ -167,8 +168,9 @@ describe('OrdersPage bundled-theme table', () => {
     expect(ordersSource).not.toContain("PERIOD_LABEL[order.period] ?? ''");
   });
 
-  it('keeps bundled antd table row keys internal-only', () => {
-    expect(ordersSource).not.toContain('data-row-key');
+  it('keeps bundled antd table fallback row keys as index DOM attributes', () => {
+    expect(ordersSource).toContain('data-row-key={index}');
+    expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
   });
 
   it('keeps bundled mobile order rows unkeyed', () => {
