@@ -190,11 +190,13 @@ describe('InvitePage bundled-theme markup', () => {
     expect(html).toContain('佣金');
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_600));
     expect(html).toContain('12.34');
-    expect(html).not.toContain('data-row-key');
+    expect(html.match(/data-row-key="0"/g)).toHaveLength(2);
   });
 
-  it('keeps bundled antd table row keys internal-only', () => {
-    expect(inviteSource).not.toContain('data-row-key');
+  it('keeps bundled antd fallback row keys as index DOM attributes', () => {
+    expect(inviteSource).toContain('data-row-key={index}');
+    expect(inviteSource).not.toContain('data-row-key={code.code}');
+    expect(inviteSource).not.toContain('data-row-key={row.created_at}');
   });
 
   it('renders the old distribution-rate branch and withdraw button when enabled', () => {

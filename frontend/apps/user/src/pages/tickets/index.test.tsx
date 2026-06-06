@@ -183,11 +183,14 @@ describe('TicketsPage bundled-theme table', () => {
     expect(html).toContain(formatLegacyDateMinuteSlash(60));
     expect(html.match(/ant-divider ant-divider-vertical/g)).toHaveLength(6);
     expect(html).not.toContain('role="separator"');
-    expect(html).not.toContain('data-row-key');
+    expect(html.match(/data-row-key="0"/g)).toHaveLength(2);
+    expect(html.match(/data-row-key="1"/g)).toHaveLength(2);
+    expect(html.match(/data-row-key="2"/g)).toHaveLength(2);
   });
 
-  it('keeps bundled antd table row keys internal-only', () => {
-    expect(source).not.toContain('data-row-key');
+  it('keeps bundled antd fallback row keys as index DOM attributes', () => {
+    expect(source).toContain('data-row-key={index}');
+    expect(source).not.toContain('data-row-key={ticket.id}');
   });
 
   it('keeps the original new-ticket button text even while ticket save is pending', () => {

@@ -243,7 +243,11 @@ export default function InvitePage() {
                             </thead>
                             <tbody className="ant-table-tbody">
                               {codes.map((code, index) => (
-                                <tr className="ant-table-row ant-table-row-level-0" key={index}>
+                                <tr
+                                  className="ant-table-row ant-table-row-level-0"
+                                  data-row-key={index}
+                                  key={index}
+                                >
                                   <td>
                                     <span>{code.code}</span>
                                     <a
@@ -342,6 +346,7 @@ export default function InvitePage() {
                               {detailRows.map((row, index) => (
                                 <tr
                                   className="ant-table-row ant-table-row-level-0"
+                                  data-row-key={index}
                                   key={index}
                                 >
                                   <td>
