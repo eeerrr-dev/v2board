@@ -268,8 +268,11 @@ describe('UsersPage legacy user manager', () => {
     expect(userManageDrawerSource).toContain('width="80%"');
     expect(userManageDrawerSource).toContain('title="用户管理"');
     expect(userManageDrawerSource).toContain('v2board-drawer-action');
-    expect(userManageDrawerSource).toContain('function LegacyDrawerLoadingIcon');
-    expect(userManageDrawerSource).toContain('className="anticon anticon-loading"');
+    expect(userManageDrawerSource).toContain('LegacyLoadingIcon,');
+    expect(userManageDrawerSource).toContain(
+      "<LegacyLoadingIcon style={{ fontSize: 24, color: '#415A94' }} />",
+    );
+    expect(userManageDrawerSource).not.toContain('function LegacyDrawerLoadingIcon');
     expect(userManageDrawerSource).toContain("color: '#415A94'");
     expect(userManageDrawerSource).toContain(
       'transfer_enable: user.transfer_enable as unknown as number',

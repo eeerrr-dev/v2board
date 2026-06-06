@@ -437,15 +437,18 @@ describe('ConfigPage legacy theme config', () => {
 
   it('uses the old Ant Design 3 buttons for config side effects', () => {
     expect(configSource).toContain("import { LegacyButton } from '@/components/legacy-button';");
-    expect(configSource).toContain('function LegacyButtonLoadingIcon()');
+    expect(configSource).toContain(
+      "import { LegacyLoadingIcon } from '@/components/legacy-ant-icon';",
+    );
+    expect(configSource).not.toContain('function LegacyButtonLoadingIcon()');
     expect(configSource).toContain(
       "className={`ant-btn ant-btn-primary${testMail.isPending ? ' ant-btn-loading' : ''}`}",
     );
     expect(configSource).toContain(
       "className={`ant-btn ant-btn-primary${webhook.isPending ? ' ant-btn-loading' : ''}`}",
     );
-    expect(configSource).toContain('{testMail.isPending ? <LegacyButtonLoadingIcon /> : null}');
-    expect(configSource).toContain('{webhook.isPending ? <LegacyButtonLoadingIcon /> : null}');
+    expect(configSource).toContain('{testMail.isPending ? <LegacyLoadingIcon /> : null}');
+    expect(configSource).toContain('{webhook.isPending ? <LegacyLoadingIcon /> : null}');
     expect(configSource).not.toContain("Button, Input, Modal, Select } from 'antd'");
     expect(configSource).not.toContain('<Button loading={testMail.isPending}');
     expect(configSource).not.toContain('loading={webhook.isPending}');

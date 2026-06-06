@@ -5,31 +5,9 @@ import { passport, user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
 import { getAuthData, setAuthData } from '@/lib/auth';
 import { i18nGet } from '@/lib/errors';
-import {
-  getAdminBackgroundUrl,
-  getAdminLogo,
-  getAdminTitle,
-} from '@/lib/legacy-settings';
+import { getAdminBackgroundUrl, getAdminLogo, getAdminTitle } from '@/lib/legacy-settings';
 import { legacyHref } from '@/lib/legacy-href';
-
-function LegacyLoadingIcon() {
-  return (
-    <i aria-label="图标: loading" className="anticon anticon-loading">
-      <svg
-        className="anticon-spin"
-        viewBox="0 0 1024 1024"
-        focusable="false"
-        data-icon="loading"
-        width="1em"
-        height="1em"
-        fill="currentColor"
-        aria-hidden="true"
-      >
-        <path d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3.1 19.9-16 36-35.9 36z" />
-      </svg>
-    </i>
-  );
-}
+import { LegacyLoadingIcon } from '@/components/legacy-ant-icon';
 
 function normalizeRedirectTarget(target: string | null): string {
   if (!target) return '/dashboard';
@@ -72,7 +50,8 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (getAuthData()) {
-      user.checkLogin(apiClient)
+      user
+        .checkLogin(apiClient)
         .then((result) => {
           if (result.is_admin) {
             void user.info(apiClient).catch(() => undefined);
@@ -94,10 +73,7 @@ export default function LoginPage() {
   return (
     <div id="page-container">
       <main id="main-container">
-        <div
-          className="v2board-background"
-          style={{ backgroundImage: legacyBackgroundImage }}
-        />
+        <div className="v2board-background" style={{ backgroundImage: legacyBackgroundImage }} />
         <div className="no-gutters v2board-auth-box">
           <div className="" style={{ maxWidth: 450, width: '100%', margin: 'auto' }}>
             <div className="mx-2 mx-sm-0">
@@ -168,7 +144,8 @@ export default function LoginPage() {
                         centered: true,
                         okText: '我知道了',
                         onOk() {},
-                      })}
+                      })
+                    }
                   >
                     忘记密码
                   </a>

@@ -7,7 +7,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LoginPage from './login';
 
-const loginSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'login.tsx'), 'utf8');
+const loginSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'login.tsx'),
+  'utf8',
+);
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -44,8 +47,9 @@ vi.mock('@v2board/api-client', () => ({
   },
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('Admin LoginPage legacy behavior', () => {
   let container: HTMLDivElement;
@@ -121,6 +125,14 @@ describe('Admin LoginPage legacy behavior', () => {
     expect(loginSource).not.toContain('} finally {');
   });
 
+  it('uses the shared old Ant Design loading icon for the submit button', () => {
+    expect(loginSource).toContain(
+      "import { LegacyLoadingIcon } from '@/components/legacy-ant-icon';",
+    );
+    expect(loginSource).toContain('<LegacyLoadingIcon />');
+    expect(loginSource).not.toContain('function LegacyLoadingIcon()');
+  });
+
   it('keeps the original admin login submit values as direct ref reads', () => {
     expect(loginSource).toContain('email: emailRef.current!.value');
     expect(loginSource).toContain('password: passwordRef.current!.value');
@@ -144,10 +156,13 @@ describe('Admin LoginPage legacy behavior', () => {
       container.querySelector('button')!.click();
     });
 
-    expect(mocks.passportLogin).toHaveBeenCalledWith({}, {
-      email: 'admin@example.com',
-      password: 'password',
-    });
+    expect(mocks.passportLogin).toHaveBeenCalledWith(
+      {},
+      {
+        email: 'admin@example.com',
+        password: 'password',
+      },
+    );
     expect(localStorage.getItem('authorization')).toBe('jwt');
     expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
     expect(mocks.navigate).not.toHaveBeenCalledWith('/dashboard', { replace: true });
@@ -210,14 +225,18 @@ describe('Admin LoginPage legacy behavior', () => {
     );
 
     expect(checkLoginBlock).toContain('if (getAuthData()) {');
-    expect(checkLoginBlock).toContain('user.checkLogin(apiClient)');
+    expect(checkLoginBlock).toContain('.checkLogin(apiClient)');
     expect(checkLoginBlock).toContain('navigate(redirect);');
     expect(checkLoginBlock).not.toContain('cancelled');
   });
 
   it('keeps the bundled admin verify parameter inert because the old passport model has no token2Login effect', async () => {
     mocks.searchParams = new URLSearchParams('verify=abc&redirect=/ticket');
-    mocks.passportToken2Login.mockResolvedValue({ token: 't', is_admin: 1, auth_data: 'quick-jwt' });
+    mocks.passportToken2Login.mockResolvedValue({
+      token: 't',
+      is_admin: 1,
+      auth_data: 'quick-jwt',
+    });
 
     await act(async () => {
       root.render(<LoginPage />);
