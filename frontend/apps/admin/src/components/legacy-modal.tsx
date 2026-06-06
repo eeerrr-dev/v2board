@@ -6,9 +6,11 @@ import { LegacyButton } from './legacy-button';
 interface LegacyModalProps {
   bodyStyle?: CSSProperties;
   children: ReactNode;
+  cancelText?: ReactNode;
   footer?: ReactNode | boolean | null;
   maskClosable?: boolean;
   okButtonProps?: { loading?: boolean };
+  okText?: ReactNode;
   open?: boolean;
   style?: CSSProperties;
   styles?: { body?: CSSProperties };
@@ -50,9 +52,11 @@ function LegacyModalLoadingIcon() {
 export function LegacyModal({
   bodyStyle,
   children,
+  cancelText = '取消',
   footer,
   maskClosable = true,
   okButtonProps,
+  okText = '确定',
   open,
   style,
   styles,
@@ -111,14 +115,14 @@ export function LegacyModal({
                 {footer ?? (
                   <>
                     <LegacyButton className="ant-btn" onClick={onCancel}>
-                      取消
+                      {cancelText}
                     </LegacyButton>
                     <LegacyButton
                       className={`ant-btn ant-btn-primary${okLoading ? ' ant-btn-loading' : ''}`}
                       onClick={onOk}
                     >
                       {okLoading ? <LegacyModalLoadingIcon /> : null}
-                      确定
+                      {okText}
                     </LegacyButton>
                   </>
                 )}

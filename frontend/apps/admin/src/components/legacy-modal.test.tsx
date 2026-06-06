@@ -79,6 +79,27 @@ describe('LegacyModal', () => {
     expect(onOk).not.toHaveBeenCalled();
   });
 
+  it('supports the old okText and cancelText footer labels', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyModal
+          visible
+          title="添加支付方式"
+          okText="添加"
+          cancelText="取消"
+          onCancel={vi.fn()}
+          onOk={vi.fn()}
+        >
+          <div />
+        </LegacyModal>,
+      );
+    });
+
+    expect(document.querySelector('.ant-modal-footer')?.outerHTML).toContain(
+      '<button type="button" class="ant-btn"><span>取 消</span></button><button type="button" class="ant-btn ant-btn-primary"><span>添 加</span></button>',
+    );
+  });
+
   it('supports the old bodyStyle, style, width and hidden footer props', async () => {
     await act(async () => {
       root.render(

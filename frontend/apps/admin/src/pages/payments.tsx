@@ -14,6 +14,7 @@ import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
+import { LegacyModal } from '@/components/legacy-modal';
 import { LegacyPlusIcon, LegacyQuestionCircleIcon } from '@/components/legacy-ant-icon';
 import {
   LegacyStandaloneTable,
@@ -82,9 +83,9 @@ function PaymentEditor({
   return (
     <>
       {cloneElement(children, { onClick: show })}
-      <Modal
+      <LegacyModal
         title={submit.id ? '编辑支付方式' : '添加支付方式'}
-        open={visible}
+        visible={visible}
         onCancel={() => setVisible(false)}
         onOk={save}
         okText={submit.id ? '保存' : '添加'}
@@ -188,7 +189,7 @@ function PaymentEditor({
             </div>
           ) : null}
         </div>
-      </Modal>
+      </LegacyModal>
     </>
   );
 }

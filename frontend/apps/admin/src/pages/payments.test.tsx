@@ -120,6 +120,22 @@ describe('PaymentsPage legacy payment config', () => {
     expect(source).not.toContain('submit.handling_fee_fixed == null');
   });
 
+  it('uses the old Ant Design modal shell for the payment editor', () => {
+    const editorBlock = source.slice(
+      source.indexOf('function PaymentEditor({'),
+      source.indexOf('export default function PaymentsPage()'),
+    );
+
+    expect(source).toContain("import { LegacyModal } from '@/components/legacy-modal';");
+    expect(editorBlock).toContain('<LegacyModal');
+    expect(editorBlock).toContain("title={submit.id ? '编辑支付方式' : '添加支付方式'}");
+    expect(editorBlock).toContain('visible={visible}');
+    expect(editorBlock).toContain("okText={submit.id ? '保存' : '添加'}");
+    expect(editorBlock).toContain('cancelText="取消"');
+    expect(editorBlock).not.toContain('<Modal');
+    expect(editorBlock).not.toContain('open={visible}');
+  });
+
   it('keeps the original parseInt switch checked value without boolean normalization', () => {
     expect(source).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
     expect(source).toContain('<LegacySwitch');
