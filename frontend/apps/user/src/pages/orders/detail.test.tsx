@@ -498,15 +498,14 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     }
   });
 
-  it('renders the legacy cancel loading icon inline without a wrapper element', () => {
+  it('renders the legacy cancel loading icon inside the original wrapper element', () => {
     cancelState.isPending = true;
 
     const html = renderToStaticMarkup(<OrderDetailPage />);
 
     expect(html).toContain('btn btn-primary btn-sm btn-danger btn-rounded px-3');
-    expect(html).toContain('anticon anticon-loading');
-    expect(html).not.toContain('<div><i aria-label="图标: loading"');
-    expect(orderDetailSource).toContain('{cancel.isPending && <LegacyLoadingIcon />}');
-    expect(orderDetailSource).not.toContain('<div>\n                      <LegacyLoadingIcon />');
+    expect(html).toContain('<div><i aria-label="图标: loading"');
+    expect(orderDetailSource).toContain('cancel.isPending && (');
+    expect(orderDetailSource).toContain('<div>\n                      <LegacyLoadingIcon />');
   });
 });

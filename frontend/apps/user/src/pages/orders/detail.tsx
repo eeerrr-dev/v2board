@@ -261,7 +261,11 @@ export default function OrderDetailPage() {
                   className="btn btn-primary btn-sm btn-danger btn-rounded px-3"
                   onClick={handleCancel}
                 >
-                  {cancel.isPending && <LegacyLoadingIcon />}
+                  {cancel.isPending && (
+                    <div>
+                      <LegacyLoadingIcon />
+                    </div>
+                  )}
                   {' '}
                   {t('order.cancel')}
                 </button>
