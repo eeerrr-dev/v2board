@@ -104,6 +104,25 @@ describe('LegacyInput', () => {
     );
   });
 
+  it('renders the old large addon input classes from Ant Design 3', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyInputGroup
+          type="number"
+          size="large"
+          addonAfter="秒"
+          placeholder="请输入"
+          defaultValue="60"
+          onChange={() => undefined}
+        />,
+      );
+    });
+
+    expect(container.querySelector('.ant-input-group-wrapper')?.outerHTML).toBe(
+      '<span class="ant-input-group-wrapper ant-input-group-wrapper-lg"><span class="ant-input-wrapper ant-input-group"><input type="number" placeholder="请输入" class="ant-input ant-input-lg" value="60"><span class="ant-input-group-addon">秒</span></span></span>',
+    );
+  });
+
   it('keeps the old runtime checkbox attribute order after mount', async () => {
     await act(async () => {
       root.render(<LegacyCheckboxInput className="ant-checkbox-input" value="" />);

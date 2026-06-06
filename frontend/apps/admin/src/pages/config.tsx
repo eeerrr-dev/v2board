@@ -3,6 +3,7 @@ import { App, Button, Input, Modal, Select } from 'antd';
 import { useLocation } from 'react-router-dom';
 import type { AdminConfig, AdminConfigFlat, AdminConfigGroups, Plan } from '@v2board/types';
 import type { AdminThemeField, AdminThemeInfo } from '@v2board/api-client';
+import { LegacyInputGroup } from '@/components/legacy-input';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyTabs } from '@/components/legacy-tabs';
 import {
@@ -992,7 +993,7 @@ function SystemConfigPage() {
               />
             </ConfigItem>
             <ConfigItem title="节点拉取动作轮询间隔" description="节点从面板获取数据的间隔频率。">
-              <Input
+              <LegacyInputGroup
                 addonAfter="秒"
                 size="large"
                 type="number"
@@ -1004,7 +1005,7 @@ function SystemConfigPage() {
               />
             </ConfigItem>
             <ConfigItem title="节点推送动作轮询间隔" description="节点推送数据到面板的间隔频率。">
-              <Input
+              <LegacyInputGroup
                 addonAfter="秒"
                 size="large"
                 type="number"
@@ -1019,7 +1020,7 @@ function SystemConfigPage() {
               title="节点用户流量上报最低阈值"
               description="每次推送动作仅累计使用流量高于阈值的用户信息会被上报，未上报流量会累计"
             >
-              <Input
+              <LegacyInputGroup
                 addonAfter="Kb"
                 size="large"
                 type="number"
@@ -1034,7 +1035,7 @@ function SystemConfigPage() {
               title="节点用户设备数统计最低阈值"
               description="每次推送动作仅上报流量高于阈值的在线设备IP地址会被节点统计"
             >
-              <Input
+              <LegacyInputGroup
                 addonAfter="Kb"
                 size="large"
                 type="number"

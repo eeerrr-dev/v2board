@@ -378,6 +378,30 @@ describe('ConfigPage legacy theme config', () => {
     expect(configSource).not.toContain('<Tabs activeKey={activeTab}');
   });
 
+  it('uses the old Ant Design 3 large addon inputs for server interval thresholds', () => {
+    const serverTabBlock = configSource.slice(
+      configSource.indexOf('<LegacyTabs.TabPane tab="节点" key="server">'),
+      configSource.indexOf('<LegacyTabs.TabPane tab="邮件" key="email">'),
+    );
+
+    expect(configSource).toContain("import { LegacyInputGroup } from '@/components/legacy-input';");
+    expect((serverTabBlock.match(/<LegacyInputGroup/g) ?? []).length).toBe(4);
+    expect(serverTabBlock).toContain(
+      '<LegacyInputGroup\n                addonAfter="秒"\n                size="large"\n                type="number"\n                placeholder="请输入"\n                defaultValue={toText(value(\'server\', \'server_pull_interval\'))}',
+    );
+    expect(serverTabBlock).toContain(
+      '<LegacyInputGroup\n                addonAfter="秒"\n                size="large"\n                type="number"\n                placeholder="请输入"\n                defaultValue={toText(value(\'server\', \'server_push_interval\'))}',
+    );
+    expect(serverTabBlock).toContain(
+      '<LegacyInputGroup\n                addonAfter="Kb"\n                size="large"\n                type="number"\n                placeholder="请输入"\n                defaultValue={toText(value(\'server\', \'server_node_report_min_traffic\'))}',
+    );
+    expect(serverTabBlock).toContain(
+      '<LegacyInputGroup\n                addonAfter="Kb"\n                size="large"\n                type="number"\n                placeholder="请输入"\n                defaultValue={toText(value(\'server\', \'server_device_online_min_traffic\'))}',
+    );
+    expect(serverTabBlock).not.toContain('<Input\n                addonAfter=');
+    expect(serverTabBlock).not.toContain('ant-input-outlined');
+  });
+
   it('keeps the original split read and save keys for system config fields', () => {
     const source = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), 'config.tsx'),
