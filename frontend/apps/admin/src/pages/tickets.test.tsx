@@ -478,18 +478,25 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).toContain('输入内容回复工单...');
     expect(ticketsSource).toContain('setUserOpen(true)');
     expect(ticketsSource).toContain('<UserManageDrawer');
+    expect(html).toContain('aria-label="图标: user"');
+    expect(html).toContain('class="anticon anticon-user"');
     expect(ticketsSource).toContain(
-      '<UserOutlined onClick={() => current?.user_id && setUserOpen(true)} />',
+      '<LegacyUserIcon onClick={() => current?.user_id && setUserOpen(true)} />',
     );
+    expect(ticketsSource).not.toContain('@ant-design/icons');
+    expect(ticketsSource).not.toContain('UserOutlined');
     expect(ticketsSource).not.toContain(
       '<span onClick={() => current?.user_id && setUserOpen(true)}>',
     );
     expect(mocks.adminUserInfoIds).toContain(1);
     expect(ticketsSource).toContain('setTrafficOpen(true)');
     expect(ticketsSource).toContain('<UserTrafficModal');
+    expect(html).toContain('aria-label="图标: solution"');
+    expect(html).toContain('class="anticon anticon-solution"');
     expect(ticketsSource).toContain(
-      '<SolutionOutlined onClick={() => current?.user_id && setTrafficOpen(true)} />',
+      '<LegacySolutionIcon onClick={() => current?.user_id && setTrafficOpen(true)} />',
     );
+    expect(ticketsSource).not.toContain('SolutionOutlined');
     expect(ticketsSource).not.toContain(
       '<span onClick={() => current?.user_id && setTrafficOpen(true)}>',
     );

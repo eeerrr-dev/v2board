@@ -4,7 +4,6 @@ import { App, Tooltip } from 'antd';
 import type { FilterValue } from 'antd/es/table/interface';
 import dayjs from 'dayjs';
 import type { Ticket } from '@v2board/types';
-import { SolutionOutlined, UserOutlined } from '@ant-design/icons';
 import { useParams } from 'react-router-dom';
 import {
   useAdminTicket,
@@ -18,7 +17,7 @@ import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
-import { LegacyFilterIcon } from '@/components/legacy-ant-icon';
+import { LegacyFilterIcon, LegacySolutionIcon, LegacyUserIcon } from '@/components/legacy-ant-icon';
 import {
   LegacyStandaloneTable,
   legacyTableRowKey,
@@ -417,11 +416,11 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
         <span className="tag___12_9H">{current?.subject ?? emptyNotice}</span>
         <div className="ctrl___UqDJ7">
           <Tooltip title="用户管理" placement="left">
-            <UserOutlined onClick={() => current?.user_id && setUserOpen(true)} />
+            <LegacyUserIcon onClick={() => current?.user_id && setUserOpen(true)} />
           </Tooltip>
           <div className="ant-divider ant-divider-vertical" />
           <Tooltip title="TA的流量记录" placement="left">
-            <SolutionOutlined onClick={() => current?.user_id && setTrafficOpen(true)} />
+            <LegacySolutionIcon onClick={() => current?.user_id && setTrafficOpen(true)} />
           </Tooltip>
         </div>
       </div>
