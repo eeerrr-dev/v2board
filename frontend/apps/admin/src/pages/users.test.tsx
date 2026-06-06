@@ -399,6 +399,9 @@ describe('UsersPage legacy user manager', () => {
   });
 
   it('keeps the legacy assigned-order modal loading OK text', () => {
+    expect(usersSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
+    expect(assignOrderModalSource).toContain('<LegacyModal');
+    expect(assignOrderModalSource).toContain('visible={Boolean(user)}');
     expect(usersSource).toContain("okText={assign.isPending ? <LoadingOutlined /> : '确定'}");
     expect(usersSource).toContain('function assignOrderSubmit(email?: string): AssignOrderSubmit');
     expect(usersSource).toContain('email: email || undefined');
@@ -418,11 +421,17 @@ describe('UsersPage legacy user manager', () => {
     expect(assignOrderModalSource).toContain('<Select.Option value={period} key={Math.random()}>');
     expect(assignOrderModalSource).not.toContain('options={plans}');
     expect(assignOrderModalSource).not.toContain('options={Object.entries(PERIOD_TEXT)');
+    expect(assignOrderModalSource).not.toContain('<Modal');
+    expect(assignOrderModalSource).not.toContain('open={Boolean(user)}');
     expect(assignOrderModalSource).not.toContain('<Form');
     expect(assignOrderModalSource).not.toContain('rules={[{ required: true }]}');
   });
 
   it('keeps the legacy create-user modal stateful layout and CSV download', () => {
+    expect(usersSource.match(/<LegacyModal/g)).toHaveLength(3);
+    expect(usersSource).not.toContain('<Modal');
+    expect(generateUserModalSource).toContain('<LegacyModal');
+    expect(generateUserModalSource).toContain('visible={open}');
     expect(generateUserModalSource).toContain('title="创建用户"');
     expect(generateUserModalSource).toContain('okText="生成"');
     expect(generateUserModalSource).toContain('okButtonProps={{ loading }}');
@@ -451,6 +460,8 @@ describe('UsersPage legacy user manager', () => {
       "options={[{ value: null, label: '无' }, ...plans]}",
     );
     expect(generateUserModalSource).not.toContain('id="generate-user-plan"');
+    expect(generateUserModalSource).not.toContain('<Modal');
+    expect(generateUserModalSource).not.toContain('open={open}');
     expect(generateUserModalSource).not.toContain('<Form');
     expect(generateUserModalSource).not.toContain('rules={[{ required: true }]}');
     expect(usersSource).toContain('downloadGeneratedUserCsv(response.buffer)');
@@ -476,6 +487,8 @@ describe('UsersPage legacy user manager', () => {
   });
 
   it('keeps the legacy send-mail modal stateful layout', () => {
+    expect(sendMailModalSource).toContain('<LegacyModal');
+    expect(sendMailModalSource).toContain('visible={open}');
     expect(sendMailModalSource).toContain('title="发送邮件"');
     expect(sendMailModalSource).toContain('okButtonProps={{ loading }}');
     expect(sendMailModalSource).toContain('收件人');
@@ -492,6 +505,8 @@ describe('UsersPage legacy user manager', () => {
     expect(sendMailModalSource).not.toContain('send-mail-recipient');
     expect(sendMailModalSource).not.toContain('send-mail-subject');
     expect(sendMailModalSource).not.toContain('send-mail-content');
+    expect(sendMailModalSource).not.toContain('<Modal');
+    expect(sendMailModalSource).not.toContain('open={open}');
     expect(sendMailModalSource).not.toContain('<Form');
     expect(sendMailModalSource).not.toContain('rules={[{ required: true }]}');
     expect(usersSource).toContain('.mutateAsync({ filter: query.filter, ...values })');

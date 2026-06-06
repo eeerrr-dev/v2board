@@ -78,7 +78,7 @@ export function UserTrafficModal({
     <LegacyModal
       width="100%"
       style={{ maxWidth: 1000, padding: '0 10px', top: 20 }}
-      bodyStyle={{ padding: 0 }}
+      styles={{ body: { padding: 0 } }}
       footer={false}
       visible={open}
       title="流量记录"

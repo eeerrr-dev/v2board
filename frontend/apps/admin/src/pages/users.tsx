@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
-import { App, Dropdown, Input, Menu, Modal, Select, Tooltip } from 'antd';
+import { App, Dropdown, Input, Menu, Select, Tooltip } from 'antd';
 import type { DropdownProps } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -54,6 +54,7 @@ import {
   type LegacyStandaloneTableHeader,
   type LegacyTablePaginationChange,
 } from '@/components/legacy-standalone-table';
+import { LegacyModal } from '@/components/legacy-modal';
 
 type QueryState = {
   current: number;
@@ -834,8 +835,8 @@ function GenerateUserModal({
   };
 
   return (
-    <Modal
-      open={open}
+    <LegacyModal
+      visible={open}
       onCancel={close}
       title="创建用户"
       cancelText="取消"
@@ -910,7 +911,7 @@ function GenerateUserModal({
           </div>
         )}
       </div>
-    </Modal>
+    </LegacyModal>
   );
 }
 
@@ -929,8 +930,8 @@ function SendMailModal({
 }) {
   const [submit, setSubmit] = useState<SendMailSubmit>({});
   return (
-    <Modal
-      open={open}
+    <LegacyModal
+      visible={open}
       title="发送邮件"
       onOk={() => onSubmit(submit)}
       okButtonProps={{ loading }}
@@ -957,7 +958,7 @@ function SendMailModal({
           onChange={(event) => setSubmit((state) => ({ ...state, content: event.target.value }))}
         />
       </div>
-    </Modal>
+    </LegacyModal>
   );
 }
 
@@ -989,9 +990,9 @@ function AssignOrderModal({
   };
 
   return (
-    <Modal
+    <LegacyModal
       title="订单分配"
-      open={Boolean(user)}
+      visible={Boolean(user)}
       onCancel={close}
       okText={assign.isPending ? <LoadingOutlined /> : '确定'}
       cancelText="取消"
@@ -1053,6 +1054,6 @@ function AssignOrderModal({
           onChange={(event) => setSubmitField('total_amount', event.target.value)}
         />
       </div>
-    </Modal>
+    </LegacyModal>
   );
 }
