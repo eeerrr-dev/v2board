@@ -116,7 +116,13 @@ function LegacyServerButtonLoadingIcon() {
   );
 }
 
-const ROUTE_ACTION_TEXT: Record<string, string> = {
+type RouteActionTextMap = Record<string, string> &
+  Record<
+    'block' | 'block_ip' | 'block_port' | 'protocol' | 'dns' | 'route' | 'route_ip' | 'default_out',
+    string
+  >;
+
+const ROUTE_ACTION_TEXT: RouteActionTextMap = {
   block: '禁止访问(域名目标)',
   block_ip: '禁止访问(IP目标)',
   block_port: '禁止访问(端口目标)',
@@ -782,6 +788,16 @@ function ServerRouteModal({
   const save = useSaveServerRouteMutation();
   const [visible, setVisible] = useState(false);
   const [route, setRoute] = useState<Partial<admin.ServerRoute>>(initialRoute ?? {});
+  const routeActionOptions: LegacySelectOption[] = [
+    { value: 'block', label: ROUTE_ACTION_TEXT.block },
+    { value: 'block_ip', label: ROUTE_ACTION_TEXT.block_ip },
+    { value: 'block_port', label: ROUTE_ACTION_TEXT.block_port },
+    { value: 'protocol', label: ROUTE_ACTION_TEXT.protocol },
+    { value: 'dns', label: ROUTE_ACTION_TEXT.dns },
+    { value: 'route', label: ROUTE_ACTION_TEXT.route },
+    { value: 'route_ip', label: ROUTE_ACTION_TEXT.route_ip },
+    { value: 'default_out', label: ROUTE_ACTION_TEXT.default_out },
+  ];
 
   const open = () => {
     setVisible(true);
@@ -849,21 +865,13 @@ function ServerRouteModal({
           <div className="form-group">
             <label htmlFor="example-text-input-alt">动作</label>
             <div>
-              <Select
+              <LegacySelect
                 value={route.action}
                 placeholder="请选择动作"
                 style={{ width: '100%' }}
-                onChange={(value) => setRoute((route) => ({ ...route, action: value }))}
-              >
-                <Select.Option value="block">{ROUTE_ACTION_TEXT.block}</Select.Option>
-                <Select.Option value="block_ip">{ROUTE_ACTION_TEXT.block_ip}</Select.Option>
-                <Select.Option value="block_port">{ROUTE_ACTION_TEXT.block_port}</Select.Option>
-                <Select.Option value="protocol">{ROUTE_ACTION_TEXT.protocol}</Select.Option>
-                <Select.Option value="dns">{ROUTE_ACTION_TEXT.dns}</Select.Option>
-                <Select.Option value="route">{ROUTE_ACTION_TEXT.route}</Select.Option>
-                <Select.Option value="route_ip">{ROUTE_ACTION_TEXT.route_ip}</Select.Option>
-                <Select.Option value="default_out">{ROUTE_ACTION_TEXT.default_out}</Select.Option>
-              </Select>
+                options={routeActionOptions}
+                onChange={(value) => setRoute((route) => ({ ...route, action: value as string }))}
+              />
             </div>
           </div>
           {route.action === 'dns' ? (

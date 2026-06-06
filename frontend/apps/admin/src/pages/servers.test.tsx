@@ -474,20 +474,24 @@ describe('ServersPage legacy server group route', () => {
     );
 
     const optionOrder = [
-      'value="block"',
-      'value="block_ip"',
-      'value="block_port"',
-      'value="protocol"',
-      'value="dns"',
-      'value="route"',
-      'value="route_ip"',
-      'value="default_out"',
+      "value: 'block'",
+      "value: 'block_ip'",
+      "value: 'block_port'",
+      "value: 'protocol'",
+      "value: 'dns'",
+      "value: 'route'",
+      "value: 'route_ip'",
+      "value: 'default_out'",
     ];
 
     const optionIndexes = optionOrder.map((text) => routeModalSource.indexOf(text));
 
     expect(optionIndexes.every((index) => index >= 0)).toBe(true);
     expect(optionIndexes).toEqual([...optionIndexes].sort((a, b) => a - b));
+    expect(routeModalSource).toContain('const routeActionOptions: LegacySelectOption[] = [');
+    expect(routeModalSource).toContain('options={routeActionOptions}');
+    expect(routeModalSource).toContain('<LegacySelect');
+    expect(routeModalSource).not.toContain('<Select');
     expect(routeModalSource).not.toContain('Object.entries(ROUTE_ACTION_TEXT).map');
     expect(routeModalSource).not.toContain('<Select.Option key={value}');
   });
