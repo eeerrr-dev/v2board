@@ -32,7 +32,7 @@
     <div id="root"></div>
     <script>
       (function () {
-        var recoveryVersion = 'white-screen-recovery-19';
+        var recoveryVersion = 'white-screen-recovery-20';
         var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;
         var maxAttempts = 3;
         var delay = 2500;
@@ -149,9 +149,17 @@
           );
         }
 
+        function legacyMainEmpty(root) {
+          if (!root || !root.querySelector('#page-container')) return false;
+          var main =
+            root.querySelector('#main-container .content') ||
+            root.querySelector('#main-container');
+          return !!main && elementEmpty(main);
+        }
+
         function appEmpty() {
           var root = document.getElementById('root');
-          return elementEmpty(root);
+          return elementEmpty(root) || legacyMainEmpty(root);
         }
 
         function renderFallback() {
@@ -225,6 +233,6 @@
         schedule();
       })();
     </script>
-    <script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-19"></script>
+    <script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-20"></script>
   </body>
 </html>
