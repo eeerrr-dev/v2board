@@ -477,7 +477,7 @@ export default function OrderDetailPage() {
             <QRCode
               value={payUrl}
               renderAs="svg"
-              size={250}
+              size="250"
             />
           )}
         </DialogContent>

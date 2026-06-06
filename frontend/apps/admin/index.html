@@ -32,7 +32,7 @@
     <div id="root"></div>
     <script>
       (function () {
-        var recoveryVersion = 'white-screen-recovery-16';
+        var recoveryVersion = 'white-screen-recovery-17';
         var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;
         var maxAttempts = 3;
         var delay = 2500;
@@ -57,7 +57,20 @@
           }
         }
 
+        function clearBrowserCaches() {
+          if (!('caches' in window)) return;
+          window.caches
+            .keys()
+            .then(function (keys) {
+              keys.forEach(function (key) {
+                window.caches.delete(key);
+              });
+            })
+            .catch(function () {});
+        }
+
         clearOldRecoveryState();
+        clearBrowserCaches();
 
         function textOf(value, seen) {
           if (value === null || value === undefined) return '';
@@ -220,6 +233,6 @@
         schedule();
       })();
     </script>
-    <script type="module" src="/src/main.tsx?v=20260605-white-screen-recovery-16"></script>
+    <script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-17"></script>
   </body>
 </html>

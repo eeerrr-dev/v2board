@@ -4,7 +4,7 @@ declare module 'qrcode.react' {
   export interface QRCodeProps {
     value: string;
     renderAs?: 'canvas' | 'svg';
-    size?: number;
+    size?: number | string;
     bgColor?: string;
     fgColor?: string;
     level?: 'L' | 'M' | 'Q' | 'H';

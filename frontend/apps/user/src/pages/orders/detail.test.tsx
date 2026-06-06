@@ -331,7 +331,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     expect(modalSource).toContain("footer={<div style={{ textAlign: 'center' }}>{t('order.waiting_pay')}</div>}");
     expect(qrSource).toContain('value={payUrl}');
     expect(qrSource).toContain('renderAs="svg"');
-    expect(qrSource).toContain('size={250}');
+    expect(qrSource).toContain('size="250"');
     expect(qrSource).not.toContain('level=');
     expect(qrSource).not.toContain('bgColor=');
     expect(qrSource).not.toContain('fgColor=');
