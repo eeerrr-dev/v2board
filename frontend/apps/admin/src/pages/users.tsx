@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
-import { App, Dropdown, Input, Menu, Select, Tooltip } from 'antd';
+import { App, Dropdown, Input, Menu, Tooltip } from 'antd';
 import type { DropdownProps } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -55,6 +55,11 @@ import {
   type LegacyTablePaginationChange,
 } from '@/components/legacy-standalone-table';
 import { LegacyModal } from '@/components/legacy-modal';
+import {
+  LegacySelect,
+  type LegacySelectOption,
+  type LegacySelectValue,
+} from '@/components/legacy-select';
 
 type QueryState = {
   current: number;
@@ -113,6 +118,20 @@ const PERIOD_TEXT: Record<string, string> = {
   onetime_price: '一次性',
   reset_price: '流量重置包',
 };
+
+const GENERATE_USER_EMPTY_PLAN_OPTION: LegacySelectOption = { value: null, label: '无' };
+
+const PERIOD_OPTIONS: LegacySelectOption[] = Object.keys(PERIOD_TEXT).map((period) => ({
+  value: period,
+  label: PERIOD_TEXT[period] ?? period,
+}));
+
+function planSelectOptions(plans: PlanOption[], includeEmpty = false): LegacySelectOption[] {
+  return [
+    ...(includeEmpty ? [GENERATE_USER_EMPTY_PLAN_OPTION] : []),
+    ...plans.map((plan) => ({ value: plan.value, label: plan.label })),
+  ];
+}
 
 function readLegacyHabit(key: string): unknown {
   if (typeof window === 'undefined') return undefined;
@@ -886,19 +905,15 @@ function GenerateUserModal({
         </div>
         <div className="form-group">
           <label htmlFor="example-text-input-alt">订阅计划</label>
-          <Select
+          <LegacySelect
             placeholder="请选择用户订阅计划"
             style={{ width: '100%' }}
-            value={submit.plan_id || null}
-            onChange={(planId) => setSubmitField('plan_id', planId)}
-          >
-            <Select.Option value={null}>无</Select.Option>
-            {plans.map((plan) => (
-              <Select.Option key={Math.random()} value={plan.value}>
-                {plan.label}
-              </Select.Option>
-            ))}
-          </Select>
+            value={(submit.plan_id || null) as LegacySelectValue}
+            options={planSelectOptions(plans, true)}
+            onChange={(planId) =>
+              setSubmitField('plan_id', planId as GenerateUserSubmit['plan_id'])
+            }
+          />
         </div>
         {!submit.email_prefix && (
           <div className="form-group">
@@ -1014,35 +1029,27 @@ function AssignOrderModal({
       <div className="form-group">
         <label htmlFor="example-text-input-alt">请选择订阅</label>
         <div>
-          <Select
+          <LegacySelect
             value={submit.plan_id}
             style={{ width: '100%' }}
             placeholder="请选择订阅"
-            onChange={(plan_id) => setSubmitField('plan_id', plan_id)}
-          >
-            {plans.map((plan) => (
-              <Select.Option value={plan.value} key={Math.random()}>
-                {plan.label}
-              </Select.Option>
-            ))}
-          </Select>
+            options={planSelectOptions(plans)}
+            onChange={(plan_id) =>
+              setSubmitField('plan_id', plan_id as AssignOrderSubmit['plan_id'])
+            }
+          />
         </div>
       </div>
       <div className="form-group">
         <label htmlFor="example-text-input-alt">请选择周期</label>
         <div>
-          <Select
+          <LegacySelect
             value={submit.period}
             style={{ width: '100%' }}
             placeholder="请选择周期"
-            onChange={(period) => setSubmitField('period', period)}
-          >
-            {Object.keys(PERIOD_TEXT).map((period) => (
-              <Select.Option value={period} key={Math.random()}>
-                {PERIOD_TEXT[period]}
-              </Select.Option>
-            ))}
-          </Select>
+            options={PERIOD_OPTIONS}
+            onChange={(period) => setSubmitField('period', period as AssignOrderSubmit['period'])}
+          />
         </div>
       </div>
       <div className="form-group">

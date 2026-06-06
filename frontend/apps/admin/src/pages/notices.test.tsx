@@ -136,6 +136,17 @@ describe('NoticesPage legacy notice manager', () => {
     expect(source).not.toContain('open={visible}');
   });
 
+  it('uses the legacy tags select for notice labels', () => {
+    expect(source).toContain("import { LegacySelect } from '@/components/legacy-select';");
+    expect(source).toContain('<LegacySelect');
+    expect(source).toContain('mode="tags"');
+    expect(source).toContain('value={submit.tags || []}');
+    expect(source).toContain('options={[]}');
+    expect(source).toContain('tags.length > 0 ? tags.map(String) : null');
+    expect(source).not.toContain('<Select');
+    expect(source).not.toContain("import { Input, Select } from 'antd';");
+  });
+
   it('uses the original fetchLoading-style page spinner for notice refetches', () => {
     expect(source).toContain('<LegacySpin loading={notices.isFetching}>');
     expect(source).not.toContain('loading={notices.isLoading}');

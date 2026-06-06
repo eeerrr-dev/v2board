@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { App, Col, Divider, Dropdown, Input, Menu, Row, Select, Tooltip } from 'antd';
+import { App, Col, Divider, Dropdown, Input, Menu, Row, Tooltip } from 'antd';
 import type { DropdownProps } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -37,6 +37,11 @@ import {
   type LegacyTablePaginationChange,
 } from '@/components/legacy-standalone-table';
 import { LegacyModal } from '@/components/legacy-modal';
+import {
+  LegacySelect,
+  type LegacySelectOption,
+  type LegacySelectValue,
+} from '@/components/legacy-select';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -48,6 +53,11 @@ const PERIOD_TEXT: Record<string, string> = {
   onetime_price: '一次性',
   reset_price: '流量重置包',
 };
+
+const PERIOD_OPTIONS: LegacySelectOption[] = Object.keys(PERIOD_TEXT).map((period) => ({
+  value: period,
+  label: PERIOD_TEXT[period] ?? period,
+}));
 
 const ORDER_TYPE_TEXT: Record<number, string> = {
   1: '新购',
@@ -190,6 +200,10 @@ function assignOrderSubmit(): AssignOrderSubmit {
   };
 }
 
+function planSelectOptions(plans: Plan[]): LegacySelectOption[] {
+  return plans.map((plan) => ({ value: plan.id, label: plan.name }));
+}
+
 function OrderDetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <Row gutter={[16, 16]} style={detailRowStyle}>
@@ -253,35 +267,32 @@ function AssignOrderButton({
         <div className="form-group">
           <label htmlFor="example-text-input-alt">请选择订阅</label>
           <div>
-            <Select
-              value={submit.plan_id}
+            <LegacySelect
+              value={submit.plan_id as LegacySelectValue | undefined}
               style={{ width: '100%' }}
               placeholder="请选择订阅"
-              onChange={(plan_id) => setSubmit((state) => ({ ...state, plan_id }))}
-            >
-              {plans.map((plan) => (
-                <Select.Option key={Math.random()} value={plan.id}>
-                  {plan.name}
-                </Select.Option>
-              ))}
-            </Select>
+              options={planSelectOptions(plans)}
+              onChange={(plan_id) =>
+                setSubmit((state) => ({
+                  ...state,
+                  plan_id: plan_id as AssignOrderSubmit['plan_id'],
+                }))
+              }
+            />
           </div>
         </div>
         <div className="form-group">
           <label htmlFor="example-text-input-alt">请选择周期</label>
           <div>
-            <Select
-              value={submit.period}
+            <LegacySelect
+              value={submit.period as LegacySelectValue | undefined}
               style={{ width: '100%' }}
               placeholder="请选择周期"
-              onChange={(period) => setSubmit((state) => ({ ...state, period }))}
-            >
-              {Object.keys(PERIOD_TEXT).map((period) => (
-                <Select.Option key={Math.random()} value={period}>
-                  {PERIOD_TEXT[period]}
-                </Select.Option>
-              ))}
-            </Select>
+              options={PERIOD_OPTIONS}
+              onChange={(period) =>
+                setSubmit((state) => ({ ...state, period: period as AssignOrderSubmit['period'] }))
+              }
+            />
           </div>
         </div>
         <div className="form-group">

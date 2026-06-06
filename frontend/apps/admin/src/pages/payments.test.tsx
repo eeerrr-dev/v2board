@@ -145,16 +145,25 @@ describe('PaymentsPage legacy payment config', () => {
     expect(source).not.toContain('Switch, Tooltip');
   });
 
-  it('keeps the original uncontrolled payment method select', () => {
+  it('uses the legacy payment method select while preserving fetch-first selection updates', () => {
     expect(source).toContain(
       'const [selectPaymentMethod, setSelectPaymentMethod] = useState<string | undefined>(undefined);',
     );
     expect(source).not.toContain('useState<string | undefined>(\n    record?.payment,\n  )');
     expect(source).toContain('setSelectPaymentMethod(selected);');
-    expect(source).toContain('defaultValue={selectPaymentMethod}');
-    expect(source).toContain('<Select.Option value={method}>');
-    expect(source).not.toContain('<Select.Option key={method} value={method}>');
-    expect(source).not.toContain('value={selectPaymentMethod}');
+    expect(source).toContain(
+      "import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';",
+    );
+    expect(source).toContain(
+      'function paymentMethodOptions(methods: string[]): LegacySelectOption[]',
+    );
+    expect(source).toContain('<LegacySelect');
+    expect(source).toContain('value={selectPaymentMethod}');
+    expect(source).toContain('options={paymentMethodOptions(paymentMethods)}');
+    expect(source).not.toContain('defaultValue={selectPaymentMethod}');
+    expect(source).not.toContain('<Select');
+    expect(source).not.toContain('Select.Option');
+    expect(source).not.toContain('Modal, Select');
   });
 
   it('updates the selected payment method only after fetching its form', () => {

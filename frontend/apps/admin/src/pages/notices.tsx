@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Input, Select } from 'antd';
+import { Input } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Notice } from '@v2board/types';
@@ -20,6 +20,7 @@ import {
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
 import { LegacySwitch } from '@/components/legacy-switch';
+import { LegacySelect } from '@/components/legacy-select';
 
 export default function NoticesPage() {
   const notices = useAdminNotices({});
@@ -176,13 +177,14 @@ export default function NoticesPage() {
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">公告标签</label>
-            <Select
+            <LegacySelect
               mode="tags"
               value={submit.tags || []}
               style={{ width: '100%' }}
               placeholder="输入后回车添加标签"
+              options={[]}
               onChange={(tags) => {
-                setSubmit({ ...submit, tags: tags.length > 0 ? tags : null });
+                setSubmit({ ...submit, tags: tags.length > 0 ? tags.map(String) : null });
               }}
             />
           </div>

@@ -400,6 +400,11 @@ describe('UsersPage legacy user manager', () => {
 
   it('keeps the legacy assigned-order modal loading OK text', () => {
     expect(usersSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
+    expect(usersSource).toContain("import { App, Dropdown, Input, Menu, Tooltip } from 'antd';");
+    expect(usersSource).toContain("} from '@/components/legacy-select';");
+    expect(usersSource).toContain('LegacySelect,');
+    expect(usersSource).toContain('type LegacySelectOption,');
+    expect(usersSource).toContain('type LegacySelectValue,');
     expect(assignOrderModalSource).toContain('<LegacyModal');
     expect(assignOrderModalSource).toContain('visible={Boolean(user)}');
     expect(usersSource).toContain("okText={assign.isPending ? <LoadingOutlined /> : '确定'}");
@@ -415,10 +420,13 @@ describe('UsersPage legacy user manager', () => {
     expect(assignOrderModalSource).toContain(
       '<label htmlFor="example-text-input-alt">请选择订阅</label>',
     );
-    expect(assignOrderModalSource).toContain(
-      '<Select.Option value={plan.value} key={Math.random()}>',
+    expect(assignOrderModalSource).toContain('<LegacySelect');
+    expect(assignOrderModalSource).toContain('options={planSelectOptions(plans)}');
+    expect(assignOrderModalSource).toContain('options={PERIOD_OPTIONS}');
+    expect(usersSource).toContain(
+      'const PERIOD_OPTIONS: LegacySelectOption[] = Object.keys(PERIOD_TEXT).map',
     );
-    expect(assignOrderModalSource).toContain('<Select.Option value={period} key={Math.random()}>');
+    expect(assignOrderModalSource).not.toContain('<Select.Option');
     expect(assignOrderModalSource).not.toContain('options={plans}');
     expect(assignOrderModalSource).not.toContain('options={Object.entries(PERIOD_TEXT)');
     expect(assignOrderModalSource).not.toContain('<Modal');
@@ -452,10 +460,12 @@ describe('UsersPage legacy user manager', () => {
     expect(generateUserModalSource).toContain(
       '<label htmlFor="example-text-input-alt">订阅计划</label>',
     );
-    expect(generateUserModalSource).toContain('<Select.Option value={null}>无</Select.Option>');
-    expect(generateUserModalSource).toContain(
-      '<Select.Option key={Math.random()} value={plan.value}>',
+    expect(generateUserModalSource).toContain('<LegacySelect');
+    expect(generateUserModalSource).toContain('options={planSelectOptions(plans, true)}');
+    expect(usersSource).toContain(
+      "const GENERATE_USER_EMPTY_PLAN_OPTION: LegacySelectOption = { value: null, label: '无' };",
     );
+    expect(generateUserModalSource).not.toContain('<Select.Option');
     expect(generateUserModalSource).not.toContain(
       "options={[{ value: null, label: '无' }, ...plans]}",
     );
@@ -484,6 +494,9 @@ describe('UsersPage legacy user manager', () => {
     );
     expect(generateUserHook).not.toContain('onSuccess');
     expect(generateUserHook).not.toContain("queryKey: ['admin', 'users']");
+    expect(usersSource).not.toContain('<Select');
+    expect(usersSource).not.toContain('Select.Option');
+    expect(usersSource).not.toContain("Select, Tooltip } from 'antd'");
   });
 
   it('keeps the legacy send-mail modal stateful layout', () => {

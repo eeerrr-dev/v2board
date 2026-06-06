@@ -1,5 +1,5 @@
 import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react';
-import { Input, Modal, Select, Tooltip } from 'antd';
+import { Input, Modal, Tooltip } from 'antd';
 import { admin } from '@v2board/api-client';
 import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
 import { apiClient } from '@/lib/api';
@@ -22,8 +22,13 @@ import {
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
 import { LegacySwitch } from '@/components/legacy-switch';
+import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';
 
 type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];
+
+function paymentMethodOptions(methods: string[]): LegacySelectOption[] {
+  return methods.map((method) => ({ value: method, label: method }));
+}
 
 function PaymentEditor({
   record,
@@ -150,17 +155,14 @@ function PaymentEditor({
           <div className="form-group">
             <label htmlFor="example-text-input-alt">接口文件</label>
             <div>
-              <Select
+              <LegacySelect
                 style={{ width: '100%' }}
-                defaultValue={selectPaymentMethod}
+                value={selectPaymentMethod}
+                options={paymentMethodOptions(paymentMethods)}
                 onChange={(value) => {
-                  void onSelectPaymentMethod(value);
+                  void onSelectPaymentMethod(value as string | undefined);
                 }}
-              >
-                {paymentMethods.map((method) => (
-                  <Select.Option value={method}>{method}</Select.Option>
-                ))}
-              </Select>
+              />
             </div>
           </div>
           {Object.keys(form).map((key) => {

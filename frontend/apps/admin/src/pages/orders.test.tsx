@@ -238,12 +238,22 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).not.toContain('assign-amount');
   });
 
-  it('keeps the original assigned-order select option structure and random keys', () => {
-    expect(ordersSource).toContain('<Select.Option key={Math.random()} value={plan.id}>');
-    expect(ordersSource).toContain('<Select.Option key={Math.random()} value={period}>');
-    expect(ordersSource).not.toContain('options={plans.map');
-    expect(ordersSource).not.toContain('options={PERIOD_OPTIONS}');
-    expect(ordersSource).not.toContain('const PERIOD_OPTIONS');
+  it('uses the legacy assigned-order select shell without antd Select options', () => {
+    expect(ordersSource).toContain("} from '@/components/legacy-select';");
+    expect(ordersSource).toContain('LegacySelect,');
+    expect(ordersSource).toContain('type LegacySelectOption,');
+    expect(ordersSource).toContain('type LegacySelectValue,');
+    expect(ordersSource).toContain(
+      'function planSelectOptions(plans: Plan[]): LegacySelectOption[]',
+    );
+    expect(ordersSource).toContain('options={planSelectOptions(plans)}');
+    expect(ordersSource).toContain(
+      'const PERIOD_OPTIONS: LegacySelectOption[] = Object.keys(PERIOD_TEXT).map',
+    );
+    expect(ordersSource).toContain('options={PERIOD_OPTIONS}');
+    expect(ordersSource).not.toContain('<Select');
+    expect(ordersSource).not.toContain('Select.Option');
+    expect(ordersSource).not.toContain('Select, Tooltip } from');
   });
 
   it('uses the original outer fetchLoading spin wrapper for order refetches', () => {
