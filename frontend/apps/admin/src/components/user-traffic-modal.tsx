@@ -1,15 +1,44 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Table } from 'antd';
-import type { TablePaginationConfig } from 'antd';
+import { Modal } from 'antd';
+import type { admin } from '@v2board/api-client';
 import { formatBytes, formatDate } from '@v2board/config/format';
 import { useAdminUserTraffic } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
+import {
+  LegacyStandaloneTable,
+  LegacyTablePagination,
+  legacyTableRowKey,
+  type LegacyStandaloneTableHeader,
+  type LegacyTablePaginationChange,
+} from '@/components/legacy-standalone-table';
 
 interface LegacyTrafficPagination {
   current?: number;
   page?: number;
   pageSize: number;
   total?: number;
+}
+
+const headers: LegacyStandaloneTableHeader[] = [
+  { title: '日期' },
+  { title: '上行', alignRight: true },
+  { title: '下行', alignRight: true },
+  { title: '倍率', alignRight: true },
+];
+
+function getTrafficCurrentPage(pagination: LegacyTrafficPagination) {
+  return pagination.current ?? pagination.page ?? 1;
+}
+
+function renderTrafficRow(record: admin.AdminUserTrafficRecord, index: number) {
+  return (
+    <tr key={index} className="ant-table-row ant-table-row-level-0" {...legacyTableRowKey(index)}>
+      <td>{formatDate(record.record_at)}</td>
+      <td style={{ textAlign: 'right' }}>{formatBytes(record.u)}</td>
+      <td style={{ textAlign: 'right' }}>{formatBytes(record.d)}</td>
+      <td style={{ textAlign: 'right' }}>{record.server_rate}</td>
+    </tr>
+  );
 }
 
 export function UserTrafficModal({
@@ -27,11 +56,7 @@ export function UserTrafficModal({
     total: 0,
   });
   const lastUserIdRef = useRef<number | null | undefined>(undefined);
-  const records = useAdminUserTraffic(
-    userId ?? undefined,
-    pagination,
-    open,
-  );
+  const records = useAdminUserTraffic(userId ?? undefined, pagination, open);
 
   useEffect(() => {
     if (!open || userId == null) return;
@@ -40,6 +65,14 @@ export function UserTrafficModal({
     }
     lastUserIdRef.current = userId;
   }, [open, userId]);
+
+  const data = records.data?.data ?? [];
+  const total = records.data?.total ?? pagination.total;
+  const current = getTrafficCurrentPage(pagination);
+  const nextPagination = { ...pagination, current, total };
+  const handlePaginationChange = (next: LegacyTablePaginationChange) => {
+    setPagination({ ...next, total });
+  };
 
   return (
     <Modal
@@ -52,45 +85,20 @@ export function UserTrafficModal({
       onCancel={onClose}
     >
       <LegacySpin loading={records.isFetching}>
-        <Table
-          dataSource={records.data?.data ?? []}
-          pagination={{
-            ...pagination,
-            total: records.data?.total,
-            size: 'small',
-          }}
-          columns={[
-            {
-              title: '日期',
-              dataIndex: 'record_at',
-              key: 'record_at',
-              render: (value: number) => formatDate(value),
-            },
-            {
-              title: '上行',
-              dataIndex: 'u',
-              key: 'd',
-              align: 'right',
-              render: (value: number) => formatBytes(value),
-            },
-            {
-              title: '下行',
-              dataIndex: 'd',
-              key: 'd',
-              align: 'right',
-              render: (value: number) => formatBytes(value),
-            },
-            {
-              title: '倍率',
-              dataIndex: 'server_rate',
-              key: 'server_rate',
-              align: 'right',
-            },
-          ]}
-          onChange={(next: TablePaginationConfig) =>
-            setPagination(next as LegacyTrafficPagination)
+        <LegacyStandaloneTable
+          headers={headers}
+          isEmpty={data.length === 0}
+          pagination={
+            <LegacyTablePagination
+              current={current}
+              pageSize={nextPagination.pageSize}
+              total={nextPagination.total}
+              onChange={handlePaginationChange}
+            />
           }
-        />
+        >
+          {data.map(renderTrafficRow)}
+        </LegacyStandaloneTable>
       </LegacySpin>
     </Modal>
   );

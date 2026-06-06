@@ -223,14 +223,27 @@ describe('UsersPage legacy user manager', () => {
       'lastUserIdRef.current !== undefined && lastUserIdRef.current !== userId',
     );
     expect(userTrafficModalSource).toContain('lastUserIdRef.current = userId;');
-    expect(userTrafficModalSource).toContain('total: records.data?.total,');
+    expect(userTrafficModalSource).toContain(
+      'const total = records.data?.total ?? pagination.total;',
+    );
     expect(userTrafficModalSource).toContain('total?: number;');
-    expect(userTrafficModalSource).toContain("key: 'd'");
+    expect(userTrafficModalSource).toContain(
+      'import {\n  LegacyStandaloneTable,\n  LegacyTablePagination,\n  legacyTableRowKey,',
+    );
+    expect(userTrafficModalSource).toContain('<LegacyStandaloneTable');
+    expect(userTrafficModalSource).toContain('<LegacyTablePagination');
+    expect(userTrafficModalSource).toContain('const headers: LegacyStandaloneTableHeader[] = [');
+    expect(userTrafficModalSource).toContain("{ title: '上行', alignRight: true }");
+    expect(userTrafficModalSource).toContain("{ title: '下行', alignRight: true }");
+    expect(userTrafficModalSource).toContain("{ title: '倍率', alignRight: true }");
+    expect(userTrafficModalSource).toContain(
+      '<tr key={index} className="ant-table-row ant-table-row-level-0" {...legacyTableRowKey(index)}>',
+    );
+    expect(userTrafficModalSource).not.toContain("import { Modal, Table } from 'antd';");
     expect(userTrafficModalSource).not.toContain('page: pagination.current');
     expect(userTrafficModalSource).not.toContain(
       'if (open) setPagination({ page: 1, pageSize: 10, total: 0 });',
     );
-    expect(userTrafficModalSource).not.toContain('records.data?.total ?? pagination.total');
     expect(userTrafficModalSource).not.toContain('<Table\n          loading={records.isFetching}');
     expect(userTrafficModalSource).not.toContain('rowKey={(record)');
     expect(adminQueriesSource).toContain(
