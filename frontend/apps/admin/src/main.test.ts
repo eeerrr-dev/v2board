@@ -31,7 +31,7 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
-    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-22';");
+    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-23';");
     expect(mainSource).toContain(
       'storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`',
     );
@@ -49,7 +49,9 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource.indexOf('if (import.meta.env.DEV) {')).toBeLessThan(
       mainSource.indexOf('installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);'),
     );
-    expect(mainSource.indexOf('installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);')).toBeLessThan(
+    expect(
+      mainSource.indexOf('installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);'),
+    ).toBeLessThan(
       mainSource.indexOf(
         'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {\n    ...legacyWhiteScreenRecoveryConfig,\n    delay: 3000,\n  });',
       ),
@@ -121,8 +123,10 @@ describe('admin legacy entrypoint', () => {
   });
 
   it('installs dev entry recovery before the Vite module graph loads', () => {
-    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-22';");
-    expect(indexSource).toContain("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;");
+    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-23';");
+    expect(indexSource).toContain(
+      "var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;",
+    );
     expect(indexSource).toContain('function clearOldRecoveryState()');
     expect(indexSource).toContain("'v2board:white-screen-recovery:',");
     expect(indexSource).toContain("'v2board:dev-module-recovery:',");
@@ -135,25 +139,27 @@ describe('admin legacy entrypoint', () => {
     expect(indexSource).toContain("var legacyPublicRoutes = ['/', '/login'];");
     expect(indexSource).toContain('function normalizeBootUrl(url)');
     expect(indexSource).toContain("var nextHash = '#' + normalizedLegacyPath(routeSource);");
-    expect(indexSource).toContain('window.history.replaceState(window.history.state, \'\', bootUrl.toString());');
+    expect(indexSource).toContain(
+      "window.history.replaceState(window.history.state, '', bootUrl.toString());",
+    );
     expect(indexSource).toContain('normalizeBootUrl(current);');
     expect(indexSource).toContain("text.indexOf('outdated optimize dep') !== -1");
     expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1 &&");
     expect(indexSource).toContain("text.indexOf('module script') !== -1");
     expect(indexSource).not.toContain("text.indexOf('/node_modules/.vite/') !== -1\n          );");
-    expect(indexSource).toContain('function legacyMainEmpty(root)');
-    expect(indexSource).toContain("if (!root || !root.querySelector('#page-container')) return false;");
-    expect(indexSource).toContain("root.querySelector('#main-container .content') ||");
-    expect(indexSource).toContain('return elementEmpty(root) || legacyMainEmpty(root);');
+    expect(indexSource).not.toContain('function legacyMainEmpty(root)');
+    expect(indexSource).toContain('return elementEmpty(root);');
     expect(indexSource).toContain('if (appEmpty()) recover();');
     expect(indexSource).toContain("window.addEventListener('hashchange', schedule);");
     expect(indexSource).toContain("window.addEventListener('popstate', schedule);");
     expect(indexSource).toContain('new MutationObserver(schedule).observe(observerTarget');
     expect(indexSource).toContain("current.searchParams.set('__v2board_entry_recover'");
     expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
-    expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;")).toBeLessThan(
+    expect(
+      indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;"),
+    ).toBeLessThan(
       indexSource.indexOf(
-        '<script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-22"',
+        '<script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-23"',
       ),
     );
   });

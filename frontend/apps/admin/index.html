@@ -32,7 +32,7 @@
     <div id="root"></div>
     <script>
       (function () {
-        var recoveryVersion = 'white-screen-recovery-22';
+        var recoveryVersion = 'white-screen-recovery-23';
         var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;
         var maxAttempts = 3;
         var delay = 2500;
@@ -101,9 +101,7 @@
         }
 
         function routePattern(route) {
-          var escaped = route
-            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-            .replace(/:[^/]+/g, '[^/]+');
+          var escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[^/]+/g, '[^/]+');
           return new RegExp('^' + escaped + '$');
         }
 
@@ -114,9 +112,7 @@
           if (route.indexOf(':') === -1) {
             return path.indexOf(route + '/') === 0 ? route.length : null;
           }
-          escaped = route
-            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-            .replace(/:[^/]+/g, '[^/]+');
+          escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[^/]+/g, '[^/]+');
           match = new RegExp('^(' + escaped + ')(?=/)').exec(path);
           return match && match[1] ? match[1].length : null;
         }
@@ -251,17 +247,9 @@
           );
         }
 
-        function legacyMainEmpty(root) {
-          if (!root || !root.querySelector('#page-container')) return false;
-          var main =
-            root.querySelector('#main-container .content') ||
-            root.querySelector('#main-container');
-          return !!main && elementEmpty(main);
-        }
-
         function appEmpty() {
           var root = document.getElementById('root');
-          return elementEmpty(root) || legacyMainEmpty(root);
+          return elementEmpty(root);
         }
 
         function renderFallback() {
@@ -336,6 +324,6 @@
         schedule();
       })();
     </script>
-    <script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-22"></script>
+    <script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-23"></script>
   </body>
 </html>
