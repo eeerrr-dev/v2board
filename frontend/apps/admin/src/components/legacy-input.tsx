@@ -9,49 +9,65 @@ import {
   type TextareaHTMLAttributes,
 } from 'react';
 
-export const LegacyInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  function LegacyInput(
-    { className, defaultValue = '', onChange, placeholder, style, type = 'text', ...rest },
-    ref,
-  ) {
-    const inputRef = useRef<HTMLInputElement | null>(null);
-    useImperativeHandle(ref, () => inputRef.current as HTMLInputElement, []);
+type LegacyInputProps = InputHTMLAttributes<HTMLInputElement> & {
+  legacyAttributeOrder?: 'placeholder-first' | 'type-first';
+};
 
-    useLayoutEffect(() => {
-      const node = inputRef.current;
-      if (!node) return;
-      const placeholderAttr = node.getAttribute('placeholder');
-      const typeAttr = node.getAttribute('type') ?? type;
-      const classAttr = node.getAttribute('class');
-      const valueAttr = node.getAttribute('value') ?? '';
-      const styleAttr = node.getAttribute('style');
+export const LegacyInput = forwardRef<HTMLInputElement, LegacyInputProps>(function LegacyInput(
+  {
+    className,
+    defaultValue = '',
+    legacyAttributeOrder,
+    onChange,
+    placeholder,
+    style,
+    type = 'text',
+    ...rest
+  }: LegacyInputProps,
+  ref,
+) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useImperativeHandle(ref, () => inputRef.current as HTMLInputElement, []);
 
-      node.removeAttribute('placeholder');
-      node.removeAttribute('type');
-      node.removeAttribute('class');
-      node.removeAttribute('value');
-      node.removeAttribute('style');
+  useLayoutEffect(() => {
+    const node = inputRef.current;
+    if (!node) return;
+    const placeholderAttr = node.getAttribute('placeholder');
+    const typeAttr = node.getAttribute('type') ?? type;
+    const classAttr = node.getAttribute('class');
+    const valueAttr = node.getAttribute('value') ?? '';
+    const styleAttr = node.getAttribute('style');
+
+    node.removeAttribute('placeholder');
+    node.removeAttribute('type');
+    node.removeAttribute('class');
+    node.removeAttribute('value');
+    node.removeAttribute('style');
+    if (legacyAttributeOrder === 'type-first') {
+      node.setAttribute('type', typeAttr);
+      if (placeholderAttr !== null) node.setAttribute('placeholder', placeholderAttr);
+    } else {
       if (placeholderAttr !== null) node.setAttribute('placeholder', placeholderAttr);
       node.setAttribute('type', typeAttr);
-      if (classAttr) node.setAttribute('class', classAttr);
-      node.setAttribute('value', valueAttr);
-      if (styleAttr !== null) node.setAttribute('style', styleAttr);
-    }, [type]);
+    }
+    if (classAttr) node.setAttribute('class', classAttr);
+    node.setAttribute('value', valueAttr);
+    if (styleAttr !== null) node.setAttribute('style', styleAttr);
+  }, [legacyAttributeOrder, type]);
 
-    return (
-      <input
-        ref={inputRef}
-        placeholder={placeholder}
-        type={type}
-        className={className || undefined}
-        defaultValue={defaultValue}
-        style={style}
-        onChange={onChange}
-        {...rest}
-      />
-    );
-  },
-);
+  return (
+    <input
+      ref={inputRef}
+      placeholder={placeholder}
+      type={type}
+      className={className || undefined}
+      defaultValue={defaultValue}
+      style={style}
+      onChange={onChange}
+      {...rest}
+    />
+  );
+});
 
 export const LegacyCheckboxInput = forwardRef<
   HTMLInputElement,
@@ -112,12 +128,14 @@ export function LegacyInputGroup({
   className = 'ant-input',
   onChange,
   placeholder,
+  type = 'text',
   value,
 }: {
   addonAfter: ReactNode;
   className?: string;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string;
+  type?: HTMLInputElement['type'];
   value?: string | number | readonly string[] | undefined;
 }) {
   return (
@@ -125,8 +143,10 @@ export function LegacyInputGroup({
       <span className="ant-input-wrapper ant-input-group">
         <LegacyInput
           placeholder={placeholder}
+          type={type}
           className={className}
           value={value}
+          legacyAttributeOrder={type === 'number' ? 'type-first' : undefined}
           onChange={onChange}
         />
         <span className="ant-input-group-addon">{addonAfter}</span>

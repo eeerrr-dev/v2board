@@ -238,6 +238,16 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).not.toContain('<UserEditModal');
     expect(usersSource).toContain('<UserManageDrawer');
     expect(usersSource).toContain('onSaved={() => users.refetch()}');
+    expect(userManageDrawerSource).toContain("import { LegacyDrawer } from './legacy-drawer';");
+    expect(userManageDrawerSource).toContain("import { LegacyButton } from './legacy-button';");
+    expect(userManageDrawerSource).toContain(
+      "import { LegacyInput, LegacyInputGroup, LegacyTextArea } from './legacy-input';",
+    );
+    expect(userManageDrawerSource).toContain(
+      "import { LegacySelect, type LegacySelectOption, type LegacySelectValue } from './legacy-select';",
+    );
+    expect(userManageDrawerSource).toContain('<LegacyDrawer');
+    expect(userManageDrawerSource).toContain('cancelText="取消"');
     expect(userManageDrawerSource).toContain('width="80%"');
     expect(userManageDrawerSource).toContain('title="用户管理"');
     expect(userManageDrawerSource).toContain('v2board-drawer-action');
@@ -255,11 +265,14 @@ describe('UsersPage legacy user manager', () => {
       'function legacyExpiredAtDefaultValue(value: UserManageFormValues',
     );
     expect(userManageDrawerSource).toContain('value !== null && dayjs(1000 * Number(value))');
-    expect(userManageDrawerSource).toContain('checked={values.is_admin as unknown as boolean}');
+    expect(userManageDrawerSource).toContain('function LegacySwitch({');
+    expect(userManageDrawerSource).toContain('className={`ant-switch${checked ?');
+    expect(userManageDrawerSource).toContain("aria-checked={checked ? 'true' : 'false'}");
+    expect(userManageDrawerSource).toContain('checked={Boolean(values.is_admin)}');
     expect(userManageDrawerSource).toContain(
       "onChange={(value) => formChange('is_admin', value ? 1 : 0)}",
     );
-    expect(userManageDrawerSource).toContain('checked={values.is_staff as unknown as boolean}');
+    expect(userManageDrawerSource).toContain('checked={Boolean(values.is_staff)}');
     expect(userManageDrawerSource).toContain(
       "onChange={(value) => formChange('is_staff', value ? 1 : 0)}",
     );
@@ -284,7 +297,7 @@ describe('UsersPage legacy user manager', () => {
       'defaultValue={legacyDefaultValue(values.invite_user_email)}',
     );
     expect(userManageDrawerSource).toContain('defaultValue={values.password}');
-    expect(userManageDrawerSource).toContain('defaultValue={values.transfer_enable}');
+    expect(userManageDrawerSource).toContain('value={legacyDefaultValue(values.transfer_enable)}');
     expect(userManageDrawerSource).toContain(
       'defaultValue={legacyDefaultValue(values.device_limit)}',
     );
@@ -294,22 +307,18 @@ describe('UsersPage legacy user manager', () => {
     expect(userManageDrawerSource).toContain(
       "onChange={(value) => formChange('expired_at', value ? value.format('X') : null)}",
     );
-    expect(userManageDrawerSource).toContain('defaultValue={values.plan_id || null}');
-    expect(userManageDrawerSource).toContain('defaultValue={values.banned ? 1 : 0}');
     expect(userManageDrawerSource).toContain(
-      'defaultValue={parseInt(values.commission_type as string)}',
+      'value={(values.plan_id || null) as LegacySelectValue}',
     );
-    expect(userManageDrawerSource).toContain(
-      'defaultValue={legacyDefaultValue(values.commission_rate)}',
-    );
-    expect(userManageDrawerSource).toContain('defaultValue={legacyDefaultValue(values.discount)}');
-    expect(userManageDrawerSource).toContain(
-      'defaultValue={legacyDefaultValue(values.speed_limit)}',
-    );
+    expect(userManageDrawerSource).toContain('value={values.banned ? 1 : 0}');
+    expect(userManageDrawerSource).toContain('value={parseInt(values.commission_type as string)}');
+    expect(userManageDrawerSource).toContain('value={legacyDefaultValue(values.commission_rate)}');
+    expect(userManageDrawerSource).toContain('value={legacyDefaultValue(values.discount)}');
+    expect(userManageDrawerSource).toContain('value={legacyDefaultValue(values.speed_limit)}');
     expect(userManageDrawerSource).toContain('defaultValue={legacyDefaultValue(values.remarks)}');
     expect(userManageDrawerSource).not.toContain('value={values.email}');
     expect(userManageDrawerSource).not.toContain('value={values.password ??');
-    expect(userManageDrawerSource).not.toContain('value={values.plan_id || null}');
+    expect(userManageDrawerSource).not.toContain('defaultValue={values.plan_id || null}');
     expect(userManageDrawerSource).not.toContain(
       'defaultValue={Number(values.commission_type ?? 0)}',
     );
@@ -333,10 +342,18 @@ describe('UsersPage legacy user manager', () => {
     expect(userManageDrawerSource).toContain(
       'delete (payload as Record<string, unknown>).invite_user',
     );
-    expect(userManageDrawerSource).toContain('<Select.Option key={Math.random()} value={plan.id}>');
-    expect(userManageDrawerSource).not.toContain('<Select.Option key={plan.id} value={plan.id}>');
+    expect(userManageDrawerSource).toContain('const planOptions: LegacySelectOption[] = [');
+    expect(userManageDrawerSource).toContain("{ value: null, label: '无' }");
+    expect(userManageDrawerSource).toContain('options={planOptions}');
+    expect(userManageDrawerSource).toContain('options={LEGACY_ACCOUNT_STATUS_OPTIONS}');
+    expect(userManageDrawerSource).toContain('options={LEGACY_COMMISSION_TYPE_OPTIONS}');
+    expect(userManageDrawerSource).not.toContain('<Select.Option');
     expect(userManageDrawerSource).not.toContain('<Form');
     expect(userManageDrawerSource).not.toContain('<Spin');
+    expect(userManageDrawerSource).not.toContain('<Drawer');
+    expect(userManageDrawerSource).not.toContain('<Button');
+    expect(userManageDrawerSource).not.toContain('<Input');
+    expect(userManageDrawerSource).not.toContain('<Switch');
   });
 
   it('keeps user update triggering the page fetch before the drawer closes', () => {

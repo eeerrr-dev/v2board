@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { LegacyCloseIcon } from './legacy-ant-icon';
 
 interface LegacyDrawerProps {
+  cancelText?: string;
   children: ReactNode;
   id?: string;
   maskClosable?: boolean;
@@ -18,6 +19,7 @@ function drawerWidthStyle(width: number | string | undefined) {
 }
 
 export function LegacyDrawer({
+  cancelText,
   children,
   id,
   maskClosable = true,
@@ -48,7 +50,12 @@ export function LegacyDrawer({
   if (!open || typeof document === 'undefined') return null;
 
   return createPortal(
-    <div id={id} tabIndex={-1} className="ant-drawer ant-drawer-right ant-drawer-open">
+    <div
+      id={id}
+      {...(cancelText !== undefined ? { canceltext: cancelText } : {})}
+      tabIndex={-1}
+      className="ant-drawer ant-drawer-right ant-drawer-open"
+    >
       <div className="ant-drawer-mask" onClick={maskClosable ? onClose : undefined} />
       <div className="ant-drawer-content-wrapper" style={drawerWidthStyle(width)}>
         <div className="ant-drawer-content">

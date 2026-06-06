@@ -86,6 +86,24 @@ describe('LegacyInput', () => {
     );
   });
 
+  it('keeps the old runtime number input group attribute order', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyInputGroup
+          type="number"
+          addonAfter="GB"
+          placeholder="请输入流量"
+          value="0.00"
+          onChange={() => undefined}
+        />,
+      );
+    });
+
+    expect(container.querySelector('.ant-input-group-wrapper')?.outerHTML).toBe(
+      '<span class="ant-input-group-wrapper"><span class="ant-input-wrapper ant-input-group"><input type="number" placeholder="请输入流量" class="ant-input" value="0.00"><span class="ant-input-group-addon">GB</span></span></span>',
+    );
+  });
+
   it('keeps the old runtime checkbox attribute order after mount', async () => {
     await act(async () => {
       root.render(<LegacyCheckboxInput className="ant-checkbox-input" value="" />);

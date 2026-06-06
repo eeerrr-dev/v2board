@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { App, Button, DatePicker, Drawer, Input, Select, Switch, Tooltip } from 'antd';
-import { QuestionCircleOutlined } from '@ant-design/icons';
+import { App, DatePicker, Tooltip } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { AdminUserRow, AdminUserUpdatePayload } from '@v2board/types';
 import { BYTE_GB } from '@v2board/config/format';
 import { useAdminPlans, useAdminUserInfo, useUpdateUserMutation } from '@/lib/queries';
 import { i18nGet } from '@/lib/errors';
+import { LegacyButton } from './legacy-button';
+import { LegacyDrawer } from './legacy-drawer';
+import { LegacyInput, LegacyInputGroup, LegacyTextArea } from './legacy-input';
+import { LegacyQuestionCircleIcon } from './legacy-ant-icon';
+import { LegacySelect, type LegacySelectOption, type LegacySelectValue } from './legacy-select';
 
 type UserManageFormValues = Omit<Partial<AdminUserRow>, 'expired_at' | 'is_admin' | 'is_staff'> & {
   invite_user_email?: string | null;
@@ -26,7 +30,7 @@ function scaled(value: unknown, multiplier: number) {
 }
 
 function legacyDefaultValue(value: unknown) {
-  return value as string | number | readonly string[] | undefined;
+  return value === null ? undefined : (value as string | number | readonly string[] | undefined);
 }
 
 function legacyExpiredAtDefaultValue(value: UserManageFormValues['expired_at']) {
@@ -93,6 +97,37 @@ function LegacyDrawerLoadingIcon() {
   );
 }
 
+const LEGACY_ACCOUNT_STATUS_OPTIONS: LegacySelectOption[] = [
+  { value: 1, label: '封禁' },
+  { value: 0, label: '正常' },
+];
+
+const LEGACY_COMMISSION_TYPE_OPTIONS: LegacySelectOption[] = [
+  { value: 0, label: '跟随系统设置' },
+  { value: 1, label: '循环返利' },
+  { value: 2, label: '首次返利' },
+];
+
+function LegacySwitch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked ? 'true' : 'false'}
+      className={`ant-switch${checked ? ' ant-switch-checked' : ''}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="ant-switch-inner" />
+    </button>
+  );
+}
+
 export function UserManageDrawer({
   userId,
   open,
@@ -110,6 +145,10 @@ export function UserManageDrawer({
   const plans = useAdminPlans();
   const update = useUpdateUserMutation();
   const current = user.data as (Partial<AdminUserRow> & Record<string, unknown>) | undefined;
+  const planOptions: LegacySelectOption[] = [
+    { value: null, label: '无' },
+    ...(plans.data?.map((plan) => ({ value: plan.id, label: plan.name })) ?? []),
+  ];
 
   useEffect(() => {
     if (current?.email) {
@@ -145,13 +184,21 @@ export function UserManageDrawer({
   };
 
   return (
-    <Drawer id="user" width="80%" title="用户管理" open={open} onClose={hide}>
+    <LegacyDrawer
+      id="user"
+      cancelText="取消"
+      width="80%"
+      title="用户管理"
+      open={open}
+      onClose={hide}
+    >
       {values?.email ? (
         <div>
           <div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">邮箱</label>
-              <Input
+              <LegacyInput
+                className="ant-input"
                 placeholder="请输入邮箱"
                 defaultValue={values.email}
                 onChange={(event) => formChange('email', event.target.value)}
@@ -159,7 +206,8 @@ export function UserManageDrawer({
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">邀请人邮箱</label>
-              <Input
+              <LegacyInput
+                className="ant-input"
                 placeholder="请输入邀请人邮箱"
                 defaultValue={legacyDefaultValue(values.invite_user_email)}
                 onChange={(event) => formChange('invite_user_email', event.target.value)}
@@ -167,7 +215,8 @@ export function UserManageDrawer({
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">密码</label>
-              <Input
+              <LegacyInput
+                className="ant-input"
                 defaultValue={values.password}
                 placeholder="如需修改密码请输入"
                 onChange={(event) => formChange('password', event.target.value)}
@@ -176,11 +225,11 @@ export function UserManageDrawer({
             <div className="row">
               <div className="form-group col-md-6 col-xs-12">
                 <label>余额</label>
-                <Input
+                <LegacyInputGroup
                   type="number"
                   addonAfter="¥"
                   placeholder="余额"
-                  defaultValue={values.balance}
+                  value={legacyDefaultValue(values.balance)}
                   onChange={(event) =>
                     formChange('balance', event.target.value as unknown as number)
                   }
@@ -188,11 +237,11 @@ export function UserManageDrawer({
               </div>
               <div className="form-group col-md-6 col-xs-12">
                 <label>推广佣金</label>
-                <Input
+                <LegacyInputGroup
                   type="number"
                   addonAfter="¥"
                   placeholder="推广佣金"
-                  defaultValue={values.commission_balance}
+                  value={legacyDefaultValue(values.commission_balance)}
                   onChange={(event) =>
                     formChange('commission_balance', event.target.value as unknown as number)
                   }
@@ -202,31 +251,31 @@ export function UserManageDrawer({
             <div className="row">
               <div className="form-group col-md-6 col-xs-12">
                 <label>已用上行</label>
-                <Input
+                <LegacyInputGroup
                   type="number"
                   addonAfter="GB"
                   placeholder="已用上行"
-                  defaultValue={values.u}
+                  value={legacyDefaultValue(values.u)}
                   onChange={(event) => formChange('u', event.target.value as unknown as number)}
                 />
               </div>
               <div className="form-group col-md-6 col-xs-12">
                 <label>已用下行</label>
-                <Input
+                <LegacyInputGroup
                   type="number"
                   addonAfter="GB"
                   placeholder="已用下行"
-                  defaultValue={values.d}
+                  value={legacyDefaultValue(values.d)}
                   onChange={(event) => formChange('d', event.target.value as unknown as number)}
                 />
               </div>
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">流量</label>
-              <Input
+              <LegacyInputGroup
                 type="number"
                 addonAfter="GB"
-                defaultValue={values.transfer_enable}
+                value={legacyDefaultValue(values.transfer_enable)}
                 placeholder="请输入流量"
                 onChange={(event) =>
                   formChange('transfer_enable', event.target.value as unknown as number)
@@ -235,7 +284,8 @@ export function UserManageDrawer({
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">设备数限制</label>
-              <Input
+              <LegacyInput
+                className="ant-input"
                 placeholder="留空则不限制"
                 defaultValue={legacyDefaultValue(values.device_limit)}
                 onChange={(event) =>
@@ -256,58 +306,37 @@ export function UserManageDrawer({
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">订阅计划</label>
-              <Select
+              <LegacySelect
                 placeholder="请选择用户订阅计划"
                 style={{ width: '100%' }}
-                defaultValue={values.plan_id || null}
-                onChange={(value) => formChange('plan_id', value)}
-              >
-                <Select.Option value={null}>无</Select.Option>
-                {plans.data?.map((plan) => (
-                  <Select.Option key={Math.random()} value={plan.id}>
-                    {plan.name}
-                  </Select.Option>
-                ))}
-              </Select>
+                value={(values.plan_id || null) as LegacySelectValue}
+                options={planOptions}
+                onChange={(value) => formChange('plan_id', value as number | null)}
+              />
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">账户状态</label>
-              <Select
+              <LegacySelect
                 style={{ width: '100%' }}
-                defaultValue={values.banned ? 1 : 0}
+                value={values.banned ? 1 : 0}
+                options={LEGACY_ACCOUNT_STATUS_OPTIONS}
                 onChange={(value) => formChange('banned', value as 0 | 1)}
-              >
-                <Select.Option key={1} value={1}>
-                  封禁
-                </Select.Option>
-                <Select.Option key={0} value={0}>
-                  正常
-                </Select.Option>
-              </Select>
+              />
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">推荐返利类型</label>
-              <Select
+              <LegacySelect
                 style={{ width: '100%' }}
-                defaultValue={parseInt(values.commission_type as string)}
+                value={parseInt(values.commission_type as string)}
+                options={LEGACY_COMMISSION_TYPE_OPTIONS}
                 onChange={(value) => formChange('commission_type', value)}
-              >
-                <Select.Option key={0} value={0}>
-                  跟随系统设置
-                </Select.Option>
-                <Select.Option key={1} value={1}>
-                  循环返利
-                </Select.Option>
-                <Select.Option key={2} value={2}>
-                  首次返利
-                </Select.Option>
-              </Select>
+              />
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">推荐返利比例</label>
-              <Input
+              <LegacyInputGroup
                 addonAfter="%"
-                defaultValue={legacyDefaultValue(values.commission_rate)}
+                value={legacyDefaultValue(values.commission_rate)}
                 placeholder="请输入推荐返利比例(为空则跟随站点设置返利比例)"
                 onChange={(event) =>
                   formChange('commission_rate', event.target.value as unknown as number)
@@ -318,12 +347,12 @@ export function UserManageDrawer({
               <label htmlFor="example-text-input-alt">
                 专享折扣比例{' '}
                 <Tooltip title="设置后该用户购买任何订阅将始终享受该折扣" placement="top">
-                  <QuestionCircleOutlined />
+                  <LegacyQuestionCircleIcon />
                 </Tooltip>
               </label>
-              <Input
+              <LegacyInputGroup
                 addonAfter="%"
-                defaultValue={legacyDefaultValue(values.discount)}
+                value={legacyDefaultValue(values.discount)}
                 placeholder="请输入专享折扣比例"
                 onChange={(event) =>
                   formChange('discount', event.target.value as unknown as number)
@@ -332,9 +361,9 @@ export function UserManageDrawer({
             </div>
             <div className="form-group">
               <label htmlFor="example-text-input-alt">限速</label>
-              <Input
+              <LegacyInputGroup
                 addonAfter="Mbps"
-                defaultValue={legacyDefaultValue(values.speed_limit)}
+                value={legacyDefaultValue(values.speed_limit)}
                 placeholder="留空则不限制"
                 onChange={(event) => formChange('speed_limit', event.target.value)}
               />
@@ -342,8 +371,8 @@ export function UserManageDrawer({
             <div className="form-group">
               <label htmlFor="example-text-input-alt">是否管理员</label>
               <div>
-                <Switch
-                  checked={values.is_admin as unknown as boolean}
+                <LegacySwitch
+                  checked={Boolean(values.is_admin)}
                   onChange={(value) => formChange('is_admin', value ? 1 : 0)}
                 />
               </div>
@@ -351,8 +380,8 @@ export function UserManageDrawer({
             <div className="form-group">
               <label htmlFor="example-text-input-alt">是否员工</label>
               <div>
-                <Switch
-                  checked={values.is_staff as unknown as boolean}
+                <LegacySwitch
+                  checked={Boolean(values.is_staff)}
                   onChange={(value) => formChange('is_staff', value ? 1 : 0)}
                 />
               </div>
@@ -360,7 +389,8 @@ export function UserManageDrawer({
             <div className="form-group">
               <label htmlFor="example-text-input-alt">备注</label>
               <div>
-                <Input.TextArea
+                <LegacyTextArea
+                  className="ant-input"
                   rows={4}
                   placeholder="请在这里记录.."
                   defaultValue={legacyDefaultValue(values.remarks)}
@@ -370,22 +400,21 @@ export function UserManageDrawer({
             </div>
           </div>
           <div className="v2board-drawer-action">
-            <Button style={{ marginRight: 8 }} onClick={hide}>
+            <LegacyButton className="ant-btn" style={{ marginRight: 8 }} onClick={hide}>
               取消
-            </Button>
-            <Button
+            </LegacyButton>
+            <LegacyButton
+              className={`ant-btn ant-btn-primary${update.isPending ? ' ant-btn-loading' : ''}`}
               disabled={update.isPending}
-              loading={update.isPending}
-              onClick={submit}
-              type="primary"
+              onClick={() => !update.isPending && submit()}
             >
               提交
-            </Button>
+            </LegacyButton>
           </div>
         </div>
       ) : (
         <LegacyDrawerLoadingIcon />
       )}
-    </Drawer>
+    </LegacyDrawer>
   );
 }

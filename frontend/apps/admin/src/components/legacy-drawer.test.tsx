@@ -47,6 +47,27 @@ describe('LegacyDrawer', () => {
     expect(container.children).toHaveLength(0);
   });
 
+  it('can preserve legacy Drawer passthrough attributes used by the user editor', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyDrawer
+          id="user"
+          cancelText="取消"
+          open
+          title="用户管理"
+          width="80%"
+          onClose={vi.fn()}
+        >
+          <div>表单</div>
+        </LegacyDrawer>,
+      );
+    });
+
+    expect(document.querySelector('#user')?.outerHTML).toContain(
+      '<div id="user" canceltext="取消" tabindex="-1" class="ant-drawer ant-drawer-right ant-drawer-open">',
+    );
+  });
+
   it('closes from the old mask and close button interactions', async () => {
     const onClose = vi.fn();
     await act(async () => {
