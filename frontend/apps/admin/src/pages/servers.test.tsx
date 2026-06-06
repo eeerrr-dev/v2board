@@ -973,6 +973,50 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('const LEGACY_SECURITY_NONE_OPTION: LegacySelectOption');
     expect(serversSource).toContain('const LEGACY_SECURITY_TLS_OPTION: LegacySelectOption');
     expect(serversSource).toContain('const LEGACY_SECURITY_REALITY_OPTION: LegacySelectOption');
+    expect(serversSource).toContain(
+      'const LEGACY_STREAM_NETWORK_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_TROJAN_NETWORK_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_V2NODE_PROTOCOL_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_V2NODE_SHADOWSOCKS_NETWORK_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_V2NODE_TRANSPORT_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_SHADOWSOCKS_CIPHER_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_SHADOWSOCKS_OBFS_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_VLESS_ENCRYPTION_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain('const LEGACY_VLESS_FLOW_OPTIONS: LegacySelectOption[] = [');
+    expect(serversSource).toContain(
+      'const LEGACY_HYSTERIA_VERSION_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_HYSTERIA_V1_OBFS_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_HYSTERIA2_OBFS_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_TUIC_RELAY_MODE_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      'const LEGACY_TUIC_CONGESTION_CONTROL_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain('function getLegacyV2nodeTransportOptions');
+    expect(serversSource).toContain('function getLegacyVlessFlowOptions');
+    expect(serversSource).not.toContain('import { App, Form, Input, List, Select');
+    expect(serversSource).not.toContain('<Select');
   });
 
   it('uses the original Shadowsocks-specific drawer fields', () => {
@@ -992,8 +1036,10 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('2022-blake3-aes-128-gcm');
     expect(serversSource).toContain('2022-blake3-aes-256-gcm');
     expect(serversSource).toContain('混淆');
-    expect(serversSource).toContain('<Select.Option value="">无</Select.Option>');
-    expect(serversSource).toContain('<Select.Option value="http">HTTP</Select.Option>');
+    expect(serversSource).toContain('options={LEGACY_SHADOWSOCKS_CIPHER_OPTIONS}');
+    expect(serversSource).toContain('options={LEGACY_SHADOWSOCKS_OBFS_OPTIONS}');
+    expect(serversSource).toContain("{ value: '', label: '无' }");
+    expect(serversSource).toContain("{ value: 'http', label: 'HTTP' }");
     expect(serversSource).toContain("shadowsocksObfs === 'http'");
     expect(serversSource).toContain('className="row mt-2"');
     expect(serversSource).toContain('className="form-group col-4 mb-0"');
@@ -1042,6 +1088,16 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('一键安装指令');
     expect(serversSource).toContain('readOnly');
     expect(serversSource).toContain('delete payload.install_command');
+    expect(serversSource).toContain('options={LEGACY_V2NODE_PROTOCOL_OPTIONS}');
+    expect(serversSource).toContain('options={LEGACY_V2NODE_SHADOWSOCKS_NETWORK_OPTIONS}');
+    expect(serversSource).toContain('options={getLegacyV2nodeTransportOptions(protocolValue)}');
+    expect(serversSource).toContain('options={LEGACY_HYSTERIA2_OBFS_OPTIONS}');
+    expect(serversSource).toContain('options={LEGACY_TUIC_RELAY_MODE_OPTIONS}');
+    expect(serversSource).toContain('options={LEGACY_TUIC_CONGESTION_CONTROL_OPTIONS}');
+    expect(serversSource).toContain('options={LEGACY_SHADOWSOCKS_CIPHER_OPTIONS}');
+    expect(serversSource).toContain('options={LEGACY_VLESS_ENCRYPTION_OPTIONS}');
+    expect(serversSource).toContain('options={LEGACY_VLESS_FLOW_OPTIONS}');
+    expect(serversSource).toContain("return protocol === 'trojan'");
   });
 
   it('parses the original protocol JSON fields before saving node payloads', () => {
@@ -1141,9 +1197,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('编辑配置');
     expect(serversSource).toContain("showChildDrawer('编辑协议配置', 'network_settings')");
     expect(serversSource).toContain('placeholder="选择传输协议"');
-    expect(serversSource).toContain('<Select.Option value="tcp">TCP</Select.Option>');
-    expect(serversSource).toContain('<Select.Option value="ws">WebSocket</Select.Option>');
-    expect(serversSource).toContain('<Select.Option value="grpc">gRPC</Select.Option>');
+    expect(serversSource).toContain('options={LEGACY_TROJAN_NETWORK_OPTIONS}');
     expect(serversSource).not.toContain('label="Allow insecure"');
   });
 
@@ -1165,11 +1219,10 @@ describe('ServersPage legacy server group route', () => {
     expect(vmessTlsSource).toContain('options={LEGACY_TLS_SUPPORT_OPTIONS}');
     expect(vmessTlsSource).not.toContain('<Select');
     expect(serversSource).toContain("showChildDrawer('编辑协议配置', 'networkSettings')");
-    expect(serversSource).toContain('<Select.Option value="kcp">mKCP</Select.Option>');
-    expect(serversSource).toContain(
-      '<Select.Option value="httpupgrade">HTTPUpgrade</Select.Option>',
-    );
-    expect(serversSource).toContain('<Select.Option value="xhttp">XHTTP</Select.Option>');
+    expect(serversSource).toContain('options={LEGACY_STREAM_NETWORK_OPTIONS}');
+    expect(serversSource).toContain("{ value: 'kcp', label: 'mKCP' }");
+    expect(serversSource).toContain("{ value: 'httpupgrade', label: 'HTTPUpgrade' }");
+    expect(serversSource).toContain("{ value: 'xhttp', label: 'XHTTP' }");
   });
 
   it('uses the original VLess-specific security, protocol, encryption, and flow fields', () => {
@@ -1192,13 +1245,14 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('加密方式');
     expect(serversSource).toContain("showChildDrawer('编辑加密配置', 'encryption_settings')");
     expect(serversSource).toContain('placeholder="选择加密方式"');
+    expect(serversSource).toContain('options={LEGACY_VLESS_ENCRYPTION_OPTIONS}');
     expect(serversSource).toContain('MLKEM768X25519PLUS');
     expect(serversSource).toContain('XTLS流控算法');
     expect(serversSource).toContain('placeholder="选择XTLS流控算法"');
+    expect(serversSource).toContain('options={getLegacyVlessFlowOptions(vlessNetwork)}');
     expect(serversSource).toContain('xtls-rprx-vision');
     expect(serversSource).toContain("const vlessNetwork = Form.useWatch('network', form);");
-    expect(serversSource).toContain("{String(vlessNetwork) === 'tcp' ? (");
-    expect(serversSource).not.toContain("vlessNetwork === 'tcp'");
+    expect(serversSource).toContain("return String(network) === 'tcp'");
     expect(serversSource).not.toContain('name="reality_settings" label="Reality settings (JSON)"');
   });
 
@@ -1294,11 +1348,12 @@ describe('ServersPage legacy server group route', () => {
     expect(serverInsecureSource).toContain('options={LEGACY_BINARY_SELECT_OPTIONS}');
     expect(serverInsecureSource).not.toContain('<Select');
     expect(serversSource).toContain('HYSTERIA版本');
-    expect(serversSource).toContain('<Select.Option key={0} value={1}>');
+    expect(serversSource).toContain('options={LEGACY_HYSTERIA_VERSION_OPTIONS}');
     expect(serversSource).toContain('v1');
-    expect(serversSource).toContain('<Select.Option key={1} value={2}>');
     expect(serversSource).toContain('v2');
     expect(serversSource).toContain('混淆方式obfs');
+    expect(serversSource).toContain('options={LEGACY_HYSTERIA_V1_OBFS_OPTIONS}');
+    expect(serversSource).toContain('options={LEGACY_HYSTERIA2_OBFS_OPTIONS}');
     expect(serversSource).toContain('xplus');
     expect(serversSource).toContain('salamander');
     expect(serversSource).toContain('混淆密码obfsParam');
@@ -1324,12 +1379,14 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('name="disable_sni"');
     expect(serversSource).toContain('数据包中继模式');
     expect(serversSource).toContain('name="udp_relay_mode" initialValue="native"');
+    expect(serversSource).toContain('options={LEGACY_TUIC_RELAY_MODE_OPTIONS}');
     expect(serversSource).toContain('native');
     expect(serversSource).toContain('quic');
     expect(serversSource).toContain('tuicDisableSni');
     expect(serversSource).toContain('服务器名称指示(sni)');
     expect(serversSource).toContain('拥塞控制算法');
     expect(serversSource).toContain('name="congestion_control" initialValue="cubic"');
+    expect(serversSource).toContain('options={LEGACY_TUIC_CONGESTION_CONTROL_OPTIONS}');
     expect(serversSource).toContain('new_reno');
     expect(serversSource).toContain('客户端启用 0-RTT');
     expect(serversSource).toContain('name="zero_rtt_handshake"');
