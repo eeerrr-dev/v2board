@@ -32,7 +32,7 @@
     <div id="root"></div>
     <script>
       (function () {
-        var recoveryVersion = 'white-screen-recovery-26';
+        var recoveryVersion = 'white-screen-recovery-27';
         var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;
         var maxAttempts = 3;
         var delay = 2500;
@@ -250,8 +250,7 @@
         function legacyMainEmpty(root) {
           if (!root || !root.querySelector('#page-container')) return false;
           var main =
-            root.querySelector('#main-container .content') ||
-            root.querySelector('#main-container');
+            root.querySelector('#main-container .content') || root.querySelector('#main-container');
           return !!main && elementEmpty(main);
         }
 
@@ -297,6 +296,30 @@
           if (staleViteModule(event)) recover(event);
         }
 
+        function routeMismatchWarning(value) {
+          var text = textOf(value, []).toLowerCase();
+          return (
+            text.indexOf('no routes matched location') !== -1 ||
+            text.indexOf('matched location "/login/') !== -1
+          );
+        }
+
+        function patchConsoleRecovery(method) {
+          var original = window.console && window.console[method];
+          if (typeof original !== 'function') return;
+          window.console[method] = function () {
+            for (var index = 0; index < arguments.length; index += 1) {
+              if (routeMismatchWarning(arguments[index])) {
+                window.setTimeout(function () {
+                  recover();
+                }, 0);
+                break;
+              }
+            }
+            return original.apply(this, arguments);
+          };
+        }
+
         function checkEmptyRoot() {
           if (appEmpty()) recover();
         }
@@ -316,6 +339,8 @@
         window.addEventListener('vite:preloadError', recoverStaleModule);
         window.addEventListener('error', recoverStaleModule, true);
         window.addEventListener('unhandledrejection', recoverStaleModule);
+        patchConsoleRecovery('error');
+        patchConsoleRecovery('warn');
         window.addEventListener('hashchange', schedule);
         window.addEventListener('popstate', schedule);
         document.addEventListener('DOMContentLoaded', schedule);
@@ -332,6 +357,6 @@
         schedule();
       })();
     </script>
-    <script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-26"></script>
+    <script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-27"></script>
   </body>
 </html>

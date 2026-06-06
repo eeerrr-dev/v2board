@@ -31,7 +31,7 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
-    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-26';");
+    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-27';");
     expect(mainSource).toContain(
       'storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`',
     );
@@ -49,7 +49,9 @@ describe('user legacy entrypoint', () => {
     expect(mainSource.indexOf('if (import.meta.env.DEV) {')).toBeLessThan(
       mainSource.indexOf('installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);'),
     );
-    expect(mainSource.indexOf('installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);')).toBeLessThan(
+    expect(
+      mainSource.indexOf('installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);'),
+    ).toBeLessThan(
       mainSource.indexOf(
         'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {\n    ...legacyWhiteScreenRecoveryConfig,\n    delay: 3000,\n  });',
       ),
@@ -93,8 +95,10 @@ describe('user legacy entrypoint', () => {
   });
 
   it('installs dev entry recovery before the Vite module graph loads', () => {
-    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-26';");
-    expect(indexSource).toContain("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;");
+    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-27';");
+    expect(indexSource).toContain(
+      "var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;",
+    );
     expect(indexSource).toContain('function clearOldRecoveryState()');
     expect(indexSource).toContain("'v2board:white-screen-recovery:',");
     expect(indexSource).toContain("'v2board:dev-module-recovery:',");
@@ -104,17 +108,29 @@ describe('user legacy entrypoint', () => {
     expect(indexSource).toContain("if (!('caches' in window)) return;");
     expect(indexSource).toContain('clearBrowserCaches();');
     expect(indexSource).toContain('var legacyRoutes = [');
-    expect(indexSource).toContain("var legacyPublicRoutes = ['/', '/login', '/register', '/forgetpassword'];");
+    expect(indexSource).toContain(
+      "var legacyPublicRoutes = ['/', '/login', '/register', '/forgetpassword'];",
+    );
     expect(indexSource).toContain('function normalizeBootUrl(url)');
     expect(indexSource).toContain("var nextHash = '#' + normalizedLegacyPath(routeSource);");
-    expect(indexSource).toContain('window.history.replaceState(window.history.state, \'\', bootUrl.toString());');
+    expect(indexSource).toContain(
+      "window.history.replaceState(window.history.state, '', bootUrl.toString());",
+    );
     expect(indexSource).toContain('normalizeBootUrl(current);');
     expect(indexSource).toContain("text.indexOf('outdated optimize dep') !== -1");
     expect(indexSource).toContain("text.indexOf('/node_modules/.vite/') !== -1 &&");
     expect(indexSource).toContain("text.indexOf('module script') !== -1");
     expect(indexSource).not.toContain("text.indexOf('/node_modules/.vite/') !== -1\n          );");
+    expect(indexSource).toContain('function routeMismatchWarning(value)');
+    expect(indexSource).toContain("text.indexOf('no routes matched location') !== -1");
+    expect(indexSource).toContain("text.indexOf('matched location \"/login/') !== -1");
+    expect(indexSource).toContain('function patchConsoleRecovery(method)');
+    expect(indexSource).toContain("patchConsoleRecovery('error');");
+    expect(indexSource).toContain("patchConsoleRecovery('warn');");
     expect(indexSource).toContain('function legacyMainEmpty(root)');
-    expect(indexSource).toContain("if (!root || !root.querySelector('#page-container')) return false;");
+    expect(indexSource).toContain(
+      "if (!root || !root.querySelector('#page-container')) return false;",
+    );
     expect(indexSource).toContain("root.querySelector('#main-container .content') ||");
     expect(indexSource).toContain('return elementEmpty(root) || legacyMainEmpty(root);');
     expect(indexSource).toContain('if (appEmpty()) recover();');
@@ -123,9 +139,11 @@ describe('user legacy entrypoint', () => {
     expect(indexSource).toContain('new MutationObserver(schedule).observe(observerTarget');
     expect(indexSource).toContain("current.searchParams.set('__v2board_entry_recover'");
     expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
-    expect(indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;")).toBeLessThan(
+    expect(
+      indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;"),
+    ).toBeLessThan(
       indexSource.indexOf(
-        '<script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-26"',
+        '<script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-27"',
       ),
     );
   });
