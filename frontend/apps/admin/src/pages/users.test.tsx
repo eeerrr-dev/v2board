@@ -416,7 +416,11 @@ describe('UsersPage legacy user manager', () => {
     expect(generateUserModalSource).toContain('<Input.Group compact>');
     expect(generateUserModalSource).toContain('!submit.generate_count');
     expect(generateUserModalSource).toContain('!submit.email_prefix');
-    expect(generateUserModalSource).toContain('<DatePicker');
+    expect(generateUserModalSource).toContain('<LegacyDatePicker');
+    expect(generateUserModalSource).not.toContain('<DatePicker');
+    expect(usersSource).not.toContain(
+      "import { App, DatePicker, Dropdown, Input, Menu, Modal, Select, Tooltip } from 'antd';",
+    );
     expect(generateUserModalSource).toContain(
       'defaultValue={submit.expired_at ? dayjs(1000 * Number(submit.expired_at)) : undefined}',
     );

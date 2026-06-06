@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
-import { App, DatePicker, Dropdown, Input, Menu, Modal, Select, Tooltip } from 'antd';
+import { App, Dropdown, Input, Menu, Modal, Select, Tooltip } from 'antd';
 import type { DropdownProps } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -29,6 +29,7 @@ import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-fi
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyButton } from '@/components/legacy-button';
+import { LegacyDatePicker } from '@/components/legacy-date-picker';
 import {
   LegacyAccountBookIcon,
   LegacyCaretDownIcon,
@@ -874,7 +875,7 @@ function GenerateUserModal({
         <div className="form-group">
           <label htmlFor="example-text-input-alt">到期时间</label>
           <div>
-            <DatePicker
+            <LegacyDatePicker
               placeholder="请选择用户到期日期，为空则不限制到期时间"
               defaultValue={submit.expired_at ? dayjs(1000 * Number(submit.expired_at)) : undefined}
               style={{ width: '100%' }}
