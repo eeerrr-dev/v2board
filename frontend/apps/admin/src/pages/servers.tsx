@@ -1,18 +1,15 @@
 import { cloneElement, useEffect, useMemo, useRef, useState } from 'react';
-import type { HTMLAttributes, MouseEvent as ReactMouseEvent, ReactElement, ReactNode } from 'react';
-import { App, Dropdown, Form, Input, List, Menu, Select, Space, Tag, Badge, Tooltip } from 'antd';
-import {
-  CaretDownOutlined,
-  CopyOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  LinkOutlined,
-  LoadingOutlined,
-  QuestionCircleOutlined,
-  ReadOutlined,
-  UserOutlined,
-} from '@ant-design/icons';
-import type { DropdownProps, FormInstance } from 'antd';
+import type {
+  CSSProperties,
+  HTMLAttributes,
+  MouseEvent as ReactMouseEvent,
+  ReactElement,
+  ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
+import { App, Form, Input, List, Select, Space, Badge, Tooltip } from 'antd';
+import { LinkOutlined, LoadingOutlined, ReadOutlined } from '@ant-design/icons';
+import type { FormInstance } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
   useCopyServerMutation,
@@ -43,6 +40,7 @@ import {
   LegacyCopyIcon,
   LegacyDatabaseIcon,
   LegacyDeleteIcon,
+  LegacyEditIcon,
   LegacyFilterIcon,
   LegacyFormIcon,
   LegacyPlusIcon,
@@ -345,16 +343,208 @@ function writeLegacyHabit(key: string, value: unknown) {
   }
 }
 
-type LegacyDropdownProps = Omit<DropdownProps, 'popupRender' | 'trigger'> & {
-  overlay: ReactNode;
-  trigger?: DropdownProps['trigger'] | 'click';
+interface LegacyDropdownCoords {
+  left: number;
+  top: number;
+  minWidth: number;
+}
+
+type LegacyDropdownTrigger = 'click' | 'hover';
+
+type LegacyDropdownChildProps = {
+  className?: string;
+  onClick?: (event: ReactMouseEvent<HTMLElement>) => void;
+  onMouseEnter?: (event: ReactMouseEvent<HTMLElement>) => void;
+  onMouseLeave?: (event: ReactMouseEvent<HTMLElement>) => void;
 };
 
-const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];
+interface LegacyDropdownProps {
+  children: ReactElement<LegacyDropdownChildProps>;
+  overlay: ReactNode;
+  trigger?: LegacyDropdownTrigger | LegacyDropdownTrigger[];
+}
 
-function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps) {
-  const nextTrigger = Array.isArray(trigger) ? trigger : trigger ? [trigger] : undefined;
-  return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;
+interface LegacyDropdownMenuItemProps {
+  children?: ReactNode;
+  onClick?: (event: ReactMouseEvent<HTMLLIElement>) => void;
+  onContextMenu?: (event: ReactMouseEvent<HTMLLIElement>) => void;
+  style?: CSSProperties;
+}
+
+const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownTrigger;
+const LEGACY_DROPDOWN_HOVER_CLOSE_DELAY = 120;
+const LEGACY_DROPDOWN_OFFSET = 4;
+
+function dropdownTriggerModes(trigger: LegacyDropdownProps['trigger']) {
+  return Array.isArray(trigger) ? trigger : trigger ? [trigger] : ['hover'];
+}
+
+function legacyDropdownClassName(open: boolean) {
+  return [
+    'ant-dropdown',
+    'ant-dropdown-placement-bottomLeft',
+    open ? undefined : 'ant-dropdown-hidden',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function mergeClassName(...values: Array<string | undefined | false>) {
+  return values.filter(Boolean).join(' ');
+}
+
+function LegacyDropdown({ children, overlay, trigger }: LegacyDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const [hasOpened, setHasOpened] = useState(false);
+  const [coords, setCoords] = useState<LegacyDropdownCoords>();
+  const popupRef = useRef<HTMLDivElement | null>(null);
+  const closeTimer = useRef<number | undefined>(undefined);
+  const triggerModes = dropdownTriggerModes(trigger);
+  const opensOnClick = triggerModes.includes('click');
+  const opensOnHover = triggerModes.includes('hover');
+
+  const clearCloseTimer = () => {
+    if (closeTimer.current !== undefined) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = undefined;
+    }
+  };
+
+  const openFromElement = (element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    clearCloseTimer();
+    setCoords({
+      left: rect.left,
+      top: rect.bottom + LEGACY_DROPDOWN_OFFSET,
+      minWidth: rect.width,
+    });
+    setHasOpened(true);
+    setOpen(true);
+  };
+
+  const scheduleHoverClose = () => {
+    if (!opensOnHover) return;
+    clearCloseTimer();
+    closeTimer.current = window.setTimeout(() => setOpen(false), LEGACY_DROPDOWN_HOVER_CLOSE_DELAY);
+  };
+
+  useEffect(() => {
+    if (!open || !opensOnClick) return undefined;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+      if (popupRef.current?.contains(target)) return;
+      if (target.closest('.ant-dropdown-trigger')) return;
+      setOpen(false);
+    };
+
+    document.addEventListener('click', closeOnOutsideClick);
+    return () => document.removeEventListener('click', closeOnOutsideClick);
+  }, [open, opensOnClick]);
+
+  useEffect(() => {
+    return () => clearCloseTimer();
+  }, []);
+
+  const triggerElement = cloneElement(children, {
+    className: mergeClassName(
+      children.props.className,
+      'ant-dropdown-trigger',
+      open && 'ant-dropdown-open',
+    ),
+    onClick: (event: ReactMouseEvent<HTMLElement>) => {
+      children.props.onClick?.(event);
+      if (opensOnClick) {
+        if (open) {
+          setOpen(false);
+        } else {
+          openFromElement(event.currentTarget);
+        }
+        return;
+      }
+      openFromElement(event.currentTarget);
+    },
+    onMouseEnter: (event: ReactMouseEvent<HTMLElement>) => {
+      children.props.onMouseEnter?.(event);
+      if (opensOnHover) openFromElement(event.currentTarget);
+    },
+    onMouseLeave: (event: ReactMouseEvent<HTMLElement>) => {
+      children.props.onMouseLeave?.(event);
+      scheduleHoverClose();
+    },
+  });
+
+  return (
+    <>
+      {triggerElement}
+      {hasOpened && coords && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              ref={popupRef}
+              className={legacyDropdownClassName(open)}
+              style={{
+                position: 'fixed',
+                top: coords.top,
+                left: coords.left,
+                minWidth: coords.minWidth,
+              }}
+              onClick={() => setOpen(false)}
+              onMouseEnter={clearCloseTimer}
+              onMouseLeave={scheduleHoverClose}
+            >
+              {overlay}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
+function LegacyDropdownMenu({ children }: { children: ReactNode }) {
+  return (
+    <ul className="ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical">
+      {children}
+    </ul>
+  );
+}
+
+function LegacyDropdownMenuItem({
+  children,
+  onClick,
+  onContextMenu,
+  style,
+}: LegacyDropdownMenuItemProps) {
+  return (
+    <li
+      className="ant-dropdown-menu-item"
+      role="menuitem"
+      style={style}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+    >
+      {children}
+    </li>
+  );
+}
+
+function LegacyTag({
+  children,
+  color,
+  style,
+}: {
+  children: ReactNode;
+  color?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <span
+      className={color ? 'ant-tag ant-tag-has-color' : 'ant-tag'}
+      style={color ? { ...style, backgroundColor: color } : style}
+    >
+      {children}
+    </span>
+  );
 }
 
 function readLegacyServerPageSize() {
@@ -731,7 +921,7 @@ function ServerRouteModal({
 }
 
 function getServerTypeTag(type: string, label: ReactNode) {
-  return <Tag color={SERVER_TYPE_COLORS[type]}>{label}</Tag>;
+  return <LegacyTag color={SERVER_TYPE_COLORS[type]}>{label}</LegacyTag>;
 }
 
 function getLegacyAvailableStatus(status?: number | null) {
@@ -961,8 +1151,8 @@ function ServerManagePage() {
   };
 
   const actionMenu = (row: admin.ServerNode) => (
-    <Menu>
-      <Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>
+    <LegacyDropdownMenu>
+      <LegacyDropdownMenuItem onContextMenu={(event) => event.stopPropagation()}>
         <LegacyNodeEditMenuTrigger
           key={row.id}
           type={row.type as admin.ServerTypeName}
@@ -973,21 +1163,20 @@ function ServerManagePage() {
           onSaved={() => nodes.refetch()}
         >
           <a>
-            <EditOutlined /> 编辑
+            <LegacyEditIcon /> 编辑
           </a>
         </LegacyNodeEditMenuTrigger>
-      </Menu.Item>
-      <Menu.Item key="copy" onClick={() => runNodeAction('copy', row)}>
-        <CopyOutlined /> 复制
-      </Menu.Item>
-      <Menu.Item
-        key="delete"
+      </LegacyDropdownMenuItem>
+      <LegacyDropdownMenuItem onClick={() => runNodeAction('copy', row)}>
+        <LegacyCopyIcon /> 复制
+      </LegacyDropdownMenuItem>
+      <LegacyDropdownMenuItem
         style={{ color: '#ff4d4f' }}
         onClick={() => runNodeAction('delete', row)}
       >
-        <DeleteOutlined /> 删除
-      </Menu.Item>
-    </Menu>
+        <LegacyDeleteIcon /> 删除
+      </LegacyDropdownMenuItem>
+    </LegacyDropdownMenu>
   );
 
   const tableClassName = [
@@ -1018,7 +1207,7 @@ function ServerManagePage() {
     <div>
       <LegacyDropdown trigger={LEGACY_DROPDOWN_CLICK_TRIGGER} overlay={actionMenu(row)}>
         <a ref={legacyHref()}>
-          操作 <CaretDownOutlined />
+          操作 <LegacyCaretDownIcon />
         </a>
       </LegacyDropdown>
     </div>
@@ -1100,9 +1289,9 @@ function ServerManagePage() {
           <div className="v2board-table-action" style={{ padding: 15 }}>
             <LegacyDropdown
               overlay={
-                <Menu>
+                <LegacyDropdownMenu>
                   {SERVER_TYPES.map((type) => (
-                    <Menu.Item key={type}>
+                    <LegacyDropdownMenuItem key={type}>
                       <LegacyNodeEditMenuTrigger
                         key={Math.random()}
                         type={type}
@@ -1113,9 +1302,9 @@ function ServerManagePage() {
                       >
                         <a ref={legacyHref()}>{getServerTypeTag(type, SERVER_TYPE_LABELS[type])}</a>
                       </LegacyNodeEditMenuTrigger>
-                    </Menu.Item>
+                    </LegacyDropdownMenuItem>
                   ))}
-                </Menu>
+                </LegacyDropdownMenu>
               }
             >
               <LegacyButton className="ant-btn">
@@ -1164,10 +1353,10 @@ function ServerManagePage() {
                         node.type,
                         node.parent_id ? `${node.id} => ${node.parent_id}` : node.id,
                       )}
-                      <Tag>
-                        <UserOutlined /> {node.online || 0}
-                      </Tag>
-                      <Tag>{node.rate} x</Tag>
+                      <LegacyTag>
+                        <LegacyUserIcon /> {node.online || 0}
+                      </LegacyTag>
+                      <LegacyTag>{node.rate} x</LegacyTag>
                     </>,
                   ]}
                   extra={
@@ -1184,7 +1373,7 @@ function ServerManagePage() {
                           overlay={actionMenu(node)}
                         >
                           <a ref={legacyHref()}>
-                            操作 <CaretDownOutlined />
+                            操作 <LegacyCaretDownIcon />
                           </a>
                         </LegacyDropdown>
                       </span>
@@ -1377,14 +1566,16 @@ function ServerManagePage() {
                                             </span>
                                           </td>
                                           <td style={{ textAlign: 'left' }}>
-                                            <UserOutlined /> {node.online || 0}
+                                            <LegacyUserIcon /> {node.online || 0}
                                           </td>
                                           <td style={{ textAlign: 'center' }}>
-                                            <Tag style={{ minWidth: 60 }}>{node.rate} x</Tag>
+                                            <LegacyTag style={{ minWidth: 60 }}>
+                                              {node.rate} x
+                                            </LegacyTag>
                                           </td>
                                           <td>
                                             {groupName(node.group_id).map((name) => (
-                                              <Tag>{name}</Tag>
+                                              <LegacyTag>{name}</LegacyTag>
                                             ))}
                                           </td>
                                           <td
@@ -2398,7 +2589,7 @@ function TrojanAllowInsecureField() {
     <div className="form-group col-md-4 col-xs-12">
       <label>
         <Tooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">
-          允许不安全 <QuestionCircleOutlined />
+          允许不安全 <LegacyQuestionCircleIcon />
         </Tooltip>
       </label>
       <Form.Item
@@ -2425,7 +2616,7 @@ function ServerInsecureField() {
     <div className="form-group col-md-4 col-xs-12">
       <label>
         <Tooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">
-          允许不安全 <QuestionCircleOutlined />
+          允许不安全 <LegacyQuestionCircleIcon />
         </Tooltip>
       </label>
       <Form.Item

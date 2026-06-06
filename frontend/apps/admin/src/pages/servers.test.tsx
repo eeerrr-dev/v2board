@@ -650,7 +650,7 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function NodeEditDrawer'),
     );
 
-    expect(serversSource).toContain('<Tag>{name}</Tag>');
+    expect(serversSource).toContain('<LegacyTag>{name}</LegacyTag>');
     expect(serversSource).toContain('className="ant-table-filter-dropdown"');
     expect(serversSource).toContain('<span>{group.name}</span>');
     expect(managePageSource).toContain(
@@ -679,22 +679,23 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function NodeEditDrawer'),
     );
 
-    expect(serversSource).toContain(
-      'function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)',
-    );
-    expect(serversSource).toContain(
-      'return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;',
-    );
+    expect(serversSource).toContain('function LegacyDropdown({ children, overlay, trigger }');
+    expect(serversSource).toContain('function LegacyDropdownMenu({ children }');
+    expect(serversSource).toContain('function LegacyDropdownMenuItem({');
+    expect(serversSource).toContain('function LegacyTag({');
     expect(managePageSource).toContain('<LegacyDropdown');
     expect(managePageSource).toContain('overlay={');
-    expect(managePageSource).toContain('<Menu>');
+    expect(managePageSource).toContain('<LegacyDropdownMenu>');
     expect(managePageSource).toContain('<LegacyButton className="ant-btn">');
     expect(managePageSource).toContain('<LegacyPlusIcon />');
     expect(managePageSource).toContain('SERVER_TYPES.map((type) => (');
-    expect(managePageSource).toContain('<Menu.Item key={type}>');
+    expect(managePageSource).toContain('<LegacyDropdownMenuItem key={type}>');
     expect(serversSource).toContain('<LegacyNodeEditMenuTrigger');
     expect(serversSource).toContain('key={Math.random()}');
     expect(serversSource).toContain('type={type}');
+    expect(serversSource).not.toContain('Dropdown, Form');
+    expect(serversSource).not.toContain('Menu, Select');
+    expect(serversSource).not.toContain('Tag, Badge');
     expect(managePageSource).not.toContain('menu={{');
     expect(managePageSource).not.toContain('items: SERVER_TYPES.map');
     expect(managePageSource).not.toContain(
@@ -717,18 +718,20 @@ describe('ServersPage legacy server group route', () => {
 
     expect(managePageSource).toContain('const actionMenu = (row: admin.ServerNode) => (');
     expect(managePageSource).toContain(
-      '<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>',
+      '<LegacyDropdownMenuItem onContextMenu={(event) => event.stopPropagation()}>',
     );
     expect(managePageSource).toContain(
-      '<Menu.Item key="copy" onClick={() => runNodeAction(\'copy\', row)}>',
+      "<LegacyDropdownMenuItem onClick={() => runNodeAction('copy', row)}>",
     );
     expect(managePageSource).toContain("style={{ color: '#ff4d4f' }}");
-    expect(managePageSource).toContain('<Menu.Item');
+    expect(managePageSource).toContain('<LegacyDropdownMenuItem');
     expect(managePageSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
     expect(managePageSource).toContain('overlay={actionMenu(row)}');
     expect(managePageSource).toContain('overlay={actionMenu(node)}');
     expect(managePageSource).not.toContain('menu={actionMenu');
     expect(managePageSource).not.toContain('const actionMenu = (row: admin.ServerNode): MenuProps');
+    expect(managePageSource).not.toContain('<Menu>');
+    expect(managePageSource).not.toContain('<Menu.Item');
   });
 
   it('keeps the original add-node protocol menu order', () => {
