@@ -1,13 +1,5 @@
-import {
-  cloneElement,
-  useEffect,
-  useRef,
-  useState,
-  type ReactElement,
-} from 'react';
-import { Button, Input, Modal, Select, Switch, Table, Tooltip } from 'antd';
-import type { TableProps } from 'antd';
-import { PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react';
+import { Input, Modal, Select, Switch, Tooltip } from 'antd';
 import { admin } from '@v2board/api-client';
 import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
 import { apiClient } from '@/lib/api';
@@ -21,6 +13,13 @@ import {
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
+import { LegacyButton } from '@/components/legacy-button';
+import { LegacyPlusIcon, LegacyQuestionCircleIcon } from '@/components/legacy-ant-icon';
+import {
+  LegacyStandaloneTable,
+  legacyTableRowKey,
+  type LegacyStandaloneTableHeader,
+} from '@/components/legacy-standalone-table';
 
 type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];
 
@@ -137,7 +136,10 @@ function PaymentEditor({
                   placeholder="在订单金额基础上附加手续费"
                   defaultValue={(submit.handling_fee_fixed as number) / 100}
                   onChange={(event) =>
-                    submitOnChange('handling_fee_fixed', 100 * (event.target.value as unknown as number))
+                    submitOnChange(
+                      'handling_fee_fixed',
+                      100 * (event.target.value as unknown as number),
+                    )
                   }
                 />
               </div>
@@ -154,9 +156,7 @@ function PaymentEditor({
                 }}
               >
                 {paymentMethods.map((method) => (
-                  <Select.Option value={method}>
-                    {method}
-                  </Select.Option>
+                  <Select.Option value={method}>{method}</Select.Option>
                 ))}
               </Select>
             </div>
@@ -221,55 +221,23 @@ export default function PaymentsPage() {
     }
     setOrderedPayments(next);
     setLegacySortLoading(true);
-    sort.mutate(next.map((payment) => payment.id), {
-      onSuccess: () => {
-        void payments.refetch().finally(() => {
-          setLegacySortLoading(false);
-        });
+    sort.mutate(
+      next.map((payment) => payment.id),
+      {
+        onSuccess: () => {
+          void payments.refetch().finally(() => {
+            setLegacySortLoading(false);
+          });
+        },
       },
-    });
+    );
   };
 
-  const columns: TableProps<AdminPayment>['columns'] = [
-    {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      render: (id: number) => (
-        <>
-          <LegacyMenuIcon />{' '}
-          {id}
-        </>
-      ),
-    },
-    {
-      title: '启用',
-      dataIndex: 'enable',
-      key: 'enable',
-      render: (enable: 0 | 1 | string, row) => (
-        <Switch
-          checked={parseInt(String(enable), 10) as unknown as boolean}
-          size="small"
-          onChange={() =>
-            show.mutate(row.id, {
-              onSuccess: () => {
-                void payments.refetch();
-              },
-            })
-          }
-        />
-      ),
-    },
-    {
-      title: '显示名称',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: '支付接口',
-      dataIndex: 'payment',
-      key: 'payment',
-    },
+  const headers: LegacyStandaloneTableHeader[] = [
+    { title: 'ID' },
+    { title: '启用' },
+    { title: '显示名称' },
+    { title: '支付接口' },
     {
       title: (
         <span>
@@ -278,55 +246,62 @@ export default function PaymentsPage() {
             placement="top"
             title="支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。"
           >
-            <QuestionCircleOutlined />
+            <LegacyQuestionCircleIcon />
           </Tooltip>
         </span>
       ),
-      dataIndex: 'notify_url',
-      key: 'notify_url',
     },
-    {
-      title: '操作',
-      dataIndex: 'action',
-      key: 'action',
-      align: 'right',
-      fixed: 'right',
-      render: (_value, row) => (
-        <>
-          <PaymentEditor
-            key={row.id}
-            record={row}
-            fetchLoading={payments.isFetching}
-            onSave={(payload) => save.mutateAsync(payload)}
-            onSaved={() => {
-              void payments.refetch();
-            }}
-          >
-            <a ref={legacyHref()}>编辑</a>
-          </PaymentEditor>
-          <div className="ant-divider ant-divider-vertical" />
-          <a
-            ref={legacyHref('javascript:void(0)')}
-            onClick={() => {
-              Modal.confirm({
-                title: '警告',
-                content: '确定要删除该条项目吗？',
-                onOk: () => {
-                  void drop.mutateAsync(row.id).then(() => {
-                    void payments.refetch();
-                  });
-                },
-                okText: '确定',
-                cancelText: '取消',
-              });
-            }}
-          >
-            删除
-          </a>
-        </>
-      ),
-    },
+    { title: '操作', alignRight: true, fixedRight: true },
   ];
+
+  const renderPaymentEnableSwitch = (enable: 0 | 1 | string, row: AdminPayment) => (
+    <Switch
+      checked={parseInt(String(enable), 10) as unknown as boolean}
+      size="small"
+      onChange={() =>
+        show.mutate(row.id, {
+          onSuccess: () => {
+            void payments.refetch();
+          },
+        })
+      }
+    />
+  );
+
+  const renderPaymentActions = (row: AdminPayment) => (
+    <>
+      <PaymentEditor
+        key={row.id}
+        record={row}
+        fetchLoading={payments.isFetching}
+        onSave={(payload) => save.mutateAsync(payload)}
+        onSaved={() => {
+          void payments.refetch();
+        }}
+      >
+        <a ref={legacyHref()}>编辑</a>
+      </PaymentEditor>
+      <div className="ant-divider ant-divider-vertical" />
+      <a
+        ref={legacyHref('javascript:void(0)')}
+        onClick={() => {
+          Modal.confirm({
+            title: '警告',
+            content: '确定要删除该条项目吗？',
+            onOk: () => {
+              void drop.mutateAsync(row.id).then(() => {
+                void payments.refetch();
+              });
+            },
+            okText: '确定',
+            cancelText: '取消',
+          });
+        }}
+      >
+        删除
+      </a>
+    </>
+  );
 
   return (
     <>
@@ -343,9 +318,10 @@ export default function PaymentsPage() {
                   void payments.refetch();
                 }}
               >
-                <Button>
-                  <PlusOutlined /> 添加支付方式
-                </Button>
+                <LegacyButton className="ant-btn">
+                  <LegacyPlusIcon />
+                  <span> 添加支付方式</span>
+                </LegacyButton>
               </PaymentEditor>
             </div>
             <LegacyDragSort
@@ -353,13 +329,45 @@ export default function PaymentsPage() {
               nodeSelector="tr"
               handleSelector="i"
             >
-              <Table<AdminPayment>
-                tableLayout="auto"
-                dataSource={orderedPayments}
-                columns={columns}
-                pagination={false}
-                scroll={{ x: 1300 }}
-              />
+              <LegacyStandaloneTable
+                headers={headers}
+                isEmpty={orderedPayments.length === 0}
+                scrollX={1300}
+                scrollPositionRight={false}
+                fixedRightChildren={orderedPayments.map((row, index) => (
+                  <tr
+                    key={index}
+                    className="ant-table-row ant-table-row-level-0"
+                    {...legacyTableRowKey(index)}
+                  >
+                    <td className="ant-table-row-cell-last" style={{ textAlign: 'right' }}>
+                      {renderPaymentActions(row)}
+                    </td>
+                  </tr>
+                ))}
+              >
+                {orderedPayments.map((row, index) => (
+                  <tr
+                    key={index}
+                    className="ant-table-row ant-table-row-level-0"
+                    {...legacyTableRowKey(index)}
+                  >
+                    <td className="">
+                      <LegacyMenuIcon /> {row.id}
+                    </td>
+                    <td className="">{renderPaymentEnableSwitch(row.enable, row)}</td>
+                    <td className="">{row.name}</td>
+                    <td className="">{row.payment}</td>
+                    <td className="">{row.notify_url}</td>
+                    <td
+                      className="ant-table-fixed-columns-in-body ant-table-row-cell-last"
+                      style={{ textAlign: 'right' }}
+                    >
+                      {renderPaymentActions(row)}
+                    </td>
+                  </tr>
+                ))}
+              </LegacyStandaloneTable>
             </LegacyDragSort>
           </div>
         </div>

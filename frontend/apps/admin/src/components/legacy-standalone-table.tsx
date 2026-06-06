@@ -137,12 +137,14 @@ export function LegacyStandaloneTable({
   isEmpty,
   children,
   fixedRightChildren,
+  scrollPositionRight = true,
   scrollX,
 }: {
   headers: LegacyStandaloneTableHeader[];
   isEmpty: boolean;
   children: ReactNode;
   fixedRightChildren?: ReactNode;
+  scrollPositionRight?: boolean;
   scrollX?: number;
 }) {
   const fixedRightHeaders =
@@ -150,7 +152,9 @@ export function LegacyStandaloneTable({
   const scrollClassName =
     scrollX === undefined
       ? 'ant-table-scroll-position-left'
-      : 'ant-table-scroll-position-left ant-table-scroll-position-right';
+      : scrollPositionRight
+        ? 'ant-table-scroll-position-left ant-table-scroll-position-right'
+        : 'ant-table-scroll-position-left';
 
   return (
     <div className="ant-table-wrapper">

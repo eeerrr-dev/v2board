@@ -59,7 +59,20 @@ describe('PaymentsPage legacy payment config', () => {
     expect(html).toContain('class="d-flex justify-content-between align-items-center"');
     expect(html).toContain('class="block block-rounded"');
     expect(html).toContain('class="bg-white"');
+    expect(html).toContain('<button type="button" class="ant-btn">');
+    expect(html).toContain('aria-label="图标: plus"');
     expect(html).toContain('添加支付方式');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain('class="ant-spin-nested-loading"');
+    expect(html).toContain('class="ant-table ant-table-default ant-table-scroll-position-left"');
+    expect(html).toContain('class="ant-table-scroll"');
+    expect(html).toContain('tabindex="-1" class="ant-table-body" style="overflow-x:scroll"');
+    expect(html).toContain('class="ant-table-fixed" style="width:1300px"');
+    expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain(
+      'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"',
+    );
+    expect(html).toContain('data-row-key="0"');
     expect(html).toContain('ID');
     expect(html).toContain('启用');
     expect(html).toContain('显示名称');
@@ -75,10 +88,13 @@ describe('PaymentsPage legacy payment config', () => {
     expect(html).toContain('删除');
     expect(html).not.toContain('ant-card');
     expect(html).not.toContain('ant-typography');
+    expect(html).not.toContain('ant-table-cell');
   });
 
   it('keeps the bundled notification-address tooltip copy', () => {
-    expect(source).toContain('title="支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。"');
+    expect(source).toContain(
+      'title="支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。"',
+    );
     expect(source).not.toContain('支付网关将会把数据通知到本地址，请通过防火墙放行本地址。');
   });
 
@@ -94,9 +110,9 @@ describe('PaymentsPage legacy payment config', () => {
 
   it('uses the legacy fixed handling fee default conversion', () => {
     expect(source).toContain('defaultValue={(submit.handling_fee_fixed as number) / 100}');
-    expect(source).toContain(
-      "submitOnChange('handling_fee_fixed', 100 * (event.target.value as unknown as number))",
-    );
+    expect(source).toContain('submitOnChange(');
+    expect(source).toContain("'handling_fee_fixed',");
+    expect(source).toContain('100 * (event.target.value as unknown as number),');
     expect(source).not.toContain('Number(submit.handling_fee_fixed)');
     expect(source).not.toContain('Number(event.target.value)');
     expect(source).not.toContain('submit.handling_fee_fixed == null');
@@ -125,7 +141,9 @@ describe('PaymentsPage legacy payment config', () => {
       source.indexOf('const show = async', source.indexOf('const onSelectPaymentMethod = async')),
     );
 
-    expect(block).toContain('const nextForm = await admin.paymentForm(apiClient, payment, record?.id);');
+    expect(block).toContain(
+      'const nextForm = await admin.paymentForm(apiClient, payment, record?.id);',
+    );
     expect(block).toContain('setForm(nextForm);');
     expect(block).toContain('setSelectPaymentMethod(payment);');
     expect(block.indexOf('setForm(nextForm);')).toBeLessThan(
@@ -148,9 +166,17 @@ describe('PaymentsPage legacy payment config', () => {
   });
 
   it('keeps the legacy payment table without an explicit rowKey', () => {
-    expect(source).toContain('tableLayout="auto"');
-    expect(source).toContain('pagination={false}');
+    expect(source).toContain('<LegacyStandaloneTable');
+    expect(source).toContain('headers={headers}');
+    expect(source).toContain('isEmpty={orderedPayments.length === 0}');
+    expect(source).toContain('scrollX={1300}');
+    expect(source).toContain('scrollPositionRight={false}');
+    expect(source).toContain('fixedRightChildren={orderedPayments.map((row, index) => (');
+    expect(source).toContain('{...legacyTableRowKey(index)}');
     expect(source).toContain('<LegacyDragSort');
+    expect(source).not.toContain('<Table<AdminPayment>');
+    expect(source).not.toContain('tableLayout="auto"');
+    expect(source).not.toContain('pagination={false}');
     expect(source).not.toContain('data-row-key');
     expect(source).not.toContain('data-sort-index');
     expect(source).not.toContain('rowKey="id"');
@@ -164,8 +190,7 @@ describe('PaymentsPage legacy payment config', () => {
 
     expect(saveBlock).toContain('setVisible(false);\n    onSaved();');
     expect(saveBlock.indexOf('setVisible(false);')).toBeLessThan(saveBlock.indexOf('onSaved();'));
-    expect(source).toContain('onSaved={() => {\n              void payments.refetch();\n            }}');
-    expect(source).toContain('onSaved={() => {\n                  void payments.refetch();\n                }}');
+    expect(source.match(/onSaved=\{\(\) => \{\n\s+void payments\.refetch\(\);\n\s+\}\}/g)).toHaveLength(2);
   });
 
   it('keeps the original vertical divider markup in the payment action column', () => {
@@ -175,24 +200,34 @@ describe('PaymentsPage legacy payment config', () => {
   });
 
   it('keeps the legacy delete confirm from returning a modal-loading promise', () => {
-    expect(source).toContain('onOk: () => {\n                  void drop.mutateAsync(row.id).then(() => {');
+    const confirmStart = source.indexOf('onOk: () => {');
+    const dropStart = source.indexOf('void drop.mutateAsync(row.id).then(() => {', confirmStart);
+
+    expect(confirmStart).toBeGreaterThan(-1);
+    expect(dropStart).toBeGreaterThan(confirmStart);
     expect(source).toContain('void payments.refetch();');
     expect(source).not.toContain('onOk: () => drop.mutateAsync(row.id)');
   });
 
   it('uses the original drag-sort wrapper instead of business row keys', () => {
-    expect(source).toContain("import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';");
+    expect(source).toContain(
+      "import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';",
+    );
     expect(source).toContain('<LegacyDragSort');
     expect(source).toContain('<LegacyMenuIcon />');
     expect(source).not.toContain('function LegacyPaymentDragSort({');
     expect(legacyDragSortSource).toContain('export function LegacyDragSort({');
     expect(legacyDragSortSource).toContain('LEGACY_DRAG_LINE_STYLE');
-    expect(legacyDragSortSource).toContain('<div role="presentation" onMouseDown={onMouseDown} ref={dragList}>');
+    expect(legacyDragSortSource).toContain(
+      '<div role="presentation" onMouseDown={onMouseDown} ref={dragList}>',
+    );
     expect(source).toContain('nodeSelector="tr"');
     expect(source).toContain('handleSelector="i"');
-    expect(legacyDragSortSource).toContain('handle.setAttribute(\'draggable\', \'false\');');
-    expect(legacyDragSortSource).toContain('dragNode.setAttribute(\'draggable\', \'true\');');
-    expect(legacyDragSortSource).toContain('<i aria-label="图标: menu" className="anticon anticon-menu">');
+    expect(legacyDragSortSource).toContain("handle.setAttribute('draggable', 'false');");
+    expect(legacyDragSortSource).toContain("dragNode.setAttribute('draggable', 'true');");
+    expect(legacyDragSortSource).toContain(
+      '<i aria-label="图标: menu" className="anticon anticon-menu">',
+    );
     expect(source).not.toContain('<MenuOutlined');
     expect(source).not.toContain('dragIndex.current');
     expect(source).not.toContain('onDrop={onDrop}');
@@ -201,16 +236,17 @@ describe('PaymentsPage legacy payment config', () => {
     expect(source).toContain('next.splice(fromIndex, 1);');
     expect(source).toContain('next.splice(toIndex, 0, moved);');
     expect(source).toContain('next.splice(fromIndex + 1, 1);');
-    expect(source).toContain('sort.mutate(next.map((payment) => payment.id),');
+    expect(source).toContain('sort.mutate(');
+    expect(source).toContain('next.map((payment) => payment.id),');
     expect(source).toContain(
-      'onSuccess: () => {\n        void payments.refetch().finally(() => {\n          setLegacySortLoading(false);\n        });\n      },',
+      'void payments.refetch().finally(() => {\n            setLegacySortLoading(false);\n          });',
     );
   });
 
   it('keeps payment mutations fetching from the page after successful requests', () => {
     const showStart = source.indexOf('show.mutate(row.id, {');
     const showRefetch = source.indexOf('void payments.refetch();', showStart);
-    const sortStart = source.indexOf('sort.mutate(next.map((payment) => payment.id),');
+    const sortStart = source.indexOf('sort.mutate(');
     const sortRefetch = source.indexOf('void payments.refetch().finally', sortStart);
     const dropStart = source.indexOf('drop.mutateAsync(row.id).then');
     const dropRefetch = source.indexOf('void payments.refetch();', dropStart);
