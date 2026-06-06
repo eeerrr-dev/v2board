@@ -8,7 +8,6 @@ import type {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { App, Form, Input, List, Space, Badge, Tooltip } from 'antd';
-import { LinkOutlined, ReadOutlined } from '@ant-design/icons';
 import type { FormInstance } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
@@ -43,9 +42,11 @@ import {
   LegacyEditIcon,
   LegacyFilterIcon,
   LegacyFormIcon,
+  LegacyLinkIcon,
   LegacyLoadingIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
+  LegacyReadIcon,
   LegacyUserIcon,
 } from '@/components/legacy-ant-icon';
 import { LegacyCheckboxInput, LegacyInput } from '@/components/legacy-input';
@@ -955,7 +956,7 @@ function ServerRouteModal({
               <label htmlFor="example-text-input-alt">
                 匹配值
                 <a href="https://xtls.github.io/config/routing.html#ruleobject">
-                  <LinkOutlined />
+                  <LegacyLinkIcon />
                   填写参考
                 </a>
               </label>
@@ -1003,7 +1004,7 @@ function ServerRouteModal({
               <label htmlFor="example-text-input-alt">
                 Xray出站配置
                 <a href="https://xtls.github.io/config/outbound.html">
-                  <LinkOutlined />
+                  <LegacyLinkIcon />
                   填写参考
                 </a>
               </label>
@@ -2046,7 +2047,7 @@ function NodeEditDrawer({
                 href="https://docs.v2board.com/use/node.html#父节点与子节点关系"
                 rel="noreferrer"
               >
-                {type === 'vmess' || type === 'vless' ? <ReadOutlined /> : '更多解答'}
+                {type === 'vmess' || type === 'vless' ? <LegacyReadIcon /> : '更多解答'}
               </a>
             </Tooltip>
           </label>
@@ -2307,7 +2308,7 @@ function ServerChildDrawerField({
           <label>
             协议详细配置
             <a href="https://www.v2ray.com/chapter_02/05_transport.html">
-              <LinkOutlined />
+              <LegacyLinkIcon />
               参考
             </a>
           </label>

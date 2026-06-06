@@ -838,10 +838,14 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('非NAT同连接端口');
     expect(serversSource).toContain('父节点');
     expect(serversSource).toContain('更多解答');
-    expect(serversSource).toContain('ReadOutlined');
+    expect(serversSource).toContain('LegacyReadIcon');
     expect(serversSource).toContain(
-      "type === 'vmess' || type === 'vless' ? <ReadOutlined /> : '更多解答'",
+      "type === 'vmess' || type === 'vless' ? <LegacyReadIcon /> : '更多解答'",
     );
+    expect(serversSource).toContain('<LegacyLinkIcon />');
+    expect(serversSource).not.toContain('@ant-design/icons');
+    expect(serversSource).not.toContain('LinkOutlined');
+    expect(serversSource).not.toContain('ReadOutlined');
     expect(serversSource).toContain("} from '@/components/legacy-select';");
     expect(serversSource).toContain('LegacySelect,');
     expect(serversSource).toContain('type LegacySelectOption,');
