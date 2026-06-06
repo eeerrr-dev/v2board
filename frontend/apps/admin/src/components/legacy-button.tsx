@@ -101,15 +101,16 @@ function orderLegacyButtonClassName(className: string | undefined) {
 }
 
 export const LegacyButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement>>(
-  function LegacyButton({ children, className, onClick, type = 'button', ...rest }, ref) {
+  function LegacyButton({ children, className, onClick, style, type = 'button', ...rest }, ref) {
     const needInserted = shouldInsertSpace(children);
     const buttonClassName = orderLegacyButtonClassName(className);
     return (
       <button
-        {...rest}
         ref={ref}
         type={type}
         className={buttonClassName}
+        style={style}
+        {...rest}
         onClick={(event) => {
           if (hasClassToken(className, 'ant-btn-loading')) {
             event.preventDefault();

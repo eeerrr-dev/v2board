@@ -456,7 +456,9 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('class="block block-bottom undefined"');
     expect(html).toContain('class="v2board-table-action"');
     expect(html).toContain('输入任意关键字搜索');
+    expect(html).toContain('class="ant-input ml-2"');
     expect(html).toContain('编辑排序');
+    expect(html).toContain('class="ant-btn ant-btn-primary"');
     expect(html).toContain('节点ID');
     expect(html).toContain('节点');
     expect(html).toContain('Tokyo');
@@ -1222,8 +1224,11 @@ describe('ServersPage legacy server group route', () => {
     );
 
     expect(managePageSource).toContain('const [searchKey, setSearchKey] = useState<string | undefined>()');
+    expect(managePageSource).toContain('<LegacyInput');
     expect(managePageSource).toContain('placeholder="输入任意关键字搜索"');
+    expect(managePageSource).toContain('className="ant-input ml-2"');
     expect(managePageSource).toContain('onChange={(event) => setSearchKey(event.target.value)}');
+    expect(managePageSource).not.toContain('<Input\n              placeholder="输入任意关键字搜索"');
     expect(managePageSource).not.toContain('value={searchKey}');
   });
 

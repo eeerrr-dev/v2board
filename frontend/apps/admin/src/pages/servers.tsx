@@ -57,6 +57,7 @@ import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
 import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
+import { LegacyInput } from '@/components/legacy-input';
 
 const SERVER_TYPES: admin.ServerTypeName[] = [
   'v2node',
@@ -1217,16 +1218,16 @@ function ServerManagePage() {
                 <LegacyPlusIcon />
               </LegacyButton>
             </LegacyDropdown>
-            <Input
+            <LegacyInput
               placeholder="输入任意关键字搜索"
               style={{ width: 200 }}
-              className="ml-2"
+              className="ant-input ml-2"
               onChange={(event) => setSearchKey(event.target.value)}
             />
             {!mobile && (
-              <Button
+              <LegacyButton
                 style={{ float: 'right' }}
-                type="primary"
+                className="ant-btn ant-btn-primary"
                 onClick={() => {
                   if (!sortMode) {
                     setSortMode(true);
@@ -1242,7 +1243,7 @@ function ServerManagePage() {
                 }}
               >
                 {sortMode ? '保存排序' : '编辑排序'}
-              </Button>
+              </LegacyButton>
             )}
           </div>
           {mobile ? (

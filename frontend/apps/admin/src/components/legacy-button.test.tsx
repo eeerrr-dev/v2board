@@ -33,4 +33,16 @@ describe('LegacyButton', () => {
 
     expect(html).toContain('<span>提 交</span>');
   });
+
+  it('keeps the old primary button attribute order with inline style', () => {
+    const html = renderToStaticMarkup(
+      <LegacyButton className="ant-btn ant-btn-primary" style={{ float: 'right' }}>
+        编辑排序
+      </LegacyButton>,
+    );
+
+    expect(html).toContain(
+      '<button type="button" class="ant-btn ant-btn-primary" style="float:right"><span>编辑排序</span></button>',
+    );
+  });
 });
