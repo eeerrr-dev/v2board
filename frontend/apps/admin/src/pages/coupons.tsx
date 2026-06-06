@@ -27,6 +27,7 @@ import {
 } from '@/components/legacy-standalone-table';
 import { LegacyRangePicker } from '@/components/legacy-range-picker';
 import { LegacySwitch } from '@/components/legacy-switch';
+import { LegacyModal } from '@/components/legacy-modal';
 
 type AdminPageQuery = admin.AdminPageQuery;
 
@@ -300,9 +301,9 @@ function CouponPage() {
           </div>
         </div>
       </LegacySpin>
-      <Modal
+      <LegacyModal
         title={`${submit.id ? '编辑优惠券' : '新建优惠券'}`}
-        open={visible}
+        visible={visible}
         onCancel={modalVisible}
         onOk={() => {
           void generateCoupon();
@@ -435,7 +436,7 @@ function CouponPage() {
             </div>
           ) : null}
         </div>
-      </Modal>
+      </LegacyModal>
     </>
   );
 }
@@ -630,9 +631,9 @@ function GiftcardPage() {
           </div>
         </div>
       </LegacySpin>
-      <Modal
+      <LegacyModal
         title={`${submit.id ? '编辑礼品卡' : '新建礼品卡'}`}
-        open={visible}
+        visible={visible}
         onCancel={modalVisible}
         onOk={() => {
           void generateGiftcard();
@@ -746,7 +747,7 @@ function GiftcardPage() {
             </div>
           ) : null}
         </div>
-      </Modal>
+      </LegacyModal>
     </>
   );
 }

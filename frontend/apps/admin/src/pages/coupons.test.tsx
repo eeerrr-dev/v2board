@@ -394,6 +394,27 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain("DatePicker } from 'antd'");
   });
 
+  it('uses the old Ant Design modal shell for coupon and giftcard forms', () => {
+    const couponModalStart = source.indexOf('<LegacyModal');
+    const couponModalEnd = source.indexOf('</LegacyModal>', couponModalStart);
+    const couponModalBlock = source.slice(couponModalStart, couponModalEnd);
+    const giftcardModalStart = source.indexOf('<LegacyModal', couponModalEnd);
+    const giftcardModalEnd = source.indexOf('</LegacyModal>', giftcardModalStart);
+    const giftcardModalBlock = source.slice(giftcardModalStart, giftcardModalEnd);
+
+    expect(source).toContain("import { LegacyModal } from '@/components/legacy-modal';");
+    expect(source.match(/<LegacyModal/g)).toHaveLength(2);
+    expect(source.match(/visible=\{visible\}/g)).toHaveLength(2);
+    expect(source.match(/okText="提交"/g)).toHaveLength(2);
+    expect(source.match(/cancelText="取消"/g)).toHaveLength(2);
+    expect(source.match(/okButtonProps=\{\{ loading: generate\.isPending \}\}/g)).toHaveLength(2);
+    expect(couponModalBlock).toContain("title={`${submit.id ? '编辑优惠券' : '新建优惠券'}`}");
+    expect(giftcardModalBlock).toContain("title={`${submit.id ? '编辑礼品卡' : '新建礼品卡'}`}");
+    expect(source).toContain('Modal.confirm({');
+    expect(source).not.toContain('<Modal');
+    expect(source).not.toContain('open={visible}');
+  });
+
   it('keeps coupon and giftcard limit-use cells wrapped in the old antd Tag', () => {
     expect(source).toContain('const renderCouponLimitUse = (value: number | null) => (');
     expect(source).toContain('const renderGiftcardLimitUse = (value: number | null) => (');
