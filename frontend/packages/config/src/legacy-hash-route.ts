@@ -258,6 +258,16 @@ function appIsEmpty(root: HTMLElement | null): boolean {
   return elementIsEmpty(root);
 }
 
+function legacyMainIsEmpty(root: HTMLElement | null): boolean {
+  if (!root?.querySelector('#page-container')) return false;
+  const main =
+    root.querySelector<HTMLElement>('#main-container .content') ??
+    root.querySelector<HTMLElement>('#main-container .p-0') ??
+    root.querySelector<HTMLElement>('#main-container');
+
+  return elementIsEmpty(main);
+}
+
 function renderLegacyWhiteScreenFallback(root: HTMLElement | null): void {
   if (!root) return;
   const target =
@@ -325,17 +335,28 @@ export function installLegacyWhiteScreenRecovery(
   const now = config.now ?? (() => Date.now());
   const replace = config.replace ?? ((url: string) => window.location.replace(url));
   let timer: number | undefined;
+  let pendingBlankMainKey: string | undefined;
 
   const recoverIfEmpty = () => {
     const root = document.getElementById('root');
     const current = new URL(window.location.href);
     const key = `${storageKey}:${stableRecoveryKey(current)}`;
     const rootIsEmpty = appIsEmpty(root);
+    const mainIsEmpty = !rootIsEmpty && legacyMainIsEmpty(root);
 
-    if (!rootIsEmpty) {
+    if (!rootIsEmpty && !mainIsEmpty) {
       window.sessionStorage.removeItem(key);
+      pendingBlankMainKey = undefined;
       return;
     }
+
+    if (mainIsEmpty && pendingBlankMainKey !== key) {
+      pendingBlankMainKey = key;
+      schedule();
+      return;
+    }
+
+    pendingBlankMainKey = undefined;
 
     const attempts = Number(window.sessionStorage.getItem(key) ?? '0');
     const hasAuth = hasLegacyAuth(options);
@@ -542,10 +563,25 @@ export function installLegacyDevWhiteScreenFallback(
 
   const delay = config.delay ?? 2500;
   let timer: number | undefined;
+  let pendingBlankMainUrl: string | undefined;
 
   const renderIfEmpty = () => {
     const root = document.getElementById('root');
-    if (!appIsEmpty(root)) return;
+    const rootIsEmpty = appIsEmpty(root);
+    const mainIsEmpty = !rootIsEmpty && legacyMainIsEmpty(root);
+
+    if (!rootIsEmpty && !mainIsEmpty) {
+      pendingBlankMainUrl = undefined;
+      return;
+    }
+
+    if (mainIsEmpty && pendingBlankMainUrl !== window.location.href) {
+      pendingBlankMainUrl = window.location.href;
+      schedule();
+      return;
+    }
+
+    pendingBlankMainUrl = undefined;
     renderLegacyWhiteScreenFallback(root);
   };
 

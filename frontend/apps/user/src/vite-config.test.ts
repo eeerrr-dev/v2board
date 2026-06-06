@@ -15,7 +15,7 @@ const sharedViteConfigSource = readFileSync(
 describe('user Vite dev optimizer', () => {
   it('keeps user optimized deps isolated and fully declared for stable page clicks', () => {
     expect(viteConfigSource).toContain(
-      "cacheDir: '../../node_modules/.vite/user-white-screen-recovery-34'",
+      "cacheDir: '../../node_modules/.vite/user-white-screen-recovery-35'",
     );
     expect(viteConfigSource).toContain('optimizeDeps: {');
     expect(viteConfigSource).toContain('legacyNavigationRedirectPlugin()');
