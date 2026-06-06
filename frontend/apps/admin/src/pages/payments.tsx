@@ -1,5 +1,5 @@
 import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react';
-import { Input, Modal, Select, Switch, Tooltip } from 'antd';
+import { Input, Modal, Select, Tooltip } from 'antd';
 import { admin } from '@v2board/api-client';
 import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
 import { apiClient } from '@/lib/api';
@@ -20,6 +20,7 @@ import {
   legacyTableRowKey,
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
+import { LegacySwitch } from '@/components/legacy-switch';
 
 type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];
 
@@ -255,7 +256,7 @@ export default function PaymentsPage() {
   ];
 
   const renderPaymentEnableSwitch = (enable: 0 | 1 | string, row: AdminPayment) => (
-    <Switch
+    <LegacySwitch
       checked={parseInt(String(enable), 10) as unknown as boolean}
       size="small"
       onChange={() =>

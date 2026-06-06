@@ -62,6 +62,8 @@ describe('PaymentsPage legacy payment config', () => {
     expect(html).toContain('<button type="button" class="ant-btn">');
     expect(html).toContain('aria-label="图标: plus"');
     expect(html).toContain('添加支付方式');
+    expect(html).toContain('class="ant-switch-small ant-switch ant-switch-checked"');
+    expect(html).toContain('class="ant-switch-inner"');
     expect(html).toContain('class="ant-table-wrapper"');
     expect(html).toContain('class="ant-spin-nested-loading"');
     expect(html).toContain('class="ant-table ant-table-default ant-table-scroll-position-left"');
@@ -119,8 +121,12 @@ describe('PaymentsPage legacy payment config', () => {
   });
 
   it('keeps the original parseInt switch checked value without boolean normalization', () => {
+    expect(source).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
+    expect(source).toContain('<LegacySwitch');
     expect(source).toContain('checked={parseInt(String(enable), 10) as unknown as boolean}');
     expect(source).not.toContain('Boolean(parseInt(String(enable), 10))');
+    expect(source).not.toContain('<Switch');
+    expect(source).not.toContain('Switch, Tooltip');
   });
 
   it('keeps the original uncontrolled payment method select', () => {
