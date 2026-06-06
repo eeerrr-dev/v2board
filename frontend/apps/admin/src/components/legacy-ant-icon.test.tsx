@@ -6,6 +6,7 @@ import {
   LegacyCopyIcon,
   LegacyDatabaseIcon,
   LegacyDeleteIcon,
+  LegacyEditIcon,
   LegacyFilterIcon,
   LegacyFormIcon,
   LegacyLeftIcon,
@@ -38,6 +39,7 @@ describe('LegacyPlusIcon', () => {
         <LegacyRightIcon />
         <LegacyCaretUpIcon className="ant-table-column-sorter-up off" />
         <LegacyCaretDownIcon className="ant-table-column-sorter-down off" />
+        <LegacyEditIcon />
         <LegacyFormIcon />
         <LegacyCopyIcon />
         <LegacyDeleteIcon />
@@ -56,6 +58,7 @@ describe('LegacyPlusIcon', () => {
     expect(html).toContain('aria-label="图标: right"');
     expect(html).toContain('class="anticon anticon-caret-up ant-table-column-sorter-up off"');
     expect(html).toContain('class="anticon anticon-caret-down ant-table-column-sorter-down off"');
+    expect(html).toContain('aria-label="图标: edit"');
     expect(html).toContain('aria-label="图标: form"');
     expect(html).toContain('aria-label="图标: copy"');
     expect(html).toContain('aria-label="图标: delete"');

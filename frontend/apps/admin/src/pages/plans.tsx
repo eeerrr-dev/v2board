@@ -4,7 +4,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type HTMLAttributes,
   type ReactElement,
   type ReactNode,
 } from 'react';
@@ -20,21 +19,10 @@ import {
   Row,
   Col,
   Select,
-  Switch,
-  Table,
-  Tag,
   Tooltip,
 } from 'antd';
-import type { DropdownProps, TableProps } from 'antd';
-import {
-  CaretDownOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  InfoCircleOutlined,
-  PlusOutlined,
-  QuestionCircleOutlined,
-  UserOutlined,
-} from '@ant-design/icons';
+import type { DropdownProps } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import type { Plan, PlanPeriod } from '@v2board/types';
 import {
   useAdminPlans,
@@ -49,6 +37,20 @@ import { i18nGet } from '@/lib/errors';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
+import { LegacyButton } from '@/components/legacy-button';
+import {
+  LegacyCaretDownIcon,
+  LegacyDeleteIcon,
+  LegacyEditIcon,
+  LegacyPlusIcon,
+  LegacyQuestionCircleIcon,
+  LegacyUserIcon,
+} from '@/components/legacy-ant-icon';
+import {
+  LegacyStandaloneTable,
+  legacyTableRowKey,
+  type LegacyStandaloneTableHeader,
+} from '@/components/legacy-standalone-table';
 
 type EditablePlan = {
   [K in keyof Omit<Plan, 'id'>]?: Plan[K] | string | null;
@@ -248,8 +250,7 @@ function PlanEditor({
           />
           <div className="form-group">
             <label htmlFor="example-text-input-alt">
-              权限组{' '}
-              <a ref={legacyHref('javascript:(0);')}>添加权限组</a>
+              权限组 <a ref={legacyHref('javascript:(0);')}>添加权限组</a>
             </label>
             <Select
               placeholder="请选择权限组"
@@ -272,12 +273,24 @@ function PlanEditor({
               value={submit.reset_traffic_method}
               onChange={(value) => change('reset_traffic_method', value)}
             >
-              <Select.Option key={null} value={null}>跟随系统设置</Select.Option>
-              <Select.Option key={0} value={0}>每月1号</Select.Option>
-              <Select.Option key={1} value={1}>按月重置</Select.Option>
-              <Select.Option key={2} value={2}>不重置</Select.Option>
-              <Select.Option key={3} value={3}>每年1月1日</Select.Option>
-              <Select.Option key={4} value={4}>按年重置</Select.Option>
+              <Select.Option key={null} value={null}>
+                跟随系统设置
+              </Select.Option>
+              <Select.Option key={0} value={0}>
+                每月1号
+              </Select.Option>
+              <Select.Option key={1} value={1}>
+                按月重置
+              </Select.Option>
+              <Select.Option key={2} value={2}>
+                不重置
+              </Select.Option>
+              <Select.Option key={3} value={3}>
+                每年1月1日
+              </Select.Option>
+              <Select.Option key={4} value={4}>
+                按年重置
+              </Select.Option>
             </Select>
           </div>
           <PlanInput
@@ -296,13 +309,8 @@ function PlanEditor({
 
           <div className="v2board-drawer-action">
             <div style={{ float: 'left', marginTop: 5 }}>
-              <Tooltip
-                title="勾选后变更的流量、限速、权限组将应用到该套餐下的用户"
-                placement="top"
-              >
-                <Checkbox
-                  onChange={(event) => change('force_update', event.target.checked)}
-                >
+              <Tooltip title="勾选后变更的流量、限速、权限组将应用到该套餐下的用户" placement="top">
+                <Checkbox onChange={(event) => change('force_update', event.target.checked)}>
                   强制更新到用户
                 </Checkbox>
               </Tooltip>
@@ -310,7 +318,11 @@ function PlanEditor({
             <Button style={{ marginRight: 8 }} onClick={() => setVisible(false)}>
               取消
             </Button>
-            <Button loading={saveLoading} onClick={() => !saveLoading && void save()} type="primary">
+            <Button
+              loading={saveLoading}
+              onClick={() => !saveLoading && void save()}
+              type="primary"
+            >
               提交
             </Button>
           </div>
@@ -376,13 +388,16 @@ export default function PlansPage() {
   const persistSort = (next: Plan[]) => {
     setOrder(next);
     setLegacySortLoading(true);
-    sort.mutate(next.map((plan) => plan.id), {
-      onSuccess: () => {
-        void plans.refetch().finally(() => {
-          setLegacySortLoading(false);
-        });
+    sort.mutate(
+      next.map((plan) => plan.id),
+      {
+        onSuccess: () => {
+          void plans.refetch().finally(() => {
+            setLegacySortLoading(false);
+          });
+        },
       },
-    });
+    );
   };
 
   const sortPlan = (fromIndex: number, toIndex: number) => {
@@ -430,133 +445,95 @@ export default function PlansPage() {
     );
   };
 
-  const columns: TableProps<Plan>['columns'] = [
-    {
-      title: '排序',
-      dataIndex: 'sort',
-      key: 'sort',
-      render: () => <LegacyMenuIcon />,
-    },
-    {
-      title: '销售状态',
-      dataIndex: 'show',
-      key: 'show',
-      render: (value: 0 | 1, record) => (
-        <Switch
-          size="small"
-          checked={parseInt(String(value), 10) as unknown as boolean}
-          onClick={() => updatePlan(record.id, 'show', parseInt(String(value), 10) ? 0 : 1)}
-        />
-      ),
-    },
+  const headers: LegacyStandaloneTableHeader[] = [
+    { title: '排序' },
+    { title: '销售状态' },
     {
       title: (
         <span>
           续费{' '}
-          <Tooltip
-            placement="top"
-            title="在订阅停止销售时，已购用户是否可以续费"
-          >
-            <QuestionCircleOutlined />
+          <Tooltip placement="top" title="在订阅停止销售时，已购用户是否可以续费">
+            <LegacyQuestionCircleIcon />
           </Tooltip>
         </span>
       ),
-      dataIndex: 'renew',
-      key: 'renew',
-      render: (value: 0 | 1, record) => (
-        <Switch
-          size="small"
-          checked={parseInt(String(value), 10) as unknown as boolean}
-          onClick={() => updatePlan(record.id, 'renew', parseInt(String(value), 10) ? 0 : 1)}
-        />
-      ),
     },
-    { title: '名称', dataIndex: 'name', key: 'name' },
-    {
-      title: '统计',
-      dataIndex: 'count',
-      key: 'count',
-      render: (value: number) => (
-        <>
-          <UserOutlined style={{ cursor: 'move' }} /> {value}
-        </>
-      ),
-    },
-    {
-      title: '流量',
-      dataIndex: 'transfer_enable',
-      key: 'transfer_enable',
-      render: (value: number) => <>{value} GB</>,
-    },
-    {
-      title: '设备数限制',
-      dataIndex: 'device_limit',
-      key: 'device_limit',
-      render: (value: number | null) => (value !== null ? value : '-'),
-    },
-    { title: '月付', dataIndex: 'month_price', key: 'month_price', render: formatPrice },
-    { title: '季付', dataIndex: 'quarter_price', key: 'quarter_price', render: formatPrice },
-    { title: '半年付', dataIndex: 'half_year_price', key: 'half_year_price', render: formatPrice },
-    { title: '年付', dataIndex: 'year_price', key: 'year_price', render: formatPrice },
-    { title: '两年付', dataIndex: 'two_year_price', key: 'two_year_price', render: formatPrice },
-    { title: '三年付', dataIndex: 'three_year_price', key: 'three_year_price', render: formatPrice },
-    { title: '一次性', dataIndex: 'onetime_price', key: 'onetime_price', render: formatPrice },
-    { title: '重置包', dataIndex: 'reset_price', key: 'reset_price', render: formatPrice },
-    {
-      title: '权限组',
-      dataIndex: 'group_id',
-      key: 'group_id',
-      render: (value: number) => {
-        const tags: ReactNode[] = [];
-        (groups.data ?? []).map((group) => {
-          if (group.id === parseInt(String(value), 10)) tags.push(<Tag>{group.name}</Tag>);
-        });
-        return tags;
-      },
-    },
-    {
-      title: '操作',
-      dataIndex: 'action',
-      key: 'action',
-      fixed: 'right',
-      align: 'right',
-      render: (_value, record) => (
-        <LegacyDropdown
-          trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
-          overlay={(
-            <Menu>
-              <Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>
-                <PlanEditor
-                  key={record.id}
-                  record={record}
-                  groups={groups.data ?? []}
-                  currencySymbol={config.data?.site?.currency_symbol}
-                  saveLoading={save.isPending}
-                  onSave={savePlan}
-                  onLegacyMount={refetchPlanEditorDependencies}
-                >
-                  <a>
-                    <EditOutlined /> 编辑
-                  </a>
-                </PlanEditor>
-              </Menu.Item>
-              <Menu.Item
-                key="delete"
-                style={{ color: '#ff4d4f' }}
-                onClick={() => dropPlan(record.id)}
-              >
-                <DeleteOutlined /> 删除
-              </Menu.Item>
-            </Menu>
-          )}
-        >
-          <a ref={legacyHref()}>
-            操作 <CaretDownOutlined />
-          </a>
-        </LegacyDropdown>
-      ),
-    },
+    { title: '名称' },
+    { title: '统计' },
+    { title: '流量' },
+    { title: '设备数限制' },
+    { title: '月付' },
+    { title: '季付' },
+    { title: '半年付' },
+    { title: '年付' },
+    { title: '两年付' },
+    { title: '三年付' },
+    { title: '一次性' },
+    { title: '重置包' },
+    { title: '权限组' },
+    { title: '操作', alignRight: true, fixedRight: true },
   ];
+
+  const renderPlanSwitch = (checked: 0 | 1, onClick: () => void) => {
+    const enabled = Boolean(parseInt(String(checked), 10));
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        className={`ant-switch-small ant-switch${enabled ? ' ant-switch-checked' : ''}`}
+        onClick={onClick}
+      >
+        <span className="ant-switch-inner" />
+      </button>
+    );
+  };
+
+  const renderGroupTags = (value: number) => {
+    const tags: ReactNode[] = [];
+    (groups.data ?? []).map((group) => {
+      if (group.id === parseInt(String(value), 10)) {
+        tags.push(
+          <span key={group.id} className="ant-tag">
+            {group.name}
+          </span>,
+        );
+      }
+    });
+    return tags;
+  };
+
+  const renderPlanActions = (record: Plan) => (
+    <LegacyDropdown
+      trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+      overlay={
+        <Menu>
+          <Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>
+            <PlanEditor
+              key={record.id}
+              record={record}
+              groups={groups.data ?? []}
+              currencySymbol={config.data?.site?.currency_symbol}
+              saveLoading={save.isPending}
+              onSave={savePlan}
+              onLegacyMount={refetchPlanEditorDependencies}
+            >
+              <a>
+                <LegacyEditIcon /> 编辑
+              </a>
+            </PlanEditor>
+          </Menu.Item>
+          <Menu.Item key="delete" style={{ color: '#ff4d4f' }} onClick={() => dropPlan(record.id)}>
+            <LegacyDeleteIcon /> 删除
+          </Menu.Item>
+        </Menu>
+      }
+    >
+      <a ref={legacyHref()}>
+        操作 <LegacyCaretDownIcon />
+      </a>
+    </LegacyDropdown>
+  );
 
   return (
     <>
@@ -572,9 +549,10 @@ export default function PlansPage() {
                 onSave={savePlan}
                 onLegacyMount={refetchPlanEditorDependencies}
               >
-                <Button>
-                  <PlusOutlined /> 添加订阅
-                </Button>
+                <LegacyButton className="ant-btn">
+                  <LegacyPlusIcon />
+                  <span> 添加订阅</span>
+                </LegacyButton>
               </PlanEditor>
             </div>
             <LegacyDragSort
@@ -582,64 +560,112 @@ export default function PlansPage() {
               nodeSelector="tr"
               handleSelector="i"
             >
-              <Table<Plan>
-                onRow={(record) =>
-                  ({
-                    onClick: () => setContextMenu(null),
-                    onContextMenu: (event) => {
+              <LegacyStandaloneTable
+                headers={headers}
+                isEmpty={order.length === 0}
+                scrollX={1300}
+                scrollPositionRight={false}
+                fixedRightRowHeight={75}
+                fixedRightChildren={order.map((record, index) => (
+                  <tr
+                    key={index}
+                    className="ant-table-row ant-table-row-level-0"
+                    style={{ height: 75 }}
+                    {...legacyTableRowKey(index)}
+                  >
+                    <td className="" style={{ textAlign: 'right' }}>
+                      {renderPlanActions(record)}
+                    </td>
+                  </tr>
+                ))}
+              >
+                {order.map((record, index) => (
+                  <tr
+                    key={index}
+                    className="ant-table-row ant-table-row-level-0"
+                    onClick={() => setContextMenu(null)}
+                    onContextMenu={(event) => {
                       event.preventDefault();
                       setContextRecord(record);
                       setContextMenu({ top: event.clientY, left: event.clientX });
-                    },
-                  }) satisfies HTMLAttributes<HTMLElement>
-                }
-                tableLayout="auto"
-                dataSource={order}
-                columns={columns}
-                pagination={false}
-                scroll={{ x: 1300 }}
-              />
-            </LegacyDragSort>
-            <div
-              id="v2board-table-dropdown"
-              className="ant-dropdown ant-dropdown-placement-bottomLeft"
-              style={{
-                display: contextMenu ? 'unset' : 'none',
-                position: 'fixed',
-                top: contextMenu?.top ?? 0,
-                left: contextMenu?.left ?? 0,
-              }}
-              onClick={() => setContextMenu(null)}
-            >
-              <ul className="ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical">
-                <li className="ant-dropdown-menu-item">
-                  <PlanEditor
-                    record={contextRecord}
-                    key={contextRecord?.id}
-                    groups={groups.data ?? []}
-                    currencySymbol={config.data?.site?.currency_symbol}
-                    saveLoading={save.isPending}
-                    onSave={savePlan}
-                    onLegacyMount={refetchPlanEditorDependencies}
+                    }}
+                    {...legacyTableRowKey(index)}
                   >
-                    <a>
-                      <EditOutlined /> 编辑
+                    <td className="">
+                      <LegacyMenuIcon style={{ cursor: 'move' }} />
+                    </td>
+                    <td className="">
+                      {renderPlanSwitch(record.show, () =>
+                        updatePlan(record.id, 'show', parseInt(String(record.show), 10) ? 0 : 1),
+                      )}
+                    </td>
+                    <td className="">
+                      {renderPlanSwitch(record.renew, () =>
+                        updatePlan(record.id, 'renew', parseInt(String(record.renew), 10) ? 0 : 1),
+                      )}
+                    </td>
+                    <td className="">{record.name}</td>
+                    <td className="">
+                      <LegacyUserIcon style={{ cursor: 'move' }} /> {record.count}
+                    </td>
+                    <td className="">{record.transfer_enable} GB</td>
+                    <td className="">{record.device_limit !== null ? record.device_limit : '-'}</td>
+                    <td className="">{formatPrice(record.month_price)}</td>
+                    <td className="">{formatPrice(record.quarter_price)}</td>
+                    <td className="">{formatPrice(record.half_year_price)}</td>
+                    <td className="">{formatPrice(record.year_price)}</td>
+                    <td className="">{formatPrice(record.two_year_price)}</td>
+                    <td className="">{formatPrice(record.three_year_price)}</td>
+                    <td className="">{formatPrice(record.onetime_price)}</td>
+                    <td className="">{formatPrice(record.reset_price)}</td>
+                    <td className="">{renderGroupTags(record.group_id)}</td>
+                    <td className="ant-table-fixed-columns-in-body" style={{ textAlign: 'right' }}>
+                      {renderPlanActions(record)}
+                    </td>
+                  </tr>
+                ))}
+              </LegacyStandaloneTable>
+              <div
+                id="v2board-table-dropdown"
+                className="ant-dropdown ant-dropdown-placement-bottomLeft"
+                style={{
+                  display: contextMenu ? 'unset' : 'none',
+                  position: 'fixed',
+                  top: contextMenu?.top ?? 0,
+                  left: contextMenu?.left ?? 0,
+                }}
+                onClick={() => setContextMenu(null)}
+              >
+                <ul className="ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical">
+                  <li className="ant-dropdown-menu-item">
+                    <PlanEditor
+                      record={contextRecord}
+                      key={contextRecord?.id}
+                      groups={groups.data ?? []}
+                      currencySymbol={config.data?.site?.currency_symbol}
+                      saveLoading={save.isPending}
+                      onSave={savePlan}
+                      onLegacyMount={refetchPlanEditorDependencies}
+                    >
+                      <a>
+                        <LegacyEditIcon /> 编辑
+                      </a>
+                    </PlanEditor>
+                  </li>
+                  <li
+                    className="ant-dropdown-menu-item"
+                    onClick={() => {
+                      setContextMenu(null);
+                      dropPlan(contextRecord?.id);
+                    }}
+                  >
+                    <a style={{ color: '#ff4d4f' }}>
+                      <LegacyDeleteIcon /> 删除
                     </a>
-                  </PlanEditor>
-                </li>
-                <li
-                  className="ant-dropdown-menu-item"
-                  onClick={() => {
-                    setContextMenu(null);
-                    dropPlan(contextRecord?.id);
-                  }}
-                >
-                  <a style={{ color: '#ff4d4f' }}>
-                    <DeleteOutlined /> 删除
-                  </a>
-                </li>
-              </ul>
-            </div>
+                  </li>
+                </ul>
+              </div>
+            </LegacyDragSort>
           </div>
         </div>
       </LegacySpin>

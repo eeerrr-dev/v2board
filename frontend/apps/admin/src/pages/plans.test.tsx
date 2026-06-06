@@ -5,7 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import PlansPage from './plans';
 
-const plansSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'plans.tsx'), 'utf8');
+const plansSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'plans.tsx'),
+  'utf8',
+);
 const adminQueriesSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'),
   'utf8',
@@ -72,6 +75,15 @@ describe('PlansPage legacy subscription management', () => {
     expect(html).toContain('d-flex justify-content-between align-items-center');
     expect(html).toContain('block block-rounded');
     expect(html).toContain('bg-white');
+    expect(html).toContain('class="ant-btn"');
+    expect(html).toContain('aria-label="图标: plus"');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain('class="ant-table-fixed" style="width:1300px"');
+    expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain('class="ant-switch-small ant-switch ant-switch-checked"');
+    expect(html).toContain('aria-label="图标: menu"');
+    expect(html).toContain('aria-label="图标: user"');
+    expect(html).toContain('aria-label="图标: caret-down"');
     expect(html).toContain('添加订阅');
     expect(html).toContain('排序');
     expect(html).toContain('销售状态');
@@ -97,14 +109,19 @@ describe('PlansPage legacy subscription management', () => {
     expect(html).toContain('100.00');
     expect(html).toContain('300.00');
     expect(html).toContain('默认权限组');
+    expect(html).toContain('class="ant-tag"');
     expect(html).not.toContain('ant-card');
+    expect(html).not.toContain('ant-table-cell');
+    expect(html).not.toContain('css-dev-only');
     expect(html).not.toContain('ant-typography');
   });
 
   it('preserves the original row right-click edit/delete menu', () => {
     expect(plansSource).toContain('id="v2board-table-dropdown"');
-    expect(plansSource).toContain('ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical');
-    expect(plansSource).toContain('onContextMenu: (event) =>');
+    expect(plansSource).toContain(
+      'ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical',
+    );
+    expect(plansSource).toContain('onContextMenu={(event) => {');
     expect(plansSource).toContain('event.preventDefault()');
     expect(plansSource).toContain('event.clientY');
     expect(plansSource).toContain('event.clientX');
@@ -116,35 +133,53 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain(
       "const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];",
     );
-    expect(plansSource).toContain('function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)');
-    expect(plansSource).toContain('return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;');
+    expect(plansSource).toContain(
+      'function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)',
+    );
+    expect(plansSource).toContain(
+      'return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;',
+    );
     expect(plansSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
-    expect(plansSource).toContain('overlay={(');
+    expect(plansSource).toContain('overlay={');
     expect(plansSource).toContain('<Menu>');
-    expect(plansSource).toContain('<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>');
+    expect(plansSource).toContain(
+      '<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>',
+    );
     expect(plansSource).toContain('key="delete"');
     expect(plansSource).toContain("style={{ color: '#ff4d4f' }}");
     expect(plansSource).toContain('onClick={() => dropPlan(record.id)}');
-    expect(plansSource).toContain('<DeleteOutlined /> 删除');
+    expect(plansSource).toContain('<LegacyEditIcon /> 编辑');
+    expect(plansSource).toContain('<LegacyDeleteIcon /> 删除');
     expect(plansSource).not.toContain("key: 'delete',");
     expect(plansSource).not.toContain('menu={{');
     expect(plansSource).not.toContain("<span style={{ color: '#ff4d4f' }}>");
+    expect(plansSource).not.toContain('<DeleteOutlined');
+    expect(plansSource).not.toContain('<EditOutlined');
   });
 
   it('keeps the legacy plan table without an explicit rowKey', () => {
-    expect(plansSource).toContain('tableLayout="auto"');
-    expect(plansSource).toContain('pagination={false}');
+    expect(plansSource).toContain('<LegacyStandaloneTable');
+    expect(plansSource).toContain('scrollX={1300}');
+    expect(plansSource).toContain('scrollPositionRight={false}');
+    expect(plansSource).toContain('fixedRightRowHeight={75}');
+    expect(plansSource).toContain('fixedRightChildren={order.map((record, index) => (');
     expect(plansSource).toContain('<LegacyDragSort');
     expect(plansSource).toContain('nodeSelector="tr"');
     expect(plansSource).toContain('handleSelector="i"');
-    expect(plansSource).toContain('<LegacyMenuIcon />');
+    expect(plansSource).toContain("<LegacyMenuIcon style={{ cursor: 'move' }} />");
+    expect(plansSource).toContain('{...legacyTableRowKey(index)}');
+    expect(plansSource).not.toContain('<Table<Plan>');
+    expect(plansSource).not.toContain('tableLayout="auto"');
+    expect(plansSource).not.toContain('pagination={false}');
     expect(plansSource).not.toContain('data-sort-index');
     expect(plansSource).not.toContain('data-row-key');
     expect(plansSource).not.toContain('rowKey="id"');
   });
 
   it('keeps the original plan sort loading and force-update payload shape', () => {
-    expect(plansSource).toContain('const [legacySortLoading, setLegacySortLoading] = useState(false);');
+    expect(plansSource).toContain(
+      'const [legacySortLoading, setLegacySortLoading] = useState(false);',
+    );
     expect(plansSource).toContain('setLegacySortLoading(true);');
     expect(plansSource).toContain('loading={plans.isFetching || legacySortLoading}');
     expect(plansSource).not.toContain('loading={plans.isFetching || sort.isPending}');
@@ -153,22 +188,26 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain('const sortPlan = (fromIndex: number, toIndex: number) => {');
     expect(plansSource).toContain('next.splice(toIndex + 1, 0, moved);');
     expect(plansSource).toContain('next.splice(fromIndex + 1, 1);');
-    expect(plansSource).not.toContain("next.force_update = next.force_update ? 1 : 0");
+    expect(plansSource).not.toContain('next.force_update = next.force_update ? 1 : 0');
     expect(plansSource).toContain('force_update?: boolean');
-    expect(plansSource).toContain("onChange={(event) => change('force_update', event.target.checked)}");
+    expect(plansSource).toContain(
+      "onChange={(event) => change('force_update', event.target.checked)}",
+    );
     expect(plansSource).not.toContain('checked={Boolean(submit.force_update)}');
   });
 
   it('submits the original drawer state instead of rewriting prices in the page component', () => {
     expect(plansSource).toContain('await onSave({ ...submit });');
     expect(plansSource).toContain('await save.mutateAsync(payload);\n    void plans.refetch();');
-    expect(plansSource).not.toContain('await save.mutateAsync(payload);\n    await plans.refetch();');
+    expect(plansSource).not.toContain(
+      'await save.mutateAsync(payload);\n    await plans.refetch();',
+    );
     expect(plansSource).not.toContain('serializePlan(');
     expect(plansSource).not.toContain('Math.round(100 * Number(next[key]))');
   });
 
   it('keeps plan mutations fetching from the page after successful requests', () => {
-    const sortStart = plansSource.indexOf('sort.mutate(next.map((plan) => plan.id),');
+    const sortStart = plansSource.indexOf('sort.mutate(\n      next.map((plan) => plan.id),');
     const sortRefetch = plansSource.indexOf('void plans.refetch().finally', sortStart);
     const dropStart = plansSource.indexOf('drop.mutate(id, {');
     const dropRefetch = plansSource.indexOf('void plans.refetch();', dropStart);
@@ -213,14 +252,18 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain('const refetchPlanEditorDependencies = useCallback(() => {');
     expect(plansSource).toContain('void refetchConfig();');
     expect(plansSource).toContain('void refetchGroups();');
-    expect(plansSource).toContain('useEffect(() => {\n    onLegacyMount();\n  }, [onLegacyMount]);');
+    expect(plansSource).toContain(
+      'useEffect(() => {\n    onLegacyMount();\n  }, [onLegacyMount]);',
+    );
     expect(plansSource).toContain('onLegacyMount={refetchPlanEditorDependencies}');
   });
 
   it('keeps the original direct drawer input bindings', () => {
     expect(plansSource).toContain('value={submit.name as string | undefined}');
     expect(plansSource).toContain('value={submit.content as string | undefined}');
-    expect(plansSource).toContain('value={submit.month_price !== null ? submit.month_price : undefined}');
+    expect(plansSource).toContain(
+      'value={submit.month_price !== null ? submit.month_price : undefined}',
+    );
     expect(plansSource).toContain('value={submit.transfer_enable}');
     expect(plansSource).toContain('value={submit.device_limit}');
     expect(plansSource).toContain('value={value as string | number | undefined}');
@@ -235,10 +278,18 @@ describe('PlansPage legacy subscription management', () => {
   });
 
   it('keeps the original switch and reset-method option value wiring', () => {
-    expect(plansSource).toContain('checked={parseInt(String(value), 10) as unknown as boolean}');
+    expect(plansSource).toContain(
+      'const renderPlanSwitch = (checked: 0 | 1, onClick: () => void) => {',
+    );
+    expect(plansSource).toContain('const enabled = Boolean(parseInt(String(checked), 10));');
+    expect(plansSource).toContain('aria-checked={enabled}');
+    expect(plansSource).toContain('className={`ant-switch-small ant-switch${enabled ?');
+    expect(plansSource).not.toContain('<Switch');
     expect(plansSource).not.toContain('checked={Boolean(parseInt(String(value), 10))}');
-    expect(plansSource).toContain('<Select.Option key={null} value={null}>跟随系统设置</Select.Option>');
-    expect(plansSource).toContain('<Select.Option key={4} value={4}>按年重置</Select.Option>');
+    expect(plansSource).toContain('<Select.Option key={null} value={null}>');
+    expect(plansSource).toContain('跟随系统设置');
+    expect(plansSource).toContain('<Select.Option key={4} value={4}>');
+    expect(plansSource).toContain('按年重置');
   });
 
   it('keeps the original plan update key/value dispatch shape', () => {
@@ -247,10 +298,14 @@ describe('PlansPage legacy subscription management', () => {
       adminQueriesSource.indexOf('export function useSortPlansMutation()'),
     );
 
-    expect(plansSource).toContain("const updatePlan = (id: number, key: 'show' | 'renew', value: 0 | 1) => {");
+    expect(plansSource).toContain(
+      "const updatePlan = (id: number, key: 'show' | 'renew', value: 0 | 1) => {",
+    );
     expect(plansSource).toContain('update.mutate(\n      { id, key, value },');
     expect(plansSource).not.toContain('{ id, [key]: value }');
-    expect(hook).toContain("mutationFn: (vars: { id: number; key: 'show' | 'renew'; value: 0 | 1 }) =>");
+    expect(hook).toContain(
+      "mutationFn: (vars: { id: number; key: 'show' | 'renew'; value: 0 | 1 }) =>",
+    );
     expect(hook).toContain('admin.updatePlan(apiClient, vars.id, vars.key, vars.value)');
     expect(hook).not.toContain('show?:');
     expect(hook).not.toContain('renew?:');
@@ -259,13 +314,14 @@ describe('PlansPage legacy subscription management', () => {
   });
 
   it('renders server groups with the original tag component styling', () => {
-    expect(plansSource).toContain('Tag,');
+    expect(plansSource).toContain('className="ant-tag"');
     expect(plansSource).toContain('const tags: ReactNode[] = [];');
     expect(plansSource).toContain('group.id === parseInt(String(value), 10)');
-    expect(plansSource).toContain('tags.push(<Tag>{group.name}</Tag>)');
+    expect(plansSource).toContain('{group.name}');
     expect(plansSource).toContain('return tags;');
+    expect(plansSource).not.toContain('Tag,');
+    expect(plansSource).not.toContain('tags.push(<Tag>{group.name}</Tag>)');
     expect(plansSource).not.toContain('return group ? <Tag>{group}</Tag> : null;');
-    expect(plansSource).not.toContain('<span className="ant-tag">{group}</span>');
   });
 
   it('keeps the original null-only price formatter behavior', () => {

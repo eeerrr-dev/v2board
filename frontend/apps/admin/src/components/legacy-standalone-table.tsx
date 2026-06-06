@@ -189,9 +189,11 @@ function LegacyStandaloneTableBody({
 function LegacyStandaloneTableFixedRight({
   headers,
   children,
+  rowHeight = 54,
 }: {
   headers: LegacyStandaloneTableHeader[];
   children: ReactNode;
+  rowHeight?: number;
 }) {
   if (headers.length === 0) return null;
 
@@ -205,7 +207,7 @@ function LegacyStandaloneTableFixedRight({
                 <col key={index} />
               ))}
             </colgroup>
-            <LegacyStandaloneTableHead headers={headers} fixedRightTable rowHeight={54} />
+            <LegacyStandaloneTableHead headers={headers} fixedRightTable rowHeight={rowHeight} />
             <tbody className="ant-table-tbody">{children}</tbody>
           </table>
         </div>
@@ -219,6 +221,7 @@ export function LegacyStandaloneTable({
   isEmpty,
   children,
   fixedRightChildren,
+  fixedRightRowHeight,
   pagination,
   scrollPositionRight = true,
   scrollX,
@@ -227,6 +230,7 @@ export function LegacyStandaloneTable({
   isEmpty: boolean;
   children: ReactNode;
   fixedRightChildren?: ReactNode;
+  fixedRightRowHeight?: number;
   pagination?: ReactNode;
   scrollPositionRight?: boolean;
   scrollX?: number;
@@ -271,7 +275,10 @@ export function LegacyStandaloneTable({
                       </div>
                     ) : null}
                   </div>
-                  <LegacyStandaloneTableFixedRight headers={fixedRightHeaders}>
+                  <LegacyStandaloneTableFixedRight
+                    headers={fixedRightHeaders}
+                    rowHeight={fixedRightRowHeight}
+                  >
                     {fixedRightChildren}
                   </LegacyStandaloneTableFixedRight>
                 </>

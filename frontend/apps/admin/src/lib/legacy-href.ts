@@ -9,7 +9,12 @@ export function legacyHref(href = 'javascript:void(0);') {
   let ref = refs.get(href);
   if (!ref) {
     ref = (node: HTMLAnchorElement | null) => {
-      if (node) node.setAttribute('href', href);
+      if (!node) return;
+      const className = node.getAttribute('class');
+      node.removeAttribute('href');
+      if (className !== null) node.removeAttribute('class');
+      node.setAttribute('href', href);
+      if (className !== null) node.setAttribute('class', className);
     };
     refs.set(href, ref);
   }

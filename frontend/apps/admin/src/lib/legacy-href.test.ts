@@ -29,6 +29,13 @@ describe('admin legacy javascript hrefs', () => {
     const expressionHref = document.createElement('a');
     legacyHref('javascript:(0);')(expressionHref);
     expect(expressionHref.getAttribute('href')).toBe('javascript:(0);');
+
+    const classed = document.createElement('a');
+    classed.className = 'ant-dropdown-trigger';
+    legacyHref()(classed);
+    expect(classed.outerHTML).toContain(
+      '<a href="javascript:void(0);" class="ant-dropdown-trigger"',
+    );
   });
 
   it('does not pass javascript href strings through React props in admin source', () => {
