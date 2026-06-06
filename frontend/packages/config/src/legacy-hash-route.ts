@@ -149,8 +149,18 @@ export function installLegacyHashRouteNormalizer(options: LegacyHashRouteOptions
     function normalizedStateWriter(this: History, ...args: Parameters<History['pushState']>) {
       writer.apply(this, args);
       const writtenHref = window.location.href;
+      const writtenHash = window.location.hash;
       normalize();
-      if (window.location.href !== writtenHref) {
+      const normalizedHref = window.location.href;
+      if (normalizedHref !== writtenHref) {
+        if (window.location.hash !== writtenHash) {
+          window.dispatchEvent(
+            new HashChangeEvent('hashchange', {
+              oldURL: writtenHref,
+              newURL: normalizedHref,
+            }),
+          );
+        }
         window.dispatchEvent(new PopStateEvent('popstate'));
       }
     };

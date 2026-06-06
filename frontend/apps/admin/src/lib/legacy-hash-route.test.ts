@@ -232,6 +232,24 @@ describe('normalizeLegacyHashRoute', () => {
     window.removeEventListener('popstate', listener);
   });
 
+  it('notifies hash listeners when a pushed bad hash is corrected after mount', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const listener = vi.fn();
+    window.addEventListener('hashchange', listener);
+    const dispose = installLegacyHashRouteNormalizer(options);
+
+    window.history.pushState(null, '', '/#/login/dashboard');
+
+    expect(window.location.hash).toBe('#/dashboard');
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0]?.[0]).toMatchObject({
+      oldURL: expect.stringContaining('/#/login/dashboard'),
+      newURL: expect.stringContaining('/#/dashboard'),
+    });
+    dispose();
+    window.removeEventListener('hashchange', listener);
+  });
+
   it('does not notify listeners for already normalized pushState URLs', () => {
     window.localStorage.setItem('authorization', 'jwt');
     const listener = vi.fn();
