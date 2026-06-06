@@ -9,7 +9,6 @@ import {
   Input,
   List,
   Menu,
-  Modal,
   Select,
   Space,
   Tag,
@@ -66,6 +65,7 @@ import {
 import { LegacyCheckboxInput, LegacyInput } from '@/components/legacy-input';
 import { LegacyEmpty } from '@/components/legacy-empty';
 import { LegacySwitch } from '@/components/legacy-switch';
+import { LegacyModal } from '@/components/legacy-modal';
 import {
   LegacyStandaloneTable,
   legacyTableRowKey as legacyRowKey,
@@ -461,9 +461,9 @@ function ServerGroupModal({
   return (
     <>
       {cloneElement(children, { onClick: open })}
-      <Modal
+      <LegacyModal
         title={`${submit.id ? '编辑组' : '创建组'}`}
-        open={visible}
+        visible={visible}
         onCancel={() => setVisible(false)}
         onOk={() => {
           if (groups.isFetching) return;
@@ -482,7 +482,7 @@ function ServerGroupModal({
             />
           </div>
         </div>
-      </Modal>
+      </LegacyModal>
     </>
   );
 }
@@ -607,9 +607,9 @@ function ServerRouteModal({
   return (
     <>
       {cloneElement(children, { onClick: open })}
-      <Modal
+      <LegacyModal
         title={`${route.id ? '编辑路由' : '创建路由'}`}
-        open={visible}
+        visible={visible}
         onCancel={() => setVisible(false)}
         onOk={() => {
           if (routes.isFetching) return;
@@ -719,7 +719,7 @@ function ServerRouteModal({
             </div>
           ) : null}
         </div>
-      </Modal>
+      </LegacyModal>
     </>
   );
 }

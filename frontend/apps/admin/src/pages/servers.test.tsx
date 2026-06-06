@@ -226,6 +226,13 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function getRouteMatchLabel'),
     );
 
+    expect(serversSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
+    expect(groupModalSource).toContain('<LegacyModal');
+    expect(groupModalSource).toContain("title={`${submit.id ? '编辑组' : '创建组'}`}");
+    expect(groupModalSource).toContain('visible={visible}');
+    expect(groupModalSource).toContain('cancelText="取消"');
+    expect(groupModalSource).not.toContain('<Modal');
+    expect(groupModalSource).not.toContain('open={visible}');
     expect(groupModalSource).toContain('const groups = useServerGroups()');
     expect(groupModalSource).toContain('if (groups.isFetching) return;');
     expect(groupModalSource).toContain('await save.mutateAsync({ ...submit });');
@@ -250,6 +257,12 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function getServerTypeTag'),
     );
 
+    expect(routeModalSource).toContain('<LegacyModal');
+    expect(routeModalSource).toContain("title={`${route.id ? '编辑路由' : '创建路由'}`}");
+    expect(routeModalSource).toContain('visible={visible}');
+    expect(routeModalSource).toContain('cancelText="取消"');
+    expect(routeModalSource).not.toContain('<Modal');
+    expect(routeModalSource).not.toContain('open={visible}');
     expect(routeModalSource).toContain('const routes = useServerRoutes()');
     expect(routeModalSource).toContain('if (routes.isFetching) return;');
     expect(routeModalSource).toContain('await save.mutateAsync(payload);');
