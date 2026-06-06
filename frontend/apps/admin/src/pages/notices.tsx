@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Input, Modal, Select } from 'antd';
+import { Input, Select } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Notice } from '@v2board/types';
@@ -12,6 +12,7 @@ import {
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyButton } from '@/components/legacy-button';
+import { LegacyModal } from '@/components/legacy-modal';
 import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
 import {
   LegacyStandaloneTable,
@@ -145,9 +146,9 @@ export default function NoticesPage() {
           </div>
         </div>
       </LegacySpin>
-      <Modal
+      <LegacyModal
         title={`${submit.id ? '编辑公告' : '新建公告'}`}
-        open={visible}
+        visible={visible}
         onCancel={modalVisible}
         onOk={() => {
           saveLoading || void saveNotice();
@@ -194,7 +195,7 @@ export default function NoticesPage() {
             />
           </div>
         </div>
-      </Modal>
+      </LegacyModal>
     </>
   );
 }

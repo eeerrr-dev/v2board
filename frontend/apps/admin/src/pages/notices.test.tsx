@@ -121,6 +121,21 @@ describe('NoticesPage legacy notice manager', () => {
     expect(source).not.toContain('okButtonProps={{ loading');
   });
 
+  it('uses the old Ant Design modal shell for the notice editor', () => {
+    const modalStart = source.indexOf('<LegacyModal');
+    const modalEnd = source.indexOf('</LegacyModal>', modalStart);
+    const modalBlock = source.slice(modalStart, modalEnd);
+
+    expect(source).toContain("import { LegacyModal } from '@/components/legacy-modal';");
+    expect(modalStart).toBeGreaterThan(-1);
+    expect(modalBlock).toContain("title={`${submit.id ? '编辑公告' : '新建公告'}`}");
+    expect(modalBlock).toContain('visible={visible}');
+    expect(modalBlock).toContain("okText={saveLoading ? <LoadingOutlined /> : '提交'}");
+    expect(modalBlock).toContain('cancelText="取消"');
+    expect(source).not.toContain('<Modal');
+    expect(source).not.toContain('open={visible}');
+  });
+
   it('uses the original fetchLoading-style page spinner for notice refetches', () => {
     expect(source).toContain('<LegacySpin loading={notices.isFetching}>');
     expect(source).not.toContain('loading={notices.isLoading}');
