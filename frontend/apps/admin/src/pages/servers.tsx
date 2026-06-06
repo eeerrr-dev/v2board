@@ -13,7 +13,6 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tag,
   Badge,
   Tooltip,
@@ -21,7 +20,6 @@ import {
 import {
   CaretDownOutlined,
   CopyOutlined,
-  DatabaseOutlined,
   DeleteOutlined,
   EditOutlined,
   LinkOutlined,
@@ -30,7 +28,7 @@ import {
   ReadOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import type { DropdownProps, FormInstance, TableProps } from 'antd';
+import type { DropdownProps, FormInstance } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
   useCopyServerMutation,
@@ -58,11 +56,13 @@ import {
   LegacyCaretDownIcon,
   LegacyCaretUpIcon,
   LegacyCopyIcon,
+  LegacyDatabaseIcon,
   LegacyDeleteIcon,
   LegacyFilterIcon,
   LegacyFormIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
+  LegacyUserIcon,
 } from '@/components/legacy-ant-icon';
 import { LegacyCheckboxInput, LegacyInput } from '@/components/legacy-input';
 import { LegacyEmpty } from '@/components/legacy-empty';
@@ -357,6 +357,79 @@ function legacyRowKey(value: number) {
   return { [LEGACY_ROW_KEY_ATTRIBUTE]: value };
 }
 
+type LegacyStandaloneTableHeader = {
+  title: ReactNode;
+  alignRight?: boolean;
+};
+
+function LegacyStandaloneTableHeaderCell({ title }: { title: ReactNode }) {
+  return (
+    <span className="ant-table-header-column">
+      <div>
+        <span className="ant-table-column-title">{title}</span>
+        <span className="ant-table-column-sorter" />
+      </div>
+    </span>
+  );
+}
+
+function LegacyStandaloneTable({
+  headers,
+  isEmpty,
+  children,
+}: {
+  headers: LegacyStandaloneTableHeader[];
+  isEmpty: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="ant-table-wrapper">
+      <div className="ant-spin-nested-loading">
+        <div className="ant-spin-container">
+          <div
+            className={`ant-table ant-table-default${isEmpty ? ' ant-table-empty' : ''} ant-table-scroll-position-left`}
+          >
+            <div className="ant-table-content">
+              <div className="ant-table-body">
+                <table className="">
+                  <colgroup>
+                    {headers.map((_, index) => (
+                      <col key={index} />
+                    ))}
+                  </colgroup>
+                  <thead className="ant-table-thead">
+                    <tr>
+                      {headers.map((header, index) => (
+                        <th
+                          key={index}
+                          className={
+                            header.alignRight
+                              ? 'ant-table-align-right ant-table-row-cell-last'
+                              : ''
+                          }
+                          style={header.alignRight ? { textAlign: 'right' } : undefined}
+                        >
+                          <LegacyStandaloneTableHeaderCell title={header.title} />
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="ant-table-tbody">{children}</tbody>
+                </table>
+              </div>
+              {isEmpty ? (
+                <div className="ant-table-placeholder">
+                  <LegacyEmpty />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ServersPage() {
   const location = useLocation();
   if (location.pathname === '/server/group') return <ServerGroupPage />;
@@ -369,63 +442,13 @@ export default function ServersPage() {
 function ServerGroupPage() {
   const groups = useServerGroups();
   const drop = useDropServerGroupMutation();
-  const columns: TableProps<admin.ServerGroup>['columns'] = [
-    {
-      title: '组ID',
-      dataIndex: 'id',
-      key: 'id',
-    },
-    {
-      title: '组名称',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: '用户数量',
-      dataIndex: 'user_count',
-      key: 'user_count',
-      render: (value: number) => (
-        <>
-          <UserOutlined style={{ cursor: 'move' }} /> {value}
-        </>
-      ),
-    },
-    {
-      title: '节点数量',
-      dataIndex: 'server_count',
-      key: 'server_count',
-      render: (value: number) => (
-        <>
-          <DatabaseOutlined style={{ cursor: 'move' }} /> {value}
-        </>
-      ),
-    },
-    {
-      title: '操作',
-      dataIndex: 'action',
-      key: 'action',
-      align: 'right',
-      render: (_: unknown, record) => (
-        <div>
-          <ServerGroupModal key={record.id} record={record}>
-            <a ref={legacyHref()}>编辑</a>
-          </ServerGroupModal>
-          <div className="ant-divider ant-divider-vertical" />
-          <a
-            ref={legacyHref()}
-            onClick={() =>
-              drop.mutate(record.id, {
-                onSuccess: () => {
-                  void groups.refetch();
-                },
-              })
-            }
-          >
-            删除
-          </a>
-        </div>
-      ),
-    },
+  const groupItems = groups.data ?? [];
+  const headers: LegacyStandaloneTableHeader[] = [
+    { title: '组ID' },
+    { title: '组名称' },
+    { title: '用户数量' },
+    { title: '节点数量' },
+    { title: '操作', alignRight: true },
   ];
 
   return (
@@ -442,12 +465,44 @@ function ServerGroupPage() {
                 </LegacyButton>
               </ServerGroupModal>
             </div>
-            <Table<admin.ServerGroup>
-              tableLayout="auto"
-              columns={columns}
-              dataSource={groups.data ?? []}
-              pagination={false}
-            />
+            <LegacyStandaloneTable headers={headers} isEmpty={groupItems.length === 0}>
+              {groupItems.map((record, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyRowKey(index)}
+                >
+                  <td className="">{record.id}</td>
+                  <td className="">{record.name}</td>
+                  <td className="">
+                    <LegacyUserIcon style={{ cursor: 'move' }} /> {record.user_count}
+                  </td>
+                  <td className="">
+                    <LegacyDatabaseIcon style={{ cursor: 'move' }} /> {record.server_count}
+                  </td>
+                  <td className="" style={{ textAlign: 'right' }}>
+                    <div>
+                      <ServerGroupModal key={record.id} record={record}>
+                        <a ref={legacyHref()}>编辑</a>
+                      </ServerGroupModal>
+                      <div className="ant-divider ant-divider-vertical" role="separator" />
+                      <a
+                        ref={legacyHref()}
+                        onClick={() =>
+                          drop.mutate(record.id, {
+                            onSuccess: () => {
+                              void groups.refetch();
+                            },
+                          })
+                        }
+                      >
+                        删除
+                      </a>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </LegacyStandaloneTable>
           </div>
         </div>
       </LegacySpin>
@@ -531,55 +586,13 @@ function getRouteMatchPlaceholder(action: string | undefined) {
 function ServerRoutePage() {
   const routes = useServerRoutes();
   const drop = useDropServerRouteMutation();
-  const columns: TableProps<admin.ServerRoute>['columns'] = [
-    {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-    },
-    {
-      title: '备注',
-      dataIndex: 'remarks',
-      key: 'remarks',
-    },
-    {
-      title: '匹配数量',
-      dataIndex: 'match',
-      key: 'match',
-      render: (value: admin.ServerRoute['match']) => getRouteMatchLabel(value),
-    },
-    {
-      title: '动作',
-      dataIndex: 'action',
-      key: 'action',
-      render: (value: string) => ROUTE_ACTION_TEXT[value],
-    },
-    {
-      title: '操作',
-      dataIndex: 'action2',
-      key: 'action2',
-      align: 'right',
-      render: (_: unknown, record) => (
-        <div>
-          <ServerRouteModal key={record.id} route={record}>
-            <a ref={legacyHref()}>编辑</a>
-          </ServerRouteModal>
-          <div className="ant-divider ant-divider-vertical" />
-          <a
-            ref={legacyHref()}
-            onClick={() =>
-              drop.mutate(record.id, {
-                onSuccess: () => {
-                  void routes.refetch();
-                },
-              })
-            }
-          >
-            删除
-          </a>
-        </div>
-      ),
-    },
+  const routeItems = routes.data ?? [];
+  const headers: LegacyStandaloneTableHeader[] = [
+    { title: 'ID' },
+    { title: '备注' },
+    { title: '匹配数量' },
+    { title: '动作' },
+    { title: '操作', alignRight: true },
   ];
 
   return (
@@ -596,12 +609,40 @@ function ServerRoutePage() {
                 </LegacyButton>
               </ServerRouteModal>
             </div>
-            <Table<admin.ServerRoute>
-              tableLayout="auto"
-              columns={columns}
-              dataSource={routes.data ?? []}
-              pagination={false}
-            />
+            <LegacyStandaloneTable headers={headers} isEmpty={routeItems.length === 0}>
+              {routeItems.map((record, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyRowKey(index)}
+                >
+                  <td className="">{record.id}</td>
+                  <td className="">{record.remarks}</td>
+                  <td className="">{getRouteMatchLabel(record.match)}</td>
+                  <td className="">{ROUTE_ACTION_TEXT[record.action]}</td>
+                  <td className="" style={{ textAlign: 'right' }}>
+                    <div>
+                      <ServerRouteModal key={record.id} route={record}>
+                        <a ref={legacyHref()}>编辑</a>
+                      </ServerRouteModal>
+                      <div className="ant-divider ant-divider-vertical" role="separator" />
+                      <a
+                        ref={legacyHref()}
+                        onClick={() =>
+                          drop.mutate(record.id, {
+                            onSuccess: () => {
+                              void routes.refetch();
+                            },
+                          })
+                        }
+                      >
+                        删除
+                      </a>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </LegacyStandaloneTable>
           </div>
         </div>
       </LegacySpin>

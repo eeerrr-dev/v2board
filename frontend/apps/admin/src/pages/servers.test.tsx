@@ -160,6 +160,12 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('<button type="button" class="ant-btn">');
     expect(html).toContain('aria-label="图标: plus"');
     expect(html).toContain('添加权限组');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain('class="ant-spin-nested-loading"');
+    expect(html).toContain('class="ant-table ant-table-default ant-table-scroll-position-left"');
+    expect(html).toContain('class="ant-table-header-column"');
+    expect(html).toContain('class="ant-table-column-sorter"');
+    expect(html).toContain('data-row-key="0"');
     expect(html).toContain('组ID');
     expect(html).toContain('组名称');
     expect(html).toContain('用户数量');
@@ -171,6 +177,8 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('删除');
     expect(html).not.toContain('ant-tabs');
     expect(html).not.toContain('created_at');
+    expect(html).not.toContain('ant-table-cell');
+    expect(html).not.toContain('css-dev-only');
   });
 
   it('renders /server/route as the original standalone route table', () => {
@@ -183,6 +191,12 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('<button type="button" class="ant-btn">');
     expect(html).toContain('aria-label="图标: plus"');
     expect(html).toContain('添加路由');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain('class="ant-spin-nested-loading"');
+    expect(html).toContain('class="ant-table ant-table-default ant-table-scroll-position-left"');
+    expect(html).toContain('class="ant-table-header-column"');
+    expect(html).toContain('class="ant-table-column-sorter"');
+    expect(html).toContain('data-row-key="0"');
     expect(html).toContain('ID');
     expect(html).toContain('备注');
     expect(html).toContain('匹配数量');
@@ -196,6 +210,8 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('删除');
     expect(html).not.toContain('ant-tabs');
     expect(html).not.toContain('action_value');
+    expect(html).not.toContain('ant-table-cell');
+    expect(html).not.toContain('css-dev-only');
   });
 
   it('keeps the original server group modal submit loading tied to group fetching', () => {
@@ -255,11 +271,21 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function ServerRouteModal'),
     );
 
-    expect(groupPageSource).toContain('tableLayout="auto"');
-    expect(groupPageSource).toContain('pagination={false}');
+    expect(groupPageSource).toContain('<LegacyStandaloneTable');
+    expect(groupPageSource).toContain('headers={headers}');
+    expect(groupPageSource).toContain('isEmpty={groupItems.length === 0}');
+    expect(groupPageSource).toContain('{...legacyRowKey(index)}');
+    expect(groupPageSource).not.toContain('<Table<admin.ServerGroup>');
+    expect(groupPageSource).not.toContain('tableLayout="auto"');
+    expect(groupPageSource).not.toContain('pagination={false}');
     expect(groupPageSource).not.toContain('rowKey="id"');
-    expect(routePageSource).toContain('tableLayout="auto"');
-    expect(routePageSource).toContain('pagination={false}');
+    expect(routePageSource).toContain('<LegacyStandaloneTable');
+    expect(routePageSource).toContain('headers={headers}');
+    expect(routePageSource).toContain('isEmpty={routeItems.length === 0}');
+    expect(routePageSource).toContain('{...legacyRowKey(index)}');
+    expect(routePageSource).not.toContain('<Table<admin.ServerRoute>');
+    expect(routePageSource).not.toContain('tableLayout="auto"');
+    expect(routePageSource).not.toContain('pagination={false}');
     expect(routePageSource).not.toContain('rowKey="id"');
   });
 
@@ -448,9 +474,13 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('keeps the original vertical divider markup in server action columns', () => {
-    expect(serversSource.match(/<div className="ant-divider ant-divider-vertical" \/>/g)).toHaveLength(3);
+    expect(
+      serversSource.match(
+        /<div className="ant-divider ant-divider-vertical" role="separator" \/>/g,
+      ),
+    ).toHaveLength(2);
+    expect(serversSource.match(/<div className="ant-divider ant-divider-vertical" \/>/g)).toHaveLength(1);
     expect(serversSource).not.toContain('<span className="ant-divider ant-divider-vertical"');
-    expect(serversSource).not.toContain('role="separator"');
   });
 
   it('renders /server/manage with the original initial non-sort table before getNodes completes', () => {

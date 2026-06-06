@@ -4,11 +4,13 @@ import {
   LegacyCaretDownIcon,
   LegacyCaretUpIcon,
   LegacyCopyIcon,
+  LegacyDatabaseIcon,
   LegacyDeleteIcon,
   LegacyFilterIcon,
   LegacyFormIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
+  LegacyUserIcon,
 } from './legacy-ant-icon';
 
 describe('LegacyPlusIcon', () => {
@@ -39,6 +41,8 @@ describe('LegacyPlusIcon', () => {
         <LegacyFormIcon />
         <LegacyCopyIcon />
         <LegacyDeleteIcon />
+        <LegacyUserIcon style={{ cursor: 'move' }} />
+        <LegacyDatabaseIcon style={{ cursor: 'move' }} />
       </>,
     );
 
@@ -50,6 +54,10 @@ describe('LegacyPlusIcon', () => {
     expect(html).toContain('aria-label="图标: form"');
     expect(html).toContain('aria-label="图标: copy"');
     expect(html).toContain('aria-label="图标: delete"');
+    expect(html).toContain('aria-label="图标: user"');
+    expect(html).toContain('class="anticon anticon-user" style="cursor:move"');
+    expect(html).toContain('aria-label="图标: database"');
+    expect(html).toContain('class="anticon anticon-database" style="cursor:move"');
     expect(html).not.toContain('role="img"');
   });
 });
