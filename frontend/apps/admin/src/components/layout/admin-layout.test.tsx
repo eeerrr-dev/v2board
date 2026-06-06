@@ -25,8 +25,9 @@ vi.mock('@/lib/api', () => ({
   apiClient: {},
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 function installLocalStorageStub() {
   const store = new Map<string, string>();
@@ -129,8 +130,13 @@ describe('AdminLayout legacy shell', () => {
     expect(source).toContain(
       "className={`dropdown-menu dropdown-menu-right dropdown-menu-lg p-0 ${showAvatarMenu && 'show'}`}",
     );
+    expect(source).toContain('<a className="link-fx font-size-lg text-white" href="/">');
+    expect(source).not.toContain('handleHomeClick');
+    expect(source).not.toContain('onClick={handleHomeClick}');
     expect(source).toContain('document.onclick = function legacyAvatarMenuDocumentClick()');
-    expect(source).toContain("document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];");
+    expect(source).toContain(
+      "document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];",
+    );
     expect(source).not.toContain("document.addEventListener('click'");
     expect(source).not.toContain("document.removeEventListener('click'");
     expect(source).not.toContain('key={`${item.title}-${index}`}');
@@ -241,7 +247,7 @@ describe('AdminLayout legacy dark mode behavior', () => {
     expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
   });
 
-  it('keeps the legacy brand href but routes it through the client app', async () => {
+  it('keeps the legacy brand as a plain href without client-side interception', async () => {
     await renderLayout();
 
     const brand = container.querySelector<HTMLAnchorElement>(
@@ -255,8 +261,8 @@ describe('AdminLayout legacy dark mode behavior', () => {
     });
 
     expect(brand.getAttribute('href')).toBe('/');
-    expect(click.defaultPrevented).toBe(true);
-    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
+    expect(click.defaultPrevented).toBe(false);
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it('renders and controls the bundled header search overlay when search props are passed', async () => {
@@ -339,8 +345,7 @@ describe('AdminLayout legacy dark mode behavior', () => {
   it('closes the avatar menu on the next document click like the old layout', async () => {
     await renderLayout();
 
-    const userButton =
-      container.querySelector<HTMLButtonElement>('#page-header-user-dropdown')!;
+    const userButton = container.querySelector<HTMLButtonElement>('#page-header-user-dropdown')!;
 
     await act(async () => {
       userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));

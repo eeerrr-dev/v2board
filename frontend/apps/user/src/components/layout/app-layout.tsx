@@ -112,11 +112,6 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
     setOpen(false);
   };
 
-  const handleHomeClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
-    go('/dashboard');
-  };
-
   const handleProfileClick = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
     navigate('/profile');
@@ -171,7 +166,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
       <nav id="sidebar">
         <div className="smini-hidden bg-header-dark">
           <div className="content-header justify-content-lg-center bg-white-10">
-            <a className="font-size-lg text-white" href="/" onClick={handleHomeClick}>
+            <a className="font-size-lg text-white" href="/">
               <span className="text-white-75">{siteTitle}</span>
             </a>
             <div className="d-lg-none">
@@ -242,7 +237,9 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
 
           <div
             className={
-              darkHeader ? 'v2board-container-title text-white' : 'v2board-container-title text-black'
+              darkHeader
+                ? 'v2board-container-title text-white'
+                : 'v2board-container-title text-black'
             }
           >
             {title}
@@ -290,8 +287,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
                       navigate('/login');
                     }}
                   >
-                    <i className="far fa-fw fa-arrow-alt-circle-left mr-1" />{' '}
-                    {t('common.logout')}
+                    <i className="far fa-fw fa-arrow-alt-circle-left mr-1" /> {t('common.logout')}
                   </a>
                 </div>
               </div>

@@ -48,12 +48,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('./language-menu', () => ({
-  LanguageMenu: ({
-    triggerClassName,
-  }: {
-    legacyIcon?: boolean;
-    triggerClassName?: string;
-  }) => (
+  LanguageMenu: ({ triggerClassName }: { legacyIcon?: boolean; triggerClassName?: string }) => (
     <button type="button" className={triggerClassName}>
       <i className="far fa fa-language" />
     </button>
@@ -80,8 +75,9 @@ vi.mock('@/lib/legacy-settings', () => ({
   getLegacyTitle: () => mocks.title,
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 function installLocalStorageStub() {
   const store = new Map<string, string>();
@@ -163,7 +159,12 @@ describe('AppLayout bundled-theme markup', () => {
     expect(html).toContain('Outlet content');
     const source = readFileSync(`${process.cwd()}/src/components/layout/app-layout.tsx`, 'utf8');
     expect(source).toContain('document.onclick = function legacyAvatarMenuDocumentClick()');
-    expect(source).toContain("document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];");
+    expect(source).toContain(
+      "document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];",
+    );
+    expect(source).toContain('<a className="font-size-lg text-white" href="/">');
+    expect(source).not.toContain('handleHomeClick');
+    expect(source).not.toContain('onClick={handleHomeClick}');
     expect(source).not.toContain("document.addEventListener('click'");
     expect(source).not.toContain("document.removeEventListener('click'");
   });
@@ -294,7 +295,7 @@ describe('AppLayout bundled-theme behavior', () => {
     expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
   });
 
-  it('keeps the legacy brand href but routes it through the client app', async () => {
+  it('keeps the legacy brand as a plain href without client-side interception', async () => {
     await renderLayout();
 
     const brand = container.querySelector<HTMLAnchorElement>('#sidebar .content-header > a')!;
@@ -306,8 +307,8 @@ describe('AppLayout bundled-theme behavior', () => {
     });
 
     expect(brand.getAttribute('href')).toBe('/');
-    expect(click.defaultPrevented).toBe(true);
-    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
+    expect(click.defaultPrevented).toBe(false);
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it('toggles dark mode through the old header button', async () => {
@@ -395,11 +396,11 @@ describe('AppLayout bundled-theme behavior', () => {
 
     expect(container.querySelector('.dropdown-menu')!.className).toContain('show');
     expect(document.onclick).toBeTypeOf('function');
-    const profile = Array.from(container.querySelectorAll('.dropdown-item')).find(
-      (item) => item.textContent?.includes('个人中心'),
+    const profile = Array.from(container.querySelectorAll('.dropdown-item')).find((item) =>
+      item.textContent?.includes('个人中心'),
     ) as HTMLAnchorElement;
-    const logoutLink = Array.from(container.querySelectorAll('.dropdown-item')).find(
-      (item) => item.textContent?.includes('登出'),
+    const logoutLink = Array.from(container.querySelectorAll('.dropdown-item')).find((item) =>
+      item.textContent?.includes('登出'),
     ) as HTMLAnchorElement;
 
     expect(profile.getAttribute('href')).toBe('/#/profile');

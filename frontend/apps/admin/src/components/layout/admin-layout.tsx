@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
@@ -102,7 +102,8 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
     `side-scroll page-header-fixed main-content-boxed side-trans-enabled ${showNav && 'sidebar-o-xs'}`;
 
   useEffect(() => {
-    user.info(apiClient)
+    user
+      .info(apiClient)
       .then((info) => setEmail(info.email ?? ''))
       .catch(() => undefined);
   }, []);
@@ -154,11 +155,6 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
     closeMobileNav();
   };
 
-  const handleHomeClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
-    handleNavClick('/dashboard');
-  };
-
   return (
     <div id="page-container" className={pageClassName}>
       <div
@@ -170,7 +166,7 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
       <nav id="sidebar">
         <div className="smini-hidden bg-header-dark">
           <div className="content-header justify-content-lg-center bg-black-10">
-            <a className="link-fx font-size-lg text-white" href="/" onClick={handleHomeClick}>
+            <a className="link-fx font-size-lg text-white" href="/">
               <span className="text-white-75">{getSiteTitle()}</span>
             </a>
             <div className="d-lg-none">
@@ -217,7 +213,9 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
           <div className="sidebar-toggle" style={{ display: search ? 'block' : 'none' }}>
             <button
               type="button"
-              className={theme.header === 'dark' ? 'btn btn-primary mr-1 d-lg-none' : 'btn mr-1 d-lg-none'}
+              className={
+                theme.header === 'dark' ? 'btn btn-primary mr-1 d-lg-none' : 'btn mr-1 d-lg-none'
+              }
               onClick={() => setShowNav((value) => !value)}
             >
               <i className="fa fa-fw fa-bars" />
@@ -233,7 +231,13 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
               </button>
             )}
           </div>
-          <div className={theme.header === 'dark' ? 'v2board-container-title text-white' : 'v2board-container-title text-black'}>
+          <div
+            className={
+              theme.header === 'dark'
+                ? 'v2board-container-title text-white'
+                : 'v2board-container-title text-black'
+            }
+          >
             {title}
           </div>
           <div>
