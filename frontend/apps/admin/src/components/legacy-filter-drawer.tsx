@@ -1,9 +1,12 @@
-import { cloneElement, useState, type ReactElement, type ReactNode } from 'react';
-import { App, Button, DatePicker, Divider, Drawer, Input, Select } from 'antd';
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { Fragment, cloneElement, useState, type ReactElement, type ReactNode } from 'react';
+import { App, DatePicker } from 'antd';
 import dayjs from 'dayjs';
 import type { AdminFilter } from '@v2board/api-client';
-import type { ButtonProps } from 'antd';
+import { LegacyButton } from './legacy-button';
+import { LegacyDeleteIcon, LegacyPlusIcon } from './legacy-ant-icon';
+import { LegacyDrawer } from './legacy-drawer';
+import { LegacyInput } from './legacy-input';
+import { LegacySelect, type LegacySelectValue } from './legacy-select';
 
 export interface LegacyFilterOption {
   key?: ReactNode;
@@ -30,6 +33,17 @@ function defaultFilter(keys: LegacyFilterKey[]): AdminFilter {
 
 function isBlank(value: AdminFilter['value']) {
   return value === '';
+}
+
+function LegacyDivider({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="ant-divider ant-divider-horizontal ant-divider-with-text-center"
+      role="separator"
+    >
+      <span className="ant-divider-inner-text">{children}</span>
+    </div>
+  );
 }
 
 export function LegacyFilterDrawer({
@@ -96,70 +110,65 @@ export function LegacyFilterDrawer({
   return (
     <>
       {cloneElement(children, { onClick: () => setOpen(true) })}
-      <Drawer
+      <LegacyDrawer
         title="过滤器"
         open={open}
         onClose={hide}
         className="v2board-filter-drawer"
         footer={<></>}
+        width={256}
       >
         {filters.map((filter, index) => {
           const selected = keys.find((key) => key.key === filter.key)!;
           return (
-            <>
-              <Divider>
+            <Fragment key={index}>
+              <LegacyDivider>
                 条件{index + 1}{' '}
-                <DeleteOutlined style={{ color: '#ff4d4f' }} onClick={() => remove(index)} />
-              </Divider>
+                <LegacyDeleteIcon
+                  tabIndex={-1}
+                  style={{ color: '#ff4d4f' }}
+                  onClick={() => remove(index)}
+                />
+              </LegacyDivider>
               <div className="form-group">
                 <label>字段名</label>
                 <div>
-                  <Select
+                  <LegacySelect
                     value={filter.key}
                     style={{ width: '100%' }}
-                  >
-                    {keys.map((item, optionIndex) => (
-                      <Select.Option
-                        key={optionIndex}
-                        value={item.key}
-                        onClick={() => update(index, { key: item.key })}
-                      >
-                        {item.title}
-                      </Select.Option>
-                    ))}
-                  </Select>
+                    options={keys.map((item) => ({ value: item.key, label: item.title }))}
+                    onChange={(key) => update(index, { key: key as string })}
+                  />
                 </div>
               </div>
               <div className="form-group">
                 <label>条件</label>
                 <div>
-                  <Select
+                  <LegacySelect
                     value={filter.condition}
                     style={{ width: '100%' }}
-                    onChange={(condition) => update(index, { condition })}
-                  >
-                    {keys[keyIndex]!.condition.map((condition) => (
-                      <Select.Option key={condition} value={condition}>
-                        {condition}
-                      </Select.Option>
-                    ))}
-                  </Select>
+                    options={keys[keyIndex]!.condition.map((condition) => ({
+                      value: condition,
+                      label: condition,
+                    }))}
+                    onChange={(condition) => update(index, { condition: condition as string })}
+                  />
                 </div>
               </div>
               <div className="form-group">
                 <label>欲检索内容</label>
                 <div>
                   {selected.type === 'select' ? (
-                    <Select
-                      defaultValue={filter.value || undefined}
+                    <LegacySelect
+                      value={(filter.value || undefined) as LegacySelectValue | undefined}
                       style={{ width: '100%' }}
                       placeholder="请选择值"
+                      options={selected.options!.map((option) => ({
+                        value: option.value,
+                        label: String(option.key ?? option.label ?? option.value),
+                      }))}
                       onChange={(filterValue) => update(index, { value: filterValue })}
-                    >
-                      {selected.options!.map((option) => (
-                        <Select.Option value={option.value}>{option.key}</Select.Option>
-                      ))}
-                    </Select>
+                    />
                   ) : null}
                   {selected.type === 'date' ? (
                     <DatePicker
@@ -169,8 +178,9 @@ export function LegacyFilterDrawer({
                     />
                   ) : null}
                   {!selected.type ? (
-                    <Input
+                    <LegacyInput
                       style={{ width: '100%' }}
+                      className="ant-input"
                       defaultValue={filter.value || undefined}
                       placeholder="值"
                       onChange={(event) => update(index, { value: event.target.value })}
@@ -178,29 +188,34 @@ export function LegacyFilterDrawer({
                   ) : null}
                 </div>
               </div>
-            </>
+            </Fragment>
           );
         })}
-        <Button style={{ width: '100%' }} type="primary" onClick={add}>
-          <PlusOutlined /> 添加条件
-        </Button>
+        <LegacyButton className="ant-btn ant-btn-primary" style={{ width: '100%' }} onClick={add}>
+          <LegacyPlusIcon />
+          <span> 添加条件</span>
+        </LegacyButton>
         <div className="v2board-drawer-action">
-          <Button
+          <LegacyButton
             disabled={!filters.length}
-            type={'danger' as ButtonProps['type']}
+            className="ant-btn ant-btn-danger"
             onClick={reset}
             style={{ float: 'left' }}
           >
             重置
-          </Button>
-          <Button style={{ marginRight: 8 }} onClick={hide}>
+          </LegacyButton>
+          <LegacyButton className="ant-btn" style={{ marginRight: 8 }} onClick={hide}>
             取消
-          </Button>
-          <Button disabled={!filters.length} onClick={search} type="primary">
+          </LegacyButton>
+          <LegacyButton
+            disabled={!filters.length}
+            className="ant-btn ant-btn-primary"
+            onClick={search}
+          >
             检索
-          </Button>
+          </LegacyButton>
         </div>
-      </Drawer>
+      </LegacyDrawer>
     </>
   );
 }

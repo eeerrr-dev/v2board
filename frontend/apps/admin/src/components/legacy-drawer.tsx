@@ -5,6 +5,8 @@ import { LegacyCloseIcon } from './legacy-ant-icon';
 interface LegacyDrawerProps {
   cancelText?: string;
   children: ReactNode;
+  className?: string;
+  footer?: ReactNode;
   id?: string;
   maskClosable?: boolean;
   open: boolean;
@@ -18,9 +20,15 @@ function drawerWidthStyle(width: number | string | undefined) {
   return { width };
 }
 
+function drawerClassName(className: string | undefined) {
+  return ['ant-drawer ant-drawer-right ant-drawer-open', className].filter(Boolean).join(' ');
+}
+
 export function LegacyDrawer({
   cancelText,
   children,
+  className,
+  footer,
   id,
   maskClosable = true,
   open,
@@ -53,8 +61,9 @@ export function LegacyDrawer({
     <div
       id={id}
       {...(cancelText !== undefined ? { canceltext: cancelText } : {})}
+      {...(footer !== undefined ? { footer: String(footer) } : {})}
       tabIndex={-1}
-      className="ant-drawer ant-drawer-right ant-drawer-open"
+      className={drawerClassName(className)}
     >
       <div className="ant-drawer-mask" onClick={maskClosable ? onClose : undefined} />
       <div className="ant-drawer-content-wrapper" style={drawerWidthStyle(width)}>

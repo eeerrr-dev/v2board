@@ -492,31 +492,40 @@ describe('UsersPage legacy user manager', () => {
     expect(legacyFilterDrawerSource).toContain('<label>字段名</label>');
     expect(legacyFilterDrawerSource).toContain('<label>条件</label>');
     expect(legacyFilterDrawerSource).toContain('<label>欲检索内容</label>');
-    expect(legacyFilterDrawerSource).toContain('return (\n            <>');
+    expect(legacyFilterDrawerSource).toContain('return (\n            <Fragment key={index}>');
+    expect(legacyFilterDrawerSource).toContain('</Fragment>');
     expect(legacyFilterDrawerSource).not.toContain('key={`${filter.key}-${index}`}');
     expect(legacyFilterDrawerSource).toContain('keys.find((key) => key.key === filter.key)!');
     expect(legacyFilterDrawerSource).not.toContain('?? keys[0]!');
-    expect(legacyFilterDrawerSource).toContain('<Select.Option');
-    expect(legacyFilterDrawerSource).toContain('key={optionIndex}');
-    expect(legacyFilterDrawerSource).toContain('value={item.key}');
+    expect(legacyFilterDrawerSource).toContain('<LegacyDrawer');
+    expect(legacyFilterDrawerSource).toContain('width={256}');
+    expect(legacyFilterDrawerSource).toContain('<LegacyDivider>');
+    expect(legacyFilterDrawerSource).toContain('<LegacyDeleteIcon');
+    expect(legacyFilterDrawerSource).toContain('<LegacySelect');
+    expect(legacyFilterDrawerSource).toContain('options={keys.map((item) => ({ value: item.key, label: item.title }))}');
+    expect(legacyFilterDrawerSource).toContain(
+      "onChange={(key) => update(index, { key: key as string })}",
+    );
     expect(legacyFilterDrawerSource).toContain('keys[keyIndex]!.condition.map');
     expect(legacyFilterDrawerSource).toContain('selected.options!.map');
     expect(legacyFilterDrawerSource).not.toContain('keys[keyIndex]?.condition ?? []');
     expect(legacyFilterDrawerSource).not.toContain('selected.options ?? []');
     expect(legacyFilterDrawerSource).toContain(
-      '<Select.Option value={option.value}>{option.key}</Select.Option>',
+      'label: String(option.key ?? option.label ?? option.value)',
     );
+    expect(legacyFilterDrawerSource).not.toContain('<Select.Option');
+    expect(legacyFilterDrawerSource).not.toContain("import { App, Button, DatePicker, Divider, Drawer, Input, Select } from 'antd';");
+    expect(legacyFilterDrawerSource).not.toContain('@ant-design/icons');
     expect(legacyFilterDrawerSource).not.toContain('legacy-filter-key');
     expect(legacyFilterDrawerSource).not.toContain('legacy-filter-condition');
     expect(legacyFilterDrawerSource).not.toContain('legacy-filter-value');
     expect(legacyFilterDrawerSource).not.toContain('htmlFor={`legacy-filter');
-    expect(legacyFilterDrawerSource).not.toContain('options={keys.map');
     expect(legacyFilterDrawerSource).not.toContain('label: option.label');
     expect(legacyFilterDrawerSource).toContain('<DatePicker');
     expect(legacyFilterDrawerSource).toContain('添加条件');
     expect(legacyFilterDrawerSource).toContain('欲检索内容不能为空');
     expect(legacyFilterDrawerSource).toContain('v2board-drawer-action');
-    expect(legacyFilterDrawerSource).toContain("type={'danger' as ButtonProps['type']}");
+    expect(legacyFilterDrawerSource).toContain('className="ant-btn ant-btn-danger"');
     expect(legacyFilterDrawerSource).not.toContain('danger onClick={reset}');
     expect(legacyFilterDrawerSource).toContain('useState<AdminFilter[]>(value || [])');
     expect(legacyFilterDrawerSource).not.toContain('if (!open) setFilters(value)');

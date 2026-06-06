@@ -68,6 +68,30 @@ describe('LegacyDrawer', () => {
     );
   });
 
+  it('can preserve the old filter drawer root attributes and default width', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyDrawer
+          className="v2board-filter-drawer"
+          footer={<></>}
+          open
+          title="过滤器"
+          width={256}
+          onClose={vi.fn()}
+        >
+          <div>表单</div>
+        </LegacyDrawer>,
+      );
+    });
+
+    expect(document.querySelector('.ant-drawer')?.outerHTML).toContain(
+      '<div footer="[object Object]" tabindex="-1" class="ant-drawer ant-drawer-right ant-drawer-open v2board-filter-drawer">',
+    );
+    expect(document.querySelector('.ant-drawer-content-wrapper')?.getAttribute('style')).toBe(
+      'width: 256px;',
+    );
+  });
+
   it('closes from the old mask and close button interactions', async () => {
     const onClose = vi.fn();
     await act(async () => {
