@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal } from 'antd';
 import type { admin } from '@v2board/api-client';
 import { formatBytes, formatDate } from '@v2board/config/format';
 import { useAdminUserTraffic } from '@/lib/queries';
@@ -11,6 +10,7 @@ import {
   type LegacyStandaloneTableHeader,
   type LegacyTablePaginationChange,
 } from '@/components/legacy-standalone-table';
+import { LegacyModal } from '@/components/legacy-modal';
 
 interface LegacyTrafficPagination {
   current?: number;
@@ -75,12 +75,12 @@ export function UserTrafficModal({
   };
 
   return (
-    <Modal
+    <LegacyModal
       width="100%"
       style={{ maxWidth: 1000, padding: '0 10px', top: 20 }}
-      styles={{ body: { padding: 0 } }}
+      bodyStyle={{ padding: 0 }}
       footer={false}
-      open={open}
+      visible={open}
       title="流量记录"
       onCancel={onClose}
     >
@@ -100,6 +100,6 @@ export function UserTrafficModal({
           {data.map(renderTrafficRow)}
         </LegacyStandaloneTable>
       </LegacySpin>
-    </Modal>
+    </LegacyModal>
   );
 }

@@ -79,6 +79,42 @@ describe('LegacyModal', () => {
     expect(onOk).not.toHaveBeenCalled();
   });
 
+  it('supports the old bodyStyle, style, width and hidden footer props', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyModal
+          visible
+          width="100%"
+          style={{ maxWidth: 1000, padding: '0 10px', top: 20 }}
+          bodyStyle={{ padding: 0 }}
+          footer={false}
+          title="流量记录"
+          onCancel={vi.fn()}
+        >
+          <div>表格</div>
+        </LegacyModal>,
+      );
+    });
+
+    expect(document.querySelector('.ant-modal')?.getAttribute('style')).toBe(
+      'width: 100%; max-width: 1000px; padding: 0px 10px; top: 20px;',
+    );
+    expect(document.querySelector('.ant-modal-body')?.getAttribute('style')).toBe('padding: 0px;');
+    expect(document.querySelector('.ant-modal-footer')).toBeNull();
+  });
+
+  it('also accepts the Ant Design 5 styles.body alias while rendering old DOM', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyModal open title="流量记录" styles={{ body: { padding: 0 } }} onCancel={vi.fn()}>
+          <div>表格</div>
+        </LegacyModal>,
+      );
+    });
+
+    expect(document.querySelector('.ant-modal-body')?.getAttribute('style')).toBe('padding: 0px;');
+  });
+
   it('closes from the old mask, close button and cancel button interactions', async () => {
     const onCancel = vi.fn();
     await act(async () => {

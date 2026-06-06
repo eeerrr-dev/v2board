@@ -4,10 +4,14 @@ import { LegacyCloseIcon } from './legacy-ant-icon';
 import { LegacyButton } from './legacy-button';
 
 interface LegacyModalProps {
+  bodyStyle?: CSSProperties;
   children: ReactNode;
+  footer?: ReactNode | boolean | null;
   maskClosable?: boolean;
   okButtonProps?: { loading?: boolean };
   open?: boolean;
+  style?: CSSProperties;
+  styles?: { body?: CSSProperties };
   title: ReactNode;
   visible?: boolean;
   width?: number | string;
@@ -18,6 +22,10 @@ interface LegacyModalProps {
 function widthStyle(width: number | string | undefined): CSSProperties {
   const value = width ?? 520;
   return { width: typeof value === 'number' ? `${value}px` : value };
+}
+
+function modalStyle(width: number | string | undefined, style: CSSProperties | undefined) {
+  return { ...widthStyle(width), ...style };
 }
 
 function LegacyModalLoadingIcon() {
@@ -40,10 +48,14 @@ function LegacyModalLoadingIcon() {
 }
 
 export function LegacyModal({
+  bodyStyle,
   children,
+  footer,
   maskClosable = true,
   okButtonProps,
   open,
+  style,
+  styles,
   title,
   visible,
   width,
@@ -52,6 +64,7 @@ export function LegacyModal({
 }: LegacyModalProps) {
   const isVisible = visible ?? open ?? false;
   const okLoading = Boolean(okButtonProps?.loading);
+  const mergedBodyStyle = bodyStyle ?? styles?.body;
 
   useEffect(() => {
     if (!isVisible || typeof document === 'undefined') return;
@@ -80,7 +93,7 @@ export function LegacyModal({
     <div className="ant-modal-root">
       <div className="ant-modal-mask" />
       <div tabIndex={-1} className="ant-modal-wrap" role="dialog" onClick={handleMaskClick}>
-        <div className="ant-modal" role="document" style={widthStyle(width)}>
+        <div className="ant-modal" role="document" style={modalStyle(width, style)}>
           <div className="ant-modal-content">
             <button type="button" aria-label="Close" className="ant-modal-close" onClick={onCancel}>
               <span className="ant-modal-close-x">
@@ -90,19 +103,27 @@ export function LegacyModal({
             <div className="ant-modal-header">
               <div className="ant-modal-title">{title}</div>
             </div>
-            <div className="ant-modal-body">{children}</div>
-            <div className="ant-modal-footer">
-              <LegacyButton className="ant-btn" onClick={onCancel}>
-                取消
-              </LegacyButton>
-              <LegacyButton
-                className={`ant-btn ant-btn-primary${okLoading ? ' ant-btn-loading' : ''}`}
-                onClick={onOk}
-              >
-                {okLoading ? <LegacyModalLoadingIcon /> : null}
-                确定
-              </LegacyButton>
+            <div className="ant-modal-body" style={mergedBodyStyle}>
+              {children}
             </div>
+            {footer === false || footer === null ? null : (
+              <div className="ant-modal-footer">
+                {footer ?? (
+                  <>
+                    <LegacyButton className="ant-btn" onClick={onCancel}>
+                      取消
+                    </LegacyButton>
+                    <LegacyButton
+                      className={`ant-btn ant-btn-primary${okLoading ? ' ant-btn-loading' : ''}`}
+                      onClick={onOk}
+                    >
+                      {okLoading ? <LegacyModalLoadingIcon /> : null}
+                      确定
+                    </LegacyButton>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
