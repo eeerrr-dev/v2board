@@ -66,6 +66,11 @@ import {
 } from '@/components/legacy-ant-icon';
 import { LegacyCheckboxInput, LegacyInput } from '@/components/legacy-input';
 import { LegacyEmpty } from '@/components/legacy-empty';
+import {
+  LegacyStandaloneTable,
+  legacyTableRowKey as legacyRowKey,
+  type LegacyStandaloneTableHeader,
+} from '@/components/legacy-standalone-table';
 
 const SERVER_TYPES: admin.ServerTypeName[] = [
   'v2node',
@@ -351,85 +356,6 @@ function readLegacyServerPageSize() {
   return Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 10;
 }
 
-const LEGACY_ROW_KEY_ATTRIBUTE = `data-${'row-key'}`;
-
-function legacyRowKey(value: number) {
-  return { [LEGACY_ROW_KEY_ATTRIBUTE]: value };
-}
-
-type LegacyStandaloneTableHeader = {
-  title: ReactNode;
-  alignRight?: boolean;
-};
-
-function LegacyStandaloneTableHeaderCell({ title }: { title: ReactNode }) {
-  return (
-    <span className="ant-table-header-column">
-      <div>
-        <span className="ant-table-column-title">{title}</span>
-        <span className="ant-table-column-sorter" />
-      </div>
-    </span>
-  );
-}
-
-function LegacyStandaloneTable({
-  headers,
-  isEmpty,
-  children,
-}: {
-  headers: LegacyStandaloneTableHeader[];
-  isEmpty: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className="ant-table-wrapper">
-      <div className="ant-spin-nested-loading">
-        <div className="ant-spin-container">
-          <div
-            className={`ant-table ant-table-default${isEmpty ? ' ant-table-empty' : ''} ant-table-scroll-position-left`}
-          >
-            <div className="ant-table-content">
-              <div className="ant-table-body">
-                <table className="">
-                  <colgroup>
-                    {headers.map((_, index) => (
-                      <col key={index} />
-                    ))}
-                  </colgroup>
-                  <thead className="ant-table-thead">
-                    <tr>
-                      {headers.map((header, index) => (
-                        <th
-                          key={index}
-                          className={
-                            header.alignRight
-                              ? 'ant-table-align-right ant-table-row-cell-last'
-                              : ''
-                          }
-                          style={header.alignRight ? { textAlign: 'right' } : undefined}
-                        >
-                          <LegacyStandaloneTableHeaderCell title={header.title} />
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="ant-table-tbody">{children}</tbody>
-                </table>
-              </div>
-              {isEmpty ? (
-                <div className="ant-table-placeholder">
-                  <LegacyEmpty />
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function ServersPage() {
   const location = useLocation();
   if (location.pathname === '/server/group') return <ServerGroupPage />;
@@ -552,9 +478,7 @@ function ServerGroupModal({
             <Input
               placeholder="请输入组名"
               value={submit.name}
-              onChange={(event) =>
-                setSubmit((value) => ({ ...value, name: event.target.value }))
-              }
+              onChange={(event) => setSubmit((value) => ({ ...value, name: event.target.value }))}
             />
           </div>
         </div>
@@ -700,9 +624,7 @@ function ServerRouteModal({
             <Input
               placeholder="请输入备注"
               value={route.remarks}
-              onChange={(event) =>
-                setRoute((value) => ({ ...value, remarks: event.target.value }))
-              }
+              onChange={(event) => setRoute((value) => ({ ...value, remarks: event.target.value }))}
             />
           </div>
           {route.action !== 'default_out' ? (
@@ -738,16 +660,12 @@ function ServerRouteModal({
               >
                 <Select.Option value="block">{ROUTE_ACTION_TEXT.block}</Select.Option>
                 <Select.Option value="block_ip">{ROUTE_ACTION_TEXT.block_ip}</Select.Option>
-                <Select.Option value="block_port">
-                  {ROUTE_ACTION_TEXT.block_port}
-                </Select.Option>
+                <Select.Option value="block_port">{ROUTE_ACTION_TEXT.block_port}</Select.Option>
                 <Select.Option value="protocol">{ROUTE_ACTION_TEXT.protocol}</Select.Option>
                 <Select.Option value="dns">{ROUTE_ACTION_TEXT.dns}</Select.Option>
                 <Select.Option value="route">{ROUTE_ACTION_TEXT.route}</Select.Option>
                 <Select.Option value="route_ip">{ROUTE_ACTION_TEXT.route_ip}</Select.Option>
-                <Select.Option value="default_out">
-                  {ROUTE_ACTION_TEXT.default_out}
-                </Select.Option>
+                <Select.Option value="default_out">{ROUTE_ACTION_TEXT.default_out}</Select.Option>
               </Select>
             </div>
           </div>
@@ -993,9 +911,7 @@ function ServerManagePage() {
   };
 
   const groupName = (ids: admin.ServerNode['group_id']) =>
-    ids
-      .map((id) => groups.data?.find((group) => group.id === Number(id))?.name)
-      .filter(Boolean);
+    ids.map((id) => groups.data?.find((group) => group.id === Number(id))?.name).filter(Boolean);
 
   const toggleNodeShow = (row: admin.ServerNode) => {
     const checked = parseInt(String(row.show), 10);
@@ -1073,7 +989,9 @@ function ServerManagePage() {
     'ant-table-default',
     filteredNodes.length ? '' : 'ant-table-empty',
     'ant-table-scroll-position-left',
-  ].filter(Boolean).join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
   const visibleNodes = sortMode ? filteredNodes : filteredNodes.slice(0, pageSize);
   const changeServerPageSize = (_current: number, size: number) => {
     setPageSize(size);
@@ -1112,7 +1030,10 @@ function ServerManagePage() {
   );
   const sorterIcon = (
     <span className="ant-table-column-sorter">
-      <div title="排序" className="ant-table-column-sorter-inner ant-table-column-sorter-inner-full">
+      <div
+        title="排序"
+        className="ant-table-column-sorter-inner ant-table-column-sorter-inner-full"
+      >
         <LegacyCaretUpIcon className="ant-table-column-sorter-up off" />
         <LegacyCaretDownIcon className="ant-table-column-sorter-down off" />
       </div>
@@ -1172,7 +1093,7 @@ function ServerManagePage() {
         <div className="bg-white">
           <div className="v2board-table-action" style={{ padding: 15 }}>
             <LegacyDropdown
-              overlay={(
+              overlay={
                 <Menu>
                   {SERVER_TYPES.map((type) => (
                     <Menu.Item key={type}>
@@ -1184,14 +1105,12 @@ function ServerManagePage() {
                         routes={routes.data ?? []}
                         onSaved={() => nodes.refetch()}
                       >
-                        <a ref={legacyHref()}>
-                          {getServerTypeTag(type, SERVER_TYPE_LABELS[type])}
-                        </a>
+                        <a ref={legacyHref()}>{getServerTypeTag(type, SERVER_TYPE_LABELS[type])}</a>
                       </LegacyNodeEditMenuTrigger>
                     </Menu.Item>
                   ))}
                 </Menu>
-              )}
+              }
             >
               <LegacyButton className="ant-btn">
                 <LegacyPlusIcon />
@@ -1339,7 +1258,9 @@ function ServerManagePage() {
                                         <td>
                                           {getServerTypeTag(
                                             node.type,
-                                            node.parent_id ? `${node.id} => ${node.parent_id}` : node.id,
+                                            node.parent_id
+                                              ? `${node.id} => ${node.parent_id}`
+                                              : node.id,
                                           )}
                                         </td>
                                         <td>{node.name}</td>
@@ -1418,7 +1339,9 @@ function ServerManagePage() {
                                           <td>
                                             {getServerTypeTag(
                                               node.type,
-                                              node.parent_id ? `${node.id} => ${node.parent_id}` : node.id,
+                                              node.parent_id
+                                                ? `${node.id} => ${node.parent_id}`
+                                                : node.id,
                                             )}
                                           </td>
                                           <td>
@@ -1429,7 +1352,11 @@ function ServerManagePage() {
                                             />
                                           </td>
                                           <td>
-                                            <Badge status={getLegacyAvailableStatus(node.available_status)} />
+                                            <Badge
+                                              status={getLegacyAvailableStatus(
+                                                node.available_status,
+                                              )}
+                                            />
                                             <span>{node.name}</span>
                                           </td>
                                           <td>
@@ -1500,9 +1427,7 @@ function ServerManagePage() {
                                           key={index}
                                           className={`ant-table-row ant-table-row-level-0${node.parent_id ? ' child_node' : ''}`}
                                         >
-                                          <td style={{ textAlign: 'right' }}>
-                                            {actionCell(node)}
-                                          </td>
+                                          <td style={{ textAlign: 'right' }}>{actionCell(node)}</td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -1524,10 +1449,17 @@ function ServerManagePage() {
                                   tabIndex={0}
                                 >
                                   {(groups.data ?? []).map((group) => (
-                                    <li className="ant-dropdown-menu-item" role="menuitem" key={group.id}>
+                                    <li
+                                      className="ant-dropdown-menu-item"
+                                      role="menuitem"
+                                      key={group.id}
+                                    >
                                       <label className="ant-checkbox-wrapper">
                                         <span className="ant-checkbox">
-                                          <LegacyCheckboxInput className="ant-checkbox-input" value="" />
+                                          <LegacyCheckboxInput
+                                            className="ant-checkbox-input"
+                                            value=""
+                                          />
                                           <span className="ant-checkbox-inner" />
                                         </span>
                                       </label>
@@ -1659,16 +1591,8 @@ function NodeEditDrawer({
           </div>
           <div className="form-group">
             <label>节点标签</label>
-            <Form.Item
-              noStyle
-              name="tags"
-              getValueFromEvent={normalizeLegacyNullableArray}
-            >
-              <Select
-                mode="tags"
-                style={{ width: '100%' }}
-                placeholder="输入后回车添加标签"
-              />
+            <Form.Item noStyle name="tags" getValueFromEvent={normalizeLegacyNullableArray}>
+              <Select mode="tags" style={{ width: '100%' }} placeholder="输入后回车添加标签" />
             </Form.Item>
           </div>
           <div className="form-group">
@@ -1679,15 +1603,9 @@ function NodeEditDrawer({
               </Tooltip>
             </label>
             <Form.Item noStyle name="group_id">
-              <Select
-                mode="multiple"
-                placeholder="请选择权限组"
-                style={{ width: '100%' }}
-              >
+              <Select mode="multiple" placeholder="请选择权限组" style={{ width: '100%' }}>
                 {groups.map((group) => (
-                  <Select.Option key={group.id}>
-                    {group.name}
-                  </Select.Option>
+                  <Select.Option key={group.id}>{group.name}</Select.Option>
                 ))}
               </Select>
             </Form.Item>
@@ -1731,10 +1649,7 @@ function NodeEditDrawer({
               </div>
             </div>
           )}
-          {type === 'trojan' ||
-          type === 'hysteria' ||
-          type === 'tuic' ||
-          type === 'anytls' ? (
+          {type === 'trojan' || type === 'hysteria' || type === 'tuic' || type === 'anytls' ? (
             <div className="row">
               <div className="form-group col-md-4 col-xs-12">
                 <label>连接端口</label>
@@ -1809,16 +1724,10 @@ function NodeEditDrawer({
         </div>
         <div className="form-group">
           <label>路由组</label>
-          <Form.Item
-            noStyle
-            name="route_id"
-            getValueFromEvent={normalizeLegacyNullableArray}
-          >
+          <Form.Item noStyle name="route_id" getValueFromEvent={normalizeLegacyNullableArray}>
             <Select mode="multiple" placeholder="请选择路由组" style={{ width: '100%' }}>
               {routes.map((route) => (
-                <Select.Option key={route.id}>
-                  {route.remarks}
-                </Select.Option>
+                <Select.Option key={route.id}>{route.remarks}</Select.Option>
               ))}
             </Select>
           </Form.Item>
@@ -1903,25 +1812,11 @@ export function getLegacyServerInitialValues(
   const normalizedRecord: Record<string, unknown> = record
     ? { ...(record as Record<string, unknown>) }
     : {};
-  if (
-    normalizedRecord.networkSettings &&
-    typeof normalizedRecord.networkSettings === 'object'
-  ) {
-    normalizedRecord.networkSettings = JSON.stringify(
-      normalizedRecord.networkSettings,
-      null,
-      2,
-    );
+  if (normalizedRecord.networkSettings && typeof normalizedRecord.networkSettings === 'object') {
+    normalizedRecord.networkSettings = JSON.stringify(normalizedRecord.networkSettings, null, 2);
   }
-  if (
-    normalizedRecord.network_settings &&
-    typeof normalizedRecord.network_settings === 'object'
-  ) {
-    normalizedRecord.network_settings = JSON.stringify(
-      normalizedRecord.network_settings,
-      null,
-      2,
-    );
+  if (normalizedRecord.network_settings && typeof normalizedRecord.network_settings === 'object') {
+    normalizedRecord.network_settings = JSON.stringify(normalizedRecord.network_settings, null, 2);
   }
   const tuicDefaults =
     type === 'tuic'
@@ -1933,12 +1828,10 @@ export function getLegacyServerInitialValues(
           congestion_control: 'cubic',
         }
       : {};
-  const shadowsocksDefaults =
-    type === 'shadowsocks' ? { cipher: 'chacha20-ietf-poly1305' } : {};
+  const shadowsocksDefaults = type === 'shadowsocks' ? { cipher: 'chacha20-ietf-poly1305' } : {};
   const vmessDefaults = type === 'vmess' ? { tls: 0 } : {};
   const trojanDefaults = type === 'trojan' ? { tls: 0 } : {};
-  const hysteriaDefaults =
-    type === 'hysteria' ? { insecure: 0, version: 1 } : {};
+  const hysteriaDefaults = type === 'hysteria' ? { insecure: 0, version: 1 } : {};
   const vlessDefaults = type === 'vless' ? { tls: 0, flow: null } : {};
   const anyTlsDefaults = type === 'anytls' ? { insecure: 0 } : {};
   const v2nodeDefaults =
@@ -1974,10 +1867,7 @@ export function getLegacyV2nodeSecurityValue(protocol: unknown, tls: unknown) {
   const parsedTls = parseInt(String(tls ?? 0), 10);
   if (parsedTls) return parsedTls;
   const protocolValue = protocol == null ? null : String(protocol);
-  return protocolValue &&
-    LEGACY_V2NODE_SECURITY_FALLBACK_PROTOCOLS.includes(protocolValue)
-    ? 1
-    : 0;
+  return protocolValue && LEGACY_V2NODE_SECURITY_FALLBACK_PROTOCOLS.includes(protocolValue) ? 1 : 0;
 }
 
 export function getLegacyNumericSelectValue(value: unknown, fallback = 0) {
@@ -2094,11 +1984,7 @@ function ServerChildDrawerField({
 
   if (field === 'encryption_settings') {
     return (
-      <LegacyEncryptionSettingsField
-        form={form}
-        settings={settings}
-        encryption={encryption}
-      />
+      <LegacyEncryptionSettingsField form={form} settings={settings} encryption={encryption} />
     );
   }
 
@@ -2348,10 +2234,16 @@ function LegacyTlsSettingsField({
       {value.ech === 'cloudflare' ? (
         <div
           className="form-group"
-          style={{ background: '#f6ffed', padding: '8px 12px', borderRadius: 4, border: '1px solid #b7eb8f' }}
+          style={{
+            background: '#f6ffed',
+            padding: '8px 12px',
+            borderRadius: 4,
+            border: '1px solid #b7eb8f',
+          }}
         >
           <span style={{ color: '#52c41a' }}>
-            ✓ Cloudflare 托管 ECH，密钥由 Cloudflare 自动管理，客户端从 DNS 自动获取配置，服务端无需配置
+            ✓ Cloudflare 托管 ECH，密钥由 Cloudflare 自动管理，客户端从 DNS
+            自动获取配置，服务端无需配置
           </span>
         </div>
       ) : null}
@@ -2495,10 +2387,7 @@ function TrojanAllowInsecureField() {
   return (
     <div className="form-group col-md-4 col-xs-12">
       <label>
-        <Tooltip
-          placement="top"
-          title="使用自签名证书需要允许不安全，用户才可以连接"
-        >
+        <Tooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">
           允许不安全 <QuestionCircleOutlined />
         </Tooltip>
       </label>
@@ -2525,10 +2414,7 @@ function ServerInsecureField() {
   return (
     <div className="form-group col-md-4 col-xs-12">
       <label>
-        <Tooltip
-          placement="top"
-          title="使用自签名证书需要允许不安全，用户才可以连接"
-        >
+        <Tooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">
           允许不安全 <QuestionCircleOutlined />
         </Tooltip>
       </label>
@@ -2560,19 +2446,11 @@ function VmessTlsField({
     <div className="form-group col-md-4 col-xs-12">
       <label>
         TLS{' '}
-        <a
-          ref={legacyHref()}
-          onClick={() => showChildDrawer('编辑TLS配置', 'tlsSettings')}
-        >
+        <a ref={legacyHref()} onClick={() => showChildDrawer('编辑TLS配置', 'tlsSettings')}>
           编辑配置
         </a>
       </label>
-      <Form.Item
-        noStyle
-        name="tls"
-        initialValue={0}
-        getValueProps={legacyBinarySelectValueProps}
-      >
+      <Form.Item noStyle name="tls" initialValue={0} getValueProps={legacyBinarySelectValueProps}>
         <Select placeholder="是否支持TLS" style={{ width: '100%' }}>
           <Select.Option key={0} value={0}>
             不支持
@@ -2600,20 +2478,12 @@ function VlessSecurityField({
       <label>
         安全性{' '}
         {parseInt(String(security ?? 0), 10) !== 0 ? (
-          <a
-            ref={legacyHref()}
-            onClick={() => showChildDrawer('编辑安全性配置', 'tls_settings')}
-          >
+          <a ref={legacyHref()} onClick={() => showChildDrawer('编辑安全性配置', 'tls_settings')}>
             编辑配置
           </a>
         ) : null}
       </label>
-      <Form.Item
-        noStyle
-        name="tls"
-        initialValue={0}
-        getValueProps={legacyNumericSelectValueProps}
-      >
+      <Form.Item noStyle name="tls" initialValue={0} getValueProps={legacyNumericSelectValueProps}>
         <Select style={{ width: '100%' }}>
           <Select.Option key={0} value={0}>
             无
@@ -2816,19 +2686,13 @@ function V2nodeFields({
           <div className="form-group">
             <label>上行带宽</label>
             <Form.Item noStyle name="up_mbps">
-              <Input
-                addonAfter="Mbps"
-                placeholder="服务端发送带宽,留空或填0使用BBR"
-              />
+              <Input addonAfter="Mbps" placeholder="服务端发送带宽,留空或填0使用BBR" />
             </Form.Item>
           </div>
           <div className="form-group">
             <label>下行带宽</label>
             <Form.Item noStyle name="down_mbps">
-              <Input
-                addonAfter="Mbps"
-                placeholder="服务端接收带宽,留空或填0使用BBR"
-              />
+              <Input addonAfter="Mbps" placeholder="服务端接收带宽,留空或填0使用BBR" />
             </Form.Item>
           </div>
         </>
@@ -2914,15 +2778,9 @@ function V2nodeFields({
               <Select.Option value="aes-128-gcm">aes-128-gcm</Select.Option>
               <Select.Option value="aes-192-gcm">aes-192-gcm</Select.Option>
               <Select.Option value="aes-256-gcm">aes-256-gcm</Select.Option>
-              <Select.Option value="chacha20-ietf-poly1305">
-                chacha20-ietf-poly1305
-              </Select.Option>
-              <Select.Option value="2022-blake3-aes-128-gcm">
-                2022-blake3-aes-128-gcm
-              </Select.Option>
-              <Select.Option value="2022-blake3-aes-256-gcm">
-                2022-blake3-aes-256-gcm
-              </Select.Option>
+              <Select.Option value="chacha20-ietf-poly1305">chacha20-ietf-poly1305</Select.Option>
+              <Select.Option value="2022-blake3-aes-128-gcm">2022-blake3-aes-128-gcm</Select.Option>
+              <Select.Option value="2022-blake3-aes-256-gcm">2022-blake3-aes-256-gcm</Select.Option>
             </Select>
           </Form.Item>
         </div>
@@ -2945,9 +2803,7 @@ function V2nodeFields({
               <Form.Item noStyle name="encryption">
                 <Select placeholder="选择加密方式" style={{ width: '100%' }}>
                   <Select.Option value={null}>无</Select.Option>
-                  <Select.Option value="mlkem768x25519plus">
-                    MLKEM768X25519PLUS
-                  </Select.Option>
+                  <Select.Option value="mlkem768x25519plus">MLKEM768X25519PLUS</Select.Option>
                 </Select>
               </Form.Item>
             </div>
@@ -2958,9 +2814,7 @@ function V2nodeFields({
               <Form.Item noStyle name="flow">
                 <Select placeholder="选择XTLS流控算法" style={{ width: '100%' }}>
                   <Select.Option value={null}>无</Select.Option>
-                  <Select.Option value="xtls-rprx-vision">
-                    xtls-rprx-vision
-                  </Select.Option>
+                  <Select.Option value="xtls-rprx-vision">xtls-rprx-vision</Select.Option>
                 </Select>
               </Form.Item>
             </div>
@@ -3001,15 +2855,9 @@ function ServerTypeFields({
               <Select.Option value="aes-128-gcm">aes-128-gcm</Select.Option>
               <Select.Option value="aes-192-gcm">aes-192-gcm</Select.Option>
               <Select.Option value="aes-256-gcm">aes-256-gcm</Select.Option>
-              <Select.Option value="chacha20-ietf-poly1305">
-                chacha20-ietf-poly1305
-              </Select.Option>
-              <Select.Option value="2022-blake3-aes-128-gcm">
-                2022-blake3-aes-128-gcm
-              </Select.Option>
-              <Select.Option value="2022-blake3-aes-256-gcm">
-                2022-blake3-aes-256-gcm
-              </Select.Option>
+              <Select.Option value="chacha20-ietf-poly1305">chacha20-ietf-poly1305</Select.Option>
+              <Select.Option value="2022-blake3-aes-128-gcm">2022-blake3-aes-128-gcm</Select.Option>
+              <Select.Option value="2022-blake3-aes-256-gcm">2022-blake3-aes-256-gcm</Select.Option>
             </Select>
           </Form.Item>
         </div>
@@ -3225,9 +3073,7 @@ function ServerTypeFields({
             <Form.Item noStyle name="encryption">
               <Select placeholder="选择加密方式" style={{ width: '100%' }}>
                 <Select.Option value={null}>无</Select.Option>
-                <Select.Option value="mlkem768x25519plus">
-                  MLKEM768X25519PLUS
-                </Select.Option>
+                <Select.Option value="mlkem768x25519plus">MLKEM768X25519PLUS</Select.Option>
               </Select>
             </Form.Item>
           </div>
@@ -3239,9 +3085,7 @@ function ServerTypeFields({
               <Select placeholder="选择XTLS流控算法" style={{ width: '100%' }}>
                 <Select.Option value={null}>无</Select.Option>
                 {String(vlessNetwork) === 'tcp' ? (
-                  <Select.Option value="xtls-rprx-vision">
-                    xtls-rprx-vision
-                  </Select.Option>
+                  <Select.Option value="xtls-rprx-vision">xtls-rprx-vision</Select.Option>
                 ) : null}
               </Select>
             </Form.Item>
@@ -3333,19 +3177,13 @@ function ServerTypeFields({
         <div className="form-group">
           <label>上行带宽</label>
           <Form.Item noStyle name="up_mbps">
-            <Input
-              addonAfter="Mbps"
-              placeholder="服务端发送带宽,留空或填0使用BBR"
-            />
+            <Input addonAfter="Mbps" placeholder="服务端发送带宽,留空或填0使用BBR" />
           </Form.Item>
         </div>
         <div className="form-group">
           <label>下行带宽</label>
           <Form.Item noStyle name="down_mbps">
-            <Input
-              addonAfter="Mbps"
-              placeholder="服务端接收带宽,留空或填0使用BBR"
-            />
+            <Input addonAfter="Mbps" placeholder="服务端接收带宽,留空或填0使用BBR" />
           </Form.Item>
         </div>
       </>

@@ -645,7 +645,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)');
     expect(serversSource).toContain('return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;');
     expect(managePageSource).toContain('<LegacyDropdown');
-    expect(managePageSource).toContain('overlay={(');
+    expect(managePageSource).toContain('overlay={');
     expect(managePageSource).toContain('<Menu>');
     expect(managePageSource).toContain('<LegacyButton className="ant-btn">');
     expect(managePageSource).toContain('<LegacyPlusIcon />');

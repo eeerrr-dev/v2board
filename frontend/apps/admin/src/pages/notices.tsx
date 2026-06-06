@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, Input, Modal, Select, Switch, Table } from 'antd';
-import type { TableProps } from 'antd';
-import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';
+import { Input, Modal, Select, Switch } from 'antd';
+import { LoadingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Notice } from '@v2board/types';
 import {
@@ -12,6 +11,13 @@ import {
 } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { LegacyButton } from '@/components/legacy-button';
+import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
+import {
+  LegacyStandaloneTable,
+  legacyTableRowKey,
+  type LegacyStandaloneTableHeader,
+} from '@/components/legacy-standalone-table';
 
 export default function NoticesPage() {
   const notices = useAdminNotices({});
@@ -37,76 +43,54 @@ export default function NoticesPage() {
     modalVisible();
   };
 
-  const columns: TableProps<Notice>['columns'] = [
-    {
-      title: '#',
-      dataIndex: 'id',
-      key: 'id',
-    },
-    {
-      title: '显示',
-      dataIndex: 'show',
-      key: 'show',
-      render: (value: 0 | 1, row) => (
-        <Switch
-          size="small"
-          onChange={() =>
-            show.mutate(row.id, {
-              onSuccess: () => {
-                void notices.refetch();
-              },
-            })
-          }
-          checked={value as unknown as boolean}
-        />
-      ),
-    },
-    {
-      title: '标题',
-      dataIndex: 'title',
-      key: 'title',
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      align: 'right',
-      render: (value: number) => dayjs(1000 * value).format('YYYY/MM/DD HH:mm'),
-    },
-    {
-      title: '操作',
-      dataIndex: 'action',
-      key: 'action',
-      align: 'right',
-      fixed: 'right',
-      render: (_value, row, index) => (
-        <div>
-          <a
-            onClick={() => {
-              setSubmit(dataSource[index] as Partial<Notice>);
-              setVisible(true);
-            }}
-            ref={legacyHref()}
-          >
-            编辑
-          </a>
-          <div className="ant-divider ant-divider-vertical" />
-          <a
-            onClick={() =>
-              drop.mutate(row.id, {
-                onSuccess: () => {
-                  void notices.refetch();
-                },
-              })
-            }
-            ref={legacyHref()}
-          >
-            删除
-          </a>
-        </div>
-      ),
-    },
+  const headers: LegacyStandaloneTableHeader[] = [
+    { title: '#' },
+    { title: '显示' },
+    { title: '标题' },
+    { title: '创建时间', alignRight: true },
+    { title: '操作', alignRight: true, fixedRight: true },
   ];
+
+  const renderNoticeShowSwitch = (value: 0 | 1, row: Notice) => (
+    <Switch
+      size="small"
+      onChange={() =>
+        show.mutate(row.id, {
+          onSuccess: () => {
+            void notices.refetch();
+          },
+        })
+      }
+      checked={value as unknown as boolean}
+    />
+  );
+
+  const renderNoticeActions = (row: Notice, index: number) => (
+    <div>
+      <a
+        onClick={() => {
+          setSubmit(dataSource[index] as Partial<Notice>);
+          setVisible(true);
+        }}
+        ref={legacyHref()}
+      >
+        编辑
+      </a>
+      <div className="ant-divider ant-divider-vertical" />
+      <a
+        onClick={() =>
+          drop.mutate(row.id, {
+            onSuccess: () => {
+              void notices.refetch();
+            },
+          })
+        }
+        ref={legacyHref()}
+      >
+        删除
+      </a>
+    </div>
+  );
 
   return (
     <>
@@ -115,17 +99,48 @@ export default function NoticesPage() {
         <div className="block block-rounded">
           <div className="bg-white">
             <div style={{ padding: 15 }}>
-              <Button onClick={modalVisible}>
-                <PlusOutlined /> 添加公告
-              </Button>
+              <LegacyButton className="ant-btn" onClick={modalVisible}>
+                <LegacyPlusIcon />
+                <span> 添加公告</span>
+              </LegacyButton>
             </div>
-            <Table<Notice>
-              tableLayout="auto"
-              dataSource={dataSource}
-              pagination={false}
-              columns={columns}
-              scroll={{ x: 950 }}
-            />
+            <LegacyStandaloneTable
+              headers={headers}
+              isEmpty={dataSource.length === 0}
+              scrollX={950}
+              fixedRightChildren={dataSource.map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyTableRowKey(index)}
+                >
+                  <td className="ant-table-row-cell-last" style={{ textAlign: 'right' }}>
+                    {renderNoticeActions(row, index)}
+                  </td>
+                </tr>
+              ))}
+            >
+              {dataSource.map((row, index) => (
+                <tr
+                  key={index}
+                  className="ant-table-row ant-table-row-level-0"
+                  {...legacyTableRowKey(index)}
+                >
+                  <td className="">{row.id}</td>
+                  <td className="">{renderNoticeShowSwitch(row.show, row)}</td>
+                  <td className="">{row.title}</td>
+                  <td className="" style={{ textAlign: 'right' }}>
+                    {dayjs(1000 * row.created_at).format('YYYY/MM/DD HH:mm')}
+                  </td>
+                  <td
+                    className="ant-table-fixed-columns-in-body ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
+                    {renderNoticeActions(row, index)}
+                  </td>
+                </tr>
+              ))}
+            </LegacyStandaloneTable>
           </div>
         </div>
       </LegacySpin>

@@ -52,7 +52,22 @@ describe('NoticesPage legacy notice manager', () => {
     expect(html).toContain('class="d-flex justify-content-between align-items-center"');
     expect(html).toContain('class="block block-rounded"');
     expect(html).toContain('class="bg-white"');
+    expect(html).toContain('<button type="button" class="ant-btn">');
+    expect(html).toContain('aria-label="图标: plus"');
     expect(html).toContain('添加公告');
+    expect(html).toContain('class="ant-table-wrapper"');
+    expect(html).toContain('class="ant-spin-nested-loading"');
+    expect(html).toContain(
+      'class="ant-table ant-table-default ant-table-scroll-position-left ant-table-scroll-position-right"',
+    );
+    expect(html).toContain('class="ant-table-scroll"');
+    expect(html).toContain('tabindex="-1" class="ant-table-body" style="overflow-x:scroll"');
+    expect(html).toContain('class="ant-table-fixed" style="width:950px"');
+    expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain(
+      'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"',
+    );
+    expect(html).toContain('data-row-key="0"');
     expect(html).toContain('#');
     expect(html).toContain('显示');
     expect(html).toContain('标题');
@@ -64,12 +79,13 @@ describe('NoticesPage legacy notice manager', () => {
     expect(html).toContain('删除');
     expect(html).not.toContain('ant-card');
     expect(html).not.toContain('ant-typography');
+    expect(html).not.toContain('ant-table-cell');
   });
 
   it('keeps the original notice save callback order without waiting for the page fetch', () => {
     const saveBlock = source.slice(
       source.indexOf('const saveNotice = async () => {'),
-      source.indexOf('const columns: TableProps<Notice>'),
+      source.indexOf('const headers: LegacyStandaloneTableHeader[]'),
     );
     const mutationBlock = queriesSource.slice(
       queriesSource.indexOf('export function useSaveNoticeMutation()'),
@@ -86,8 +102,11 @@ describe('NoticesPage legacy notice manager', () => {
       saveBlock.indexOf('modalVisible();'),
     );
     expect(saveBlock).not.toContain('await notices.refetch();');
-    expect(mutationBlock).not.toContain("queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })");
-    expect(source).toContain("import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';");
+    expect(mutationBlock).not.toContain(
+      "queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })",
+    );
+    expect(source).toContain("import { LoadingOutlined } from '@ant-design/icons';");
+    expect(source).toContain("import { LegacyPlusIcon } from '@/components/legacy-ant-icon';");
     expect(source).toContain('const [saveLoading] = useState<boolean | undefined>(undefined);');
     expect(source).toContain('saveLoading || void saveNotice();');
     expect(source).toContain("okText={saveLoading ? <LoadingOutlined /> : '提交'}");
@@ -133,20 +152,31 @@ describe('NoticesPage legacy notice manager', () => {
     expect(dropStart).toBeGreaterThan(-1);
     expect(dropRefetch).toBeGreaterThan(dropStart);
     expect(dropBlock).not.toContain('onSuccess');
-    expect(dropBlock).not.toContain("queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })");
+    expect(dropBlock).not.toContain(
+      "queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })",
+    );
     expect(showBlock).not.toContain('onSuccess');
-    expect(showBlock).not.toContain("queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })");
+    expect(showBlock).not.toContain(
+      "queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })",
+    );
   });
 
   it('keeps the legacy notice table without an explicit rowKey', () => {
-    expect(source).toContain('tableLayout="auto"');
-    expect(source).toContain('dataSource={dataSource}');
-    expect(source).toContain('pagination={false}');
+    expect(source).toContain('<LegacyStandaloneTable');
+    expect(source).toContain('headers={headers}');
+    expect(source).toContain('isEmpty={dataSource.length === 0}');
+    expect(source).toContain('scrollX={950}');
+    expect(source).toContain('fixedRightChildren={dataSource.map((row, index) => (');
+    expect(source).toContain('{...legacyTableRowKey(index)}');
+    expect(source).not.toContain('<Table<Notice>');
+    expect(source).not.toContain('tableLayout="auto"');
+    expect(source).not.toContain('dataSource={dataSource}');
+    expect(source).not.toContain('pagination={false}');
     expect(source).not.toContain('rowKey="id"');
   });
 
   it('uses the bundled table index when opening the notice editor', () => {
-    expect(source).toContain('render: (_value, row, index) =>');
+    expect(source).toContain('const renderNoticeActions = (row: Notice, index: number) =>');
     expect(source).toContain('setSubmit(dataSource[index] as Partial<Notice>);');
     expect(source).not.toContain('setSubmit(dataSource[index] ?? {});');
     expect(source).not.toContain('setSubmit(row);');
