@@ -270,6 +270,8 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain('<LegacyTextArea');
     expect(plansSource).toContain('<LegacyInputGroup');
     expect(plansSource).toContain('<LegacySelect');
+    expect(plansSource).toContain('<LegacyInfoCircleIcon />');
+    expect(plansSource).toContain('LegacyInfoCircleIcon,');
     expect(plansSource).toContain('value={legacyInputValue(submit.name)}');
     expect(plansSource).toContain('value={legacyInputValue(submit.content)}');
     expect(plansSource).toContain(
@@ -288,6 +290,8 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).not.toContain('<Button');
     expect(plansSource).not.toContain('<Select');
     expect(plansSource).not.toContain('<Checkbox');
+    expect(plansSource).not.toContain('@ant-design/icons');
+    expect(plansSource).not.toContain('InfoCircleOutlined');
   });
 
   it('keeps the original site currency-symbol handoff for plan editors', () => {

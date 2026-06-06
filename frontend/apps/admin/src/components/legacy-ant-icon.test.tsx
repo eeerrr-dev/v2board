@@ -12,6 +12,7 @@ import {
   LegacyFileExcelIcon,
   LegacyFilterIcon,
   LegacyFormIcon,
+  LegacyInfoCircleIcon,
   LegacyLeftIcon,
   LegacyMailIcon,
   LegacyPlusIcon,
@@ -47,6 +48,7 @@ describe('LegacyPlusIcon', () => {
         <LegacySelectIcon />
         <LegacyUserAddIcon />
         <LegacyQuestionCircleIcon />
+        <LegacyInfoCircleIcon />
         <LegacyLeftIcon />
         <LegacyRightIcon />
         <LegacyDownIcon className="ant-select-arrow-icon" />
@@ -76,6 +78,12 @@ describe('LegacyPlusIcon', () => {
     expect(html).toContain('aria-label="图标: select"');
     expect(html).toContain('aria-label="图标: user-add"');
     expect(html).toContain('data-icon="question-circle"');
+    expect(html).toContain('aria-label="图标: info-circle"');
+    expect(html).toContain('class="anticon anticon-info-circle"');
+    expect(html).toContain('data-icon="info-circle"');
+    expect(html).toContain(
+      'd="M464 336a48 48 0 1096 0 48 48 0 10-96 0zm72 112h-48c-4.4 0-8 3.6-8 8v272c0 4.4 3.6 8 8 8h48c4.4 0 8-3.6 8-8V456c0-4.4-3.6-8-8-8z"',
+    );
     expect(html).toContain('aria-label="图标: left"');
     expect(html).toContain('aria-label="图标: right"');
     expect(html).toContain('class="anticon anticon-down ant-select-arrow-icon"');

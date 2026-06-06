@@ -9,7 +9,6 @@ import {
 } from 'react';
 import { App, Divider, Dropdown, Menu, Row, Col, Tooltip } from 'antd';
 import type { DropdownProps } from 'antd';
-import { InfoCircleOutlined } from '@ant-design/icons';
 import type { Plan, PlanPeriod } from '@v2board/types';
 import {
   useAdminPlans,
@@ -37,6 +36,7 @@ import {
   LegacyCaretDownIcon,
   LegacyDeleteIcon,
   LegacyEditIcon,
+  LegacyInfoCircleIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
   LegacyUserIcon,
@@ -175,7 +175,7 @@ function PlanEditor({
           <Divider>
             售价设置{' '}
             <Tooltip title="将金额留空则不会进行出售" placement="top">
-              <InfoCircleOutlined />
+              <LegacyInfoCircleIcon />
             </Tooltip>
           </Divider>
 
