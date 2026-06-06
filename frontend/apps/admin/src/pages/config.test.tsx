@@ -335,6 +335,10 @@ describe('ConfigPage legacy theme config', () => {
     const html = renderToStaticMarkup(<ConfigPage />);
 
     expect(html).toContain('mb-0 block border-bottom');
+    expect(html).toContain('ant-tabs ant-tabs-top ant-tabs-large ant-tabs-line');
+    expect(html).toContain('ant-tabs-bar ant-tabs-top-bar ant-tabs-large-bar');
+    expect(html).toContain('ant-tabs-nav-scroll');
+    expect(html).toContain('ant-tabs-content ant-tabs-content-animated ant-tabs-top-content');
     expect(html).toContain('站点');
     expect(html).toContain('安全');
     expect(html).toContain('订阅');
@@ -356,14 +360,21 @@ describe('ConfigPage legacy theme config', () => {
     );
     expect(html).toContain('v2board-config-children');
     expect(html).not.toContain('ant-switch-handle');
+    expect(html).not.toContain('ant-tabs-nav-operations');
+    expect(html).not.toContain('css-dev-only-do-not-override');
     expect(html).not.toContain('ant-card');
     expect(html).not.toContain('ant-typography');
   });
 
   it('keeps the original system config tabs uncontrolled after initial render', () => {
+    expect(configSource).toContain("import { LegacyTabs } from '@/components/legacy-tabs';");
     expect(configSource).toContain('defaultActiveKey={activeTab}');
     expect(configSource).toContain('onChange={(key) => setActiveTab(key as ConfigGroupKey)}');
     expect(configSource).toContain('size="large"');
+    expect(configSource).toContain('<LegacyTabs');
+    expect(configSource).toContain('<LegacyTabs.TabPane tab="站点" key="site">');
+    expect(configSource).not.toContain("Tabs } from 'antd'");
+    expect(configSource).not.toContain('<Tabs');
     expect(configSource).not.toContain('<Tabs activeKey={activeTab}');
   });
 
@@ -550,7 +561,7 @@ describe('ConfigPage legacy theme config', () => {
     expect(configSource).toContain('checkedChildren="亮"');
     expect(configSource).toContain('unCheckedChildren="暗"');
     expect(configSource).not.toContain('<Switch');
-    expect(configSource).not.toContain('Switch, Tabs');
+    expect(configSource).not.toContain('Switch,');
     expect(isLegacyChecked(1)).toBe(true);
     expect(isLegacyChecked('2')).toBe(true);
     expect(isLegacyChecked(0)).toBe(false);

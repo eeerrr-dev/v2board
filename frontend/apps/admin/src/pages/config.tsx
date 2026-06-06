@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { App, Button, Input, Modal, Select, Tabs } from 'antd';
+import { App, Button, Input, Modal, Select } from 'antd';
 import { useLocation } from 'react-router-dom';
 import type { AdminConfig, AdminConfigFlat, AdminConfigGroups, Plan } from '@v2board/types';
 import type { AdminThemeField, AdminThemeInfo } from '@v2board/api-client';
 import { LegacySwitch } from '@/components/legacy-switch';
+import { LegacyTabs } from '@/components/legacy-tabs';
 import {
   useAdminPlans,
   useConfig,
@@ -345,12 +346,12 @@ function SystemConfigPage() {
 
   return (
     <div className={`mb-0 block border-bottom ${config.isFetching ? 'block-mode-loading' : ''}`}>
-      <Tabs
+      <LegacyTabs
         defaultActiveKey={activeTab}
         onChange={(key) => setActiveTab(key as ConfigGroupKey)}
         size="large"
       >
-        <Tabs.TabPane tab="站点" key="site">
+        <LegacyTabs.TabPane tab="站点" key="site">
           <div className="">
             <ConfigItem title="站点名称" description="用于显示需要站点名称的地方。">
               <LegacyInput
@@ -474,9 +475,9 @@ function SystemConfigPage() {
               />
             </ConfigItem>
           </div>
-        </Tabs.TabPane>
+        </LegacyTabs.TabPane>
 
-        <Tabs.TabPane tab="安全" key="safe">
+        <LegacyTabs.TabPane tab="安全" key="safe">
           <div className="">
             <ConfigItem title="邮箱验证" description="开启后将会强制要求用户进行邮箱验证。">
               <LegacySwitch
@@ -630,9 +631,9 @@ function SystemConfigPage() {
               </>
             ) : null}
           </div>
-        </Tabs.TabPane>
+        </LegacyTabs.TabPane>
 
-        <Tabs.TabPane tab="订阅" key="subscribe">
+        <LegacyTabs.TabPane tab="订阅" key="subscribe">
           <div className="">
             <ConfigItem
               title="允许用户更改订阅"
@@ -743,9 +744,9 @@ function SystemConfigPage() {
               </ConfigItem>
             ) : null}
           </div>
-        </Tabs.TabPane>
+        </LegacyTabs.TabPane>
 
-        <Tabs.TabPane tab="充值" key="deposit">
+        <LegacyTabs.TabPane tab="充值" key="deposit">
           <div className="">
             <ConfigItem title="充值奖励" description="充值一定金额可以获得的奖励。">
               <LegacyTextarea
@@ -756,9 +757,9 @@ function SystemConfigPage() {
               />
             </ConfigItem>
           </div>
-        </Tabs.TabPane>
+        </LegacyTabs.TabPane>
 
-        <Tabs.TabPane tab="工单" key="ticket">
+        <LegacyTabs.TabPane tab="工单" key="ticket">
           <div className="">
             <ConfigItem title="工单设置" description="请选择工单的状态。">
               <select
@@ -772,9 +773,9 @@ function SystemConfigPage() {
               </select>
             </ConfigItem>
           </div>
-        </Tabs.TabPane>
+        </LegacyTabs.TabPane>
 
-        <Tabs.TabPane tab="邀请&佣金" key="invite">
+        <LegacyTabs.TabPane tab="邀请&佣金" key="invite">
           <div className="">
             <ConfigItem title="开启强制邀请" description="开启后只有被邀请的用户才可以进行注册。">
               <LegacySwitch
@@ -907,9 +908,9 @@ function SystemConfigPage() {
               </>
             ) : null}
           </div>
-        </Tabs.TabPane>
+        </LegacyTabs.TabPane>
 
-        <Tabs.TabPane tab="个性化" key="frontend">
+        <LegacyTabs.TabPane tab="个性化" key="frontend">
           <div className="block-content">
             <div className="row">
               <div className="col-lg-12">
@@ -969,9 +970,9 @@ function SystemConfigPage() {
               </ConfigItem>
             </div>
           </div>
-        </Tabs.TabPane>
+        </LegacyTabs.TabPane>
 
-        <Tabs.TabPane tab="节点" key="server">
+        <LegacyTabs.TabPane tab="节点" key="server">
           <div className="">
             <ConfigItem title="节点对接API地址" description="v2node节点一键对接专用地址。">
               <LegacyInput
@@ -1056,9 +1057,9 @@ function SystemConfigPage() {
               />
             </ConfigItem>
           </div>
-        </Tabs.TabPane>
+        </LegacyTabs.TabPane>
 
-        <Tabs.TabPane tab="邮件" key="email">
+        <LegacyTabs.TabPane tab="邮件" key="email">
           <div className="block-content">
             <div className="row">
               <div className="col-lg-12">
@@ -1137,9 +1138,9 @@ function SystemConfigPage() {
               </ConfigItem>
             </div>
           </div>
-        </Tabs.TabPane>
+        </LegacyTabs.TabPane>
 
-        <Tabs.TabPane tab="Telegram" key="telegram">
+        <LegacyTabs.TabPane tab="Telegram" key="telegram">
           <div className="">
             <ConfigItem title="机器人Token" description="请输入由Botfather提供的token。">
               <LegacyInput
@@ -1185,9 +1186,9 @@ function SystemConfigPage() {
               />
             </ConfigItem>
           </div>
-        </Tabs.TabPane>
+        </LegacyTabs.TabPane>
 
-        <Tabs.TabPane tab="APP" key="app">
+        <LegacyTabs.TabPane tab="APP" key="app">
           <div className="block-content">
             <div className="row">
               <div className="col-lg-12">
@@ -1238,8 +1239,8 @@ function SystemConfigPage() {
               </ConfigItem>
             </div>
           </div>
-        </Tabs.TabPane>
-      </Tabs>
+        </LegacyTabs.TabPane>
+      </LegacyTabs>
     </div>
   );
 }
