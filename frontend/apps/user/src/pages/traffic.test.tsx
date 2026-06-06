@@ -146,7 +146,8 @@ describe('TrafficPage bundled-theme table', () => {
     expect(html).toContain('<td style="text-align:right">200.00 B</td>');
     expect(html).toContain('<td style="text-align:right">0.00 B</td>');
     expect(html).toContain('<span class="ant-tag" style="min-width:60px">-</span>');
-    expect(html).not.toContain('data-row-key');
+    expect(html.match(/data-row-key="0"/g)).toHaveLength(2);
+    expect(html.match(/data-row-key="1"/g)).toHaveLength(2);
   });
 
   it('keeps the legacy charged total coercion expression', () => {
@@ -159,7 +160,8 @@ describe('TrafficPage bundled-theme table', () => {
     expect(trafficSource).not.toContain('Number(row.server_rate)');
   });
 
-  it('keeps bundled antd table row keys internal-only', () => {
-    expect(trafficSource).not.toContain('data-row-key');
+  it('keeps bundled antd fallback row keys as index DOM attributes', () => {
+    expect(trafficSource).toContain('data-row-key={index}');
+    expect(trafficSource).not.toContain('data-row-key={row.record_at}');
   });
 });

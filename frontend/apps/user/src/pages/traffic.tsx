@@ -132,6 +132,7 @@ export default function TrafficPage() {
                             return (
                               <tr
                                 className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
+                                data-row-key={index}
                                 key={index}
                                 onMouseEnter={() => setHoverKey(index)}
                                 onMouseLeave={() => setHoverKey(null)}
@@ -206,6 +207,7 @@ export default function TrafficPage() {
                               return (
                                 <tr
                                   className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
+                                  data-row-key={index}
                                   key={index}
                                   onMouseEnter={() => setHoverKey(index)}
                                   onMouseLeave={() => setHoverKey(null)}
