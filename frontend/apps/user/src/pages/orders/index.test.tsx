@@ -171,6 +171,17 @@ describe('OrdersPage bundled-theme table', () => {
     expect(ordersSource).not.toContain('data-row-key');
   });
 
+  it('keeps bundled mobile order rows unkeyed', () => {
+    const mobileSource = ordersSource.slice(
+      ordersSource.indexOf('{mobile ? ('),
+      ordersSource.indexOf(') : (', ordersSource.indexOf('{mobile ? (')),
+    );
+
+    expect(mobileSource).toContain('{orders.map((order, index) => {');
+    expect(mobileSource).not.toContain('key={index}');
+    expect(mobileSource).not.toContain('key={order.trade_no}');
+  });
+
   it('does not apply the list loading class before the mount fetch dispatch equivalent', () => {
     mocks.fetching = true;
 

@@ -80,7 +80,6 @@ export default function OrdersPage() {
                 return (
                   <div
                     className={`am-list-item am-list-item-middle${activeMobileKey === index ? ' am-list-item-active' : ''}`}
-                    key={index}
                     onTouchStart={() => setActiveMobileKey(index)}
                     onTouchMove={() => setActiveMobileKey(null)}
                     onTouchEnd={() => setActiveMobileKey(null)}
