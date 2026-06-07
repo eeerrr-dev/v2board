@@ -289,6 +289,21 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).not.toContain('InfoCircleOutlined');
   });
 
+  it('keeps the original legacy tooltip placements for plan hints', () => {
+    expect(plansSource).toContain("import { LegacyTooltip } from '@/components/legacy-tooltip';");
+    expect(plansSource).toContain(
+      '<LegacyTooltip title="将金额留空则不会进行出售" placement="top">',
+    );
+    expect(plansSource).toMatch(
+      /<LegacyTooltip\s+title="勾选后变更的流量、限速、权限组将应用到该套餐下的用户"\s+placement="top"/,
+    );
+    expect(plansSource).toContain(
+      '<LegacyTooltip placement="top" title="在订阅停止销售时，已购用户是否可以续费">',
+    );
+    expect(plansSource).not.toContain("Tooltip } from 'antd'");
+    expect(plansSource).not.toContain('<Tooltip');
+  });
+
   it('keeps the original site currency-symbol handoff for plan editors', () => {
     expect(plansSource).toContain('currencySymbol?: string;');
     expect(plansSource).toContain('currencySymbol={config.data?.site?.currency_symbol}');

@@ -7,7 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { App, Divider, Row, Col, Tooltip } from 'antd';
+import { App, Divider, Row, Col } from 'antd';
 import type { Plan, PlanPeriod } from '@v2board/types';
 import {
   useAdminPlans,
@@ -51,6 +51,7 @@ import {
   LegacyDropdownMenuItem,
   LEGACY_DROPDOWN_CLICK_TRIGGER,
 } from '@/components/legacy-dropdown';
+import { LegacyTooltip } from '@/components/legacy-tooltip';
 
 type EditablePlan = {
   [K in keyof Omit<Plan, 'id'>]?: Plan[K] | string | null;
@@ -167,9 +168,9 @@ function PlanEditor({
 
           <Divider>
             售价设置{' '}
-            <Tooltip title="将金额留空则不会进行出售" placement="top">
+            <LegacyTooltip title="将金额留空则不会进行出售" placement="top">
               <LegacyInfoCircleIcon />
-            </Tooltip>
+            </LegacyTooltip>
           </Divider>
 
           <Row gutter={10}>
@@ -289,7 +290,10 @@ function PlanEditor({
 
         <div className="v2board-drawer-action">
           <div style={{ float: 'left', marginTop: 5 }}>
-            <Tooltip title="勾选后变更的流量、限速、权限组将应用到该套餐下的用户" placement="top">
+            <LegacyTooltip
+              title="勾选后变更的流量、限速、权限组将应用到该套餐下的用户"
+              placement="top"
+            >
               <label className="ant-checkbox-wrapper">
                 <span
                   className={`ant-checkbox${submit.force_update ? ' ant-checkbox-checked' : ''}`}
@@ -302,7 +306,7 @@ function PlanEditor({
                 </span>
                 <span>强制更新到用户</span>
               </label>
-            </Tooltip>
+            </LegacyTooltip>
           </div>
           <LegacyButton
             className="ant-btn"
@@ -452,9 +456,9 @@ export default function PlansPage() {
       title: (
         <span>
           续费{' '}
-          <Tooltip placement="top" title="在订阅停止销售时，已购用户是否可以续费">
+          <LegacyTooltip placement="top" title="在订阅停止销售时，已购用户是否可以续费">
             <LegacyQuestionCircleIcon />
-          </Tooltip>
+          </LegacyTooltip>
         </span>
       ),
     },
