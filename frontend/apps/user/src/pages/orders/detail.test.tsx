@@ -292,7 +292,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     expect(orderDetailSource).not.toContain('method?.handling_fee_fixed ?? 0');
   });
 
-  it('keeps the bundled-theme unkeyed payment method items', () => {
+  it('keeps payment method items keyed by their legacy method id without index fallback', () => {
     const paymentMethodSource = orderDetailSource.slice(
       orderDetailSource.indexOf('paymentMethods?.map((method) => ('),
       orderDetailSource.indexOf('{isStripePayment && stripePk', orderDetailSource.indexOf('paymentMethods?.map')),
@@ -301,7 +301,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     expect(paymentMethodSource).toContain('paymentMethods?.map((method) => (');
     expect(paymentMethodSource).toContain('className={`v2board-select ${effectiveMethodId === method.id ? \'active border-primary\' : \'false\'}`}');
     expect(paymentMethodSource).not.toContain('key={index}');
-    expect(paymentMethodSource).not.toContain('key={method.id}');
+    expect(paymentMethodSource).toContain('key={method.id}');
   });
 
   it('keeps the bundled-theme Stripe form keyed by public key', () => {

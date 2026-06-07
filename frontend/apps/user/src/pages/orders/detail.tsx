@@ -311,6 +311,7 @@ export default function OrderDetailPage() {
                 <div className="block-content p-0">
                   {paymentMethods?.map((method) => (
                     <div
+                      key={method.id}
                       className={`v2board-select ${effectiveMethodId === method.id ? 'active border-primary' : 'false'}`}
                       onClick={() => {
                         setMethodId(method.id);

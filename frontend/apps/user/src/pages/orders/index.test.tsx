@@ -174,14 +174,14 @@ describe('OrdersPage bundled-theme table', () => {
     expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
   });
 
-  it('keeps bundled mobile order rows unkeyed', () => {
+  it('keeps bundled mobile order rows keyed by the table fallback index', () => {
     const mobileSource = ordersSource.slice(
       ordersSource.indexOf('{mobile ? ('),
       ordersSource.indexOf(') : (', ordersSource.indexOf('{mobile ? (')),
     );
 
     expect(mobileSource).toContain('{orders.map((order, index) => {');
-    expect(mobileSource).not.toContain('key={index}');
+    expect(mobileSource).toContain('key={index}');
     expect(mobileSource).not.toContain('key={order.trade_no}');
   });
 

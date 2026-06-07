@@ -133,6 +133,7 @@ export function LanguageMenu({
             >
               {locales.map((locale) => (
                 <li
+                  key={locale.code}
                   className="ant-dropdown-menu-item"
                   role="menuitem"
                   aria-disabled="false"

@@ -78,9 +78,9 @@ export default function TicketDetailPage() {
         className="bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1"
         ref={chatRef}
       >
-        {data?.message.map((item) =>
+        {data?.message.map((item, index) =>
           item.is_me ? (
-            <div>
+            <div key={index}>
               <div className="font-size-sm text-muted my-2 text-right">
                 {formatLegacyDateMinuteSlash(item.created_at)}
               </div>
@@ -91,7 +91,7 @@ export default function TicketDetailPage() {
               </div>
             </div>
           ) : (
-            <div>
+            <div key={index}>
               <div className="font-size-sm text-muted my-2">
                 {formatLegacyDateMinuteSlash(item.created_at)}
               </div>

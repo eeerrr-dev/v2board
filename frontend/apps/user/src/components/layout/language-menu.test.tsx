@@ -166,7 +166,7 @@ describe('LanguageMenu antd dropdown behavior', () => {
     }
   });
 
-  it('keeps the old unkeyed locale menu item map from SelectLang', () => {
+  it('keys locale menu items by locale code while keeping SelectLang DOM stable', () => {
     const source = readFileSync('src/components/layout/language-menu.tsx', 'utf8');
     const menuSource = source.slice(
       source.indexOf('{locales.map((locale) => ('),
@@ -174,8 +174,8 @@ describe('LanguageMenu antd dropdown behavior', () => {
     );
 
     expect(menuSource).toContain('{locales.map((locale) => (');
-    expect(menuSource).not.toContain('key={locale.code}');
-    expect(menuSource).not.toContain('key=');
+    expect(menuSource).toContain('key={locale.code}');
+    expect(menuSource).not.toContain('key={index}');
   });
 
   it('keeps the legacy antd Dropdown base CSS', () => {

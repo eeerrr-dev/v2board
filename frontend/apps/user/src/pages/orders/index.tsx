@@ -79,6 +79,7 @@ export default function OrdersPage() {
                 const status = STATUS_LABEL[order.status];
                 return (
                   <div
+                    key={index}
                     className={`am-list-item am-list-item-middle${activeMobileKey === index ? ' am-list-item-active' : ''}`}
                     onTouchStart={() => setActiveMobileKey(index)}
                     onTouchMove={() => setActiveMobileKey(null)}

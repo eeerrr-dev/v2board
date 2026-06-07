@@ -99,17 +99,16 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     expect(source).not.toContain("const ticketId = ticket_id ?? ''");
   });
 
-  it('keeps the old unkeyed ticket message map from the bundled theme', () => {
+  it('keys ticket messages by the legacy list index without introducing a message id fallback', () => {
     const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
     const messageSource = source.slice(
-      source.indexOf('{data?.message.map((item) =>'),
+      source.indexOf('{data?.message.map((item, index) =>'),
       source.indexOf('<div className="js-chat-form'),
     );
 
-    expect(messageSource).toContain('{data?.message.map((item) =>');
-    expect(messageSource).not.toContain('key={index}');
+    expect(messageSource).toContain('{data?.message.map((item, index) =>');
+    expect(messageSource).toContain('key={index}');
     expect(messageSource).not.toContain('key={item.id}');
-    expect(messageSource).not.toContain('key=');
     expect(source).not.toContain('const messages = data?.message ?? []');
     expect(source).not.toContain('data?.message?.length');
   });
