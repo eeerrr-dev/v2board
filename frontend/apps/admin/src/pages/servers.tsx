@@ -1,4 +1,4 @@
-import { Fragment, cloneElement, useEffect, useMemo, useRef, useState } from 'react';
+import { cloneElement, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CSSProperties,
   HTMLAttributes,
@@ -7,7 +7,7 @@ import type {
   ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { App, Form, Input, List, Space, Badge, Tooltip } from 'antd';
+import { App, Form, Input, Tooltip } from 'antd';
 import type { FormInstance } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
@@ -1048,6 +1048,19 @@ function getLegacyAvailableStatus(status?: number | null) {
   return status == null ? undefined : AVAILABLE_STATUS[status];
 }
 
+function LegacyStatusBadge({
+  status,
+}: {
+  status?: 'error' | 'warning' | 'processing' | 'success' | 'default';
+}) {
+  return (
+    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
+      <span className={`ant-badge-status-dot${status ? ` ant-badge-status-${status}` : ''}`} />
+      <span className="ant-badge-status-text" />
+    </span>
+  );
+}
+
 export function createServerSortPayload(nodes: admin.ServerNode[]) {
   return nodes.reduce<Record<string, Record<string | number, number>>>((payload, node, index) => {
     const typePayload = payload[node.type] ?? {};
@@ -1185,6 +1198,89 @@ function LegacyNodeEditMenuTrigger({
         onClose={() => setOpen(false)}
       />
     </>
+  );
+}
+
+function LegacyServerMobileNodeList({
+  nodes,
+  actionMenu,
+  onToggleNodeShow,
+}: {
+  nodes: admin.ServerNode[];
+  actionMenu: (node: admin.ServerNode) => ReactNode;
+  onToggleNodeShow: (node: admin.ServerNode) => void;
+}) {
+  return (
+    <div className="ant-list ant-list-vertical ant-list-split v2board-table">
+      <div className="ant-spin-nested-loading">
+        <div className="ant-spin-container">
+          {nodes.length ? (
+            <ul className="ant-list-items">
+              {nodes.map((node) => (
+                <li
+                  key={node.id}
+                  className={`ant-list-item ant-list-item-no-flex v2board_node_mobile ${
+                    node.parent_id ? 'child_node' : ''
+                  }`}
+                >
+                  <div className="ant-list-item-main">
+                    <div className="ant-list-item-meta">
+                      <div className="ant-list-item-meta-content">
+                        <h4 className="ant-list-item-meta-title">
+                          <LegacyStatusBadge
+                            status={getLegacyAvailableStatus(node.available_status)}
+                          />
+                          {node.name}
+                        </h4>
+                        <div className="ant-list-item-meta-description">
+                          {node.host}:{node.port}
+                        </div>
+                      </div>
+                    </div>
+                    <ul className="ant-list-item-action">
+                      <li>
+                        <span>
+                          {getServerTypeTag(
+                            node.type,
+                            node.parent_id ? `${node.id} => ${node.parent_id}` : node.id,
+                          )}
+                          <LegacyTag>
+                            <LegacyUserIcon /> {node.online || 0}
+                          </LegacyTag>
+                          <LegacyTag>{node.rate} x</LegacyTag>
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+                  <div className="ant-list-item-extra">
+                    <LegacySwitch
+                      size="small"
+                      checked={parseInt(String(node.show), 10) as unknown as boolean}
+                      onChange={() => onToggleNodeShow(node)}
+                    />
+                    <div className="ant-divider ant-divider-vertical" />
+                    <span>
+                      <LegacyDropdown
+                        trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+                        overlay={actionMenu(node)}
+                      >
+                        <a ref={legacyHref()}>
+                          操作 <LegacyCaretDownIcon />
+                        </a>
+                      </LegacyDropdown>
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="ant-list-empty-text">
+              <LegacyEmpty />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1460,57 +1556,10 @@ function ServerManagePage() {
             )}
           </div>
           {mobile ? (
-            <List
-              className="v2board-table"
-              itemLayout="vertical"
-              dataSource={filteredNodes}
-              renderItem={(node) => (
-                <List.Item
-                  className={`v2board_node_mobile ${node.parent_id ? 'child_node' : ''}`}
-                  actions={[
-                    <Fragment key="server-node-summary">
-                      {getServerTypeTag(
-                        node.type,
-                        node.parent_id ? `${node.id} => ${node.parent_id}` : node.id,
-                      )}
-                      <LegacyTag>
-                        <LegacyUserIcon /> {node.online || 0}
-                      </LegacyTag>
-                      <LegacyTag>{node.rate} x</LegacyTag>
-                    </Fragment>,
-                  ]}
-                  extra={
-                    <>
-                      <LegacySwitch
-                        size="small"
-                        checked={parseInt(String(node.show), 10) as unknown as boolean}
-                        onChange={() => toggleNodeShow(node)}
-                      />
-                      <div className="ant-divider ant-divider-vertical" />
-                      <span>
-                        <LegacyDropdown
-                          trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
-                          overlay={actionMenu(node)}
-                        >
-                          <a ref={legacyHref()}>
-                            操作 <LegacyCaretDownIcon />
-                          </a>
-                        </LegacyDropdown>
-                      </span>
-                    </>
-                  }
-                >
-                  <List.Item.Meta
-                    title={
-                      <>
-                        <Badge status={getLegacyAvailableStatus(node.available_status)} />
-                        {node.name}
-                      </>
-                    }
-                    description={`${node.host}:${node.port}`}
-                  />
-                </List.Item>
-              )}
+            <LegacyServerMobileNodeList
+              nodes={filteredNodes}
+              actionMenu={actionMenu}
+              onToggleNodeShow={toggleNodeShow}
             />
           ) : (
             <LegacyDragSort
@@ -1667,7 +1716,7 @@ function ServerManagePage() {
                                             />
                                           </td>
                                           <td>
-                                            <Badge
+                                            <LegacyStatusBadge
                                               status={getLegacyAvailableStatus(
                                                 node.available_status,
                                               )}

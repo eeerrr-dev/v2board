@@ -612,15 +612,26 @@ describe('ServersPage legacy server group route', () => {
     expect(html).not.toContain('编辑排序');
     expect(serversSource).toContain('function isLegacyMobile()');
     expect(serversSource).toContain("window.navigator.userAgent.toLowerCase().includes('mobile')");
-    expect(serversSource).toContain('<List');
-    expect(serversSource).toContain('actions={[\n                    <Fragment key="server-node-summary">');
+    expect(serversSource).toContain('function LegacyServerMobileNodeList({');
+    expect(serversSource).toContain(
+      'className="ant-list ant-list-vertical ant-list-split v2board-table"',
+    );
+    expect(serversSource).toContain('className="ant-list-item-action"');
+    expect(serversSource).toContain('className="ant-list-item-extra"');
+    expect(serversSource).toContain('<LegacyServerMobileNodeList');
+    expect(serversSource).not.toContain('<List');
+    expect(serversSource).not.toContain('actions={[');
+    expect(serversSource).not.toContain('<Fragment');
     expect(serversSource).not.toContain('<span key="summary">');
   });
 
   it('uses the original available_status-only badge mapping', () => {
     expect(serversSource).toContain('function getLegacyAvailableStatus(status?: number | null)');
+    expect(serversSource).toContain('function LegacyStatusBadge({');
     expect(serversSource).toContain('getLegacyAvailableStatus(node.available_status)');
+    expect(serversSource).toContain('className="ant-badge ant-badge-status ant-badge-not-a-wrapper"');
     expect(serversSource).not.toContain('available_status ??');
+    expect(serversSource).not.toContain('<Badge');
   });
 
   it('keeps the original parseInt switch checked values in server manage', () => {
@@ -737,7 +748,8 @@ describe('ServersPage legacy server group route', () => {
     expect(managePageSource).toContain('<LegacyDropdownMenuItem');
     expect(managePageSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
     expect(managePageSource).toContain('overlay={actionMenu(row)}');
-    expect(managePageSource).toContain('overlay={actionMenu(node)}');
+    expect(managePageSource).toContain('actionMenu={actionMenu}');
+    expect(serversSource).toContain('overlay={actionMenu(node)}');
     expect(managePageSource).not.toContain('menu={actionMenu');
     expect(managePageSource).not.toContain('const actionMenu = (row: admin.ServerNode): MenuProps');
     expect(managePageSource).not.toContain('<Menu>');
@@ -1027,6 +1039,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('function getLegacyV2nodeTransportOptions');
     expect(serversSource).toContain('function getLegacyVlessFlowOptions');
     expect(serversSource).not.toContain('import { App, Form, Input, List, Select');
+    expect(serversSource).not.toContain('List, Space, Badge');
     expect(serversSource).not.toContain('<Select');
   });
 
