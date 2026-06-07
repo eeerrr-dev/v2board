@@ -11,6 +11,7 @@ import {
 
 type LegacyInputProps = InputHTMLAttributes<HTMLInputElement> & {
   legacyAttributeOrder?: 'placeholder-first' | 'type-first';
+  suffix?: ReactNode;
 };
 
 export const LegacyInput = forwardRef<HTMLInputElement, LegacyInputProps>(function LegacyInput(
@@ -20,6 +21,7 @@ export const LegacyInput = forwardRef<HTMLInputElement, LegacyInputProps>(functi
     legacyAttributeOrder,
     onChange,
     placeholder,
+    suffix,
     style,
     type = 'text',
     ...rest
@@ -56,7 +58,7 @@ export const LegacyInput = forwardRef<HTMLInputElement, LegacyInputProps>(functi
     if (styleAttr !== null) node.setAttribute('style', styleAttr);
   }, [legacyAttributeOrder, type]);
 
-  return (
+  const input = (
     <input
       ref={inputRef}
       placeholder={placeholder}
@@ -68,6 +70,17 @@ export const LegacyInput = forwardRef<HTMLInputElement, LegacyInputProps>(functi
       {...rest}
     />
   );
+
+  if (suffix !== undefined && suffix !== null) {
+    return (
+      <span className="ant-input-affix-wrapper">
+        {input}
+        <span className="ant-input-suffix">{suffix}</span>
+      </span>
+    );
+  }
+
+  return input;
 });
 
 export const LegacyCheckboxInput = forwardRef<

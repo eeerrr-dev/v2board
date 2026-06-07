@@ -74,6 +74,25 @@ describe('LegacyInput', () => {
     );
   });
 
+  it('renders the old runtime suffix input shell', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyInput
+          className="ant-input"
+          suffix="%"
+          type="number"
+          placeholder="在订单金额基础上附加手续费"
+          defaultValue="1"
+          onChange={() => undefined}
+        />,
+      );
+    });
+
+    expect(container.querySelector('.ant-input-affix-wrapper')?.outerHTML).toBe(
+      '<span class="ant-input-affix-wrapper"><input placeholder="在订单金额基础上附加手续费" type="number" class="ant-input" value="1"><span class="ant-input-suffix">%</span></span>',
+    );
+  });
+
   it('renders the old runtime textarea shell', async () => {
     await act(async () => {
       root.render(

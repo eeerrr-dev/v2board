@@ -1,5 +1,4 @@
 import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react';
-import { Input } from 'antd';
 import { admin } from '@v2board/api-client';
 import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
 import { apiClient } from '@/lib/api';
@@ -25,6 +24,7 @@ import {
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';
 import { LegacyTooltip } from '@/components/legacy-tooltip';
+import { LegacyInput } from '@/components/legacy-input';
 
 type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];
 
@@ -102,7 +102,8 @@ function PaymentEditor({
         <div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">显示名称</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="用于前端显示使用"
               defaultValue={submit.name as string | undefined}
               onChange={(event) => submitOnChange('name', event.target.value)}
@@ -110,7 +111,8 @@ function PaymentEditor({
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">图标URL(选填)</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="用于前端显示使用(https://x.com/icon.svg)"
               defaultValue={submit.icon as string | undefined}
               onChange={(event) => submitOnChange('icon', event.target.value)}
@@ -118,7 +120,8 @@ function PaymentEditor({
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">自定义通知域名(选填)</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="网关的通知将会发送到该域名(https://x.com)"
               defaultValue={submit.notify_domain as string | undefined}
               onChange={(event) => submitOnChange('notify_domain', event.target.value)}
@@ -128,7 +131,8 @@ function PaymentEditor({
             <div className="col-6">
               <div className="form-group">
                 <label htmlFor="example-text-input-alt">百分比手续费(选填)</label>
-                <Input
+                <LegacyInput
+                  className="ant-input"
                   suffix="%"
                   type="number"
                   placeholder="在订单金额基础上附加手续费"
@@ -140,7 +144,8 @@ function PaymentEditor({
             <div className="col-6">
               <div className="form-group">
                 <label htmlFor="example-text-input-alt">固定手续费(选填)</label>
-                <Input
+                <LegacyInput
+                  className="ant-input"
                   type="number"
                   placeholder="在订单金额基础上附加手续费"
                   defaultValue={(submit.handling_fee_fixed as number) / 100}
@@ -178,7 +183,8 @@ function PaymentEditor({
               <div className="form-group">
                 <label htmlFor="example-text-input-alt">{field.label}</label>
                 {showInput ? (
-                  <Input
+                  <LegacyInput
+                    className="ant-input"
                     placeholder={field.description}
                     defaultValue={(config[key] || field.value) as string | undefined}
                     onChange={(event) => configOnChange(key, event.target.value)}

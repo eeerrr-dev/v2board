@@ -125,6 +125,21 @@ describe('PaymentsPage legacy payment config', () => {
     expect(source).not.toContain('submit.handling_fee_fixed == null');
   });
 
+  it('uses the legacy payment editor input shells', () => {
+    expect(source).toContain("import { LegacyInput } from '@/components/legacy-input';");
+    expect(source).toContain('<LegacyInput');
+    expect(source).toContain('className="ant-input"');
+    expect(source).toContain('placeholder="用于前端显示使用"');
+    expect(source).toContain('placeholder="用于前端显示使用(https://x.com/icon.svg)"');
+    expect(source).toContain('placeholder="网关的通知将会发送到该域名(https://x.com)"');
+    expect(source).toContain('suffix="%"');
+    expect(source).toContain('type="number"');
+    expect(source).toContain('placeholder="在订单金额基础上附加手续费"');
+    expect(source).toContain('defaultValue={(config[key] || field.value) as string | undefined}');
+    expect(source).not.toContain("import { Input } from 'antd';");
+    expect(source).not.toContain('<Input');
+  });
+
   it('uses the old Ant Design modal shell for the payment editor', () => {
     const editorBlock = source.slice(
       source.indexOf('function PaymentEditor({'),
@@ -239,7 +254,8 @@ describe('PaymentsPage legacy payment config', () => {
 
   it('keeps the legacy delete confirm from returning a modal-loading promise', () => {
     expect(source).toContain("import { legacyConfirm } from '@/components/legacy-confirm';");
-    expect(source).toContain("import { Input } from 'antd';");
+    expect(source).toContain("import { LegacyInput } from '@/components/legacy-input';");
+    expect(source).not.toContain("import { Input } from 'antd';");
     expect(source).not.toContain("import { Input, Modal, Tooltip } from 'antd';");
     expect(source).not.toContain("import { Input, Tooltip } from 'antd';");
     expect(source).not.toContain('Modal.confirm({');
