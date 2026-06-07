@@ -132,6 +132,8 @@ describe('CouponsPage legacy routes', () => {
     expect(html).toContain('tabindex="-1" class="ant-table-body" style="overflow-x:scroll"');
     expect(html).toContain('class="ant-table-fixed" style="width:1050px"');
     expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain('class="ant-pagination ant-table-pagination mini"');
+    expect(html).toContain('ant-pagination-options-size-changer');
     expect(html).toContain('class="ant-table-align-left" style="text-align:left"');
     expect(html).toContain(
       'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
@@ -175,6 +177,8 @@ describe('CouponsPage legacy routes', () => {
     expect(html).toContain('tabindex="-1" class="ant-table-body" style="overflow-x:scroll"');
     expect(html).toContain('class="ant-table-fixed" style="width:1050px"');
     expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain('class="ant-pagination ant-table-pagination mini"');
+    expect(html).toContain('ant-pagination-options-size-changer');
     expect(html).toContain('class="ant-table-align-left" style="text-align:left"');
     expect(html).toContain('名称');
     expect(html).toContain('卡密');
@@ -294,7 +298,13 @@ describe('CouponsPage legacy routes', () => {
     );
     expect(source).toContain('legacyCouponQuery = next;');
     expect(source).toContain('legacyGiftcardQuery = next;');
-    expect(source.match(/\.\.\.pagination,/g) ?? []).toHaveLength(0);
+    expect(source.match(/const tablePagination = \{/g)).toHaveLength(2);
+    expect(source).toContain('total: coupons.data?.total');
+    expect(source).toContain('total: giftcards.data?.total');
+    expect(source).toContain(
+      'const updateTablePagination = (pagination: LegacyTablePaginationChange) =>',
+    );
+    expect(source.match(/\.\.\.pagination,/g) ?? []).toHaveLength(2);
     expect(source).not.toContain('current: pagination.current');
     expect(source).not.toContain('pageSize: pagination.pageSize');
     expect(source).not.toContain(
@@ -304,8 +314,12 @@ describe('CouponsPage legacy routes', () => {
 
   it('renders coupon and giftcard lists with the legacy standalone table instead of AntD5 Table props', () => {
     expect(source.match(/<LegacyStandaloneTable/g)).toHaveLength(2);
+    expect(source.match(/<LegacyTablePagination/g)).toHaveLength(2);
     expect(source.match(/scrollX=\{1050\}/g)).toHaveLength(2);
     expect(source.match(/fixedRightChildren=\{data\.map/g)).toHaveLength(2);
+    expect(source.match(/pageSizeOptions=\{LEGACY_TABLE_PAGE_SIZE_OPTIONS\}/g)).toHaveLength(2);
+    expect(source.match(/onChange=\{updateTablePagination\}/g)).toHaveLength(2);
+    expect(source).toContain('const LEGACY_TABLE_PAGE_SIZE_OPTIONS = [10, 50, 100, 150];');
     expect(source.match(/\{ title: '有效期', alignLeft: true \}/g)).toHaveLength(2);
     expect(source.match(/\{ title: '操作', alignRight: true, fixedRight: true \}/g)).toHaveLength(
       2,
@@ -313,8 +327,6 @@ describe('CouponsPage legacy routes', () => {
     expect(source).toContain('isEmpty={data.length === 0}');
     expect(source).not.toContain('<Table<Coupon>');
     expect(source).not.toContain('<Table<Giftcard>');
-    expect(source).not.toContain('total: coupons.data?.total,');
-    expect(source).not.toContain('total: giftcards.data?.total,');
     expect(source).not.toContain('pagination={{');
   });
 
@@ -377,7 +389,7 @@ describe('CouponsPage legacy routes', () => {
     expect(source).toContain('<LegacySwitch');
     expect(source.match(/<LegacySelect/g)).toHaveLength(5);
     expect(source).toContain(
-      'LegacyStandaloneTable,\n  legacyTableRowKey,\n  type LegacyStandaloneTableHeader,',
+      'LegacyStandaloneTable,\n  LegacyTablePagination,\n  legacyTableRowKey,\n  type LegacyStandaloneTableHeader,\n  type LegacyTablePaginationChange,',
     );
     expect(source).not.toContain("import { PlusOutlined } from '@ant-design/icons';");
     expect(source).not.toContain('Button, DatePicker');

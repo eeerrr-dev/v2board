@@ -22,8 +22,10 @@ import { LegacyButton } from '@/components/legacy-button';
 import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
 import {
   LegacyStandaloneTable,
+  LegacyTablePagination,
   legacyTableRowKey,
   type LegacyStandaloneTableHeader,
+  type LegacyTablePaginationChange,
 } from '@/components/legacy-standalone-table';
 import { LegacyRangePicker } from '@/components/legacy-range-picker';
 import { LegacySwitch } from '@/components/legacy-switch';
@@ -95,6 +97,7 @@ const PERIOD_OPTIONS: LegacySelectOption[] = Object.keys(PERIOD_TEXT).map((perio
   value: period,
   label: PERIOD_TEXT[period] ?? period,
 }));
+const LEGACY_TABLE_PAGE_SIZE_OPTIONS = [10, 50, 100, 150];
 
 function planOptions(plans: Plan[] | undefined): LegacySelectOption[] {
   return (plans ?? []).map((plan) => ({
@@ -209,6 +212,16 @@ function CouponPage() {
   };
 
   const data = coupons.data?.data ?? [];
+  const tablePagination = {
+    current: query.current || 1,
+    pageSize: query.pageSize || 10,
+    total: coupons.data?.total,
+  };
+  const updateTablePagination = (pagination: LegacyTablePaginationChange) =>
+    setQuery({
+      ...query,
+      ...pagination,
+    });
 
   const headers: LegacyStandaloneTableHeader[] = [
     { title: '#' },
@@ -295,6 +308,15 @@ function CouponPage() {
               headers={headers}
               isEmpty={data.length === 0}
               scrollX={1050}
+              pagination={
+                <LegacyTablePagination
+                  current={tablePagination.current}
+                  pageSize={tablePagination.pageSize}
+                  total={tablePagination.total}
+                  pageSizeOptions={LEGACY_TABLE_PAGE_SIZE_OPTIONS}
+                  onChange={updateTablePagination}
+                />
+              }
               fixedRightChildren={data.map((row, index) => (
                 <tr
                   key={index}
@@ -515,6 +537,16 @@ function GiftcardPage() {
   };
 
   const data = giftcards.data?.data ?? [];
+  const tablePagination = {
+    current: query.current || 1,
+    pageSize: query.pageSize || 10,
+    total: giftcards.data?.total,
+  };
+  const updateTablePagination = (pagination: LegacyTablePaginationChange) =>
+    setQuery({
+      ...query,
+      ...pagination,
+    });
 
   const headers: LegacyStandaloneTableHeader[] = [
     { title: '#' },
@@ -620,6 +652,15 @@ function GiftcardPage() {
               headers={headers}
               isEmpty={data.length === 0}
               scrollX={1050}
+              pagination={
+                <LegacyTablePagination
+                  current={tablePagination.current}
+                  pageSize={tablePagination.pageSize}
+                  total={tablePagination.total}
+                  pageSizeOptions={LEGACY_TABLE_PAGE_SIZE_OPTIONS}
+                  onChange={updateTablePagination}
+                />
+              }
               fixedRightChildren={data.map((row, index) => (
                 <tr
                   key={index}
