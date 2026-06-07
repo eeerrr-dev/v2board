@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   passportToken2Login: vi.fn(),
   userCheckLogin: vi.fn(),
   userInfo: vi.fn(),
+  legacyInfo: vi.fn(),
   searchParams: new URLSearchParams(),
 }));
 
@@ -30,9 +31,12 @@ vi.mock('antd', () => ({
   App: {
     useApp: () => ({
       message: { error: vi.fn() },
-      modal: { info: vi.fn() },
     }),
   },
+}));
+
+vi.mock('@/components/legacy-confirm', () => ({
+  legacyInfo: mocks.legacyInfo,
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -61,6 +65,7 @@ describe('Admin LoginPage legacy behavior', () => {
     mocks.passportToken2Login.mockReset();
     mocks.userCheckLogin.mockReset();
     mocks.userInfo.mockReset();
+    mocks.legacyInfo.mockReset();
     mocks.searchParams = new URLSearchParams();
     localStorage.clear();
     window.settings = {
@@ -107,9 +112,42 @@ describe('Admin LoginPage legacy behavior', () => {
   });
 
   it('keeps the original forgot-password modal options', () => {
+    expect(loginSource).toContain("import { legacyInfo } from '@/components/legacy-confirm';");
+    expect(loginSource).toContain('void legacyInfo({');
+    expect(loginSource).not.toContain('modal.info({');
     expect(loginSource).toContain("title: '忘记密码'");
+    expect(loginSource).toContain('centered: true');
     expect(loginSource).toContain("okText: '我知道了'");
     expect(loginSource).toContain('onOk() {}');
+  });
+
+  it('opens the old static info modal for forgot-password help', async () => {
+    await act(async () => {
+      root.render(<LoginPage />);
+    });
+
+    await act(async () => {
+      [...container.querySelectorAll<HTMLAnchorElement>('a')]
+        .find((anchor) => anchor.textContent === '忘记密码')!
+        .click();
+    });
+
+    expect(mocks.legacyInfo).toHaveBeenCalledTimes(1);
+    const options = mocks.legacyInfo.mock.calls[0]![0] as {
+      title: string;
+      content: { props: { children: Array<{ props: { children: string } }> } };
+      centered: boolean;
+      okText: string;
+      onOk: () => void;
+    };
+    expect(options.title).toBe('忘记密码');
+    expect(options.centered).toBe(true);
+    expect(options.okText).toBe('我知道了');
+    expect(options.content.props.children).toHaveLength(2);
+    const [helpText, commandText] = options.content.props.children;
+    expect(helpText?.props.children).toBe('在站点目录下执行命令找回密码');
+    expect(commandText?.props.children).toBe('php artisan reset:password 管理员邮箱');
+    expect(options.onOk()).toBeUndefined();
   });
 
   it('clears the legacy login loading state before saving auth and navigating', () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { LegacyQuestionCircleIcon, LegacyLoadingIcon } from './legacy-ant-icon';
+import { LegacyQuestionCircleIcon, LegacyInfoCircleIcon, LegacyLoadingIcon } from './legacy-ant-icon';
 import { LegacyButton } from './legacy-button';
 
 interface LegacyConfirmOptions {
@@ -16,6 +16,8 @@ interface LegacyConfirmOptions {
     disabled?: boolean;
     loading?: boolean;
   };
+  centered?: boolean;
+  type?: 'confirm' | 'info';
 }
 
 type LegacyConfirmAction = (...args: unknown[]) => unknown;
@@ -43,6 +45,10 @@ export function legacyConfirm(options: LegacyConfirmOptions): Promise<boolean> {
     queue = [...queue, { id: nextId++, options, resolve }];
     emit();
   });
+}
+
+export function legacyInfo(options: Omit<LegacyConfirmOptions, 'showCancel' | 'type'>): Promise<boolean> {
+  return legacyConfirm({ ...options, showCancel: false, type: 'info' });
 }
 
 export function LegacyConfirmProvider() {
@@ -130,6 +136,11 @@ export function LegacyConfirmProvider() {
   const { options } = request;
   const okButtonLoading = actionLoading || Boolean(options.okButtonProps?.loading);
   const okButtonClassName = `ant-btn ant-btn-primary${okButtonLoading ? ' ant-btn-loading' : ''}`;
+  const modalType = options.type ?? 'confirm';
+  const wrapClassName = `ant-modal-wrap${options.centered ? ' ant-modal-centered' : ''}`;
+  const modalClassName = `ant-modal ant-modal-confirm ant-modal-confirm-${modalType}`;
+  const modalIcon =
+    modalType === 'info' ? <LegacyInfoCircleIcon /> : <LegacyQuestionCircleIcon />;
 
   const handleMaskClick = (event: MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget && options.maskClosable) {
@@ -140,9 +151,9 @@ export function LegacyConfirmProvider() {
   return createPortal(
     <div className="ant-modal-root">
       <div className="ant-modal-mask" />
-      <div tabIndex={-1} className="ant-modal-wrap" role="dialog" onClick={handleMaskClick}>
+      <div tabIndex={-1} className={wrapClassName} role="dialog" onClick={handleMaskClick}>
         <div
-          className="ant-modal ant-modal-confirm ant-modal-confirm-confirm"
+          className={modalClassName}
           role="document"
           style={{ width: '416px' }}
         >
@@ -150,7 +161,7 @@ export function LegacyConfirmProvider() {
             <div className="ant-modal-body">
               <div className="ant-modal-confirm-body-wrapper" ref={bodyRef}>
                 <div className="ant-modal-confirm-body">
-                  <LegacyQuestionCircleIcon />
+                  {modalIcon}
                   <span className="ant-modal-confirm-title">{options.title}</span>
                   <div className="ant-modal-confirm-content">{options.content}</div>
                 </div>

@@ -8,6 +8,7 @@ import { i18nGet } from '@/lib/errors';
 import { getAdminBackgroundUrl, getAdminLogo, getAdminTitle } from '@/lib/legacy-settings';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyLoadingIcon } from '@/components/legacy-ant-icon';
+import { legacyInfo } from '@/components/legacy-confirm';
 
 function normalizeRedirectTarget(target: string | null): string {
   if (!target) return '/dashboard';
@@ -17,7 +18,7 @@ function normalizeRedirectTarget(target: string | null): string {
 export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const [submitting, setSubmitting] = useState(false);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
@@ -132,8 +133,8 @@ export default function LoginPage() {
                 </div>
                 <div className="text-center bg-gray-lighter p-3 px-4">
                   <a
-                    onClick={() =>
-                      modal.info({
+                    onClick={() => {
+                      void legacyInfo({
                         title: '忘记密码',
                         content: (
                           <div>
@@ -144,8 +145,8 @@ export default function LoginPage() {
                         centered: true,
                         okText: '我知道了',
                         onOk() {},
-                      })
-                    }
+                      });
+                    }}
                   >
                     忘记密码
                   </a>
