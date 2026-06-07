@@ -332,6 +332,12 @@ describe('UsersPage legacy user manager', () => {
     expect(userManageDrawerSource).not.toContain(
       "import { App, DatePicker, Tooltip } from 'antd';",
     );
+    expect(userManageDrawerSource).toContain("import { LegacyTooltip } from './legacy-tooltip';");
+    expect(userManageDrawerSource).toContain(
+      '<LegacyTooltip title="设置后该用户购买任何订阅将始终享受该折扣" placement="top">',
+    );
+    expect(userManageDrawerSource).not.toContain("Tooltip } from 'antd'");
+    expect(userManageDrawerSource).not.toContain('<Tooltip');
     expect(userManageDrawerSource).toContain(
       'value={(values.plan_id || null) as LegacySelectValue}',
     );

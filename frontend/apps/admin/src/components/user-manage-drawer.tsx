@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App, Tooltip } from 'antd';
+import { App } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { AdminUserRow, AdminUserUpdatePayload } from '@v2board/types';
 import { BYTE_GB } from '@v2board/config/format';
@@ -11,6 +11,7 @@ import { LegacyInput, LegacyInputGroup, LegacyTextArea } from './legacy-input';
 import { LegacyLoadingIcon, LegacyQuestionCircleIcon } from './legacy-ant-icon';
 import { LegacyDatePicker } from './legacy-date-picker';
 import { LegacySelect, type LegacySelectOption, type LegacySelectValue } from './legacy-select';
+import { LegacyTooltip } from './legacy-tooltip';
 
 type UserManageFormValues = Omit<Partial<AdminUserRow>, 'expired_at' | 'is_admin' | 'is_staff'> & {
   invite_user_email?: string | null;
@@ -324,9 +325,9 @@ export function UserManageDrawer({
             <div className="form-group">
               <label htmlFor="example-text-input-alt">
                 专享折扣比例{' '}
-                <Tooltip title="设置后该用户购买任何订阅将始终享受该折扣" placement="top">
+                <LegacyTooltip title="设置后该用户购买任何订阅将始终享受该折扣" placement="top">
                   <LegacyQuestionCircleIcon />
-                </Tooltip>
+                </LegacyTooltip>
               </label>
               <LegacyInputGroup
                 addonAfter="%"
