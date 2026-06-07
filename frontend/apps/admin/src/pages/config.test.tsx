@@ -215,18 +215,19 @@ describe('ConfigPage legacy theme config', () => {
     expect(html).not.toContain('block block-transparent bg-image mb-0 mb-md-3 bg-primary');
   });
 
-  it('renders a visible legacy failure block when theme loading errors', () => {
+  it('keeps showing the original loading spinner when theme loading errors', () => {
     mocks.themesData = { active: undefined, themes: {} };
     mocks.themesError = true;
     const html = renderToStaticMarkup(<ConfigPage />);
     mocks.themesError = false;
 
-    expect(html).toContain('block block-rounded');
-    expect(html).toContain('页面加载失败');
-    expect(html).toContain('主题配置加载失败，请刷新页面后重试。');
-    expect(html).toContain('btn btn-primary');
-    expect(html).toContain('重试');
-    expect(html).not.toContain('spinner-grow text-primary');
+    expect(html).toContain('content content-full text-center pt-5');
+    expect(html).toContain('spinner-grow text-primary');
+    expect(html).toContain('Loading...');
+    expect(html).not.toContain('页面加载失败');
+    expect(html).not.toContain('主题配置加载失败，请刷新页面后重试。');
+    expect(html).not.toContain('btn btn-primary');
+    expect(html).not.toContain('重试');
     expect(html).not.toContain('主题配置将不会生效');
   });
 
@@ -335,7 +336,7 @@ describe('ConfigPage legacy theme config', () => {
 
     expect(themeCardBlock).toContain('key={key}');
     expect(configSource).toContain('{(theme.configs ?? []).map((field) => (');
-    expect(configSource).toContain('<div key={field.field_name} className="form-group">');
+    expect(configSource).toContain('<div className="form-group">');
     expect(configSource).toContain(
       'const options = field.select_options as Record<string, string>;',
     );
@@ -354,6 +355,7 @@ describe('ConfigPage legacy theme config', () => {
     expect(configSource).toContain('value={toText(value)}');
     expect(configSource).toContain("if (field.field_type === 'input') {");
     expect(configSource).toContain('return undefined;');
+    expect(configSource).not.toContain('<div key={field.field_name} className="form-group">');
     expect(configSource).not.toContain('<div className="form-group" key={field.field_name}>');
     expect(configSource).not.toContain('options={Object.entries(field.select_options ?? {}).map');
     expect(configSource).not.toContain('Object.keys(field.select_options ?? {})');
