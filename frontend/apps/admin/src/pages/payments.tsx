@@ -1,5 +1,5 @@
 import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react';
-import { Input, Tooltip } from 'antd';
+import { Input } from 'antd';
 import { admin } from '@v2board/api-client';
 import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
 import { apiClient } from '@/lib/api';
@@ -24,6 +24,7 @@ import {
 } from '@/components/legacy-standalone-table';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';
+import { LegacyTooltip } from '@/components/legacy-tooltip';
 
 type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];
 
@@ -247,12 +248,12 @@ export default function PaymentsPage() {
       title: (
         <span>
           通知地址{' '}
-          <Tooltip
+          <LegacyTooltip
             placement="top"
             title="支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。"
           >
             <LegacyQuestionCircleIcon />
-          </Tooltip>
+          </LegacyTooltip>
         </span>
       ),
     },

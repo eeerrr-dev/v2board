@@ -94,9 +94,14 @@ describe('PaymentsPage legacy payment config', () => {
   });
 
   it('keeps the bundled notification-address tooltip copy', () => {
+    expect(source).toContain("import { LegacyTooltip } from '@/components/legacy-tooltip';");
+    expect(source).toContain('<LegacyTooltip');
+    expect(source).toContain('placement="top"');
     expect(source).toContain(
       'title="支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。"',
     );
+    expect(source).not.toContain("Tooltip } from 'antd'");
+    expect(source).not.toContain('<Tooltip');
     expect(source).not.toContain('支付网关将会把数据通知到本地址，请通过防火墙放行本地址。');
   });
 
@@ -234,8 +239,9 @@ describe('PaymentsPage legacy payment config', () => {
 
   it('keeps the legacy delete confirm from returning a modal-loading promise', () => {
     expect(source).toContain("import { legacyConfirm } from '@/components/legacy-confirm';");
-    expect(source).toContain("import { Input, Tooltip } from 'antd';");
+    expect(source).toContain("import { Input } from 'antd';");
     expect(source).not.toContain("import { Input, Modal, Tooltip } from 'antd';");
+    expect(source).not.toContain("import { Input, Tooltip } from 'antd';");
     expect(source).not.toContain('Modal.confirm({');
     expect(source).toContain('void legacyConfirm({');
     const confirmStart = source.indexOf('onOk: () => {');
