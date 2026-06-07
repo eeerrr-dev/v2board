@@ -49,7 +49,7 @@ import {
   LegacyReadIcon,
   LegacyUserIcon,
 } from '@/components/legacy-ant-icon';
-import { LegacyCheckboxInput, LegacyInput } from '@/components/legacy-input';
+import { LegacyCheckboxInput, LegacyInput, LegacyTextArea } from '@/components/legacy-input';
 import { LegacyEmpty } from '@/components/legacy-empty';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyModal } from '@/components/legacy-modal';
@@ -790,7 +790,8 @@ function ServerGroupModal({
         <div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">组名</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="请输入组名"
               value={submit.name}
               onChange={(event) => setSubmit((value) => ({ ...value, name: event.target.value }))}
@@ -946,7 +947,8 @@ function ServerRouteModal({
         <div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">备注</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="请输入备注"
               value={route.remarks}
               onChange={(event) => setRoute((value) => ({ ...value, remarks: event.target.value }))}
@@ -961,7 +963,8 @@ function ServerRouteModal({
                   填写参考
                 </a>
               </label>
-              <Input.TextArea
+              <LegacyTextArea
+                className="ant-input"
                 rows={5}
                 placeholder={getRouteMatchPlaceholder(route.action)}
                 value={getRouteMatchTextareaValue(route.match)}
@@ -989,7 +992,8 @@ function ServerRouteModal({
           {route.action === 'dns' ? (
             <div className="form-group">
               <label htmlFor="example-text-input-alt">DNS服务器</label>
-              <Input
+              <LegacyInput
+                className="ant-input"
                 placeholder="请输入用于解析的DNS服务器地址"
                 value={legacyInputValue(route.action_value)}
                 onChange={(event) =>
@@ -1009,7 +1013,8 @@ function ServerRouteModal({
                   填写参考
                 </a>
               </label>
-              <Input.TextArea
+              <LegacyTextArea
+                className="ant-input"
                 rows={8}
                 placeholder={JSON.stringify(
                   {

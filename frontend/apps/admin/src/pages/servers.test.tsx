@@ -384,6 +384,17 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function getServerTypeTag'),
     );
 
+    expect(serversSource).toContain(
+      "import { LegacyCheckboxInput, LegacyInput, LegacyTextArea } from '@/components/legacy-input';",
+    );
+    expect(groupModalSource).toContain('<LegacyInput');
+    expect(groupModalSource).toContain('className="ant-input"');
+    expect(groupModalSource).not.toContain('<Input');
+    expect(routeModalSource.match(/<LegacyInput/g)).toHaveLength(2);
+    expect(routeModalSource.match(/<LegacyTextArea/g)).toHaveLength(2);
+    expect(routeModalSource).toContain('className="ant-input"');
+    expect(routeModalSource).not.toContain('<Input');
+    expect(routeModalSource).not.toContain('Input.TextArea');
     expect(groupModalSource).toContain('value={submit.name}');
     expect(routeModalSource).toContain('value={route.remarks}');
     expect(
