@@ -410,10 +410,8 @@ describe('UsersPage legacy user manager', () => {
   it('keeps the legacy assigned-order modal loading OK text', () => {
     expect(usersSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
     expect(usersSource).toContain("import { legacyConfirm } from '@/components/legacy-confirm';");
-    expect(usersSource).toContain("import { App, Input } from 'antd';");
-    expect(usersSource).toContain(
-      "import { LegacyInput, LegacyInputGroup, LegacyTextArea } from '@/components/legacy-input';",
-    );
+    expect(usersSource).toContain("import { App } from 'antd';");
+    expect(usersSource).toContain('LegacyInputCompactGroup,');
     expect(usersSource).toContain('LegacyDropdownMenu,');
     expect(usersSource).toContain('LegacyDropdownMenuItem,');
     expect(usersSource).toContain("} from '@/components/legacy-select';");
@@ -466,11 +464,19 @@ describe('UsersPage legacy user manager', () => {
     expect(generateUserModalSource).toContain('title="创建用户"');
     expect(generateUserModalSource).toContain('okText="生成"');
     expect(generateUserModalSource).toContain('okButtonProps={{ loading }}');
-    expect(generateUserModalSource).toContain('<Input.Group compact>');
+    expect(generateUserModalSource).toContain('<LegacyInputCompactGroup>');
+    expect(generateUserModalSource).toContain('<LegacyInput');
+    expect(generateUserModalSource).toContain('className="ant-input"');
+    expect(generateUserModalSource).toContain('placeholder="账号（批量生成请留空）"');
+    expect(generateUserModalSource).toContain('placeholder="留空则密码与邮箱相同"');
+    expect(generateUserModalSource).toContain('placeholder="如果为批量生成请输入生成数量"');
     expect(generateUserModalSource).toContain('!submit.generate_count');
     expect(generateUserModalSource).toContain('!submit.email_prefix');
     expect(generateUserModalSource).toContain('<LegacyDatePicker');
     expect(generateUserModalSource).not.toContain('<DatePicker');
+    expect(generateUserModalSource).not.toContain('<Input');
+    expect(generateUserModalSource).not.toContain('Input.Group');
+    expect(usersSource).not.toContain("Input } from 'antd'");
     expect(usersSource).not.toContain(
       "import { App, DatePicker, Dropdown, Input, Menu, Modal, Select, Tooltip } from 'antd';",
     );

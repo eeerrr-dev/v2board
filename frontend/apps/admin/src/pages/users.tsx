@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
-import { App, Input } from 'antd';
+import { App } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -67,7 +67,12 @@ import {
   LEGACY_DROPDOWN_CLICK_TRIGGER,
 } from '@/components/legacy-dropdown';
 import { LegacyTooltip } from '@/components/legacy-tooltip';
-import { LegacyInput, LegacyInputGroup, LegacyTextArea } from '@/components/legacy-input';
+import {
+  LegacyInput,
+  LegacyInputCompactGroup,
+  LegacyInputGroup,
+  LegacyTextArea,
+} from '@/components/legacy-input';
 
 type QueryState = {
   current: number;
@@ -862,27 +867,35 @@ function GenerateUserModal({
       <div>
         <div className="form-group">
           <label htmlFor="example-text-input-alt">邮箱</label>
-          <Input.Group compact>
+          <LegacyInputCompactGroup>
             {!submit.generate_count && (
-              <Input
+              <LegacyInput
+                className="ant-input"
                 placeholder="账号（批量生成请留空）"
                 style={{ width: '45%' }}
                 value={submit.email_prefix}
                 onChange={(event) => setSubmitField('email_prefix', event.target.value)}
               />
             )}
-            <Input placeholder="@" style={{ width: '10%', textAlign: 'center' }} disabled />
-            <Input
+            <LegacyInput
+              className="ant-input"
+              placeholder="@"
+              style={{ width: '10%', textAlign: 'center' }}
+              disabled
+            />
+            <LegacyInput
+              className="ant-input"
               placeholder="域"
               style={{ width: '45%' }}
               value={submit.email_suffix}
               onChange={(event) => setSubmitField('email_suffix', event.target.value)}
             />
-          </Input.Group>
+          </LegacyInputCompactGroup>
         </div>
         <div className="form-group">
           <label htmlFor="example-text-input-alt">密码</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={submit.password}
             placeholder="留空则密码与邮箱相同"
             onChange={(event) => setSubmitField('password', event.target.value)}
@@ -914,7 +927,8 @@ function GenerateUserModal({
         {!submit.email_prefix && (
           <div className="form-group">
             <label htmlFor="example-text-input-alt">生成数量</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               value={submit.generate_count}
               placeholder="如果为批量生成请输入生成数量"
               onChange={(event) => setSubmitField('generate_count', event.target.value)}

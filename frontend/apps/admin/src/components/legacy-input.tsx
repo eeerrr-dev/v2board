@@ -138,6 +138,10 @@ export const LegacyTextArea = forwardRef<
   );
 });
 
+export function LegacyInputCompactGroup({ children }: { children: ReactNode }) {
+  return <span className="ant-input-group ant-input-group-compact">{children}</span>;
+}
+
 export function LegacyInputGroup({
   addonBefore,
   addonAfter,

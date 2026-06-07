@@ -2,7 +2,13 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { LegacyCheckboxInput, LegacyInput, LegacyInputGroup, LegacyTextArea } from './legacy-input';
+import {
+  LegacyCheckboxInput,
+  LegacyInput,
+  LegacyInputCompactGroup,
+  LegacyInputGroup,
+  LegacyTextArea,
+} from './legacy-input';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -174,6 +180,21 @@ describe('LegacyInput', () => {
 
     expect(container.querySelector('.ant-input-group-wrapper')?.outerHTML).toBe(
       '<span class="ant-input-group-wrapper"><span class="ant-input-wrapper ant-input-group"><span class="ant-input-group-addon"><span class="selector">类型</span></span><input type="number" placeholder="请输入值" class="ant-input" value="8"><span class="ant-input-group-addon">%</span></span></span>',
+    );
+  });
+
+  it('renders the old compact input group classes', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyInputCompactGroup>
+          <LegacyInput className="ant-input" placeholder="账号" style={{ width: '45%' }} />
+          <LegacyInput className="ant-input" placeholder="@" disabled style={{ width: '10%' }} />
+        </LegacyInputCompactGroup>,
+      );
+    });
+
+    expect(container.querySelector('.ant-input-group-compact')?.outerHTML).toBe(
+      '<span class="ant-input-group ant-input-group-compact"><input placeholder="账号" type="text" class="ant-input" value="" style="width: 45%;"><input disabled="" placeholder="@" type="text" class="ant-input" value="" style="width: 10%;"></span>',
     );
   });
 
