@@ -88,7 +88,7 @@ function ThemeConfigPage() {
 
   return (
     <>
-      <div className="row">
+      <div key="theme-warning" className="row">
         <div className="col-lg-12">
           <div className="alert alert-warning mb-0 mb-md-4" role="alert">
             <p className="mb-0">
@@ -105,6 +105,7 @@ function ThemeConfigPage() {
       {Object.entries(themeItems).map(([key, theme]) => {
         return (
           <div
+            key={key}
             className="block block-transparent bg-image mb-0 mb-md-3 bg-primary"
             style={{ backgroundImage: `url(${THEME_BACKGROUND})` }}
           >
@@ -193,7 +194,7 @@ function ThemeSettingsButton({
         onOk={save}
       >
         {(theme.configs ?? []).map((field) => (
-          <div className="form-group">
+          <div key={field.field_name} className="form-group">
             <label>{field.label}</label>
             <ThemeField
               field={field}

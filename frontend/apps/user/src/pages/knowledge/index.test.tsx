@@ -199,7 +199,7 @@ describe('KnowledgePage bundled-theme list', () => {
     expect(html).not.toContain('暂无数据');
   });
 
-  it('keeps the bundled-theme unkeyed category and article rows', () => {
+  it('uses stable keys for category and article rows without changing the legacy markup', () => {
     const categorySource = knowledgeSource.slice(
       knowledgeSource.indexOf('Object.keys(knowledgeGroups).map((category) => ('),
       knowledgeSource.indexOf('{detailDrawerStatus', knowledgeSource.indexOf('Object.keys(knowledgeGroups).map')),
@@ -207,9 +207,9 @@ describe('KnowledgePage bundled-theme list', () => {
 
     expect(categorySource).toContain('Object.keys(knowledgeGroups).map((category) => (');
     expect(categorySource).toContain('knowledgeGroups[category]?.map((item) => (');
-    expect(categorySource).not.toContain('key={category}');
-    expect(categorySource).not.toContain('key={item.id}');
-    expect(categorySource).not.toContain('key=');
+    expect(categorySource).toContain('key={category}');
+    expect(categorySource).toContain('key={item.id}');
+    expect(categorySource).not.toContain('key={Math.random()}');
   });
 
   it('keeps the bundled-theme markdown body fallback using logical OR', () => {

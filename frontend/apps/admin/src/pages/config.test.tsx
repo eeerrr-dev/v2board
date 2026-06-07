@@ -333,9 +333,9 @@ describe('ConfigPage legacy theme config', () => {
       configSource.indexOf('function ThemeSettingsButton('),
     );
 
-    expect(themeCardBlock).not.toContain('key={key}');
+    expect(themeCardBlock).toContain('key={key}');
     expect(configSource).toContain('{(theme.configs ?? []).map((field) => (');
-    expect(configSource).toContain('<div className="form-group">');
+    expect(configSource).toContain('<div key={field.field_name} className="form-group">');
     expect(configSource).toContain(
       'const options = field.select_options as Record<string, string>;',
     );

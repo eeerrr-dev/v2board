@@ -122,11 +122,11 @@ describe('AdminLayout legacy shell', () => {
     expect(html).not.toContain('href="/#/server/manage"');
   });
 
-  it('keeps bundled-theme random keys for admin sidebar menu headings and items', () => {
+  it('uses stable admin sidebar keys without changing the legacy navigation markup', () => {
     const source = readFileSync(`${process.cwd()}/src/components/layout/admin-layout.tsx`, 'utf8');
 
-    expect(source).toContain('<li key={Math.random()} className="nav-main-heading">');
-    expect(source).toContain('<li key={Math.random()} className="nav-main-item">');
+    expect(source).toContain('<li key={`heading-${item.title}-${index}`} className="nav-main-heading">');
+    expect(source).toContain('<li key={item.href ?? item.title} className="nav-main-item">');
     expect(source).toContain(
       "className={`dropdown-menu dropdown-menu-right dropdown-menu-lg p-0 ${showAvatarMenu && 'show'}`}",
     );
@@ -139,8 +139,8 @@ describe('AdminLayout legacy shell', () => {
     );
     expect(source).not.toContain("document.addEventListener('click'");
     expect(source).not.toContain("document.removeEventListener('click'");
-    expect(source).not.toContain('key={`${item.title}-${index}`}');
-    expect(source).not.toContain('key={item.href}');
+    expect(source).not.toContain('key={Math.random()} className="nav-main-heading"');
+    expect(source).not.toContain('key={Math.random()} className="nav-main-item"');
   });
 });
 

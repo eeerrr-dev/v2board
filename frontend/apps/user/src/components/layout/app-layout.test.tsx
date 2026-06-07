@@ -192,12 +192,13 @@ describe('AppLayout bundled-theme markup', () => {
     expect(html).not.toContain('class="nav-main-link active"');
   });
 
-  it('keeps bundled-theme random keys for sidebar menu headings and items', () => {
+  it('uses stable sidebar keys without changing the legacy navigation markup', () => {
     const source = readFileSync(`${process.cwd()}/src/components/layout/app-layout.tsx`, 'utf8');
 
-    expect(source).toContain('<li key={Math.random()} className="nav-main-heading">');
-    expect(source).toContain('<li className="nav-main-item" key={Math.random()}>');
-    expect(source).not.toContain('<li className="nav-main-item" key={item.to}>');
+    expect(source).toContain('<li key={`heading-${group.labelKey}`} className="nav-main-heading">');
+    expect(source).toContain('<li className="nav-main-item" key={item.to}>');
+    expect(source).not.toContain('key={Math.random()} className="nav-main-heading"');
+    expect(source).not.toContain('className="nav-main-item" key={Math.random()}');
   });
 });
 

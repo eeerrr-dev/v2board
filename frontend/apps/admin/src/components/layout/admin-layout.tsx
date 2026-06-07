@@ -187,11 +187,11 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
           <ul className="nav-main">
             {navItems.map((item, index) =>
               item.type === 'heading' ? (
-                <li key={Math.random()} className="nav-main-heading">
+                <li key={`heading-${item.title}-${index}`} className="nav-main-heading">
                   {item.title}
                 </li>
               ) : (
-                <li key={Math.random()} className="nav-main-item">
+                <li key={item.href ?? item.title} className="nav-main-item">
                   <a
                     className={`nav-main-link ${location.pathname === item.href && 'active'}`}
                     onClick={() => handleNavClick(item.href)}

@@ -113,7 +113,7 @@ export default function KnowledgePage() {
 
   return (
     <>
-      <div className="v2board-knowledge-search-bar">
+      <div key="knowledge-search" className="v2board-knowledge-search-bar">
         <span className="ant-input-search mb-3 ant-input-search-enter-button ant-input-search-large ant-input-group-wrapper ant-input-group-wrapper-lg">
           <span className="ant-input-wrapper ant-input-group">
             <input
@@ -141,7 +141,7 @@ export default function KnowledgePage() {
         </div>
       ) : (
         Object.keys(knowledgeGroups).map((category) => (
-          <div className="row mb-3 mb-md-0">
+          <div key={category} className="row mb-3 mb-md-0">
             <div className="col-md-12">
               {/* Original class string has a trailing space: "block block-rounded " (umi.js). */}
               <div className="block block-rounded ">
@@ -151,6 +151,7 @@ export default function KnowledgePage() {
                 <div className="list-group">
                   {knowledgeGroups[category]?.map((item) => (
                     <a
+                      key={item.id}
                       className="list-group-item list-group-item-action"
                       style={{
                         borderRadius: 'unset',

@@ -180,14 +180,14 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
         <div className="content-side content-side-full">
           <ul className="nav-main">
             {NAV.map((group, gi) => (
-              <Fragment key={gi}>
+              <Fragment key={group.labelKey ?? `group-${gi}`}>
                 {group.labelKey && (
-                  <li key={Math.random()} className="nav-main-heading">
+                  <li key={`heading-${group.labelKey}`} className="nav-main-heading">
                     {t(group.labelKey)}
                   </li>
                 )}
                 {group.items.map((item) => (
-                  <li className="nav-main-item" key={Math.random()}>
+                  <li className="nav-main-item" key={item.to}>
                     <a
                       // Original inactive link renders the literal `false`:
                       // `"nav-main-link ".concat(pathname===to && "active")` (umi.js @895700).
