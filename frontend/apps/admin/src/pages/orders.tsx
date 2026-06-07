@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { App, Col, Divider, Input, Row } from 'antd';
+import { App, Col, Divider, Row } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminFilter } from '@v2board/api-client';
@@ -48,6 +48,7 @@ import {
   LEGACY_DROPDOWN_CLICK_TRIGGER,
 } from '@/components/legacy-dropdown';
 import { LegacyTooltip } from '@/components/legacy-tooltip';
+import { LegacyInput, LegacyInputGroup } from '@/components/legacy-input';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -251,7 +252,8 @@ function AssignOrderButton({
       >
         <div className="form-group">
           <label htmlFor="example-text-input-alt">用户邮箱</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             placeholder="请输入用户邮箱"
             value={submit.email}
             onChange={(event) => setSubmit((state) => ({ ...state, email: event.target.value }))}
@@ -290,7 +292,7 @@ function AssignOrderButton({
         </div>
         <div className="form-group">
           <label htmlFor="example-text-input-alt">支付金额</label>
-          <Input
+          <LegacyInputGroup
             placeholder="请输入需要支付的金额"
             addonAfter="¥"
             value={submit.total_amount}

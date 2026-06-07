@@ -240,6 +240,20 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).not.toContain('assign-amount');
   });
 
+  it('uses the legacy assigned-order input shells', () => {
+    expect(ordersSource).toContain(
+      "import { LegacyInput, LegacyInputGroup } from '@/components/legacy-input';",
+    );
+    expect(ordersSource).toContain('<LegacyInput');
+    expect(ordersSource).toContain('className="ant-input"');
+    expect(ordersSource).toContain('placeholder="请输入用户邮箱"');
+    expect(ordersSource).toContain('<LegacyInputGroup');
+    expect(ordersSource).toContain('placeholder="请输入需要支付的金额"');
+    expect(ordersSource).toContain('addonAfter="¥"');
+    expect(ordersSource).not.toContain("Input, Row } from 'antd'");
+    expect(ordersSource).not.toContain('<Input');
+  });
+
   it('uses the legacy assigned-order select shell without antd Select options', () => {
     expect(ordersSource).toContain("} from '@/components/legacy-select';");
     expect(ordersSource).toContain('LegacySelect,');
