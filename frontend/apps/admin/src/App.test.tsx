@@ -79,6 +79,13 @@ describe('admin legacy route table', () => {
     expect(source.indexOf('if (normalized !== current) return <Navigate to={normalized} replace />;')).toBeLessThan(
       source.indexOf('<Routes>'),
     );
+    expect(source).toContain("import { getAuthData } from '@/lib/auth';");
+    expect(source).toContain('function matchesAdminLegacyRoute(pathname: string): boolean');
+    expect(source).toContain('matchPath({ path, end: true }, pathname)');
+    expect(source).toContain('function getAdminRouteFallback(): string');
+    expect(source.indexOf('if (!matchesAdminLegacyRoute(location.pathname))')).toBeLessThan(
+      source.indexOf('<Routes>'),
+    );
     expect(source).toContain('<LegacyUnknownRouteRedirect />');
   });
 

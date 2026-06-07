@@ -1,9 +1,10 @@
 import { useEffect, type ReactNode } from 'react';
 import { App as AntdApp } from 'antd';
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AdminLayout } from '@/components/layout/admin-layout';
 import { bindMessageApi } from '@/lib/api';
+import { getAuthData } from '@/lib/auth';
 import LoginPage from '@/pages/login';
 import DashboardPage from '@/pages/dashboard';
 import UsersPage from '@/pages/users';
@@ -74,6 +75,16 @@ const ADMIN_LEGACY_ROUTE_OPTIONS = {
   routes: ADMIN_LEGACY_ROUTE_PATHS,
 } as const;
 
+function matchesAdminLegacyRoute(pathname: string): boolean {
+  return ADMIN_LEGACY_ROUTE_PATHS.some((path) => matchPath({ path, end: true }, pathname));
+}
+
+function getAdminRouteFallback(): string {
+  return getAuthData()
+    ? ADMIN_LEGACY_ROUTE_OPTIONS.authenticatedFallback
+    : ADMIN_LEGACY_ROUTE_OPTIONS.guestFallback;
+}
+
 function RootRedirect() {
   const navigate = useNavigate();
 
@@ -123,6 +134,9 @@ export default function App() {
   useEffect(() => bindMessageApi(message), [message]);
 
   if (normalized !== current) return <Navigate to={normalized} replace />;
+  if (!matchesAdminLegacyRoute(location.pathname)) {
+    return <Navigate to={getAdminRouteFallback()} replace />;
+  }
 
   return (
     <Routes>

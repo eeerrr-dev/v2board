@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, matchPath, useLocation } from 'react-router-dom';
 import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
@@ -20,6 +20,7 @@ import KnowledgePage from '@/pages/knowledge';
 import NodePage from '@/pages/node';
 import TrafficPage from '@/pages/traffic';
 import { RouteBoundaryElement } from '@/components/route-error-boundary';
+import { getAuthData } from '@/lib/auth';
 
 export const USER_LEGACY_ROUTE_PATHS = [
   '/dashboard',
@@ -71,6 +72,16 @@ const USER_LEGACY_ROUTE_OPTIONS = {
   routes: USER_LEGACY_ROUTE_PATHS,
 } as const;
 
+function matchesUserLegacyRoute(pathname: string): boolean {
+  return USER_LEGACY_ROUTE_PATHS.some((path) => matchPath({ path, end: true }, pathname));
+}
+
+function getUserRouteFallback(): string {
+  return getAuthData()
+    ? USER_LEGACY_ROUTE_OPTIONS.authenticatedFallback
+    : USER_LEGACY_ROUTE_OPTIONS.guestFallback;
+}
+
 export const USER_APP_LAYOUT_ROUTE_PATHS = [
   '/dashboard',
   '/plan',
@@ -99,6 +110,9 @@ export default function App() {
   const normalized = getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS);
 
   if (normalized !== current) return <Navigate to={normalized} replace />;
+  if (!matchesUserLegacyRoute(location.pathname)) {
+    return <Navigate to={getUserRouteFallback()} replace />;
+  }
 
   return (
     <Routes>
