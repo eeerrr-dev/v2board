@@ -56,7 +56,7 @@ export function LegacyTooltip({
   children,
   placement = 'top',
 }: {
-  title: ReactNode;
+  title?: ReactNode;
   children: ReactNode;
   placement?: LegacyTooltipPlacement;
 }) {

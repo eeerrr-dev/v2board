@@ -7,7 +7,7 @@ import type {
   ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { App, Form, Input, Tooltip } from 'antd';
+import { App, Form, Input } from 'antd';
 import type { FormInstance } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
@@ -53,6 +53,7 @@ import { LegacyCheckboxInput, LegacyInput } from '@/components/legacy-input';
 import { LegacyEmpty } from '@/components/legacy-empty';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyModal } from '@/components/legacy-modal';
+import { LegacyTooltip } from '@/components/legacy-tooltip';
 import {
   LegacySelect,
   type LegacySelectOption,
@@ -1986,9 +1987,9 @@ function NodeEditDrawer({
           <div className="form-group">
             <label>
               权限组{' '}
-              <Tooltip>
+              <LegacyTooltip>
                 <a ref={legacyHref('javascript:(0);')}>添加权限组</a>
-              </Tooltip>
+              </LegacyTooltip>
             </label>
             <Form.Item noStyle name="group_id">
               <LegacySelect
@@ -2089,7 +2090,7 @@ function NodeEditDrawer({
         <ServerTypeFields type={type} form={form} showChildDrawer={showChildDrawer} />
         <div className="form-group">
           <label>
-            <Tooltip placement="top">
+            <LegacyTooltip placement="top">
               父节点{' '}
               <a
                 target="_blank"
@@ -2098,7 +2099,7 @@ function NodeEditDrawer({
               >
                 {type === 'vmess' || type === 'vless' ? <LegacyReadIcon /> : '更多解答'}
               </a>
-            </Tooltip>
+            </LegacyTooltip>
           </label>
           <Form.Item noStyle name="parent_id" getValueProps={(value) => ({ value: value || '' })}>
             <LegacySelect style={{ width: '100%' }} options={parentOptions} />
@@ -2740,9 +2741,9 @@ function TrojanAllowInsecureField() {
   return (
     <div className="form-group col-md-4 col-xs-12">
       <label>
-        <Tooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">
+        <LegacyTooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">
           允许不安全 <LegacyQuestionCircleIcon />
-        </Tooltip>
+        </LegacyTooltip>
       </label>
       <Form.Item
         noStyle
@@ -2764,9 +2765,9 @@ function ServerInsecureField() {
   return (
     <div className="form-group col-md-4 col-xs-12">
       <label>
-        <Tooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">
+        <LegacyTooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">
           允许不安全 <LegacyQuestionCircleIcon />
-        </Tooltip>
+        </LegacyTooltip>
       </label>
       <Form.Item
         noStyle

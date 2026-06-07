@@ -629,7 +629,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('function getLegacyAvailableStatus(status?: number | null)');
     expect(serversSource).toContain('function LegacyStatusBadge({');
     expect(serversSource).toContain('getLegacyAvailableStatus(node.available_status)');
-    expect(serversSource).toContain('className="ant-badge ant-badge-status ant-badge-not-a-wrapper"');
+    expect(serversSource).toContain(
+      'className="ant-badge ant-badge-status ant-badge-not-a-wrapper"',
+    );
     expect(serversSource).not.toContain('available_status ??');
     expect(serversSource).not.toContain('<Badge');
   });
@@ -772,6 +774,8 @@ describe('ServersPage legacy server group route', () => {
   it('uses the original server drawer shell for node editing', () => {
     expect(serversSource).toContain('function NodeEditDrawer');
     expect(serversSource).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
+    expect(serversSource).toContain("import { LegacyTooltip } from '@/components/legacy-tooltip';");
+    expect(serversSource).toContain("import { App, Form, Input } from 'antd';");
     expect(serversSource).toContain('<LegacyDrawer');
     expect(serversSource).toContain('id="server"');
     expect(serversSource).toContain('maskClosable');
@@ -790,6 +794,8 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).not.toContain('function NodeEditModal');
     expect(serversSource).not.toContain('width={720}');
     expect(serversSource).not.toContain('import {\\n  App,\\n  Button,\\n  Drawer,');
+    expect(serversSource).not.toContain("Tooltip } from 'antd'");
+    expect(serversSource).not.toContain('<Tooltip');
   });
 
   it('keeps the original node edit drawer mounted after close', () => {
@@ -830,6 +836,7 @@ describe('ServersPage legacy server group route', () => {
     );
     expect(serversSource).toContain('权限组');
     expect(serversSource).toContain('添加权限组');
+    expect(serversSource).toContain('<LegacyTooltip>');
     expect(serversSource).toContain('<Form.Item noStyle name="group_id">');
     expect(serversSource).not.toContain(
       '<Form.Item noStyle name="group_id" rules={[{ required: true }]}>',
@@ -851,6 +858,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('父节点');
     expect(serversSource).toContain('更多解答');
     expect(serversSource).toContain('LegacyReadIcon');
+    expect(serversSource).toContain('<LegacyTooltip placement="top">');
     expect(serversSource).toContain(
       "type === 'vmess' || type === 'vless' ? <LegacyReadIcon /> : '更多解答'",
     );
@@ -1212,6 +1220,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('允许不安全');
     expect(serversSource).toContain('使用自签名证书需要允许不安全，用户才可以连接');
     expect(serversSource).toContain('placeholder="允许不安全"');
+    expect(trojanAllowInsecureSource).toContain(
+      '<LegacyTooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">',
+    );
     expect(trojanAllowInsecureSource).toContain('<LegacySelect');
     expect(trojanAllowInsecureSource).toContain('options={LEGACY_BINARY_SELECT_OPTIONS}');
     expect(trojanAllowInsecureSource).not.toContain('<Select');
@@ -1368,6 +1379,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('function ServerInsecureField');
     expect(serversSource).toContain('name="insecure"');
     expect(serversSource).toContain('getValueProps={legacyBinarySelectValueProps}');
+    expect(serverInsecureSource).toContain(
+      '<LegacyTooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">',
+    );
     expect(serverInsecureSource).toContain('<LegacySelect');
     expect(serverInsecureSource).toContain('options={LEGACY_BINARY_SELECT_OPTIONS}');
     expect(serverInsecureSource).not.toContain('<Select');
