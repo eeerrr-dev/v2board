@@ -292,6 +292,11 @@ describe('KnowledgePage legacy knowledge manager', () => {
   });
 
   it('keeps the legacy table keying and delete-confirm behavior', () => {
+    expect(source).toContain("import { legacyConfirm } from '@/components/legacy-confirm';");
+    expect(source).toContain("import { App } from 'antd';");
+    expect(source).not.toContain("import { App, Modal } from 'antd';");
+    expect(source).not.toContain('Modal.confirm({');
+    expect(source).toContain('void legacyConfirm({');
     expect(source).toContain('<LegacyStandaloneTable');
     expect(source).toContain('scrollX={750}');
     expect(source).toContain('{...legacyTableRowKey(index)}');

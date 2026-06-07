@@ -1,5 +1,5 @@
 import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react';
-import { Input, Modal, Tooltip } from 'antd';
+import { Input, Tooltip } from 'antd';
 import { admin } from '@v2board/api-client';
 import type { AdminPayment, PaymentFormDefinition } from '@v2board/types';
 import { apiClient } from '@/lib/api';
@@ -15,6 +15,7 @@ import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
 import { LegacyModal } from '@/components/legacy-modal';
+import { legacyConfirm } from '@/components/legacy-confirm';
 import { LegacyPlusIcon, LegacyQuestionCircleIcon } from '@/components/legacy-ant-icon';
 import {
   LegacyStandaloneTable,
@@ -289,7 +290,7 @@ export default function PaymentsPage() {
       <a
         ref={legacyHref('javascript:void(0)')}
         onClick={() => {
-          Modal.confirm({
+          void legacyConfirm({
             title: '警告',
             content: '确定要删除该条项目吗？',
             onOk: () => {

@@ -403,6 +403,7 @@ describe('UsersPage legacy user manager', () => {
 
   it('keeps the legacy assigned-order modal loading OK text', () => {
     expect(usersSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
+    expect(usersSource).toContain("import { legacyConfirm } from '@/components/legacy-confirm';");
     expect(usersSource).toContain("import { App, Input, Tooltip } from 'antd';");
     expect(usersSource).toContain('LegacyDropdownMenu,');
     expect(usersSource).toContain('LegacyDropdownMenuItem,');
@@ -721,6 +722,8 @@ describe('UsersPage legacy user manager', () => {
 
   it('keeps the legacy main table keying and confirm-button behavior', () => {
     expect(usersSource).not.toContain('rowKey="id"');
+    expect(usersSource).not.toContain('modal.confirm({');
+    expect(usersSource.match(/void legacyConfirm\(\{/g)).toHaveLength(4);
     expect(usersSource).toContain('onOk: () => {\n        void resetSecret');
     expect(usersSource).toContain('onOk: () => {\n        void remove');
     expect(usersSource).toContain('void banUsers');

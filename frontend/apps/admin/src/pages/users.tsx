@@ -54,6 +54,7 @@ import {
   type LegacyTablePaginationChange,
 } from '@/components/legacy-standalone-table';
 import { LegacyModal } from '@/components/legacy-modal';
+import { legacyConfirm } from '@/components/legacy-confirm';
 import {
   LegacySelect,
   type LegacySelectOption,
@@ -233,7 +234,7 @@ function userRowKey(index: number) {
 }
 
 export default function UsersPage() {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<QueryState>(() => ({
@@ -341,7 +342,7 @@ export default function UsersPage() {
   };
 
   const resetUserSecret = (row: AdminUserRow) =>
-    modal.confirm({
+    void legacyConfirm({
       title: '重置安全信息',
       content: `确定要重置${row.email}的安全信息吗？`,
       okText: '确定',
@@ -358,7 +359,7 @@ export default function UsersPage() {
     });
 
   const deleteUser = (row: AdminUserRow) =>
-    modal.confirm({
+    void legacyConfirm({
       title: '删除用户',
       content: `确定要删除${row.email}的用户信息吗？`,
       okText: '确定',
@@ -572,7 +573,7 @@ export default function UsersPage() {
                           <a
                             {...legacyDisabledAnchorProps(!query.filter.length)}
                             onClick={() => {
-                              modal.confirm({
+                              void legacyConfirm({
                                 title: '提醒',
                                 content: '确定要进行封禁吗？',
                                 onOk: () => {
@@ -593,7 +594,7 @@ export default function UsersPage() {
                           <a
                             {...legacyDisabledAnchorProps(!query.filter.length)}
                             onClick={() => {
-                              modal.confirm({
+                              void legacyConfirm({
                                 title: '提醒',
                                 content: '确定要进行删除吗？',
                                 onOk: () => {

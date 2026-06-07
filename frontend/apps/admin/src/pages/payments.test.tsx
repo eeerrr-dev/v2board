@@ -233,6 +233,11 @@ describe('PaymentsPage legacy payment config', () => {
   });
 
   it('keeps the legacy delete confirm from returning a modal-loading promise', () => {
+    expect(source).toContain("import { legacyConfirm } from '@/components/legacy-confirm';");
+    expect(source).toContain("import { Input, Tooltip } from 'antd';");
+    expect(source).not.toContain("import { Input, Modal, Tooltip } from 'antd';");
+    expect(source).not.toContain('Modal.confirm({');
+    expect(source).toContain('void legacyConfirm({');
     const confirmStart = source.indexOf('onOk: () => {');
     const dropStart = source.indexOf('void drop.mutateAsync(row.id).then(() => {', confirmStart);
 

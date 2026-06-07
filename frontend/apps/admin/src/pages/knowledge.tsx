@@ -1,5 +1,5 @@
 import { cloneElement, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { App, Modal } from 'antd';
+import { App } from 'antd';
 import dayjs from 'dayjs';
 import MarkdownIt from 'markdown-it';
 import { admin } from '@v2board/api-client';
@@ -17,6 +17,7 @@ import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
+import { legacyConfirm } from '@/components/legacy-confirm';
 import { LegacyLoadingIcon, LegacyPlusIcon } from '@/components/legacy-ant-icon';
 import { LegacySelect } from '@/components/legacy-select';
 import { LegacyInput } from '@/components/legacy-input';
@@ -653,7 +654,7 @@ export default function KnowledgePage() {
       <a
         ref={legacyHref()}
         onClick={() => {
-          Modal.confirm({
+          void legacyConfirm({
             title: '警告',
             content: '确定要删除该条项目吗？',
             onOk: () => {
