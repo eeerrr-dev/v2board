@@ -7,7 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { App, Divider, Row, Col } from 'antd';
+import { App } from 'antd';
 import type { Plan, PlanPeriod } from '@v2board/types';
 import {
   useAdminPlans,
@@ -92,6 +92,40 @@ function legacyInputValue(value: unknown) {
   return value === null ? undefined : (value as string | number | readonly string[] | undefined);
 }
 
+const planPriceRowStyle = { marginLeft: -5, marginRight: -5 };
+const planPriceColStyle = { paddingLeft: 5, paddingRight: 5 };
+
+function LegacyPlanPriceRow({ children }: { children: ReactNode }) {
+  return (
+    <div className="ant-row" style={planPriceRowStyle}>
+      {children}
+    </div>
+  );
+}
+
+function LegacyPlanPriceCol({ md, children }: { md: 4 | 12; children: ReactNode }) {
+  return (
+    <div className={`ant-col ant-col-md-${md}`} style={planPriceColStyle}>
+      {children}
+    </div>
+  );
+}
+
+function LegacyPlanDivider({ children }: { children?: ReactNode }) {
+  if (children === undefined || children === null) {
+    return <div className="ant-divider ant-divider-horizontal" role="separator" />;
+  }
+
+  return (
+    <div
+      className="ant-divider ant-divider-horizontal ant-divider-with-text-center"
+      role="separator"
+    >
+      <span className="ant-divider-inner-text">{children}</span>
+    </div>
+  );
+}
+
 function PlanEditor({
   record,
   children,
@@ -166,77 +200,77 @@ function PlanEditor({
             />
           </div>
 
-          <Divider>
+          <LegacyPlanDivider>
             售价设置{' '}
             <LegacyTooltip title="将金额留空则不会进行出售" placement="top">
               <LegacyInfoCircleIcon />
             </LegacyTooltip>
-          </Divider>
+          </LegacyPlanDivider>
 
-          <Row gutter={10}>
-            <Col md={4}>
+          <LegacyPlanPriceRow>
+            <LegacyPlanPriceCol md={4}>
               <PlanInput
                 label="月付"
                 value={submit.month_price !== null ? submit.month_price : undefined}
                 onChange={(value) => priceOnChange('month_price', value)}
               />
-            </Col>
-            <Col md={4}>
+            </LegacyPlanPriceCol>
+            <LegacyPlanPriceCol md={4}>
               <PlanInput
                 label="季付"
                 value={submit.quarter_price !== null ? submit.quarter_price : undefined}
                 onChange={(value) => priceOnChange('quarter_price', value)}
               />
-            </Col>
-            <Col md={4}>
+            </LegacyPlanPriceCol>
+            <LegacyPlanPriceCol md={4}>
               <PlanInput
                 label="半年"
                 value={submit.half_year_price !== null ? submit.half_year_price : undefined}
                 onChange={(value) => priceOnChange('half_year_price', value)}
               />
-            </Col>
-            <Col md={4}>
+            </LegacyPlanPriceCol>
+            <LegacyPlanPriceCol md={4}>
               <PlanInput
                 label="年付"
                 value={submit.year_price !== null ? submit.year_price : undefined}
                 onChange={(value) => priceOnChange('year_price', value)}
               />
-            </Col>
-            <Col md={4}>
+            </LegacyPlanPriceCol>
+            <LegacyPlanPriceCol md={4}>
               <PlanInput
                 label="两年付"
                 value={submit.two_year_price !== null ? submit.two_year_price : undefined}
                 onChange={(value) => priceOnChange('two_year_price', value)}
               />
-            </Col>
-            <Col md={4}>
+            </LegacyPlanPriceCol>
+            <LegacyPlanPriceCol md={4}>
               <PlanInput
                 label="三年付"
                 value={submit.three_year_price !== null ? submit.three_year_price : undefined}
                 onChange={(value) => priceOnChange('three_year_price', value)}
               />
-            </Col>
-          </Row>
-          <Row gutter={10}>
-            <Col md={12}>
+            </LegacyPlanPriceCol>
+          </LegacyPlanPriceRow>
+          <LegacyPlanPriceRow>
+            <LegacyPlanPriceCol md={12}>
               <PlanInput
                 label="一次性"
                 addonAfter={currencySymbol}
                 value={submit.onetime_price !== null ? submit.onetime_price : undefined}
                 onChange={(value) => priceOnChange('onetime_price', value)}
               />
-            </Col>
-            <Col md={12}>
+            </LegacyPlanPriceCol>
+            <LegacyPlanPriceCol md={12}>
               <PlanInput
                 label="重置包"
                 addonAfter={currencySymbol}
                 value={submit.reset_price !== null ? submit.reset_price : undefined}
                 onChange={(value) => priceOnChange('reset_price', value)}
               />
-            </Col>
-          </Row>
+            </LegacyPlanPriceCol>
+          </LegacyPlanPriceRow>
 
-          <Divider />
+          <LegacyPlanDivider />
 
           <PlanInput
             label="套餐流量"

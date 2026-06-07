@@ -254,6 +254,8 @@ describe('PlansPage legacy subscription management', () => {
   });
 
   it('keeps the original direct drawer input bindings', () => {
+    expect(plansSource).toContain("import { App } from 'antd';");
+    expect(plansSource).not.toContain("import { App, Divider, Row, Col } from 'antd';");
     expect(plansSource).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
     expect(plansSource).toContain('LegacyInputGroup,');
     expect(plansSource).toContain('LegacyTextArea,');
@@ -265,6 +267,13 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain('<LegacyTextArea');
     expect(plansSource).toContain('<LegacyInputGroup');
     expect(plansSource).toContain('<LegacySelect');
+    expect(plansSource).toContain('function LegacyPlanPriceRow');
+    expect(plansSource).toContain('function LegacyPlanPriceCol');
+    expect(plansSource).toContain('function LegacyPlanDivider');
+    expect(plansSource).toContain('className="ant-row"');
+    expect(plansSource).toContain('className={`ant-col ant-col-md-${md}`}');
+    expect(plansSource).toContain('className="ant-divider ant-divider-horizontal"');
+    expect(plansSource).toContain('ant-divider-with-text-center');
     expect(plansSource).toContain('<LegacyInfoCircleIcon />');
     expect(plansSource).toContain('LegacyInfoCircleIcon,');
     expect(plansSource).toContain('value={legacyInputValue(submit.name)}');
@@ -285,6 +294,9 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).not.toContain('<Button');
     expect(plansSource).not.toContain('<Select');
     expect(plansSource).not.toContain('<Checkbox');
+    expect(plansSource).not.toContain('<Row');
+    expect(plansSource).not.toContain('<Col');
+    expect(plansSource).not.toContain('<Divider');
     expect(plansSource).not.toContain('@ant-design/icons');
     expect(plansSource).not.toContain('InfoCircleOutlined');
   });
