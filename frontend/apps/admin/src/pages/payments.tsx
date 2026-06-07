@@ -164,7 +164,7 @@ function PaymentEditor({
             <div>
               <LegacySelect
                 style={{ width: '100%' }}
-                value={selectPaymentMethod}
+                defaultValue={selectPaymentMethod}
                 options={paymentMethodOptions(paymentMethods)}
                 onChange={(value) => {
                   void onSelectPaymentMethod(value as string | undefined);

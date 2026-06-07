@@ -178,9 +178,9 @@ describe('PaymentsPage legacy payment config', () => {
       'function paymentMethodOptions(methods: string[]): LegacySelectOption[]',
     );
     expect(source).toContain('<LegacySelect');
-    expect(source).toContain('value={selectPaymentMethod}');
+    expect(source).toContain('defaultValue={selectPaymentMethod}');
     expect(source).toContain('options={paymentMethodOptions(paymentMethods)}');
-    expect(source).not.toContain('defaultValue={selectPaymentMethod}');
+    expect(source).not.toContain('value={selectPaymentMethod}');
     expect(source).not.toContain('<Select');
     expect(source).not.toContain('Select.Option');
     expect(source).not.toContain('Modal, Select');
