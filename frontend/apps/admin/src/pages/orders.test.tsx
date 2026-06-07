@@ -376,12 +376,16 @@ describe('OrdersPage legacy order manager', () => {
   });
 
   it('keeps the original top placement for order status tooltips', () => {
+    expect(ordersSource).toContain("import { LegacyTooltip } from '@/components/legacy-tooltip';");
+    expect(ordersSource).toContain('<LegacyTooltip title="查看TA邀请的人">');
     expect(ordersSource).toContain(
-      '<Tooltip placement="top" title="标记为[已支付]后将会由系统进行开通后并完成">',
+      '<LegacyTooltip placement="top" title="标记为[已支付]后将会由系统进行开通后并完成">',
     );
     expect(ordersSource).toContain(
-      '<Tooltip placement="top" title="标记为[有效]后将会由系统处理后发放到用户并完成">',
+      '<LegacyTooltip placement="top" title="标记为[有效]后将会由系统处理后发放到用户并完成">',
     );
+    expect(ordersSource).not.toContain("Tooltip } from 'antd'");
+    expect(ordersSource).not.toContain('<Tooltip');
   });
 
   it('keeps the original first-fetch pagination and addFilter jump page values', () => {

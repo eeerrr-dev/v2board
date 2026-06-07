@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { App, Col, Divider, Input, Row, Tooltip } from 'antd';
+import { App, Col, Divider, Input, Row } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminFilter } from '@v2board/api-client';
@@ -47,6 +47,7 @@ import {
   LegacyDropdownMenuItem,
   LEGACY_DROPDOWN_CLICK_TRIGGER,
 } from '@/components/legacy-dropdown';
+import { LegacyTooltip } from '@/components/legacy-tooltip';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -353,7 +354,7 @@ function OrderDetailModal({
             <div>
               <Divider />
               <OrderDetailRow label="邀请人">
-                <Tooltip title="查看TA邀请的人">
+                <LegacyTooltip title="查看TA邀请的人">
                   <a
                     ref={legacyHref()}
                     onClick={() =>
@@ -363,7 +364,7 @@ function OrderDetailModal({
                   >
                     {inviteUser.data?.email}
                   </a>
-                </Tooltip>
+                </LegacyTooltip>
               </OrderDetailRow>
               <OrderDetailRow label="佣金金额">{cents(detail.commission_balance)}</OrderDetailRow>
               {detail.actual_commission_balance ? (
@@ -452,11 +453,11 @@ export default function OrdersPage() {
     {
       title: (
         <span>
-          <Tooltip placement="top" title="标记为[已支付]后将会由系统进行开通后并完成">
+          <LegacyTooltip placement="top" title="标记为[已支付]后将会由系统进行开通后并完成">
             <span>
               订单状态 <LegacyQuestionCircleIcon />
             </span>
-          </Tooltip>
+          </LegacyTooltip>
         </span>
       ),
     },
@@ -465,9 +466,9 @@ export default function OrdersPage() {
       title: (
         <span>
           佣金状态{' '}
-          <Tooltip placement="top" title="标记为[有效]后将会由系统处理后发放到用户并完成">
+          <LegacyTooltip placement="top" title="标记为[有效]后将会由系统处理后发放到用户并完成">
             <LegacyQuestionCircleIcon />
-          </Tooltip>
+          </LegacyTooltip>
         </span>
       ),
     },
