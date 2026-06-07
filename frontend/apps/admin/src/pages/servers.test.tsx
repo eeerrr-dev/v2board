@@ -1343,6 +1343,10 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('uses the original TLS and encryption child drawer forms instead of raw textareas', () => {
+    const serverChildDrawerSource = serversSource.slice(
+      serversSource.indexOf('function ServerChildDrawerField'),
+      serversSource.indexOf('function LegacyTlsSettingsField'),
+    );
     const tlsSettingsSource = serversSource.slice(
       serversSource.indexOf('function LegacyTlsSettingsField'),
       serversSource.indexOf('function LegacyEncryptionSettingsField'),
@@ -1367,6 +1371,19 @@ describe('ServersPage legacy server group route', () => {
     );
     expect(serversSource).toContain(
       'const LEGACY_ENCRYPTION_RTT_OPTIONS: LegacySelectOption[] = [',
+    );
+    expect(serversSource).toContain(
+      "import { LegacyAceJsonEditor } from '@/components/legacy-ace-editor';",
+    );
+    expect(serverChildDrawerSource).toContain(
+      "if (field === 'network_settings' || field === 'networkSettings')",
+    );
+    expect(serverChildDrawerSource).toContain('<LegacyAceJsonEditor');
+    expect(serverChildDrawerSource).toContain(
+      'placeholder={getLegacyNetworkSettingsPlaceholder(type, network)}',
+    );
+    expect(serverChildDrawerSource).not.toContain(
+      '<LegacyTextArea\n              className="ant-input"\n              rows={8}\n              placeholder={getLegacyNetworkSettingsPlaceholder(type, network)}',
     );
     expect(serversSource).toContain('function LegacyTlsSettingsField');
     expect(tlsSettingsSource).toContain('<LegacySelect');

@@ -59,6 +59,7 @@ import { LegacyEmpty } from '@/components/legacy-empty';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyModal } from '@/components/legacy-modal';
 import { LegacyTooltip } from '@/components/legacy-tooltip';
+import { LegacyAceJsonEditor } from '@/components/legacy-ace-editor';
 import {
   LegacySelect,
   type LegacySelectOption,
@@ -2374,11 +2375,7 @@ function ServerChildDrawerField({
             </a>
           </label>
           <Form.Item noStyle name={field}>
-            <LegacyTextArea
-              className="ant-input"
-              rows={8}
-              placeholder={getLegacyNetworkSettingsPlaceholder(type, network)}
-            />
+            <LegacyAceJsonEditor placeholder={getLegacyNetworkSettingsPlaceholder(type, network)} />
           </Form.Item>
         </div>
       </div>

@@ -20,3 +20,188 @@
   position: relative;
   opacity: 1;
 }
+
+.ace_editor {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  font:
+    12px/normal Monaco,
+    Menlo,
+    'Ubuntu Mono',
+    Consolas,
+    'source-code-pro',
+    monospace;
+  direction: ltr;
+  text-align: left;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+
+.ace-github {
+  background: #fff;
+  color: #000;
+}
+
+.ace-github .ace_string {
+  color: #d14;
+}
+
+.ace-github .ace_constant.ace_numeric {
+  color: #099;
+}
+
+.ace-github .ace_constant.ace_language {
+  font-weight: bold;
+}
+
+.ace-github .ace_gutter {
+  background: #e8e8e8;
+  color: #aaa;
+}
+
+.ace_gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  width: 46px;
+  overflow: hidden;
+  cursor: default;
+  user-select: none;
+}
+
+.ace_scroller {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 46px;
+  overflow: hidden;
+  background-color: inherit;
+  cursor: text;
+  user-select: none;
+}
+
+.ace_content {
+  position: absolute;
+  box-sizing: border-box;
+  min-width: 100%;
+  font-variant-ligatures: no-common-ligatures;
+}
+
+.ace_layer {
+  position: absolute;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  white-space: pre;
+  pointer-events: none;
+}
+
+.ace_gutter-layer {
+  position: relative;
+  width: auto;
+  height: 1000000px;
+  text-align: right;
+  pointer-events: auto;
+}
+
+.ace_gutter-cell {
+  position: relative;
+  height: 17px;
+  padding-right: 6px;
+  padding-left: 19px;
+  line-height: 17px;
+  background-repeat: no-repeat;
+}
+
+.ace_text-layer {
+  top: 0;
+  left: 4px;
+  width: 1000000px;
+  height: 1000000px;
+  font: inherit !important;
+}
+
+.ace_line {
+  height: 17px;
+  line-height: 17px;
+}
+
+.ace_marker-layer .ace_active-line {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  height: 17px;
+  background: rgb(245, 245, 245);
+}
+
+.ace-github.ace_focus .ace_marker-layer .ace_active-line {
+  background: rgb(255, 255, 204);
+}
+
+.ace_cursor-layer {
+  z-index: 4;
+}
+
+.ace_cursor {
+  position: absolute;
+  z-index: 4;
+  box-sizing: border-box;
+  height: 17px;
+  border-left: 2px solid black;
+}
+
+.ace_print-margin-layer {
+  top: 0;
+  left: 46px;
+}
+
+.ace_print-margin {
+  position: absolute;
+  height: 100%;
+  width: 1px;
+  margin-left: 560px;
+  background: #e8e8e8;
+}
+
+.ace_placeholder {
+  position: absolute;
+  top: 0;
+  left: 14px;
+  margin: 0 10px;
+  color: #000;
+  font-family: arial, sans-serif;
+  white-space: pre;
+  opacity: 0.7;
+  transform: scale(0.9);
+  transform-origin: left;
+}
+
+.legacy-ace-json-input {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 46px;
+  width: calc(100% - 46px);
+  height: 100%;
+  margin: 0;
+  padding: 0 4px;
+  overflow: auto;
+  color: transparent;
+  caret-color: #000;
+  background: transparent;
+  border: 0;
+  outline: none;
+  resize: none;
+  font: inherit;
+  line-height: 17px;
+  white-space: pre;
+}
