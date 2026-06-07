@@ -139,18 +139,22 @@ export const LegacyTextArea = forwardRef<
 });
 
 export function LegacyInputGroup({
+  addonBefore,
   addonAfter,
   className,
   defaultValue,
+  disabled,
   onChange,
   placeholder,
   size,
   type = 'text',
   value,
 }: {
-  addonAfter: ReactNode;
+  addonBefore?: ReactNode;
+  addonAfter?: ReactNode;
   className?: string;
   defaultValue?: string | number | readonly string[] | undefined;
+  disabled?: boolean;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string;
   size?: 'large';
@@ -166,16 +170,22 @@ export function LegacyInputGroup({
   return (
     <span className={wrapperClassName}>
       <span className="ant-input-wrapper ant-input-group">
+        {addonBefore !== undefined ? (
+          <span className="ant-input-group-addon">{addonBefore}</span>
+        ) : null}
         <LegacyInput
           placeholder={placeholder}
           type={type}
           className={inputClassName}
+          disabled={disabled}
           defaultValue={defaultValue}
           legacyAttributeOrder={type === 'number' ? 'type-first' : undefined}
           onChange={onChange}
           {...(value !== undefined ? { value } : {})}
         />
-        <span className="ant-input-group-addon">{addonAfter}</span>
+        {addonAfter !== undefined ? (
+          <span className="ant-input-group-addon">{addonAfter}</span>
+        ) : null}
       </span>
     </span>
   );

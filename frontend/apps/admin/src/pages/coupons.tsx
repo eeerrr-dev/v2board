@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App, Input } from 'antd';
+import { App } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useLocation } from 'react-router-dom';
@@ -35,6 +35,7 @@ import {
   type LegacySelectOption,
   type LegacySelectValue,
 } from '@/components/legacy-select';
+import { LegacyInput, LegacyInputGroup } from '@/components/legacy-input';
 
 type AdminPageQuery = admin.AdminPageQuery;
 
@@ -347,7 +348,8 @@ function CouponPage() {
         <div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">名称</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="请输入优惠券名称"
               value={submit.name}
               onChange={(event) => setSubmit({ ...submit, name: event.target.value })}
@@ -356,7 +358,8 @@ function CouponPage() {
           {!submit.generate_count ? (
             <div className="form-group">
               <label htmlFor="example-text-input-alt">自定义优惠券码</label>
-              <Input
+              <LegacyInput
+                className="ant-input"
                 placeholder="自定义优惠券码(留空随机生成)"
                 value={submit.code}
                 onChange={(event) =>
@@ -367,7 +370,7 @@ function CouponPage() {
           ) : null}
           <div className="form-group">
             <label htmlFor="example-text-input-alt">优惠信息</label>
-            <Input
+            <LegacyInputGroup
               type="number"
               addonBefore={
                 <LegacySelect
@@ -397,7 +400,8 @@ function CouponPage() {
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">最大使用次数</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"
               value={submit.limit_use as string | number | undefined}
               onChange={(event) => setSubmit({ ...submit, limit_use: event.target.value })}
@@ -405,7 +409,8 @@ function CouponPage() {
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">每个用户可使用次数</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="限制每个用户可使用次数(为空则不限制)"
               value={submit.limit_use_with_user as string | number | undefined}
               onChange={(event) =>
@@ -449,7 +454,8 @@ function CouponPage() {
           {!submit.code && !submit.id ? (
             <div className="form-group">
               <label htmlFor="example-text-input-alt">生成数量</label>
-              <Input
+              <LegacyInput
+                className="ant-input"
                 placeholder="输入数量批量生成"
                 value={submit.generate_count}
                 onChange={(event) =>
@@ -668,7 +674,8 @@ function GiftcardPage() {
         <div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">名称</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="请输入礼品卡名称"
               value={submit.name}
               onChange={(event) => setSubmit({ ...submit, name: event.target.value })}
@@ -677,7 +684,8 @@ function GiftcardPage() {
           {!submit.generate_count ? (
             <div className="form-group">
               <label htmlFor="example-text-input-alt">自定义礼品卡卡密</label>
-              <Input
+              <LegacyInput
+                className="ant-input"
                 placeholder="自定义礼品卡卡密(留空随机生成)"
                 value={submit.code}
                 onChange={(event) =>
@@ -688,7 +696,7 @@ function GiftcardPage() {
           ) : null}
           <div className="form-group">
             <label htmlFor="example-text-input-alt">礼品卡类型</label>
-            <Input
+            <LegacyInputGroup
               type="number"
               addonBefore={
                 <LegacySelect
@@ -742,7 +750,8 @@ function GiftcardPage() {
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">最大使用次数</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"
               value={submit.limit_use as string | number | undefined}
               onChange={(event) => setSubmit({ ...submit, limit_use: event.target.value })}
@@ -751,7 +760,8 @@ function GiftcardPage() {
           {!submit.code && !submit.id ? (
             <div className="form-group">
               <label htmlFor="example-text-input-alt">生成数量</label>
-              <Input
+              <LegacyInput
+                className="ant-input"
                 placeholder="输入数量批量生成"
                 value={submit.generate_count}
                 onChange={(event) =>

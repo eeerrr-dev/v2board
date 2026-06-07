@@ -158,6 +158,25 @@ describe('LegacyInput', () => {
     );
   });
 
+  it('renders the old runtime input group with before and after addons', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyInputGroup
+          type="number"
+          addonBefore={<span className="selector">类型</span>}
+          addonAfter="%"
+          placeholder="请输入值"
+          value="8"
+          onChange={() => undefined}
+        />,
+      );
+    });
+
+    expect(container.querySelector('.ant-input-group-wrapper')?.outerHTML).toBe(
+      '<span class="ant-input-group-wrapper"><span class="ant-input-wrapper ant-input-group"><span class="ant-input-group-addon"><span class="selector">类型</span></span><input type="number" placeholder="请输入值" class="ant-input" value="8"><span class="ant-input-group-addon">%</span></span></span>',
+    );
+  });
+
   it('renders the old large addon input classes from Ant Design 3', async () => {
     await act(async () => {
       root.render(

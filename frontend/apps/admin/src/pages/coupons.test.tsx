@@ -362,7 +362,7 @@ describe('CouponsPage legacy routes', () => {
         /<LegacyTag style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g,
       ),
     ).toHaveLength(2);
-    expect(source).toContain("import { App, Input } from 'antd';");
+    expect(source).toContain("import { App } from 'antd';");
     expect(source).toContain("import { LegacyButton } from '@/components/legacy-button';");
     expect(source).toContain("import { LegacyPlusIcon } from '@/components/legacy-ant-icon';");
     expect(source).toContain(
@@ -430,10 +430,33 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain('open={visible}');
   });
 
+  it('uses the legacy coupon and giftcard input shells', () => {
+    expect(source).toContain(
+      "import { LegacyInput, LegacyInputGroup } from '@/components/legacy-input';",
+    );
+    expect(source).toContain('<LegacyInput');
+    expect(source).toContain('<LegacyInputGroup');
+    expect(source).toContain('className="ant-input"');
+    expect(source).toContain('placeholder="请输入优惠券名称"');
+    expect(source).toContain('placeholder="自定义优惠券码(留空随机生成)"');
+    expect(source).toContain('placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"');
+    expect(source).toContain('placeholder="限制每个用户可使用次数(为空则不限制)"');
+    expect(source).toContain('placeholder="输入数量批量生成"');
+    expect(source).toContain('placeholder="请输入礼品卡名称"');
+    expect(source).toContain('placeholder="自定义礼品卡卡密(留空随机生成)"');
+    expect(source).toContain('addonAfter={submit.type === 1 ?');
+    expect(source).toContain('addonAfter={legacyGiftcardValueAddon(submit.type)}');
+    expect(source).toContain('addonBefore={');
+    expect(source).not.toContain("import { App, Input } from 'antd';");
+    expect(source).not.toContain('<Input');
+  });
+
   it('keeps coupon and giftcard limit-use cells wrapped in the old ant tag DOM', () => {
     expect(source).toContain('const renderCouponLimitUse = (value: number | null) => (');
     expect(source).toContain('const renderGiftcardLimitUse = (value: number | null) => (');
-    expect(source.match(/<LegacyTag>\{value !== null \? value : '无限'\}<\/LegacyTag>/g)).toHaveLength(2);
+    expect(
+      source.match(/<LegacyTag>\{value !== null \? value : '无限'\}<\/LegacyTag>/g),
+    ).toHaveLength(2);
     expect(source).not.toContain(
       "render: (value: number | null) => (value !== null ? value : '无限'),",
     );
