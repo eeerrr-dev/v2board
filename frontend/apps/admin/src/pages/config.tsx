@@ -50,7 +50,8 @@ function ThemeConfigPage() {
   const saveConfig = useSaveConfigMutation();
   const themeItems = themes.data?.themes ?? {};
   const active = themes.data?.active;
-  const loading = Object.keys(themeItems).length <= 0;
+  const themeError = themes.isError;
+  const loading = !themeError && Object.keys(themeItems).length <= 0;
 
   const activateTheme = (name: string) => {
     saveConfig
@@ -66,6 +67,20 @@ function ThemeConfigPage() {
       <div className="content content-full text-center pt-5">
         <div className="spinner-grow text-primary" role="status">
           <span className="sr-only">Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (themeError) {
+    return (
+      <div className="block block-rounded">
+        <div className="block-content text-center py-5">
+          <h3 className="font-w400 text-danger mb-2">页面加载失败</h3>
+          <p className="text-muted mb-4">主题配置加载失败，请刷新页面后重试。</p>
+          <button type="button" className="btn btn-primary" onClick={() => void themes.refetch()}>
+            重试
+          </button>
         </div>
       </div>
     );

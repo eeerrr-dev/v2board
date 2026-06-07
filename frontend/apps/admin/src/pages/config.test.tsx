@@ -33,6 +33,7 @@ type MockThemeData = {
 
 const mocks = vi.hoisted(() => ({
   pathname: '/config/theme',
+  themesError: false,
   themesData: {
     active: 'default',
     themes: {
@@ -178,6 +179,7 @@ vi.mock('@/lib/queries', () => ({
   useThemes: () => ({
     refetch: vi.fn(),
     data: mocks.themesData,
+    isError: mocks.themesError,
   }),
   useSaveConfigMutation: () => ({
     mutateAsync: vi.fn(),
@@ -203,6 +205,7 @@ vi.mock('@/lib/queries', () => ({
 describe('ConfigPage legacy theme config', () => {
   it('renders the original full page spinner while themes are empty', () => {
     mocks.themesData = { active: undefined, themes: {} };
+    mocks.themesError = false;
     const html = renderToStaticMarkup(<ConfigPage />);
 
     expect(html).toContain('content content-full text-center pt-5');
@@ -212,7 +215,23 @@ describe('ConfigPage legacy theme config', () => {
     expect(html).not.toContain('block block-transparent bg-image mb-0 mb-md-3 bg-primary');
   });
 
+  it('renders a visible legacy failure block when theme loading errors', () => {
+    mocks.themesData = { active: undefined, themes: {} };
+    mocks.themesError = true;
+    const html = renderToStaticMarkup(<ConfigPage />);
+    mocks.themesError = false;
+
+    expect(html).toContain('block block-rounded');
+    expect(html).toContain('页面加载失败');
+    expect(html).toContain('主题配置加载失败，请刷新页面后重试。');
+    expect(html).toContain('btn btn-primary');
+    expect(html).toContain('重试');
+    expect(html).not.toContain('spinner-grow text-primary');
+    expect(html).not.toContain('主题配置将不会生效');
+  });
+
   it('renders /config/theme as the original theme manager cards', () => {
+    mocks.themesError = false;
     mocks.themesData = {
       active: 'default',
       themes: {
