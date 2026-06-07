@@ -16,6 +16,7 @@ import {
 import { HashRouter, Navigate, useLocation } from 'react-router-dom';
 import App, { ADMIN_LEGACY_ROUTE_PATHS } from './App';
 import { RouteBoundaryElement } from './components/route-error-boundary';
+import { LegacyConfirmProvider } from './components/legacy-confirm';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyAdminLegacySettings } from './lib/legacy-settings';
 import './styles/antd-v5-compat.css';
@@ -116,6 +117,7 @@ function Boot() {
               <LegacyRouteGate>
                 <App />
               </LegacyRouteGate>
+              <LegacyConfirmProvider />
             </RouteBoundaryElement>
           </HashRouter>
         </QueryClientProvider>

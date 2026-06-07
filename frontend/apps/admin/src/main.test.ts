@@ -97,11 +97,15 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain(
       "import { RouteBoundaryElement } from './components/route-error-boundary';",
     );
+    expect(mainSource).toContain(
+      "import { LegacyConfirmProvider } from './components/legacy-confirm';",
+    );
     expect(mainSource).toContain('<HashRouter>');
     expect(mainSource).toContain('<LegacyRouteGate>');
     expect(mainSource).toContain('</LegacyRouteGate>');
     expect(mainSource).toContain('<RouteBoundaryElement>');
     expect(mainSource).toContain('<App />');
+    expect(mainSource).toContain('<LegacyConfirmProvider />');
   });
 
   it('does not install a storage-event auth sync listener absent from the bundled admin entry', () => {

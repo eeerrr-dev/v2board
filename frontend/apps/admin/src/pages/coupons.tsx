@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App, Input, Modal, Tag } from 'antd';
+import { App, Input } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useLocation } from 'react-router-dom';
@@ -28,6 +28,8 @@ import {
 import { LegacyRangePicker } from '@/components/legacy-range-picker';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyModal } from '@/components/legacy-modal';
+import { legacyConfirm } from '@/components/legacy-confirm';
+import { LegacyTag } from '@/components/legacy-tag';
 import {
   LegacySelect,
   type LegacySelectOption,
@@ -235,13 +237,13 @@ function CouponPage() {
   const renderCouponType = (value: Coupon['type']) => (value === 1 ? '金额' : '比例');
 
   const renderCouponCode = (value: string) => (
-    <Tag style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
+    <LegacyTag style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
       {value}
-    </Tag>
+    </LegacyTag>
   );
 
   const renderCouponLimitUse = (value: number | null) => (
-    <Tag>{value !== null ? value : '无限'}</Tag>
+    <LegacyTag>{value !== null ? value : '无限'}</LegacyTag>
   );
 
   const renderCouponActions = (row: Coupon, index: number) => (
@@ -258,7 +260,7 @@ function CouponPage() {
       <div className="ant-divider ant-divider-vertical" />
       <a
         onClick={() => {
-          Modal.confirm({
+          void legacyConfirm({
             title: '警告',
             content: '确定要删除该条项目吗？',
             onOk: () => {
@@ -555,13 +557,13 @@ function GiftcardPage() {
   };
 
   const renderGiftcardCode = (value: string) => (
-    <Tag style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
+    <LegacyTag style={{ cursor: 'pointer' }} onClick={() => copy(value)}>
       {value}
-    </Tag>
+    </LegacyTag>
   );
 
   const renderGiftcardLimitUse = (value: number | null) => (
-    <Tag>{value !== null ? value : '无限'}</Tag>
+    <LegacyTag>{value !== null ? value : '无限'}</LegacyTag>
   );
 
   const renderGiftcardActions = (row: Giftcard, index: number) => (
@@ -578,7 +580,7 @@ function GiftcardPage() {
       <div className="ant-divider ant-divider-vertical" />
       <a
         onClick={() => {
-          Modal.confirm({
+          void legacyConfirm({
             title: '警告',
             content: '确定要删除该条项目吗？',
             onOk: () => {

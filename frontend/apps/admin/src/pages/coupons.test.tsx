@@ -358,15 +358,18 @@ describe('CouponsPage legacy routes', () => {
     expect(source).toContain("import { legacyCopyText } from '@/lib/legacy-copy';");
     expect(source).toContain('legacyCopyText(text)');
     expect(
-      source.match(/<Tag style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g),
+      source.match(
+        /<LegacyTag style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g,
+      ),
     ).toHaveLength(2);
-    expect(source).toContain("import { App, Input, Modal, Tag } from 'antd';");
+    expect(source).toContain("import { App, Input } from 'antd';");
     expect(source).toContain("import { LegacyButton } from '@/components/legacy-button';");
     expect(source).toContain("import { LegacyPlusIcon } from '@/components/legacy-ant-icon';");
     expect(source).toContain(
       "import { LegacyRangePicker } from '@/components/legacy-range-picker';",
     );
     expect(source).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
+    expect(source).toContain("import { LegacyTag } from '@/components/legacy-tag';");
     expect(source).toContain("} from '@/components/legacy-select';");
     expect(source).toContain('LegacySelect,');
     expect(source).toContain('type LegacySelectOption,');
@@ -382,6 +385,8 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain('Typography.Text');
     expect(source).not.toContain("Typography } from 'antd'");
     expect(source).not.toContain('Modal, Select');
+    expect(source).not.toContain('Modal, Tag');
+    expect(source).not.toContain('<Tag');
     expect(source).not.toContain('<Select');
     expect(source).not.toContain('Select.Option');
     expect(source).not.toContain('<Switch');
@@ -418,15 +423,17 @@ describe('CouponsPage legacy routes', () => {
     expect(source.match(/okButtonProps=\{\{ loading: generate\.isPending \}\}/g)).toHaveLength(2);
     expect(couponModalBlock).toContain("title={`${submit.id ? '编辑优惠券' : '新建优惠券'}`}");
     expect(giftcardModalBlock).toContain("title={`${submit.id ? '编辑礼品卡' : '新建礼品卡'}`}");
-    expect(source).toContain('Modal.confirm({');
+    expect(source).toContain("import { legacyConfirm } from '@/components/legacy-confirm';");
+    expect(source.match(/void legacyConfirm\(\{/g)).toHaveLength(2);
+    expect(source).not.toContain('Modal.confirm({');
     expect(source).not.toContain('<Modal');
     expect(source).not.toContain('open={visible}');
   });
 
-  it('keeps coupon and giftcard limit-use cells wrapped in the old antd Tag', () => {
+  it('keeps coupon and giftcard limit-use cells wrapped in the old ant tag DOM', () => {
     expect(source).toContain('const renderCouponLimitUse = (value: number | null) => (');
     expect(source).toContain('const renderGiftcardLimitUse = (value: number | null) => (');
-    expect(source.match(/<Tag>\{value !== null \? value : '无限'\}<\/Tag>/g)).toHaveLength(2);
+    expect(source.match(/<LegacyTag>\{value !== null \? value : '无限'\}<\/LegacyTag>/g)).toHaveLength(2);
     expect(source).not.toContain(
       "render: (value: number | null) => (value !== null ? value : '无限'),",
     );
