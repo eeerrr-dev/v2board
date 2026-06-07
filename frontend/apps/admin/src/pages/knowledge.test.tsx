@@ -113,8 +113,8 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
     expect(source).toContain('<LegacyInput');
     expect(source).toContain('className="ant-input"');
-    expect(source).toContain('defaultValue={knowledge.title}');
-    expect(source).toContain('defaultValue={knowledge.category}');
+    expect(source).toContain('value={knowledge.title}');
+    expect(source).toContain('value={knowledge.category}');
     expect(source).toContain('<LegacySelect');
     expect(source).toContain('<LegacyDrawer');
     expect(source).toContain('<LegacyButton className="ant-btn" style={{ marginRight: 8 }}');
@@ -128,8 +128,8 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).not.toContain('Input,');
     expect(source).not.toContain(" Input } from 'antd'");
     expect(source).not.toContain('<Input');
-    expect(source).not.toContain('value={knowledge.title}');
-    expect(source).not.toContain('value={knowledge.category}');
+    expect(source).not.toContain('defaultValue={knowledge.title}');
+    expect(source).not.toContain('defaultValue={knowledge.category}');
   });
 
   it('keeps the full bundled markdown navigation toolbar', () => {
@@ -234,13 +234,13 @@ describe('KnowledgePage legacy knowledge manager', () => {
     );
     expect(source).toContain('label: LEGACY_KNOWLEDGE_I18N_TEXT[locale]');
     expect(source).toContain('<LegacySelect');
+    expect(source).toContain('defaultValue={knowledge.language || 1}');
     expect(source).toContain('options={LEGACY_KNOWLEDGE_LOCALE_OPTIONS}');
     expect(source).toContain("import { LegacySelect } from '@/components/legacy-select';");
     expect(source).not.toContain("Select } from 'antd'");
     expect(source).not.toContain('<Select');
     expect(source).not.toContain('<Select.Option');
     expect(source).not.toContain('defaultValue={knowledge.language}');
-    expect(source).not.toContain('defaultValue={knowledge.language || 1}');
     expect(source).not.toContain('@v2board/i18n');
     expect(source).not.toContain('SUPPORTED_LOCALES');
     expect(source).not.toContain('fa-IR');

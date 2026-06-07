@@ -519,7 +519,7 @@ function KnowledgeEditor({
                 key={`title-${editorKey}`}
                 className="ant-input"
                 placeholder="请输入知识标题"
-                defaultValue={knowledge.title}
+                value={knowledge.title}
                 onChange={(event) => formChange('title', event.target.value)}
               />
             </div>
@@ -529,7 +529,7 @@ function KnowledgeEditor({
                 key={`category-${editorKey}`}
                 className="ant-input"
                 placeholder="请输入分类，分类将会自动归集"
-                defaultValue={knowledge.category}
+                value={knowledge.category}
                 onChange={(event) => formChange('category', event.target.value)}
               />
             </div>
@@ -537,6 +537,7 @@ function KnowledgeEditor({
               <label htmlFor="example-text-input-alt">语言</label>
               <LegacySelect
                 placeholder="请选择知识语言"
+                defaultValue={knowledge.language || 1}
                 style={{ width: '100%' }}
                 value={knowledge.language}
                 options={LEGACY_KNOWLEDGE_LOCALE_OPTIONS}

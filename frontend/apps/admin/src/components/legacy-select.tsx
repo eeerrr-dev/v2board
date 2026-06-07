@@ -34,12 +34,14 @@ interface LegacySelectBaseProps {
 
 interface LegacySelectSingleProps extends LegacySelectBaseProps {
   mode?: undefined;
+  defaultValue?: LegacySelectValue;
   value?: LegacySelectValue;
   onChange?: (value: LegacySelectValue) => void;
 }
 
 interface LegacySelectMultipleProps extends LegacySelectBaseProps {
   mode: LegacySelectMode;
+  defaultValue?: LegacyMultipleSelectValue;
   value?: LegacyMultipleSelectValue;
   onChange?: (value: LegacyMultipleSelectValue) => void;
 }
@@ -130,6 +132,7 @@ function getLegacySelectedOptionLabel(options: LegacySelectOption[], value: stri
 export function LegacySelect({
   id,
   value,
+  defaultValue,
   options,
   mode,
   placeholder,
@@ -154,9 +157,10 @@ export function LegacySelect({
   const [coords, setCoords] = useState<DropdownCoords | null>(null);
   const dropdownStatus = useLegacyTransitionStatus(open, 230, 30);
   const multiple = mode === 'multiple' || mode === 'tags';
-  const singleValue = multiple ? undefined : (value as LegacySelectValue | undefined);
+  const effectiveValue = value === undefined ? defaultValue : value;
+  const singleValue = multiple ? undefined : (effectiveValue as LegacySelectValue | undefined);
   const multipleValues = normalizeLegacyMultipleValue(
-    multiple ? (value as LegacyMultipleSelectValue | undefined) : undefined,
+    multiple ? (effectiveValue as LegacyMultipleSelectValue | undefined) : undefined,
   );
   const selected = multiple ? undefined : options.find((item) => item.value === singleValue);
   const selectedLabel = selected

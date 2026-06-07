@@ -50,6 +50,61 @@ describe('LegacySelect', () => {
     expect(html).not.toContain('ant-select-selection-item');
   });
 
+  it('renders the old single defaultValue fallback before a controlled value is chosen', () => {
+    const html = renderToStaticMarkup(
+      <LegacySelect
+        defaultValue={1}
+        placeholder="请选择知识语言"
+        options={[
+          { value: 'en-US', label: 'English' },
+          { value: 'zh-CN', label: '简体中文' },
+        ]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('class="ant-select-selection-selected-value"');
+    expect(html).toContain('title="1"');
+    expect(html).toContain('>1</div>');
+  });
+
+  it('lets a controlled value override the old single defaultValue fallback', () => {
+    const html = renderToStaticMarkup(
+      <LegacySelect
+        defaultValue={1}
+        value="zh-CN"
+        placeholder="请选择知识语言"
+        options={[
+          { value: 'en-US', label: 'English' },
+          { value: 'zh-CN', label: '简体中文' },
+        ]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('title="简体中文"');
+    expect(html).toContain('简体中文');
+    expect(html).not.toContain('title="1"');
+  });
+
+  it('does not replace an explicit null value with the old defaultValue fallback', () => {
+    const html = renderToStaticMarkup(
+      <LegacySelect
+        defaultValue={1}
+        value={null}
+        placeholder="请选择知识语言"
+        options={[
+          { value: 'en-US', label: 'English' },
+          { value: 'zh-CN', label: '简体中文' },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('class="ant-select-selection__placeholder"');
+    expect(html).toContain('请选择知识语言');
+    expect(html).not.toContain('title="1"');
+  });
+
   it('can be rendered with form-injected change handling', () => {
     const html = renderToStaticMarkup(
       <LegacySelect
