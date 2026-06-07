@@ -443,7 +443,18 @@ describe('OrdersPage legacy order manager', () => {
     const end = ordersSource.indexOf('export default function OrdersPage()', start);
     const block = ordersSource.slice(start, end);
 
+    expect(ordersSource).toContain("import { App } from 'antd';");
+    expect(ordersSource).not.toContain("import { App, Col, Divider, Row } from 'antd';");
     expect(ordersSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
+    expect(ordersSource).toContain('function OrderDetailRow');
+    expect(ordersSource).toContain('className="ant-row"');
+    expect(ordersSource).toContain('className="ant-col ant-col-6"');
+    expect(ordersSource).toContain('className="ant-col ant-col-18"');
+    expect(ordersSource).toContain('function OrderDetailDivider()');
+    expect(ordersSource).toContain('className="ant-divider ant-divider-horizontal"');
+    expect(ordersSource).not.toContain('<Row');
+    expect(ordersSource).not.toContain('<Col');
+    expect(ordersSource).not.toContain('<Divider');
     expect(block).toContain(
       '<LegacyModal visible={open} title="订单信息" onCancel={onClose} footer={false}>',
     );

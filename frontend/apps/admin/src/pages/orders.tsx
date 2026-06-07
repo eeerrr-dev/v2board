@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { App, Col, Divider, Row } from 'antd';
+import { App } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminFilter } from '@v2board/api-client';
@@ -147,7 +147,8 @@ function readStoredOrderFilter(): AdminFilter[] {
   }
 }
 
-const detailRowStyle = { marginBottom: 0 };
+const detailRowStyle = { marginLeft: -8, marginRight: -8, marginBottom: 0 };
+const detailColStyle = { paddingLeft: 8, paddingRight: 8 };
 
 function cents(value?: number | null) {
   return ((value as number) / 100).toFixed(2);
@@ -200,11 +201,19 @@ function planSelectOptions(plans: Plan[]): LegacySelectOption[] {
 
 function OrderDetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <Row gutter={[16, 16]} style={detailRowStyle}>
-      <Col span={6}>{label}</Col>
-      <Col span={18}>{children}</Col>
-    </Row>
+    <div className="ant-row" style={detailRowStyle}>
+      <div className="ant-col ant-col-6" style={detailColStyle}>
+        {label}
+      </div>
+      <div className="ant-col ant-col-18" style={detailColStyle}>
+        {children}
+      </div>
+    </div>
   );
+}
+
+function OrderDetailDivider() {
+  return <div className="ant-divider ant-divider-horizontal" role="separator" />;
 }
 
 function AssignOrderButton({
@@ -343,18 +352,18 @@ function OrderDetailModal({
           <OrderDetailRow label="订单状态">{ORDER_STATUS_TEXT[detail.status]}</OrderDetailRow>
           <OrderDetailRow label="订阅计划">{planName}</OrderDetailRow>
           <OrderDetailRow label="回调单号">{detail.callback_no || '-'}</OrderDetailRow>
-          <Divider />
+          <OrderDetailDivider />
           <OrderDetailRow label="支付金额">{cents(detail.total_amount)}</OrderDetailRow>
           <OrderDetailRow label="余额支付">{cents(detail.balance_amount)}</OrderDetailRow>
           <OrderDetailRow label="优惠金额">{cents(detail.discount_amount)}</OrderDetailRow>
           <OrderDetailRow label="退回金额">{cents(detail.refund_amount)}</OrderDetailRow>
           <OrderDetailRow label="折抵金额">{cents(detail.surplus_amount)}</OrderDetailRow>
-          <Divider />
+          <OrderDetailDivider />
           <OrderDetailRow label="创建时间">{formatDateTime(detail.created_at)}</OrderDetailRow>
           <OrderDetailRow label="更新时间">{formatDateTime(detail.updated_at)}</OrderDetailRow>
           {detail.invite_user_id && detail.status === 3 ? (
             <div>
-              <Divider />
+              <OrderDetailDivider />
               <OrderDetailRow label="邀请人">
                 <LegacyTooltip title="查看TA邀请的人">
                   <a
