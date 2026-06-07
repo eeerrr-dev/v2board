@@ -67,6 +67,7 @@ import {
   LEGACY_DROPDOWN_CLICK_TRIGGER,
 } from '@/components/legacy-dropdown';
 import { LegacyTooltip } from '@/components/legacy-tooltip';
+import { LegacyInput, LegacyInputGroup, LegacyTextArea } from '@/components/legacy-input';
 
 type QueryState = {
   current: number;
@@ -949,11 +950,16 @@ function SendMailModal({
     >
       <div className="form-group">
         <label htmlFor="example-text-input-alt">收件人</label>
-        <Input disabled value={filter.length ? '过滤用户' : '全部用户'} />
+        <LegacyInput
+          className="ant-input"
+          disabled
+          value={filter.length ? '过滤用户' : '全部用户'}
+        />
       </div>
       <div className="form-group">
         <label htmlFor="example-text-input-alt">主题</label>
-        <Input
+        <LegacyInput
+          className="ant-input"
           placeholder="请输入邮件主题"
           value={submit.subject}
           onChange={(event) => setSubmit((state) => ({ ...state, subject: event.target.value }))}
@@ -961,7 +967,8 @@ function SendMailModal({
       </div>
       <div className="form-group">
         <label htmlFor="example-text-input-alt">发送内容</label>
-        <Input.TextArea
+        <LegacyTextArea
+          className="ant-input"
           rows={12}
           value={submit.content}
           placeholder="请输入邮件内容"
@@ -1015,7 +1022,8 @@ function AssignOrderModal({
     >
       <div className="form-group">
         <label htmlFor="example-text-input-alt">用户邮箱</label>
-        <Input
+        <LegacyInput
+          className="ant-input"
           placeholder="请输入用户邮箱"
           value={submit.email}
           onChange={(event) => setSubmitField('email', event.target.value)}
@@ -1049,7 +1057,7 @@ function AssignOrderModal({
       </div>
       <div className="form-group">
         <label htmlFor="example-text-input-alt">支付金额</label>
-        <Input
+        <LegacyInputGroup
           placeholder="请输入需要支付的金额"
           addonAfter="¥"
           value={submit.total_amount}

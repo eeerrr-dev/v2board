@@ -411,6 +411,9 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
     expect(usersSource).toContain("import { legacyConfirm } from '@/components/legacy-confirm';");
     expect(usersSource).toContain("import { App, Input } from 'antd';");
+    expect(usersSource).toContain(
+      "import { LegacyInput, LegacyInputGroup, LegacyTextArea } from '@/components/legacy-input';",
+    );
     expect(usersSource).toContain('LegacyDropdownMenu,');
     expect(usersSource).toContain('LegacyDropdownMenuItem,');
     expect(usersSource).toContain("} from '@/components/legacy-select';");
@@ -431,6 +434,11 @@ describe('UsersPage legacy user manager', () => {
     expect(assignOrderModalSource).toContain('setSubmit(assignOrderSubmit(user?.email));');
     expect(assignOrderModalSource).not.toContain('setSubmit({ email: user.email });');
     expect(assignOrderModalSource).toContain('.mutateAsync(submit)');
+    expect(assignOrderModalSource).toContain('<LegacyInput');
+    expect(assignOrderModalSource).toContain('placeholder="请输入用户邮箱"');
+    expect(assignOrderModalSource).toContain('<LegacyInputGroup');
+    expect(assignOrderModalSource).toContain('placeholder="请输入需要支付的金额"');
+    expect(assignOrderModalSource).toContain('addonAfter="¥"');
     expect(assignOrderModalSource).toContain(
       '<label htmlFor="example-text-input-alt">请选择订阅</label>',
     );
@@ -444,6 +452,7 @@ describe('UsersPage legacy user manager', () => {
     expect(assignOrderModalSource).not.toContain('options={plans}');
     expect(assignOrderModalSource).not.toContain('options={Object.entries(PERIOD_TEXT)');
     expect(assignOrderModalSource).not.toContain('<Modal');
+    expect(assignOrderModalSource).not.toContain('<Input');
     expect(assignOrderModalSource).not.toContain('open={Boolean(user)}');
     expect(assignOrderModalSource).not.toContain('<Form');
     expect(assignOrderModalSource).not.toContain('rules={[{ required: true }]}');
@@ -538,6 +547,9 @@ describe('UsersPage legacy user manager', () => {
       '<label htmlFor="example-text-input-alt">发送内容</label>',
     );
     expect(sendMailModalSource).toContain("filter.length ? '过滤用户' : '全部用户'");
+    expect(sendMailModalSource).toContain('<LegacyInput');
+    expect(sendMailModalSource).toContain('<LegacyTextArea');
+    expect(sendMailModalSource).toContain('className="ant-input"');
     expect(sendMailModalSource).toContain('placeholder="请输入邮件主题"');
     expect(sendMailModalSource).toContain('rows={12}');
     expect(sendMailModalSource).toContain('placeholder="请输入邮件内容"');
@@ -546,6 +558,8 @@ describe('UsersPage legacy user manager', () => {
     expect(sendMailModalSource).not.toContain('send-mail-subject');
     expect(sendMailModalSource).not.toContain('send-mail-content');
     expect(sendMailModalSource).not.toContain('<Modal');
+    expect(sendMailModalSource).not.toContain('<Input');
+    expect(sendMailModalSource).not.toContain('Input.TextArea');
     expect(sendMailModalSource).not.toContain('open={open}');
     expect(sendMailModalSource).not.toContain('<Form');
     expect(sendMailModalSource).not.toContain('rules={[{ required: true }]}');
