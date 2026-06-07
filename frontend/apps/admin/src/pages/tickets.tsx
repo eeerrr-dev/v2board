@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
-import { App, Tooltip } from 'antd';
+import { App } from 'antd';
 import type { FilterValue } from 'antd/es/table/interface';
 import dayjs from 'dayjs';
 import type { Ticket } from '@v2board/types';
@@ -23,6 +23,7 @@ import {
   legacyTableRowKey,
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
+import { LegacyTooltip } from '@/components/legacy-tooltip';
 
 type TicketQuery = AdminPageQuery & {
   total?: number;
@@ -415,13 +416,13 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
       <div className="block-content-full bg-gray-lighter p-3">
         <span className="tag___12_9H">{current?.subject ?? emptyNotice}</span>
         <div className="ctrl___UqDJ7">
-          <Tooltip title="用户管理" placement="left">
+          <LegacyTooltip title="用户管理" placement="left">
             <LegacyUserIcon onClick={() => current?.user_id && setUserOpen(true)} />
-          </Tooltip>
+          </LegacyTooltip>
           <div className="ant-divider ant-divider-vertical" />
-          <Tooltip title="TA的流量记录" placement="left">
+          <LegacyTooltip title="TA的流量记录" placement="left">
             <LegacySolutionIcon onClick={() => current?.user_id && setTrafficOpen(true)} />
-          </Tooltip>
+          </LegacyTooltip>
         </div>
       </div>
       <div

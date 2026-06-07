@@ -478,6 +478,11 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).toContain('输入内容回复工单...');
     expect(ticketsSource).toContain('setUserOpen(true)');
     expect(ticketsSource).toContain('<UserManageDrawer');
+    expect(ticketsSource).toContain("import { LegacyTooltip } from '@/components/legacy-tooltip';");
+    expect(ticketsSource).toContain('<LegacyTooltip title="用户管理" placement="left">');
+    expect(ticketsSource).toContain('<LegacyTooltip title="TA的流量记录" placement="left">');
+    expect(ticketsSource).not.toContain("Tooltip } from 'antd'");
+    expect(ticketsSource).not.toContain('<Tooltip');
     expect(html).toContain('aria-label="图标: user"');
     expect(html).toContain('class="anticon anticon-user"');
     expect(ticketsSource).toContain(

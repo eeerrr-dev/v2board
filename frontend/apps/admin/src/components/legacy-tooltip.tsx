@@ -13,6 +13,32 @@ import {
 import { createPortal } from 'react-dom';
 import { useTransitionStatus } from '@/lib/use-transition-status';
 
+type LegacyTooltipPlacement = 'top' | 'topRight' | 'left';
+
+function getTooltipBox(placement: LegacyTooltipPlacement, rect: DOMRect) {
+  if (placement === 'left') {
+    return {
+      top: rect.top + rect.height / 2 + window.scrollY,
+      left: rect.left + window.scrollX - 4,
+    };
+  }
+
+  return {
+    top: rect.top + window.scrollY - 4,
+    left: (placement === 'topRight' ? rect.right : rect.left + rect.width / 2) + window.scrollX,
+  };
+}
+
+function getTooltipTranslate(placement: LegacyTooltipPlacement) {
+  if (placement === 'left') return '-100% -50%';
+  return placement === 'topRight' ? '-100% -100%' : '-50% -100%';
+}
+
+function getTooltipTransformOrigin(placement: LegacyTooltipPlacement) {
+  if (placement === 'left') return 'calc(100% + 4px) 50%';
+  return placement === 'topRight' ? '100% calc(100% + 4px)' : '50% calc(100% + 4px)';
+}
+
 // antd v3 Tooltip portals `.ant-tooltip > (.ant-tooltip-arrow, .ant-tooltip-inner)`
 // directly to document.body and opens/closes through rc-trigger's 0.1s mouse delays.
 // The admin shell already loads the bundled theme CSS, so keeping the legacy classes
@@ -24,7 +50,7 @@ export function LegacyTooltip({
 }: {
   title: ReactNode;
   children: ReactNode;
-  placement?: 'top' | 'topRight';
+  placement?: LegacyTooltipPlacement;
 }) {
   const enterTimer = useRef<number | undefined>(undefined);
   const leaveTimer = useRef<number | undefined>(undefined);
@@ -51,10 +77,7 @@ export function LegacyTooltip({
     window.clearTimeout(leaveTimer.current);
     enterTimer.current = window.setTimeout(() => {
       const rect = trigger.getBoundingClientRect();
-      setBox({
-        top: rect.top + window.scrollY - 4,
-        left: (placement === 'topRight' ? rect.right : rect.left + rect.width / 2) + window.scrollX,
-      });
+      setBox(getTooltipBox(placement, rect));
       setVisible(true);
     }, 100);
   };
@@ -87,9 +110,8 @@ export function LegacyTooltip({
           position: 'absolute',
           top: box.top,
           left: box.left,
-          translate: placement === 'topRight' ? '-100% -100%' : '-50% -100%',
-          transformOrigin:
-            placement === 'topRight' ? '100% calc(100% + 4px)' : '50% calc(100% + 4px)',
+          translate: getTooltipTranslate(placement),
+          transformOrigin: getTooltipTransformOrigin(placement),
           zIndex: 1060,
         }}
       >

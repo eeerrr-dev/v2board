@@ -25,7 +25,7 @@ describe('LegacyTooltip antd behavior', () => {
     vi.useRealTimers();
   });
 
-  function renderTooltip(title: string, placement: 'top' | 'topRight' = 'top') {
+  function renderTooltip(title: string, placement: 'top' | 'topRight' | 'left' = 'top') {
     act(() => {
       root.render(
         <LegacyTooltip title={title} placement={placement}>
@@ -137,5 +137,21 @@ describe('LegacyTooltip antd behavior', () => {
     expect(tooltip.className).toContain('ant-tooltip-placement-topRight');
     expect(tooltip.style.transformOrigin).toBe('100% calc(100% + 4px)');
     expect(tooltip.style.translate).toBe('-100% -100%');
+  });
+
+  it('uses the legacy left transform origin at the arrow edge', () => {
+    const target = renderTooltip('Tip', 'left');
+
+    act(() => {
+      target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      vi.advanceTimersByTime(130);
+    });
+
+    const tooltip = document.body.querySelector('.ant-tooltip') as HTMLElement;
+    expect(tooltip.className).toContain('ant-tooltip-placement-left');
+    expect(tooltip.style.top).toBe('30px');
+    expect(tooltip.style.left).toBe('26px');
+    expect(tooltip.style.transformOrigin).toBe('calc(100% + 4px) 50%');
+    expect(tooltip.style.translate).toBe('-100% -50%');
   });
 });
