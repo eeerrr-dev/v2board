@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
-import { App, Dropdown, Input, Menu, Tooltip } from 'antd';
-import type { DropdownProps } from 'antd';
+import { App, Input, Tooltip } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -60,6 +59,12 @@ import {
   type LegacySelectOption,
   type LegacySelectValue,
 } from '@/components/legacy-select';
+import {
+  LegacyDropdown,
+  LegacyDropdownMenu,
+  LegacyDropdownMenuItem,
+  LEGACY_DROPDOWN_CLICK_TRIGGER,
+} from '@/components/legacy-dropdown';
 
 type QueryState = {
   current: number;
@@ -163,18 +168,6 @@ function writeLegacyHabit(key: string, value: unknown) {
 
 function legacyDisabledAnchorProps(disabled: boolean): AnchorHTMLAttributes<HTMLAnchorElement> {
   return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;
-}
-
-type LegacyDropdownProps = Omit<DropdownProps, 'popupRender' | 'trigger'> & {
-  overlay: ReactNode;
-  trigger?: DropdownProps['trigger'] | 'click';
-};
-
-const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];
-
-function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps) {
-  const nextTrigger = Array.isArray(trigger) ? trigger : trigger ? [trigger] : undefined;
-  return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;
 }
 
 function readLegacyUserPageSize() {
@@ -471,48 +464,48 @@ export default function UsersPage() {
     <LegacyDropdown
       trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
       overlay={
-        <Menu>
-          <Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>
+        <LegacyDropdownMenu>
+          <LegacyDropdownMenuItem key="edit" onContextMenu={(event) => event.stopPropagation()}>
             <a onClick={() => runUserAction('edit', row)}>
               <LegacyEditIcon /> 编辑
             </a>
-          </Menu.Item>
-          <Menu.Item key="assign" onContextMenu={(event) => event.stopPropagation()}>
+          </LegacyDropdownMenuItem>
+          <LegacyDropdownMenuItem key="assign" onContextMenu={(event) => event.stopPropagation()}>
             <a onClick={() => runUserAction('assign', row)}>
               <LegacyPlusIcon /> 分配订单
             </a>
-          </Menu.Item>
-          <Menu.Item key="copy">
+          </LegacyDropdownMenuItem>
+          <LegacyDropdownMenuItem key="copy">
             <a onClick={() => runUserAction('copy', row)}>
               <LegacyCopyIcon /> 复制订阅URL
             </a>
-          </Menu.Item>
-          <Menu.Item key="reset">
+          </LegacyDropdownMenuItem>
+          <LegacyDropdownMenuItem key="reset">
             <a onClick={() => runUserAction('reset', row)}>
               <LegacyReloadIcon /> 重置UUID及订阅URL
             </a>
-          </Menu.Item>
-          <Menu.Item key="orders" onClick={() => runUserAction('orders', row)}>
+          </LegacyDropdownMenuItem>
+          <LegacyDropdownMenuItem key="orders" onClick={() => runUserAction('orders', row)}>
             <a>
               <LegacyAccountBookIcon /> TA的订单
             </a>
-          </Menu.Item>
-          <Menu.Item key="invite" onClick={() => runUserAction('invite', row)}>
+          </LegacyDropdownMenuItem>
+          <LegacyDropdownMenuItem key="invite" onClick={() => runUserAction('invite', row)}>
             <a>
               <LegacyUsergroupAddIcon /> TA的邀请
             </a>
-          </Menu.Item>
-          <Menu.Item key="traffic" onContextMenu={(event) => event.stopPropagation()}>
+          </LegacyDropdownMenuItem>
+          <LegacyDropdownMenuItem key="traffic" onContextMenu={(event) => event.stopPropagation()}>
             <a onClick={() => runUserAction('traffic', row)}>
               <LegacySolutionIcon /> TA的流量记录
             </a>
-          </Menu.Item>
-          <Menu.Item key="delete">
+          </LegacyDropdownMenuItem>
+          <LegacyDropdownMenuItem key="delete">
             <a onClick={() => runUserAction('delete', row)}>
               <LegacyDeleteIcon /> 删除用户
             </a>
-          </Menu.Item>
-        </Menu>
+          </LegacyDropdownMenuItem>
+        </LegacyDropdownMenu>
       }
     >
       <a ref={legacyHref()}>
@@ -547,8 +540,8 @@ export default function UsersPage() {
                   </LegacyFilterDrawer>
                   <LegacyDropdown
                     overlay={
-                      <Menu>
-                        <Menu.Item key="csv">
+                      <LegacyDropdownMenu>
+                        <LegacyDropdownMenuItem key="csv">
                           <a
                             onClick={() => {
                               message.loading('导出中');
@@ -569,13 +562,13 @@ export default function UsersPage() {
                           >
                             <LegacyFileExcelIcon /> 导出CSV
                           </a>
-                        </Menu.Item>
-                        <Menu.Item key="mail">
+                        </LegacyDropdownMenuItem>
+                        <LegacyDropdownMenuItem key="mail">
                           <a onClick={() => setMailOpen(true)}>
                             <LegacyMailIcon /> 发送邮件
                           </a>
-                        </Menu.Item>
-                        <Menu.Item key="ban" disabled={!query.filter.length}>
+                        </LegacyDropdownMenuItem>
+                        <LegacyDropdownMenuItem key="ban" disabled={!query.filter.length}>
                           <a
                             {...legacyDisabledAnchorProps(!query.filter.length)}
                             onClick={() => {
@@ -595,8 +588,8 @@ export default function UsersPage() {
                           >
                             <LegacyStopIcon /> 批量封禁
                           </a>
-                        </Menu.Item>
-                        <Menu.Item key="delete" disabled={!query.filter.length}>
+                        </LegacyDropdownMenuItem>
+                        <LegacyDropdownMenuItem key="delete" disabled={!query.filter.length}>
                           <a
                             {...legacyDisabledAnchorProps(!query.filter.length)}
                             onClick={() => {
@@ -616,8 +609,8 @@ export default function UsersPage() {
                           >
                             <LegacyDeleteIcon /> 批量删除
                           </a>
-                        </Menu.Item>
-                      </Menu>
+                        </LegacyDropdownMenuItem>
+                      </LegacyDropdownMenu>
                     }
                   >
                     <LegacyButton className="ant-btn">

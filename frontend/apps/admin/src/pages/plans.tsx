@@ -7,8 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { App, Divider, Dropdown, Menu, Row, Col, Tooltip } from 'antd';
-import type { DropdownProps } from 'antd';
+import { App, Divider, Row, Col, Tooltip } from 'antd';
 import type { Plan, PlanPeriod } from '@v2board/types';
 import {
   useAdminPlans,
@@ -46,6 +45,12 @@ import {
   legacyTableRowKey,
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
+import {
+  LegacyDropdown,
+  LegacyDropdownMenu,
+  LegacyDropdownMenuItem,
+  LEGACY_DROPDOWN_CLICK_TRIGGER,
+} from '@/components/legacy-dropdown';
 
 type EditablePlan = {
   [K in keyof Omit<Plan, 'id'>]?: Plan[K] | string | null;
@@ -56,12 +61,6 @@ type EditablePlan = {
 
 type SavePlanPayload = EditablePlan;
 
-type LegacyDropdownProps = Omit<DropdownProps, 'popupRender' | 'trigger'> & {
-  trigger?: DropdownProps['trigger'] | 'click';
-  overlay: ReactNode;
-};
-
-const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];
 const LEGACY_RESET_TRAFFIC_OPTIONS: LegacySelectOption[] = [
   { value: null, label: '跟随系统设置' },
   { value: 0, label: '每月1号' },
@@ -70,12 +69,6 @@ const LEGACY_RESET_TRAFFIC_OPTIONS: LegacySelectOption[] = [
   { value: 3, label: '每年1月1日' },
   { value: 4, label: '按年重置' },
 ];
-
-function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps) {
-  const nextTrigger = Array.isArray(trigger) ? trigger : trigger ? [trigger] : undefined;
-
-  return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;
-}
 
 function emptyPlan(): EditablePlan {
   return {
@@ -514,8 +507,8 @@ export default function PlansPage() {
     <LegacyDropdown
       trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
       overlay={
-        <Menu>
-          <Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>
+        <LegacyDropdownMenu>
+          <LegacyDropdownMenuItem key="edit" onContextMenu={(event) => event.stopPropagation()}>
             <PlanEditor
               key={record.id}
               record={record}
@@ -529,11 +522,15 @@ export default function PlansPage() {
                 <LegacyEditIcon /> 编辑
               </a>
             </PlanEditor>
-          </Menu.Item>
-          <Menu.Item key="delete" style={{ color: '#ff4d4f' }} onClick={() => dropPlan(record.id)}>
+          </LegacyDropdownMenuItem>
+          <LegacyDropdownMenuItem
+            key="delete"
+            style={{ color: '#ff4d4f' }}
+            onClick={() => dropPlan(record.id)}
+          >
             <LegacyDeleteIcon /> 删除
-          </Menu.Item>
-        </Menu>
+          </LegacyDropdownMenuItem>
+        </LegacyDropdownMenu>
       }
     >
       <a ref={legacyHref()}>

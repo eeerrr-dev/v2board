@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { App, Col, Divider, Dropdown, Input, Menu, Row, Tooltip } from 'antd';
-import type { DropdownProps } from 'antd';
+import { App, Col, Divider, Input, Row, Tooltip } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminFilter } from '@v2board/api-client';
@@ -42,6 +41,12 @@ import {
   type LegacySelectOption,
   type LegacySelectValue,
 } from '@/components/legacy-select';
+import {
+  LegacyDropdown,
+  LegacyDropdownMenu,
+  LegacyDropdownMenuItem,
+  LEGACY_DROPDOWN_CLICK_TRIGGER,
+} from '@/components/legacy-dropdown';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -87,19 +92,6 @@ const COMMISSION_STATUS_BADGE = ['default', 'processing', 'success', 'error'] as
 type LegacyBadgeStatus =
   | (typeof ORDER_STATUS_BADGE)[number]
   | (typeof COMMISSION_STATUS_BADGE)[number];
-
-type LegacyDropdownProps = Omit<DropdownProps, 'popupRender' | 'trigger'> & {
-  trigger?: DropdownProps['trigger'] | 'click';
-  overlay: ReactNode;
-};
-
-const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];
-
-function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps) {
-  const nextTrigger = Array.isArray(trigger) ? trigger : trigger ? [trigger] : undefined;
-
-  return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;
-}
 
 const ORDER_FILTER_KEYS: LegacyFilterKey[] = [
   { key: 'trade_no', title: '订单号', condition: ['模糊', '='] },
@@ -490,14 +482,14 @@ export default function OrdersPage() {
           disabled={value !== 0}
           trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
           overlay={
-            <Menu>
-              <Menu.Item key="1" onClick={() => updateOrderStatus(row.trade_no, '1')}>
+            <LegacyDropdownMenu>
+              <LegacyDropdownMenuItem key="1" onClick={() => updateOrderStatus(row.trade_no, '1')}>
                 已支付
-              </Menu.Item>
-              <Menu.Item key="2" onClick={() => updateOrderStatus(row.trade_no, '2')}>
+              </LegacyDropdownMenuItem>
+              <LegacyDropdownMenuItem key="2" onClick={() => updateOrderStatus(row.trade_no, '2')}>
                 取消
-              </Menu.Item>
-            </Menu>
+              </LegacyDropdownMenuItem>
+            </LegacyDropdownMenu>
           }
         >
           <div>
@@ -530,29 +522,29 @@ export default function OrdersPage() {
         <LegacyDropdown
           trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
           overlay={
-            <Menu>
-              <Menu.Item
+            <LegacyDropdownMenu>
+              <LegacyDropdownMenuItem
                 key="0"
                 disabled={value === 0}
-                onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
+                onClick={() => updateCommissionStatus(row.trade_no, '0')}
               >
                 待确认
-              </Menu.Item>
-              <Menu.Item
+              </LegacyDropdownMenuItem>
+              <LegacyDropdownMenuItem
                 key="1"
                 disabled={value === 1}
-                onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
+                onClick={() => updateCommissionStatus(row.trade_no, '1')}
               >
                 有效
-              </Menu.Item>
-              <Menu.Item
+              </LegacyDropdownMenuItem>
+              <LegacyDropdownMenuItem
                 key="3"
                 disabled={value === 3}
-                onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}
+                onClick={() => updateCommissionStatus(row.trade_no, '3')}
               >
                 无效
-              </Menu.Item>
-            </Menu>
+              </LegacyDropdownMenuItem>
+            </LegacyDropdownMenu>
           }
         >
           <div>

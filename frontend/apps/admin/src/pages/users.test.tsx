@@ -403,7 +403,9 @@ describe('UsersPage legacy user manager', () => {
 
   it('keeps the legacy assigned-order modal loading OK text', () => {
     expect(usersSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
-    expect(usersSource).toContain("import { App, Dropdown, Input, Menu, Tooltip } from 'antd';");
+    expect(usersSource).toContain("import { App, Input, Tooltip } from 'antd';");
+    expect(usersSource).toContain('LegacyDropdownMenu,');
+    expect(usersSource).toContain('LegacyDropdownMenuItem,');
     expect(usersSource).toContain("} from '@/components/legacy-select';");
     expect(usersSource).toContain('LegacySelect,');
     expect(usersSource).toContain('type LegacySelectOption,');
@@ -644,18 +646,14 @@ describe('UsersPage legacy user manager', () => {
       usersSource.indexOf('<LegacyButton className="ant-btn ml-2"'),
     );
 
-    expect(usersSource).toContain(
-      'function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)',
-    );
-    expect(usersSource).toContain(
-      'return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;',
-    );
+    expect(usersSource).not.toContain("import type { DropdownProps } from 'antd';");
+    expect(usersSource).not.toContain('popupRender={() => overlay}');
+    expect(usersSource).not.toContain('<Menu>');
     expect(rowActionSource).toContain('<LegacyDropdown');
     expect(rowActionSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
     expect(rowActionSource).toContain('overlay={');
-    expect(rowActionSource).toContain('<Menu>');
     expect(rowActionSource).toContain(
-      '<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>',
+      '<LegacyDropdownMenuItem key="edit" onContextMenu={(event) => event.stopPropagation()}>',
     );
     expect(rowActionSource).toContain("runUserAction('edit', row)");
     expect(rowActionSource).toContain('<LegacyEditIcon /> 编辑');
@@ -666,11 +664,11 @@ describe('UsersPage legacy user manager', () => {
     expect(rowActionSource).toContain("runUserAction('reset', row)");
     expect(rowActionSource).toContain('<LegacyReloadIcon /> 重置UUID及订阅URL');
     expect(rowActionSource).toContain(
-      '<Menu.Item key="orders" onClick={() => runUserAction(\'orders\', row)}>',
+      '<LegacyDropdownMenuItem key="orders" onClick={() => runUserAction(\'orders\', row)}>',
     );
     expect(rowActionSource).toContain('<LegacyAccountBookIcon /> TA的订单');
     expect(rowActionSource).toContain(
-      '<Menu.Item key="invite" onClick={() => runUserAction(\'invite\', row)}>',
+      '<LegacyDropdownMenuItem key="invite" onClick={() => runUserAction(\'invite\', row)}>',
     );
     expect(rowActionSource).toContain('<LegacyUsergroupAddIcon /> TA的邀请');
     expect(rowActionSource).toContain("runUserAction('traffic', row)");
@@ -690,11 +688,12 @@ describe('UsersPage legacy user manager', () => {
     );
     expect(toolbarSource).toContain('<LegacyDropdown');
     expect(toolbarSource).toContain('overlay={');
-    expect(toolbarSource).toContain('<Menu>');
     expect(toolbarSource).toContain('<LegacyFileExcelIcon /> 导出CSV');
     expect(toolbarSource).toContain('onClick={() => setMailOpen(true)}');
     expect(toolbarSource).toContain('<LegacyMailIcon /> 发送邮件');
-    expect(toolbarSource).toContain('<Menu.Item key="ban" disabled={!query.filter.length}>');
+    expect(toolbarSource).toContain(
+      '<LegacyDropdownMenuItem key="ban" disabled={!query.filter.length}>',
+    );
     expect(toolbarSource).toContain('{...legacyDisabledAnchorProps(!query.filter.length)}');
     expect(toolbarSource).toContain('<LegacyStopIcon /> 批量封禁');
     expect(toolbarSource).toContain('<LegacyDeleteIcon /> 批量删除');

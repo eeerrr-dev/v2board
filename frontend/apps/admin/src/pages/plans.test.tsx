@@ -130,20 +130,15 @@ describe('PlansPage legacy subscription management', () => {
   });
 
   it('keeps the legacy action dropdown delete color on the menu item', () => {
-    expect(plansSource).toContain(
-      "const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];",
-    );
-    expect(plansSource).toContain(
-      'function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)',
-    );
-    expect(plansSource).toContain(
-      'return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;',
-    );
+    expect(plansSource).toContain('LegacyDropdownMenu,');
+    expect(plansSource).toContain('LegacyDropdownMenuItem,');
+    expect(plansSource).not.toContain("import type { DropdownProps } from 'antd';");
+    expect(plansSource).not.toContain('popupRender={() => overlay}');
+    expect(plansSource).not.toContain('<Menu>');
     expect(plansSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
     expect(plansSource).toContain('overlay={');
-    expect(plansSource).toContain('<Menu>');
     expect(plansSource).toContain(
-      '<Menu.Item key="edit" onContextMenu={(event) => event.stopPropagation()}>',
+      '<LegacyDropdownMenuItem key="edit" onContextMenu={(event) => event.stopPropagation()}>',
     );
     expect(plansSource).toContain('key="delete"');
     expect(plansSource).toContain("style={{ color: '#ff4d4f' }}");

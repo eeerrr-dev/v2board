@@ -288,23 +288,19 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).toContain('className="ant-badge-status-text"');
     expect(ordersSource).not.toContain("ORDER_STATUS_BADGE[value] ?? 'default'");
     expect(ordersSource).not.toContain("COMMISSION_STATUS_BADGE[value] ?? 'default'");
-    expect(ordersSource).toContain(
-      "const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownProps['trigger'];",
-    );
-    expect(ordersSource).toContain(
-      'function LegacyDropdown({ overlay, trigger, ...props }: LegacyDropdownProps)',
-    );
-    expect(ordersSource).toContain(
-      'return <Dropdown {...props} trigger={nextTrigger} popupRender={() => overlay} />;',
-    );
+    expect(ordersSource).toContain('LegacyDropdownMenu,');
+    expect(ordersSource).toContain('LegacyDropdownMenuItem,');
+    expect(ordersSource).not.toContain("import type { DropdownProps } from 'antd';");
+    expect(ordersSource).not.toContain('popupRender={() => overlay}');
+    expect(ordersSource).not.toContain('<Menu>');
     expect(ordersSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
+    expect(ordersSource).toContain('disabled={value !== 0}');
     expect(ordersSource).toContain('overlay={');
-    expect(ordersSource).toContain('<Menu>');
     expect(ordersSource).toContain(
-      '<Menu.Item key="1" onClick={() => updateOrderStatus(row.trade_no, \'1\')}>',
+      '<LegacyDropdownMenuItem key="1" onClick={() => updateOrderStatus(row.trade_no, \'1\')}>',
     );
     expect(ordersSource).toContain(
-      '<Menu.Item key="2" onClick={() => updateOrderStatus(row.trade_no, \'2\')}>',
+      '<LegacyDropdownMenuItem key="2" onClick={() => updateOrderStatus(row.trade_no, \'2\')}>',
     );
     expect(ordersSource).toContain("updateOrderStatus(row.trade_no, '1')");
     expect(ordersSource).not.toContain('menu={{');
@@ -353,9 +349,9 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).toContain("3: '已驳回'");
     expect(ordersSource).toContain('key="3"');
     expect(ordersSource).toContain('disabled={value === 3}');
-    expect(ordersSource).toContain(
-      'onClick={(event) => updateCommissionStatus(row.trade_no, String(event.key))}',
-    );
+    expect(ordersSource).toContain("onClick={() => updateCommissionStatus(row.trade_no, '0')}");
+    expect(ordersSource).toContain("onClick={() => updateCommissionStatus(row.trade_no, '1')}");
+    expect(ordersSource).toContain("onClick={() => updateCommissionStatus(row.trade_no, '3')}");
     expect(ordersSource).toContain('无效');
     expect(ordersSource).not.toContain("3: '无效'");
   });
