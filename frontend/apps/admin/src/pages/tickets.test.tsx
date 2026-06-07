@@ -576,19 +576,18 @@ describe('TicketsPage legacy ticket manager', () => {
     );
   });
 
-  it('keeps the old unkeyed ticket message map from the bundled chat component', () => {
+  it('keys ticket messages by the legacy list index without introducing a message id fallback', () => {
     const messageSource = ticketsSource.slice(
-      ticketsSource.indexOf('{current?.message!.map((item) =>'),
+      ticketsSource.indexOf('{current?.message!.map((item, index) =>'),
       ticketsSource.indexOf(
         '<div className="js-chat-form',
-        ticketsSource.indexOf('{current?.message!.map((item) =>'),
+        ticketsSource.indexOf('{current?.message!.map((item, index) =>'),
       ),
     );
 
-    expect(messageSource).toContain('{current?.message!.map((item) =>');
+    expect(messageSource).toContain('{current?.message!.map((item, index) =>');
     expect(messageSource).not.toContain('key={item.id}');
-    expect(messageSource).not.toContain('key={index}');
-    expect(messageSource).not.toContain('key=');
+    expect(messageSource).toContain('key={index}');
     expect(ticketsSource).not.toContain('current?.message?.map');
     expect(ticketsSource).not.toContain('ticket.data?.message?.length');
     expect(ticketsSource).toContain('ticket.data?.message!.length');

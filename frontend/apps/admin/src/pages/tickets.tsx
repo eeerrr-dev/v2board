@@ -428,9 +428,9 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
         className="bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1"
         ref={chatRef}
       >
-        {current?.message!.map((item) =>
+        {current?.message!.map((item, index) =>
           item.is_me ? (
-            <div>
+            <div key={index}>
               <div className="font-size-sm text-muted my-2 text-right">
                 {formatMinute(item.created_at)}
               </div>
@@ -441,7 +441,7 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
               </div>
             </div>
           ) : (
-            <div>
+            <div key={index}>
               <div className="font-size-sm text-muted my-2">{formatMinute(item.created_at)}</div>
               <div className="mr-4">
                 <div className="d-inline-block bg-success-lighter px-3 py-2 mb-2 mw-100 rounded text-left">

@@ -613,7 +613,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('function isLegacyMobile()');
     expect(serversSource).toContain("window.navigator.userAgent.toLowerCase().includes('mobile')");
     expect(serversSource).toContain('<List');
-    expect(serversSource).toContain('actions={[\n                    <>');
+    expect(serversSource).toContain('actions={[\n                    <Fragment key="server-node-summary">');
     expect(serversSource).not.toContain('<span key="summary">');
   });
 
@@ -660,7 +660,7 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function NodeEditDrawer'),
     );
 
-    expect(serversSource).toContain('<LegacyTag>{name}</LegacyTag>');
+    expect(serversSource).toContain('<LegacyTag key={name}>{name}</LegacyTag>');
     expect(serversSource).toContain('className="ant-table-filter-dropdown"');
     expect(serversSource).toContain('<span>{group.name}</span>');
     expect(managePageSource).toContain(

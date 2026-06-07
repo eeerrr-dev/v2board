@@ -1,4 +1,4 @@
-import { cloneElement, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, cloneElement, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CSSProperties,
   HTMLAttributes,
@@ -1468,7 +1468,7 @@ function ServerManagePage() {
                 <List.Item
                   className={`v2board_node_mobile ${node.parent_id ? 'child_node' : ''}`}
                   actions={[
-                    <>
+                    <Fragment key="server-node-summary">
                       {getServerTypeTag(
                         node.type,
                         node.parent_id ? `${node.id} => ${node.parent_id}` : node.id,
@@ -1477,7 +1477,7 @@ function ServerManagePage() {
                         <LegacyUserIcon /> {node.online || 0}
                       </LegacyTag>
                       <LegacyTag>{node.rate} x</LegacyTag>
-                    </>,
+                    </Fragment>,
                   ]}
                   extra={
                     <>
@@ -1695,7 +1695,7 @@ function ServerManagePage() {
                                           </td>
                                           <td>
                                             {groupName(node.group_id).map((name) => (
-                                              <LegacyTag>{name}</LegacyTag>
+                                              <LegacyTag key={name}>{name}</LegacyTag>
                                             ))}
                                           </td>
                                           <td
