@@ -384,9 +384,9 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function getServerTypeTag'),
     );
 
-    expect(serversSource).toContain(
-      "import { LegacyCheckboxInput, LegacyInput, LegacyTextArea } from '@/components/legacy-input';",
-    );
+    expect(serversSource).toContain("} from '@/components/legacy-input';");
+    expect(serversSource).toContain('LegacyInput,');
+    expect(serversSource).toContain('LegacyTextArea,');
     expect(groupModalSource).toContain('<LegacyInput');
     expect(groupModalSource).toContain('className="ant-input"');
     expect(groupModalSource).not.toContain('<Input');
@@ -819,6 +819,11 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('uses the original server drawer form-group layout for common node fields', () => {
+    const nodeDrawerSource = serversSource.slice(
+      serversSource.indexOf('function NodeEditDrawer'),
+      serversSource.indexOf('function parseLegacyJsonPayloadField'),
+    );
+
     expect(serversSource).toContain('component={false}');
     expect(serversSource).toContain('className="form-group col-8"');
     expect(serversSource).toContain('className="form-group col-4"');
@@ -827,12 +832,21 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('节点名称');
     expect(serversSource).toContain('请输入节点名称');
     expect(serversSource).toContain('<Form.Item noStyle name="name">');
+    expect(nodeDrawerSource).toContain(
+      '<LegacyInput className="ant-input" placeholder="请输入节点名称" />',
+    );
+    expect(nodeDrawerSource).not.toContain('<Input placeholder="请输入节点名称" />');
     expect(serversSource).not.toContain(
       '<Form.Item noStyle name="name" rules={[{ required: true }]}>',
     );
     expect(serversSource).toContain('倍率');
     expect(serversSource).toContain('addonAfter="x"');
     expect(serversSource).toContain('<Form.Item noStyle name="rate">');
+    expect(serversSource).toContain('LegacyInputGroup,');
+    expect(nodeDrawerSource).toContain(
+      '<LegacyInputGroup addonAfter="x" placeholder="请输入节点倍率" />',
+    );
+    expect(nodeDrawerSource).not.toContain('<Input addonAfter="x" placeholder="请输入节点倍率" />');
     expect(serversSource).not.toContain(
       '<Form.Item noStyle name="rate" rules={[{ required: true }]}>',
     );
@@ -855,17 +869,32 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('节点地址');
     expect(serversSource).toContain('地址或IP');
     expect(serversSource).toContain('<Form.Item noStyle name="host">');
+    expect(nodeDrawerSource).toContain(
+      '<LegacyInput className="ant-input" placeholder="地址或IP" />',
+    );
+    expect(nodeDrawerSource).toContain(
+      '<LegacyInput className="ant-input" placeholder="请输入连接地址" />',
+    );
     expect(serversSource).not.toContain(
       '<Form.Item noStyle name="host" rules={[{ required: true }]}>',
     );
     expect(serversSource).toContain('连接端口');
     expect(serversSource).toContain('用户连接端口');
     expect(serversSource).toContain('<Form.Item noStyle name="port">');
+    expect(nodeDrawerSource).toContain(
+      '<LegacyInput className="ant-input" placeholder="用户连接端口" />',
+    );
     expect(serversSource).not.toContain(
       '<Form.Item noStyle name="port" rules={[{ required: true }]}>',
     );
     expect(serversSource).toContain('服务端口');
     expect(serversSource).toContain('非NAT同连接端口');
+    expect(nodeDrawerSource).toContain(
+      '<LegacyInput className="ant-input" placeholder="服务端开放端口" />',
+    );
+    expect(nodeDrawerSource).toContain(
+      '<LegacyInput className="ant-input" placeholder="非NAT同连接端口" />',
+    );
     expect(serversSource).toContain('父节点');
     expect(serversSource).toContain('更多解答');
     expect(serversSource).toContain('LegacyReadIcon');
@@ -1130,6 +1159,14 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('XTLS流控算法');
     expect(serversSource).toContain('一键安装指令');
     expect(serversSource).toContain('readOnly');
+    expect(serversSource).toContain('<LegacyInput className="ant-input" type="hidden" />');
+    expect(serversSource).toContain('<LegacyTextArea');
+    expect(serversSource).toContain('className="ant-input"');
+    expect(serversSource).toContain("style={{ backgroundColor: '#f5f5f5a0', cursor: 'text' }}");
+    expect(serversSource).not.toContain('<Input type="hidden" />');
+    expect(serversSource).not.toContain(
+      '<Input.TextArea\n                rows={4}\n                readOnly',
+    );
     expect(serversSource).toContain('delete payload.install_command');
     expect(serversSource).toContain('options={LEGACY_V2NODE_PROTOCOL_OPTIONS}');
     expect(serversSource).toContain('options={LEGACY_V2NODE_SHADOWSOCKS_NETWORK_OPTIONS}');

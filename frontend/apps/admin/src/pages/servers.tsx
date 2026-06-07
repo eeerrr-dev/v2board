@@ -49,7 +49,12 @@ import {
   LegacyReadIcon,
   LegacyUserIcon,
 } from '@/components/legacy-ant-icon';
-import { LegacyCheckboxInput, LegacyInput, LegacyTextArea } from '@/components/legacy-input';
+import {
+  LegacyCheckboxInput,
+  LegacyInput,
+  LegacyInputGroup,
+  LegacyTextArea,
+} from '@/components/legacy-input';
 import { LegacyEmpty } from '@/components/legacy-empty';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyModal } from '@/components/legacy-modal';
@@ -1963,13 +1968,13 @@ function NodeEditDrawer({
             <div className="form-group col-8">
               <label>节点名称</label>
               <Form.Item noStyle name="name">
-                <Input placeholder="请输入节点名称" />
+                <LegacyInput className="ant-input" placeholder="请输入节点名称" />
               </Form.Item>
             </div>
             <div className="form-group col-4">
               <label>倍率</label>
               <Form.Item noStyle name="rate">
-                <Input addonAfter="x" placeholder="请输入节点倍率" />
+                <LegacyInputGroup addonAfter="x" placeholder="请输入节点倍率" />
               </Form.Item>
             </div>
           </div>
@@ -2010,13 +2015,13 @@ function NodeEditDrawer({
               <div className="form-group col-md-6 col-xs-12">
                 <label>连接地址</label>
                 <Form.Item noStyle name="host">
-                  <Input placeholder="地址或IP" />
+                  <LegacyInput className="ant-input" placeholder="地址或IP" />
                 </Form.Item>
               </div>
               <div className="form-group col-md-6 col-xs-12">
                 <label>监听地址</label>
                 <Form.Item noStyle name="listen_ip">
-                  <Input placeholder="地址或IP默认为0.0.0.0" />
+                  <LegacyInput className="ant-input" placeholder="地址或IP默认为0.0.0.0" />
                 </Form.Item>
               </div>
             </div>
@@ -2025,7 +2030,7 @@ function NodeEditDrawer({
               <div className="form-group col-md-8 col-xs-12">
                 <label>节点地址</label>
                 <Form.Item noStyle name="host">
-                  <Input placeholder="请输入连接地址" />
+                  <LegacyInput className="ant-input" placeholder="请输入连接地址" />
                 </Form.Item>
               </div>
               {type === 'vmess' ? (
@@ -2039,7 +2044,7 @@ function NodeEditDrawer({
               <div className="form-group col-md-12 col-xs-12">
                 <label>节点地址</label>
                 <Form.Item noStyle name="host">
-                  <Input placeholder="地址或IP" />
+                  <LegacyInput className="ant-input" placeholder="地址或IP" />
                 </Form.Item>
               </div>
             </div>
@@ -2049,13 +2054,13 @@ function NodeEditDrawer({
               <div className="form-group col-md-4 col-xs-12">
                 <label>连接端口</label>
                 <Form.Item noStyle name="port">
-                  <Input placeholder="用户连接端口" />
+                  <LegacyInput className="ant-input" placeholder="用户连接端口" />
                 </Form.Item>
               </div>
               <div className="form-group col-md-4 col-xs-12">
                 <label>服务端口</label>
                 <Form.Item noStyle name="server_port">
-                  <Input placeholder="服务端开放端口" />
+                  <LegacyInput className="ant-input" placeholder="服务端开放端口" />
                 </Form.Item>
               </div>
               {type === 'trojan' ? <TrojanAllowInsecureField /> : <ServerInsecureField />}
@@ -2065,13 +2070,13 @@ function NodeEditDrawer({
               <div className="form-group col-md-6 col-xs-12">
                 <label>连接端口</label>
                 <Form.Item noStyle name="port">
-                  <Input placeholder="用户连接端口" />
+                  <LegacyInput className="ant-input" placeholder="用户连接端口" />
                 </Form.Item>
               </div>
               <div className="form-group col-md-6 col-xs-12">
                 <label>服务端口</label>
                 <Form.Item noStyle name="server_port">
-                  <Input placeholder="服务端开放端口" />
+                  <LegacyInput className="ant-input" placeholder="服务端开放端口" />
                 </Form.Item>
               </div>
             </div>
@@ -2080,13 +2085,13 @@ function NodeEditDrawer({
               <div className="form-group col-md-6 col-xs-12">
                 <label>连接端口</label>
                 <Form.Item noStyle name="port">
-                  <Input placeholder="用户连接端口" />
+                  <LegacyInput className="ant-input" placeholder="用户连接端口" />
                 </Form.Item>
               </div>
               <div className="form-group col-md-6 col-xs-12">
                 <label>服务端口</label>
                 <Form.Item noStyle name="server_port">
-                  <Input placeholder="非NAT同连接端口" />
+                  <LegacyInput className="ant-input" placeholder="非NAT同连接端口" />
                 </Form.Item>
               </div>
             </div>
@@ -2127,13 +2132,14 @@ function NodeEditDrawer({
           </Form.Item>
         </div>
         <Form.Item noStyle name="show">
-          <Input type="hidden" />
+          <LegacyInput className="ant-input" type="hidden" />
         </Form.Item>
         {type === 'v2node' ? (
           <div className="form-group">
             <label>一键安装指令</label>
             <Form.Item noStyle name="install_command">
-              <Input.TextArea
+              <LegacyTextArea
+                className="ant-input"
                 rows={4}
                 readOnly
                 style={{ backgroundColor: '#f5f5f5a0', cursor: 'text' }}

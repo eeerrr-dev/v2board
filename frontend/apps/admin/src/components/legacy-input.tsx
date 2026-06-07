@@ -159,7 +159,7 @@ export function LegacyInputGroup({
   className?: string;
   defaultValue?: string | number | readonly string[] | undefined;
   disabled?: boolean;
-  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string;
   size?: 'large';
   type?: HTMLInputElement['type'];
