@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
-import { App, Input, Tooltip } from 'antd';
+import { App, Input } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -66,6 +66,7 @@ import {
   LegacyDropdownMenuItem,
   LEGACY_DROPDOWN_CLICK_TRIGGER,
 } from '@/components/legacy-dropdown';
+import { LegacyTooltip } from '@/components/legacy-tooltip';
 
 type QueryState = {
   current: number;
@@ -430,7 +431,7 @@ export default function UsersPage() {
     const legacyOnlineAt = (row as AdminUserRow & { t?: number | null }).t;
     const online = !(Date.now() / 1000 - 600 > Number(legacyOnlineAt));
     return (
-      <Tooltip
+      <LegacyTooltip
         placement="top"
         title={legacyOnlineAt ? `最后在线${formatDateTime(Number(legacyOnlineAt))}` : '从未在线'}
       >
@@ -438,7 +439,7 @@ export default function UsersPage() {
           <LegacyUserStatusBadge online={online} />
           {row.email}
         </span>
-      </Tooltip>
+      </LegacyTooltip>
     );
   };
 
@@ -447,9 +448,9 @@ export default function UsersPage() {
     const deviceLimit = row.device_limit !== null ? row.device_limit : '∞';
     const text = `${deviceCount} / ${deviceLimit}`;
     return row.ips ? (
-      <Tooltip placement="top" title={row.ips}>
+      <LegacyTooltip placement="top" title={row.ips}>
         {text}
-      </Tooltip>
+      </LegacyTooltip>
     ) : (
       text
     );
@@ -521,7 +522,7 @@ export default function UsersPage() {
         <div className="block border-bottom">
           <div className="bg-white">
             <div className="v2board-table-action" style={{ padding: 15 }}>
-              <Tooltip
+              <LegacyTooltip
                 title="Tips：可以使用过滤器过滤后再使用操作对过滤的用户进行操作。"
                 placement="right"
               >
@@ -620,7 +621,7 @@ export default function UsersPage() {
                     </LegacyButton>
                   </LegacyDropdown>
                 </div>
-              </Tooltip>
+              </LegacyTooltip>
               <LegacyButton className="ant-btn ml-2" onClick={() => setCreating(true)}>
                 <LegacyUserAddIcon />
               </LegacyButton>

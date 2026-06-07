@@ -410,7 +410,7 @@ describe('UsersPage legacy user manager', () => {
   it('keeps the legacy assigned-order modal loading OK text', () => {
     expect(usersSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
     expect(usersSource).toContain("import { legacyConfirm } from '@/components/legacy-confirm';");
-    expect(usersSource).toContain("import { App, Input, Tooltip } from 'antd';");
+    expect(usersSource).toContain("import { App, Input } from 'antd';");
     expect(usersSource).toContain('LegacyDropdownMenu,');
     expect(usersSource).toContain('LegacyDropdownMenuItem,');
     expect(usersSource).toContain("} from '@/components/legacy-select';");
@@ -511,6 +511,19 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).not.toContain('<Select');
     expect(usersSource).not.toContain('Select.Option');
     expect(usersSource).not.toContain("Select, Tooltip } from 'antd'");
+  });
+
+  it('keeps the original user list tooltip placements', () => {
+    expect(usersSource).toContain("import { LegacyTooltip } from '@/components/legacy-tooltip';");
+    expect(usersSource).toMatch(
+      /<LegacyTooltip\s+placement="top"\s+title=\{legacyOnlineAt \? `最后在线\$\{formatDateTime\(Number\(legacyOnlineAt\)\)\}` : '从未在线'\}/,
+    );
+    expect(usersSource).toContain('<LegacyTooltip placement="top" title={row.ips}>');
+    expect(usersSource).toMatch(
+      /<LegacyTooltip\s+title="Tips：可以使用过滤器过滤后再使用操作对过滤的用户进行操作。"\s+placement="right"/,
+    );
+    expect(usersSource).not.toContain("Tooltip } from 'antd'");
+    expect(usersSource).not.toContain('<Tooltip');
   });
 
   it('keeps the legacy send-mail modal stateful layout', () => {

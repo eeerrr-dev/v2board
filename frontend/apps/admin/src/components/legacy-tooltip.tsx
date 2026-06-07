@@ -13,13 +13,19 @@ import {
 import { createPortal } from 'react-dom';
 import { useTransitionStatus } from '@/lib/use-transition-status';
 
-type LegacyTooltipPlacement = 'top' | 'topRight' | 'left';
+type LegacyTooltipPlacement = 'top' | 'topRight' | 'left' | 'right';
 
 function getTooltipBox(placement: LegacyTooltipPlacement, rect: DOMRect) {
   if (placement === 'left') {
     return {
       top: rect.top + rect.height / 2 + window.scrollY,
       left: rect.left + window.scrollX - 4,
+    };
+  }
+  if (placement === 'right') {
+    return {
+      top: rect.top + rect.height / 2 + window.scrollY,
+      left: rect.right + window.scrollX + 4,
     };
   }
 
@@ -31,11 +37,13 @@ function getTooltipBox(placement: LegacyTooltipPlacement, rect: DOMRect) {
 
 function getTooltipTranslate(placement: LegacyTooltipPlacement) {
   if (placement === 'left') return '-100% -50%';
+  if (placement === 'right') return '0 -50%';
   return placement === 'topRight' ? '-100% -100%' : '-50% -100%';
 }
 
 function getTooltipTransformOrigin(placement: LegacyTooltipPlacement) {
   if (placement === 'left') return 'calc(100% + 4px) 50%';
+  if (placement === 'right') return '-4px 50%';
   return placement === 'topRight' ? '100% calc(100% + 4px)' : '50% calc(100% + 4px)';
 }
 
@@ -123,7 +131,7 @@ export function LegacyTooltip({
       document.body,
     );
 
-  const child = Children.count(children) === 1 ? Children.only(children) : null;
+  const child = Children.count(children) === 1 ? Children.toArray(children)[0] : null;
   if (isValidElement(child)) {
     const element = child as ReactElement<HTMLAttributes<HTMLElement>>;
     const className = open

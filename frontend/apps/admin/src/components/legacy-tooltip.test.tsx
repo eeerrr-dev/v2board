@@ -25,7 +25,7 @@ describe('LegacyTooltip antd behavior', () => {
     vi.useRealTimers();
   });
 
-  function renderTooltip(title: string, placement: 'top' | 'topRight' | 'left' = 'top') {
+  function renderTooltip(title: string, placement: 'top' | 'topRight' | 'left' | 'right' = 'top') {
     act(() => {
       root.render(
         <LegacyTooltip title={title} placement={placement}>
@@ -125,6 +125,35 @@ describe('LegacyTooltip antd behavior', () => {
     expect(target.className).not.toContain('ant-tooltip-open');
   });
 
+  it('wraps primitive children the way antd Tooltip allows', () => {
+    act(() => {
+      root.render(<LegacyTooltip title="Tip">plain text</LegacyTooltip>);
+    });
+
+    const target = container.querySelector('span') as HTMLElement;
+    target.getBoundingClientRect = () =>
+      ({
+        top: 20,
+        right: 70,
+        bottom: 40,
+        left: 30,
+        width: 40,
+        height: 20,
+        x: 30,
+        y: 20,
+        toJSON: () => {},
+      }) as DOMRect;
+
+    act(() => {
+      target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      vi.advanceTimersByTime(130);
+    });
+
+    expect(target.textContent).toBe('plain text');
+    expect(target.className).toContain('ant-tooltip-open');
+    expect(document.body.querySelector('.ant-tooltip-inner')?.textContent).toBe('Tip');
+  });
+
   it('uses the legacy topRight transform origin at the arrow corner', () => {
     const target = renderTooltip('Tip', 'topRight');
 
@@ -153,5 +182,21 @@ describe('LegacyTooltip antd behavior', () => {
     expect(tooltip.style.left).toBe('26px');
     expect(tooltip.style.transformOrigin).toBe('calc(100% + 4px) 50%');
     expect(tooltip.style.translate).toBe('-100% -50%');
+  });
+
+  it('uses the legacy right transform origin at the arrow edge', () => {
+    const target = renderTooltip('Tip', 'right');
+
+    act(() => {
+      target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      vi.advanceTimersByTime(130);
+    });
+
+    const tooltip = document.body.querySelector('.ant-tooltip') as HTMLElement;
+    expect(tooltip.className).toContain('ant-tooltip-placement-right');
+    expect(tooltip.style.top).toBe('30px');
+    expect(tooltip.style.left).toBe('74px');
+    expect(tooltip.style.transformOrigin).toBe('-4px 50%');
+    expect(tooltip.style.translate).toBe('0 -50%');
   });
 });
