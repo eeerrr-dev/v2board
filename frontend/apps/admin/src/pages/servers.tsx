@@ -7,7 +7,7 @@ import type {
   ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { App, Form, Input } from 'antd';
+import { App, Form } from 'antd';
 import type { FormInstance } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
@@ -2374,7 +2374,8 @@ function ServerChildDrawerField({
             </a>
           </label>
           <Form.Item noStyle name={field}>
-            <Input.TextArea
+            <LegacyTextArea
+              className="ant-input"
               rows={8}
               placeholder={getLegacyNetworkSettingsPlaceholder(type, network)}
             />
@@ -2389,7 +2390,11 @@ function ServerChildDrawerField({
       <div id="anytls-padding-scheme">
         <div className="form-group">
           <Form.Item noStyle name="padding_scheme">
-            <Input.TextArea rows={8} placeholder={ANYTLS_PADDING_SCHEME_PLACEHOLDER} />
+            <LegacyTextArea
+              className="ant-input"
+              rows={8}
+              placeholder={ANYTLS_PADDING_SCHEME_PLACEHOLDER}
+            />
           </Form.Item>
         </div>
       </div>
@@ -2416,7 +2421,7 @@ function ServerChildDrawerField({
 
   return (
     <Form.Item noStyle name={field}>
-      <Input.TextArea rows={8} />
+      <LegacyTextArea className="ant-input" rows={8} />
     </Form.Item>
   );
 }
@@ -2444,7 +2449,8 @@ function LegacyTlsSettingsField({
     <div>
       <div className="form-group">
         <label>Server Name(SNI)</label>
-        <Input
+        <LegacyInput
+          className="ant-input"
           value={legacyText(value.server_name)}
           onChange={(event) => change('server_name', event.target.value)}
           placeholder={tlsValue === 2 ? 'REALITY必填，与后端保持一致' : ''}
@@ -2473,7 +2479,8 @@ function LegacyTlsSettingsField({
               填写参考
             </a>
           </label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.provider)}
             onChange={(event) => change('provider', event.target.value)}
             placeholder="书写格式cloudflare"
@@ -2483,7 +2490,8 @@ function LegacyTlsSettingsField({
       {value.cert_mode === 'dns' && certApply ? (
         <div className="form-group">
           <label>DNS env</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.dns_env)}
             onChange={(event) => change('dns_env', event.target.value)}
             placeholder="书写格式CF_DNS_API_TOKEN=xxxxxxx如有多条使用逗号,分隔"
@@ -2493,7 +2501,8 @@ function LegacyTlsSettingsField({
       {tlsValue === 1 && value.cert_mode !== 'none' && certApply ? (
         <div className="form-group">
           <label>证书公钥文件地址Cert File Path</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.cert_file)}
             onChange={(event) => change('cert_file', event.target.value)}
             placeholder="留空在/etc/v2node/目录自动生成"
@@ -2503,7 +2512,8 @@ function LegacyTlsSettingsField({
       {tlsValue === 1 && value.cert_mode !== 'none' && certApply ? (
         <div className="form-group">
           <label>证书私钥文件地址Key File Path</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.key_file)}
             onChange={(event) => change('key_file', event.target.value)}
             placeholder="留空在/etc/v2node/目录自动生成"
@@ -2513,7 +2523,8 @@ function LegacyTlsSettingsField({
       {tlsValue === 2 ? (
         <div className="form-group">
           <label>Server Address</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.dest)}
             onChange={(event) => change('dest', event.target.value)}
             placeholder="REALITY目标地址,默认使用SNI"
@@ -2523,7 +2534,8 @@ function LegacyTlsSettingsField({
       {tlsValue === 2 ? (
         <div className="form-group">
           <label>Server Port</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.server_port)}
             onChange={(event) => change('server_port', event.target.value)}
             placeholder="REALITY目标端口,默认443"
@@ -2544,7 +2556,8 @@ function LegacyTlsSettingsField({
       {tlsValue === 2 ? (
         <div className="form-group">
           <label>Private Key</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.private_key)}
             onChange={(event) => change('private_key', event.target.value)}
             placeholder="留空自动生成"
@@ -2554,7 +2567,8 @@ function LegacyTlsSettingsField({
       {tlsValue === 2 ? (
         <div className="form-group">
           <label>Public Key</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.public_key)}
             onChange={(event) => change('public_key', event.target.value)}
             placeholder="留空自动生成"
@@ -2564,7 +2578,8 @@ function LegacyTlsSettingsField({
       {tlsValue === 2 ? (
         <div className="form-group">
           <label>ShortId</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.short_id)}
             onChange={(event) => change('short_id', event.target.value)}
             placeholder="留空自动生成"
@@ -2630,7 +2645,8 @@ function LegacyTlsSettingsField({
       {value.ech === 'custom' ? (
         <div className="form-group">
           <label>ECH Server Name (伪装域名/外层SNI)</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.ech_server_name)}
             onChange={(event) => change('ech_server_name', event.target.value)}
             placeholder="必填"
@@ -2640,7 +2656,8 @@ function LegacyTlsSettingsField({
       {value.ech === 'custom' ? (
         <div className="form-group">
           <label>ECH Key (服务端私钥)</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.ech_key)}
             onChange={(event) => change('ech_key', event.target.value)}
             placeholder="留空自动生成"
@@ -2650,7 +2667,8 @@ function LegacyTlsSettingsField({
       {value.ech === 'custom' ? (
         <div className="form-group">
           <label>ECH Config (客户端配置)</label>
-          <Input
+          <LegacyInput
+            className="ant-input"
             value={legacyText(value.ech_config)}
             onChange={(event) => change('ech_config', event.target.value)}
             placeholder="留空自动生成"
@@ -2704,7 +2722,8 @@ function LegacyEncryptionSettingsField({
         {value.rtt === '0rtt' ? (
           <div className="form-group col-md-6 col-xs-12">
             <label>Ticket time</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               value={legacyText(value.ticket)}
               onChange={(event) => change('ticket', event.target.value)}
               placeholder="最长允许时间"
@@ -2714,7 +2733,8 @@ function LegacyEncryptionSettingsField({
       </div>
       <div className="form-group">
         <label>Server Padding</label>
-        <Input
+        <LegacyInput
+          className="ant-input"
           value={legacyText(value.server_padding)}
           onChange={(event) => change('server_padding', event.target.value)}
           placeholder="留空使用默认值100-111-1111.75-0-111.50-0-3333"
@@ -2722,7 +2742,8 @@ function LegacyEncryptionSettingsField({
       </div>
       <div className="form-group">
         <label>Private Key</label>
-        <Input
+        <LegacyInput
+          className="ant-input"
           value={legacyText(value.private_key)}
           onChange={(event) => change('private_key', event.target.value)}
           placeholder="留空自动生成，需抗量子加密请自行替换"
@@ -2730,7 +2751,8 @@ function LegacyEncryptionSettingsField({
       </div>
       <div className="form-group">
         <label>Client Padding</label>
-        <Input
+        <LegacyInput
+          className="ant-input"
           value={legacyText(value.client_padding)}
           onChange={(event) => change('client_padding', event.target.value)}
           placeholder="留空使用默认值100-111-1111.75-0-111.50-0-3333"
@@ -2738,7 +2760,8 @@ function LegacyEncryptionSettingsField({
       </div>
       <div className="form-group">
         <label>Password</label>
-        <Input
+        <LegacyInput
+          className="ant-input"
           value={legacyText(value.password)}
           onChange={(event) => change('password', event.target.value)}
           placeholder="留空自动生成，需抗量子加密请自行替换"
@@ -2991,7 +3014,7 @@ function V2nodeFields({
               <div className="form-group col-md-6 col-xs-12">
                 <label>混淆密码obfs_password</label>
                 <Form.Item noStyle name="obfs_password">
-                  <Input placeholder="留空自动生成" />
+                  <LegacyInput className="ant-input" placeholder="留空自动生成" />
                 </Form.Item>
               </div>
             ) : null}
@@ -2999,13 +3022,13 @@ function V2nodeFields({
           <div className="form-group">
             <label>上行带宽</label>
             <Form.Item noStyle name="up_mbps">
-              <Input addonAfter="Mbps" placeholder="服务端发送带宽,留空或填0使用BBR" />
+              <LegacyInputGroup addonAfter="Mbps" placeholder="服务端发送带宽,留空或填0使用BBR" />
             </Form.Item>
           </div>
           <div className="form-group">
             <label>下行带宽</label>
             <Form.Item noStyle name="down_mbps">
-              <Input addonAfter="Mbps" placeholder="服务端接收带宽,留空或填0使用BBR" />
+              <LegacyInputGroup addonAfter="Mbps" placeholder="服务端接收带宽,留空或填0使用BBR" />
             </Form.Item>
           </div>
         </>
@@ -3144,12 +3167,12 @@ function ServerTypeFields({
               <div className="row mt-2">
                 <div className="form-group col-4 mb-0">
                   <Form.Item noStyle name={['obfs_settings', 'path']}>
-                    <Input placeholder="路径" />
+                    <LegacyInput className="ant-input" placeholder="路径" />
                   </Form.Item>
                 </div>
                 <div className="form-group col-8 mb-0">
                   <Form.Item noStyle name={['obfs_settings', 'host']}>
-                    <Input placeholder="Host" />
+                    <LegacyInput className="ant-input" placeholder="Host" />
                   </Form.Item>
                 </div>
               </div>
@@ -3189,7 +3212,7 @@ function ServerTypeFields({
         <div className="form-group">
           <label>服务器名称指示(sni)</label>
           <Form.Item noStyle name="server_name">
-            <Input placeholder="当节点地址与证书不一致时用于证书验证" />
+            <LegacyInput className="ant-input" placeholder="当节点地址与证书不一致时用于证书验证" />
           </Form.Item>
         </div>
         <div className="row">
@@ -3241,7 +3264,10 @@ function ServerTypeFields({
           <div className="form-group">
             <label>服务器名称指示(sni)</label>
             <Form.Item noStyle name="server_name">
-              <Input placeholder="当节点地址与证书不一致时用于证书验证" />
+              <LegacyInput
+                className="ant-input"
+                placeholder="当节点地址与证书不一致时用于证书验证"
+              />
             </Form.Item>
           </div>
         )}
@@ -3352,7 +3378,7 @@ function ServerTypeFields({
         <div className="form-group">
           <label>服务器名称指示(sni)</label>
           <Form.Item noStyle name="server_name">
-            <Input placeholder="当节点地址与证书不一致时用于证书验证" />
+            <LegacyInput className="ant-input" placeholder="当节点地址与证书不一致时用于证书验证" />
           </Form.Item>
         </div>
         <div className="row">
@@ -3368,7 +3394,7 @@ function ServerTypeFields({
             <div className="form-group col-md-6 col-xs-12">
               <label>混淆密码obfsParam</label>
               <Form.Item noStyle name="obfs_password">
-                <Input placeholder="留空自动生成" />
+                <LegacyInput className="ant-input" placeholder="留空自动生成" />
               </Form.Item>
             </div>
           ) : null}
@@ -3384,7 +3410,7 @@ function ServerTypeFields({
             <div className="form-group col-md-6 col-xs-12">
               <label>混淆密码obfs_password</label>
               <Form.Item noStyle name="obfs_password">
-                <Input placeholder="留空自动生成" />
+                <LegacyInput className="ant-input" placeholder="留空自动生成" />
               </Form.Item>
             </div>
           ) : null}
@@ -3392,13 +3418,13 @@ function ServerTypeFields({
         <div className="form-group">
           <label>上行带宽</label>
           <Form.Item noStyle name="up_mbps">
-            <Input addonAfter="Mbps" placeholder="服务端发送带宽,留空或填0使用BBR" />
+            <LegacyInputGroup addonAfter="Mbps" placeholder="服务端发送带宽,留空或填0使用BBR" />
           </Form.Item>
         </div>
         <div className="form-group">
           <label>下行带宽</label>
           <Form.Item noStyle name="down_mbps">
-            <Input addonAfter="Mbps" placeholder="服务端接收带宽,留空或填0使用BBR" />
+            <LegacyInputGroup addonAfter="Mbps" placeholder="服务端接收带宽,留空或填0使用BBR" />
           </Form.Item>
         </div>
       </>
@@ -3410,7 +3436,7 @@ function ServerTypeFields({
         <div className="form-group">
           <label>服务器名称指示(sni)</label>
           <Form.Item noStyle name="server_name">
-            <Input placeholder="当节点地址与证书不一致时用于证书验证" />
+            <LegacyInput className="ant-input" placeholder="当节点地址与证书不一致时用于证书验证" />
           </Form.Item>
         </div>
         <div className="row">

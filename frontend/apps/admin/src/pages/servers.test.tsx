@@ -786,7 +786,10 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('function NodeEditDrawer');
     expect(serversSource).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
     expect(serversSource).toContain("import { LegacyTooltip } from '@/components/legacy-tooltip';");
-    expect(serversSource).toContain("import { App, Form, Input } from 'antd';");
+    expect(serversSource).toContain("import { App, Form } from 'antd';");
+    expect(serversSource).not.toContain("import { App, Form, Input } from 'antd';");
+    expect(serversSource).not.toContain('<Input');
+    expect(serversSource).not.toContain('Input.TextArea');
     expect(serversSource).toContain('<LegacyDrawer');
     expect(serversSource).toContain('id="server"');
     expect(serversSource).toContain('maskClosable');
