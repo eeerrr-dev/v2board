@@ -32,7 +32,7 @@
     <div id="root"></div>
     <script>
       (function () {
-        var recoveryVersion = 'white-screen-recovery-35';
+        var recoveryVersion = 'white-screen-recovery-36';
         var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;
         var maxAttempts = 3;
         var delay = 2500;
@@ -314,6 +314,10 @@
         }
 
         function checkEmptyRoot() {
+          if (document.readyState === 'loading') {
+            schedule();
+            return;
+          }
           if (appEmpty()) recover();
         }
 
@@ -350,6 +354,6 @@
         schedule();
       })();
     </script>
-    <script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-35"></script>
+    <script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-36"></script>
   </body>
 </html>

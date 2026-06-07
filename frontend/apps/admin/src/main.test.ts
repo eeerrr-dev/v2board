@@ -31,7 +31,7 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
-    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-35';");
+    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-36';");
     expect(mainSource).toContain(
       'storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`',
     );
@@ -123,7 +123,7 @@ describe('admin legacy entrypoint', () => {
   });
 
   it('installs dev entry recovery before the Vite module graph loads', () => {
-    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-35';");
+    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-36';");
     expect(indexSource).toContain(
       "var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;",
     );
@@ -156,6 +156,7 @@ describe('admin legacy entrypoint', () => {
     expect(indexSource).not.toContain('function legacyMainEmpty(root)');
     expect(indexSource).toContain('return elementEmpty(root);');
     expect(indexSource).not.toContain('legacyMainEmpty(root)');
+    expect(indexSource).toContain("if (document.readyState === 'loading') {");
     expect(indexSource).toContain('if (appEmpty()) recover();');
     expect(indexSource).toContain("window.addEventListener('hashchange', schedule);");
     expect(indexSource).toContain("window.addEventListener('popstate', schedule);");
@@ -166,7 +167,7 @@ describe('admin legacy entrypoint', () => {
       indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;"),
     ).toBeLessThan(
       indexSource.indexOf(
-        '<script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-35"',
+        '<script type="module" src="/src/main.tsx?v=20260606-white-screen-recovery-36"',
       ),
     );
   });
