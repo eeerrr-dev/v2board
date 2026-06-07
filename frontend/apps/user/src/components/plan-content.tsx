@@ -38,10 +38,11 @@ export function PlanContent({ content, className, htmlClassName, guardNull = fal
   const features = parsed as Array<{ feature?: unknown; support?: unknown }>;
   return (
     <div className={cn(className)}>
-      {features.map((item) => {
+      {features.map((item, index) => {
         const supported = Boolean(item.support);
         return (
           <div
+            key={index}
             style={{
               textAlign: 'left',
               marginBottom: 8,

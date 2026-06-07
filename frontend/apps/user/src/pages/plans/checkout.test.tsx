@@ -222,14 +222,15 @@ describe('PlanCheckoutPage bundled-theme markup', () => {
     expect(html).not.toContain('class="v2board-select');
   });
 
-  it('keeps the bundled-theme unkeyed period select items', () => {
+  it('uses stable period select keys without changing the bundled-theme markup', () => {
     const periodSource = checkoutSource.slice(
       checkoutSource.indexOf('periods.map((item) => {'),
       checkoutSource.indexOf('</div>', checkoutSource.indexOf('periods.map((item) => {')),
     );
 
     expect(periodSource).toContain('periods.map((item) => {');
-    expect(periodSource).not.toContain('key={item.period}');
+    expect(periodSource).toContain('key={item.period}');
+    expect(periodSource).not.toContain('key={Math.random()}');
   });
 
   it('keeps the bundled-theme direct plan content handoff on checkout', () => {

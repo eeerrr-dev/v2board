@@ -255,6 +255,7 @@ export default function PlanCheckoutPage() {
               if (price === null) return null;
               return (
                 <div
+                  key={item.period}
                   onClick={() => setPeriod(item.period)}
                   className={`v2board-select ${selectedPeriod === item.period ? 'active border-primary' : 'false'}`}
                 >

@@ -25,15 +25,15 @@ describe('PlanContent bundled-theme quirks', () => {
     expect(html).toContain('opacity:0.3');
   });
 
-  it('keeps the bundled-theme unkeyed feature rows', () => {
+  it('uses stable feature row keys without changing the bundled-theme markup', () => {
     const featureSource = planContentSource.slice(
-      planContentSource.indexOf('features.map((item) => {'),
-      planContentSource.indexOf('</div>', planContentSource.indexOf('features.map((item) => {')),
+      planContentSource.indexOf('features.map((item, index) => {'),
+      planContentSource.indexOf('</div>', planContentSource.indexOf('features.map((item, index) => {')),
     );
 
-    expect(featureSource).toContain('features.map((item) => {');
-    expect(featureSource).not.toContain('key={index}');
-    expect(featureSource).not.toContain('key=');
+    expect(featureSource).toContain('features.map((item, index) => {');
+    expect(featureSource).toContain('key={index}');
+    expect(featureSource).not.toContain('key={Math.random()}');
   });
 
   it('falls back to raw HTML for non-JSON content', () => {
