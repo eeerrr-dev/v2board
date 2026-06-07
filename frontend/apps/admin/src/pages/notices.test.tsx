@@ -150,6 +150,22 @@ describe('NoticesPage legacy notice manager', () => {
     expect(source).not.toContain("import { Input, Select } from 'antd';");
   });
 
+  it('uses the legacy notice editor input shells', () => {
+    expect(source).toContain(
+      "import { LegacyInput, LegacyTextArea } from '@/components/legacy-input';",
+    );
+    expect(source).toContain('<LegacyInput');
+    expect(source).toContain('<LegacyTextArea');
+    expect(source).toContain('className="ant-input"');
+    expect(source).toContain('placeholder="请输入公告标题"');
+    expect(source).toContain('placeholder="请输入公告内容"');
+    expect(source).toContain('placeholder="请输入图片URL"');
+    expect(source).toContain('rows={12}');
+    expect(source).not.toContain("import { Input } from 'antd';");
+    expect(source).not.toContain('<Input');
+    expect(source).not.toContain('Input.TextArea');
+  });
+
   it('uses the original fetchLoading-style page spinner for notice refetches', () => {
     expect(source).toContain('<LegacySpin loading={notices.isFetching}>');
     expect(source).not.toContain('loading={notices.isLoading}');

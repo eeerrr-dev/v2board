@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Input } from 'antd';
 import dayjs from 'dayjs';
 import type { Notice } from '@v2board/types';
 import {
@@ -20,6 +19,7 @@ import {
 } from '@/components/legacy-standalone-table';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacySelect } from '@/components/legacy-select';
+import { LegacyInput, LegacyTextArea } from '@/components/legacy-input';
 
 export default function NoticesPage() {
   const notices = useAdminNotices({});
@@ -159,7 +159,8 @@ export default function NoticesPage() {
         <div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">标题</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="请输入公告标题"
               value={submit.title}
               onChange={(event) => setSubmit({ ...submit, title: event.target.value })}
@@ -167,7 +168,8 @@ export default function NoticesPage() {
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">公告内容</label>
-            <Input.TextArea
+            <LegacyTextArea
+              className="ant-input"
               rows={12}
               value={submit.content}
               placeholder="请输入公告内容"
@@ -189,7 +191,8 @@ export default function NoticesPage() {
           </div>
           <div className="form-group">
             <label htmlFor="example-text-input-alt">图片URL</label>
-            <Input
+            <LegacyInput
+              className="ant-input"
               placeholder="请输入图片URL"
               value={submit.img_url as string | undefined}
               onChange={(event) => setSubmit({ ...submit, img_url: event.target.value })}
