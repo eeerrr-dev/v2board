@@ -106,10 +106,13 @@ describe('DashboardPage legacy OneUI layout', () => {
   });
 
   it('keeps the original grouped currency lookup and stats-bar scroll logging', () => {
+    expect(dashboardSource).toContain("const config = useConfig('site');");
     expect(dashboardSource).toContain('const currency = config.data?.site?.currency;');
     expect(dashboardSource).not.toContain("config.data?.site?.currency ?? ''");
     expect(dashboardSource).not.toContain('config.data?.currency');
-    expect(dashboardSource).toContain('onScroll={(event) => console.log(event.currentTarget.scrollLeft)}');
+    expect(dashboardSource).toContain(
+      'onScroll={(event) => console.log(event.currentTarget.scrollLeft)}',
+    );
   });
 
   it('keeps the original queue monitor request without swallowing failures', () => {
@@ -119,10 +122,41 @@ describe('DashboardPage legacy OneUI layout', () => {
     );
 
     expect(queueBlock).toContain('const origin = new URL(getAdminApiBaseUrl()).origin;');
-    expect(queueBlock).toContain("fetch(`${origin}/monitor/api/stats`)");
+    expect(queueBlock).toContain('fetch(`${origin}/monitor/api/stats`)');
     expect(queueBlock).toContain('.then((response) => response.json())');
     expect(queueBlock).toContain('.then((data) => setQueueStatus(data?.status));');
     expect(queueBlock).not.toContain('.catch(');
+  });
+
+  it('keeps the old dashboard mount request and chart initialization order', () => {
+    const pageBlock = dashboardSource.slice(
+      dashboardSource.indexOf('export default function DashboardPage()'),
+      dashboardSource.indexOf('const goPendingCommissionOrders'),
+    );
+    const hookOrder = [
+      'const queueStatus = useQueueStatus();',
+      'const stat = useStat();',
+      'const order = useStatOrder();',
+      'const serverLast = useStatServerLast();',
+      'const serverToday = useStatServerToday();',
+      'const userToday = useStatUserToday();',
+      'const userLast = useStatUserLast();',
+      "const config = useConfig('site');",
+    ];
+    let previous = -1;
+    for (const hook of hookOrder) {
+      const index = pageBlock.indexOf(hook);
+      expect(index).toBeGreaterThan(previous);
+      previous = index;
+    }
+
+    const chartBlock = dashboardSource.slice(
+      dashboardSource.indexOf('const orderChart = useChart('),
+      dashboardSource.indexOf('return (', dashboardSource.indexOf('const orderChart = useChart(')),
+    );
+    expect(chartBlock.indexOf('const serverLastRankChart = useChart(')).toBeLessThan(
+      chartBlock.indexOf('const serverTodayRankChart = useChart('),
+    );
   });
 
   it('keeps the original rank chart in-place reverse behavior', () => {
@@ -132,7 +166,7 @@ describe('DashboardPage legacy OneUI layout', () => {
 
   it('keeps the original rank tooltip axis payload assumption', () => {
     expect(dashboardSource).toContain(
-      "formatter: (params) => `${(params as Array<{ value: unknown }>)[0]!.value} GB`,",
+      'formatter: (params) => `${(params as Array<{ value: unknown }>)[0]!.value} GB`,',
     );
     expect(dashboardSource).not.toContain('Array.isArray(params)');
   });
@@ -144,24 +178,26 @@ describe('DashboardPage legacy OneUI layout', () => {
     expect(dashboardSource).toContain(
       'function renderUserRankChart(element: HTMLDivElement, data: UserRankItem[])',
     );
-    expect(dashboardSource).toContain(
-      'const serverTodayRankChart = useChart(serverToday.data, renderServerRankChart, serverTodayRankChartObj);',
+    expect(dashboardSource).toMatch(
+      /const serverTodayRankChart = useChart\(\s*serverToday\.data,\s*renderServerRankChart,\s*serverTodayRankChartObj,?\s*\);/,
     );
-    expect(dashboardSource).toContain(
-      'const serverLastRankChart = useChart(serverLast.data, renderServerRankChart, serverLastRankChartObj);',
+    expect(dashboardSource).toMatch(
+      /const serverLastRankChart = useChart\(\s*serverLast\.data,\s*renderServerRankChart,\s*serverLastRankChartObj,?\s*\);/,
     );
-    expect(dashboardSource).toContain(
-      'const userTodayRankChart = useChart(userToday.data, renderUserRankChart, userTodayRankChartObj);',
+    expect(dashboardSource).toMatch(
+      /const userTodayRankChart = useChart\(\s*userToday\.data,\s*renderUserRankChart,\s*userTodayRankChartObj,?\s*\);/,
     );
-    expect(dashboardSource).toContain(
-      'const userLastRankChart = useChart(userLast.data, renderUserRankChart, userLastRankChartObj);',
+    expect(dashboardSource).toMatch(
+      /const userLastRankChart = useChart\(\s*userLast\.data,\s*renderUserRankChart,\s*userLastRankChartObj,?\s*\);/,
     );
     expect(dashboardSource).not.toContain('useChart(serverToday.data, (element, items)');
     expect(dashboardSource).not.toContain('useChart(userToday.data, (element, items)');
   });
 
   it('does not cache one-shot dashboard chart payloads after the page unmounts', () => {
-    expect(queriesSource).toContain('const legacyDashboardChartQueryOptions = { gcTime: 0 } as const;');
+    expect(queriesSource).toContain(
+      'const legacyDashboardChartQueryOptions = { gcTime: 0 } as const;',
+    );
     expect(queriesSource.match(/\.\.\.legacyDashboardChartQueryOptions/g)).toHaveLength(5);
     expect(queriesSource).toContain('queryFn: () => admin.statOrder(apiClient),');
     expect(queriesSource).toContain('queryFn: () => admin.statServerTodayRank(apiClient),');
@@ -173,17 +209,19 @@ describe('DashboardPage legacy OneUI layout', () => {
 
   it('keeps the original single order-chart resize listener lifecycle', () => {
     expect(dashboardSource).toContain('const resizeAllCharts = useCallback(() => {');
-    expect(dashboardSource).toContain('orderChartObj.current?.resize();');
-    expect(dashboardSource).toContain('serverLastRankChartObj.current?.resize();');
-    expect(dashboardSource).toContain('serverTodayRankChartObj.current?.resize();');
-    expect(dashboardSource).toContain('userTodayRankChartObj.current?.resize();');
-    expect(dashboardSource).toContain('userLastRankChartObj.current?.resize();');
+    expect(dashboardSource).toContain('orderChartObj.current!.resize();');
+    expect(dashboardSource).toContain('serverLastRankChartObj.current!.resize();');
+    expect(dashboardSource).toContain('serverTodayRankChartObj.current!.resize();');
+    expect(dashboardSource).toContain('userTodayRankChartObj.current!.resize();');
+    expect(dashboardSource).toContain('userLastRankChartObj.current!.resize();');
     expect(dashboardSource).toContain("window.addEventListener('resize', resizeAllCharts);");
     expect(dashboardSource).toContain(
       "window.removeEventListener('resize', () => resizeAllCharts());",
     );
-    expect(dashboardSource).toContain(
-      'const orderChart = useChart(order.data, renderOrderChart, orderChartObj, registerLegacyOrderChartResize);',
+    expect(dashboardSource).not.toContain('current?.resize();');
+    expect(dashboardSource).not.toContain('chartObjectRef.current = undefined;');
+    expect(dashboardSource).toMatch(
+      /const orderChart = useChart\(\s*order\.data,\s*renderOrderChart,\s*orderChartObj,\s*registerLegacyOrderChartResize,\s*\);/,
     );
     expect(dashboardSource).not.toContain("window.addEventListener('resize', resize);");
     expect(dashboardSource).not.toContain('chart.dispose();');

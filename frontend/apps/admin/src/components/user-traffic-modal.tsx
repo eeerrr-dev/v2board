@@ -34,9 +34,18 @@ function renderTrafficRow(record: admin.AdminUserTrafficRecord, index: number) {
   return (
     <tr key={index} className="ant-table-row ant-table-row-level-0" {...legacyTableRowKey(index)}>
       <td>{formatDate(record.record_at)}</td>
-      <td style={{ textAlign: 'right' }}>{formatBytes(record.u)}</td>
-      <td style={{ textAlign: 'right' }}>{formatBytes(record.d)}</td>
-      <td style={{ textAlign: 'right' }}>{record.server_rate}</td>
+      <td className="ant-table-align-right" style={{ textAlign: 'right' }}>
+        {formatBytes(record.u)}
+      </td>
+      <td className="ant-table-align-right" style={{ textAlign: 'right' }}>
+        {formatBytes(record.d)}
+      </td>
+      <td
+        className="ant-table-align-right ant-table-row-cell-last"
+        style={{ textAlign: 'right' }}
+      >
+        {record.server_rate}
+      </td>
     </tr>
   );
 }
@@ -56,15 +65,20 @@ export function UserTrafficModal({
     total: 0,
   });
   const lastUserIdRef = useRef<number | null | undefined>(undefined);
-  const records = useAdminUserTraffic(userId ?? undefined, pagination, open);
+  const shouldResetPagination =
+    open && userId != null && lastUserIdRef.current !== undefined && lastUserIdRef.current !== userId;
+  const queryPagination = shouldResetPagination
+    ? { page: 1, pageSize: 10, total: 0 }
+    : pagination;
+  const records = useAdminUserTraffic(userId ?? undefined, queryPagination, open);
 
   useEffect(() => {
     if (!open || userId == null) return;
-    if (lastUserIdRef.current !== undefined && lastUserIdRef.current !== userId) {
+    if (shouldResetPagination) {
       setPagination({ page: 1, pageSize: 10, total: 0 });
     }
     lastUserIdRef.current = userId;
-  }, [open, userId]);
+  }, [open, shouldResetPagination, userId]);
 
   const data = records.data?.data ?? [];
   const total = records.data?.total ?? pagination.total;

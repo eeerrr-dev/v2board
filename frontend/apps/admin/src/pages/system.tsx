@@ -119,7 +119,10 @@ export default function SystemPage() {
                   <td className="">{QUEUE_NAMES[row.name]}</td>
                   <td className="">{row.processes}</td>
                   <td className="">{row.length}</td>
-                  <td className="" style={{ textAlign: 'right' }}>
+                  <td
+                    className="ant-table-align-right ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
                     {row.wait}s
                   </td>
                 </tr>

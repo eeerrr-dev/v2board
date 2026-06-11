@@ -25,6 +25,7 @@ import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';
 import { LegacyTooltip } from '@/components/legacy-tooltip';
 import { LegacyInput } from '@/components/legacy-input';
+import { LegacyDivider } from '@/components/legacy-divider';
 
 type SavePaymentPayload = Parameters<typeof admin.savePayment>[1];
 
@@ -173,8 +174,7 @@ function PaymentEditor({
             </div>
           </div>
           {Object.keys(form).map((key) => {
-            const field = form[key];
-            if (!field) return null;
+            const field = form[key] as PaymentFormDefinition[string];
             const inputType = field.type;
             const showInput =
               inputType === 'input' || inputType === 'text' || inputType === 'string' || !inputType;
@@ -293,7 +293,7 @@ export default function PaymentsPage() {
       >
         <a ref={legacyHref()}>编辑</a>
       </PaymentEditor>
-      <div className="ant-divider ant-divider-vertical" />
+      <LegacyDivider type="vertical" />
       <a
         ref={legacyHref('javascript:void(0)')}
         onClick={() => {
@@ -352,7 +352,10 @@ export default function PaymentsPage() {
                     className="ant-table-row ant-table-row-level-0"
                     {...legacyTableRowKey(index)}
                   >
-                    <td className="ant-table-row-cell-last" style={{ textAlign: 'right' }}>
+                    <td
+                      className="ant-table-align-right ant-table-row-cell-last"
+                      style={{ textAlign: 'right' }}
+                    >
                       {renderPaymentActions(row)}
                     </td>
                   </tr>
@@ -372,7 +375,7 @@ export default function PaymentsPage() {
                     <td className="">{row.payment}</td>
                     <td className="">{row.notify_url}</td>
                     <td
-                      className="ant-table-fixed-columns-in-body ant-table-row-cell-last"
+                      className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
                       style={{ textAlign: 'right' }}
                     >
                       {renderPaymentActions(row)}

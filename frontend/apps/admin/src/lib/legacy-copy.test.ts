@@ -1,9 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  messageSuccess: vi.fn(),
+}));
+
+vi.mock('antd', () => ({
+  message: {
+    success: mocks.messageSuccess,
+  },
+}));
+
 import { legacyCopyText } from './legacy-copy';
 
 describe('legacyCopyText', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    mocks.messageSuccess.mockClear();
     document.body.innerHTML = '';
   });
 
@@ -39,6 +51,7 @@ describe('legacyCopyText', () => {
 
     expect(execCommand).toHaveBeenCalledWith('copy');
     expect(clipboardWrite).not.toHaveBeenCalled();
+    expect(mocks.messageSuccess).toHaveBeenCalledWith('复制成功');
     expect(document.querySelector('span')).toBeNull();
   });
 
@@ -64,6 +77,7 @@ describe('legacyCopyText', () => {
     expect(execCommand).toHaveBeenCalledWith('copy');
     expect(setData).toHaveBeenCalledWith('text', 'fallback text');
     expect(prompt).not.toHaveBeenCalled();
+    expect(mocks.messageSuccess).toHaveBeenCalledWith('复制成功');
     expect(document.querySelector('span')).toBeNull();
   });
 
@@ -86,6 +100,7 @@ describe('legacyCopyText', () => {
     expect(legacyCopyText('manual text')).toBe(false);
 
     expect(prompt).toHaveBeenCalledWith(expect.stringContaining('Copy to clipboard:'), 'manual text');
+    expect(mocks.messageSuccess).toHaveBeenCalledWith('复制成功');
     expect(document.querySelector('span')).toBeNull();
   });
 });

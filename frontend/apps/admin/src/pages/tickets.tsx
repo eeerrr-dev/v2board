@@ -20,10 +20,16 @@ import { legacyHref } from '@/lib/legacy-href';
 import { LegacyFilterIcon, LegacySolutionIcon, LegacyUserIcon } from '@/components/legacy-ant-icon';
 import {
   LegacyStandaloneTable,
+  LegacyTablePagination,
   legacyTableRowKey,
   type LegacyStandaloneTableHeader,
+  type LegacyTablePaginationChange,
 } from '@/components/legacy-standalone-table';
 import { LegacyTooltip } from '@/components/legacy-tooltip';
+import { LegacyRadio } from '@/components/legacy-radio';
+import { LegacyCheckbox } from '@/components/legacy-checkbox';
+import { LegacyBadge } from '@/components/legacy-badge';
+import { LegacyDivider } from '@/components/legacy-divider';
 
 type TicketQuery = AdminPageQuery & {
   total?: number;
@@ -42,39 +48,6 @@ function formatMinute(value: number) {
 
 function ticketLevelName(value: number) {
   return ['低', '中', '高'][value];
-}
-
-function LegacyBadgeStatus({ status }: { status: 'success' | 'processing' | 'error' }) {
-  return (
-    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-      <span className={`ant-badge-status-dot ant-badge-status-${status}`} />
-    </span>
-  );
-}
-
-function legacyTicketToolbarHtml(status?: number) {
-  const openChecked = status === 0 ? ' checked=""' : '';
-  const closedChecked = status === 1 ? ' checked=""' : '';
-
-  return [
-    '<div class="ant-radio-group ant-radio-group-outline">',
-    `<label class="ant-radio-button-wrapper${status === 0 ? ' ant-radio-button-wrapper-checked' : ''}">`,
-    `<span class="ant-radio-button${status === 0 ? ' ant-radio-button-checked' : ''}">`,
-    `<input type="radio" class="ant-radio-button-input" value="0"${openChecked}>`,
-    '<span class="ant-radio-button-inner"></span>',
-    '</span>',
-    '<span>已开启</span>',
-    '</label>',
-    `<label class="ant-radio-button-wrapper${status === 1 ? ' ant-radio-button-wrapper-checked' : ''}">`,
-    `<span class="ant-radio-button${status === 1 ? ' ant-radio-button-checked' : ''}">`,
-    `<input type="radio" class="ant-radio-button-input" value="1"${closedChecked}>`,
-    '<span class="ant-radio-button-inner"></span>',
-    '</span>',
-    '<span>已关闭</span>',
-    '</label>',
-    '</div>',
-    '<div style="float: right;"><input placeholder="输入邮箱搜索" type="text" class="ant-input" value=""></div>',
-  ].join('');
 }
 
 function filterValueIncludes(value: FilterValue | null | undefined, option: number) {
@@ -119,18 +92,11 @@ function LegacyTicketReplyStatusFilterDropdown({
             const checked = filterValueIncludes(value, item.value);
             return (
               <li key={item.value} className="ant-dropdown-menu-item" role="menuitem">
-                <label className="ant-checkbox-wrapper">
-                  <span className={`ant-checkbox${checked ? ' ant-checkbox-checked' : ''}`}>
-                    <input
-                      type="checkbox"
-                      className="ant-checkbox-input"
-                      value=""
-                      checked={checked}
-                      onChange={() => onToggle(item.value)}
-                    />
-                    <span className="ant-checkbox-inner" />
-                  </span>
-                </label>
+                <LegacyCheckbox
+                  checked={checked}
+                  value=""
+                  onChange={() => onToggle(item.value)}
+                />
                 <span>{item.label}</span>
               </li>
             );
@@ -175,7 +141,6 @@ function TicketListPage() {
   const tickets = useAdminTickets(query);
   const closeTicket = useCloseTicketMutation();
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const toolbarRef = useRef<HTMLDivElement | null>(null);
   const data = tickets.data?.data ?? [];
   const [replyStatusFilterOpen, setReplyStatusFilterOpen] = useState(false);
   const [replyStatusFilterValue, setReplyStatusFilterValue] = useState<FilterValue | null>(
@@ -185,9 +150,9 @@ function TicketListPage() {
   const filter = (key: keyof TicketQuery, value: TicketQuery[keyof TicketQuery]) => {
     setQuery((current) => ({
       ...current,
-      [key]: value,
       current: 1,
       pageSize: 10,
+      [key]: value,
     }));
   };
 
@@ -217,28 +182,11 @@ function TicketListPage() {
     filter('reply_status', null);
   };
 
-  useEffect(() => {
-    const toolbar = toolbarRef.current;
-    if (!toolbar) return undefined;
-
-    const handleChange = (event: Event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLInputElement) || target.type !== 'radio') return;
-      filter('status', Number(target.value));
-    };
-    const handleInput = (event: Event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLInputElement) || target.type !== 'text') return;
-      onSearch('email', target.value);
-    };
-
-    toolbar.addEventListener('change', handleChange);
-    toolbar.addEventListener('input', handleInput);
-    return () => {
-      toolbar.removeEventListener('change', handleChange);
-      toolbar.removeEventListener('input', handleInput);
-    };
-  });
+  const updateTablePagination = (pagination: LegacyTablePaginationChange) =>
+    setQuery((current) => ({
+      ...current,
+      ...pagination,
+    }));
 
   const toChat = (id: number) => {
     const url = `${window.location.origin}${window.location.pathname}#/ticket/${id}`;
@@ -283,11 +231,11 @@ function TicketListPage() {
   const renderTicketStatus = (value: 0 | 1, row: Ticket) =>
     row.status === 1 ? (
       <span>
-        <LegacyBadgeStatus status="success" /> 已关闭
+        <LegacyBadge status="success" /> 已关闭
       </span>
     ) : (
       <span>
-        <LegacyBadgeStatus status={value ? 'processing' : 'error'} /> {value ? '已回复' : '待回复'}
+        <LegacyBadge status={value ? 'processing' : 'error'} /> {value ? '已回复' : '待回复'}
       </span>
     );
 
@@ -296,7 +244,7 @@ function TicketListPage() {
       <a ref={legacyHref()} onClick={() => toChat(row.id)}>
         查看
       </a>
-      <div className="ant-divider ant-divider-vertical" />
+      <LegacyDivider type="vertical" />
       <a
         {...legacyDisabledAnchorProps(row.status)}
         ref={legacyHref()}
@@ -317,22 +265,46 @@ function TicketListPage() {
     <LegacySpin loading={tickets.isFetching}>
       <div className="block border-bottom">
         <div className="bg-white">
-          <div
-            className="p-3"
-            ref={toolbarRef}
-            dangerouslySetInnerHTML={{ __html: legacyTicketToolbarHtml(query.status) }}
-          />
+          <div className="p-3">
+            <LegacyRadio.Group
+              value={query.status}
+              onChange={(event) => filter('status', Number(event.target.value))}
+            >
+              <LegacyRadio.Button value={0}>已开启</LegacyRadio.Button>
+              <LegacyRadio.Button value={1}>已关闭</LegacyRadio.Button>
+            </LegacyRadio.Group>
+            <div style={{ float: 'right' }}>
+              <input
+                placeholder="输入邮箱搜索"
+                type="text"
+                className="ant-input"
+                defaultValue=""
+                onChange={(event) => onSearch('email', event.target.value)}
+              />
+            </div>
+          </div>
           <LegacyStandaloneTable
             headers={headers}
             isEmpty={data.length === 0}
             scrollX={900}
+            pagination={
+              <LegacyTablePagination
+                current={query.current ?? 1}
+                pageSize={query.pageSize ?? 10}
+                total={tickets.data?.total}
+                onChange={updateTablePagination}
+              />
+            }
             fixedRightChildren={data.map((row, index) => (
               <tr
                 key={index}
                 className="ant-table-row ant-table-row-level-0"
                 {...legacyTableRowKey(index)}
               >
-                <td className="ant-table-row-cell-last" style={{ textAlign: 'right' }}>
+                <td
+                  className="ant-table-align-right ant-table-row-cell-last"
+                  style={{ textAlign: 'right' }}
+                >
                   {renderTicketActions(row)}
                 </td>
               </tr>
@@ -351,7 +323,7 @@ function TicketListPage() {
                 <td className="">{formatMinute(row.created_at)}</td>
                 <td className="">{formatMinute(row.updated_at)}</td>
                 <td
-                  className="ant-table-fixed-columns-in-body ant-table-row-cell-last"
+                  className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
                   style={{ textAlign: 'right' }}
                 >
                   {renderTicketActions(row)}
@@ -403,7 +375,7 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
     } finally {
       messageApi.destroy();
     }
-    void ticket.refetch();
+    await ticket.refetch();
     if (inputRef.current) inputRef.current.value = '';
   };
 
@@ -419,7 +391,7 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
           <LegacyTooltip title="用户管理" placement="left">
             <LegacyUserIcon onClick={() => current?.user_id && setUserOpen(true)} />
           </LegacyTooltip>
-          <div className="ant-divider ant-divider-vertical" />
+          <LegacyDivider type="vertical" />
           <LegacyTooltip title="TA的流量记录" placement="left">
             <LegacySolutionIcon onClick={() => current?.user_id && setTrafficOpen(true)} />
           </LegacyTooltip>

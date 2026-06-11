@@ -125,7 +125,9 @@ describe('AdminLayout legacy shell', () => {
   it('uses stable admin sidebar keys without changing the legacy navigation markup', () => {
     const source = readFileSync(`${process.cwd()}/src/components/layout/admin-layout.tsx`, 'utf8');
 
-    expect(source).toContain('<li key={`heading-${item.title}-${index}`} className="nav-main-heading">');
+    expect(source).toContain(
+      '<li key={`heading-${item.title}-${index}`} className="nav-main-heading">',
+    );
     expect(source).toContain('<li key={item.href ?? item.title} className="nav-main-item">');
     expect(source).toContain(
       "className={`dropdown-menu dropdown-menu-right dropdown-menu-lg p-0 ${showAvatarMenu && 'show'}`}",

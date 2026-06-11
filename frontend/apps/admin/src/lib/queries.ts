@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from './api';
 
 export const adminKeys = {
-  config: ['admin', 'config'] as const,
+  config: (key?: string) => ['admin', 'config', key] as const,
   stat: ['admin', 'stat'] as const,
   users: (filters: unknown) => ['admin', 'users', filters] as const,
   orders: (filters: unknown) => ['admin', 'orders', filters] as const,
@@ -84,8 +84,8 @@ export const useStatServerLast = () =>
     ...legacyDashboardChartQueryOptions,
   });
 
-export const useConfig = () =>
-  useQuery({ queryKey: adminKeys.config, queryFn: () => admin.fetchConfig(apiClient) });
+export const useConfig = (key?: string) =>
+  useQuery({ queryKey: adminKeys.config(key), queryFn: () => admin.fetchConfig(apiClient, key) });
 
 export const useAdminPlans = () =>
   useQuery({ queryKey: adminKeys.plans, queryFn: () => admin.fetchPlans(apiClient) });
@@ -249,8 +249,7 @@ export function useSortPlansMutation() {
 
 export function useUpdateUserMutation() {
   return useMutation({
-    mutationFn: (data: Parameters<typeof admin.updateUser>[1]) =>
-      admin.updateUser(apiClient, data),
+    mutationFn: (data: Parameters<typeof admin.updateUser>[1]) => admin.updateUser(apiClient, data),
   });
 }
 
@@ -342,8 +341,7 @@ export function useCloseTicketMutation() {
 
 export function useSaveNoticeMutation() {
   return useMutation({
-    mutationFn: (data: Parameters<typeof admin.saveNotice>[1]) =>
-      admin.saveNotice(apiClient, data),
+    mutationFn: (data: Parameters<typeof admin.saveNotice>[1]) => admin.saveNotice(apiClient, data),
   });
 }
 
@@ -361,8 +359,7 @@ export function useShowNoticeMutation() {
 
 export function useSaveConfigMutation() {
   return useMutation({
-    mutationFn: (data: Parameters<typeof admin.saveConfig>[1]) =>
-      admin.saveConfig(apiClient, data),
+    mutationFn: (data: Parameters<typeof admin.saveConfig>[1]) => admin.saveConfig(apiClient, data),
   });
 }
 

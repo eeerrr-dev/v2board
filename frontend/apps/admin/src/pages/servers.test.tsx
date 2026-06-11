@@ -177,6 +177,9 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('用户数量');
     expect(html).toContain('节点数量');
     expect(html).toContain('操作');
+    expect(html).toContain(
+      'class="ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
+    );
     expect(html).toContain('anticon-user');
     expect(html).toContain('anticon-database');
     expect(html).toContain('编辑');
@@ -236,14 +239,14 @@ describe('ServersPage legacy server group route', () => {
     expect(groupModalSource).toContain('const groups = useServerGroups()');
     expect(groupModalSource).toContain('if (groups.isFetching) return;');
     expect(groupModalSource).toContain('await save.mutateAsync({ ...submit });');
-    expect(groupModalSource).toContain('void groups.refetch();');
+    expect(groupModalSource).toContain('await groups.refetch();');
     expect(groupModalSource.indexOf('await save.mutateAsync({ ...submit });')).toBeLessThan(
-      groupModalSource.indexOf('void groups.refetch();'),
+      groupModalSource.indexOf('await groups.refetch();'),
     );
-    expect(groupModalSource.indexOf('void groups.refetch();')).toBeLessThan(
+    expect(groupModalSource.indexOf('await groups.refetch();')).toBeLessThan(
       groupModalSource.indexOf('setVisible(false);'),
     );
-    expect(groupModalSource).not.toContain('await groups.refetch();');
+    expect(groupModalSource).not.toContain('void groups.refetch();\n    setVisible(false);');
     expect(groupModalSource).toContain(
       "okText={groups.isFetching ? <LegacyLoadingIcon /> : '提交'}",
     );
@@ -269,14 +272,14 @@ describe('ServersPage legacy server group route', () => {
     expect(routeModalSource).toContain('const routes = useServerRoutes()');
     expect(routeModalSource).toContain('if (routes.isFetching) return;');
     expect(routeModalSource).toContain('await save.mutateAsync(payload);');
-    expect(routeModalSource).toContain('void routes.refetch();');
+    expect(routeModalSource).toContain('await routes.refetch();');
     expect(routeModalSource.indexOf('await save.mutateAsync(payload);')).toBeLessThan(
-      routeModalSource.indexOf('void routes.refetch();'),
+      routeModalSource.indexOf('await routes.refetch();'),
     );
-    expect(routeModalSource.indexOf('void routes.refetch();')).toBeLessThan(
+    expect(routeModalSource.indexOf('await routes.refetch();')).toBeLessThan(
       routeModalSource.indexOf('setVisible(false);'),
     );
-    expect(routeModalSource).not.toContain('await routes.refetch();');
+    expect(routeModalSource).not.toContain('void routes.refetch();\n    setVisible(false);');
     expect(routeModalSource).toContain(
       "okText={routes.isFetching ? <LegacyLoadingIcon /> : '提交'}",
     );
@@ -298,6 +301,9 @@ describe('ServersPage legacy server group route', () => {
     expect(groupPageSource).toContain('headers={headers}');
     expect(groupPageSource).toContain('isEmpty={groupItems.length === 0}');
     expect(groupPageSource).toContain('{...legacyRowKey(index)}');
+    expect(groupPageSource).toContain(
+      'className="ant-table-align-right ant-table-row-cell-last"',
+    );
     expect(groupPageSource).not.toContain('<Table<admin.ServerGroup>');
     expect(groupPageSource).not.toContain('tableLayout="auto"');
     expect(groupPageSource).not.toContain('pagination={false}');
@@ -306,6 +312,9 @@ describe('ServersPage legacy server group route', () => {
     expect(routePageSource).toContain('headers={headers}');
     expect(routePageSource).toContain('isEmpty={routeItems.length === 0}');
     expect(routePageSource).toContain('{...legacyRowKey(index)}');
+    expect(routePageSource).toContain(
+      'className="ant-table-align-right ant-table-row-cell-last"',
+    );
     expect(routePageSource).not.toContain('<Table<admin.ServerRoute>');
     expect(routePageSource).not.toContain('tableLayout="auto"');
     expect(routePageSource).not.toContain('pagination={false}');
@@ -514,14 +523,11 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('keeps the original vertical divider markup in server action columns', () => {
-    expect(
-      serversSource.match(
-        /<div className="ant-divider ant-divider-vertical" role="separator" \/>/g,
-      ),
-    ).toHaveLength(2);
-    expect(
-      serversSource.match(/<div className="ant-divider ant-divider-vertical" \/>/g),
-    ).toHaveLength(1);
+    expect(serversSource).toContain("import { LegacyDivider } from '@/components/legacy-divider';");
+    expect(serversSource.match(/<LegacyDivider type="vertical" \/>/g)).toHaveLength(3);
+    expect(serversSource).not.toContain(
+      '<div className="ant-divider ant-divider-vertical" role="separator" />',
+    );
     expect(serversSource).not.toContain('<span className="ant-divider ant-divider-vertical"');
   });
 
@@ -539,6 +545,11 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain('ant-table-scroll-position-left');
     expect(html).toContain('class="ant-table-fixed"');
     expect(html).toContain('style="width:1300px"');
+    expect(html).toContain(
+      'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
+    );
+    expect(html).toContain('class="ant-table-align-left" style="text-align:left"');
+    expect(html).toContain('class="ant-table-align-center" style="text-align:center"');
     expect(html).toContain('节点ID');
     expect(html).toContain('节点');
     expect(html).toContain('Tokyo');
@@ -558,6 +569,24 @@ describe('ServersPage legacy server group route', () => {
     expect(html).not.toContain('保存排序');
     expect(html).not.toContain('<th class="ant-table-cell" scope="col">排序</th>');
     expect(html).not.toContain('ant-tabs');
+  });
+
+  it('keeps /server/manage fixed-right action body cells using the original last-column classes', () => {
+    const manageSource = serversSource.slice(
+      serversSource.indexOf('function ServerManagePage'),
+      serversSource.indexOf('function NodeEditDrawer'),
+    );
+
+    expect(manageSource).toContain(
+      'className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"',
+    );
+    expect(manageSource).toContain('className="ant-table-align-left"');
+    expect(manageSource).toContain('className="ant-table-align-center"');
+    expect(manageSource).toContain('className="ant-table-align-right ant-table-row-cell-last"');
+    expect(manageSource).not.toContain(
+      'className="ant-table-fixed-columns-in-body"\n                                            style={{ textAlign: \'right\' }}',
+    );
+    expect(manageSource).not.toContain('<td style={{ textAlign: \'right\' }}>{actionCell(node)}</td>');
   });
 
   it('keeps the legacy server manage hidden filter dropdown outside table content', () => {
@@ -638,11 +667,9 @@ describe('ServersPage legacy server group route', () => {
 
   it('uses the original available_status-only badge mapping', () => {
     expect(serversSource).toContain('function getLegacyAvailableStatus(status?: number | null)');
-    expect(serversSource).toContain('function LegacyStatusBadge({');
     expect(serversSource).toContain('getLegacyAvailableStatus(node.available_status)');
-    expect(serversSource).toContain(
-      'className="ant-badge ant-badge-status ant-badge-not-a-wrapper"',
-    );
+    expect(serversSource).toContain("import { LegacyBadge } from '@/components/legacy-badge';");
+    expect(serversSource).toContain('<LegacyBadge');
     expect(serversSource).not.toContain('available_status ??');
     expect(serversSource).not.toContain('<Badge');
   });
@@ -685,6 +712,8 @@ describe('ServersPage legacy server group route', () => {
     );
 
     expect(serversSource).toContain('<LegacyTag key={name}>{name}</LegacyTag>');
+    expect(serversSource).toContain("import { LegacyTag } from '@/components/legacy-tag';");
+    expect(serversSource).not.toContain('function LegacyTag');
     expect(serversSource).toContain('className="ant-table-filter-dropdown"');
     expect(serversSource).toContain('<span>{group.name}</span>');
     expect(managePageSource).toContain(
@@ -716,7 +745,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('function LegacyDropdown({ children, overlay, trigger }');
     expect(serversSource).toContain('function LegacyDropdownMenu({ children }');
     expect(serversSource).toContain('function LegacyDropdownMenuItem({');
-    expect(serversSource).toContain('function LegacyTag({');
+    expect(serversSource).toContain("import { LegacyTag } from '@/components/legacy-tag';");
+    expect(serversSource).toContain('const LEGACY_DROPDOWN_HOVER_CLOSE_DELAY = 100;');
+    expect(serversSource).not.toContain('const LEGACY_DROPDOWN_HOVER_CLOSE_DELAY = 120;');
     expect(managePageSource).toContain('<LegacyDropdown');
     expect(managePageSource).toContain('overlay={');
     expect(managePageSource).toContain('<LegacyDropdownMenu>');
@@ -1203,15 +1234,15 @@ describe('ServersPage legacy server group route', () => {
       'const payload = prepareLegacyServerPayload(type, values, id);',
     );
     expect(nodeDrawerSource).toContain('await admin.saveServer(apiClient, type, payload);');
-    expect(nodeDrawerSource).toContain('void onSaved?.();');
+    expect(nodeDrawerSource).toContain('await onSaved?.();');
     expect(nodeDrawerSource).toContain('onClose();');
     expect(
       nodeDrawerSource.indexOf('await admin.saveServer(apiClient, type, payload);'),
-    ).toBeLessThan(nodeDrawerSource.indexOf('void onSaved?.();'));
-    expect(nodeDrawerSource.indexOf('void onSaved?.();')).toBeLessThan(
+    ).toBeLessThan(nodeDrawerSource.indexOf('await onSaved?.();'));
+    expect(nodeDrawerSource.indexOf('await onSaved?.();')).toBeLessThan(
       nodeDrawerSource.indexOf('onClose();'),
     );
-    expect(nodeDrawerSource).not.toContain('await onSaved?.();');
+    expect(nodeDrawerSource).not.toContain('void onSaved?.();');
     expect(serversSource).toContain('onSaved?: () => void | Promise<unknown>;');
     expect(serversSource).toContain('onSaved: () => void | Promise<unknown>;');
     expect(serversSource.match(/onSaved=\{\(\) => nodes\.refetch\(\)\}/g)).toHaveLength(3);
@@ -1583,6 +1614,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain("import { legacyCopyText } from '@/lib/legacy-copy';");
     expect(serversSource).toContain('legacyCopyText(node.host)');
     expect(serversSource).not.toContain('legacyCopyText(`${node.host}:${node.port}`)');
+    expect(serversSource).not.toContain("message.success('复制成功')");
     expect(serversSource).not.toContain('navigator.clipboard?.writeText');
   });
 

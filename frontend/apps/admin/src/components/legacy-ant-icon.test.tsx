@@ -4,11 +4,15 @@ import {
   LegacyAccountBookIcon,
   LegacyCaretDownIcon,
   LegacyCaretUpIcon,
+  LegacyCheckCircleIcon,
   LegacyCopyIcon,
   LegacyDatabaseIcon,
   LegacyDeleteIcon,
+  LegacyDoubleLeftIcon,
+  LegacyDoubleRightIcon,
   LegacyDownIcon,
   LegacyEditIcon,
+  LegacyExclamationCircleIcon,
   LegacyFileExcelIcon,
   LegacyFilterIcon,
   LegacyFormIcon,
@@ -52,11 +56,15 @@ describe('LegacyPlusIcon', () => {
         <LegacyUserAddIcon />
         <LegacyQuestionCircleIcon />
         <LegacyInfoCircleIcon />
+        <LegacyCheckCircleIcon />
+        <LegacyExclamationCircleIcon />
         <LegacyLoadingIcon />
         <LegacyLinkIcon />
         <LegacyReadIcon />
         <LegacyLeftIcon />
         <LegacyRightIcon />
+        <LegacyDoubleLeftIcon className="ant-pagination-item-link-icon" />
+        <LegacyDoubleRightIcon className="ant-pagination-item-link-icon" />
         <LegacyDownIcon className="ant-select-arrow-icon" />
         <LegacyCaretUpIcon className="ant-table-column-sorter-up off" />
         <LegacyCaretDownIcon className="ant-table-column-sorter-down off" />
@@ -90,6 +98,16 @@ describe('LegacyPlusIcon', () => {
     expect(html).toContain(
       'd="M464 336a48 48 0 1096 0 48 48 0 10-96 0zm72 112h-48c-4.4 0-8 3.6-8 8v272c0 4.4 3.6 8 8 8h48c4.4 0 8-3.6 8-8V456c0-4.4-3.6-8-8-8z"',
     );
+    expect(html).toContain('aria-label="图标: check-circle"');
+    expect(html).toContain('data-icon="check-circle"');
+    expect(html).toContain(
+      'd="M699 353h-46.9c-10.2 0-19.9 4.9-25.9 13.3L469 584.3l-71.2-98.8c-6-8.3-15.6-13.3-25.9-13.3H325c-6.5 0-10.3 7.4-6.5 12.7l124.6 172.8a31.8 31.8 0 0 0 51.7 0l210.6-292c3.9-5.3.1-12.7-6.4-12.7z"',
+    );
+    expect(html).toContain('aria-label="图标: exclamation-circle"');
+    expect(html).toContain('data-icon="exclamation-circle"');
+    expect(html).toContain(
+      'd="M464 688a48 48 0 1 0 96 0 48 48 0 1 0-96 0zm24-112h48c4.4 0 8-3.6 8-8V296c0-4.4-3.6-8-8-8h-48c-4.4 0-8 3.6-8 8v272c0 4.4 3.6 8 8 8z"',
+    );
     expect(html).toContain('aria-label="图标: loading"');
     expect(html).toContain('class="anticon anticon-loading"');
     expect(html).toContain('class="anticon-spin"');
@@ -111,6 +129,10 @@ describe('LegacyPlusIcon', () => {
     );
     expect(html).toContain('aria-label="图标: left"');
     expect(html).toContain('aria-label="图标: right"');
+    expect(html).toContain('class="anticon anticon-double-left ant-pagination-item-link-icon"');
+    expect(html).toContain('class="anticon anticon-double-right ant-pagination-item-link-icon"');
+    expect(html).toContain('data-icon="double-left"');
+    expect(html).toContain('data-icon="double-right"');
     expect(html).toContain('class="anticon anticon-down ant-select-arrow-icon"');
     expect(html).toContain('class="anticon anticon-caret-up ant-table-column-sorter-up off"');
     expect(html).toContain('class="anticon anticon-caret-down ant-table-column-sorter-down off"');

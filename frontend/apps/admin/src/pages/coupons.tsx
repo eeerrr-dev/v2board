@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { App } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useLocation } from 'react-router-dom';
@@ -38,6 +37,7 @@ import {
   type LegacySelectValue,
 } from '@/components/legacy-select';
 import { LegacyInput, LegacyInputGroup } from '@/components/legacy-input';
+import { LegacyDivider } from '@/components/legacy-divider';
 
 type AdminPageQuery = admin.AdminPageQuery;
 
@@ -145,10 +145,8 @@ function legacyGiftcardValueAddon(type: GiftcardSubmit['type']) {
 }
 
 function useCopy() {
-  const { message } = App.useApp();
   return (text: string) => {
     legacyCopyText(text);
-    message.success('复制成功');
   };
 }
 
@@ -161,6 +159,11 @@ function downloadGeneratedCsv(prefix: 'COUPON' | 'GIFTCARD', buffer: unknown) {
   anchor.download = `${prefix} ${dayjs().format('YYYY-MM-DD HH:mm:ss')}.csv`;
   anchor.click();
   window.URL.revokeObjectURL(url);
+}
+
+function rememberLegacyPaginationTotal(query: AdminPageQuery, total: number | undefined) {
+  if (total === undefined) return;
+  (query as AdminPageQuery & { total?: number }).total = total;
 }
 
 export default function CouponsPage() {
@@ -186,6 +189,11 @@ function CouponPage() {
   };
 
   useEffect(() => {
+    rememberLegacyPaginationTotal(query, coupons.data?.total);
+    legacyCouponQuery = query;
+  }, [coupons.data?.total, query]);
+
+  useEffect(() => {
     if (!visible) setSubmit({ type: 1 });
   }, [visible]);
 
@@ -198,7 +206,7 @@ function CouponPage() {
     if (payload.type === 1) payload.value = 100 * Number(payload.value);
     const response = await generate.mutateAsync(payload);
     if (payload.generate_count) downloadGeneratedCsv('COUPON', response.buffer);
-    void coupons.refetch();
+    await coupons.refetch();
     modalVisible();
   };
 
@@ -221,6 +229,7 @@ function CouponPage() {
     setQuery({
       ...query,
       ...pagination,
+      ...tableSort({}),
     });
 
   const headers: LegacyStandaloneTableHeader[] = [
@@ -271,7 +280,7 @@ function CouponPage() {
       >
         编辑
       </a>
-      <div className="ant-divider ant-divider-vertical" />
+      <LegacyDivider type="vertical" />
       <a
         onClick={() => {
           void legacyConfirm({
@@ -323,7 +332,10 @@ function CouponPage() {
                   className="ant-table-row ant-table-row-level-0"
                   {...legacyTableRowKey(index)}
                 >
-                  <td className="ant-table-row-cell-last" style={{ textAlign: 'right' }}>
+                  <td
+                    className="ant-table-align-right ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
                     {renderCouponActions(row, index)}
                   </td>
                 </tr>
@@ -345,7 +357,7 @@ function CouponPage() {
                     {legacyDateRange(row.started_at, row.ended_at)}
                   </td>
                   <td
-                    className="ant-table-fixed-columns-in-body ant-table-row-cell-last"
+                    className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
                     style={{ textAlign: 'right' }}
                   >
                     {renderCouponActions(row, index)}
@@ -508,6 +520,11 @@ function GiftcardPage() {
   };
 
   useEffect(() => {
+    rememberLegacyPaginationTotal(query, giftcards.data?.total);
+    legacyGiftcardQuery = query;
+  }, [giftcards.data?.total, query]);
+
+  useEffect(() => {
     if (!visible) setSubmit({ type: 1 });
   }, [visible]);
 
@@ -523,7 +540,7 @@ function GiftcardPage() {
     if (payload.type === 1) payload.value = 100 * Number(payload.value);
     const response = await generate.mutateAsync(payload);
     if (payload.generate_count) downloadGeneratedCsv('GIFTCARD', response.buffer);
-    void giftcards.refetch();
+    await giftcards.refetch();
     modalVisible();
   };
 
@@ -546,6 +563,7 @@ function GiftcardPage() {
     setQuery({
       ...query,
       ...pagination,
+      ...tableSort({}),
     });
 
   const headers: LegacyStandaloneTableHeader[] = [
@@ -615,7 +633,7 @@ function GiftcardPage() {
       >
         编辑
       </a>
-      <div className="ant-divider ant-divider-vertical" />
+      <LegacyDivider type="vertical" />
       <a
         onClick={() => {
           void legacyConfirm({
@@ -667,7 +685,10 @@ function GiftcardPage() {
                   className="ant-table-row ant-table-row-level-0"
                   {...legacyTableRowKey(index)}
                 >
-                  <td className="ant-table-row-cell-last" style={{ textAlign: 'right' }}>
+                  <td
+                    className="ant-table-align-right ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
                     {renderGiftcardActions(row, index)}
                   </td>
                 </tr>
@@ -690,7 +711,7 @@ function GiftcardPage() {
                     {legacyDateRange(row.started_at, row.ended_at)}
                   </td>
                   <td
-                    className="ant-table-fixed-columns-in-body ant-table-row-cell-last"
+                    className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
                     style={{ textAlign: 'right' }}
                   >
                     {renderGiftcardActions(row, index)}
@@ -765,11 +786,10 @@ function GiftcardPage() {
                   onChange={(value) =>
                     setSubmit({
                       ...submit,
-                      plan_id: (String(value ?? '').length
-                        ? value
-                        : null) as GiftcardSubmit['plan_id'],
+                      plan_id: ((value as string).length ? value : null) as GiftcardSubmit['plan_id'],
                     })
                   }
+                  mode="single"
                   placeholder="指定订阅"
                   style={{ width: '100%' }}
                   options={planOptions(plans.data)}

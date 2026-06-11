@@ -67,7 +67,9 @@ describe('createApiClient', () => {
     const source = readFileSync(new URL('./endpoints/user.ts', import.meta.url), 'utf8');
 
     expect(source).toContain('export const fetchNotices = (client: ApiClient) =>');
-    expect(source).toContain("client.request<Notice[]>({ url: '/user/notice/fetch', method: 'GET' });");
+    expect(source).toContain(
+      "client.request<Notice[]>({ url: '/user/notice/fetch', method: 'GET' });",
+    );
     expect(source).not.toContain('total: env.total ?? 0');
     expect(source).not.toContain('NoticePage');
   });
@@ -389,10 +391,13 @@ describe('createApiClient', () => {
         '/admin-path/stat/getStatUser?user_id=1&current=2&pageSize=10&total=1',
       );
       expect(config.params).toBeUndefined();
-      return [200, {
-        data: [{ record_at: 1700000000, u: 1024, d: 2048, server_rate: 1 }],
-        total: 1,
-      }];
+      return [
+        200,
+        {
+          data: [{ record_at: 1700000000, u: 1024, d: 2048, server_rate: 1 }],
+          total: 1,
+        },
+      ];
     });
 
     await expect(
@@ -444,7 +449,7 @@ describe('createApiClient', () => {
     const source = readFileSync(new URL('./endpoints/admin.ts', import.meta.url), 'utf8');
 
     expect(source).toContain("key: 'show' | 'renew',");
-    expect(source).toContain("value: 0 | 1,");
+    expect(source).toContain('value: 0 | 1,');
     expect(source).toContain("adminPost<true>(client, '/plan/update', { id, [key]: value })");
     expect(source).not.toContain('show?: 0 | 1, renew?: 0 | 1');
     expect(source).not.toContain('{ id, show, renew }');
@@ -546,9 +551,13 @@ describe('createApiClient', () => {
     const source = readFileSync(new URL('./endpoints/admin.ts', import.meta.url), 'utf8');
 
     expect(source).toContain("key: 'show',");
-    expect(source).toContain("value: 0 | 1,");
-    expect(source).toContain('adminPost<true>(client, `/server/${type}/update`, { id, [key]: value })');
-    expect(source).not.toContain('show: 0 | 1,\n) => adminPost<true>(client, `/server/${type}/update`, { id, show })');
+    expect(source).toContain('value: 0 | 1,');
+    expect(source).toContain(
+      'adminPost<true>(client, `/server/${type}/update`, { id, [key]: value })',
+    );
+    expect(source).not.toContain(
+      'show: 0 | 1,\n) => adminPost<true>(client, `/server/${type}/update`, { id, show })',
+    );
   });
 
   it('submits legacy admin plan prices in cents from the API layer', async () => {
@@ -631,6 +640,21 @@ describe('createApiClient', () => {
     expect(result.email_whitelist_suffix).toBe('safe.example');
   });
 
+  it('passes the legacy config key when a page requests a single config group', async () => {
+    const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onAny().reply((config) => {
+      expect(config.method).toBe('get');
+      expect(config.url).toBe('/admin-path/config/fetch?key=site');
+      expect(config.params).toBeUndefined();
+      return [200, { data: { site: { currency: 'CNY' } } }];
+    });
+
+    await expect(fetchConfig(client, 'site')).resolves.toMatchObject({
+      site: { currency: 'CNY' },
+    });
+  });
+
   it('keeps legacy admin notice fetch as a plain unpaginated array response', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
@@ -707,9 +731,11 @@ describe('createApiClient', () => {
   it('keeps JSON responses usable on legacy admin CSV-capable endpoints', async () => {
     const client = createApiClient({ baseURL: '/api/v1', adminSecurePath: () => 'admin-path' });
     const mock = new AxiosMockAdapter(client.axios);
-    mock.onPost('/admin-path/user/generate').reply(200, textBuffer(JSON.stringify({ data: true })), {
-      'content-type': 'application/json',
-    });
+    mock
+      .onPost('/admin-path/user/generate')
+      .reply(200, textBuffer(JSON.stringify({ data: true })), {
+        'content-type': 'application/json',
+      });
 
     await expect(generateUser(client, { email_suffix: 'example.com' })).resolves.toMatchObject({
       code: 200,

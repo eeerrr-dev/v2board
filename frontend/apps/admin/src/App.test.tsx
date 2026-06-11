@@ -76,9 +76,9 @@ describe('admin legacy route table', () => {
     expect(source).toContain('nestedPrefixes: ADMIN_LEGACY_ROUTE_PATHS');
     expect(source).toContain('getNormalizedLegacyHashPath(current, ADMIN_LEGACY_ROUTE_OPTIONS)');
     expect(source).toContain('return <Navigate to={normalized} replace />;');
-    expect(source.indexOf('if (normalized !== current) return <Navigate to={normalized} replace />;')).toBeLessThan(
-      source.indexOf('<Routes>'),
-    );
+    expect(
+      source.indexOf('if (normalized !== current) return <Navigate to={normalized} replace />;'),
+    ).toBeLessThan(source.indexOf('<Routes>'));
     expect(source).toContain("import { getAuthData } from '@/lib/auth';");
     expect(source).toContain('function matchesAdminLegacyRoute(pathname: string): boolean');
     expect(source).toContain('matchPath({ path, end: true }, pathname)');
@@ -94,7 +94,9 @@ describe('admin legacy route table', () => {
     expect(source).not.toContain('<Suspense');
     expect(source).not.toContain('fallback={<Fallback />}');
     expect(source).not.toContain('Spin size="large"');
-    expect(source).toContain("import { RouteBoundaryElement } from '@/components/route-error-boundary';");
+    expect(source).toContain(
+      "import { RouteBoundaryElement } from '@/components/route-error-boundary';",
+    );
     expect(source).toContain('<RouteBoundaryElement>{ADMIN_ROUTE_ELEMENTS');
     expect(source).toContain("import DashboardPage from '@/pages/dashboard';");
     expect(source).toContain("import ConfigPage from '@/pages/config';");

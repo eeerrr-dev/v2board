@@ -170,6 +170,9 @@ describe('UsersPage legacy user manager', () => {
     expect(html).toContain('class="block border-bottom"');
     expect(html).toContain('class="bg-white"');
     expect(html).toContain('class="v2board-table-action"');
+    expect(html).toContain(
+      'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
+    );
     expect(html).toContain('过滤器');
     expect(html).toContain('操作');
     expect(html).toContain('anticon-user-add');
@@ -236,6 +239,10 @@ describe('UsersPage legacy user manager', () => {
     expect(userTrafficModalSource).toContain("{ title: '上行', alignRight: true }");
     expect(userTrafficModalSource).toContain("{ title: '下行', alignRight: true }");
     expect(userTrafficModalSource).toContain("{ title: '倍率', alignRight: true }");
+    expect(userTrafficModalSource).toContain('className="ant-table-align-right"');
+    expect(userTrafficModalSource).toContain(
+      'className="ant-table-align-right ant-table-row-cell-last"',
+    );
     expect(userTrafficModalSource).toContain(
       '<tr key={index} className="ant-table-row ant-table-row-level-0" {...legacyTableRowKey(index)}>',
     );
@@ -270,6 +277,12 @@ describe('UsersPage legacy user manager', () => {
     expect(userManageDrawerSource).toContain('v2board-drawer-action');
     expect(userManageDrawerSource).toContain('LegacyLoadingIcon,');
     expect(userManageDrawerSource).toContain(
+      "className={`ant-btn ant-btn-primary${update.isPending ? ' ant-btn-loading' : ''}`}",
+    );
+    expect(userManageDrawerSource).toContain(
+      '{update.isPending ? <LegacyLoadingIcon /> : null}',
+    );
+    expect(userManageDrawerSource).toContain(
       "<LegacyLoadingIcon style={{ fontSize: 24, color: '#415A94' }} />",
     );
     expect(userManageDrawerSource).not.toContain('function LegacyDrawerLoadingIcon');
@@ -285,9 +298,10 @@ describe('UsersPage legacy user manager', () => {
       'function legacyExpiredAtDefaultValue(value: UserManageFormValues',
     );
     expect(userManageDrawerSource).toContain('value !== null && dayjs(1000 * Number(value))');
-    expect(userManageDrawerSource).toContain('function LegacySwitch({');
-    expect(userManageDrawerSource).toContain('className={`ant-switch${checked ?');
-    expect(userManageDrawerSource).toContain("aria-checked={checked ? 'true' : 'false'}");
+    expect(userManageDrawerSource).toContain("import { LegacySwitch } from './legacy-switch';");
+    expect(userManageDrawerSource).not.toContain('function LegacySwitch({');
+    expect(userManageDrawerSource).not.toContain('className={`ant-switch${checked ?');
+    expect(userManageDrawerSource).not.toContain("aria-checked={checked ? 'true' : 'false'}");
     expect(userManageDrawerSource).toContain('checked={Boolean(values.is_admin)}');
     expect(userManageDrawerSource).toContain(
       "onChange={(value) => formChange('is_admin', value ? 1 : 0)}",
@@ -317,7 +331,15 @@ describe('UsersPage legacy user manager', () => {
       'defaultValue={legacyDefaultValue(values.invite_user_email)}',
     );
     expect(userManageDrawerSource).toContain('defaultValue={values.password}');
-    expect(userManageDrawerSource).toContain('value={legacyDefaultValue(values.transfer_enable)}');
+    expect(userManageDrawerSource).toContain('defaultValue={legacyDefaultValue(values.balance)}');
+    expect(userManageDrawerSource).toContain(
+      'defaultValue={legacyDefaultValue(values.commission_balance)}',
+    );
+    expect(userManageDrawerSource).toContain('defaultValue={legacyDefaultValue(values.u)}');
+    expect(userManageDrawerSource).toContain('defaultValue={legacyDefaultValue(values.d)}');
+    expect(userManageDrawerSource).toContain(
+      'defaultValue={legacyDefaultValue(values.transfer_enable)}',
+    );
     expect(userManageDrawerSource).toContain(
       'defaultValue={legacyDefaultValue(values.device_limit)}',
     );
@@ -339,16 +361,43 @@ describe('UsersPage legacy user manager', () => {
     expect(userManageDrawerSource).not.toContain("Tooltip } from 'antd'");
     expect(userManageDrawerSource).not.toContain('<Tooltip');
     expect(userManageDrawerSource).toContain(
-      'value={(values.plan_id || null) as LegacySelectValue}',
+      'defaultValue={(values.plan_id || null) as LegacySelectValue}',
     );
-    expect(userManageDrawerSource).toContain('value={values.banned ? 1 : 0}');
-    expect(userManageDrawerSource).toContain('value={parseInt(values.commission_type as string)}');
-    expect(userManageDrawerSource).toContain('value={legacyDefaultValue(values.commission_rate)}');
-    expect(userManageDrawerSource).toContain('value={legacyDefaultValue(values.discount)}');
-    expect(userManageDrawerSource).toContain('value={legacyDefaultValue(values.speed_limit)}');
+    expect(userManageDrawerSource).toContain('defaultValue={values.banned ? 1 : 0}');
+    expect(userManageDrawerSource).toContain(
+      'defaultValue={parseInt(values.commission_type as string)}',
+    );
+    expect(userManageDrawerSource).toContain(
+      'defaultValue={legacyDefaultValue(values.commission_rate)}',
+    );
+    expect(userManageDrawerSource).toContain('defaultValue={legacyDefaultValue(values.discount)}');
+    expect(userManageDrawerSource).toContain(
+      'defaultValue={legacyDefaultValue(values.speed_limit)}',
+    );
     expect(userManageDrawerSource).toContain('defaultValue={legacyDefaultValue(values.remarks)}');
     expect(userManageDrawerSource).not.toContain('value={values.email}');
     expect(userManageDrawerSource).not.toContain('value={values.password ??');
+    expect(userManageDrawerSource).not.toContain('value={legacyDefaultValue(values.balance)}');
+    expect(userManageDrawerSource).not.toContain(
+      'value={legacyDefaultValue(values.commission_balance)}',
+    );
+    expect(userManageDrawerSource).not.toContain('value={legacyDefaultValue(values.u)}');
+    expect(userManageDrawerSource).not.toContain('value={legacyDefaultValue(values.d)}');
+    expect(userManageDrawerSource).not.toContain(
+      'value={legacyDefaultValue(values.transfer_enable)}',
+    );
+    expect(userManageDrawerSource).not.toContain(
+      'value={(values.plan_id || null) as LegacySelectValue}',
+    );
+    expect(userManageDrawerSource).not.toContain('value={values.banned ? 1 : 0}');
+    expect(userManageDrawerSource).not.toContain(
+      'value={parseInt(values.commission_type as string)}',
+    );
+    expect(userManageDrawerSource).not.toContain(
+      'value={legacyDefaultValue(values.commission_rate)}',
+    );
+    expect(userManageDrawerSource).not.toContain('value={legacyDefaultValue(values.discount)}');
+    expect(userManageDrawerSource).not.toContain('value={legacyDefaultValue(values.speed_limit)}');
     expect(userManageDrawerSource).not.toContain('defaultValue={values.plan_id || null}');
     expect(userManageDrawerSource).not.toContain(
       'defaultValue={Number(values.commission_type ?? 0)}',
@@ -389,7 +438,7 @@ describe('UsersPage legacy user manager', () => {
 
   it('keeps user update triggering the page fetch before the drawer closes', () => {
     const updateStart = userManageDrawerSource.indexOf('.mutateAsync(toPayload(values, userId))');
-    const updateRefetch = userManageDrawerSource.indexOf('onSaved?.();', updateStart);
+    const updateRefetch = userManageDrawerSource.indexOf('await onSaved?.();', updateStart);
     const updateHide = userManageDrawerSource.indexOf('hide();', updateRefetch);
     const updateUserHook = adminQueriesSource.slice(
       adminQueriesSource.indexOf('export function useUpdateUserMutation()'),
@@ -400,8 +449,8 @@ describe('UsersPage legacy user manager', () => {
     expect(updateRefetch).toBeGreaterThan(updateStart);
     expect(updateHide).toBeGreaterThan(updateRefetch);
     expect(userManageDrawerSource).toContain('onSaved?: () => void | Promise<unknown>;');
-    expect(userManageDrawerSource).toContain('        void onSaved?.();\n        hide();');
-    expect(userManageDrawerSource).not.toContain('await onSaved?.();');
+    expect(userManageDrawerSource).toContain('        await onSaved?.();\n        hide();');
+    expect(userManageDrawerSource).not.toContain('void onSaved?.();');
     expect(userManageDrawerSource).not.toContain("message.success('操作成功')");
     expect(updateUserHook).not.toContain('onSuccess');
     expect(updateUserHook).not.toContain("queryKey: ['admin', 'users']");
@@ -432,6 +481,20 @@ describe('UsersPage legacy user manager', () => {
     expect(assignOrderModalSource).toContain('setSubmit(assignOrderSubmit(user?.email));');
     expect(assignOrderModalSource).not.toContain('setSubmit({ email: user.email });');
     expect(assignOrderModalSource).toContain('.mutateAsync(submit)');
+    expect(assignOrderModalSource).toContain(
+      ".then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }))",
+    );
+    expect(assignOrderModalSource).toContain('.then(close)');
+    expect(assignOrderModalSource.indexOf('.mutateAsync(submit)')).toBeLessThan(
+      assignOrderModalSource.indexOf(
+        ".then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }))",
+      ),
+    );
+    expect(
+      assignOrderModalSource.indexOf(
+        ".then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }))",
+      ),
+    ).toBeLessThan(assignOrderModalSource.indexOf('.then(close)'));
     expect(assignOrderModalSource).toContain('<LegacyInput');
     expect(assignOrderModalSource).toContain('placeholder="请输入用户邮箱"');
     expect(assignOrderModalSource).toContain('<LegacyInputGroup');
@@ -504,14 +567,15 @@ describe('UsersPage legacy user manager', () => {
     expect(generateUserModalSource).not.toContain('<Form');
     expect(generateUserModalSource).not.toContain('rules={[{ required: true }]}');
     expect(usersSource).toContain('downloadGeneratedUserCsv(response.buffer)');
-    expect(usersSource).toContain('void users.refetch();');
-    expect(usersSource).toContain('void users.refetch();\n              setCreating(false);');
+    expect(usersSource).toContain('return users.refetch();');
+    expect(usersSource).toContain('return users.refetch();\n            })\n            .then(() => {\n              setCreating(false);');
+    expect(usersSource).not.toContain('void users.refetch();\n              setCreating(false);');
     expect(usersSource).not.toContain('await users.refetch();');
     expect(usersSource).toContain("USER ${dayjs().format('YYYY-MM-DD HH:mm:ss')}.csv");
     expect(usersSource).not.toContain("message.success('操作成功')");
 
     const downloadIndex = usersSource.indexOf('downloadGeneratedUserCsv(response.buffer)');
-    const refetchIndex = usersSource.indexOf('void users.refetch();', downloadIndex);
+    const refetchIndex = usersSource.indexOf('return users.refetch();', downloadIndex);
     const closeIndex = usersSource.indexOf('setCreating(false);', refetchIndex);
     expect(downloadIndex).toBeGreaterThan(-1);
     expect(refetchIndex).toBeGreaterThan(downloadIndex);
@@ -614,6 +678,12 @@ describe('UsersPage legacy user manager', () => {
     expect(legacyFilterDrawerSource).not.toContain('keys[keyIndex]?.condition ?? []');
     expect(legacyFilterDrawerSource).not.toContain('selected.options ?? []');
     expect(legacyFilterDrawerSource).toContain(
+      'defaultValue={(filter.value || undefined) as LegacySelectValue | undefined}',
+    );
+    expect(legacyFilterDrawerSource).not.toContain(
+      'value={(filter.value || undefined) as LegacySelectValue | undefined}',
+    );
+    expect(legacyFilterDrawerSource).toContain(
       'label: String(option.key ?? option.label ?? option.value)',
     );
     expect(legacyFilterDrawerSource).not.toContain('<Select.Option');
@@ -656,7 +726,8 @@ describe('UsersPage legacy user manager', () => {
       "onChange={(date) => update(index, { value: date && date.format('X') })}",
     );
     expect(legacyFilterDrawerSource).toContain('showTime');
-    expect(legacyDatePickerSource).toContain('onChange(date);');
+    expect(legacyDatePickerSource).toContain('onChange(date, nextValue);');
+    expect(legacyDatePickerSource).toContain("onChange(null, '');");
     expect(legacyFilterDrawerSource).not.toContain("date ? date.format('X') : ''");
     expect(legacyFilterDrawerSource).not.toContain('keys[keyIndex]?.condition');
   });
@@ -761,6 +832,12 @@ describe('UsersPage legacy user manager', () => {
 
   it('keeps the legacy main table keying and confirm-button behavior', () => {
     expect(usersSource).not.toContain('rowKey="id"');
+    expect(usersSource).toContain(
+      'className="ant-table-align-right ant-table-row-cell-last"',
+    );
+    expect(usersSource).toContain(
+      'className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"',
+    );
     expect(usersSource).not.toContain('modal.confirm({');
     expect(usersSource.match(/void legacyConfirm\(\{/g)).toHaveLength(4);
     expect(usersSource).toContain('onOk: () => {\n        void resetSecret');
@@ -836,11 +913,10 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain(
       "legacyOnlineAt ? `最后在线${formatDateTime(Number(legacyOnlineAt))}` : '从未在线'",
     );
-    expect(usersSource).toContain('<LegacyUserStatusBadge online={online} />');
-    expect(usersSource).toContain('ant-badge ant-badge-status ant-badge-not-a-wrapper');
     expect(usersSource).toContain(
-      "ant-badge-status-dot ant-badge-status-${online ? 'success' : 'default'}",
+      "<LegacyBadge status={online ? 'success' : 'default'} />",
     );
+    expect(usersSource).toContain("import { LegacyBadge } from '@/components/legacy-badge';");
     expect(usersSource).not.toContain("<Badge status={online ? 'success' : 'default'} /> {email}");
     expect(usersSource).not.toContain('row.last_login_at ?? 0');
   });
@@ -905,6 +981,7 @@ describe('UsersPage legacy user manager', () => {
   it('uses the old copy helper for subscription URL copying', () => {
     expect(usersSource).toContain("import { legacyCopyText } from '@/lib/legacy-copy';");
     expect(usersSource).toContain('legacyCopyText(row.subscribe_url)');
+    expect(usersSource).not.toContain("message.success('复制成功')");
     expect(usersSource).not.toContain('navigator.clipboard?.writeText');
   });
 

@@ -49,6 +49,9 @@ import {
 } from '@/components/legacy-dropdown';
 import { LegacyTooltip } from '@/components/legacy-tooltip';
 import { LegacyInput, LegacyInputGroup } from '@/components/legacy-input';
+import { LegacyBadge } from '@/components/legacy-badge';
+import { LegacyTag } from '@/components/legacy-tag';
+import { LegacyDivider } from '@/components/legacy-divider';
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -91,9 +94,6 @@ const COMMISSION_STATUS_TEXT: Record<number, string> = {
 
 const ORDER_STATUS_BADGE = ['error', 'processing', 'default', 'success', 'default'] as const;
 const COMMISSION_STATUS_BADGE = ['default', 'processing', 'success', 'error'] as const;
-type LegacyBadgeStatus =
-  | (typeof ORDER_STATUS_BADGE)[number]
-  | (typeof COMMISSION_STATUS_BADGE)[number];
 
 const ORDER_FILTER_KEYS: LegacyFilterKey[] = [
   { key: 'trade_no', title: '订单号', condition: ['模糊', '='] },
@@ -166,19 +166,6 @@ function showError(message: ReturnType<typeof App.useApp>['message'], error: unk
   if (error instanceof Error) message.error(i18nGet(error.message));
 }
 
-function LegacyBadge({ status }: { status: LegacyBadgeStatus }) {
-  return (
-    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-      <span className={`ant-badge-status-dot ant-badge-status-${status}`} />
-      <span className="ant-badge-status-text" />
-    </span>
-  );
-}
-
-function LegacyTag({ children }: { children: ReactNode }) {
-  return <span className="ant-tag">{children}</span>;
-}
-
 interface AssignOrderSubmit {
   email?: string;
   plan_id?: number;
@@ -210,10 +197,6 @@ function OrderDetailRow({ label, children }: { label: string; children: ReactNod
       </div>
     </div>
   );
-}
-
-function OrderDetailDivider() {
-  return <div className="ant-divider ant-divider-horizontal" role="separator" />;
 }
 
 function AssignOrderButton({
@@ -352,18 +335,18 @@ function OrderDetailModal({
           <OrderDetailRow label="订单状态">{ORDER_STATUS_TEXT[detail.status]}</OrderDetailRow>
           <OrderDetailRow label="订阅计划">{planName}</OrderDetailRow>
           <OrderDetailRow label="回调单号">{detail.callback_no || '-'}</OrderDetailRow>
-          <OrderDetailDivider />
+          <LegacyDivider />
           <OrderDetailRow label="支付金额">{cents(detail.total_amount)}</OrderDetailRow>
           <OrderDetailRow label="余额支付">{cents(detail.balance_amount)}</OrderDetailRow>
           <OrderDetailRow label="优惠金额">{cents(detail.discount_amount)}</OrderDetailRow>
           <OrderDetailRow label="退回金额">{cents(detail.refund_amount)}</OrderDetailRow>
           <OrderDetailRow label="折抵金额">{cents(detail.surplus_amount)}</OrderDetailRow>
-          <OrderDetailDivider />
+          <LegacyDivider />
           <OrderDetailRow label="创建时间">{formatDateTime(detail.created_at)}</OrderDetailRow>
           <OrderDetailRow label="更新时间">{formatDateTime(detail.updated_at)}</OrderDetailRow>
           {detail.invite_user_id && detail.status === 3 ? (
             <div>
-              <OrderDetailDivider />
+              <LegacyDivider />
               <OrderDetailRow label="邀请人">
                 <LegacyTooltip title="查看TA邀请的人">
                   <a
@@ -602,7 +585,12 @@ export default function OrdersPage() {
                   </LegacyButton>
                 </LegacyFilterDrawer>
               </div>
-              <AssignOrderButton plans={plans.data ?? []} onAssigned={() => orders.refetch()} />
+              <AssignOrderButton
+                plans={plans.data ?? []}
+                onAssigned={() => {
+                  return orders.refetch();
+                }}
+              />
             </div>
             <LegacyStandaloneTable
               headers={headers}
@@ -633,14 +621,14 @@ export default function OrdersPage() {
                   </td>
                   <td className="">{ORDER_TYPE_TEXT[row.type]}</td>
                   <td className="">{row.plan_name}</td>
-                  <td className="" style={{ textAlign: 'center' }}>
+                  <td className="ant-table-align-center" style={{ textAlign: 'center' }}>
                     <LegacyTag>{PERIOD_TEXT[row.period]}</LegacyTag>
                   </td>
-                  <td className="" style={{ textAlign: 'right' }}>
+                  <td className="ant-table-align-right" style={{ textAlign: 'right' }}>
                     {cents(row.total_amount)}
                   </td>
                   <td className="">{renderOrderStatus(row)}</td>
-                  <td className="" style={{ textAlign: 'right' }}>
+                  <td className="ant-table-align-right" style={{ textAlign: 'right' }}>
                     {row.status === 0 || row.status === 2
                       ? '-'
                       : row.commission_balance
@@ -648,7 +636,10 @@ export default function OrdersPage() {
                         : '-'}
                   </td>
                   <td className="">{renderCommissionStatus(row)}</td>
-                  <td className="" style={{ textAlign: 'right' }}>
+                  <td
+                    className="ant-table-align-right ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
                     {formatDateMinuteSlash(row.created_at)}
                   </td>
                 </tr>

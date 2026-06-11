@@ -1,13 +1,26 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import dayjs, { type Dayjs } from 'dayjs';
-import { LegacyCalendarIcon } from './legacy-ant-icon';
+import { LegacyCalendarIcon, LegacyCloseCircleIcon } from './legacy-ant-icon';
+import { LegacyRangePicker } from './legacy-range-picker';
 
 interface LegacyDatePickerProps {
+  allowClear?: boolean;
   defaultValue?: Dayjs | false | null;
-  onChange: (value: Dayjs | null) => void;
+  disabled?: boolean;
+  format?: string | string[];
+  onChange: (value: Dayjs | null, dateString: string) => void;
+  onOk?: (value: Dayjs) => void;
+  onOpenChange?: (open: boolean) => void;
   placeholder?: string;
-  showTime?: boolean;
+  popupStyle?: CSSProperties;
+  showTime?: boolean | { format?: string };
   style?: CSSProperties;
 }
 
@@ -26,16 +39,19 @@ const WEEKDAYS = [
   ['周日', '日'],
 ] as const;
 
+type TimeUnit = 'hour' | 'minute' | 'second';
+
 function formatDateTitle(date: Dayjs) {
   return `${date.year()}年${date.month() + 1}月${date.date()}日`;
 }
 
-function formatDateTime(date: Dayjs) {
-  return date.format('YYYY-MM-DD HH:mm:ss');
+function normalizeFormat(format: LegacyDatePickerProps['format'], showTime: boolean) {
+  const nextFormat = Array.isArray(format) ? format[0] : format;
+  return nextFormat ?? (showTime ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD');
 }
 
-function formatDisplayValue(date: Dayjs, showTime: boolean) {
-  return showTime ? formatDateTime(date) : date.format('YYYY-MM-DD');
+function formatDisplayValue(date: Dayjs, format: string) {
+  return date.format(format);
 }
 
 function normalizeDefaultValue(value: LegacyDatePickerProps['defaultValue']) {
@@ -58,6 +74,22 @@ function getCalendarRows(viewMonth: Dayjs): CalendarCell[][] {
 
 function pad(value: number) {
   return String(value).padStart(2, '0');
+}
+
+function getTimeColumns(format: string): Array<{ max: number; unit: TimeUnit }> {
+  const columns: Array<{ max: number; unit: TimeUnit }> = [];
+  if (/[HhKk]/.test(format)) columns.push({ max: 23, unit: 'hour' });
+  if (/m/.test(format)) columns.push({ max: 59, unit: 'minute' });
+  if (/s/.test(format)) columns.push({ max: 59, unit: 'second' });
+  return columns.length ? columns : [{ max: 23, unit: 'hour' }];
+}
+
+function getTimeFormat(showTime: LegacyDatePickerProps['showTime']) {
+  return typeof showTime === 'object' && showTime.format ? showTime.format : 'HH:mm:ss';
+}
+
+function formatEmptyTime(format: string) {
+  return dayjs().hour(0).minute(0).second(0).millisecond(0).format(format);
 }
 
 function TimeColumn({
@@ -88,10 +120,16 @@ function TimeColumn({
   );
 }
 
-export function LegacyDatePicker({
+function LegacyDatePickerComponent({
+  allowClear = true,
   defaultValue,
+  disabled = false,
+  format,
   onChange,
+  onOk,
+  onOpenChange,
   placeholder = '请选择日期',
+  popupStyle: customPopupStyle,
   showTime = false,
   style,
 }: LegacyDatePickerProps) {
@@ -103,20 +141,30 @@ export function LegacyDatePicker({
     (normalizeDefaultValue(defaultValue) ?? dayjs()).startOf('month'),
   );
   const [selected, setSelected] = useState<Dayjs | null>(() => normalizeDefaultValue(defaultValue));
+  const hasTime = Boolean(showTime);
+  const timeFormat = getTimeFormat(showTime);
+  const timeColumns = getTimeColumns(timeFormat);
+  const pickerFormat = normalizeFormat(format, hasTime);
   const [value, setValue] = useState(() => {
     const initial = normalizeDefaultValue(defaultValue);
-    return initial ? formatDisplayValue(initial, showTime) : '';
+    return initial ? formatDisplayValue(initial, pickerFormat) : '';
   });
-  const [popupStyle, setPopupStyle] = useState<CSSProperties>({});
+  const [popupPositionStyle, setPopupPositionStyle] = useState<CSSProperties>({});
   const today = dayjs();
   const activeDate = selected ?? today;
   const headerDate = showTimeOpen ? activeDate : viewMonth;
+  const showClear = allowClear && !disabled && Boolean(selected);
+
+  const setPickerOpen = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
 
   useEffect(() => {
     if (!open) return;
     const rect = rootRef.current?.getBoundingClientRect();
     if (rect) {
-      setPopupStyle({
+      setPopupPositionStyle({
         left: rect.left + window.scrollX,
         top: rect.bottom + window.scrollY,
       });
@@ -125,7 +173,7 @@ export function LegacyDatePicker({
     const close = (event: MouseEvent) => {
       const target = event.target as Node;
       if (rootRef.current?.contains(target) || popupRef.current?.contains(target)) return;
-      setOpen(false);
+      setPickerOpen(false);
     };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
@@ -135,13 +183,14 @@ export function LegacyDatePicker({
     if (!date) {
       setSelected(null);
       setValue('');
-      onChange(null);
+      onChange(null, '');
       return;
     }
+    const nextValue = formatDisplayValue(date, pickerFormat);
     setSelected(date);
-    setValue(formatDisplayValue(date, showTime));
+    setValue(nextValue);
     setViewMonth(date.startOf('month'));
-    onChange(date);
+    onChange(date, nextValue);
   };
 
   const selectDate = (date: Dayjs) => {
@@ -149,8 +198,8 @@ export function LegacyDatePicker({
       ? date.hour(selected.hour()).minute(selected.minute()).second(selected.second())
       : date.hour(0).minute(0).second(0);
     applyValue(next);
-    if (!showTime) {
-      setOpen(false);
+    if (!hasTime) {
+      setPickerOpen(false);
     }
   };
 
@@ -161,17 +210,29 @@ export function LegacyDatePicker({
 
   const selectNow = () => {
     applyValue(dayjs());
+    if (!hasTime) {
+      setPickerOpen(false);
+    }
+  };
+
+  const clearSelection = (event: ReactMouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!showClear) return;
+    applyValue(null);
   };
 
   const closeWithValue = () => {
     if (!selected) return;
-    setOpen(false);
+    onOk?.(selected);
+    setPickerOpen(false);
     setShowTimeOpen(false);
   };
 
   const openPicker = () => {
+    if (disabled) return;
     setViewMonth((selected ?? dayjs()).startOf('month'));
-    setOpen(true);
+    setPickerOpen(true);
   };
 
   const rows = getCalendarRows(viewMonth);
@@ -182,19 +243,21 @@ export function LegacyDatePicker({
 
   useEffect(() => {
     if (selected) {
+      setValue(formatDisplayValue(selected, pickerFormat));
       setViewMonth(selected.startOf('month'));
     } else {
+      setValue('');
       setShowTimeOpen(false);
     }
-  }, [selected]);
+  }, [pickerFormat, selected]);
 
   const popup = (
     <div
       ref={popupRef}
       className="ant-calendar-picker-container ant-calendar-picker-container-placement-bottomLeft"
-      style={popupStyle}
+      style={{ ...popupPositionStyle, ...customPopupStyle }}
     >
-      <div className={`ant-calendar${showTime ? ' ant-calendar-time' : ''}`} tabIndex={0}>
+      <div className={`ant-calendar${hasTime ? ' ant-calendar-time' : ''}`} tabIndex={0}>
         <div className="ant-calendar-panel">
           <div className="ant-calendar-input-wrap">
             <div className="ant-calendar-date-input-wrap">
@@ -205,9 +268,11 @@ export function LegacyDatePicker({
                 onChange={() => undefined}
               />
             </div>
-            <a role="button" title="清除" onClick={() => applyValue(null)}>
-              <span className="ant-calendar-clear-btn" />
-            </a>
+            {showClear ? (
+              <a role="button" title="清除" onClick={() => applyValue(null)}>
+                <span className="ant-calendar-clear-btn" />
+              </a>
+            ) : null}
           </div>
           <div tabIndex={0} className="ant-calendar-date-panel">
             <div className="ant-calendar-header">
@@ -268,34 +333,27 @@ export function LegacyDatePicker({
             {showTimeOpen ? (
               <div className="ant-calendar-time-picker">
                 <div className="ant-calendar-time-picker-panel">
-                  <div className="ant-calendar-time-picker-column-3 ant-calendar-time-picker-inner">
-                    <div className="ant-calendar-time-picker-input-wrap">
-                      <input
-                        className="ant-calendar-time-picker-input"
-                        placeholder="请选择时间"
-                        value={selected ? selected.format('HH:mm:ss') : '00:00:00'}
-                        onChange={() => undefined}
-                      />
-                    </div>
-                    <div className="ant-calendar-time-picker-combobox">
-                      <TimeColumn
-                        max={23}
-                        selected={selected?.hour() ?? 0}
-                        onSelect={(next) => selectTime('hour', next)}
-                      />
-                      <TimeColumn
-                        max={59}
-                        selected={selected?.minute() ?? 0}
-                        onSelect={(next) => selectTime('minute', next)}
-                      />
-                      <TimeColumn
-                        max={59}
-                        selected={selected?.second() ?? 0}
-                        onSelect={(next) => selectTime('second', next)}
-                      />
+                    <div className={`ant-calendar-time-picker-column-${timeColumns.length} ant-calendar-time-picker-inner`}>
+                      <div className="ant-calendar-time-picker-input-wrap">
+                        <input
+                          className="ant-calendar-time-picker-input"
+                          placeholder="请选择时间"
+                          value={selected ? selected.format(timeFormat) : formatEmptyTime(timeFormat)}
+                          onChange={() => undefined}
+                        />
+                      </div>
+                      <div className="ant-calendar-time-picker-combobox">
+                        {timeColumns.map(({ max, unit }) => (
+                          <TimeColumn
+                            key={unit}
+                            max={max}
+                            selected={selected?.get(unit) ?? 0}
+                            onSelect={(next) => selectTime(unit, next)}
+                          />
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
               </div>
             ) : null}
             <div className="ant-calendar-body">
@@ -375,7 +433,7 @@ export function LegacyDatePicker({
                 </tbody>
               </table>
             </div>
-            <div className="ant-calendar-footer ant-calendar-footer-show-ok">
+            <div className={`ant-calendar-footer${hasTime ? ' ant-calendar-footer-show-ok' : ''}`}>
               <span className="ant-calendar-footer-btn">
                 <a
                   className="ant-calendar-today-btn "
@@ -385,7 +443,7 @@ export function LegacyDatePicker({
                 >
                   此刻
                 </a>
-                {showTime ? (
+                {hasTime ? (
                   <>
                     <a
                       className={`ant-calendar-time-picker-btn${selected ? '' : ' ant-calendar-time-picker-btn-disabled'}`}
@@ -420,16 +478,23 @@ export function LegacyDatePicker({
       <span
         ref={rootRef}
         className="ant-calendar-picker"
-        style={{ ...(showTime ? { minWidth: 195 } : {}), ...style }}
+        style={{ ...(hasTime ? { minWidth: 195 } : {}), ...style }}
         onClick={openPicker}
       >
         <div>
           <input
             readOnly
+            disabled={disabled}
             placeholder={placeholder}
-            className="ant-calendar-picker-input ant-input"
+            className={`ant-calendar-picker-input ant-input${disabled ? ' ant-input-disabled' : ''}`}
             value={value}
           />
+          {showClear ? (
+            <LegacyCloseCircleIcon
+              className="ant-calendar-picker-clear"
+              onClick={clearSelection}
+            />
+          ) : null}
           <LegacyCalendarIcon className="ant-calendar-picker-icon" />
         </div>
       </span>
@@ -437,3 +502,7 @@ export function LegacyDatePicker({
     </>
   );
 }
+
+export const LegacyDatePicker = Object.assign(LegacyDatePickerComponent, {
+  RangePicker: LegacyRangePicker,
+});

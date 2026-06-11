@@ -155,7 +155,7 @@ function ThemeSettingsButton({
   const save = async () => {
     try {
       await saveConfig.mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) });
-      void onSaved();
+      await onSaved();
       message.success('保存成功');
     } catch (error) {
       showError(message, error);
@@ -1151,7 +1151,6 @@ function SystemConfigPage() {
               <ConfigItem title="发送测试邮件" description="邮件将会发送到当前登陆用户邮箱">
                 <LegacyButton
                   className={`ant-btn ant-btn-primary${testMail.isPending ? ' ant-btn-loading' : ''}`}
-                  disabled={testMail.isPending}
                   onClick={sendTestMail}
                 >
                   {testMail.isPending ? <LegacyLoadingIcon /> : null}

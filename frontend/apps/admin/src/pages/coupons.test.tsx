@@ -211,20 +211,20 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain('useQueryClient');
 
     const couponDownload = source.indexOf("downloadGeneratedCsv('COUPON', response.buffer)");
-    const couponRefetch = source.indexOf('void coupons.refetch();');
+    const couponRefetch = source.indexOf('await coupons.refetch();');
     const couponClose = source.indexOf('modalVisible();', couponRefetch);
     expect(couponDownload).toBeGreaterThan(-1);
     expect(couponRefetch).toBeGreaterThan(couponDownload);
     expect(couponClose).toBeGreaterThan(couponRefetch);
 
     const giftcardDownload = source.indexOf("downloadGeneratedCsv('GIFTCARD', response.buffer)");
-    const giftcardRefetch = source.indexOf('void giftcards.refetch();');
+    const giftcardRefetch = source.indexOf('await giftcards.refetch();');
     const giftcardClose = source.indexOf('modalVisible();', giftcardRefetch);
     expect(giftcardDownload).toBeGreaterThan(-1);
     expect(giftcardRefetch).toBeGreaterThan(giftcardDownload);
     expect(giftcardClose).toBeGreaterThan(giftcardRefetch);
-    expect(source).not.toContain('await coupons.refetch();');
-    expect(source).not.toContain('await giftcards.refetch();');
+    expect(source).not.toContain('void coupons.refetch();\n    modalVisible();');
+    expect(source).not.toContain('void giftcards.refetch();\n    modalVisible();');
 
     const generateCouponHook = queriesSource.slice(
       queriesSource.indexOf('export function useGenerateCouponMutation()'),
@@ -280,7 +280,9 @@ describe('CouponsPage legacy routes', () => {
     expect(source).toContain(
       'sort: current?.columnKey == null ? undefined : String(current.columnKey)',
     );
+    expect(source.match(/\.\.\.tableSort\(\{\}\),/g)).toHaveLength(2);
     expect(source).not.toContain("sort: String(current?.columnKey ?? '')");
+    expect(source).not.toContain('...pagination,\n    });');
   });
 
   it('keeps coupon and giftcard table query state in module scope like the old models', () => {
@@ -310,6 +312,18 @@ describe('CouponsPage legacy routes', () => {
     expect(source).not.toContain(
       'const [query, setQuery] = useState<AdminPageQuery>({ current: 1, pageSize: 10 });',
     );
+  });
+
+  it('remembers fetched coupon and giftcard totals on the legacy query objects', () => {
+    expect(source).toContain(
+      'function rememberLegacyPaginationTotal(query: AdminPageQuery, total: number | undefined)',
+    );
+    expect(source).toContain('(query as AdminPageQuery & { total?: number }).total = total;');
+    expect(source).toContain('rememberLegacyPaginationTotal(query, coupons.data?.total);');
+    expect(source).toContain('rememberLegacyPaginationTotal(query, giftcards.data?.total);');
+    expect(source.match(/legacy(Coupon|Giftcard)Query = query;/g)).toHaveLength(2);
+    expect(source).not.toContain('setQuery({ ...query, total:');
+    expect(source).not.toContain('setQueryState({ ...query, total:');
   });
 
   it('renders coupon and giftcard lists with the legacy standalone table instead of AntD5 Table props', () => {
@@ -369,12 +383,14 @@ describe('CouponsPage legacy routes', () => {
   it('uses the old copy helper for coupon and giftcard code copying', () => {
     expect(source).toContain("import { legacyCopyText } from '@/lib/legacy-copy';");
     expect(source).toContain('legacyCopyText(text)');
+    expect(source).not.toContain("message.success('复制成功')");
+    expect(source).not.toContain("import { App } from 'antd';");
     expect(
       source.match(
         /<LegacyTag style=\{\{ cursor: 'pointer' \}\} onClick=\{\(\) => copy\(value\)\}>/g,
       ),
     ).toHaveLength(2);
-    expect(source).toContain("import { App } from 'antd';");
+    expect(source).not.toContain("import { App } from 'antd';");
     expect(source).toContain("import { LegacyButton } from '@/components/legacy-button';");
     expect(source).toContain("import { LegacyPlusIcon } from '@/components/legacy-ant-icon';");
     expect(source).toContain(
@@ -488,9 +504,11 @@ describe('CouponsPage legacy routes', () => {
     expect(source).toContain('value={submit.limit_use_with_user as string | number | undefined}');
     expect(source).toContain('value={submit.plan_id as LegacySelectValue | undefined}');
     expect(source.match(/mode="multiple"/g)).toHaveLength(2);
+    expect(source.match(/mode="single"/g)).toHaveLength(1);
     expect(source).toMatch(
-      /plan_id:\s*\(String\(value \?\? ''\)\.length\s*\?\s*value\s*:\s*null\) as GiftcardSubmit\['plan_id'\]/,
+      /plan_id:\s*\(\(value as string\)\.length\s*\?\s*value\s*:\s*null\) as GiftcardSubmit\['plan_id'\]/,
     );
+    expect(source).not.toContain("String(value ?? '').length");
     expect(source).not.toContain('checked={Boolean(value)}');
     expect(source).not.toContain('submit.limit_use ?? undefined');
     expect(source).not.toContain('submit.limit_use_with_user ?? undefined');
@@ -576,9 +594,12 @@ describe('CouponsPage legacy routes', () => {
   });
 
   it('keeps the original vertical divider markup in coupon and giftcard action columns', () => {
-    expect(source.match(/<div className="ant-divider ant-divider-vertical" \/>/g)).toHaveLength(2);
+    expect(source).toContain("import { LegacyDivider } from '@/components/legacy-divider';");
+    expect(source.match(/<LegacyDivider type="vertical" \/>/g)).toHaveLength(2);
+    expect(source).not.toContain(
+      '<div className="ant-divider ant-divider-vertical" role="separator" />',
+    );
     expect(source).not.toContain('<span className="ant-divider ant-divider-vertical"');
-    expect(source).not.toContain('role="separator"');
   });
 
   it('keeps the original delete confirm from entering promise loading state', () => {

@@ -20,6 +20,7 @@ import {
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacySelect } from '@/components/legacy-select';
 import { LegacyInput, LegacyTextArea } from '@/components/legacy-input';
+import { LegacyDivider } from '@/components/legacy-divider';
 
 export default function NoticesPage() {
   const notices = useAdminNotices({});
@@ -41,7 +42,7 @@ export default function NoticesPage() {
 
   const saveNotice = async () => {
     await save.mutateAsync({ ...submit });
-    void notices.refetch();
+    await notices.refetch();
     modalVisible();
   };
 
@@ -72,13 +73,13 @@ export default function NoticesPage() {
       <a
         onClick={() => {
           setSubmit(dataSource[index] as Partial<Notice>);
-          setVisible(true);
+          modalVisible();
         }}
         ref={legacyHref()}
       >
         编辑
       </a>
-      <div className="ant-divider ant-divider-vertical" />
+      <LegacyDivider type="vertical" />
       <a
         onClick={() =>
           drop.mutate(row.id, {
@@ -116,7 +117,10 @@ export default function NoticesPage() {
                   className="ant-table-row ant-table-row-level-0"
                   {...legacyTableRowKey(index)}
                 >
-                  <td className="ant-table-row-cell-last" style={{ textAlign: 'right' }}>
+                  <td
+                    className="ant-table-align-right ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
                     {renderNoticeActions(row, index)}
                   </td>
                 </tr>
@@ -131,11 +135,11 @@ export default function NoticesPage() {
                   <td className="">{row.id}</td>
                   <td className="">{renderNoticeShowSwitch(row.show, row)}</td>
                   <td className="">{row.title}</td>
-                  <td className="" style={{ textAlign: 'right' }}>
+                  <td className="ant-table-align-right" style={{ textAlign: 'right' }}>
                     {dayjs(1000 * row.created_at).format('YYYY/MM/DD HH:mm')}
                   </td>
                   <td
-                    className="ant-table-fixed-columns-in-body ant-table-row-cell-last"
+                    className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
                     style={{ textAlign: 'right' }}
                   >
                     {renderNoticeActions(row, index)}
@@ -185,7 +189,7 @@ export default function NoticesPage() {
               placeholder="输入后回车添加标签"
               options={[]}
               onChange={(tags) => {
-                setSubmit({ ...submit, tags: tags.length > 0 ? tags.map(String) : null });
+                setSubmit({ ...submit, tags: (tags.length > 0 ? tags : null) as Notice['tags'] });
               }}
             />
           </div>

@@ -50,16 +50,18 @@ import {
   LegacyUserIcon,
 } from '@/components/legacy-ant-icon';
 import {
-  LegacyCheckboxInput,
   LegacyInput,
   LegacyInputGroup,
   LegacyTextArea,
 } from '@/components/legacy-input';
+import { LegacyCheckbox } from '@/components/legacy-checkbox';
 import { LegacyEmpty } from '@/components/legacy-empty';
 import { LegacySwitch } from '@/components/legacy-switch';
 import { LegacyModal } from '@/components/legacy-modal';
 import { LegacyTooltip } from '@/components/legacy-tooltip';
 import { LegacyAceJsonEditor } from '@/components/legacy-ace-editor';
+import { LegacyBadge } from '@/components/legacy-badge';
+import { LegacyTag } from '@/components/legacy-tag';
 import {
   LegacySelect,
   type LegacySelectOption,
@@ -70,6 +72,7 @@ import {
   legacyTableRowKey as legacyRowKey,
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
+import { LegacyDivider } from '@/components/legacy-divider';
 
 const SERVER_TYPES: admin.ServerTypeName[] = [
   'v2node',
@@ -497,7 +500,7 @@ interface LegacyDropdownMenuItemProps {
 }
 
 const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownTrigger;
-const LEGACY_DROPDOWN_HOVER_CLOSE_DELAY = 120;
+const LEGACY_DROPDOWN_HOVER_CLOSE_DELAY = 100;
 const LEGACY_DROPDOWN_OFFSET = 4;
 
 function dropdownTriggerModes(trigger: LegacyDropdownProps['trigger']) {
@@ -579,15 +582,12 @@ function LegacyDropdown({ children, overlay, trigger }: LegacyDropdownProps) {
     ),
     onClick: (event: ReactMouseEvent<HTMLElement>) => {
       children.props.onClick?.(event);
-      if (opensOnClick) {
-        if (open) {
-          setOpen(false);
-        } else {
-          openFromElement(event.currentTarget);
-        }
-        return;
+      if (!opensOnClick) return;
+      if (open) {
+        setOpen(false);
+      } else {
+        openFromElement(event.currentTarget);
       }
-      openFromElement(event.currentTarget);
     },
     onMouseEnter: (event: ReactMouseEvent<HTMLElement>) => {
       children.props.onMouseEnter?.(event);
@@ -653,25 +653,6 @@ function LegacyDropdownMenuItem({
   );
 }
 
-function LegacyTag({
-  children,
-  color,
-  style,
-}: {
-  children: ReactNode;
-  color?: string;
-  style?: CSSProperties;
-}) {
-  return (
-    <span
-      className={color ? 'ant-tag ant-tag-has-color' : 'ant-tag'}
-      style={color ? { ...style, backgroundColor: color } : style}
-    >
-      {children}
-    </span>
-  );
-}
-
 function readLegacyServerPageSize() {
   const pageSize = Number(readLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY));
   return Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 10;
@@ -727,12 +708,15 @@ function ServerGroupPage() {
                   <td className="">
                     <LegacyDatabaseIcon style={{ cursor: 'move' }} /> {record.server_count}
                   </td>
-                  <td className="" style={{ textAlign: 'right' }}>
+                  <td
+                    className="ant-table-align-right ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
                     <div>
                       <ServerGroupModal key={record.id} record={record}>
                         <a ref={legacyHref()}>编辑</a>
                       </ServerGroupModal>
-                      <div className="ant-divider ant-divider-vertical" role="separator" />
+                      <LegacyDivider type="vertical" />
                       <a
                         ref={legacyHref()}
                         onClick={() =>
@@ -757,7 +741,7 @@ function ServerGroupPage() {
   );
 }
 
-function ServerGroupModal({
+export function ServerGroupModal({
   record,
   children,
 }: {
@@ -775,7 +759,7 @@ function ServerGroupModal({
 
   const saveGroup = async () => {
     await save.mutateAsync({ ...submit });
-    void groups.refetch();
+    await groups.refetch();
     setVisible(false);
   };
 
@@ -866,12 +850,15 @@ function ServerRoutePage() {
                   <td className="">{record.remarks}</td>
                   <td className="">{getRouteMatchLabel(record.match)}</td>
                   <td className="">{ROUTE_ACTION_TEXT[record.action]}</td>
-                  <td className="" style={{ textAlign: 'right' }}>
+                  <td
+                    className="ant-table-align-right ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
                     <div>
                       <ServerRouteModal key={record.id} route={record}>
                         <a ref={legacyHref()}>编辑</a>
                       </ServerRouteModal>
-                      <div className="ant-divider ant-divider-vertical" role="separator" />
+                      <LegacyDivider type="vertical" />
                       <a
                         ref={legacyHref()}
                         onClick={() =>
@@ -932,7 +919,7 @@ function ServerRouteModal({
       payload.match = [];
     }
     await save.mutateAsync(payload);
-    void routes.refetch();
+    await routes.refetch();
     setVisible(false);
   };
 
@@ -1058,19 +1045,6 @@ function getServerTypeTag(type: string, label: ReactNode) {
 
 function getLegacyAvailableStatus(status?: number | null) {
   return status == null ? undefined : AVAILABLE_STATUS[status];
-}
-
-function LegacyStatusBadge({
-  status,
-}: {
-  status?: 'error' | 'warning' | 'processing' | 'success' | 'default';
-}) {
-  return (
-    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-      <span className={`ant-badge-status-dot${status ? ` ant-badge-status-${status}` : ''}`} />
-      <span className="ant-badge-status-text" />
-    </span>
-  );
 }
 
 export function createServerSortPayload(nodes: admin.ServerNode[]) {
@@ -1239,7 +1213,7 @@ function LegacyServerMobileNodeList({
                     <div className="ant-list-item-meta">
                       <div className="ant-list-item-meta-content">
                         <h4 className="ant-list-item-meta-title">
-                          <LegacyStatusBadge
+                          <LegacyBadge
                             status={getLegacyAvailableStatus(node.available_status)}
                           />
                           {node.name}
@@ -1270,7 +1244,7 @@ function LegacyServerMobileNodeList({
                       checked={parseInt(String(node.show), 10) as unknown as boolean}
                       onChange={() => onToggleNodeShow(node)}
                     />
-                    <div className="ant-divider ant-divider-vertical" />
+                    <LegacyDivider type="vertical" />
                     <span>
                       <LegacyDropdown
                         trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
@@ -1728,7 +1702,7 @@ function ServerManagePage() {
                                             />
                                           </td>
                                           <td>
-                                            <LegacyStatusBadge
+                                            <LegacyBadge
                                               status={getLegacyAvailableStatus(
                                                 node.available_status,
                                               )}
@@ -1740,16 +1714,21 @@ function ServerManagePage() {
                                               style={{ cursor: 'pointer' }}
                                               onClick={() => {
                                                 legacyCopyText(node.host);
-                                                message.success('复制成功');
                                               }}
                                             >
                                               {node.host}:{node.port}
                                             </span>
                                           </td>
-                                          <td style={{ textAlign: 'left' }}>
+                                          <td
+                                            className="ant-table-align-left"
+                                            style={{ textAlign: 'left' }}
+                                          >
                                             <LegacyUserIcon /> {node.online || 0}
                                           </td>
-                                          <td style={{ textAlign: 'center' }}>
+                                          <td
+                                            className="ant-table-align-center"
+                                            style={{ textAlign: 'center' }}
+                                          >
                                             <LegacyTag style={{ minWidth: 60 }}>
                                               {node.rate} x
                                             </LegacyTag>
@@ -1760,7 +1739,7 @@ function ServerManagePage() {
                                             ))}
                                           </td>
                                           <td
-                                            className="ant-table-fixed-columns-in-body"
+                                            className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
                                             style={{ textAlign: 'right' }}
                                           >
                                             {actionCell(node)}
@@ -1805,7 +1784,12 @@ function ServerManagePage() {
                                           key={index}
                                           className={`ant-table-row ant-table-row-level-0${node.parent_id ? ' child_node' : ''}`}
                                         >
-                                          <td style={{ textAlign: 'right' }}>{actionCell(node)}</td>
+                                          <td
+                                            className="ant-table-align-right ant-table-row-cell-last"
+                                            style={{ textAlign: 'right' }}
+                                          >
+                                            {actionCell(node)}
+                                          </td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -1832,15 +1816,7 @@ function ServerManagePage() {
                                       role="menuitem"
                                       key={group.id}
                                     >
-                                      <label className="ant-checkbox-wrapper">
-                                        <span className="ant-checkbox">
-                                          <LegacyCheckboxInput
-                                            className="ant-checkbox-input"
-                                            value=""
-                                          />
-                                          <span className="ant-checkbox-inner" />
-                                        </span>
-                                      </label>
+                                      <LegacyCheckbox value="" />
                                       <span>{group.name}</span>
                                     </li>
                                   ))}
@@ -1951,7 +1927,7 @@ function NodeEditDrawer({
           try {
             const payload = prepareLegacyServerPayload(type, values, id);
             await admin.saveServer(apiClient, type, payload);
-            void onSaved?.();
+            await onSaved?.();
             onClose();
           } catch (e) {
             if (e instanceof SyntaxError) {

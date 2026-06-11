@@ -225,7 +225,7 @@ describe('Admin LoginPage legacy behavior', () => {
     expect(mocks.navigate).not.toHaveBeenCalledWith('/order', { replace: true });
   });
 
-  it('uses an absolute dashboard target for an existing admin session without redirect', async () => {
+  it('uses the bundled bare dashboard target for an existing admin session without redirect', async () => {
     localStorage.setItem('authorization', 'jwt');
     mocks.userCheckLogin.mockResolvedValue({ is_login: true, is_admin: true });
     mocks.userInfo.mockResolvedValue({});
@@ -238,11 +238,11 @@ describe('Admin LoginPage legacy behavior', () => {
     expect(mocks.userInfo.mock.invocationCallOrder[0]!).toBeLessThan(
       mocks.navigate.mock.invocationCallOrder[0]!,
     );
-    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
-    expect(mocks.navigate).not.toHaveBeenCalledWith('dashboard');
+    expect(mocks.navigate).toHaveBeenCalledWith('dashboard');
+    expect(mocks.navigate).not.toHaveBeenCalledWith('/dashboard');
   });
 
-  it('normalizes bare redirect targets before navigating from login', async () => {
+  it('passes bare redirect targets through like the old checkLogin effect', async () => {
     localStorage.setItem('authorization', 'jwt');
     mocks.searchParams = new URLSearchParams('redirect=order');
     mocks.userCheckLogin.mockResolvedValue({ is_login: true, is_admin: true });
@@ -252,8 +252,8 @@ describe('Admin LoginPage legacy behavior', () => {
       root.render(<LoginPage />);
     });
 
-    expect(mocks.navigate).toHaveBeenCalledWith('/order');
-    expect(mocks.navigate).not.toHaveBeenCalledWith('order');
+    expect(mocks.navigate).toHaveBeenCalledWith('order');
+    expect(mocks.navigate).not.toHaveBeenCalledWith('/order');
   });
 
   it('keeps the old checkLogin effect uncancelled after login page unmount', () => {

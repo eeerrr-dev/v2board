@@ -1,16 +1,27 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import dayjs, { type Dayjs } from 'dayjs';
-import { LegacyCalendarIcon } from './legacy-ant-icon';
+import { LegacyCalendarIcon, LegacyCloseCircleIcon } from './legacy-ant-icon';
 
 type LegacyRangeValue = [Dayjs | null, Dayjs | null];
 
 interface LegacyRangePickerProps {
-  format?: string;
-  onChange: (value: LegacyRangeValue) => void;
+  allowClear?: boolean;
+  disabled?: boolean;
+  format?: string | string[];
+  onChange: (value: LegacyRangeValue, dateStrings: [string, string]) => void;
   onOk?: (value: LegacyRangeValue) => void;
+  onOpenChange?: (open: boolean) => void;
   placeholder?: [string, string];
-  showTime?: { format?: string };
+  popupStyle?: CSSProperties;
+  separator?: string;
+  showTime?: boolean | { format?: string };
   style?: CSSProperties;
   value: LegacyRangeValue;
 }
@@ -21,6 +32,7 @@ interface CalendarCell {
 }
 
 type RangeSide = 'start' | 'end';
+type TimeUnit = 'hour' | 'minute' | 'second';
 
 const WEEKDAYS = [
   ['周一', '一'],
@@ -53,12 +65,45 @@ function pad(value: number) {
   return String(value).padStart(2, '0');
 }
 
+function getTimeColumns(format: string): Array<{ max: number; unit: TimeUnit }> {
+  const columns: Array<{ max: number; unit: TimeUnit }> = [];
+  if (/[HhKk]/.test(format)) columns.push({ max: 23, unit: 'hour' });
+  if (/m/.test(format)) columns.push({ max: 59, unit: 'minute' });
+  if (/s/.test(format)) columns.push({ max: 59, unit: 'second' });
+  return columns.length ? columns : [{ max: 23, unit: 'hour' }];
+}
+
+function getTimeFormat(showTime: LegacyRangePickerProps['showTime']) {
+  return typeof showTime === 'object' && showTime.format ? showTime.format : 'HH:mm:ss';
+}
+
+function formatEmptyTime(format: string) {
+  return dayjs().hour(0).minute(0).second(0).millisecond(0).format(format);
+}
+
 function normalizeRange(value: LegacyRangeValue): LegacyRangeValue {
   return [value[0]?.isValid() ? value[0] : null, value[1]?.isValid() ? value[1] : null];
 }
 
+function normalizeOrderedRange(value: LegacyRangeValue): LegacyRangeValue {
+  const [start, end] = normalizeRange(value);
+  if (start && end && start.diff(end) > 0) {
+    return [start, null];
+  }
+  return [start, end];
+}
+
+function normalizeFormat(format: LegacyRangePickerProps['format'], showTime: boolean) {
+  const nextFormat = Array.isArray(format) ? format[0] : format;
+  return nextFormat ?? (showTime ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD');
+}
+
 function displayValue(value: Dayjs | null, format: string) {
   return value ? value.format(format) : '';
+}
+
+function displayRange(value: LegacyRangeValue, format: string): [string, string] {
+  return [displayValue(value[0], format), displayValue(value[1], format)];
 }
 
 function withTimeFrom(baseDate: Dayjs, current: Dayjs | null) {
@@ -99,9 +144,11 @@ function TimeColumn({
 
 function CalendarPanel({
   activeSide,
+  hasTime,
   range,
   side,
   showTimeOpen,
+  timeFormat,
   today,
   viewMonth,
   onChangeMonth,
@@ -110,9 +157,11 @@ function CalendarPanel({
   onToggleTime,
 }: {
   activeSide: RangeSide;
+  hasTime: boolean;
   range: LegacyRangeValue;
   side: RangeSide;
   showTimeOpen: boolean;
+  timeFormat: string;
   today: Dayjs;
   viewMonth: Dayjs;
   onChangeMonth: (value: Dayjs) => void;
@@ -125,6 +174,7 @@ function CalendarPanel({
   const rows = getCalendarRows(viewMonth);
   const [start, end] = range;
   const showPanelTime = showTimeOpen && activeSide === side;
+  const timeColumns = getTimeColumns(timeFormat);
   const panelClass = side === 'start' ? 'ant-calendar-range-left' : 'ant-calendar-range-right';
 
   return (
@@ -188,31 +238,24 @@ function CalendarPanel({
       {showPanelTime ? (
         <div className="ant-calendar-time-picker">
           <div className="ant-calendar-time-picker-panel">
-            <div className="ant-calendar-time-picker-column-3 ant-calendar-time-picker-inner">
+            <div className={`ant-calendar-time-picker-column-${timeColumns.length} ant-calendar-time-picker-inner`}>
               <div className="ant-calendar-time-picker-input-wrap">
                 <input
                   className="ant-calendar-time-picker-input"
                   placeholder="请选择时间"
-                  value={selected ? selected.format('HH:mm:ss') : '00:00:00'}
+                  value={selected ? selected.format(timeFormat) : formatEmptyTime(timeFormat)}
                   onChange={() => undefined}
                 />
               </div>
               <div className="ant-calendar-time-picker-combobox">
-                <TimeColumn
-                  max={23}
-                  selected={selected?.hour() ?? 0}
-                  onSelect={(value) => onSelectTime(side, 'hour', value)}
-                />
-                <TimeColumn
-                  max={59}
-                  selected={selected?.minute() ?? 0}
-                  onSelect={(value) => onSelectTime(side, 'minute', value)}
-                />
-                <TimeColumn
-                  max={59}
-                  selected={selected?.second() ?? 0}
-                  onSelect={(value) => onSelectTime(side, 'second', value)}
-                />
+                {timeColumns.map(({ max, unit }) => (
+                  <TimeColumn
+                    key={unit}
+                    max={max}
+                    selected={selected?.get(unit) ?? 0}
+                    onSelect={(value) => onSelectTime(side, unit, value)}
+                  />
+                ))}
               </div>
             </div>
           </div>
@@ -303,24 +346,32 @@ function CalendarPanel({
           </tbody>
         </table>
       </div>
-      <div className="ant-calendar-time-picker-wrap">
-        <a
-          className={`ant-calendar-time-picker-btn${selected ? '' : ' ant-calendar-time-picker-btn-disabled'}`}
-          role="button"
-          onClick={() => selected && onToggleTime(side)}
-        >
-          {showPanelTime ? '选择日期' : '选择时间'}
-        </a>
-      </div>
+      {hasTime ? (
+        <div className="ant-calendar-time-picker-wrap">
+          <a
+            className={`ant-calendar-time-picker-btn${selected ? '' : ' ant-calendar-time-picker-btn-disabled'}`}
+            role="button"
+            onClick={() => selected && onToggleTime(side)}
+          >
+            {showPanelTime ? '选择日期' : '选择时间'}
+          </a>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 export function LegacyRangePicker({
-  format = 'YYYY-MM-DD HH:mm',
+  allowClear = true,
+  disabled = false,
+  format,
   onChange,
   onOk,
-  placeholder = ['Start Time', 'End Time'],
+  onOpenChange,
+  placeholder = ['开始日期', '结束日期'],
+  popupStyle: customPopupStyle,
+  separator = '~',
+  showTime,
   style,
   value,
 }: LegacyRangePickerProps) {
@@ -331,11 +382,21 @@ export function LegacyRangePicker({
   const [showTimeSide, setShowTimeSide] = useState<RangeSide | null>(null);
   const [draftRange, setDraftRange] = useState<LegacyRangeValue>(() => normalizeRange(value));
   const [leftMonth, setLeftMonth] = useState(() => (value[0] ?? dayjs()).startOf('month'));
-  const [popupStyle, setPopupStyle] = useState<CSSProperties>({});
+  const [popupPositionStyle, setPopupPositionStyle] = useState<CSSProperties>({});
+  const hasTime = Boolean(showTime);
+  const timeFormat = getTimeFormat(showTime);
+  const pickerFormat = normalizeFormat(format, hasTime);
   const range = open ? draftRange : normalizeRange(value);
   const [start, end] = range;
   const today = dayjs();
   const rightMonth = leftMonth.add(1, 'month');
+  const showClear = allowClear && !disabled && Boolean(start || end);
+  const pickerStyle = hasTime ? { ...style, width: style?.width ?? 350 } : style;
+
+  const setPickerOpen = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
 
   useEffect(() => {
     if (!open) {
@@ -351,7 +412,7 @@ export function LegacyRangePicker({
     if (!open) return;
     const rect = rootRef.current?.getBoundingClientRect();
     if (rect) {
-      setPopupStyle({
+      setPopupPositionStyle({
         left: rect.left + window.scrollX,
         top: rect.bottom + window.scrollY,
       });
@@ -360,7 +421,7 @@ export function LegacyRangePicker({
     const close = (event: MouseEvent) => {
       const target = event.target as Node;
       if (rootRef.current?.contains(target) || popupRef.current?.contains(target)) return;
-      setOpen(false);
+      setPickerOpen(false);
       setShowTimeSide(null);
     };
     document.addEventListener('mousedown', close);
@@ -368,22 +429,32 @@ export function LegacyRangePicker({
   }, [open]);
 
   const commitRange = (next: LegacyRangeValue) => {
-    setDraftRange(next);
-    onChange(next);
+    const normalized = normalizeOrderedRange(next);
+    setDraftRange(normalized);
+    onChange(normalized, displayRange(normalized, pickerFormat));
+    return normalized;
   };
 
   const openPicker = () => {
+    if (disabled) return;
     const next = normalizeRange(value);
     setDraftRange(next);
     setActiveSide(next[0] && !next[1] ? 'end' : 'start');
     setLeftMonth((next[0] ?? next[1] ?? dayjs()).startOf('month'));
-    setOpen(true);
+    setPickerOpen(true);
   };
 
   const clearRange = () => {
+    if (!showClear) return;
     commitRange([null, null]);
     setActiveSide('start');
     setShowTimeSide(null);
+  };
+
+  const clearSelection = (event: ReactMouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearRange();
   };
 
   const selectDate = (side: RangeSide, date: Dayjs) => {
@@ -391,12 +462,16 @@ export function LegacyRangePicker({
     const nextDate = withTimeFrom(date, current);
     const next: LegacyRangeValue =
       side === 'start' ? [nextDate, draftRange[1]] : [draftRange[0], nextDate];
-    commitRange(next);
+    const committed = commitRange(next);
     setActiveSide(side === 'start' ? 'end' : 'start');
     setShowTimeSide(null);
+    if (!hasTime && committed[0] && committed[1]) {
+      setPickerOpen(false);
+    }
   };
 
   const selectTime = (side: RangeSide, unit: 'hour' | 'minute' | 'second', nextValue: number) => {
+    if (!hasTime) return;
     const current = side === 'start' ? draftRange[0] : draftRange[1];
     if (!current) return;
     const nextDate = current.set(unit, nextValue);
@@ -404,6 +479,7 @@ export function LegacyRangePicker({
   };
 
   const selectNow = () => {
+    if (!hasTime) return;
     const now = dayjs();
     const next: LegacyRangeValue =
       activeSide === 'start' ? [now, draftRange[1]] : [draftRange[0], now];
@@ -412,18 +488,24 @@ export function LegacyRangePicker({
   };
 
   const confirmRange = () => {
-    onOk?.(draftRange);
-    setOpen(false);
+    const confirmed = normalizeOrderedRange(draftRange);
+    onOk?.(confirmed);
+    setPickerOpen(false);
     setShowTimeSide(null);
+  };
+
+  const toggleTime = (side: RangeSide) => {
+    setActiveSide(side);
+    setShowTimeSide(showTimeSide === side ? null : side);
   };
 
   const popup = (
     <div
       ref={popupRef}
       className="ant-calendar-picker-container ant-calendar-picker-container-placement-bottomLeft"
-      style={popupStyle}
+      style={{ ...popupPositionStyle, ...customPopupStyle }}
     >
-      <div className="ant-calendar ant-calendar-range ant-calendar-time" tabIndex={0}>
+      <div className={`ant-calendar ant-calendar-range${hasTime ? ' ant-calendar-time' : ''}`} tabIndex={0}>
         <div className="ant-calendar-panel">
           <div className="ant-calendar-date-panel">
             <div className="ant-calendar-input-wrap">
@@ -431,7 +513,7 @@ export function LegacyRangePicker({
                 <input
                   className="ant-calendar-input "
                   placeholder={placeholder[0]}
-                  value={displayValue(start, format)}
+                  value={displayValue(start, pickerFormat)}
                   onChange={() => undefined}
                   onFocus={() => setActiveSide('start')}
                 />
@@ -440,59 +522,67 @@ export function LegacyRangePicker({
                 <input
                   className="ant-calendar-input "
                   placeholder={placeholder[1]}
-                  value={displayValue(end, format)}
+                  value={displayValue(end, pickerFormat)}
                   onChange={() => undefined}
                   onFocus={() => setActiveSide('end')}
                 />
               </div>
-              <a role="button" title="清除" onClick={clearRange}>
-                <span className="ant-calendar-clear-btn" />
-              </a>
+              {showClear ? (
+                <a role="button" title="清除" onClick={clearRange}>
+                  <span className="ant-calendar-clear-btn" />
+                </a>
+              ) : null}
             </div>
             <CalendarPanel
               activeSide={activeSide}
+              hasTime={hasTime}
               range={range}
               side="start"
               showTimeOpen={showTimeSide === 'start'}
+              timeFormat={timeFormat}
               today={today}
               viewMonth={leftMonth}
               onChangeMonth={setLeftMonth}
               onSelectDate={selectDate}
               onSelectTime={selectTime}
-              onToggleTime={(side) => setShowTimeSide(showTimeSide === side ? null : side)}
+              onToggleTime={toggleTime}
             />
-            <span className="ant-calendar-range-middle"> ~ </span>
+            <span className="ant-calendar-range-middle"> {separator} </span>
             <CalendarPanel
               activeSide={activeSide}
+              hasTime={hasTime}
               range={range}
               side="end"
               showTimeOpen={showTimeSide === 'end'}
+              timeFormat={timeFormat}
               today={today}
               viewMonth={rightMonth}
               onChangeMonth={(next) => setLeftMonth(next.subtract(1, 'month'))}
               onSelectDate={selectDate}
               onSelectTime={selectTime}
-              onToggleTime={(side) => setShowTimeSide(showTimeSide === side ? null : side)}
+              onToggleTime={toggleTime}
             />
-            <div className="ant-calendar-footer ant-calendar-footer-show-ok">
-              <span className="ant-calendar-footer-btn">
-                <a
-                  className="ant-calendar-today-btn "
-                  role="button"
-                  title={formatDateTitle(today)}
-                  onClick={selectNow}
-                >
-                  此刻
-                </a>
-                <a
-                  className={`ant-calendar-ok-btn${start && end ? '' : ' ant-calendar-ok-btn-disabled'}`}
-                  role="button"
-                  onClick={() => start && end && confirmRange()}
-                >
-                  确 定
-                </a>
-              </span>
-            </div>
+            {hasTime ? (
+              <div className="ant-calendar-footer ant-calendar-footer-show-ok">
+                <span className="ant-calendar-footer-btn">
+                  <a
+                    className="ant-calendar-today-btn "
+                    role="button"
+                    title={formatDateTitle(today)}
+                    onClick={selectNow}
+                  >
+                    此刻
+                  </a>
+                  <a
+                    className={`ant-calendar-ok-btn${start && end ? '' : ' ant-calendar-ok-btn-disabled'}`}
+                    role="button"
+                    onClick={() => start && end && confirmRange()}
+                  >
+                    确 定
+                  </a>
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -504,21 +594,35 @@ export function LegacyRangePicker({
 
   return (
     <>
-      <span ref={rootRef} className="ant-calendar-picker" style={style} onClick={openPicker}>
+      <span
+        ref={rootRef}
+        className="ant-calendar-picker"
+        style={pickerStyle}
+        tabIndex={disabled ? -1 : 0}
+        onClick={openPicker}
+      >
         <span className="ant-calendar-range-picker ant-calendar-picker-input ant-input">
           <input
             readOnly
+            disabled={disabled}
             placeholder={placeholder[0]}
             className="ant-calendar-range-picker-input"
-            value={displayValue(start, format)}
+            value={displayValue(start, pickerFormat)}
           />
-          <span className="ant-calendar-range-picker-separator"> ~ </span>
+          <span className="ant-calendar-range-picker-separator"> {separator} </span>
           <input
             readOnly
+            disabled={disabled}
             placeholder={placeholder[1]}
             className="ant-calendar-range-picker-input"
-            value={displayValue(end, format)}
+            value={displayValue(end, pickerFormat)}
           />
+          {showClear ? (
+            <LegacyCloseCircleIcon
+              className="ant-calendar-picker-clear"
+              onClick={clearSelection}
+            />
+          ) : null}
           <LegacyCalendarIcon className="ant-calendar-picker-icon" />
         </span>
       </span>

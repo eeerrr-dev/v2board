@@ -97,11 +97,8 @@ const LEGACY_GB_BYTES = 1_073_741_824;
 const adminGet = <T>(client: ApiClient, path: string, params?: Record<string, unknown>) =>
   client.request<T>({ url: client.resolveAdminPath(path), method: 'GET', params });
 
-const adminGetEnvelope = <T>(
-  client: ApiClient,
-  path: string,
-  params?: Record<string, unknown>,
-) => client.requestEnvelope<T>({ url: client.resolveAdminPath(path), method: 'GET', params });
+const adminGetEnvelope = <T>(client: ApiClient, path: string, params?: Record<string, unknown>) =>
+  client.requestEnvelope<T>({ url: client.resolveAdminPath(path), method: 'GET', params });
 
 const adminPost = <T>(client: ApiClient, path: string, data?: Record<string, unknown>) =>
   client.request<T>({ url: client.resolveAdminPath(path), method: 'POST', data });
@@ -144,8 +141,10 @@ function normalizeAdminConfig(config: AdminConfig): AdminConfig {
   };
 }
 
-export const fetchConfig = async (client: ApiClient) =>
-  normalizeAdminConfig(await adminGet<AdminConfig>(client, '/config/fetch'));
+export const fetchConfig = async (client: ApiClient, key?: string) =>
+  normalizeAdminConfig(
+    await adminGet<AdminConfig>(client, '/config/fetch', key ? { key } : undefined),
+  );
 
 export const saveConfig = (client: ApiClient, data: Partial<AdminConfigFlat>) =>
   adminPost<true>(client, '/config/save', data as Record<string, unknown>);
@@ -186,7 +185,7 @@ function normalizePlan(plan: Plan): Plan {
   const next = { ...plan };
   for (const key of PLAN_PRICE_KEYS) {
     const value = next[key];
-    next[key] = value !== null ? (Number(value) / 100) as Plan[typeof key] : null;
+    next[key] = value !== null ? ((Number(value) / 100) as Plan[typeof key]) : null;
   }
   return next;
 }
@@ -234,12 +233,8 @@ function serializePlanForSave(data: AdminPlanSavePayload): Record<string, unknow
   return next;
 }
 
-export const updatePlan = (
-  client: ApiClient,
-  id: number,
-  key: 'show' | 'renew',
-  value: 0 | 1,
-) => adminPost<true>(client, '/plan/update', { id, [key]: value });
+export const updatePlan = (client: ApiClient, id: number, key: 'show' | 'renew', value: 0 | 1) =>
+  adminPost<true>(client, '/plan/update', { id, [key]: value });
 
 export const dropPlan = (client: ApiClient, id: number) =>
   adminPost<true>(client, '/plan/drop', { id });
@@ -546,10 +541,8 @@ export const themes = (client: ApiClient) =>
 export const themeConfig = (client: ApiClient, name: string) =>
   adminPost<Record<string, unknown>>(client, '/theme/getThemeConfig', { name });
 
-export const saveThemeConfig = (
-  client: ApiClient,
-  data: { name: string; config: string },
-) => adminPost<true>(client, '/theme/saveThemeConfig', data as unknown as Record<string, unknown>);
+export const saveThemeConfig = (client: ApiClient, data: { name: string; config: string }) =>
+  adminPost<true>(client, '/theme/saveThemeConfig', data as unknown as Record<string, unknown>);
 
 export interface ServerNode {
   id: number;
@@ -630,8 +623,11 @@ export type ServerTypeName =
   | 'anytls'
   | 'v2node';
 
-export const saveServer = (client: ApiClient, type: ServerTypeName, data: Record<string, unknown>) =>
-  adminPost<true>(client, `/server/${type}/save`, data);
+export const saveServer = (
+  client: ApiClient,
+  type: ServerTypeName,
+  data: Record<string, unknown>,
+) => adminPost<true>(client, `/server/${type}/save`, data);
 
 export const dropServer = (client: ApiClient, type: ServerTypeName, id: number) =>
   adminPost<true>(client, `/server/${type}/drop`, { id });

@@ -1,3 +1,5 @@
+import { message } from 'antd';
+
 export function legacyCopyText(text: string | number | null | undefined): boolean {
   const value = String(text);
   let mark: HTMLSpanElement | null = null;
@@ -51,6 +53,7 @@ export function legacyCopyText(text: string | number | null | undefined): boolea
     restoreSelection();
   }
 
+  message.success('复制成功');
   return copied;
 }
 

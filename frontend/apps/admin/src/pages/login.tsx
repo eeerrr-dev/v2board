@@ -10,11 +10,6 @@ import { legacyHref } from '@/lib/legacy-href';
 import { LegacyLoadingIcon } from '@/components/legacy-ant-icon';
 import { legacyInfo } from '@/components/legacy-confirm';
 
-function normalizeRedirectTarget(target: string | null): string {
-  if (!target) return '/dashboard';
-  return target.startsWith('/') ? target : `/${target}`;
-}
-
 export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -27,7 +22,7 @@ export default function LoginPage() {
   const backgroundUrl = getAdminBackgroundUrl();
   const legacyBackgroundImage = (backgroundUrl && `url(${backgroundUrl})`) as string;
   const redirectParam = params.get('redirect');
-  const redirect = normalizeRedirectTarget(redirectParam);
+  const redirect = redirectParam || 'dashboard';
 
   const onLogin = useCallback(async () => {
     setSubmitting(true);

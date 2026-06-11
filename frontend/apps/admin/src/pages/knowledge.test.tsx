@@ -99,7 +99,11 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('className="section-container input "');
     expect(source).toContain('className="section-container html-wrap"');
     expect(source).toContain('dangerouslySetInnerHTML={{ __html: html }}');
-    expect(source).toContain("const text = value ?? '';");
+    expect(source).toContain('function normalizeLegacyMarkdownValue(value: unknown)');
+    expect(source).toContain("if (typeof value === 'undefined') return '';");
+    expect(source).toContain("typeof value === 'string' ? value : String(value).toString()");
+    expect(source).toContain(".replace(/\\u21b5/g, '\\n')");
+    expect(source).toContain('const text = normalizeLegacyMarkdownValue(value);');
     expect(source).toContain('value={knowledge.body}');
     expect(source).toContain('const [editorKey, setEditorKey] = useState(Math.random());');
     expect(source).toContain('setEditorKey(Math.random());');
@@ -111,16 +115,22 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain("import { LegacyInput } from '@/components/legacy-input';");
     expect(source).toContain("import { LegacySelect } from '@/components/legacy-select';");
     expect(source).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
+    expect(source).toContain(
+      "import { LegacyLoadingIcon, LegacyPlusIcon } from '@/components/legacy-ant-icon';",
+    );
     expect(source).toContain('<LegacyInput');
     expect(source).toContain('className="ant-input"');
     expect(source).toContain('value={knowledge.title}');
     expect(source).toContain('value={knowledge.category}');
+    expect(source).not.toContain('key={`title-${editorKey}`}');
+    expect(source).not.toContain('key={`category-${editorKey}`}');
     expect(source).toContain('<LegacySelect');
     expect(source).toContain('<LegacyDrawer');
     expect(source).toContain('<LegacyButton className="ant-btn" style={{ marginRight: 8 }}');
     expect(source).toContain(
       "className={`ant-btn ant-btn-primary${saveLoading ? ' ant-btn-loading' : ''}`}",
     );
+    expect(source).toContain('{saveLoading ? <LegacyLoadingIcon /> : null}');
     expect(source).not.toContain('<Drawer');
     expect(source).not.toContain('<Button');
     expect(source).not.toContain(' Button,');
@@ -167,16 +177,16 @@ describe('KnowledgePage legacy knowledge manager', () => {
       );
     }
 
-    expect(toolbar).toContain('title="Underline"');
-    expect(toolbar).toContain('title="Strikethrough"');
-    expect(toolbar).toContain('title="Ordered list"');
-    expect(toolbar).toContain('title="Line break"');
-    expect(toolbar).toContain('title="Inline code"');
-    expect(toolbar).toContain('title="Table"');
-    expect(toolbar).toContain('title="Image"');
-    expect(toolbar).toContain('title="Clear"');
-    expect(toolbar).toContain('title="Undo"');
-    expect(toolbar).toContain('title="Redo"');
+    expect(toolbar).toContain('title={labels.btnUnderline}');
+    expect(toolbar).toContain('title={labels.btnStrikethrough}');
+    expect(toolbar).toContain('title={labels.btnOrdered}');
+    expect(toolbar).toContain('title={labels.btnLineBreak}');
+    expect(toolbar).toContain('title={labels.btnInlineCode}');
+    expect(toolbar).toContain('title={labels.btnTable}');
+    expect(toolbar).toContain('title={labels.btnImage}');
+    expect(toolbar).toContain('title={labels.btnClear}');
+    expect(toolbar).toContain('title={labels.btnUndo}');
+    expect(toolbar).toContain('title={labels.btnRedo}');
     expect(toolbar).toContain('rmel-icon-underline');
     expect(toolbar).toContain('rmel-icon-strikethrough');
     expect(toolbar).toContain('rmel-icon-list-ordered');
@@ -195,8 +205,123 @@ describe('KnowledgePage legacy knowledge manager', () => {
   it('keeps the bundled markdown table, image, mode, and logger details', () => {
     expect(source).toContain('const LEGACY_TABLE_ROWS = 4;');
     expect(source).toContain('const LEGACY_TABLE_COLS = 6;');
+    expect(source).toContain('const LEGACY_LOGGER_MAX_SIZE = 100;');
+    expect(source).toContain('const LEGACY_LOGGER_INTERVAL = 600;');
+    expect(source).toContain('const LEGACY_MARKDOWN_LABELS = {');
+    expect(source).toContain("clearTip: 'Are you sure you want to clear all contents?'");
+    expect(source).toContain("clearTip: '您确定要清空所有内容吗？'");
+    expect(source).toContain('type LegacyMarkdownLocaleKey = keyof typeof LEGACY_MARKDOWN_LABELS;');
+    expect(source).toContain('function normalizeLegacyMarkdownLocale(locale?: string)');
+    expect(source).toContain("normalizeLegacyMarkdownLocale(browserNavigator.language)");
+    expect(source).toContain("normalizeLegacyMarkdownLocale(browserNavigator.browserLanguage)");
+    expect(source).toContain('return LEGACY_MARKDOWN_LABELS[locale ?? \'enUS\'];');
+    expect(source).toContain('const labels = useMemo(() => getLegacyMarkdownLabels(), []);');
     expect(source).toContain('function legacyTableMarkdown(row: number, col: number)');
     expect(source).toContain("function legacyListMarkdown(type: 'ordered' | 'unordered'");
+    expect(source).toContain('const insertLegacyNewBlock = (');
+    expect(source).toContain('markdown: string,');
+    expect(source).toContain('const composingRef = useRef(false);');
+    expect(source).toContain("type LegacySyncScrollSource = 'md' | 'html';");
+    expect(source).toContain("const shouldSyncScrollRef = useRef<LegacySyncScrollSource>('md');");
+    expect(source).toContain('const hasContentChangedRef = useRef(true);');
+    expect(source).toContain('const isSyncingScrollRef = useRef(false);');
+    expect(source).toContain('const scrollScaleRef = useRef(1);');
+    expect(source).toContain('const htmlWrapperRef = useRef<HTMLDivElement | null>(null);');
+    expect(source).toContain('const loggerInitRef = useRef(text);');
+    expect(source).toContain('const loggerTimerRef = useRef<number | null>(null);');
+    expect(source).toContain('const undoStackRef = useRef<string[]>([]);');
+    expect(source).toContain('const redoStackRef = useRef<string[]>([]);');
+    expect(source).toContain('const lastPopRef = useRef<string | null>(null);');
+    expect(source).toContain('const recordLoggerChange = (nextText: string, immediate = false) => {');
+    expect(source).toContain('pushLoggerRecord(nextText);');
+    expect(source).toContain('}, LEGACY_LOGGER_INTERVAL);');
+    expect(source).toContain('const applyTextChange = (nextText: string, immediate = true) => {');
+    expect(source).toContain('if (nextText === text) return;');
+    expect(source).toContain('const normalizedNextText = normalizeLegacyMarkdownValue(nextText);');
+    expect(source).toContain('hasContentChangedRef.current = true;');
+    expect(source).toContain('recordLoggerChange(normalizedNextText, immediate);');
+    expect(source).toContain('onChange(normalizedNextText);');
+    expect(source).toContain('const handleSyncScroll = (source: LegacySyncScrollSource) => {');
+    expect(source).toContain('if (source !== shouldSyncScrollRef.current) return;');
+    expect(source).toContain(
+      'scrollScaleRef.current = textarea.scrollHeight / htmlWrapper.scrollHeight;',
+    );
+    expect(source).toContain('requestAnimationFrame(() => {');
+    expect(source).toContain(
+      'nextHtmlWrapper.scrollTop = nextTextarea.scrollTop / scrollScaleRef.current;',
+    );
+    expect(source).toContain(
+      'nextTextarea.scrollTop = nextHtmlWrapper.scrollTop * scrollScaleRef.current;',
+    );
+    expect(source).toContain('type LegacySelectionRange = { start: number; end: number };');
+    expect(source).toContain('nextSelection?: LegacySelectionRange');
+    expect(source).toContain(
+      'restoreSelection(selection.start + nextSelection.start, selection.start + nextSelection.end);',
+    );
+    expect(source).toContain('start: before.length');
+    expect(source).toContain('end: before.length + selection.selected.length');
+    expect(source).toContain('start: selectionOffset.start + 1');
+    expect(source).toContain('restoreSelection(selection.start);');
+    expect(source).toContain('end: selection.selected.length + 2');
+    expect(source).toContain('end: selection.selected.length + 1');
+    expect(source).toContain('const clearMarkdown = () => {');
+    expect(source).toContain('window.confirm(labels.clearTip)');
+    expect(source).toContain(
+      "type LegacyShortcutKey = 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey';",
+    );
+    expect(source).toContain('const matchesLegacyShortcut = (');
+    expect(source).toContain('ctrlKey: event.ctrlKey || (aliasCommand && event.metaKey)');
+    expect(source).toContain('const handleEditorKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {');
+    expect(source).toContain("event.keyCode === 13 || event.key === 'Enter'");
+    expect(source).toContain('curLine.match(/^(\\s*?)\\* /)');
+    expect(source).toContain('insertNextListPrefix(unordered[0]);');
+    expect(source).toContain('curLine.match(/^(\\s*?)(\\d+)\\. /)');
+    expect(source).toContain(
+      'insertNextListPrefix(`${ordered[1]}${Number.parseInt(ordered[2]!, 10) + 1}. `);',
+    );
+    expect(source).toContain('removeCurrentListPrefix();');
+    expect(source).toContain("matchesLegacyShortcut(event, 'b', 66, ['ctrlKey'], true)");
+    expect(source).toContain("matchesLegacyShortcut(event, 'i', 73, ['ctrlKey'], true)");
+    expect(source).toContain("matchesLegacyShortcut(event, 'u', 85, ['ctrlKey'])");
+    expect(source).toContain("matchesLegacyShortcut(event, 'd', 68, ['ctrlKey'], true)");
+    expect(source).toContain("matchesLegacyShortcut(event, '8', 56, ['ctrlKey', 'shiftKey'], true)");
+    expect(source).toContain("matchesLegacyShortcut(event, '7', 55, ['ctrlKey', 'shiftKey'], true)");
+    expect(source).toContain("matchesLegacyShortcut(event, 'k', 75, ['ctrlKey'], true)");
+    expect(source).toContain("matchesLegacyShortcut(event, 'y', 89, ['ctrlKey'])");
+    expect(source).toContain("matchesLegacyShortcut(event, 'z', 90, ['metaKey', 'shiftKey'])");
+    expect(source).toContain("matchesLegacyShortcut(event, 'z', 90, ['ctrlKey'], true)");
+    expect(source).toContain('applyShortcut(redoMarkdown);');
+    expect(source).toContain('applyShortcut(undoMarkdown);');
+    expect(source).toContain('onKeyDown={handleEditorKeyDown}');
+    expect(source).toContain('onChange={(event) => applyTextChange(event.target.value, false)}');
+    expect(source).toContain("onScroll={() => handleSyncScroll('md')}");
+    expect(source).toContain("shouldSyncScrollRef.current = 'md';");
+    expect(source).toContain('ref={htmlWrapperRef}');
+    expect(source).toContain("shouldSyncScrollRef.current = 'html';");
+    expect(source).toContain("onScroll={() => handleSyncScroll('html')}");
+    expect(source).toContain('loggerInitRef.current !== text ?');
+    expect(source).not.toContain('undoStack.length > 1 || loggerInitRef.current !== text ?');
+    expect(source).toContain('onCompositionStart={() => {');
+    expect(source).toContain('composingRef.current = true;');
+    expect(source).toContain('composingRef.current = false;');
+    expect(source).toContain('onClick={clearMarkdown}');
+    expect(source).not.toContain("onClick={() => applyTextChange('')}");
+    expect(source).toContain("onClick={() => insertLegacyNewBlock('---', getSelection(), { start: 3, end: 3 })}");
+    expect(source).not.toContain("onClick={() => replaceSelection('\\n')}");
+    expect(source).toContain('insertLegacyNewBlock(legacyTableMarkdown(row, col));');
+    expect(source).toContain('setTableHover(null);');
+    const tableButtonStart = source.indexOf('button-type-table');
+    const tableButtonEnd = source.indexOf('button-type-image', tableButtonStart);
+    const tableButton = source.slice(tableButtonStart, tableButtonEnd);
+    expect(tableButton).toContain("className={`drop-wrap ${tableMenuVisible ? 'show' : 'hidden'}`}");
+    expect(tableButton).toContain('onClick={(event) => {');
+    expect(tableButton).toContain('event.stopPropagation();');
+    expect(tableButton).toContain('setTableMenuVisible(false);');
+    const tableDropWrap = tableButton.slice(
+      tableButton.indexOf("className={`drop-wrap ${tableMenuVisible ? 'show' : 'hidden'}`}"),
+      tableButton.indexOf('<ul', tableButton.indexOf('className={`drop-wrap')),
+    );
+    expect(tableDropWrap).toContain('setTableHover(null);');
     expect(source).toContain('className="table-list wrap"');
     expect(source).toContain('key={`${row}-${col}`}');
     expect(source).toContain('onMouseOver={() => setTableHover({ row, col })}');
@@ -207,14 +332,14 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('position: absolute; z-index: -1; left: 0px; top: 0px;');
     expect(source).not.toContain('width: LEGACY_TABLE_CELL_SIZE');
     expect(source).not.toContain('height: LEGACY_TABLE_CELL_SIZE');
-    expect(source).toContain('const [undoStack, setUndoStack] = useState<string[]>([]);');
+    expect(source).toContain('const [, setUndoStack] = useState<string[]>([]);');
     expect(source).toContain('const [redoStack, setRedoStack] = useState<string[]>([]);');
-    expect(source).toContain("title: 'Only display editor'");
-    expect(source).toContain("title: 'Only display preview'");
-    expect(source).toContain("title: 'Display both editor and preview'");
-    expect(source).not.toContain('仅显示编辑器');
-    expect(source).not.toContain('仅显示预览');
-    expect(source).not.toContain('显示编辑器与预览');
+    expect(source).toContain('title: labels.btnModeEditor');
+    expect(source).toContain('title: labels.btnModePreview');
+    expect(source).toContain('title: labels.btnModeAll');
+    expect(source).toContain("btnModeEditor: '仅显示编辑器'");
+    expect(source).toContain("btnModePreview: '仅显示预览'");
+    expect(source).toContain("btnModeAll: '显示编辑器与预览'");
     expect(source).toContain('replaceSelection(`[${selection.selected}]()`');
     expect(source).not.toContain('](https://)');
   });
@@ -258,12 +383,12 @@ describe('KnowledgePage legacy knowledge manager', () => {
     );
 
     expect(editorSaveBlock).toContain('await onSave({ ...knowledge });');
-    expect(editorSaveBlock).toContain('void onSaved();');
+    expect(editorSaveBlock).toContain('await onSaved();');
     expect(editorSaveBlock).toContain("message.success('保存成功');");
     expect(editorSaveBlock.indexOf('await onSave({ ...knowledge });')).toBeLessThan(
-      editorSaveBlock.indexOf('void onSaved();'),
+      editorSaveBlock.indexOf('await onSaved();'),
     );
-    expect(editorSaveBlock.indexOf('void onSaved();')).toBeLessThan(
+    expect(editorSaveBlock.indexOf('await onSaved();')).toBeLessThan(
       editorSaveBlock.indexOf("message.success('保存成功');"),
     );
     expect(source).toContain(
@@ -272,8 +397,8 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('const refetchKnowledge = () => list.refetch();');
     expect(source).toContain("message.success('保存成功');");
     expect(source).toContain('onSaved: () => void | Promise<unknown>;');
-    expect(source).toContain('    void onSaved();\n    message.success');
-    expect(source).not.toContain('await onSaved();');
+    expect(source).toContain('    await onSaved();\n    message.success');
+    expect(source).not.toContain('void onSaved();');
     expect(source).toContain('saveLoading?: boolean;');
     expect(source).toContain('saveLoading={save.isPending}');
     expect(source).not.toContain('const [saveLoading, setSaveLoading] = useState(false);');
@@ -284,7 +409,10 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).not.toContain('await onSave(knowledge);');
     expect(source).not.toContain('await save.mutateAsync(payload);\n    await list.refetch();');
     expect(source).toContain('checked={value as unknown as boolean}');
-    expect(source).toContain('function LegacyKnowledgeSwitch');
+    expect(source).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
+    expect(source).toContain('<LegacySwitch');
+    expect(source).toContain('size="small"');
+    expect(source).not.toContain('function LegacyKnowledgeSwitch');
     expect(source).not.toContain('<Switch');
     expect(source).toContain('show.mutate(row.id, {');
     expect(source).toContain('void list.refetch();');
@@ -304,6 +432,15 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('nodeSelector="tr"');
     expect(source).toContain('handleSelector="i"');
     expect(source).toContain("<LegacyMenuIcon style={{ cursor: 'move' }} />");
+    expect(source).toContain(
+      'className="ant-table-align-right ant-table-row-cell-last"',
+    );
+    expect(source).toContain(
+      '<td className="ant-table-align-right" style={{ textAlign: \'right\' }}>',
+    );
+    expect(source).toContain(
+      'className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"',
+    );
     expect(source).not.toContain('<Table<KnowledgeSummary>');
     expect(source).not.toContain('tableLayout="auto"');
     expect(source).not.toContain('pagination={false}');
@@ -320,7 +457,9 @@ describe('KnowledgePage legacy knowledge manager', () => {
   });
 
   it('keeps the original vertical divider markup in the knowledge action column', () => {
-    expect(source).toContain(
+    expect(source).toContain("import { LegacyDivider } from '@/components/legacy-divider';");
+    expect(source).toContain('<LegacyDivider type="vertical" />');
+    expect(source).not.toContain(
       '<div className="ant-divider ant-divider-vertical" role="separator" />',
     );
     expect(source).not.toContain('<span className="ant-divider ant-divider-vertical"');
@@ -335,6 +474,11 @@ describe('KnowledgePage legacy knowledge manager', () => {
   });
 
   it('keeps the original category request and sort loading cycle', () => {
+    const sortBlock = source.slice(
+      source.indexOf('const sortKnowledge = (fromIndex: number, toIndex: number) => {'),
+      source.indexOf('const saveKnowledge =', source.indexOf('const sortKnowledge')),
+    );
+
     expect(source).toContain('useAdminKnowledgeCategories();');
     expect(source).toContain('setSortingLoading(true)');
     expect(source).toContain('setSortingLoading(false)');
@@ -343,6 +487,9 @@ describe('KnowledgePage legacy knowledge manager', () => {
     expect(source).toContain('next.splice(fromIndex + 1, 1);');
     expect(source).toContain('sort.mutate(\n      next.map((knowledge) => knowledge.id),');
     expect(source).toContain('onSuccess: () => {\n          void list.refetch();\n        },');
+    expect(sortBlock.indexOf('setSortingLoading(true);')).toBeLessThan(
+      sortBlock.indexOf('setOrderedKnowledge(next);'),
+    );
   });
 
   it('keeps knowledge mutations fetching from the page after successful requests', () => {
@@ -351,7 +498,7 @@ describe('KnowledgePage legacy knowledge manager', () => {
     );
     const saveRefetch = source.indexOf('const refetchKnowledge = () => list.refetch();', saveStart);
     const editorSaveStart = source.indexOf('await onSave({ ...knowledge });');
-    const editorRefetch = source.indexOf('void onSaved();', editorSaveStart);
+    const editorRefetch = source.indexOf('await onSaved();', editorSaveStart);
     const sortStart = source.indexOf('sort.mutate(\n      next.map((knowledge) => knowledge.id),');
     const sortRefetch = source.indexOf('void list.refetch();', sortStart);
     const showStart = source.indexOf('show.mutate(row.id, {');

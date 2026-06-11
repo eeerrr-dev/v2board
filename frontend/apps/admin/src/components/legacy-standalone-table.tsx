@@ -1,12 +1,14 @@
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import {
   LegacyCaretDownIcon,
   LegacyCaretUpIcon,
-  LegacyDownIcon,
+  LegacyDoubleLeftIcon,
+  LegacyDoubleRightIcon,
   LegacyLeftIcon,
   LegacyRightIcon,
 } from './legacy-ant-icon';
 import { LegacyEmpty } from './legacy-empty';
+import { LegacySelect, type LegacySelectOption, type LegacySelectValue } from './legacy-select';
 
 const LEGACY_ROW_KEY_ATTRIBUTE = `data-${'row-key'}`;
 const LEGACY_UNSELECTABLE_ATTRIBUTE = { unselectable: 'unselectable' } as Record<string, string>;
@@ -115,6 +117,86 @@ export interface LegacyTablePaginationChange {
   total?: number;
 }
 
+const LEGACY_PAGER_RANGE = 2;
+const LEGACY_PAGE_SIZE_SUFFIX = '条/页';
+
+type LegacyPaginationItem =
+  | { page: number; className?: string; type: 'page' }
+  | { page: number; title: string; type: 'jump-prev' | 'jump-next' };
+
+function getLegacyPageCount(total: number | undefined, pageSize: number) {
+  return Math.max(1, Math.ceil((total ?? 0) / pageSize));
+}
+
+function getLegacyPageItems(currentPage: number, pageCount: number): LegacyPaginationItem[] {
+  if (pageCount <= 5 + 2 * LEGACY_PAGER_RANGE) {
+    return Array.from({ length: pageCount }, (_, index) => ({
+      page: index + 1,
+      type: 'page' as const,
+    }));
+  }
+
+  const items: LegacyPaginationItem[] = [];
+  let start = Math.max(1, currentPage - LEGACY_PAGER_RANGE);
+  let end = Math.min(currentPage + LEGACY_PAGER_RANGE, pageCount);
+
+  if (currentPage - 1 <= LEGACY_PAGER_RANGE) end = 1 + 2 * LEGACY_PAGER_RANGE;
+  if (pageCount - currentPage <= LEGACY_PAGER_RANGE) start = pageCount - 2 * LEGACY_PAGER_RANGE;
+
+  for (let page = start; page <= end; page += 1) {
+    items.push({ page, type: 'page' });
+  }
+
+  if (currentPage - 1 >= 2 * LEGACY_PAGER_RANGE && currentPage !== 3) {
+    const first = items[0];
+    if (first?.type === 'page') first.className = 'ant-pagination-item-after-jump-prev';
+    items.unshift({
+      page: Math.max(1, currentPage - 5),
+      title: '向前 5 页',
+      type: 'jump-prev',
+    });
+  }
+
+  if (pageCount - currentPage >= 2 * LEGACY_PAGER_RANGE && currentPage !== pageCount - 2) {
+    const last = items[items.length - 1];
+    if (last?.type === 'page') last.className = 'ant-pagination-item-before-jump-next';
+    items.push({
+      page: Math.min(pageCount, currentPage + 5),
+      title: '向后 5 页',
+      type: 'jump-next',
+    });
+  }
+
+  if (start !== 1) items.unshift({ page: 1, type: 'page' });
+  if (end !== pageCount) items.push({ page: pageCount, type: 'page' });
+
+  return items;
+}
+
+function getLegacyPageSizeOptions(pageSizeOptions: number[] | undefined): LegacySelectOption[] {
+  return (pageSizeOptions ?? []).map((option) => ({
+    value: option,
+    label: `${option} ${LEGACY_PAGE_SIZE_SUFFIX}`,
+  }));
+}
+
+function runLegacyPaginationEnter(event: KeyboardEvent<HTMLElement>, action: () => void) {
+  if (event.key !== 'Enter' && event.charCode !== 13) return;
+  action();
+}
+
+function LegacyPaginationJumpIcon({ direction }: { direction: 'prev' | 'next' }) {
+  const Icon = direction === 'prev' ? LegacyDoubleLeftIcon : LegacyDoubleRightIcon;
+  return (
+    <a className="ant-pagination-item-link">
+      <div className="ant-pagination-item-container">
+        <Icon className="ant-pagination-item-link-icon" />
+        <span className="ant-pagination-item-ellipsis">•••</span>
+      </div>
+    </a>
+  );
+}
+
 export function LegacyTablePagination({
   current,
   pageSizeOptions,
@@ -128,14 +210,22 @@ export function LegacyTablePagination({
   total?: number;
   onChange?: (pagination: LegacyTablePaginationChange) => void;
 }) {
-  const pageCount = Math.max(1, Math.ceil((total ?? 0) / pageSize));
+  const pageCount = getLegacyPageCount(total, pageSize);
   const currentPage = Math.min(Math.max(current || 1, 1), pageCount);
   const previousDisabled = currentPage <= 1;
   const nextDisabled = currentPage >= pageCount;
+  const pageItems = getLegacyPageItems(currentPage, pageCount);
+  const sizeOptions = getLegacyPageSizeOptions(pageSizeOptions);
   const changePage = (next: number) => {
     const bounded = Math.min(Math.max(next, 1), pageCount);
     if (bounded === currentPage) return;
     onChange?.({ current: bounded, pageSize, total });
+  };
+  const changePageSize = (next: LegacySelectValue) => {
+    const nextPageSize = Number(next);
+    if (!Number.isFinite(nextPageSize) || nextPageSize <= 0 || nextPageSize === pageSize) return;
+    const nextPageCount = getLegacyPageCount(total, nextPageSize);
+    onChange?.({ current: Math.min(currentPage, nextPageCount), pageSize: nextPageSize, total });
   };
 
   return (
@@ -144,60 +234,64 @@ export function LegacyTablePagination({
         title="上一页"
         className={`${previousDisabled ? 'ant-pagination-disabled ' : ''}ant-pagination-prev`}
         aria-disabled={previousDisabled}
+        tabIndex={previousDisabled ? undefined : 0}
+        onClick={() => changePage(currentPage - 1)}
+        onKeyPress={(event) => runLegacyPaginationEnter(event, () => changePage(currentPage - 1))}
       >
-        <a className="ant-pagination-item-link" onClick={() => changePage(currentPage - 1)}>
+        <a className="ant-pagination-item-link">
           <LegacyLeftIcon />
         </a>
       </li>
-      {Array.from({ length: pageCount }, (_, index) => index + 1).map((page) => (
-        <li
-          key={page}
-          title={String(page)}
-          className={`ant-pagination-item ant-pagination-item-${page}${
-            page === currentPage ? ' ant-pagination-item-active' : ''
-          }`}
-          tabIndex={0}
-          onClick={() => changePage(page)}
-        >
-          <a>{page}</a>
-        </li>
-      ))}
+      {pageItems.map((item) =>
+        item.type === 'page' ? (
+          <li
+            key={item.page}
+            title={String(item.page)}
+            className={`ant-pagination-item ant-pagination-item-${item.page}${
+              item.page === currentPage ? ' ant-pagination-item-active' : ''
+            }${item.className ? ` ${item.className}` : ''}`}
+            tabIndex={0}
+            onClick={() => changePage(item.page)}
+            onKeyPress={(event) => runLegacyPaginationEnter(event, () => changePage(item.page))}
+          >
+            <a>{item.page}</a>
+          </li>
+        ) : (
+          <li
+            key={item.type}
+            title={item.title}
+            className={`ant-pagination-${item.type}`}
+            tabIndex={0}
+            onClick={() => changePage(item.page)}
+            onKeyPress={(event) => runLegacyPaginationEnter(event, () => changePage(item.page))}
+          >
+            <LegacyPaginationJumpIcon direction={item.type === 'jump-prev' ? 'prev' : 'next'} />
+          </li>
+        ),
+      )}
       <li
         title="下一页"
         className={`${nextDisabled ? 'ant-pagination-disabled ' : ''}ant-pagination-next`}
         aria-disabled={nextDisabled}
+        tabIndex={nextDisabled ? undefined : 0}
+        onClick={() => changePage(currentPage + 1)}
+        onKeyPress={(event) => runLegacyPaginationEnter(event, () => changePage(currentPage + 1))}
       >
-        <a className="ant-pagination-item-link" onClick={() => changePage(currentPage + 1)}>
+        <a className="ant-pagination-item-link">
           <LegacyRightIcon />
         </a>
       </li>
       {pageSizeOptions ? (
         <li className="ant-pagination-options">
-          <div className="ant-select-sm ant-pagination-options-size-changer ant-select ant-select-enabled">
-            <div
-              className={`ant-select-selection
-            ant-select-selection--single`}
-              role="combobox"
-              aria-autocomplete="list"
-              aria-haspopup="true"
-              aria-controls="legacy-pagination-size"
-              aria-expanded="false"
-              tabIndex={0}
-            >
-              <div className="ant-select-selection__rendered">
-                <div
-                  className="ant-select-selection-selected-value"
-                  title={String(pageSize)}
-                  style={{ display: 'block', opacity: 1 }}
-                >
-                  {pageSize}
-                </div>
-              </div>
-              <span className="ant-select-arrow" unselectable="on" style={{ userSelect: 'none' }}>
-                <LegacyDownIcon className="ant-select-arrow-icon" />
-              </span>
-            </div>
-          </div>
+          <LegacySelect
+            size="small"
+            className="ant-pagination-options-size-changer"
+            dropdownMatchSelectWidth={false}
+            getPopupContainer={(trigger) => trigger.parentElement}
+            value={pageSize}
+            options={sizeOptions}
+            onChange={changePageSize}
+          />
         </li>
       ) : null}
     </ul>

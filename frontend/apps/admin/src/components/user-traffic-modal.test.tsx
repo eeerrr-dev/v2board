@@ -57,9 +57,9 @@ describe('UserTrafficModal', () => {
     expect(html).toContain('class="ant-modal-root"');
     expect(modal.outerHTML).toContain('<div class="ant-modal" role="document"');
     expect(modal.getAttribute('style')).toBe(
-      'width: 100%; max-width: 1000px; padding: 0px 10px; top: 20px;',
+      'max-width: 1000px; padding: 0px 10px; top: 20px; width: 100%;',
     );
-    expect(html).toContain('<div class="ant-modal-title">流量记录</div>');
+    expect(document.querySelector('.ant-modal-title')?.textContent).toBe('流量记录');
     expect(body.getAttribute('style')).toBe('padding: 0px;');
     expect(document.querySelector('.ant-modal-footer')).toBeNull();
     expect(html).toContain('class="ant-table-wrapper"');
@@ -71,9 +71,15 @@ describe('UserTrafficModal', () => {
     expect(html).toContain('倍率');
     expect(html).toContain('class="ant-table-row ant-table-row-level-0" data-row-key="0"');
     expect(html).toContain('<td>2023-11-14</td>');
-    expect(html).toContain('<td style="text-align: right;">1024.00 B</td>');
-    expect(html).toContain('<td style="text-align: right;">2.00 KB</td>');
-    expect(html).toContain('<td style="text-align: right;">1</td>');
+    expect(html).toContain(
+      '<td class="ant-table-align-right" style="text-align: right;">1024.00 B</td>',
+    );
+    expect(html).toContain(
+      '<td class="ant-table-align-right" style="text-align: right;">2.00 KB</td>',
+    );
+    expect(html).toContain(
+      '<td class="ant-table-align-right ant-table-row-cell-last" style="text-align: right;">1</td>',
+    );
     expect(html).toContain('class="ant-pagination ant-table-pagination mini"');
     expect(html).toContain(
       'class="ant-pagination-item ant-pagination-item-1 ant-pagination-item-active"',
@@ -93,5 +99,33 @@ describe('UserTrafficModal', () => {
       false,
     );
     expect(document.querySelector('.ant-modal-root')).toBeNull();
+  });
+
+  it('queries the first page immediately when opening traffic for another user', async () => {
+    await act(async () => {
+      root.render(<UserTrafficModal userId={1} open onClose={() => undefined} />);
+    });
+
+    await act(async () => {
+      document
+        .querySelector('.ant-pagination-item-2')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(mocks.useAdminUserTraffic).toHaveBeenLastCalledWith(
+      1,
+      { current: 2, pageSize: 10, total: 25 },
+      true,
+    );
+
+    await act(async () => {
+      root.render(<UserTrafficModal userId={2} open onClose={() => undefined} />);
+    });
+
+    expect(mocks.useAdminUserTraffic).toHaveBeenLastCalledWith(
+      2,
+      { page: 1, pageSize: 10, total: 0 },
+      true,
+    );
   });
 });

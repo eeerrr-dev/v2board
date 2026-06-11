@@ -38,6 +38,18 @@ const LEGACY_ANT_ICONS = {
       'M765.7 486.8L314.9 134.7A7.97 7.97 0 0 0 302 141v77.3c0 4.9 2.3 9.6 6.1 12.6l360 281.1-360 281.1c-3.9 3-6.1 7.7-6.1 12.6V883c0 6.7 7.7 10.4 12.9 6.3l450.8-352.1a31.96 31.96 0 0 0 0-50.4z',
     ],
   },
+  'double-left': {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M272.9 512l265.4-339.1c4.1-5.2.4-12.9-6.3-12.9h-77.3c-4.9 0-9.6 2.3-12.6 6.1L186.8 492.3a31.99 31.99 0 0 0 0 39.5l255.3 326.1c3 3.9 7.7 6.1 12.6 6.1H532c6.7 0 10.4-7.7 6.3-12.9L272.9 512zm304 0l265.4-339.1c4.1-5.2.4-12.9-6.3-12.9h-77.3c-4.9 0-9.6 2.3-12.6 6.1L490.8 492.3a31.99 31.99 0 0 0 0 39.5l255.3 326.1c3 3.9 7.7 6.1 12.6 6.1H836c6.7 0 10.4-7.7 6.3-12.9L576.9 512z',
+    ],
+  },
+  'double-right': {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M533.2 492.3L277.9 166.1c-3-3.9-7.7-6.1-12.6-6.1H188c-6.7 0-10.4 7.7-6.3 12.9L447.1 512 181.7 851.1A7.98 7.98 0 0 0 188 864h77.3c4.9 0 9.6-2.3 12.6-6.1l255.3-326.1c9.1-11.7 9.1-27.9 0-39.5zm304 0L581.9 166.1c-3-3.9-7.7-6.1-12.6-6.1H492c-6.7 0-10.4 7.7-6.3 12.9L751.1 512 485.7 851.1A7.98 7.98 0 0 0 492 864h77.3c4.9 0 9.6-2.3 12.6-6.1l255.3-326.1c9.1-11.7 9.1-27.9 0-39.5z',
+    ],
+  },
   'question-circle': {
     viewBox: '64 64 896 896',
     paths: [
@@ -50,6 +62,20 @@ const LEGACY_ANT_ICONS = {
     paths: [
       'M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z',
       'M464 336a48 48 0 1096 0 48 48 0 10-96 0zm72 112h-48c-4.4 0-8 3.6-8 8v272c0 4.4 3.6 8 8 8h48c4.4 0 8-3.6 8-8V456c0-4.4-3.6-8-8-8z',
+    ],
+  },
+  'check-circle': {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M699 353h-46.9c-10.2 0-19.9 4.9-25.9 13.3L469 584.3l-71.2-98.8c-6-8.3-15.6-13.3-25.9-13.3H325c-6.5 0-10.3 7.4-6.5 12.7l124.6 172.8a31.8 31.8 0 0 0 51.7 0l210.6-292c3.9-5.3.1-12.7-6.4-12.7z',
+      'M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z',
+    ],
+  },
+  'exclamation-circle': {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z',
+      'M464 688a48 48 0 1 0 96 0 48 48 0 1 0-96 0zm24-112h48c4.4 0 8-3.6 8-8V296c0-4.4-3.6-8-8-8h-48c-4.4 0-8 3.6-8 8v272c0 4.4 3.6 8 8 8z',
     ],
   },
   loading: {
@@ -93,6 +119,12 @@ const LEGACY_ANT_ICONS = {
     viewBox: '64 64 896 896',
     paths: [
       'M563.8 512l262.5-312.9c4.4-5.2.7-13.1-6.1-13.1h-79.8c-4.7 0-9.2 2.1-12.3 5.7L511.6 449.8 295.1 191.7c-3-3.6-7.5-5.7-12.3-5.7H203c-6.8 0-10.5 7.9-6.1 13.1L459.4 512 196.9 824.9A7.95 7.95 0 0 0 203 838h79.8c4.7 0 9.2-2.1 12.3-5.7l216.5-258.1 216.5 258.1c3 3.6 7.5 5.7 12.3 5.7h79.8c6.8 0 10.5-7.9 6.1-13.1L563.8 512z',
+    ],
+  },
+  'close-circle': {
+    viewBox: '64 64 896 896',
+    paths: [
+      'M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm165.4 618.2l-66-.3L512 563.4l-99.3 118.4-66.1.3c-4.4 0-8-3.5-8-8 0-1.9.7-3.7 1.9-5.2l130.1-155L340.5 359a8.32 8.32 0 0 1-1.9-5.2c0-4.4 3.6-8 8-8l66.1.3L512 464.6l99.3-118.4 66-.3c4.4 0 8 3.5 8 8 0 1.9-.7 3.7-1.9 5.2L553.5 514l130 155c1.2 1.5 1.9 3.3 1.9 5.2 0 4.4-3.6 8-8 8z',
     ],
   },
   calendar: {
@@ -182,14 +214,14 @@ const LEGACY_ANT_ICONS = {
   },
 } as const;
 
-type LegacyAntIconName = keyof typeof LEGACY_ANT_ICONS;
+export type LegacyAntIconName = keyof typeof LEGACY_ANT_ICONS;
 type LegacyAntIconProps = ComponentPropsWithoutRef<'i'>;
 
 function classNames(...values: Array<string | undefined>) {
   return values.filter(Boolean).join(' ');
 }
 
-function LegacyAntIcon({
+export function LegacyAntIcon({
   name,
   className,
   style,
@@ -240,11 +272,23 @@ export const LegacyLeftIcon = (props: LegacyAntIconProps) => (
 export const LegacyRightIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="right" {...props} />
 );
+export const LegacyDoubleLeftIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="double-left" {...props} />
+);
+export const LegacyDoubleRightIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="double-right" {...props} />
+);
 export const LegacyQuestionCircleIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="question-circle" {...props} />
 );
 export const LegacyInfoCircleIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="info-circle" {...props} />
+);
+export const LegacyCheckCircleIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="check-circle" {...props} />
+);
+export const LegacyExclamationCircleIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="exclamation-circle" {...props} />
 );
 export const LegacyLoadingIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="loading" {...props} />
@@ -266,6 +310,9 @@ export const LegacyDownIcon = (props: LegacyAntIconProps) => (
 );
 export const LegacyCloseIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="close" {...props} />
+);
+export const LegacyCloseCircleIcon = (props: LegacyAntIconProps) => (
+  <LegacyAntIcon name="close-circle" {...props} />
 );
 export const LegacyCalendarIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="calendar" {...props} />

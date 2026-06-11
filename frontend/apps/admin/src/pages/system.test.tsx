@@ -65,6 +65,9 @@ describe('SystemPage legacy queue monitor', () => {
   it('keeps the legacy workload table without an explicit rowKey', () => {
     expect(systemSource).toContain('<LegacyStandaloneTable headers={headers}');
     expect(systemSource).toContain('{...legacyTableRowKey(index)}');
+    expect(systemSource).toContain(
+      'className="ant-table-align-right ant-table-row-cell-last"',
+    );
     expect(systemSource).not.toContain('<Table<QueueWorkloadItem>');
     expect(systemSource).not.toContain('pagination={false}');
     expect(systemSource).not.toContain('rowKey="name"');

@@ -102,7 +102,7 @@ vi.mock('@/lib/queries', () => ({
             updated_at: 1700086400,
           },
         ],
-        total: 2,
+        total: 42,
       },
     };
   },
@@ -187,6 +187,8 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).toContain('tabindex="-1" class="ant-table-body" style="overflow-x:scroll"');
     expect(html).toContain('class="ant-table-fixed" style="width:900px"');
     expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain('class="ant-pagination ant-table-pagination mini"');
+    expect(html).toContain('class="ant-pagination-item ant-pagination-item-5"');
     expect(html).toContain('ant-table-column-has-actions ant-table-column-has-filters');
     expect(html).toContain('aria-label="图标: filter"');
     expect(html).toContain('已开启');
@@ -415,7 +417,17 @@ describe('TicketsPage legacy ticket manager', () => {
 
   it('keeps the legacy ticket table without an explicit rowKey', () => {
     expect(ticketsSource).toContain('<LegacyStandaloneTable');
+    expect(ticketsSource).toContain('LegacyTablePagination,');
+    expect(ticketsSource).toContain('type LegacyTablePaginationChange,');
+    expect(ticketsSource).toContain(
+      'const updateTablePagination = (pagination: LegacyTablePaginationChange) =>',
+    );
     expect(ticketsSource).toContain('scrollX={900}');
+    expect(ticketsSource).toContain('<LegacyTablePagination');
+    expect(ticketsSource).toContain('current={query.current ?? 1}');
+    expect(ticketsSource).toContain('pageSize={query.pageSize ?? 10}');
+    expect(ticketsSource).toContain('total={tickets.data?.total}');
+    expect(ticketsSource).toContain('onChange={updateTablePagination}');
     expect(ticketsSource).toContain('{...legacyTableRowKey(index)}');
     expect(ticketsSource).not.toContain('<Table<Ticket>');
     expect(ticketsSource).not.toContain('tableLayout="auto"');
@@ -424,19 +436,52 @@ describe('TicketsPage legacy ticket manager', () => {
 
   it('keeps the original ticket query shape without AntD5 pagination prop rewrites', () => {
     expect(ticketsSource).toContain('total?: number;');
+    expect(ticketsSource).toContain('setQuery((current) => ({');
+    expect(ticketsSource).toContain('...current,');
     expect(ticketsSource).toContain('[key]: value,');
     expect(ticketsSource).toContain('current: 1,');
     expect(ticketsSource).toContain('pageSize: 10,');
-    expect(ticketsSource).not.toContain('...pagination,');
+    expect(ticketsSource).toContain('...pagination,');
     expect(ticketsSource).not.toContain('current: pagination.current');
     expect(ticketsSource).not.toContain('pageSize: pagination.pageSize');
   });
 
-  it('renders the bundled ticket table empty state without AntD5 pagination totals', () => {
+  it('renders the bundled ticket table with the legacy pagination node', () => {
     expect(ticketsSource).toContain('isEmpty={data.length === 0}');
-    expect(ticketsSource).not.toContain('total: tickets.data?.total,');
-    expect(ticketsSource).not.toContain('total: tickets.data?.total ?? 0');
+    expect(ticketsSource).toContain('total={tickets.data?.total}');
     expect(ticketsSource).not.toContain('pagination={{');
+  });
+
+  it('updates the ticket query from the legacy table pagination controls', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    let root: Root | null = createRoot(container);
+
+    await act(async () => {
+      root!.render(<TicketsPage />);
+      await Promise.resolve();
+    });
+
+    mocks.ticketQueries = [];
+    const pageTwo = container.querySelector<HTMLElement>('.ant-pagination-item-2')!;
+
+    await act(async () => {
+      pageTwo.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(mocks.ticketQueries[mocks.ticketQueries.length - 1]).toMatchObject({
+      current: 2,
+      pageSize: 10,
+      total: 42,
+      status: 0,
+    });
+
+    await act(async () => {
+      root?.unmount();
+      root = null;
+    });
+    container.remove();
   });
 
   it('uses the bundled reply-status filter header and dropdown shape', () => {
@@ -452,11 +497,12 @@ describe('TicketsPage legacy ticket manager', () => {
   });
 
   it('keeps the original vertical divider markup in ticket action columns', () => {
-    expect(
-      ticketsSource.match(/<div className="ant-divider ant-divider-vertical" \/>/g),
-    ).toHaveLength(2);
+    expect(ticketsSource).toContain("import { LegacyDivider } from '@/components/legacy-divider';");
+    expect(ticketsSource.match(/<LegacyDivider type="vertical" \/>/g)).toHaveLength(2);
+    expect(ticketsSource).not.toContain(
+      '<div className="ant-divider ant-divider-vertical" role="separator" />',
+    );
     expect(ticketsSource).not.toContain('<span className="ant-divider ant-divider-vertical"');
-    expect(ticketsSource).not.toContain('role="separator"');
   });
 
   it('renders /ticket/:ticket_id as the original chat window', () => {
@@ -563,19 +609,19 @@ describe('TicketsPage legacy ticket manager', () => {
     );
     expect(replyBlock).toContain('await reply.mutateAsync({ id: ticketId, message });');
     expect(replyBlock).toContain('messageApi.destroy();');
-    expect(replyBlock).toContain('void ticket.refetch();');
+    expect(replyBlock).toContain('await ticket.refetch();');
     expect(replyBlock).toContain("if (inputRef.current) inputRef.current.value = '';");
     expect(replyBlock.indexOf('await reply.mutateAsync({ id: ticketId, message });')).toBeLessThan(
       replyBlock.indexOf('messageApi.destroy();'),
     );
     expect(replyBlock.indexOf('messageApi.destroy();')).toBeLessThan(
-      replyBlock.indexOf('void ticket.refetch();'),
+      replyBlock.indexOf('await ticket.refetch();'),
     );
-    expect(replyBlock.indexOf('void ticket.refetch();')).toBeLessThan(
+    expect(replyBlock.indexOf('await ticket.refetch();')).toBeLessThan(
       replyBlock.indexOf("if (inputRef.current) inputRef.current.value = '';"),
     );
     expect(ticketsSource).not.toContain("setMessage('');");
-    expect(ticketsSource).not.toContain('await ticket.refetch().catch(() => undefined);');
+    expect(ticketsSource).not.toContain('void ticket.refetch();\n    if (inputRef.current)');
     expect(mutationBlock).not.toContain(
       "queryClient.invalidateQueries({ queryKey: ['admin', 'tickets'] })",
     );

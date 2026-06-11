@@ -3,12 +3,61 @@ import {
   cloneElement,
   forwardRef,
   isValidElement,
+  useEffect,
+  useRef,
+  useState,
+  type AnchorHTMLAttributes,
   type ButtonHTMLAttributes,
+  type CSSProperties,
+  type HTMLAttributes,
+  type MouseEvent,
+  type Ref,
   type ReactElement,
   type ReactNode,
 } from 'react';
+import { LegacyAntIcon, LegacyLoadingIcon, type LegacyAntIconName } from './legacy-ant-icon';
+import { triggerLegacyWave } from './legacy-wave';
 
 const TWO_CN_CHAR = /^[一-龥]{2}$/;
+const NATIVE_BUTTON_TYPES = new Set(['button', 'submit', 'reset']);
+
+type LegacyButtonStyleType = 'default' | 'primary' | 'ghost' | 'dashed' | 'danger' | 'link';
+type LegacyButtonShape = 'circle' | 'circle-outline' | 'round';
+type LegacyButtonSize = 'large' | 'default' | 'small';
+type LegacyNativeButtonType = NonNullable<ButtonHTMLAttributes<HTMLButtonElement>['type']>;
+type LegacyButtonLoading = boolean | { delay?: number };
+
+type LegacyButtonAnchorProps = Pick<
+  AnchorHTMLAttributes<HTMLAnchorElement>,
+  'download' | 'href' | 'hrefLang' | 'media' | 'ping' | 'referrerPolicy' | 'rel' | 'target'
+>;
+
+export type LegacyButtonProps = Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  'children' | 'onClick' | 'style' | 'type'
+> &
+  LegacyButtonAnchorProps & {
+    autoInsertSpaceInButton?: boolean;
+    block?: boolean;
+    children?: ReactNode;
+    className?: string;
+    ghost?: boolean;
+    htmlType?: LegacyNativeButtonType;
+    icon?: LegacyAntIconName;
+    loading?: LegacyButtonLoading;
+    onClick?: (event: MouseEvent<HTMLElement>) => void;
+    prefixCls?: string;
+    shape?: LegacyButtonShape;
+    size?: LegacyButtonSize;
+    style?: CSSProperties;
+    type?: LegacyButtonStyleType | LegacyNativeButtonType;
+  };
+
+export type LegacyButtonGroupProps = Omit<HTMLAttributes<HTMLDivElement>, 'className'> & {
+  className?: string;
+  prefixCls?: string;
+  size?: LegacyButtonSize;
+};
 
 function isStringOrNumber(value: ReactNode): value is string | number {
   return typeof value === 'string' || typeof value === 'number';
@@ -58,85 +107,223 @@ function shouldInsertSpace(children: ReactNode) {
   return count === 1;
 }
 
-function triggerWave(node: HTMLElement) {
-  const style = getComputedStyle(node);
-  const waveColor =
-    style.getPropertyValue('border-top-color') ||
-    style.getPropertyValue('border-color') ||
-    style.getPropertyValue('background-color');
-  const rgb = waveColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  const meaningful =
-    !!waveColor &&
-    waveColor !== 'transparent' &&
-    waveColor !== 'rgb(255, 255, 255)' &&
-    !/rgba\((?:\d+,\s*){3}0\)/.test(waveColor) &&
-    !(rgb !== null && rgb[1] === rgb[2] && rgb[2] === rgb[3]);
-  const previousWaveColor = node.style.getPropertyValue('--antd-wave-shadow-color');
-  const hadPreviousWaveColor = node.style.getPropertyValue('--antd-wave-shadow-color') !== '';
-  if (meaningful) node.style.setProperty('--antd-wave-shadow-color', waveColor);
-
-  node.removeAttribute('ant-click-animating-without-extra-node');
-  void node.offsetWidth;
-  node.setAttribute('ant-click-animating-without-extra-node', 'true');
-  let cleanupTimer: number | undefined;
-  const cleanup = () => {
-    node.removeAttribute('ant-click-animating-without-extra-node');
-    if (meaningful) {
-      if (hadPreviousWaveColor) {
-        node.style.setProperty('--antd-wave-shadow-color', previousWaveColor);
-      } else {
-        node.style.removeProperty('--antd-wave-shadow-color');
-      }
-    }
-    node.removeEventListener('animationend', onEnd);
-    if (cleanupTimer !== undefined) window.clearTimeout(cleanupTimer);
-  };
-  const onEnd = (event: AnimationEvent) => {
-    if (event.animationName !== 'fadeEffect') return;
-    cleanup();
-  };
-  node.addEventListener('animationend', onEnd);
-  cleanupTimer = window.setTimeout(cleanup, 300);
+function hasLegacyChildren(children: ReactNode) {
+  return Boolean(children) || children === 0;
 }
 
 function hasClassToken(className: string | undefined, token: string) {
   return className?.split(/\s+/).includes(token) ?? false;
 }
 
-function orderLegacyButtonClassName(className: string | undefined) {
-  if (!className) return undefined;
-  const tokens = className.split(/\s+/).filter(Boolean);
-  if (!tokens.includes('ant-btn')) return className;
-
-  const ordered = [
-    ...tokens.filter((token) => token === 'ant-btn'),
-    ...tokens.filter((token) => token !== 'ant-btn'),
-  ];
-  return ordered.join(' ');
+function addClassToken(tokens: string[], token: string | undefined) {
+  if (token && !tokens.includes(token)) tokens.push(token);
 }
 
-export const LegacyButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement>>(
-  function LegacyButton({ children, className, onClick, style, type = 'button', ...rest }, ref) {
-    const needInserted = shouldInsertSpace(children);
-    const buttonClassName = orderLegacyButtonClassName(className);
+function getSizeClassName(prefixCls: string, size: LegacyButtonSize | undefined) {
+  if (size === 'large') return `${prefixCls}-lg`;
+  if (size === 'small') return `${prefixCls}-sm`;
+  return undefined;
+}
+
+function isNativeButtonType(type: LegacyButtonProps['type']): type is LegacyNativeButtonType {
+  return type !== undefined && NATIVE_BUTTON_TYPES.has(type);
+}
+
+function isDelayedLoading(loading: LegacyButtonLoading | undefined): loading is { delay?: number } {
+  return (
+    loading !== undefined &&
+    loading !== false &&
+    typeof loading !== 'boolean' &&
+    Boolean(loading.delay)
+  );
+}
+
+function mergeRefs<T>(externalRef: Ref<T> | undefined, internalRef: { current: T | null }) {
+  return (node: T | null) => {
+    internalRef.current = node;
+    if (typeof externalRef === 'function') {
+      externalRef(node);
+    } else if (externalRef) {
+      externalRef.current = node;
+    }
+  };
+}
+
+function getButtonClassName({
+  autoInsertSpaceInButton,
+  block,
+  buttonType,
+  className,
+  ghost,
+  hasTwoCNChar,
+  iconOnly,
+  loading,
+  prefixCls,
+  shape,
+  size,
+}: {
+  autoInsertSpaceInButton: boolean;
+  block: boolean | undefined;
+  buttonType: LegacyButtonStyleType | undefined;
+  className: string | undefined;
+  ghost: boolean | undefined;
+  hasTwoCNChar: boolean;
+  iconOnly: boolean;
+  loading: boolean;
+  prefixCls: string;
+  shape: LegacyButtonShape | undefined;
+  size: LegacyButtonSize | undefined;
+}) {
+  const tokens: string[] = [];
+  addClassToken(tokens, prefixCls);
+  className?.split(/\s+/).filter(Boolean).forEach((token) => addClassToken(tokens, token));
+  addClassToken(tokens, buttonType ? `${prefixCls}-${buttonType}` : undefined);
+  addClassToken(tokens, shape ? `${prefixCls}-${shape}` : undefined);
+  addClassToken(tokens, getSizeClassName(prefixCls, size));
+  addClassToken(tokens, iconOnly ? `${prefixCls}-icon-only` : undefined);
+  addClassToken(tokens, loading ? `${prefixCls}-loading` : undefined);
+  addClassToken(tokens, ghost ? `${prefixCls}-background-ghost` : undefined);
+  addClassToken(
+    tokens,
+    hasTwoCNChar && autoInsertSpaceInButton ? `${prefixCls}-two-chinese-chars` : undefined,
+  );
+  addClassToken(tokens, block ? `${prefixCls}-block` : undefined);
+  return tokens.join(' ');
+}
+
+const LegacyButtonBase = forwardRef<HTMLButtonElement | HTMLAnchorElement, LegacyButtonProps>(
+  function LegacyButton(
+    {
+      autoInsertSpaceInButton = true,
+      block,
+      children,
+      className,
+      ghost,
+      htmlType,
+      icon,
+      loading,
+      onClick,
+      prefixCls = 'ant-btn',
+      shape,
+      size,
+      style,
+      type,
+      ...rest
+    },
+    ref,
+  ) {
+    const nodeRef = useRef<HTMLButtonElement | HTMLAnchorElement | null>(null);
+    const [loadingState, setLoadingState] = useState<LegacyButtonLoading>(() => loading ?? false);
+    const [hasTwoCNChar, setHasTwoCNChar] = useState(false);
+    const visualLoading = Boolean(loadingState);
+    const buttonType = isNativeButtonType(type) ? undefined : type;
+    const classNameLoading =
+      hasClassToken(className, `${prefixCls}-loading`) ||
+      hasClassToken(className, 'ant-btn-loading');
+    const clickLoading = visualLoading || classNameLoading;
+    const needInserted =
+      shouldInsertSpace(children) && !icon && buttonType !== 'link' && autoInsertSpaceInButton;
+    const buttonIcon = visualLoading ? (
+      <LegacyLoadingIcon />
+    ) : icon ? (
+      <LegacyAntIcon name={icon} />
+    ) : null;
+    const content = hasLegacyChildren(children) ? insertSpace(children, needInserted) : null;
+    const iconOnly = !hasLegacyChildren(children) && (visualLoading || Boolean(icon));
+    const buttonClassName = getButtonClassName({
+      autoInsertSpaceInButton,
+      block,
+      buttonType,
+      className,
+      ghost,
+      hasTwoCNChar,
+      iconOnly,
+      loading: visualLoading,
+      prefixCls,
+      shape,
+      size,
+    });
+
+    useEffect(() => {
+      let loadingTimer: number | undefined;
+      if (isDelayedLoading(loading)) {
+        loadingTimer = window.setTimeout(() => setLoadingState(loading), loading.delay);
+      } else {
+        setLoadingState(loading ?? false);
+      }
+      return () => {
+        if (loadingTimer !== undefined) window.clearTimeout(loadingTimer);
+      };
+    }, [loading]);
+
+    useEffect(() => {
+      const text = nodeRef.current?.textContent?.replace(/\s/g, '') ?? '';
+      setHasTwoCNChar(needInserted && TWO_CN_CHAR.test(text));
+    }, [children, needInserted]);
+
+    const handleClick = (event: MouseEvent<HTMLElement>) => {
+      if (clickLoading) return;
+      if (buttonType !== 'link') triggerLegacyWave(event.currentTarget);
+      onClick?.(event);
+    };
+
+    if (rest.href !== undefined) {
+      const { disabled: _disabled, ...anchorRest } = rest;
+      return (
+        <a
+          {...(anchorRest as AnchorHTMLAttributes<HTMLAnchorElement>)}
+          ref={mergeRefs(
+            ref as Ref<HTMLAnchorElement>,
+            nodeRef as { current: HTMLAnchorElement | null },
+          )}
+          className={buttonClassName}
+          style={style}
+          onClick={handleClick}
+        >
+          {buttonIcon}
+          {content}
+        </a>
+      );
+    }
+
     return (
       <button
-        ref={ref}
-        type={type}
+        ref={mergeRefs(
+          ref as Ref<HTMLButtonElement>,
+          nodeRef as { current: HTMLButtonElement | null },
+        )}
+        type={htmlType ?? (isNativeButtonType(type) ? type : 'button')}
         className={buttonClassName}
         style={style}
         {...rest}
-        onClick={(event) => {
-          if (hasClassToken(className, 'ant-btn-loading')) {
-            event.preventDefault();
-            return;
-          }
-          triggerWave(event.currentTarget);
-          onClick?.(event);
-        }}
+        onClick={handleClick}
       >
-        {insertSpace(children, needInserted)}
+        {buttonIcon}
+        {content}
       </button>
     );
   },
 );
+
+function LegacyButtonGroup({
+  children,
+  className,
+  prefixCls = 'ant-btn-group',
+  size,
+  ...rest
+}: LegacyButtonGroupProps) {
+  const sizeClassName = getSizeClassName(prefixCls, size);
+  const groupClassName = [prefixCls, sizeClassName, className].filter(Boolean).join(' ');
+
+  return (
+    <div {...rest} className={groupClassName}>
+      {children}
+    </div>
+  );
+}
+
+export const LegacyButton = Object.assign(LegacyButtonBase, {
+  Group: LegacyButtonGroup,
+});
+
+(LegacyButton as typeof LegacyButton & { __ANT_BUTTON: boolean }).__ANT_BUTTON = true;

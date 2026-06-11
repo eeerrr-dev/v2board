@@ -128,6 +128,9 @@ describe('OrdersPage legacy order manager', () => {
     expect(html).toContain('class="ant-table-fixed" style="width:1050px"');
     expect(html).toContain('class="ant-table-align-center" style="text-align:center"');
     expect(html).toContain('class="ant-table-align-right" style="text-align:right"');
+    expect(html).toContain(
+      'class="ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
+    );
     expect(html).toContain('class="ant-pagination ant-table-pagination mini"');
     expect(html).toContain('过滤器');
     expect(html).toContain('添加订单');
@@ -180,6 +183,12 @@ describe('OrdersPage legacy order manager', () => {
     expect(legacyFilterDrawerSource).toContain('className="v2board-filter-drawer"');
     expect(legacyFilterDrawerSource).toContain('添加条件');
     expect(legacyFilterDrawerSource).toContain('欲检索内容');
+    expect(legacyFilterDrawerSource).toContain(
+      'defaultValue={(filter.value || undefined) as LegacySelectValue | undefined}',
+    );
+    expect(legacyFilterDrawerSource).not.toContain(
+      'value={(filter.value || undefined) as LegacySelectValue | undefined}',
+    );
     expect(legacyFilterDrawerSource).toContain('v2board-drawer-action');
     expect(legacyFilterDrawerSource).toContain('检索');
   });
@@ -197,9 +206,12 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).not.toContain('setSubmit({});');
     expect(ordersSource).toContain('.mutateAsync(submit)');
     expect(ordersSource).toContain('await onAssigned();\n      close();');
-    expect(ordersSource).not.toContain('onAssigned();\n              close();');
-    expect(ordersSource).toContain('onAssigned={() => orders.refetch()}');
-    expect(ordersSource).toContain('onAssigned: () => void | Promise<unknown>;');
+    expect(ordersSource).not.toContain('      onAssigned();\n      close();');
+    expect(ordersSource).toContain('return orders.refetch();');
+    expect(ordersSource).toContain(
+      'onAssigned: () => void | Promise<unknown>;',
+    );
+    expect(ordersSource).not.toContain('void orders.refetch();\n                }}');
     expect(ordersSource).not.toContain("period: submit.period ?? 'month_price'");
     expect(ordersSource).not.toContain('total_amount: Number(submit.total_amount ?? 0)');
 
@@ -290,18 +302,12 @@ describe('OrdersPage legacy order manager', () => {
   });
 
   it('keeps the original direct badge status mapping and order action menu keys', () => {
+    expect(ordersSource).toContain("import { LegacyBadge } from '@/components/legacy-badge';");
     expect(ordersSource).toContain('<LegacyBadge status={ORDER_STATUS_BADGE[value]} />');
     expect(ordersSource).toContain('<LegacyBadge status={COMMISSION_STATUS_BADGE[value]} />');
-    expect(ordersSource).toContain(
-      'function LegacyBadge({ status }: { status: LegacyBadgeStatus })',
-    );
-    expect(ordersSource).toContain(
-      'className="ant-badge ant-badge-status ant-badge-not-a-wrapper"',
-    );
-    expect(ordersSource).toContain('className={`ant-badge-status-dot ant-badge-status-${status}`}');
-    expect(ordersSource).toContain('className="ant-badge-status-text"');
     expect(ordersSource).not.toContain("ORDER_STATUS_BADGE[value] ?? 'default'");
     expect(ordersSource).not.toContain("COMMISSION_STATUS_BADGE[value] ?? 'default'");
+    expect(ordersSource).not.toContain("Badge } from 'antd'");
     expect(ordersSource).toContain('LegacyDropdownMenu,');
     expect(ordersSource).toContain('LegacyDropdownMenuItem,');
     expect(ordersSource).not.toContain("import type { DropdownProps } from 'antd';");
@@ -450,8 +456,10 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).toContain('className="ant-row"');
     expect(ordersSource).toContain('className="ant-col ant-col-6"');
     expect(ordersSource).toContain('className="ant-col ant-col-18"');
-    expect(ordersSource).toContain('function OrderDetailDivider()');
-    expect(ordersSource).toContain('className="ant-divider ant-divider-horizontal"');
+    expect(ordersSource).toContain("import { LegacyDivider } from '@/components/legacy-divider';");
+    expect(ordersSource.match(/<LegacyDivider \/>/g)).toHaveLength(3);
+    expect(ordersSource).not.toContain('function OrderDetailDivider()');
+    expect(ordersSource).not.toContain('className="ant-divider ant-divider-horizontal"');
     expect(ordersSource).not.toContain('<Row');
     expect(ordersSource).not.toContain('<Col');
     expect(ordersSource).not.toContain('<Divider');
@@ -469,7 +477,15 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).toContain('scrollX={1050}');
     expect(ordersSource).toContain('scrollPositionRight={false}');
     expect(ordersSource).toContain('{...legacyTableRowKey(index)}');
-    expect(ordersSource).toContain('function LegacyTag');
+    expect(ordersSource).toContain(
+      '<td className="ant-table-align-center" style={{ textAlign: \'center\' }}>',
+    );
+    expect(ordersSource.match(/className="ant-table-align-right"/g)).toHaveLength(2);
+    expect(ordersSource).toContain(
+      'className="ant-table-align-right ant-table-row-cell-last"',
+    );
+    expect(ordersSource).toContain("import { LegacyTag } from '@/components/legacy-tag';");
+    expect(ordersSource).not.toContain('function LegacyTag');
     expect(ordersSource).not.toContain('<Table<AdminOrderRow>');
     expect(ordersSource).not.toContain('rowKey="id"');
     expect(ordersSource).not.toContain('tableLayout="auto"');

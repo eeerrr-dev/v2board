@@ -1,4 +1,12 @@
-import { cloneElement, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import {
+  cloneElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+} from 'react';
 import { App } from 'antd';
 import dayjs from 'dayjs';
 import MarkdownIt from 'markdown-it';
@@ -27,6 +35,8 @@ import {
   legacyTableRowKey,
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
+import { LegacyDivider } from '@/components/legacy-divider';
+import { LegacySwitch } from '@/components/legacy-switch';
 
 type SaveKnowledgePayload = Parameters<typeof admin.saveKnowledge>[1];
 
@@ -52,75 +62,181 @@ function renderLegacyAdminMarkdown(markdown: string) {
   return legacyAdminMarkdown.render(markdown);
 }
 
-function LegacyKnowledgeSwitch({ checked, onChange }: { checked: boolean; onChange: () => void }) {
-  const enabled = Boolean(checked);
+function normalizeLegacyMarkdownValue(value: unknown) {
+  if (typeof value === 'undefined') return '';
+  return (typeof value === 'string' ? value : String(value).toString()).replace(/\u21b5/g, '\n');
+}
 
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      className={`ant-switch-small ant-switch${enabled ? ' ant-switch-checked' : ''}`}
-      onClick={onChange}
-    >
-      <span className="ant-switch-inner" />
-    </button>
-  );
+const LEGACY_MARKDOWN_LABELS = {
+  enUS: {
+    clearTip: 'Are you sure you want to clear all contents?',
+    btnHeader: 'Header',
+    btnClear: 'Clear',
+    btnBold: 'Bold',
+    btnItalic: 'Italic',
+    btnUnderline: 'Underline',
+    btnStrikethrough: 'Strikethrough',
+    btnUnordered: 'Unordered list',
+    btnOrdered: 'Ordered list',
+    btnQuote: 'Quote',
+    btnLineBreak: 'Line break',
+    btnInlineCode: 'Inline code',
+    btnCode: 'Code',
+    btnTable: 'Table',
+    btnImage: 'Image',
+    btnLink: 'Link',
+    btnUndo: 'Undo',
+    btnRedo: 'Redo',
+    btnFullScreen: 'Full screen',
+    btnExitFullScreen: 'Exit full screen',
+    btnModeEditor: 'Only display editor',
+    btnModePreview: 'Only display preview',
+    btnModeAll: 'Display both editor and preview',
+  },
+  zhCN: {
+    clearTip: '您确定要清空所有内容吗？',
+    btnHeader: '标题',
+    btnClear: '清空',
+    btnBold: '加粗',
+    btnItalic: '斜体',
+    btnUnderline: '下划线',
+    btnStrikethrough: '删除线',
+    btnUnordered: '无序列表',
+    btnOrdered: '有序列表',
+    btnQuote: '引用',
+    btnLineBreak: '换行',
+    btnInlineCode: '行内代码',
+    btnCode: '代码块',
+    btnTable: '表格',
+    btnImage: '图片',
+    btnLink: '链接',
+    btnUndo: '撤销',
+    btnRedo: '重做',
+    btnFullScreen: '全屏',
+    btnExitFullScreen: '退出全屏',
+    btnModeEditor: '仅显示编辑器',
+    btnModePreview: '仅显示预览',
+    btnModeAll: '显示编辑器与预览',
+  },
+} as const;
+type LegacyMarkdownLocaleKey = keyof typeof LEGACY_MARKDOWN_LABELS;
+
+function normalizeLegacyMarkdownLocale(locale?: string) {
+  if (!locale) return null;
+  const parts = locale.split('-');
+  const key = `${parts[0]}${parts.length > 1 ? parts[parts.length - 1]?.toUpperCase() : ''}`;
+  return key in LEGACY_MARKDOWN_LABELS ? (key as LegacyMarkdownLocaleKey) : null;
+}
+
+function getLegacyMarkdownLabels() {
+  if (typeof navigator === 'undefined') return LEGACY_MARKDOWN_LABELS.enUS;
+  const browserNavigator = navigator as Navigator & { browserLanguage?: string };
+  const locale =
+    normalizeLegacyMarkdownLocale(browserNavigator.language) ??
+    normalizeLegacyMarkdownLocale(browserNavigator.browserLanguage);
+  return LEGACY_MARKDOWN_LABELS[locale ?? 'enUS'];
 }
 
 const LEGACY_TABLE_ROWS = 4;
 const LEGACY_TABLE_COLS = 6;
 const LEGACY_TABLE_CELL_GAP = 3;
 const LEGACY_TABLE_CELL_STEP = 23;
+const LEGACY_LOGGER_MAX_SIZE = 100;
+const LEGACY_LOGGER_INTERVAL = 600;
 
 type LegacyMarkdownView = { md: boolean; html: boolean };
 type LegacyHeaderTag = `h${1 | 2 | 3 | 4 | 5 | 6}`;
 type LegacySelection = { start: number; end: number; selected: string };
+type LegacySelectionRange = { start: number; end: number };
+type LegacyShortcutKey = 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey';
+type LegacySyncScrollSource = 'md' | 'html';
 
 function legacyTableMarkdown(row: number, col: number) {
-  const cells = (label: string) => Array.from({ length: col }, () => ` ${label} |`).join('');
-  const rows = Array.from({ length: row }, () => `|${cells('Data')}`).join('\n');
+  const head = ['|'];
+  const divider = ['|'];
+  const data = ['|'];
+  for (let index = 1; index <= col; index += 1) {
+    head.push(' Head |');
+    divider.push(' --- |');
+    data.push(' Data |');
+  }
 
-  return `\n|${cells('Head')}\n|${cells('---')}\n${rows}\n`;
+  let rows = '';
+  for (let index = 1; index <= row; index += 1) {
+    rows += `\n${data.join('')}`;
+  }
+
+  return `${head.join('')}\n${divider.join('')}${rows}`;
 }
 
 function legacyListMarkdown(type: 'ordered' | 'unordered', selected: string) {
-  const rows = selected ? selected.split('\n') : [''];
-  return rows
-    .map((line, index) => `${type === 'ordered' ? `${index + 1}. ` : '* '}${line}`)
-    .join('\n');
+  let text = selected;
+  if (text.substr(0, 1) !== '\n') {
+    text = `\n${text}`;
+  }
+  if (type === 'unordered') {
+    return text.length > 1 ? text.replace(/\n/g, '\n* ').trim() : '* ';
+  }
+
+  let index = 1;
+  return text.length > 1 ? text.replace(/\n/g, () => `\n${index++}. `).trim() : '1. ';
 }
 
 function LegacyMarkdownEditor({
   value,
   onChange,
 }: {
-  value?: string;
+  value?: unknown;
   onChange: (value: string) => void;
 }) {
+  const text = normalizeLegacyMarkdownValue(value);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const htmlWrapperRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const composingRef = useRef(false);
+  const shouldSyncScrollRef = useRef<LegacySyncScrollSource>('md');
+  const hasContentChangedRef = useRef(true);
+  const isSyncingScrollRef = useRef(false);
+  const scrollScaleRef = useRef(1);
+  const loggerInitRef = useRef(text);
+  const loggerTimerRef = useRef<number | null>(null);
+  const undoStackRef = useRef<string[]>([]);
+  const redoStackRef = useRef<string[]>([]);
+  const lastPopRef = useRef<string | null>(null);
   const [view, setView] = useState<LegacyMarkdownView>({ md: true, html: true });
   const [fullScreen, setFullScreen] = useState(false);
   const [headerMenuVisible, setHeaderMenuVisible] = useState(false);
   const [tableMenuVisible, setTableMenuVisible] = useState(false);
   const [tableHover, setTableHover] = useState<{ row: number; col: number } | null>(null);
-  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
-  const text = value ?? '';
   const html = useMemo(() => renderLegacyAdminMarkdown(text), [text]);
+  const labels = useMemo(() => getLegacyMarkdownLabels(), []);
+
+  useEffect(
+    () => () => {
+      if (loggerTimerRef.current) {
+        window.clearTimeout(loggerTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    hasContentChangedRef.current = true;
+  }, [text]);
 
   const nextViewInfo = () => {
     if (view.md && view.html) {
-      return { view: { md: true, html: false }, icon: 'keyboard', title: 'Only display editor' };
+      return { view: { md: true, html: false }, icon: 'keyboard', title: labels.btnModeEditor };
     }
     if (view.md) {
-      return { view: { md: false, html: true }, icon: 'visibility', title: 'Only display preview' };
+      return { view: { md: false, html: true }, icon: 'visibility', title: labels.btnModePreview };
     }
     return {
       view: { md: true, html: true },
       icon: 'view-split',
-      title: 'Display both editor and preview',
+      title: labels.btnModeAll,
     };
   };
 
@@ -131,25 +247,178 @@ function LegacyMarkdownEditor({
     return { start, end, selected: text.slice(start, end) };
   };
 
-  const applyTextChange = (nextText: string) => {
-    if (nextText === text) return;
-    setUndoStack((stack) => [...stack, text].slice(-100));
-    setRedoStack([]);
-    onChange(nextText);
+  const syncLoggerStacks = (nextUndoStack: string[], nextRedoStack = redoStackRef.current) => {
+    undoStackRef.current = nextUndoStack;
+    redoStackRef.current = nextRedoStack;
+    setUndoStack(nextUndoStack);
+    setRedoStack(nextRedoStack);
   };
 
-  const replaceSelection = (replacement: string, selection = getSelection()) => {
+  const pushLoggerRecord = (nextText: string) => {
+    const nextStack = [...undoStackRef.current, nextText].slice(-LEGACY_LOGGER_MAX_SIZE);
+    undoStackRef.current = nextStack;
+    setUndoStack(nextStack);
+  };
+
+  const pauseLogger = () => {
+    if (!loggerTimerRef.current) return;
+    window.clearTimeout(loggerTimerRef.current);
+    loggerTimerRef.current = null;
+  };
+
+  const recordLoggerChange = (nextText: string, immediate = false) => {
+    if (undoStackRef.current[undoStackRef.current.length - 1] === nextText) return;
+    if (lastPopRef.current !== null && lastPopRef.current === nextText) return;
+
+    redoStackRef.current = [];
+    setRedoStack([]);
+
+    if (immediate) {
+      pushLoggerRecord(nextText);
+      lastPopRef.current = null;
+      return;
+    }
+
+    pauseLogger();
+    loggerTimerRef.current = window.setTimeout(() => {
+      if (undoStackRef.current[undoStackRef.current.length - 1] !== nextText) {
+        pushLoggerRecord(nextText);
+      }
+      lastPopRef.current = null;
+      loggerTimerRef.current = null;
+    }, LEGACY_LOGGER_INTERVAL);
+  };
+
+  const applyTextChange = (nextText: string, immediate = true) => {
+    if (nextText === text) return;
+    const normalizedNextText = normalizeLegacyMarkdownValue(nextText);
+    hasContentChangedRef.current = true;
+    recordLoggerChange(normalizedNextText, immediate);
+    onChange(normalizedNextText);
+  };
+
+  const handleSyncScroll = (source: LegacySyncScrollSource) => {
+    if (source !== shouldSyncScrollRef.current) return;
+    const textarea = textareaRef.current;
+    const htmlWrapper = htmlWrapperRef.current;
+    if (!textarea || !htmlWrapper) return;
+
+    if (hasContentChangedRef.current) {
+      scrollScaleRef.current = textarea.scrollHeight / htmlWrapper.scrollHeight;
+      hasContentChangedRef.current = false;
+    }
+    if (isSyncingScrollRef.current) return;
+
+    isSyncingScrollRef.current = true;
+    requestAnimationFrame(() => {
+      const nextTextarea = textareaRef.current;
+      const nextHtmlWrapper = htmlWrapperRef.current;
+      if (nextTextarea && nextHtmlWrapper) {
+        if (source === 'md') {
+          nextHtmlWrapper.scrollTop = nextTextarea.scrollTop / scrollScaleRef.current;
+        } else {
+          nextTextarea.scrollTop = nextHtmlWrapper.scrollTop * scrollScaleRef.current;
+        }
+      }
+      isSyncingScrollRef.current = false;
+    });
+  };
+
+  const replaceSelection = (
+    replacement: string,
+    selection = getSelection(),
+    nextSelection?: LegacySelectionRange,
+  ) => {
     applyTextChange(`${text.slice(0, selection.start)}${replacement}${text.slice(selection.end)}`);
+    if (nextSelection) {
+      restoreSelection(selection.start + nextSelection.start, selection.start + nextSelection.end);
+    }
+  };
+
+  const restoreSelection = (start: number, end = start) => {
+    window.setTimeout(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.setSelectionRange(start, end, 'forward');
+      textarea.focus();
+    });
+  };
+
+  const matchesLegacyShortcut = (
+    event: KeyboardEvent<HTMLTextAreaElement>,
+    key: string,
+    keyCode: number,
+    withKeys: LegacyShortcutKey[],
+    aliasCommand = false,
+  ) => {
+    const modifierState = {
+      ctrlKey: event.ctrlKey || (aliasCommand && event.metaKey),
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+    };
+
+    if (withKeys.length > 0) {
+      for (const withKey of withKeys) {
+        if (!modifierState[withKey]) return false;
+      }
+    } else if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return false;
+    }
+
+    return event.key ? event.key === key : event.keyCode === keyCode;
   };
 
   const wrapSelection = (before: string, after = before) => {
     const selection = getSelection();
-    replaceSelection(`${before}${selection.selected}${after}`, selection);
+    replaceSelection(`${before}${selection.selected}${after}`, selection, {
+      start: before.length,
+      end: before.length + selection.selected.length,
+    });
   };
 
   const insertMarkdownBlock = (before: string, after = '') => {
     const selection = getSelection();
-    replaceSelection(`${before}${selection.selected}${after}`, selection);
+    replaceSelection(`${before}${selection.selected}${after}`, selection, {
+      start: before.length,
+      end: before.length + selection.selected.length,
+    });
+  };
+
+  const insertLegacyNewBlock = (
+    markdown: string,
+    selection = getSelection(),
+    nextSelection?: LegacySelectionRange,
+  ) => {
+    const lines = text.split('\n');
+    const beforeLines = text.substr(0, selection.start).split('\n');
+    const col = beforeLines[beforeLines.length - 1]?.length ?? 0;
+    const curLine = lines[beforeLines.length - 1] ?? '';
+    let replacement = markdown;
+    let selectionOffset = nextSelection;
+
+    if (col > 0 && curLine.length > 0) {
+      replacement = `\n${replacement}`;
+      if (selectionOffset) {
+        selectionOffset = {
+          start: selectionOffset.start + 1,
+          end: selectionOffset.end + 1,
+        };
+      }
+    }
+
+    const afterText = text.substr(selection.end);
+    if (afterText.trim() !== '' && afterText.substr(0, 2) !== '\n\n') {
+      if (afterText.substr(0, 1) !== '\n') {
+        replacement += '\n';
+      }
+      replacement += '\n';
+    }
+
+    replaceSelection(replacement, selection, selectionOffset);
+    if (!selectionOffset) {
+      restoreSelection(selection.start);
+    }
   };
 
   const insertHeader = (tag: LegacyHeaderTag) => {
@@ -158,13 +427,129 @@ function LegacyMarkdownEditor({
   };
 
   const insertTable = (row: number, col: number) => {
-    replaceSelection(legacyTableMarkdown(row, col));
+    insertLegacyNewBlock(legacyTableMarkdown(row, col));
     setTableMenuVisible(false);
+    setTableHover(null);
   };
 
   const insertImage = (label = '') => {
     const selection = getSelection();
-    replaceSelection(`![${selection.selected || label}]()`, selection);
+    replaceSelection(`![${selection.selected || label}]()`, selection, {
+      start: 2,
+      end: selection.selected.length + 2,
+    });
+  };
+
+  const clearMarkdown = () => {
+    if (text !== '' && window.confirm && typeof window.confirm === 'function') {
+      const confirmed = window.confirm(labels.clearTip);
+      if (confirmed) applyTextChange('');
+    }
+  };
+
+  const handleEditorKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((event.keyCode === 13 || event.key === 'Enter') && !composingRef.current) {
+      const textarea = event.currentTarget;
+      const cursor = textarea.selectionStart;
+      const value = textarea.value;
+      const lines = value.split('\n');
+      const beforeLines = value.substr(0, cursor).split('\n');
+      const curLine = lines[beforeLines.length - 1] ?? '';
+      const removeCurrentListPrefix = () => {
+        const lineStart = cursor - curLine.length;
+        applyTextChange(`${value.substr(0, lineStart)}${value.substr(cursor)}`);
+        restoreSelection(lineStart);
+        event.preventDefault();
+      };
+      const insertNextListPrefix = (prefix: string) => {
+        const insertion = `\n${prefix}`;
+        applyTextChange(`${value.slice(0, cursor)}${insertion}${value.slice(cursor)}`);
+        restoreSelection(cursor + prefix.length + 1);
+        event.preventDefault();
+      };
+      const unordered = curLine.match(/^(\s*?)\* /);
+      if (unordered) {
+        if (/^(\s*?)\* $/.test(curLine)) {
+          removeCurrentListPrefix();
+        } else {
+          insertNextListPrefix(unordered[0]);
+        }
+        return;
+      }
+
+      const ordered = curLine.match(/^(\s*?)(\d+)\. /);
+      if (ordered) {
+        if (/^(\s*?)(\d+)\. $/.test(curLine)) {
+          removeCurrentListPrefix();
+        } else {
+          insertNextListPrefix(`${ordered[1]}${Number.parseInt(ordered[2]!, 10) + 1}. `);
+        }
+        return;
+      }
+    }
+
+    const selection = getSelection();
+    const applyShortcut = (callback: () => void) => {
+      event.preventDefault();
+      callback();
+    };
+
+    if (matchesLegacyShortcut(event, 'b', 66, ['ctrlKey'], true)) {
+      applyShortcut(() => wrapSelection('**'));
+      return;
+    }
+    if (matchesLegacyShortcut(event, 'i', 73, ['ctrlKey'], true)) {
+      applyShortcut(() => wrapSelection('*'));
+      return;
+    }
+    if (matchesLegacyShortcut(event, 'u', 85, ['ctrlKey'])) {
+      applyShortcut(() => wrapSelection('++'));
+      return;
+    }
+    if (matchesLegacyShortcut(event, 'd', 68, ['ctrlKey'], true)) {
+      applyShortcut(() => wrapSelection('~~'));
+      return;
+    }
+    if (matchesLegacyShortcut(event, '8', 56, ['ctrlKey', 'shiftKey'], true)) {
+      const markdown = legacyListMarkdown('unordered', selection.selected);
+      applyShortcut(() => {
+        insertLegacyNewBlock(markdown, selection, {
+          start: markdown.length,
+          end: markdown.length,
+        });
+      });
+      return;
+    }
+    if (matchesLegacyShortcut(event, '7', 55, ['ctrlKey', 'shiftKey'], true)) {
+      const markdown = legacyListMarkdown('ordered', selection.selected);
+      applyShortcut(() => {
+        insertLegacyNewBlock(markdown, selection, {
+          start: markdown.length,
+          end: markdown.length,
+        });
+      });
+      return;
+    }
+    if (matchesLegacyShortcut(event, 'k', 75, ['ctrlKey'], true)) {
+      applyShortcut(() =>
+        replaceSelection(`[${selection.selected}]()`, selection, {
+          start: 1,
+          end: selection.selected.length + 1,
+        }),
+      );
+      return;
+    }
+    if (matchesLegacyShortcut(event, 'y', 89, ['ctrlKey'])) {
+      applyShortcut(redoMarkdown);
+      return;
+    }
+    if (matchesLegacyShortcut(event, 'z', 90, ['metaKey', 'shiftKey'])) {
+      applyShortcut(redoMarkdown);
+      return;
+    }
+    if (matchesLegacyShortcut(event, 'z', 90, ['ctrlKey'], true)) {
+      applyShortcut(undoMarkdown);
+    }
   };
 
   const bindImageInput = (node: HTMLInputElement | null) => {
@@ -179,23 +564,37 @@ function LegacyMarkdownEditor({
   };
 
   const undoMarkdown = () => {
-    setUndoStack((stack) => {
-      const previous = stack[stack.length - 1];
-      if (previous === undefined) return stack;
-      setRedoStack((redo) => [...redo, text].slice(-100));
-      onChange(previous);
-      return stack.slice(0, -1);
-    });
+    pauseLogger();
+    const nextUndoStack = [...undoStackRef.current];
+    const nextRedoStack = [...redoStackRef.current];
+    const popped = nextUndoStack.pop();
+    let previous: string;
+
+    if (popped === undefined) {
+      previous = loggerInitRef.current;
+    } else if (popped !== text) {
+      nextRedoStack.push(popped);
+      previous = popped;
+    } else {
+      const next = nextUndoStack.pop();
+      nextRedoStack.push(popped);
+      previous = next === undefined ? loggerInitRef.current : next;
+    }
+
+    lastPopRef.current = previous;
+    syncLoggerStacks(nextUndoStack, nextRedoStack);
+    onChange(previous);
   };
 
   const redoMarkdown = () => {
-    setRedoStack((stack) => {
-      const next = stack[stack.length - 1];
-      if (next === undefined) return stack;
-      setUndoStack((undo) => [...undo, text].slice(-100));
-      onChange(next);
-      return stack.slice(0, -1);
-    });
+    const nextRedoStack = [...redoStackRef.current];
+    const next = nextRedoStack.pop();
+    if (next === undefined) return;
+
+    lastPopRef.current = next;
+    syncLoggerStacks(undoStackRef.current, nextRedoStack);
+    pushLoggerRecord(next);
+    onChange(next);
   };
 
   const mode = nextViewInfo();
@@ -207,7 +606,7 @@ function LegacyMarkdownEditor({
           <div className="button-wrap">
             <span
               className="button button-type-header"
-              title="Header"
+              title={labels.btnHeader}
               onMouseEnter={() => setHeaderMenuVisible(true)}
               onMouseLeave={() => setHeaderMenuVisible(false)}
             >
@@ -243,88 +642,106 @@ function LegacyMarkdownEditor({
             </span>
             <span
               className="button button-type-bold"
-              title="Bold"
+              title={labels.btnBold}
               onClick={() => wrapSelection('**')}
             >
               <i className="rmel-iconfont rmel-icon-bold" />
             </span>
             <span
               className="button button-type-italic"
-              title="Italic"
+              title={labels.btnItalic}
               onClick={() => wrapSelection('*')}
             >
               <i className="rmel-iconfont rmel-icon-italic" />
             </span>
             <span
               className="button button-type-underline"
-              title="Underline"
+              title={labels.btnUnderline}
               onClick={() => wrapSelection('++')}
             >
               <i className="rmel-iconfont rmel-icon-underline" />
             </span>
             <span
               className="button button-type-strikethrough"
-              title="Strikethrough"
+              title={labels.btnStrikethrough}
               onClick={() => wrapSelection('~~')}
             >
               <i className="rmel-iconfont rmel-icon-strikethrough" />
             </span>
             <span
               className="button button-type-unordered"
-              title="Unordered list"
+              title={labels.btnUnordered}
               onClick={() => {
                 const selection = getSelection();
-                replaceSelection(legacyListMarkdown('unordered', selection.selected), selection);
+                const markdown = legacyListMarkdown('unordered', selection.selected);
+                insertLegacyNewBlock(markdown, selection, {
+                  start: markdown.length,
+                  end: markdown.length,
+                });
               }}
             >
               <i className="rmel-iconfont rmel-icon-list-unordered" />
             </span>
             <span
               className="button button-type-ordered"
-              title="Ordered list"
+              title={labels.btnOrdered}
               onClick={() => {
                 const selection = getSelection();
-                replaceSelection(legacyListMarkdown('ordered', selection.selected), selection);
+                const markdown = legacyListMarkdown('ordered', selection.selected);
+                insertLegacyNewBlock(markdown, selection, {
+                  start: markdown.length,
+                  end: markdown.length,
+                });
               }}
             >
               <i className="rmel-iconfont rmel-icon-list-ordered" />
             </span>
             <span
               className="button button-type-quote"
-              title="Quote"
+              title={labels.btnQuote}
               onClick={() => insertMarkdownBlock('\n> ', '\n')}
             >
               <i className="rmel-iconfont rmel-icon-quote" />
             </span>
             <span
               className="button button-type-wrap"
-              title="Line break"
-              onClick={() => replaceSelection('\n')}
+              title={labels.btnLineBreak}
+              onClick={() => insertLegacyNewBlock('---', getSelection(), { start: 3, end: 3 })}
             >
               <i className="rmel-iconfont rmel-icon-wrap" />
             </span>
             <span
               className="button button-type-code-inline"
-              title="Inline code"
+              title={labels.btnInlineCode}
               onClick={() => wrapSelection('`')}
             >
               <i className="rmel-iconfont rmel-icon-code" />
             </span>
             <span
               className="button button-type-code-block"
-              title="Code"
+              title={labels.btnCode}
               onClick={() => insertMarkdownBlock('\n```\n', '\n```\n')}
             >
               <i className="rmel-iconfont rmel-icon-code-block" />
             </span>
             <span
               className="button button-type-table"
-              title="Table"
+              title={labels.btnTable}
               onMouseEnter={() => setTableMenuVisible(true)}
-              onMouseLeave={() => setTableMenuVisible(false)}
+              onMouseLeave={() => {
+                setTableMenuVisible(false);
+                setTableHover(null);
+              }}
             >
               <i className="rmel-iconfont rmel-icon-grid" />
-              <div className={`drop-wrap ${tableMenuVisible ? 'show' : 'hidden'}`}>
+              <div
+                className={`drop-wrap ${tableMenuVisible ? 'show' : 'hidden'}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setTableMenuVisible(false);
+                  setTableHover(null);
+                }}
+              >
                 <ul
                   className="table-list wrap"
                   style={{
@@ -358,7 +775,7 @@ function LegacyMarkdownEditor({
             </span>
             <span
               className="button button-type-image"
-              title="Image"
+              title={labels.btnImage}
               style={{ position: 'relative' }}
               onClick={() => insertImage()}
             >
@@ -374,31 +791,36 @@ function LegacyMarkdownEditor({
             </span>
             <span
               className="button button-type-link"
-              title="Link"
+              title={labels.btnLink}
               onClick={() => {
                 const selection = getSelection();
-                replaceSelection(`[${selection.selected}]()`, selection);
+                replaceSelection(`[${selection.selected}]()`, selection, {
+                  start: 1,
+                  end: selection.selected.length + 1,
+                });
               }}
             >
               <i className="rmel-iconfont rmel-icon-link" />
             </span>
             <span
               className="button button-type-clear"
-              title="Clear"
-              onClick={() => applyTextChange('')}
+              title={labels.btnClear}
+              onClick={clearMarkdown}
             >
               <i className="rmel-iconfont rmel-icon-delete" />
             </span>
             <span
-              className={`button button-type-undo ${undoStack.length ? '' : 'disabled'}`}
-              title="Undo"
+              className={`button button-type-undo ${
+                loggerInitRef.current !== text ? '' : 'disabled'
+              }`}
+              title={labels.btnUndo}
               onClick={undoMarkdown}
             >
               <i className="rmel-iconfont rmel-icon-undo" />
             </span>
             <span
               className={`button button-type-redo ${redoStack.length ? '' : 'disabled'}`}
-              title="Redo"
+              title={labels.btnRedo}
               onClick={redoMarkdown}
             >
               <i className="rmel-iconfont rmel-icon-redo" />
@@ -416,7 +838,7 @@ function LegacyMarkdownEditor({
             </span>
             <span
               className="button button-type-fullscreen"
-              title={fullScreen ? 'Exit full screen' : 'Full screen'}
+              title={fullScreen ? labels.btnExitFullScreen : labels.btnFullScreen}
               onClick={() => setFullScreen((current) => !current)}
             >
               <i
@@ -436,11 +858,29 @@ function LegacyMarkdownEditor({
             value={text}
             className="section-container input "
             wrap="hard"
-            onChange={(event) => applyTextChange(event.target.value)}
+            onChange={(event) => applyTextChange(event.target.value, false)}
+            onScroll={() => handleSyncScroll('md')}
+            onMouseOver={() => {
+              shouldSyncScrollRef.current = 'md';
+            }}
+            onKeyDown={handleEditorKeyDown}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false;
+            }}
           />
         </section>
         <section className={`section sec-html ${view.html ? 'visible' : 'in-visible'}`}>
-          <div className="section-container html-wrap">
+          <div
+            ref={htmlWrapperRef}
+            className="section-container html-wrap"
+            onMouseOver={() => {
+              shouldSyncScrollRef.current = 'html';
+            }}
+            onScroll={() => handleSyncScroll('html')}
+          >
             <div className="custom-html-style" dangerouslySetInnerHTML={{ __html: html }} />
           </div>
         </section>
@@ -495,7 +935,7 @@ function KnowledgeEditor({
 
   const save = async () => {
     await onSave({ ...knowledge });
-    void onSaved();
+    await onSaved();
     message.success('保存成功');
   };
 
@@ -516,7 +956,6 @@ function KnowledgeEditor({
             <div className="form-group">
               <label htmlFor="example-text-input-alt">标题</label>
               <LegacyInput
-                key={`title-${editorKey}`}
                 className="ant-input"
                 placeholder="请输入知识标题"
                 value={knowledge.title}
@@ -526,7 +965,6 @@ function KnowledgeEditor({
             <div className="form-group">
               <label htmlFor="example-text-input-alt">分类</label>
               <LegacyInput
-                key={`category-${editorKey}`}
                 className="ant-input"
                 placeholder="请输入分类，分类将会自动归集"
                 value={knowledge.category}
@@ -562,6 +1000,7 @@ function KnowledgeEditor({
             className={`ant-btn ant-btn-primary${saveLoading ? ' ant-btn-loading' : ''}`}
             onClick={() => void save()}
           >
+            {saveLoading ? <LegacyLoadingIcon /> : null}
             提交
           </LegacyButton>
         </div>
@@ -603,8 +1042,8 @@ export default function KnowledgePage() {
       next.splice(toIndex, 0, moved);
       next.splice(fromIndex + 1, 1);
     }
-    setOrderedKnowledge(next);
     setSortingLoading(true);
+    setOrderedKnowledge(next);
     sort.mutate(
       next.map((knowledge) => knowledge.id),
       {
@@ -629,7 +1068,8 @@ export default function KnowledgePage() {
   ];
 
   const renderKnowledgeShowSwitch = (value: 0 | 1 | undefined, row: KnowledgeSummary) => (
-    <LegacyKnowledgeSwitch
+    <LegacySwitch
+      size="small"
       onChange={() =>
         show.mutate(row.id, {
           onSuccess: () => {
@@ -651,7 +1091,7 @@ export default function KnowledgePage() {
       >
         <a ref={legacyHref()}>编辑</a>
       </KnowledgeEditor>
-      <div className="ant-divider ant-divider-vertical" role="separator" />
+      <LegacyDivider type="vertical" />
       <a
         ref={legacyHref()}
         onClick={() => {
@@ -705,7 +1145,10 @@ export default function KnowledgePage() {
                   style={{ height: 54 }}
                   {...legacyTableRowKey(index)}
                 >
-                  <td className="" style={{ textAlign: 'right' }}>
+                  <td
+                    className="ant-table-align-right ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
                     {renderKnowledgeActions(row)}
                   </td>
                 </tr>
@@ -724,10 +1167,13 @@ export default function KnowledgePage() {
                   <td className="">{renderKnowledgeShowSwitch(row.show, row)}</td>
                   <td className="">{row.title}</td>
                   <td className="">{row.category}</td>
-                  <td className="" style={{ textAlign: 'right' }}>
+                  <td className="ant-table-align-right" style={{ textAlign: 'right' }}>
                     {dayjs(1000 * row.updated_at).format('YYYY/MM/DD HH:mm')}
                   </td>
-                  <td className="ant-table-fixed-columns-in-body" style={{ textAlign: 'right' }}>
+                  <td
+                    className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
                     {renderKnowledgeActions(row)}
                   </td>
                 </tr>

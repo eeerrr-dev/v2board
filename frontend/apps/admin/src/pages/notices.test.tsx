@@ -84,7 +84,7 @@ describe('NoticesPage legacy notice manager', () => {
     expect(html).not.toContain('ant-table-cell');
   });
 
-  it('keeps the original notice save callback order without waiting for the page fetch', () => {
+  it('keeps the original notice save callback order after the page fetch', () => {
     const saveBlock = source.slice(
       source.indexOf('const saveNotice = async () => {'),
       source.indexOf('const headers: LegacyStandaloneTableHeader[]'),
@@ -95,15 +95,15 @@ describe('NoticesPage legacy notice manager', () => {
     );
 
     expect(saveBlock).toContain('await save.mutateAsync({ ...submit });');
-    expect(saveBlock).toContain('void notices.refetch();');
+    expect(saveBlock).toContain('await notices.refetch();');
     expect(saveBlock).toContain('modalVisible();');
     expect(saveBlock.indexOf('await save.mutateAsync({ ...submit });')).toBeLessThan(
-      saveBlock.indexOf('void notices.refetch();'),
+      saveBlock.indexOf('await notices.refetch();'),
     );
-    expect(saveBlock.indexOf('void notices.refetch();')).toBeLessThan(
+    expect(saveBlock.indexOf('await notices.refetch();')).toBeLessThan(
       saveBlock.indexOf('modalVisible();'),
     );
-    expect(saveBlock).not.toContain('await notices.refetch();');
+    expect(saveBlock).not.toContain('void notices.refetch();\n    modalVisible();');
     expect(mutationBlock).not.toContain(
       "queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] })",
     );
@@ -145,7 +145,8 @@ describe('NoticesPage legacy notice manager', () => {
     expect(source).toContain('mode="tags"');
     expect(source).toContain('value={submit.tags || []}');
     expect(source).toContain('options={[]}');
-    expect(source).toContain('tags.length > 0 ? tags.map(String) : null');
+    expect(source).toContain("tags: (tags.length > 0 ? tags : null) as Notice['tags']");
+    expect(source).not.toContain('tags.map(String)');
     expect(source).not.toContain('<Select');
     expect(source).not.toContain("import { Input, Select } from 'antd';");
   });
@@ -219,6 +220,12 @@ describe('NoticesPage legacy notice manager', () => {
     expect(source).toContain('scrollX={950}');
     expect(source).toContain('fixedRightChildren={dataSource.map((row, index) => (');
     expect(source).toContain('{...legacyTableRowKey(index)}');
+    expect(source).toContain(
+      '<td className="ant-table-align-right" style={{ textAlign: \'right\' }}>',
+    );
+    expect(source).toContain(
+      'className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"',
+    );
     expect(source).not.toContain('<Table<Notice>');
     expect(source).not.toContain('tableLayout="auto"');
     expect(source).not.toContain('dataSource={dataSource}');
@@ -229,8 +236,10 @@ describe('NoticesPage legacy notice manager', () => {
   it('uses the bundled table index when opening the notice editor', () => {
     expect(source).toContain('const renderNoticeActions = (row: Notice, index: number) =>');
     expect(source).toContain('setSubmit(dataSource[index] as Partial<Notice>);');
+    expect(source).toContain('modalVisible();');
     expect(source).not.toContain('setSubmit(dataSource[index] ?? {});');
     expect(source).not.toContain('setSubmit(row);');
+    expect(source).not.toContain('setVisible(true);');
   });
 
   it('clears the notice submit payload only after the modal has been hidden', () => {
@@ -242,9 +251,12 @@ describe('NoticesPage legacy notice manager', () => {
   });
 
   it('keeps the original vertical divider markup in the notice action column', () => {
-    expect(source).toContain('<div className="ant-divider ant-divider-vertical" />');
+    expect(source).toContain("import { LegacyDivider } from '@/components/legacy-divider';");
+    expect(source).toContain('<LegacyDivider type="vertical" />');
+    expect(source).not.toContain(
+      '<div className="ant-divider ant-divider-vertical" role="separator" />',
+    );
     expect(source).not.toContain('<span className="ant-divider ant-divider-vertical"');
-    expect(source).not.toContain('role="separator"');
   });
 
   it('uses the bundled save endpoint for both creating and editing notices', () => {

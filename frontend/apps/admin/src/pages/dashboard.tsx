@@ -35,7 +35,6 @@ function useChart<T>(
     const cleanup = onRendered?.();
     return () => {
       if (typeof cleanup === 'function') cleanup();
-      chartObjectRef.current = undefined;
     };
   }, [chartObjectRef, data, onRendered, render]);
 
@@ -136,19 +135,19 @@ const PENDING_COMMISSION_ORDER_FILTER: AdminFilter[] = [
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const queueStatus = useQueueStatus();
   const stat = useStat();
-  const config = useConfig();
   const order = useStatOrder();
-  const serverToday = useStatServerToday();
   const serverLast = useStatServerLast();
+  const serverToday = useStatServerToday();
   const userToday = useStatUserToday();
   const userLast = useStatUserLast();
-  const queueStatus = useQueueStatus();
+  const config = useConfig('site');
   const currency = config.data?.site?.currency;
   const data = stat.data;
   const orderChartObj = useRef<ECharts | undefined>(undefined);
-  const serverTodayRankChartObj = useRef<ECharts | undefined>(undefined);
   const serverLastRankChartObj = useRef<ECharts | undefined>(undefined);
+  const serverTodayRankChartObj = useRef<ECharts | undefined>(undefined);
   const userTodayRankChartObj = useRef<ECharts | undefined>(undefined);
   const userLastRankChartObj = useRef<ECharts | undefined>(undefined);
 
@@ -161,11 +160,11 @@ export default function DashboardPage() {
   };
 
   const resizeAllCharts = useCallback(() => {
-    orderChartObj.current?.resize();
-    serverLastRankChartObj.current?.resize();
-    serverTodayRankChartObj.current?.resize();
-    userTodayRankChartObj.current?.resize();
-    userLastRankChartObj.current?.resize();
+    orderChartObj.current!.resize();
+    serverLastRankChartObj.current!.resize();
+    serverTodayRankChartObj.current!.resize();
+    userTodayRankChartObj.current!.resize();
+    userLastRankChartObj.current!.resize();
   }, []);
   const registerLegacyOrderChartResize = useCallback(() => {
     window.addEventListener('resize', resizeAllCharts);
@@ -176,9 +175,22 @@ export default function DashboardPage() {
     };
   }, [resizeAllCharts]);
 
-  const orderChart = useChart(order.data, renderOrderChart, orderChartObj, registerLegacyOrderChartResize);
-  const serverTodayRankChart = useChart(serverToday.data, renderServerRankChart, serverTodayRankChartObj);
-  const serverLastRankChart = useChart(serverLast.data, renderServerRankChart, serverLastRankChartObj);
+  const orderChart = useChart(
+    order.data,
+    renderOrderChart,
+    orderChartObj,
+    registerLegacyOrderChartResize,
+  );
+  const serverLastRankChart = useChart(
+    serverLast.data,
+    renderServerRankChart,
+    serverLastRankChartObj,
+  );
+  const serverTodayRankChart = useChart(
+    serverToday.data,
+    renderServerRankChart,
+    serverTodayRankChartObj,
+  );
   const userTodayRankChart = useChart(userToday.data, renderUserRankChart, userTodayRankChartObj);
   const userLastRankChart = useChart(userLast.data, renderUserRankChart, userLastRankChartObj);
 

@@ -7,6 +7,7 @@ import { LegacyDeleteIcon, LegacyPlusIcon } from './legacy-ant-icon';
 import { LegacyDrawer } from './legacy-drawer';
 import { LegacyInput } from './legacy-input';
 import { LegacySelect, type LegacySelectValue } from './legacy-select';
+import { LegacyDivider } from './legacy-divider';
 
 export interface LegacyFilterOption {
   key?: ReactNode;
@@ -33,17 +34,6 @@ function defaultFilter(keys: LegacyFilterKey[]): AdminFilter {
 
 function isBlank(value: AdminFilter['value']) {
   return value === '';
-}
-
-function LegacyDivider({ children }: { children: ReactNode }) {
-  return (
-    <div
-      className="ant-divider ant-divider-horizontal ant-divider-with-text-center"
-      role="separator"
-    >
-      <span className="ant-divider-inner-text">{children}</span>
-    </div>
-  );
 }
 
 export function LegacyFilterDrawer({
@@ -160,7 +150,7 @@ export function LegacyFilterDrawer({
                 <div>
                   {selected.type === 'select' ? (
                     <LegacySelect
-                      value={(filter.value || undefined) as LegacySelectValue | undefined}
+                      defaultValue={(filter.value || undefined) as LegacySelectValue | undefined}
                       style={{ width: '100%' }}
                       placeholder="请选择值"
                       options={selected.options!.map((option) => ({

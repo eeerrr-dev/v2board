@@ -73,6 +73,8 @@ import {
   LegacyInputGroup,
   LegacyTextArea,
 } from '@/components/legacy-input';
+import { LegacyBadge } from '@/components/legacy-badge';
+import { LegacyTag } from '@/components/legacy-tag';
 
 type QueryState = {
   current: number;
@@ -222,19 +224,6 @@ function downloadGeneratedUserCsv(buffer: unknown) {
 }
 
 const LEGACY_SORTABLE_CELL_CLASS = 'ant-table-column-has-actions ant-table-column-has-sorters';
-
-function LegacyUserStatusBadge({ online }: { online: boolean }) {
-  return (
-    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-      <span className={`ant-badge-status-dot ant-badge-status-${online ? 'success' : 'default'}`} />
-      <span className="ant-badge-status-text" />
-    </span>
-  );
-}
-
-function LegacyTag({ children, color }: { children: ReactNode; color: 'green' | 'red' }) {
-  return <span className={`ant-tag ant-tag-${color}`}>{children}</span>;
-}
 
 function userRowKey(index: number) {
   return legacyTableRowKey(index);
@@ -388,7 +377,6 @@ export default function UsersPage() {
     if (key === 'assign') setAssigning(row);
     if (key === 'copy') {
       legacyCopyText(row.subscribe_url);
-      message.success('复制成功');
     }
     if (key === 'reset') resetUserSecret(row);
     if (key === 'orders') jumpOrderFilter('user_id', '=', row.id);
@@ -442,7 +430,7 @@ export default function UsersPage() {
         title={legacyOnlineAt ? `最后在线${formatDateTime(Number(legacyOnlineAt))}` : '从未在线'}
       >
         <span>
-          <LegacyUserStatusBadge online={online} />
+          <LegacyBadge status={online ? 'success' : 'default'} />
           {row.email}
         </span>
       </LegacyTooltip>
@@ -655,7 +643,10 @@ export default function UsersPage() {
                   style={{ height: 54 }}
                   {...userRowKey(index)}
                 >
-                  <td className="" style={{ textAlign: 'right' }}>
+                  <td
+                    className="ant-table-align-right ant-table-row-cell-last"
+                    style={{ textAlign: 'right' }}
+                  >
                     {renderUserActions(row)}
                   </td>
                 </tr>
@@ -701,7 +692,10 @@ export default function UsersPage() {
                     <td className={LEGACY_SORTABLE_CELL_CLASS}>
                       {formatDateMinuteSlash(row.created_at)}
                     </td>
-                    <td className="ant-table-fixed-columns-in-body" style={{ textAlign: 'right' }}>
+                    <td
+                      className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
+                      style={{ textAlign: 'right' }}
+                    >
                       {renderUserActions(row)}
                     </td>
                   </tr>
@@ -786,7 +780,9 @@ export default function UsersPage() {
             .mutateAsync(values as Parameters<typeof generate.mutateAsync>[0])
             .then((response) => {
               if (values.generate_count) downloadGeneratedUserCsv(response.buffer);
-              void users.refetch();
+              return users.refetch();
+            })
+            .then(() => {
               setCreating(false);
             })
             .catch((error) => showError(message, error))
@@ -1003,6 +999,7 @@ function AssignOrderModal({
   onClose: () => void;
 }) {
   const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const assign = useAssignOrderMutation();
   const [submit, setSubmit] = useState<AssignOrderSubmit>(() => assignOrderSubmit());
   useEffect(() => {
@@ -1030,6 +1027,7 @@ function AssignOrderModal({
       onOk={() => {
         assign
           .mutateAsync(submit)
+          .then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }))
           .then(close)
           .catch((error) => showError(message, error));
       }}

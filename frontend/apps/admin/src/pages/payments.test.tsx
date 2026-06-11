@@ -110,6 +110,22 @@ describe('PaymentsPage legacy payment config', () => {
     expect(source).not.toContain('config[key] ?? field.value');
   });
 
+  it('dereferences dynamic payment form fields directly like the legacy renderer', () => {
+    const dynamicFormBlock = source.slice(
+      source.indexOf('{Object.keys(form).map((key) => {'),
+      source.indexOf('{selectPaymentMethod ===', source.indexOf('{Object.keys(form).map')),
+    );
+
+    expect(dynamicFormBlock).toContain(
+      'const field = form[key] as PaymentFormDefinition[string];',
+    );
+    expect(dynamicFormBlock).toContain('const inputType = field.type;');
+    expect(dynamicFormBlock).toContain(
+      '<label htmlFor="example-text-input-alt">{field.label}</label>',
+    );
+    expect(dynamicFormBlock).not.toContain('if (!field) return null;');
+  });
+
   it('does not force-remount dynamic config inputs when switching payment methods', () => {
     expect(source).not.toContain('key={`${selectPaymentMethod}-${key}`}');
     expect(source).not.toContain('<div className="form-group" key={key}>');
@@ -247,9 +263,12 @@ describe('PaymentsPage legacy payment config', () => {
   });
 
   it('keeps the original vertical divider markup in the payment action column', () => {
-    expect(source).toContain('<div className="ant-divider ant-divider-vertical" />');
+    expect(source).toContain("import { LegacyDivider } from '@/components/legacy-divider';");
+    expect(source).toContain('<LegacyDivider type="vertical" />');
+    expect(source).not.toContain(
+      '<div className="ant-divider ant-divider-vertical" role="separator" />',
+    );
     expect(source).not.toContain('<span className="ant-divider ant-divider-vertical"');
-    expect(source).not.toContain('role="separator"');
   });
 
   it('keeps the legacy delete confirm from returning a modal-loading promise', () => {

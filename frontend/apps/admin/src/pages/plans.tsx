@@ -25,17 +25,18 @@ import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
 import { LegacyDrawer } from '@/components/legacy-drawer';
 import {
-  LegacyCheckboxInput,
   LegacyInput,
   LegacyInputGroup,
   LegacyTextArea,
 } from '@/components/legacy-input';
+import { LegacyCheckbox } from '@/components/legacy-checkbox';
 import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';
 import {
   LegacyCaretDownIcon,
   LegacyDeleteIcon,
   LegacyEditIcon,
   LegacyInfoCircleIcon,
+  LegacyLoadingIcon,
   LegacyPlusIcon,
   LegacyQuestionCircleIcon,
   LegacyUserIcon,
@@ -52,6 +53,10 @@ import {
   LEGACY_DROPDOWN_CLICK_TRIGGER,
 } from '@/components/legacy-dropdown';
 import { LegacyTooltip } from '@/components/legacy-tooltip';
+import { LegacyDivider } from '@/components/legacy-divider';
+import { LegacySwitch } from '@/components/legacy-switch';
+import { LegacyTag } from '@/components/legacy-tag';
+import { ServerGroupModal } from './servers';
 
 type EditablePlan = {
   [K in keyof Omit<Plan, 'id'>]?: Plan[K] | string | null;
@@ -107,21 +112,6 @@ function LegacyPlanPriceCol({ md, children }: { md: 4 | 12; children: ReactNode 
   return (
     <div className={`ant-col ant-col-md-${md}`} style={planPriceColStyle}>
       {children}
-    </div>
-  );
-}
-
-function LegacyPlanDivider({ children }: { children?: ReactNode }) {
-  if (children === undefined || children === null) {
-    return <div className="ant-divider ant-divider-horizontal" role="separator" />;
-  }
-
-  return (
-    <div
-      className="ant-divider ant-divider-horizontal ant-divider-with-text-center"
-      role="separator"
-    >
-      <span className="ant-divider-inner-text">{children}</span>
     </div>
   );
 }
@@ -200,12 +190,12 @@ function PlanEditor({
             />
           </div>
 
-          <LegacyPlanDivider>
+          <LegacyDivider>
             售价设置{' '}
             <LegacyTooltip title="将金额留空则不会进行出售" placement="top">
               <LegacyInfoCircleIcon />
             </LegacyTooltip>
-          </LegacyPlanDivider>
+          </LegacyDivider>
 
           <LegacyPlanPriceRow>
             <LegacyPlanPriceCol md={4}>
@@ -270,7 +260,7 @@ function PlanEditor({
             </LegacyPlanPriceCol>
           </LegacyPlanPriceRow>
 
-          <LegacyPlanDivider />
+          <LegacyDivider />
 
           <PlanInput
             label="套餐流量"
@@ -287,7 +277,10 @@ function PlanEditor({
           />
           <div className="form-group">
             <label htmlFor="example-text-input-alt">
-              权限组 <a ref={legacyHref('javascript:(0);')}>添加权限组</a>
+              权限组{' '}
+              <ServerGroupModal>
+                <a ref={legacyHref('javascript:(0);')}>添加权限组</a>
+              </ServerGroupModal>
             </label>
             <LegacySelect
               placeholder="请选择权限组"
@@ -328,18 +321,12 @@ function PlanEditor({
               title="勾选后变更的流量、限速、权限组将应用到该套餐下的用户"
               placement="top"
             >
-              <label className="ant-checkbox-wrapper">
-                <span
-                  className={`ant-checkbox${submit.force_update ? ' ant-checkbox-checked' : ''}`}
-                >
-                  <LegacyCheckboxInput
-                    className="ant-checkbox-input"
-                    onChange={(event) => change('force_update', event.target.checked)}
-                  />
-                  <span className="ant-checkbox-inner" />
-                </span>
-                <span>强制更新到用户</span>
-              </label>
+              <LegacyCheckbox
+                checked={submit.force_update}
+                onChange={(event) => change('force_update', event.target.checked)}
+              >
+                强制更新到用户
+              </LegacyCheckbox>
             </LegacyTooltip>
           </div>
           <LegacyButton
@@ -353,6 +340,7 @@ function PlanEditor({
             className={`ant-btn ant-btn-primary${saveLoading ? ' ant-btn-loading' : ''}`}
             onClick={() => !saveLoading && void save()}
           >
+            {saveLoading ? <LegacyLoadingIcon /> : null}
             提交
           </LegacyButton>
         </div>
@@ -399,7 +387,7 @@ function PlanInput({
 export default function PlansPage() {
   const plans = useAdminPlans();
   const groups = useServerGroups();
-  const config = useConfig();
+  const config = useConfig('site');
   const save = useSavePlanMutation();
   const drop = useDropPlanMutation();
   const update = useUpdatePlanMutation();
@@ -424,8 +412,8 @@ export default function PlansPage() {
   }, [refetchConfig, refetchGroups]);
 
   const persistSort = (next: Plan[]) => {
-    setOrder(next);
     setLegacySortLoading(true);
+    setOrder(next);
     sort.mutate(
       next.map((plan) => plan.id),
       {
@@ -454,7 +442,7 @@ export default function PlansPage() {
 
   const savePlan = async (payload: SavePlanPayload) => {
     await save.mutateAsync(payload);
-    void plans.refetch();
+    await plans.refetch();
   };
 
   const dropPlan = (id?: number) => {
@@ -513,18 +501,7 @@ export default function PlansPage() {
   ];
 
   const renderPlanSwitch = (checked: 0 | 1, onClick: () => void) => {
-    const enabled = Boolean(parseInt(String(checked), 10));
-    return (
-      <button
-        type="button"
-        role="switch"
-        aria-checked={enabled}
-        className={`ant-switch-small ant-switch${enabled ? ' ant-switch-checked' : ''}`}
-        onClick={onClick}
-      >
-        <span className="ant-switch-inner" />
-      </button>
-    );
+    return <LegacySwitch size="small" checked={parseInt(String(checked), 10)} onChange={onClick} />;
   };
 
   const renderGroupTags = (value: number) => {
@@ -532,9 +509,9 @@ export default function PlansPage() {
     (groups.data ?? []).map((group) => {
       if (group.id === parseInt(String(value), 10)) {
         tags.push(
-          <span key={group.id} className="ant-tag">
+          <LegacyTag key={group.id}>
             {group.name}
-          </span>,
+          </LegacyTag>,
         );
       }
     });
@@ -615,7 +592,10 @@ export default function PlansPage() {
                     style={{ height: 75 }}
                     {...legacyTableRowKey(index)}
                   >
-                    <td className="" style={{ textAlign: 'right' }}>
+                    <td
+                      className="ant-table-align-right ant-table-row-cell-last"
+                      style={{ textAlign: 'right' }}
+                    >
                       {renderPlanActions(record)}
                     </td>
                   </tr>
@@ -661,7 +641,10 @@ export default function PlansPage() {
                     <td className="">{formatPrice(record.onetime_price)}</td>
                     <td className="">{formatPrice(record.reset_price)}</td>
                     <td className="">{renderGroupTags(record.group_id)}</td>
-                    <td className="ant-table-fixed-columns-in-body" style={{ textAlign: 'right' }}>
+                    <td
+                      className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
+                      style={{ textAlign: 'right' }}
+                    >
                       {renderPlanActions(record)}
                     </td>
                   </tr>

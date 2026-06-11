@@ -48,6 +48,8 @@ vi.mock('@/lib/queries', () => ({
   }),
   useServerGroups: () => ({
     data: [{ id: 2, name: '默认权限组' }],
+    isFetching: false,
+    refetch: vi.fn(),
   }),
   useConfig: () => ({
     data: { site: { currency_symbol: '¥' }, currency_symbol: '¥' },
@@ -55,6 +57,9 @@ vi.mock('@/lib/queries', () => ({
   useSavePlanMutation: () => ({
     mutateAsync: vi.fn(),
     isPending: false,
+  }),
+  useSaveServerGroupMutation: () => ({
+    mutateAsync: vi.fn(),
   }),
   useDropPlanMutation: () => ({
     mutate: vi.fn(),
@@ -80,6 +85,9 @@ describe('PlansPage legacy subscription management', () => {
     expect(html).toContain('class="ant-table-wrapper"');
     expect(html).toContain('class="ant-table-fixed" style="width:1300px"');
     expect(html).toContain('class="ant-table-fixed-right"');
+    expect(html).toContain(
+      'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
+    );
     expect(html).toContain('class="ant-switch-small ant-switch ant-switch-checked"');
     expect(html).toContain('aria-label="图标: menu"');
     expect(html).toContain('aria-label="图标: user"');
@@ -158,6 +166,12 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain('scrollPositionRight={false}');
     expect(plansSource).toContain('fixedRightRowHeight={75}');
     expect(plansSource).toContain('fixedRightChildren={order.map((record, index) => (');
+    expect(plansSource).toContain(
+      'className="ant-table-align-right ant-table-row-cell-last"',
+    );
+    expect(plansSource).toContain(
+      'className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"',
+    );
     expect(plansSource).toContain('<LegacyDragSort');
     expect(plansSource).toContain('nodeSelector="tr"');
     expect(plansSource).toContain('handleSelector="i"');
@@ -176,6 +190,9 @@ describe('PlansPage legacy subscription management', () => {
       'const [legacySortLoading, setLegacySortLoading] = useState(false);',
     );
     expect(plansSource).toContain('setLegacySortLoading(true);');
+    expect(plansSource.indexOf('setLegacySortLoading(true);')).toBeLessThan(
+      plansSource.indexOf('setOrder(next);'),
+    );
     expect(plansSource).toContain('loading={plans.isFetching || legacySortLoading}');
     expect(plansSource).not.toContain('loading={plans.isFetching || sort.isPending}');
     expect(plansSource).not.toContain('plans.isLoading');
@@ -193,10 +210,8 @@ describe('PlansPage legacy subscription management', () => {
 
   it('submits the original drawer state instead of rewriting prices in the page component', () => {
     expect(plansSource).toContain('await onSave({ ...submit });');
-    expect(plansSource).toContain('await save.mutateAsync(payload);\n    void plans.refetch();');
-    expect(plansSource).not.toContain(
-      'await save.mutateAsync(payload);\n    await plans.refetch();',
-    );
+    expect(plansSource).toContain('await save.mutateAsync(payload);\n    await plans.refetch();');
+    expect(plansSource).not.toContain('await save.mutateAsync(payload);\n    void plans.refetch();');
     expect(plansSource).not.toContain('serializePlan(');
     expect(plansSource).not.toContain('Math.round(100 * Number(next[key]))');
   });
@@ -242,6 +257,7 @@ describe('PlansPage legacy subscription management', () => {
 
   it('keeps the original editor-mounted config and server-group fetches', () => {
     expect(plansSource).toContain('useCallback,');
+    expect(plansSource).toContain("const config = useConfig('site');");
     expect(plansSource).toContain('const refetchConfig = config.refetch;');
     expect(plansSource).toContain('const refetchGroups = groups.refetch;');
     expect(plansSource).toContain('const refetchPlanEditorDependencies = useCallback(() => {');
@@ -253,12 +269,23 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain('onLegacyMount={refetchPlanEditorDependencies}');
   });
 
+  it('keeps the original create-server-group modal from the plan drawer link', () => {
+    expect(plansSource).toContain("import { ServerGroupModal } from './servers';");
+    expect(plansSource).toContain(
+      "<ServerGroupModal>\n                <a ref={legacyHref('javascript:(0);')}>添加权限组</a>\n              </ServerGroupModal>",
+    );
+    expect(plansSource).not.toContain(
+      "权限组 <a ref={legacyHref('javascript:(0);')}>添加权限组</a>",
+    );
+  });
+
   it('keeps the original direct drawer input bindings', () => {
     expect(plansSource).toContain("import { App } from 'antd';");
     expect(plansSource).not.toContain("import { App, Divider, Row, Col } from 'antd';");
     expect(plansSource).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
     expect(plansSource).toContain('LegacyInputGroup,');
     expect(plansSource).toContain('LegacyTextArea,');
+    expect(plansSource).toContain('LegacyLoadingIcon,');
     expect(plansSource).toContain(
       "import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';",
     );
@@ -269,11 +296,14 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain('<LegacySelect');
     expect(plansSource).toContain('function LegacyPlanPriceRow');
     expect(plansSource).toContain('function LegacyPlanPriceCol');
-    expect(plansSource).toContain('function LegacyPlanDivider');
+    expect(plansSource).toContain("import { LegacyDivider } from '@/components/legacy-divider';");
+    expect(plansSource).toContain('<LegacyDivider>');
+    expect(plansSource).toContain('<LegacyDivider />');
+    expect(plansSource).not.toContain('function LegacyPlanDivider');
     expect(plansSource).toContain('className="ant-row"');
     expect(plansSource).toContain('className={`ant-col ant-col-md-${md}`}');
-    expect(plansSource).toContain('className="ant-divider ant-divider-horizontal"');
-    expect(plansSource).toContain('ant-divider-with-text-center');
+    expect(plansSource).not.toContain('className="ant-divider ant-divider-horizontal"');
+    expect(plansSource).not.toContain('ant-divider-with-text-center');
     expect(plansSource).toContain('<LegacyInfoCircleIcon />');
     expect(plansSource).toContain('LegacyInfoCircleIcon,');
     expect(plansSource).toContain('value={legacyInputValue(submit.name)}');
@@ -289,6 +319,7 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain(
       "className={`ant-btn ant-btn-primary${saveLoading ? ' ant-btn-loading' : ''}`}",
     );
+    expect(plansSource).toContain('{saveLoading ? <LegacyLoadingIcon /> : null}');
     expect(plansSource).not.toContain('<Drawer');
     expect(plansSource).not.toContain('<Input');
     expect(plansSource).not.toContain('<Button');
@@ -327,9 +358,13 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain(
       'const renderPlanSwitch = (checked: 0 | 1, onClick: () => void) => {',
     );
-    expect(plansSource).toContain('const enabled = Boolean(parseInt(String(checked), 10));');
-    expect(plansSource).toContain('aria-checked={enabled}');
-    expect(plansSource).toContain('className={`ant-switch-small ant-switch${enabled ?');
+    expect(plansSource).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
+    expect(plansSource).toContain(
+      '<LegacySwitch size="small" checked={parseInt(String(checked), 10)} onChange={onClick} />',
+    );
+    expect(plansSource).not.toContain('const enabled = Boolean(parseInt(String(checked), 10));');
+    expect(plansSource).not.toContain('aria-checked={enabled}');
+    expect(plansSource).not.toContain('className={`ant-switch-small ant-switch${enabled ?');
     expect(plansSource).not.toContain('<Switch');
     expect(plansSource).not.toContain('checked={Boolean(parseInt(String(value), 10))}');
     expect(plansSource).toContain('const LEGACY_RESET_TRAFFIC_OPTIONS: LegacySelectOption[] = [');
@@ -361,7 +396,9 @@ describe('PlansPage legacy subscription management', () => {
   });
 
   it('renders server groups with the original tag component styling', () => {
-    expect(plansSource).toContain('className="ant-tag"');
+    expect(plansSource).toContain("import { LegacyTag } from '@/components/legacy-tag';");
+    expect(plansSource).toContain('<LegacyTag key={group.id}>');
+    expect(plansSource).not.toContain('className="ant-tag"');
     expect(plansSource).toContain('const tags: ReactNode[] = [];');
     expect(plansSource).toContain('group.id === parseInt(String(value), 10)');
     expect(plansSource).toContain('{group.name}');
