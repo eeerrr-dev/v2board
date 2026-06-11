@@ -1,5 +1,4 @@
 /node_modules
-/.pnpm-store
 /config/v2board.php
 /public/hot
 /public/storage
