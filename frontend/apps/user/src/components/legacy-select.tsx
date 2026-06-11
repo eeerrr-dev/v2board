@@ -190,16 +190,20 @@ export function LegacySelect({
     });
   };
 
+  // rc-select has no destroyPopupOnHide: once opened, the dropdown stays mounted and closes by
+  // gaining `ant-select-dropdown-hidden`. SelectTrigger's popupClassName fills rc-trigger's
+  // middle slot as `--single [--empty]`, before the placement class.
   const dropdown =
-    dropdownStatus !== 'exited' && coords
+    coords
       ? createPortal(
           <div
             ref={dropdownRef}
             className={cn(
               'ant-select-dropdown ant-select-dropdown--single',
+              isEmpty && 'ant-select-dropdown--empty',
               coords.placement === 'topLeft' && 'ant-select-dropdown-placement-topLeft',
               coords.placement === 'bottomLeft' && 'ant-select-dropdown-placement-bottomLeft',
-              isEmpty && 'ant-select-dropdown--empty',
+              dropdownStatus === 'exited' && 'ant-select-dropdown-hidden',
               slideClass,
             )}
             style={{

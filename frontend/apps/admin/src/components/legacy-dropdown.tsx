@@ -82,14 +82,10 @@ function legacyDropdownClassName(
   placement: NonNullable<LegacyDropdownProps['placement']>,
   overlayClassName?: string,
 ) {
-  return [
-    'ant-dropdown',
-    `ant-dropdown-placement-${placement}`,
-    open ? undefined : 'ant-dropdown-hidden',
-    overlayClassName,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  // rc-trigger joins `prefixCls + " " + popupClassName + " " + placementCls` (double space when
+  // rc-dropdown's default overlayClassName "" fills the middle slot) and appends "-hidden" last.
+  const base = `ant-dropdown ${overlayClassName ?? ''} ant-dropdown-placement-${placement}`;
+  return open ? base : `${base} ant-dropdown-hidden`;
 }
 
 function mergeClassName(...values: Array<string | undefined | false>) {

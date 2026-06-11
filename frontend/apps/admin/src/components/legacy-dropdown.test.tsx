@@ -81,7 +81,7 @@ describe('LegacyDropdown', () => {
       await Promise.resolve();
     });
     expect(document.body.querySelector('.ant-dropdown')?.className).toBe(
-      'ant-dropdown ant-dropdown-placement-bottomLeft',
+      'ant-dropdown  ant-dropdown-placement-bottomLeft',
     );
 
     vi.useRealTimers();
@@ -112,7 +112,7 @@ describe('LegacyDropdown', () => {
     expect(onVisibleChange).toHaveBeenLastCalledWith(true);
     expect(trigger.className).toContain('ant-dropdown-open');
     expect(document.body.querySelector('.ant-dropdown')?.className).toBe(
-      'ant-dropdown ant-dropdown-placement-bottomLeft',
+      'ant-dropdown  ant-dropdown-placement-bottomLeft',
     );
 
     const closeEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
@@ -253,7 +253,7 @@ describe('LegacyDropdown', () => {
 
     expect(trigger.className).toContain('ant-dropdown-open');
     expect(document.body.querySelector('.ant-dropdown')?.className).toBe(
-      'ant-dropdown ant-dropdown-placement-bottomLeft',
+      'ant-dropdown  ant-dropdown-placement-bottomLeft',
     );
   });
 
@@ -285,7 +285,7 @@ describe('LegacyDropdown', () => {
     const dropdown = document.body.querySelector<HTMLElement>('.ant-dropdown')!;
     expect(contextMenuEvent.defaultPrevented).toBe(true);
     expect(onVisibleChange).toHaveBeenLastCalledWith(true);
-    expect(dropdown.className).toBe('ant-dropdown ant-dropdown-placement-bottomLeft');
+    expect(dropdown.className).toBe('ant-dropdown  ant-dropdown-placement-bottomLeft');
     expect(dropdown.style.position).toBe('absolute');
     expect(dropdown.style.left).toBe('120px');
     expect(dropdown.style.top).toBe('60px');

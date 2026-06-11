@@ -72,7 +72,7 @@ describe('LegacyDatePicker', () => {
 
     const popup = document.querySelector('.ant-calendar-picker-container');
     expect(popup?.className).toBe(
-      'ant-calendar-picker-container ant-calendar-picker-container-placement-bottomLeft',
+      'ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft',
     );
     expect(popup?.querySelector('.ant-calendar.ant-calendar-time')).not.toBeNull();
     expect(popup?.querySelector('.ant-calendar-input ')?.getAttribute('placeholder')).toBe(

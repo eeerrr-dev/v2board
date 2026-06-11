@@ -2768,6 +2768,10 @@ textarea.ant-input {
   animation-name: antSlideDownOut;
 }
 
+.ant-select-dropdown-hidden {
+  display: none;
+}
+
 html {
   --antd-wave-shadow-color: var(--legacy-ant-primary);
 }

@@ -77,7 +77,7 @@ function LegacyTicketReplyStatusFilterDropdown({
 
   return createPortal(
     <div
-      className={`ant-dropdown  ant-dropdown-placement-bottomRight ${open ? '' : ' ant-dropdown-hidden'}`}
+      className={`ant-dropdown  ant-dropdown-placement-bottomRight${open ? '' : ' ant-dropdown-hidden'}`}
     >
       <div className="ant-table-filter-dropdown">
         <ul

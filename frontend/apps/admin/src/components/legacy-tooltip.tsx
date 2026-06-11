@@ -389,9 +389,9 @@ export function LegacyTooltip(props: LegacyTooltipProps) {
     createPortal(
       <div
         className={mergeClassNames(
-          prefixCls,
-          `${prefixCls}-placement-${placement}`,
-          overlayClassName,
+          // rc-trigger joins `prefixCls + " " + popupClassName + " " + placementCls` (double
+          // space when rc-tooltip leaves overlayClassName empty) and appends "-hidden" last.
+          `${prefixCls} ${overlayClassName ?? ''} ${prefixCls}-placement-${placement}`,
           hiddenClass,
           motionClass,
         )}

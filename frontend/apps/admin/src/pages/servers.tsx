@@ -1803,7 +1803,7 @@ function ServerManagePage() {
                       {!sortMode && (
                         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%' }}>
                           <div>
-                            <div className="ant-dropdown  ant-dropdown-placement-bottomRight  ant-dropdown-hidden">
+                            <div className="ant-dropdown  ant-dropdown-placement-bottomRight ant-dropdown-hidden">
                               <div className="ant-table-filter-dropdown">
                                 <ul
                                   className="ant-dropdown-menu ant-dropdown-menu-without-submenu ant-dropdown-menu-root ant-dropdown-menu-vertical"

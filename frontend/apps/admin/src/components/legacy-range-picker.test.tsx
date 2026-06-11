@@ -80,7 +80,7 @@ describe('LegacyRangePicker', () => {
 
     const popup = document.querySelector('.ant-calendar-picker-container');
     expect(popup?.className).toBe(
-      'ant-calendar-picker-container ant-calendar-picker-container-placement-bottomLeft',
+      'ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft',
     );
     expect(
       popup?.querySelector('.ant-calendar.ant-calendar-range.ant-calendar-time'),

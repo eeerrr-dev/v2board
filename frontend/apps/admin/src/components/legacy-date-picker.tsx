@@ -251,10 +251,11 @@ function LegacyDatePickerComponent({
     }
   }, [pickerFormat, selected]);
 
+  // rc-trigger: prefixCls + " " + popupClassName("") + " " + placementCls → double space.
   const popup = (
     <div
       ref={popupRef}
-      className="ant-calendar-picker-container ant-calendar-picker-container-placement-bottomLeft"
+      className="ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft"
       style={{ ...popupPositionStyle, ...customPopupStyle }}
     >
       <div className={`ant-calendar${hasTime ? ' ant-calendar-time' : ''}`} tabIndex={0}>

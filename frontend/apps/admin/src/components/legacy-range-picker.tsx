@@ -499,10 +499,11 @@ export function LegacyRangePicker({
     setShowTimeSide(showTimeSide === side ? null : side);
   };
 
+  // rc-trigger: prefixCls + " " + popupClassName("") + " " + placementCls → double space.
   const popup = (
     <div
       ref={popupRef}
-      className="ant-calendar-picker-container ant-calendar-picker-container-placement-bottomLeft"
+      className="ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft"
       style={{ ...popupPositionStyle, ...customPopupStyle }}
     >
       <div className={`ant-calendar ant-calendar-range${hasTime ? ' ant-calendar-time' : ''}`} tabIndex={0}>
