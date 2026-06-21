@@ -264,10 +264,16 @@ describe('LegacySelect', () => {
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
     });
 
     const empty = document.body.querySelector<HTMLElement>('.ant-empty');
+    const dropdown = document.body.querySelector<HTMLElement>('.ant-select-dropdown');
 
+    expect(dropdown?.className).toContain('slide-up-appear');
+    expect(dropdown?.className).not.toContain('slide-up-enter');
+    expect(dropdown?.className).toContain('ant-select-dropdown-placement-bottomLeft');
+    expect(dropdown?.className).not.toContain('ant-select-dropdown-placement-topLeft');
     expect(empty?.className).toBe('ant-empty ant-empty-normal ant-empty-small');
     expect(empty?.querySelector('.ant-empty-description')?.textContent).toBe('暂无数据');
   });

@@ -160,10 +160,6 @@ function createLegacySelectAriaId() {
   });
 }
 
-function estimateDropdownHeight(optionCount: number) {
-  return Math.min(Math.max(optionCount, 1) * 32 + 8, 258);
-}
-
 function normalizeLegacyMultipleValue(
   value: LegacySelectValue | LegacyMultipleSelectValue | undefined,
 ): LegacyMultipleSelectValue {
@@ -355,31 +351,26 @@ function LegacySelectComponent({
       : dropdownStatus === 'leaving'
         ? 'slide-up-leave slide-up-leave-active'
         : dropdownStatus === 'enter'
-          ? 'slide-up-enter'
+          ? 'slide-up-appear'
           : dropdownStatus === 'entering'
-            ? 'slide-up-enter slide-up-enter-active'
+            ? 'slide-up-appear slide-up-appear-active'
             : '';
 
   const reposition = useCallback(() => {
     const trigger = rootRef.current;
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
-    const dropdownHeight =
-      dropdownRef.current?.offsetHeight ?? estimateDropdownHeight(options.length);
     const bottomTop = rect.bottom + window.scrollY + 4;
-    const topTop = rect.top + window.scrollY - dropdownHeight - 4;
-    const shouldFlipToTop =
-      rect.bottom + dropdownHeight + 4 > window.innerHeight && rect.top >= dropdownHeight + 4;
-    const placement = shouldFlipToTop ? 'topLeft' : 'bottomLeft';
+    const placement = 'bottomLeft';
 
     setCoords({
       container: getPopupContainer?.(trigger) ?? document.body,
       placement,
       left: rect.left + window.scrollX,
-      top: placement === 'topLeft' ? topTop : bottomTop,
+      top: bottomTop,
       width: rect.width,
     });
-  }, [getPopupContainer, options.length]);
+  }, [getPopupContainer]);
 
   useEffect(() => {
     setAriaId(createLegacySelectAriaId());

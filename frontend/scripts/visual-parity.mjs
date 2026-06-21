@@ -464,6 +464,11 @@ const interactionScenarios = [
     scenarioLabel: 'admin-plans',
   },
   {
+    label: 'admin-plan-create-group-select-dropdown',
+    run: runAdminPlanCreateGroupSelectDropdownInteraction,
+    scenarioLabel: 'admin-plans',
+  },
+  {
     delayAdminPlanSaveMs: 200,
     label: 'admin-plan-edit-drawer',
     run: runAdminPlanEditDrawerInteraction,
@@ -617,6 +622,11 @@ const interactionScenarios = [
     scenarioLabel: 'admin-users',
   },
   {
+    label: 'admin-users-filter-field-select-dropdown',
+    run: runAdminUsersFilterFieldSelectDropdownInteraction,
+    scenarioLabel: 'admin-users',
+  },
+  {
     label: 'admin-users-filter-expiry-picker',
     run: runAdminUsersFilterExpiryPickerInteraction,
     scenarioLabel: 'admin-users',
@@ -634,6 +644,11 @@ const interactionScenarios = [
   {
     label: 'admin-user-create-modal',
     run: runAdminUserCreateModalInteraction,
+    scenarioLabel: 'admin-users',
+  },
+  {
+    label: 'admin-user-create-plan-select-dropdown',
+    run: runAdminUserCreatePlanSelectDropdownInteraction,
     scenarioLabel: 'admin-users',
   },
   {
@@ -3111,6 +3126,21 @@ async function runAdminPlanCreateDrawerInteraction(page) {
   };
 }
 
+async function runAdminPlanCreateGroupSelectDropdownInteraction(page) {
+  await clickFirstVisible(page, '.bg-white .ant-btn');
+  await page.waitForSelector('.ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-drawer-title', '新建订阅');
+  const before = await legacySelectDropdownState(page, '.ant-drawer-open');
+  await clickVisibleAt(page, '.ant-drawer-open .ant-select-selection', 0);
+  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Default');
+  await page.waitForTimeout(700);
+  const opened = await legacySelectDropdownState(page, '.ant-drawer-open');
+  return { before, opened };
+}
+
 async function runAdminPlanEditDrawerInteraction(page) {
   const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
   const before = await adminPlanDrawerState(page);
@@ -4038,6 +4068,21 @@ async function runAdminUsersFilterInteraction(page) {
   };
 }
 
+async function runAdminUsersFilterFieldSelectDropdownInteraction(page) {
+  await clickFirstVisible(page, '.v2board-table-action .ant-btn, .ant-btn');
+  await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
+  const before = await legacySelectDropdownState(page, '.v2board-filter-drawer');
+  await clickVisibleAt(page, '.v2board-filter-drawer .ant-select-selection', 0);
+  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '到期时间');
+  await page.waitForTimeout(700);
+  const opened = await legacySelectDropdownState(page, '.v2board-filter-drawer');
+  return { before, opened };
+}
+
 async function runAdminUsersFilterExpiryPickerInteraction(page) {
   await clickFirstVisible(page, '.v2board-table-action .ant-btn, .ant-btn');
   await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
@@ -4125,6 +4170,18 @@ async function runAdminUserCreateModalInteraction(page) {
   await waitForVisibleElementsHidden(page, '.ant-modal');
   const closed = await adminUserCreateModalState(page);
   return { before, closed, filled, opened, planDropdown };
+}
+
+async function runAdminUserCreatePlanSelectDropdownInteraction(page) {
+  await clickVisibleAt(page, '.v2board-table-action .ant-btn', 2);
+  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await waitForVisibleText(page, '.ant-modal-title', '创建用户');
+  const before = await legacySelectDropdownState(page, '.ant-modal');
+  await clickVisibleAt(page, '.ant-modal .ant-select-selection', 0);
+  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Pro');
+  await page.waitForTimeout(700);
+  const opened = await legacySelectDropdownState(page, '.ant-modal');
+  return { before, opened };
 }
 
 async function runAdminUserCreateExpiryPickerInteraction(page) {
@@ -4652,6 +4709,13 @@ function sortForStableJson(value) {
 
 function normalizeInteractionResult(label, result) {
   const normalized = sortForStableJson(result);
+  if (
+    label === 'admin-plan-create-group-select-dropdown' ||
+    label === 'admin-users-filter-field-select-dropdown' ||
+    label === 'admin-user-create-plan-select-dropdown'
+  ) {
+    return normalizeSelectDropdownInteractionResult(label, normalized);
+  }
   if (label === 'admin-plan-edit-drawer') {
     const stripActionDropdownItems = (state) => {
       if (!state) return state;
@@ -4692,6 +4756,33 @@ function normalizeInteractionResult(label, result) {
     return { ...normalized, modal };
   }
   return normalized;
+}
+
+function normalizeSelectDropdownInteractionResult(label, result) {
+  const stripTransientSelectMotionClass = (state) => {
+    if (!state?.dropdownClass) return state;
+    return {
+      ...state,
+      dropdownClass: state.dropdownClass
+        .split(/\s+/)
+        .filter(
+          (className) =>
+            !/^slide-up-(?:appear|enter|leave)(?:-active)?$/.test(className) &&
+            !/^ant-select-dropdown-placement-[A-Za-z]+$/.test(className),
+        )
+        .join(' '),
+    };
+  };
+  const stripUnstableModalGeometry = (state) => {
+    if (label !== 'admin-user-create-plan-select-dropdown' || !state) return state;
+    const { geometry: _geometry, ...rest } = state;
+    return rest;
+  };
+  return {
+    ...result,
+    before: stripUnstableModalGeometry(stripTransientSelectMotionClass(result.before)),
+    opened: stripUnstableModalGeometry(stripTransientSelectMotionClass(result.opened)),
+  };
 }
 
 function assertUsefulInteraction(label, result) {
@@ -5261,6 +5352,12 @@ function assertUsefulInteraction(label, result) {
       result.closed?.drawerCount !== 0)
   ) {
     throw new Error(`admin plan create drawer did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-plan-create-group-select-dropdown' &&
+    !legacySelectDropdownHasOpened(result, ['Default'])
+  ) {
+    throw new Error(`admin plan create group select did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'admin-plan-edit-drawer' &&
@@ -5860,6 +5957,12 @@ function assertUsefulInteraction(label, result) {
     throw new Error('admin users filter input did not preserve typed value');
   }
   if (
+    label === 'admin-users-filter-field-select-dropdown' &&
+    !legacySelectDropdownHasOpened(result, ['邮箱', '到期时间'])
+  ) {
+    throw new Error(`admin users filter field select did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
     label === 'admin-users-filter-expiry-picker' &&
     (result.before?.popupCount !== 0 ||
       result.opened?.popupCount !== 1 ||
@@ -5924,6 +6027,12 @@ function assertUsefulInteraction(label, result) {
       result.closed?.modalCount !== 0)
   ) {
     throw new Error(`admin user create modal did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-user-create-plan-select-dropdown' &&
+    !legacySelectDropdownHasOpened(result, ['无', 'Pro'])
+  ) {
+    throw new Error(`admin user create plan select did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'admin-user-create-expiry-picker' &&
@@ -7065,6 +7174,66 @@ async function legacyDatePickerState(page, rootSelector) {
       viewportWidth: window.innerWidth,
     };
   }, rootSelector);
+}
+
+async function legacySelectDropdownState(page, rootSelector) {
+  return page.evaluate((selector) => {
+    const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
+    const round = (value) => Math.round(value * 10) / 10;
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    const visible = (selectorText) =>
+      Array.from(document.querySelectorAll(selectorText)).filter(isVisible);
+    const dropdown = visible('.ant-select-dropdown')[0];
+    const trigger =
+      visible(`${selector} .ant-select-open`)[0] ?? visible(`${selector} .ant-select`)[0];
+    const dropdownRect = dropdown?.getBoundingClientRect();
+    const triggerRect = trigger?.getBoundingClientRect();
+
+    return {
+      activeItems: visible('.ant-select-dropdown-menu-item-active').map((element) =>
+        normalize(element.textContent),
+      ),
+      dropdownClass: normalize(dropdown?.className),
+      dropdownCount: visible('.ant-select-dropdown').length,
+      dropdownItems: visible('.ant-select-dropdown-menu-item').map((element) =>
+        normalize(element.textContent),
+      ),
+      geometry:
+        dropdownRect && triggerRect
+          ? {
+              opensAbove: dropdownRect.bottom <= triggerRect.top + 1,
+              opensBelow: dropdownRect.top >= triggerRect.bottom - 1,
+              widthDelta: round(dropdownRect.width - triggerRect.width),
+            }
+          : null,
+      selectedItems: visible('.ant-select-dropdown-menu-item-selected').map((element) =>
+        normalize(element.textContent),
+      ),
+      triggerClasses: visible(`${selector} .ant-select`).map((element) =>
+        normalize(element.className),
+      ),
+      viewportWidth: window.innerWidth,
+    };
+  }, rootSelector);
+}
+
+function legacySelectDropdownHasOpened(result, expectedItems) {
+  return (
+    result.before?.dropdownCount === 0 &&
+    result.opened?.dropdownCount === 1 &&
+    result.opened?.dropdownClass?.includes('ant-select-dropdown') &&
+    Boolean(result.opened?.geometry) &&
+    expectedItems.every((item) => JSON.stringify(result.opened?.dropdownItems).includes(item))
+  );
 }
 
 async function legacyRangePickerState(page) {
