@@ -37,3 +37,12 @@
   animation-play-state: running;
   pointer-events: none;
 }
+
+.ant-dropdown-placement-bottomCenter .ant-dropdown-menu.slide-up-enter.slide-up-enter-active,
+.ant-dropdown-placement-bottomCenter .ant-dropdown-menu.slide-up-appear.slide-up-appear-active {
+  animation-name: antSlideUpIn;
+}
+
+.ant-dropdown-placement-bottomCenter .ant-dropdown-menu.slide-up-leave.slide-up-leave-active {
+  animation-name: antSlideUpOut;
+}

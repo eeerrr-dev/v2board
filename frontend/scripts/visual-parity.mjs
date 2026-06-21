@@ -286,6 +286,16 @@ const interactionScenarios = [
     scenarioLabel: 'user-login',
   },
   {
+    label: 'user-dashboard-header-language-dropdown',
+    run: runDashboardHeaderLanguageDropdownInteraction,
+    scenarioLabel: 'user-dashboard',
+  },
+  {
+    label: 'user-dashboard-avatar-dropdown',
+    run: runUserDashboardAvatarDropdownInteraction,
+    scenarioLabel: 'user-dashboard',
+  },
+  {
     label: 'user-dashboard-dark-mode-persistence',
     preserveRuntimeDarkMode: true,
     run: runDarkModePersistenceInteraction,
@@ -379,6 +389,11 @@ const interactionScenarios = [
     scenarioLabel: 'user-traffic',
   },
   {
+    label: 'user-traffic-total-tooltip',
+    run: runUserTrafficTotalTooltipInteraction,
+    scenarioLabel: 'user-traffic',
+  },
+  {
     label: 'user-knowledge-drawer',
     run: runKnowledgeDrawerInteraction,
     scenarioLabel: 'user-knowledge',
@@ -418,6 +433,11 @@ const interactionScenarios = [
     scenarioLabel: 'admin-dashboard',
   },
   {
+    label: 'admin-dashboard-avatar-dropdown',
+    run: runAdminDashboardAvatarDropdownInteraction,
+    scenarioLabel: 'admin-dashboard',
+  },
+  {
     label: 'admin-dashboard-commission-shortcut',
     run: runAdminDashboardCommissionShortcutInteraction,
     scenarioLabel: 'admin-dashboard',
@@ -437,6 +457,11 @@ const interactionScenarios = [
     delayAdminPlanSaveMs: 200,
     label: 'admin-plan-edit-drawer',
     run: runAdminPlanEditDrawerInteraction,
+    scenarioLabel: 'admin-plans',
+  },
+  {
+    label: 'admin-plan-renew-tooltip',
+    run: runAdminPlanRenewTooltipInteraction,
     scenarioLabel: 'admin-plans',
   },
   {
@@ -2217,6 +2242,40 @@ async function runLoginLanguagePersistenceInteraction(page) {
   };
 }
 
+async function runDashboardHeaderLanguageDropdownInteraction(page) {
+  const clicked = await page.evaluate(() => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    const trigger = Array.from(
+      document.querySelectorAll('#page-header button, #page-header .ant-dropdown-trigger'),
+    ).find((element) => element.querySelector('.fa-language') && isVisible(element));
+    if (!(trigger instanceof HTMLElement)) return false;
+    trigger.click();
+    return true;
+  });
+  if (!clicked) throw new Error('dashboard language trigger was not visible');
+  await waitForVisibleText(page, '.ant-dropdown-menu-item', 'English');
+  await page.waitForTimeout(150);
+  return languageDropdownPlacementState(page);
+}
+
+async function runUserDashboardAvatarDropdownInteraction(page) {
+  const before = await headerAvatarDropdownState(page);
+  await clickHeaderAvatarTrigger(page);
+  await waitForHeaderAvatarDropdown(page);
+  await page.waitForTimeout(150);
+  const opened = await headerAvatarDropdownState(page);
+  return { before, opened };
+}
+
 async function runDarkModePersistenceInteraction(page) {
   const diagnostics = page.__visualParityDiagnostics ?? [];
   const before = await darkModePersistenceState(page);
@@ -2724,6 +2783,13 @@ async function runTrafficTableScrollInteraction(page) {
   return { afterMiddle, afterRight, before };
 }
 
+async function runUserTrafficTotalTooltipInteraction(page) {
+  return hoverTooltipInteraction(page, [
+    '.ant-table-fixed .anticon-question-circle',
+    '.ant-table-thead .anticon-question-circle',
+  ]);
+}
+
 async function runKnowledgeDrawerInteraction(page) {
   await fillFirstVisible(page, '.v2board-knowledge-search-bar input', 'router');
   await page.waitForTimeout(350);
@@ -2928,6 +2994,15 @@ async function runAdminDashboardCommissionShortcutInteraction(page) {
   return { after, before };
 }
 
+async function runAdminDashboardAvatarDropdownInteraction(page) {
+  const before = await headerAvatarDropdownState(page);
+  await clickHeaderAvatarTrigger(page);
+  await waitForHeaderAvatarDropdown(page);
+  await page.waitForTimeout(150);
+  const opened = await headerAvatarDropdownState(page);
+  return { before, opened };
+}
+
 async function runAdminConfigTabsInteraction(page) {
   const before = await activeTabState(page);
   await clickVisibleAt(page, '.ant-tabs-tab', 1);
@@ -3048,6 +3123,10 @@ async function runAdminPlanEditDrawerInteraction(page) {
       structuredClone(request),
     ),
   };
+}
+
+async function runAdminPlanRenewTooltipInteraction(page) {
+  return hoverTooltipInteraction(page, ['.ant-table-thead .anticon-question-circle']);
 }
 
 async function runAdminTicketsReplyFilterInteraction(page) {
@@ -4528,6 +4607,51 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`login language persistence did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'user-dashboard-header-language-dropdown' &&
+    (result.dropdownCount !== 1 ||
+      result.placement !== 'bottomCenter' ||
+      !result.opensBelow ||
+      result.gap !== 4 ||
+      Math.abs(result.centerDelta ?? 99) > 1 ||
+      !result.triggerOpen ||
+      !result.items?.includes('English') ||
+      !result.items?.includes('简体中文') ||
+      !result.items?.includes('繁體中文'))
+  ) {
+    throw new Error(`dashboard language dropdown did not match legacy placement: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'user-dashboard-avatar-dropdown' &&
+    (result.before?.menuCount !== 0 ||
+      result.opened?.menuCount !== 1 ||
+      !result.opened?.menuClass?.includes('dropdown-menu-right') ||
+      Math.abs(result.opened?.rightDelta ?? 99) > 1 ||
+      result.opened?.items?.length < 2 ||
+      !jsonIncludesAny(result.opened?.items, [
+        'Profile',
+        'User Center',
+        'My Account',
+        '个人中心',
+        '我的账户',
+        '您的帳戸',
+        '您的帳戶',
+      ]) ||
+      !jsonIncludesAny(result.opened?.items, ['Logout', '登出']))
+  ) {
+    throw new Error(`user avatar dropdown did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-dashboard-avatar-dropdown' &&
+    (result.before?.menuCount !== 0 ||
+      result.opened?.menuCount !== 1 ||
+      !result.opened?.menuClass?.includes('dropdown-menu-right') ||
+      !result.opened?.menuClass?.includes('dropdown-menu-lg') ||
+      Math.abs(result.opened?.rightDelta ?? 99) > 1 ||
+      !jsonIncludesAny(result.opened?.items, ['Logout', '登出']))
+  ) {
+    throw new Error(`admin avatar dropdown did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
     label.endsWith('dark-mode-persistence') &&
     (result.before?.cookieDarkMode === '1' ||
       result.before?.darkReaderReady ||
@@ -4815,6 +4939,16 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`traffic table scroll did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'user-traffic-total-tooltip' &&
+    (result.before?.tooltipCount !== 0 ||
+      result.opened?.tooltipCount !== 1 ||
+      result.opened?.placement !== 'topRight' ||
+      result.opened?.openTriggerCount < 1 ||
+      !jsonIncludesAny(result.opened?.texts, ['Formula', 'formula', '公式', '上行']))
+  ) {
+    throw new Error(`user traffic tooltip did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
     label === 'user-knowledge-drawer' &&
     (result.before?.searchValue !== 'router' ||
       result.before?.articleTitles?.length < 2 ||
@@ -4930,6 +5064,16 @@ function assertUsefulInteraction(label, result) {
     new Set([result.before?.text, result.second?.text, result.third?.text]).size < 2
   ) {
     throw new Error('admin config tabs did not change active tab');
+  }
+  if (
+    label === 'admin-plan-renew-tooltip' &&
+    (result.before?.tooltipCount !== 0 ||
+      result.opened?.tooltipCount !== 1 ||
+      result.opened?.placement !== 'top' ||
+      result.opened?.openTriggerCount < 1 ||
+      !jsonIncludesAny(result.opened?.texts, ['续费', 'renew']))
+  ) {
+    throw new Error(`admin plan renew tooltip did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'admin-plan-create-drawer' &&
@@ -5810,6 +5954,98 @@ async function visibleCount(page, selector) {
   );
 }
 
+async function hoverTooltipInteraction(page, selectors) {
+  const before = await tooltipState(page);
+  await hoverFirstVisibleFromSelectors(page, selectors);
+  await waitForVisibleTooltip(page);
+  await page.waitForTimeout(150);
+  const opened = await tooltipState(page);
+  return { before, opened };
+}
+
+async function tooltipState(page) {
+  return page.evaluate(() => {
+    const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    const tooltips = Array.from(document.querySelectorAll('.ant-tooltip'))
+      .filter((element) => !element.className.includes('ant-tooltip-hidden'))
+      .filter(isVisible);
+    const tooltip = tooltips[0];
+
+    return {
+      className: tooltip ? normalize(tooltip.className) : '',
+      openTriggerCount: Array.from(document.querySelectorAll('.ant-tooltip-open')).filter(
+        isVisible,
+      ).length,
+      placement:
+        tooltip?.className.match(/ant-tooltip-placement-([A-Za-z]+)/)?.[1] ?? '',
+      texts: tooltip
+        ? Array.from(tooltip.querySelectorAll('.ant-tooltip-inner'))
+            .filter(isVisible)
+            .map((element) => normalize(element.textContent))
+            .filter(Boolean)
+        : [],
+      tooltipCount: tooltips.length,
+    };
+  });
+}
+
+async function waitForVisibleTooltip(page) {
+  await page.waitForFunction(
+    () => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      };
+      return Array.from(document.querySelectorAll('.ant-tooltip'))
+        .filter((element) => !element.className.includes('ant-tooltip-hidden'))
+        .some(isVisible);
+    },
+    { timeout: 5_000 },
+  );
+}
+
+async function hoverFirstVisibleFromSelectors(page, selectors) {
+  const point = await page.evaluate((targetSelectors) => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    for (const selector of targetSelectors) {
+      const element = Array.from(document.querySelectorAll(selector)).find(isVisible);
+      if (!element) continue;
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    }
+    throw new Error(`No visible hover target for selectors: ${targetSelectors.join(', ')}`);
+  }, selectors);
+  await page.mouse.move(point.x, point.y);
+}
+
 async function visibleTextCount(page, selector, texts) {
   return page.evaluate(
     ({ selector: targetSelector, texts: targetTexts }) => {
@@ -5886,6 +6122,156 @@ async function loginLanguagePersistenceState(page) {
       storedLocale: window.localStorage.getItem('umi_locale') ?? '',
       titleText: normalize(document.querySelector('.v2board-auth-box h1, .block-title')?.textContent),
       triggerText: normalize(document.querySelector('.v2board-login-i18n-btn')?.textContent),
+    };
+  });
+}
+
+async function languageDropdownPlacementState(page) {
+  return page.evaluate(() => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    const rectOf = (element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        bottom: rect.bottom,
+        height: rect.height,
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        width: rect.width,
+      };
+    };
+    const trigger = Array.from(
+      document.querySelectorAll('#page-header button, #page-header .ant-dropdown-trigger'),
+    ).find((element) => element.querySelector('.fa-language') && isVisible(element));
+    const dropdown = Array.from(document.querySelectorAll('.ant-dropdown')).find(isVisible);
+    const triggerRect = trigger ? rectOf(trigger) : undefined;
+    const dropdownRect = dropdown ? rectOf(dropdown) : undefined;
+    const triggerCenter = triggerRect
+      ? triggerRect.left + triggerRect.width / 2
+      : undefined;
+    const dropdownCenter = dropdownRect
+      ? dropdownRect.left + dropdownRect.width / 2
+      : undefined;
+
+    return {
+      centerDelta:
+        triggerCenter === undefined || dropdownCenter === undefined
+          ? undefined
+          : Math.round(dropdownCenter - triggerCenter),
+      dropdownCount: Array.from(document.querySelectorAll('.ant-dropdown')).filter(isVisible).length,
+      gap:
+        triggerRect && dropdownRect
+          ? Math.round(dropdownRect.top - triggerRect.bottom)
+          : undefined,
+      items: Array.from(document.querySelectorAll('.ant-dropdown-menu-item'))
+        .filter(isVisible)
+        .map((element) => (element.textContent ?? '').trim().replace(/\s+/g, ' ')),
+      opensBelow: Boolean(triggerRect && dropdownRect && dropdownRect.top >= triggerRect.bottom),
+      placement: dropdown?.className.match(/ant-dropdown-placement-([A-Za-z]+)/)?.[1] ?? '',
+      triggerOpen: Boolean(trigger?.className.includes('ant-dropdown-open')),
+    };
+  });
+}
+
+async function clickHeaderAvatarTrigger(page) {
+  const clicked = await page.evaluate(() => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    const trigger = Array.from(document.querySelectorAll('#page-header button')).find(
+      (element) => element.querySelector('.fa-user-circle') && isVisible(element),
+    );
+    if (!(trigger instanceof HTMLElement)) return false;
+    trigger.click();
+    return true;
+  });
+  if (!clicked) throw new Error('header avatar trigger was not visible');
+}
+
+async function waitForHeaderAvatarDropdown(page) {
+  await page.waitForFunction(
+    () => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      };
+      return Array.from(document.querySelectorAll('#page-header .dropdown-menu.show')).some(
+        isVisible,
+      );
+    },
+    { timeout: 5_000 },
+  );
+}
+
+async function headerAvatarDropdownState(page) {
+  return page.evaluate(() => {
+    const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    const rectOf = (element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        bottom: Math.round(rect.bottom),
+        left: Math.round(rect.left),
+        right: Math.round(rect.right),
+        top: Math.round(rect.top),
+        width: Math.round(rect.width),
+      };
+    };
+    const trigger = Array.from(document.querySelectorAll('#page-header button')).find(
+      (element) => element.querySelector('.fa-user-circle') && isVisible(element),
+    );
+    const visibleMenus = Array.from(
+      document.querySelectorAll('#page-header .dropdown-menu.show'),
+    ).filter(isVisible);
+    const menu = visibleMenus[0];
+    const triggerRect = trigger ? rectOf(trigger) : undefined;
+    const menuRect = menu ? rectOf(menu) : undefined;
+
+    return {
+      items: menu
+        ? Array.from(menu.querySelectorAll('.dropdown-item'))
+            .filter(isVisible)
+            .map((element) => normalize(element.textContent))
+            .filter(Boolean)
+        : [],
+      menuClass: menu ? normalize(menu.className) : '',
+      menuCount: visibleMenus.length,
+      menuTopDelta:
+        triggerRect && menuRect ? Math.round(menuRect.top - triggerRect.bottom) : undefined,
+      menuWidth: menuRect?.width,
+      rightDelta:
+        triggerRect && menuRect ? Math.round(menuRect.right - triggerRect.right) : undefined,
     };
   });
 }

@@ -154,9 +154,66 @@ describe('LanguageMenu antd dropdown behavior', () => {
       });
 
       const popup = document.body.querySelector('.ant-dropdown') as HTMLElement;
-      expect(popup.style.top).toBe('96px');
-      expect(popup.style.left).toBe('80px');
-      expect(popup.style.transform).toBe('translate(-50%, -100%)');
+      expect(popup.className).toBe('ant-dropdown ant-dropdown-placement-topCenter');
+      expect(popup.style.position).toBe('absolute');
+      expect(popup.style.top).toBe('0px');
+      expect(popup.style.left).toBe('0px');
+      expect(popup.style.transform).toBe('');
+    } finally {
+      if (heightDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetHeight', heightDescriptor);
+      }
+      if (widthDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetWidth', widthDescriptor);
+      }
+    }
+  });
+
+  it('defaults the compact header language trigger to the legacy bottom-center dropdown', () => {
+    const heightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    const widthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get() {
+        return String(this.className).includes('ant-dropdown') ? 96 : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get() {
+        return String(this.className).includes('ant-dropdown') ? 160 : 0;
+      },
+    });
+
+    try {
+      act(() => {
+        root.render(<LanguageMenu legacyIcon triggerClassName="btn btn-primary mr-1" />);
+      });
+
+      const trigger = container.querySelector('.btn') as HTMLElement;
+      trigger.getBoundingClientRect = () =>
+        ({
+          top: 8,
+          right: 140,
+          bottom: 28,
+          left: 100,
+          width: 40,
+          height: 20,
+          x: 100,
+          y: 8,
+          toJSON: () => {},
+        }) as DOMRect;
+
+      act(() => {
+        trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+
+      const popup = document.body.querySelector('.ant-dropdown') as HTMLElement;
+      expect(popup.className).toBe('ant-dropdown ant-dropdown-placement-bottomCenter');
+      expect(popup.style.position).toBe('absolute');
+      expect(popup.style.top).toBe('32px');
+      expect(popup.style.left).toBe('40px');
+      expect(popup.style.transform).toBe('');
     } finally {
       if (heightDescriptor) {
         Object.defineProperty(HTMLElement.prototype, 'offsetHeight', heightDescriptor);

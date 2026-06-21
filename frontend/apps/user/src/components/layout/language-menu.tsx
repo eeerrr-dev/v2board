@@ -14,37 +14,36 @@ interface LanguageMenuProps {
   showLabel?: boolean;
   triggerClassName?: string;
   legacyIcon?: boolean;
+  placement?: 'topCenter' | 'bottomCenter';
 }
 
 export function LanguageMenu({
   showLabel = false,
   triggerClassName,
   legacyIcon = false,
+  placement: requestedPlacement,
 }: LanguageMenuProps) {
-  // The original is umi's SelectLang: an antd Dropdown (trigger:click, placement:topCenter)
-  // that clones its trigger adding `ant-dropdown-trigger` (+`ant-dropdown-open` when open)
-  // and portals the overlay Menu to document.body. Reproduce both — the trigger className
+  // The original is umi's SelectLang: an antd Dropdown (trigger:click) that clones
+  // its trigger adding `ant-dropdown-trigger` (+`ant-dropdown-open` when open) and
+  // portals the overlay Menu to document.body. Reproduce both the trigger className
   // and the body portal.
   const triggerRef = useRef<HTMLElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ left: number; top: number } | null>(null);
-  // antd keeps the overlay mounted and runs the "slide-down" leave animation on close.
-  // For top placements, antd applies
-  // it to the px-positioned popup wrapper; here the wrapper carries the translate(-50%,-100%)
-  // that anchors its bottom-center to the trigger top (rc-align points ["bc","tc"], offset
-  // [0,-4]), so the scaleY keyframe runs on the inner .ant-dropdown-menu instead — visually
-  // identical, since the menu (with its shadow) fills the wrapper.
+  const placement = requestedPlacement ?? (showLabel ? 'topCenter' : 'bottomCenter');
+  // antd keeps the overlay mounted and runs the placement-specific leave animation on close.
   const dropdownStatus = useTransitionStatus(open, 230, 30);
+  const motionName = placement === 'topCenter' ? 'slide-down' : 'slide-up';
   const slideClass =
     dropdownStatus === 'leave'
-      ? 'slide-down-leave'
+      ? `${motionName}-leave`
       : dropdownStatus === 'leaving'
-        ? 'slide-down-leave slide-down-leave-active'
+        ? `${motionName}-leave ${motionName}-leave-active`
         : dropdownStatus === 'enter'
-          ? 'slide-down-enter'
+          ? `${motionName}-enter`
           : dropdownStatus === 'entering'
-            ? 'slide-down-enter slide-down-enter-active'
+            ? `${motionName}-enter ${motionName}-enter-active`
             : '';
   const locales = getEnabledLocales();
   const currentLabel = SUPPORTED_LOCALES.find((locale) => locale.code === legacyGetLocale())?.label;
@@ -57,32 +56,39 @@ export function LanguageMenu({
     setLegacyCookie('i18n', locale);
   };
 
-  // rc-align anchors the overlay's bottom-center to the trigger's top-center with offset
-  // [0,-4] (4px gap above the trigger); recompute on scroll/resize like rc-align re-aligns.
+  // rc-align positions the body-portaled overlay with absolute document coordinates.
+  // Auth pages use topCenter (bottom-center to trigger top-center, [0,-4]); the
+  // authenticated header uses bottomCenter (top-center to trigger bottom-center, [0,4]).
   const reposition = useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) setCoords({ left: rect.left + rect.width / 2, top: rect.top - 4 });
-  }, []);
+    if (!rect) return;
+    const popupWidth = popupRef.current?.offsetWidth ?? 0;
+    const popupHeight = popupRef.current?.offsetHeight ?? 0;
+    const center = window.scrollX + rect.left + rect.width / 2;
+    const rawLeft = popupWidth ? center - popupWidth / 2 : center;
+    const rawTop =
+      placement === 'topCenter'
+        ? window.scrollY + rect.top - 4 - popupHeight
+        : window.scrollY + rect.bottom + 4;
+    const maxLeft = popupWidth
+      ? window.scrollX + Math.max(0, window.innerWidth - popupWidth)
+      : rawLeft;
+    const maxTop = popupHeight
+      ? window.scrollY + Math.max(0, window.innerHeight - popupHeight)
+      : rawTop;
+    const next = {
+      left: popupWidth ? Math.min(Math.max(rawLeft, window.scrollX), maxLeft) : rawLeft,
+      top: popupHeight ? Math.min(Math.max(rawTop, window.scrollY), maxTop) : rawTop,
+    };
+    setCoords((current) =>
+      current?.left === next.left && current.top === next.top ? current : next,
+    );
+  }, [placement]);
 
   useLayoutEffect(() => {
     if (dropdownStatus === 'exited' || !coords || !popupRef.current) return;
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const popupHeight = popupRef.current.offsetHeight;
-    const popupWidth = popupRef.current.offsetWidth;
-    if (!popupHeight && !popupWidth) return;
-    const minLeft = popupWidth / 2;
-    const maxLeft = Math.max(minLeft, window.innerWidth - popupWidth / 2);
-
-    const next = {
-      left: popupWidth
-        ? Math.min(Math.max(rect.left + rect.width / 2, minLeft), maxLeft)
-        : coords.left,
-      top: popupHeight ? Math.max(rect.top - 4, popupHeight) : coords.top,
-    };
-
-    if (next.left !== coords.left || next.top !== coords.top) setCoords(next);
-  }, [coords, dropdownStatus]);
+    reposition();
+  }, [coords, dropdownStatus, reposition]);
 
   useEffect(() => {
     if (!open) return;
@@ -109,16 +115,13 @@ export function LanguageMenu({
   const popover =
     dropdownStatus !== 'exited' && coords
       ? createPortal(
-          // antd builds the body-portaled wrapper class as `"ant-dropdown" + " " + "" + " "
-          // + placementClass`; the empty middle token leaves a double space, reproduced here.
           <div
             ref={popupRef}
-            className="ant-dropdown  ant-dropdown-placement-topCenter"
+            className={`ant-dropdown ant-dropdown-placement-${placement}`}
             style={{
-              position: 'fixed',
+              position: 'absolute',
               left: coords.left,
               top: coords.top,
-              transform: 'translate(-50%, -100%)',
               zIndex: 1050,
             }}
           >
@@ -154,6 +157,10 @@ export function LanguageMenu({
   const triggerClass = `${triggerClassName ?? (showLabel ? 'v2board-login-i18n-btn' : 'btn')} ant-dropdown-trigger${
     open ? ' ant-dropdown-open' : ''
   }`;
+  const toggleOpen = () => {
+    if (!open) reposition();
+    setOpen((value) => !value);
+  };
 
   if (showLabel && legacyIcon) {
     return (
@@ -163,7 +170,7 @@ export function LanguageMenu({
             triggerRef.current = element;
           }}
           className={triggerClass}
-          onClick={() => setOpen((value) => !value)}
+          onClick={toggleOpen}
         >
           <i className="si si-globe pr-1" />
           <span className="font-size-sm text-muted" style={{ verticalAlign: 'text-bottom' }}>
@@ -183,7 +190,7 @@ export function LanguageMenu({
           triggerRef.current = element;
         }}
         className={triggerClass}
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggleOpen}
       >
         <i className="far fa fa-language" />
         {showLabel && (
