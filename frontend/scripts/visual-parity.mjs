@@ -384,6 +384,11 @@ const interactionScenarios = [
     scenarioLabel: 'user-node',
   },
   {
+    label: 'user-node-tooltips',
+    run: runUserNodeTooltipsInteraction,
+    scenarioLabel: 'user-node',
+  },
+  {
     label: 'user-traffic-table-scroll',
     run: runTrafficTableScrollInteraction,
     scenarioLabel: 'user-traffic',
@@ -401,6 +406,11 @@ const interactionScenarios = [
   {
     label: 'user-invite-generate',
     run: runInviteGenerateInteraction,
+    scenarioLabel: 'user-invite',
+  },
+  {
+    label: 'user-invite-tooltips',
+    run: runUserInviteTooltipsInteraction,
     scenarioLabel: 'user-invite',
   },
   {
@@ -519,8 +529,18 @@ const interactionScenarios = [
     scenarioLabel: 'admin-payments',
   },
   {
+    label: 'admin-payment-notify-tooltip',
+    run: runAdminPaymentNotifyTooltipInteraction,
+    scenarioLabel: 'admin-payments',
+  },
+  {
     label: 'admin-order-detail-modal',
     run: runAdminOrderDetailModalInteraction,
+    scenarioLabel: 'admin-orders',
+  },
+  {
+    label: 'admin-order-status-tooltips',
+    run: runAdminOrderStatusTooltipsInteraction,
     scenarioLabel: 'admin-orders',
   },
   {
@@ -542,6 +562,11 @@ const interactionScenarios = [
     delayAdminCouponGenerateMs: 200,
     label: 'admin-coupon-create-modal',
     run: runAdminCouponCreateModalInteraction,
+    scenarioLabel: 'admin-coupons',
+  },
+  {
+    label: 'admin-coupon-range-picker',
+    run: runAdminCouponRangePickerInteraction,
     scenarioLabel: 'admin-coupons',
   },
   {
@@ -592,6 +617,11 @@ const interactionScenarios = [
     scenarioLabel: 'admin-users',
   },
   {
+    label: 'admin-users-filter-expiry-picker',
+    run: runAdminUsersFilterExpiryPickerInteraction,
+    scenarioLabel: 'admin-users',
+  },
+  {
     label: 'admin-user-bulk-ban-confirm',
     run: runAdminUserBulkBanConfirmInteraction,
     scenarioLabel: 'admin-users',
@@ -604,6 +634,11 @@ const interactionScenarios = [
   {
     label: 'admin-user-create-modal',
     run: runAdminUserCreateModalInteraction,
+    scenarioLabel: 'admin-users',
+  },
+  {
+    label: 'admin-user-create-expiry-picker',
+    run: runAdminUserCreateExpiryPickerInteraction,
     scenarioLabel: 'admin-users',
   },
   {
@@ -2771,6 +2806,10 @@ async function runNodeTableScrollInteraction(page) {
   return { afterMiddle, afterRight, before };
 }
 
+async function runUserNodeTooltipsInteraction(page) {
+  return hoverAllTooltipTargetsInteraction(page, ['.ant-table-thead .anticon-question-circle']);
+}
+
 async function runTrafficTableScrollInteraction(page) {
   const before = await legacyAntTableScrollState(page);
   await setLegacyAntTableScrollLeft(page, 'right');
@@ -2823,6 +2862,10 @@ async function runInviteGenerateInteraction(page) {
   await page.waitForTimeout(100);
   const after = await inviteState(page);
   return { after, before };
+}
+
+async function runUserInviteTooltipsInteraction(page) {
+  return hoverAllTooltipTargetsInteraction(page, ['.anticon-question-circle']);
 }
 
 async function runUserTicketReplySendInteraction(page) {
@@ -3486,6 +3529,10 @@ async function runAdminPaymentEditModalInteraction(page) {
   };
 }
 
+async function runAdminPaymentNotifyTooltipInteraction(page) {
+  return hoverAllTooltipTargetsInteraction(page, ['.ant-table-thead .anticon-question-circle']);
+}
+
 async function runAdminOrderDetailModalInteraction(page) {
   await clickFirstVisibleText(page, '.ant-table-tbody a', ['VIS...001']);
   await page.waitForSelector('.ant-modal', {
@@ -3503,6 +3550,10 @@ async function runAdminOrderDetailModalInteraction(page) {
   await waitForVisibleElementsHidden(page, '.ant-modal');
   const closed = await adminOrderDetailModalState(page);
   return { closed, opened };
+}
+
+async function runAdminOrderStatusTooltipsInteraction(page) {
+  return hoverAllTooltipTargetsInteraction(page, ['.ant-table-thead .anticon-question-circle']);
 }
 
 async function runAdminOrderAssignModalInteraction(page) {
@@ -3612,6 +3663,24 @@ async function runAdminCouponCreateModalInteraction(page) {
     ),
     opened,
   };
+}
+
+async function runAdminCouponRangePickerInteraction(page) {
+  await clickFirstVisible(page, '.bg-white .ant-btn');
+  await page.waitForSelector('.ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-modal-title', '新建优惠券');
+  const before = await legacyRangePickerState(page);
+  await clickFirstVisible(page, '.ant-modal .ant-calendar-range-picker-input');
+  await page.waitForSelector('.ant-calendar-picker-container', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForTimeout(150);
+  const opened = await legacyRangePickerState(page);
+  return { before, opened };
 }
 
 async function runAdminCouponEditModalInteraction(page) {
@@ -3969,6 +4038,31 @@ async function runAdminUsersFilterInteraction(page) {
   };
 }
 
+async function runAdminUsersFilterExpiryPickerInteraction(page) {
+  await clickFirstVisible(page, '.v2board-table-action .ant-btn, .ant-btn');
+  await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
+  await clickVisibleAt(page, '.v2board-filter-drawer .ant-select-selection', 0);
+  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '到期时间');
+  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['到期时间']);
+  await page.waitForSelector('.v2board-filter-drawer .ant-calendar-picker-input', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  const before = await legacyDatePickerState(page, '.v2board-filter-drawer');
+  await clickFirstVisible(page, '.v2board-filter-drawer .ant-calendar-picker-input');
+  await page.waitForSelector('.ant-calendar-picker-container', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForTimeout(150);
+  const opened = await legacyDatePickerState(page, '.v2board-filter-drawer');
+  return { before, opened };
+}
+
 async function runAdminUserBulkBanConfirmInteraction(page) {
   return runAdminUserBulkConfirmInteraction(page, '批量封禁', '确定要进行封禁吗？');
 }
@@ -4031,6 +4125,21 @@ async function runAdminUserCreateModalInteraction(page) {
   await waitForVisibleElementsHidden(page, '.ant-modal');
   const closed = await adminUserCreateModalState(page);
   return { before, closed, filled, opened, planDropdown };
+}
+
+async function runAdminUserCreateExpiryPickerInteraction(page) {
+  await clickVisibleAt(page, '.v2board-table-action .ant-btn', 2);
+  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await waitForVisibleText(page, '.ant-modal-title', '创建用户');
+  const before = await legacyDatePickerState(page, '.ant-modal');
+  await clickFirstVisible(page, '.ant-modal .ant-calendar-picker-input');
+  await page.waitForSelector('.ant-calendar-picker-container', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForTimeout(150);
+  const opened = await legacyDatePickerState(page, '.ant-modal');
+  return { before, opened };
 }
 
 async function runAdminUserSendMailModalInteraction(page) {
@@ -4926,6 +5035,36 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`node table scroll did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
+    [
+      'user-node-tooltips',
+      'user-invite-tooltips',
+      'admin-payment-notify-tooltip',
+      'admin-order-status-tooltips',
+    ].includes(label)
+  ) {
+    const minimumTargets =
+      result.viewportWidth >= 600
+        ? label === 'admin-order-status-tooltips'
+          ? 2
+          : 1
+        : 0;
+    const invalidOpened = (result.opened ?? []).some(
+      (item) =>
+        item.tooltipCount !== 1 ||
+        item.openTriggerCount < 1 ||
+        item.placement !== 'top' ||
+        !item.texts?.length,
+    );
+    if (
+      result.before?.tooltipCount !== 0 ||
+      result.targetCount < minimumTargets ||
+      result.opened?.length !== result.targetCount ||
+      invalidOpened
+    ) {
+      throw new Error(`tooltip sequence did not match legacy state: ${JSON.stringify(result)}`);
+    }
+  }
+  if (
     label === 'user-traffic-table-scroll' &&
     (!JSON.stringify(result.before?.rows).includes('512.00 MB') ||
       !JSON.stringify(result.before?.rows).includes('1.50 x') ||
@@ -5466,6 +5605,23 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`admin coupon modal did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'admin-coupon-range-picker' &&
+    (result.before?.modalCount !== 1 ||
+      result.before?.popupCount !== 0 ||
+      result.opened?.popupCount !== 1 ||
+      !result.opened?.popupClass?.includes('ant-calendar-picker-container-placement-bottomLeft') ||
+      !result.opened?.calendarClass?.includes('ant-calendar-range') ||
+      !result.opened?.calendarClass?.includes('ant-calendar-time') ||
+      !JSON.stringify(result.opened?.pickerInputPlaceholders).includes('Start Time') ||
+      !JSON.stringify(result.opened?.pickerInputPlaceholders).includes('End Time') ||
+      !JSON.stringify(result.opened?.popupInputPlaceholders).includes('Start Time') ||
+      !JSON.stringify(result.opened?.popupInputPlaceholders).includes('End Time') ||
+      !JSON.stringify(result.opened?.footerTexts).includes('选择时间') ||
+      !JSON.stringify(result.opened?.footerTexts).includes('确 定'))
+  ) {
+    throw new Error(`admin coupon range picker did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
     label === 'admin-coupon-edit-modal' &&
     (result.before?.modalCount !== 0 ||
       !JSON.stringify(result.before?.tableRows).includes('Visual Amount') ||
@@ -5704,6 +5860,25 @@ function assertUsefulInteraction(label, result) {
     throw new Error('admin users filter input did not preserve typed value');
   }
   if (
+    label === 'admin-users-filter-expiry-picker' &&
+    (result.before?.popupCount !== 0 ||
+      result.opened?.popupCount !== 1 ||
+      !result.opened?.popupClass?.includes(
+        result.opened?.viewportWidth >= 600
+          ? 'ant-calendar-picker-container-placement-bottomRight'
+          : 'ant-calendar-picker-container-placement-bottomLeft',
+      ) ||
+      !result.opened?.calendarClass?.includes('ant-calendar-time') ||
+      !JSON.stringify(result.opened?.pickerInputPlaceholders).includes('请选择日期') ||
+      !JSON.stringify(result.opened?.popupInputPlaceholders).includes('请选择日期') ||
+      !JSON.stringify(result.opened?.footerTexts).includes('此刻') ||
+      !JSON.stringify(result.opened?.footerTexts).includes('选择时间') ||
+      !JSON.stringify(result.opened?.footerTexts).includes('确 定') ||
+      result.opened?.headerTexts?.length < 2)
+  ) {
+    throw new Error(`admin users filter expiry picker did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
     (label === 'admin-user-bulk-ban-confirm' || label === 'admin-user-bulk-delete-confirm') &&
     (!JSON.stringify(result.before?.tableRows).includes('visual-user@example.com') ||
       !JSON.stringify(result.before?.toolbarButtons).includes('过滤器') ||
@@ -5749,6 +5924,24 @@ function assertUsefulInteraction(label, result) {
       result.closed?.modalCount !== 0)
   ) {
     throw new Error(`admin user create modal did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-user-create-expiry-picker' &&
+    (result.before?.modalCount !== 1 ||
+      result.before?.popupCount !== 0 ||
+      result.opened?.popupCount !== 1 ||
+      !result.opened?.popupClass?.includes('ant-calendar-picker-container-placement-bottomLeft') ||
+      !result.opened?.calendarClass?.includes('ant-calendar') ||
+      !JSON.stringify(result.opened?.pickerInputPlaceholders).includes(
+        '请选择用户到期日期，为空则不限制到期时间',
+      ) ||
+      !JSON.stringify(result.opened?.popupInputPlaceholders).includes(
+        '请选择用户到期日期，为空则不限制到期时间',
+      ) ||
+      !JSON.stringify(result.opened?.footerTexts).includes('今天') ||
+      result.opened?.headerTexts?.length < 2)
+  ) {
+    throw new Error(`admin user create expiry picker did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'admin-user-send-mail-modal' &&
@@ -5963,6 +6156,29 @@ async function hoverTooltipInteraction(page, selectors) {
   return { before, opened };
 }
 
+async function hoverAllTooltipTargetsInteraction(page, selectors) {
+  const before = await tooltipState(page);
+  const viewportWidth = await page.evaluate(() => window.innerWidth);
+  const targetCount = await visibleTooltipTargetCount(page, selectors);
+  const opened = [];
+
+  for (let index = 0; index < targetCount; index += 1) {
+    await hoverVisibleTooltipTargetAt(page, selectors, index);
+    try {
+      await waitForVisibleTooltip(page, 800);
+    } catch {
+      await hoverVisibleTooltipTargetAncestorAt(page, selectors, index, 'span');
+      await waitForVisibleTooltip(page);
+    }
+    await page.waitForTimeout(150);
+    opened.push(await tooltipState(page));
+    await page.mouse.move(1, 1);
+    await waitForNoVisibleTooltip(page);
+  }
+
+  return { before, opened, targetCount, viewportWidth };
+}
+
 async function tooltipState(page) {
   return page.evaluate(() => {
     const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
@@ -5999,7 +6215,7 @@ async function tooltipState(page) {
   });
 }
 
-async function waitForVisibleTooltip(page) {
+async function waitForVisibleTooltip(page, timeout = 5_000) {
   await page.waitForFunction(
     () => {
       const isVisible = (element) => {
@@ -6013,6 +6229,27 @@ async function waitForVisibleTooltip(page) {
         );
       };
       return Array.from(document.querySelectorAll('.ant-tooltip'))
+        .filter((element) => !element.className.includes('ant-tooltip-hidden'))
+        .some(isVisible);
+    },
+    { timeout },
+  );
+}
+
+async function waitForNoVisibleTooltip(page) {
+  await page.waitForFunction(
+    () => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      };
+      return !Array.from(document.querySelectorAll('.ant-tooltip'))
         .filter((element) => !element.className.includes('ant-tooltip-hidden'))
         .some(isVisible);
     },
@@ -6043,6 +6280,106 @@ async function hoverFirstVisibleFromSelectors(page, selectors) {
     }
     throw new Error(`No visible hover target for selectors: ${targetSelectors.join(', ')}`);
   }, selectors);
+  await page.mouse.move(point.x, point.y);
+}
+
+async function visibleTooltipTargetCount(page, selectors) {
+  return page.evaluate((targetSelectors) => {
+    const isHoverable = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        centerX >= 0 &&
+        centerX <= window.innerWidth &&
+        centerY >= 0 &&
+        centerY <= window.innerHeight
+      );
+    };
+    return Array.from(document.querySelectorAll(targetSelectors.join(', '))).filter(isHoverable)
+      .length;
+  }, selectors);
+}
+
+async function hoverVisibleTooltipTargetAt(page, selectors, index) {
+  const point = await page.evaluate(
+    ({ index: targetIndex, selectors: targetSelectors }) => {
+      const isHoverable = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          centerX >= 0 &&
+          centerX <= window.innerWidth &&
+          centerY >= 0 &&
+          centerY <= window.innerHeight
+        );
+      };
+      const element = Array.from(document.querySelectorAll(targetSelectors.join(', '))).filter(
+        isHoverable,
+      )[targetIndex];
+      if (!element) {
+        throw new Error(
+          `No visible hover target at ${targetIndex} for selectors: ${targetSelectors.join(', ')}`,
+        );
+      }
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    },
+    { index, selectors },
+  );
+  await page.mouse.move(point.x, point.y);
+}
+
+async function hoverVisibleTooltipTargetAncestorAt(page, selectors, index, ancestorSelector) {
+  const point = await page.evaluate(
+    ({ ancestorSelector: targetAncestorSelector, index: targetIndex, selectors: targetSelectors }) => {
+      const isHoverable = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          centerX >= 0 &&
+          centerX <= window.innerWidth &&
+          centerY >= 0 &&
+          centerY <= window.innerHeight
+        );
+      };
+      const element = Array.from(document.querySelectorAll(targetSelectors.join(', '))).filter(
+        isHoverable,
+      )[targetIndex];
+      const ancestor = element?.closest(targetAncestorSelector);
+      if (!ancestor) {
+        throw new Error(
+          `No visible hover target ancestor at ${targetIndex} for selectors: ${targetSelectors.join(', ')}`,
+        );
+      }
+      const rect = ancestor.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    },
+    { ancestorSelector, index, selectors },
+  );
   await page.mouse.move(point.x, point.y);
 }
 
@@ -6689,6 +7026,82 @@ async function adminCouponModalState(page) {
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
     titles: await visibleTexts(page, '.ant-modal-title', 2),
   };
+}
+
+async function legacyDatePickerState(page, rootSelector) {
+  return page.evaluate((selector) => {
+    const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    const visible = (selectorText) =>
+      Array.from(document.querySelectorAll(selectorText)).filter(isVisible);
+    const popup = visible('.ant-calendar-picker-container')[0];
+
+    return {
+      calendarClass: normalize(visible('.ant-calendar')[0]?.className),
+      footerTexts: visible('.ant-calendar-footer a').map((element) =>
+        normalize(element.textContent),
+      ),
+      headerTexts: visible('.ant-calendar-month-select, .ant-calendar-year-select').map(
+        (element) => normalize(element.textContent),
+      ),
+      modalCount: visible('.ant-modal').length,
+      pickerInputPlaceholders: visible(`${selector} .ant-calendar-picker-input`).map(
+        (element) => element.getAttribute('placeholder') ?? '',
+      ),
+      popupClass: normalize(popup?.className),
+      popupCount: visible('.ant-calendar-picker-container').length,
+      popupInputPlaceholders: visible('.ant-calendar-picker-container .ant-calendar-input').map(
+        (element) => element.getAttribute('placeholder') ?? '',
+      ),
+      viewportWidth: window.innerWidth,
+    };
+  }, rootSelector);
+}
+
+async function legacyRangePickerState(page) {
+  return page.evaluate(() => {
+    const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    const visible = (selector) => Array.from(document.querySelectorAll(selector)).filter(isVisible);
+    const popup = visible('.ant-calendar-picker-container')[0];
+
+    return {
+      calendarClass: normalize(visible('.ant-calendar')[0]?.className),
+      footerTexts: visible('.ant-calendar-footer a').map((element) =>
+        normalize(element.textContent),
+      ),
+      headerTexts: visible('.ant-calendar-month-select, .ant-calendar-year-select').map(
+        (element) => normalize(element.textContent),
+      ),
+      modalCount: visible('.ant-modal').length,
+      pickerInputPlaceholders: visible('.ant-modal .ant-calendar-range-picker-input').map(
+        (element) => element.getAttribute('placeholder') ?? '',
+      ),
+      popupClass: normalize(popup?.className),
+      popupCount: visible('.ant-calendar-picker-container').length,
+      popupInputPlaceholders: visible('.ant-calendar-picker-container .ant-calendar-input').map(
+        (element) => element.getAttribute('placeholder') ?? '',
+      ),
+    };
+  });
 }
 
 async function adminGiftcardModalState(page) {

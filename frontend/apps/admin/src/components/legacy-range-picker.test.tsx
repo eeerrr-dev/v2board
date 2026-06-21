@@ -80,10 +80,10 @@ describe('LegacyRangePicker', () => {
 
     const popup = document.querySelector('.ant-calendar-picker-container');
     expect(popup?.className).toBe(
-      'ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft',
+      'ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft slide-up-appear slide-up-appear-active',
     );
     expect(
-      popup?.querySelector('.ant-calendar.ant-calendar-range.ant-calendar-time'),
+      popup?.querySelector('.ant-calendar-time.ant-calendar.ant-calendar-range'),
     ).not.toBeNull();
     expect(popup?.querySelector('.ant-calendar-range-left')).not.toBeNull();
     expect(popup?.querySelector('.ant-calendar-range-right')).not.toBeNull();
@@ -93,6 +93,7 @@ describe('LegacyRangePicker', () => {
     expect(popup?.querySelector('.ant-calendar-time-picker-btn-disabled')?.textContent).toBe(
       '选择时间',
     );
+    expect(popup?.querySelector('.ant-calendar-today-btn')?.textContent).toBe('选择时间');
     expect(popup?.querySelector('.ant-calendar-ok-btn-disabled')?.textContent).toBe('确 定');
     expect(popup?.querySelector('input[type="datetime-local"]')).toBeNull();
     expect(popup?.outerHTML).not.toContain('ant-picker');

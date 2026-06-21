@@ -503,10 +503,17 @@ export function LegacyRangePicker({
   const popup = (
     <div
       ref={popupRef}
-      className="ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft"
+      className="ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft slide-up-appear slide-up-appear-active"
       style={{ ...popupPositionStyle, ...customPopupStyle }}
     >
-      <div className={`ant-calendar ant-calendar-range${hasTime ? ' ant-calendar-time' : ''}`} tabIndex={0}>
+      <div
+        className={
+          hasTime
+            ? 'ant-calendar-time ant-calendar ant-calendar-range'
+            : 'ant-calendar ant-calendar-range'
+        }
+        tabIndex={0}
+      >
         <div className="ant-calendar-panel">
           <div className="ant-calendar-date-panel">
             <div className="ant-calendar-input-wrap">
@@ -572,7 +579,7 @@ export function LegacyRangePicker({
                     title={formatDateTitle(today)}
                     onClick={selectNow}
                   >
-                    此刻
+                    选择时间
                   </a>
                   <a
                     className={`ant-calendar-ok-btn${start && end ? '' : ' ant-calendar-ok-btn-disabled'}`}

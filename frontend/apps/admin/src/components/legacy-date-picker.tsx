@@ -141,6 +141,7 @@ function LegacyDatePickerComponent({
     (normalizeDefaultValue(defaultValue) ?? dayjs()).startOf('month'),
   );
   const [selected, setSelected] = useState<Dayjs | null>(() => normalizeDefaultValue(defaultValue));
+  const [popupPlacement, setPopupPlacement] = useState<'bottomLeft' | 'bottomRight'>('bottomLeft');
   const hasTime = Boolean(showTime);
   const timeFormat = getTimeFormat(showTime);
   const timeColumns = getTimeColumns(timeFormat);
@@ -164,8 +165,20 @@ function LegacyDatePickerComponent({
     if (!open) return;
     const rect = rootRef.current?.getBoundingClientRect();
     if (rect) {
+      const popupWidth = popupRef.current?.getBoundingClientRect().width || 280;
+      const isInDrawer = Boolean(
+        rootRef.current?.closest('.ant-drawer, .ant-drawer-open, .v2board-filter-drawer'),
+      );
+      const nextPlacement =
+        (isInDrawer && window.innerWidth >= 600) || rect.left + popupWidth > window.innerWidth
+          ? 'bottomRight'
+          : 'bottomLeft';
+      setPopupPlacement(nextPlacement);
       setPopupPositionStyle({
-        left: rect.left + window.scrollX,
+        left:
+          nextPlacement === 'bottomRight'
+            ? Math.max(window.scrollX, rect.right + window.scrollX - popupWidth)
+            : rect.left + window.scrollX,
         top: rect.bottom + window.scrollY,
       });
     }
@@ -255,7 +268,7 @@ function LegacyDatePickerComponent({
   const popup = (
     <div
       ref={popupRef}
-      className="ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft"
+      className={`ant-calendar-picker-container  ant-calendar-picker-container-placement-${popupPlacement} slide-up-appear slide-up-appear-active`}
       style={{ ...popupPositionStyle, ...customPopupStyle }}
     >
       <div className={`ant-calendar${hasTime ? ' ant-calendar-time' : ''}`} tabIndex={0}>
@@ -442,7 +455,7 @@ function LegacyDatePickerComponent({
                   title={formatDateTitle(today)}
                   onClick={selectNow}
                 >
-                  此刻
+                  {hasTime ? '此刻' : '今天'}
                 </a>
                 {hasTime ? (
                   <>

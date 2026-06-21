@@ -98,11 +98,11 @@ describe('PaymentsPage legacy payment config', () => {
     expect(source).toContain('<LegacyTooltip');
     expect(source).toContain('placement="top"');
     expect(source).toContain(
-      'title="支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。"',
+      'title="支付网关将会把数据通知到本地址，请通过防火墙放行本地址。"',
     );
     expect(source).not.toContain("Tooltip } from 'antd'");
     expect(source).not.toContain('<Tooltip');
-    expect(source).not.toContain('支付网关将会把数据通知到本地址，请通过防火墙放行本地址。');
+    expect(source).not.toContain('支付网关将会把数据通知到本地地址，请通过防火墙放行本地地址。');
   });
 
   it('uses the legacy falsy fallback for dynamic payment config defaults', () => {

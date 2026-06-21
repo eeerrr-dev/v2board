@@ -72,7 +72,7 @@ describe('LegacyDatePicker', () => {
 
     const popup = document.querySelector('.ant-calendar-picker-container');
     expect(popup?.className).toBe(
-      'ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft',
+      'ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomLeft slide-up-appear slide-up-appear-active',
     );
     expect(popup?.querySelector('.ant-calendar.ant-calendar-time')).not.toBeNull();
     expect(popup?.querySelector('.ant-calendar-input ')?.getAttribute('placeholder')).toBe(
@@ -84,6 +84,7 @@ describe('LegacyDatePicker', () => {
     expect(popup?.querySelector('.ant-calendar-time-picker-btn-disabled')?.textContent).toBe(
       '选择时间',
     );
+    expect(popup?.querySelector('.ant-calendar-today-btn')?.textContent).toBe('此刻');
     expect(popup?.querySelector('.ant-calendar-ok-btn-disabled')?.textContent).toBe('确 定');
     expect(popup?.querySelector('input[type="datetime-local"]')).toBeNull();
   });
@@ -185,6 +186,7 @@ describe('LegacyDatePicker', () => {
     expect(popup?.querySelector('.ant-calendar-input ')?.getAttribute('placeholder')).toBe(
       '长期有效',
     );
+    expect(popup?.querySelector('.ant-calendar-today-btn')?.textContent).toBe('今天');
 
     await act(async () => {
       document
