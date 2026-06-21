@@ -1,0 +1,9 @@
+/* Restored Bootstrap dropdown alignment and visibility helpers. */
+.dropdown-menu-right {
+  right: 0;
+  left: auto;
+}
+
+.dropdown-menu.show {
+  display: block;
+}

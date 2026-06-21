@@ -1,0 +1,14 @@
+/* Restored Ant Design v3 table empty-state placeholder. */
+.ant-table-placeholder {
+  position: relative;
+  z-index: 1;
+  margin-top: -1px;
+  padding: 16px;
+  color: rgba(0, 0, 0, 0.25);
+  font-size: 14px;
+  text-align: center;
+  background: #fff;
+  border-top: 1px solid #e8e8e8;
+  border-bottom: 1px solid #e8e8e8;
+  border-radius: 0 0 4px 4px;
+}

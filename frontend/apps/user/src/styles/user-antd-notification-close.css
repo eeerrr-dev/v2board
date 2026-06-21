@@ -1,0 +1,17 @@
+/* Restored Ant Design v3 notification close button styles. */
+.ant-notification-notice-close {
+  position: absolute;
+  top: 16px;
+  right: 22px;
+  color: rgba(0, 0, 0, 0.45);
+  outline: none;
+}
+
+.ant-notification-notice-close:hover {
+  color: rgba(0, 0, 0, 0.67);
+}
+
+.ant-notification-close-icon {
+  font-size: 14px;
+  cursor: pointer;
+}

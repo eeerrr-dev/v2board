@@ -241,37 +241,28 @@ export default function ProfilePage() {
             <div className="form-group">
               <label>{t('profile.old_password')}</label>
               <input
-                ref={(node) =>
-                  setLegacyProfilePasswordInputAttributes(
-                    node,
-                    oldPasswordRef,
-                    t('profile.old_password_placeholder'),
-                  )
-                }
+                ref={oldPasswordRef}
+                type="password"
+                className="form-control"
+                placeholder={t('profile.old_password_placeholder')}
               />
             </div>
             <div className="form-group">
               <label>{t('profile.new_password')}</label>
               <input
-                ref={(node) =>
-                  setLegacyProfilePasswordInputAttributes(
-                    node,
-                    newPasswordRef,
-                    t('profile.new_password_placeholder'),
-                  )
-                }
+                ref={newPasswordRef}
+                type="password"
+                className="form-control"
+                placeholder={t('profile.new_password_placeholder')}
               />
             </div>
             <div className="form-group">
               <label>{t('profile.new_password')}</label>
               <input
-                ref={(node) =>
-                  setLegacyProfilePasswordInputAttributes(
-                    node,
-                    confirmPasswordRef,
-                    t('profile.new_password_placeholder'),
-                  )
-                }
+                ref={confirmPasswordRef}
+                type="password"
+                className="form-control"
+                placeholder={t('profile.new_password_placeholder')}
               />
             </div>
             <AntBtn
@@ -527,21 +518,6 @@ function triggerSwitchWave(node: HTMLElement) {
     node.removeEventListener('animationend', onEnd);
   };
   node.addEventListener('animationend', onEnd);
-}
-
-function setLegacyProfilePasswordInputAttributes(
-  node: HTMLInputElement | null,
-  ref: { current: HTMLInputElement | null },
-  placeholder: string,
-) {
-  ref.current = node;
-  if (!node) return;
-  node.removeAttribute('class');
-  node.removeAttribute('placeholder');
-  node.removeAttribute('type');
-  node.setAttribute('type', 'password');
-  node.setAttribute('class', 'form-control');
-  node.setAttribute('placeholder', placeholder);
 }
 
 function LegacySwitch({

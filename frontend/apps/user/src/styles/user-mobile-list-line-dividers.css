@@ -1,0 +1,8 @@
+/* Restored Ant Design Mobile list line divider fallback. */
+.am-list-body div:not(:last-child) .am-list-line::after {
+  content: none;
+}
+
+.am-list-body div:not(:last-child) .am-list-line {
+  border-bottom: 1px solid #ddd;
+}

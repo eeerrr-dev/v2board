@@ -1,0 +1,19 @@
+/* Restored Ant Design v3 bottom drawer placement geometry. */
+.ant-drawer-bottom {
+  bottom: 0;
+}
+
+.ant-drawer-bottom .ant-drawer-content-wrapper {
+  bottom: 0;
+  transform: translateY(100%);
+}
+
+.ant-drawer-bottom.ant-drawer-open .ant-drawer-content-wrapper {
+  transform: translateY(0);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.ant-drawer-bottom.ant-drawer-open.no-mask {
+  bottom: 1px;
+  transform: translateY(1px);
+}

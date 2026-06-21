@@ -71,9 +71,10 @@ if [ "$ROLE" = "app" ]; then
     if ! mysql -h mysql -uroot -pv2board v2board -e "SELECT 1 FROM v2_user LIMIT 1" >/dev/null 2>&1; then
         echo "[entrypoint:app] importing schema from database/install.sql..."
         mysql -h mysql -uroot -pv2board v2board < /app/database/install.sql
-        echo "[entrypoint:app] seeding admin + plan + settings..."
-        php /app/docker/seed.php
     fi
+
+    echo "[entrypoint:app] ensuring local seed data + settings..."
+    php /app/docker/seed.php
 
     php artisan config:clear || true
     php artisan view:clear || true

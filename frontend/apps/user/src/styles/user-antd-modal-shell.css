@@ -1,0 +1,16 @@
+/* Restored Ant Design v3 modal shell. */
+.ant-modal {
+  box-sizing: border-box;
+  position: relative;
+  top: 100px;
+  width: auto;
+  margin: 0 auto;
+  padding: 0 0 24px;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 14px;
+  font-variant: tabular-nums;
+  line-height: 1.5;
+  list-style: none;
+  font-feature-settings: 'tnum';
+  pointer-events: none;
+}

@@ -107,7 +107,7 @@ describe('LegacySelect', () => {
     expect(html).not.toContain('ant-select-selection--multiple');
   });
 
-  it('renders the old single defaultValue fallback before a controlled value is chosen', () => {
+  it('does not render an unmatched single defaultValue as a selected option', () => {
     const html = renderToStaticMarkup(
       <LegacySelect
         defaultValue={1}
@@ -120,9 +120,43 @@ describe('LegacySelect', () => {
       />,
     );
 
+    expect(html).toContain('class="ant-select-selection__placeholder"');
+    expect(html).toContain('请选择知识语言');
+    expect(html).not.toContain('class="ant-select-selection-selected-value"');
+    expect(html).not.toContain('title="1"');
+    expect(html).not.toContain('>1</div>');
+  });
+
+  it('renders the old raw value for an unmatched controlled single value', () => {
+    const html = renderToStaticMarkup(
+      <LegacySelect
+        value={1}
+        placeholder="指定订阅"
+        options={[{ value: '1', label: 'Pro' }]}
+        onChange={vi.fn()}
+      />,
+    );
+
     expect(html).toContain('class="ant-select-selection-selected-value"');
     expect(html).toContain('title="1"');
     expect(html).toContain('>1</div>');
+    expect(html).not.toContain('Pro');
+  });
+
+  it('renders the old raw NaN defaultValue for single selects', () => {
+    const html = renderToStaticMarkup(
+      <LegacySelect
+        defaultValue={Number.NaN}
+        placeholder="推荐返利类型"
+        options={[{ value: 0, label: '跟随系统设置' }]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('class="ant-select-selection-selected-value"');
+    expect(html).toContain('title="NaN"');
+    expect(html).toContain('>NaN</div>');
+    expect(html).not.toContain('跟随系统设置');
   });
 
   it('lets a controlled value override the old single defaultValue fallback', () => {

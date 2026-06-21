@@ -216,6 +216,7 @@ function TicketListPage() {
       suffix:
         query.status !== 1 ? (
           <LegacyFilterIcon
+            filled
             title="筛选"
             tabIndex={-1}
             className="ant-dropdown-trigger"
@@ -230,13 +231,9 @@ function TicketListPage() {
 
   const renderTicketStatus = (value: 0 | 1, row: Ticket) =>
     row.status === 1 ? (
-      <span>
-        <LegacyBadge status="success" /> 已关闭
-      </span>
+      <LegacyBadge status="success" text="已关闭" />
     ) : (
-      <span>
-        <LegacyBadge status={value ? 'processing' : 'error'} /> {value ? '已回复' : '待回复'}
-      </span>
+      <LegacyBadge status={value ? 'processing' : 'error'} text={value ? '已回复' : '待回复'} />
     );
 
   const renderTicketActions = (row: Ticket) => (
@@ -287,6 +284,7 @@ function TicketListPage() {
             headers={headers}
             isEmpty={data.length === 0}
             scrollX={900}
+            scrollPositionRight="desktop"
             pagination={
               <LegacyTablePagination
                 current={query.current ?? 1}
@@ -369,11 +367,17 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
 
   const sendReply = async () => {
     if (reply.isPending) return;
-    messageApi.loading('发送中');
+    const replyMessageKey = 'v2board-admin-ticket-reply';
+    const closeReplyMessage = messageApi.open({
+      content: '发送中',
+      duration: 0,
+      key: replyMessageKey,
+      type: 'loading',
+    });
     try {
       await reply.mutateAsync({ id: ticketId, message });
     } finally {
-      messageApi.destroy();
+      closeReplyMessage();
     }
     await ticket.refetch();
     if (inputRef.current) inputRef.current.value = '';

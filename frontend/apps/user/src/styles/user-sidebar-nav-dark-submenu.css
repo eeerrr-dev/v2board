@@ -1,0 +1,22 @@
+/* Restored OneUI dark sidebar/header submenu colors. */
+.nav-main-dark .nav-main-submenu,
+.page-header-dark #page-header .nav-main-submenu,
+.sidebar-dark #sidebar .nav-main-submenu {
+  background-color: var(--legacy-nav-dark-submenu-bg);
+}
+
+.nav-main-dark .nav-main-submenu .nav-main-link,
+.page-header-dark #page-header .nav-main-submenu .nav-main-link,
+.sidebar-dark #sidebar .nav-main-submenu .nav-main-link {
+  color: var(--legacy-nav-dark-submenu-link);
+}
+
+.nav-main-dark .nav-main-submenu .nav-main-link.active,
+.nav-main-dark .nav-main-submenu .nav-main-link:hover,
+.page-header-dark #page-header .nav-main-submenu .nav-main-link.active,
+.page-header-dark #page-header .nav-main-submenu .nav-main-link:hover,
+.sidebar-dark #sidebar .nav-main-submenu .nav-main-link.active,
+.sidebar-dark #sidebar .nav-main-submenu .nav-main-link:hover {
+  color: #fff;
+  background-color: transparent;
+}

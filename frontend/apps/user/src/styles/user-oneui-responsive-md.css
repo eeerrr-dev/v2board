@@ -1,0 +1,9 @@
+/* Restored packaged md breakpoint OneUI utilities. */
+@media (min-width: 768px) {
+  .order-md-1 { order: 1; }
+  .p-md-0 { padding: 0 !important; }
+  .py-md-4 { padding-top: 1.5rem !important; padding-bottom: 1.5rem !important; }
+  .justify-content-md-between { justify-content: space-between !important; }
+  .align-items-md-center { align-items: center !important; }
+  .mb-md-0 { margin-bottom: 0 !important; }
+}

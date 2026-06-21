@@ -1,0 +1,9 @@
+/* Restored document-level selection and RTL browser effects. */
+::selection {
+  color: #fff;
+  background: var(--color-brand-500);
+}
+
+[dir='rtl'] {
+  text-align: right;
+}

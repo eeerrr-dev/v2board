@@ -216,6 +216,11 @@ const LEGACY_ANT_ICONS = {
 
 export type LegacyAntIconName = keyof typeof LEGACY_ANT_ICONS;
 type LegacyAntIconProps = ComponentPropsWithoutRef<'i'>;
+type LegacyFilterIconProps = LegacyAntIconProps & { filled?: boolean };
+
+const LEGACY_FILTER_FILLED_PATHS = [
+  'M880.1 154H143.9c-24.5 0-39.8 26.7-27.5 48L349 597.4V838c0 17.7 14.2 32 31.8 32h262.4c17.6 0 31.8-14.3 31.8-32V597.4L907.7 202c12.2-21.3-3.1-48-27.6-48z',
+] as const;
 
 function classNames(...values: Array<string | undefined>) {
   return values.filter(Boolean).join(' ');
@@ -224,10 +229,12 @@ function classNames(...values: Array<string | undefined>) {
 export function LegacyAntIcon({
   name,
   className,
+  paths,
   style,
   ...rest
-}: LegacyAntIconProps & { name: LegacyAntIconName }) {
+}: LegacyAntIconProps & { name: LegacyAntIconName; paths?: readonly string[] }) {
   const icon = LEGACY_ANT_ICONS[name];
+  const iconPaths = paths ?? icon.paths;
 
   return (
     <i
@@ -246,7 +253,7 @@ export function LegacyAntIcon({
         fill="currentColor"
         aria-hidden="true"
       >
-        {icon.paths.map((d) => (
+        {iconPaths.map((d) => (
           <path key={d} d={d} />
         ))}
       </svg>
@@ -257,8 +264,8 @@ export function LegacyAntIcon({
 export const LegacyPlusIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="plus" {...props} />
 );
-export const LegacyFilterIcon = (props: LegacyAntIconProps) => (
-  <LegacyAntIcon name="filter" {...props} />
+export const LegacyFilterIcon = ({ filled, ...props }: LegacyFilterIconProps) => (
+  <LegacyAntIcon name="filter" paths={filled ? LEGACY_FILTER_FILLED_PATHS : undefined} {...props} />
 );
 export const LegacySelectIcon = (props: LegacyAntIconProps) => (
   <LegacyAntIcon name="select" {...props} />

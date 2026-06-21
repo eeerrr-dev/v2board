@@ -1,0 +1,17 @@
+/* Restored plan filter pill tabs. */
+.v2board-plan-tabs {
+  padding: 8px 4px;
+  border: 1px solid #000;
+  border-radius: 100px;
+}
+
+.v2board-plan-tabs > span {
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.v2board-plan-tabs > .active {
+  color: #fff;
+  background: #000;
+  border-radius: 100px;
+}

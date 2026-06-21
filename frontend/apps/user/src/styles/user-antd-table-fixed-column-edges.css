@@ -1,0 +1,27 @@
+/* Restored Ant Design v3 fixed-column edge states. */
+.ant-table-fixed-left,
+.ant-table-fixed-left table {
+  border-radius: 4px 0 0 0;
+}
+
+.ant-table-fixed-right,
+.ant-table-fixed-right table {
+  border-radius: 0 4px 0 0;
+}
+
+.ant-table-fixed-right a[disabled] {
+  pointer-events: auto;
+}
+
+.ant-table-fixed-left .ant-table-thead > tr > th:last-child {
+  border-top-right-radius: 0;
+}
+
+.ant-table-fixed-right .ant-table-thead > tr > th:first-child {
+  border-top-left-radius: 0;
+}
+
+.ant-table.ant-table-scroll-position-left .ant-table-fixed-left,
+.ant-table.ant-table-scroll-position-right .ant-table-fixed-right {
+  box-shadow: none;
+}

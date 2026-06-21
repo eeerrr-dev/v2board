@@ -1,0 +1,34 @@
+/* Restored Ant Design v3 notification icon spacing and status colors. */
+.ant-notification-notice-with-icon .ant-notification-notice-message {
+  margin-bottom: 4px;
+  margin-left: 48px;
+  font-size: 16px;
+}
+
+.ant-notification-notice-with-icon .ant-notification-notice-description {
+  margin-left: 48px;
+  font-size: 14px;
+}
+
+.ant-notification-notice-icon {
+  position: absolute;
+  margin-left: 4px;
+  font-size: 24px;
+  line-height: 24px;
+}
+
+.anticon.ant-notification-notice-icon-success {
+  color: #52c41a;
+}
+.anticon.ant-notification-notice-icon-info {
+  color: #1890ff;
+}
+.anticon.ant-notification-notice-icon-warning {
+  color: #faad14;
+}
+.anticon.ant-notification-notice-icon-error {
+  color: #f5222d;
+}
+.anticon.ant-notification-notice-icon-loading {
+  color: #1890ff;
+}

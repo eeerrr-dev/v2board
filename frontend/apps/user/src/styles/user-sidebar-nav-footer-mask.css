@@ -1,0 +1,18 @@
+/* Restored mobile nav mask and sidebar copyright placement. */
+.v2board-nav-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: none;
+  background: #000;
+  opacity: 0.5;
+}
+
+.v2board-copyright {
+  position: absolute;
+  right: 0;
+  bottom: 10px;
+  left: 15px;
+  font-size: 10px;
+  opacity: 0.2;
+}

@@ -1,0 +1,15 @@
+/* Restored user main content child spacing. */
+.content .block,
+.content .items-push > div,
+.content .push,
+.content p {
+  margin-bottom: 0.875rem;
+}
+
+.content .items-push-2x > div {
+  margin-bottom: 1.75rem;
+}
+
+.content .items-push-3x > div {
+  margin-bottom: 2.625rem;
+}

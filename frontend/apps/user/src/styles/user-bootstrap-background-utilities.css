@@ -1,0 +1,31 @@
+/* Restored Bootstrap and OneUI background utility colors. */
+.bg-danger {
+  background-color: #e04f1a !important;
+}
+.bg-warning {
+  background-color: #ffb119 !important;
+}
+.bg-success {
+  background-color: #82b54b !important;
+}
+.bg-primary {
+  background-color: var(--color-brand-500) !important;
+}
+.bg-gray-light {
+  background-color: #e9ecef !important;
+}
+.bg-gray-lighter {
+  background-color: #f8f9fa !important;
+}
+.bg-success-lighter {
+  background-color: #e4efd8 !important;
+}
+.bg-dark {
+  background-color: #343a40 !important;
+}
+.bg-body-dark {
+  background-color: var(--legacy-sidebar-dark-color) !important;
+}
+.bg-black-50 {
+  background-color: rgba(0, 0, 0, 0.5) !important;
+}

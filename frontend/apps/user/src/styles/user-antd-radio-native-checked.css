@@ -1,0 +1,29 @@
+/* Restored Ant Design v3 native radio checked state and ripple shell. */
+.ant-radio-checked::after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--legacy-ant-primary);
+  border-radius: 50%;
+  visibility: hidden;
+  animation: antRadioEffect 0.36s ease-in-out;
+  animation-fill-mode: both;
+  content: '';
+}
+
+.ant-radio-wrapper:hover .ant-radio::after,
+.ant-radio:hover::after {
+  visibility: visible;
+}
+
+.ant-radio-checked .ant-radio-inner {
+  border-color: var(--legacy-ant-primary);
+}
+
+.ant-radio-checked .ant-radio-inner::after {
+  transform: scale(1);
+  opacity: 1;
+  transition: all 0.3s cubic-bezier(0.78, 0.14, 0.15, 0.86);
+}

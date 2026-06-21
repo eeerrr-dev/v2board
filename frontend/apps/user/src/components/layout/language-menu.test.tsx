@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageMenu } from './language-menu';
+import { readUserStyles } from '../../test/read-user-styles';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -179,7 +180,7 @@ describe('LanguageMenu antd dropdown behavior', () => {
   });
 
   it('keeps the legacy antd Dropdown base CSS', () => {
-    const css = readFileSync('src/styles/globals.css', 'utf8');
+    const css = readUserStyles();
 
     expect(css).toContain('.ant-dropdown {\n  box-sizing: border-box;\n  position: absolute;');
     expect(css).toContain('z-index: 1050;\n  display: block;');

@@ -5,7 +5,7 @@ import {
   buildAppViteConfig,
   legacyNavigationRedirectPlugin,
   legacyViteClientStubPlugin,
-  legacyThemePlugin,
+  rejectPackagedUserAssetsPlugin,
   stripViteClientPlugin,
 } from '@v2board/config/vite';
 
@@ -15,9 +15,9 @@ export default defineConfig({
   plugins: [
     legacyNavigationRedirectPlugin(),
     legacyViteClientStubPlugin(),
+    rejectPackagedUserAssetsPlugin(),
     react(),
     stripViteClientPlugin(),
-    legacyThemePlugin(),
   ],
   optimizeDeps: {
     include: [

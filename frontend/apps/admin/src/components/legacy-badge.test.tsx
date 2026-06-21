@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { LegacyBadge } from './legacy-badge';
 
 describe('LegacyBadge', () => {
-  it('renders the old status badge shell without children', () => {
+  it('renders the old status badge shell including the empty status text spacer', () => {
     const html = renderToStaticMarkup(<LegacyBadge status="success" />);
 
     expect(html).toContain(

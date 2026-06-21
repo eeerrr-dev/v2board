@@ -1,0 +1,8 @@
+/* Restored packaged OneUI text alignment and casing utility classes. */
+.text-center { text-align: center !important; }
+.text-left { text-align: left !important; }
+.text-right { text-align: right !important; }
+.text-uppercase {
+  text-transform: uppercase !important;
+  letter-spacing: 0.0625rem;
+}

@@ -1,0 +1,21 @@
+/* Restored Ant Design v3 switch checked state. */
+.ant-switch-checked {
+  background-color: #1890ff;
+}
+
+.ant-switch-checked .ant-switch-inner {
+  margin-right: 24px;
+  margin-left: 6px;
+}
+
+.ant-switch-checked::after {
+  left: 100%;
+  margin-left: -1px;
+  transform: translateX(-100%);
+}
+
+.ant-switch-checked .ant-switch-loading-icon {
+  left: 100%;
+  margin-left: -19px;
+  color: #1890ff;
+}

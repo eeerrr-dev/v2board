@@ -1,0 +1,8 @@
+/* Restored Ant Design v3 select arrow open rotation. */
+.ant-select-arrow .ant-select-arrow-icon svg {
+  transition: transform 0.3s;
+}
+
+.ant-select-open .ant-select-arrow-icon svg {
+  transform: rotate(180deg);
+}

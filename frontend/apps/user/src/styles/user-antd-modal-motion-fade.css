@@ -1,0 +1,30 @@
+/* Restored rc-animate fade lifecycle for Ant Design v3 modals. */
+.fade-appear,
+.fade-enter,
+.fade-leave {
+  animation-duration: 0.2s;
+  animation-fill-mode: both;
+  animation-play-state: paused;
+}
+
+.fade-appear.fade-appear-active,
+.fade-enter.fade-enter-active {
+  animation-name: antFadeIn;
+  animation-play-state: running;
+}
+
+.fade-leave.fade-leave-active {
+  animation-name: antFadeOut;
+  animation-play-state: running;
+  pointer-events: none;
+}
+
+.fade-appear,
+.fade-enter {
+  opacity: 0;
+  animation-timing-function: linear;
+}
+
+.fade-leave {
+  animation-timing-function: linear;
+}

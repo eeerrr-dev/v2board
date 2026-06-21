@@ -410,10 +410,17 @@ describe('OrdersPage legacy order manager', () => {
 
   it('keeps the original first-fetch pagination and addFilter jump page values', () => {
     expect(ordersSource).toContain('const storedFilter = readStoredOrderFilter();');
-    expect(ordersSource).toContain('current: storedFilter.length > 0 ? 1 : 0,');
-    expect(ordersSource).toContain('filter: storedFilter,');
+    expect(ordersSource).toContain('current: storedFilter.filter.length > 0 ? 1 : 0,');
+    expect(ordersSource).toContain('total: storedFilter.total,');
+    expect(ordersSource).toContain('filter: storedFilter.filter,');
     expect(ordersSource).toContain('current: query.current || 1,');
     expect(ordersSource).toContain('setQuery((state) => ({ ...state, current: 1, filter }))');
+  });
+
+  it('keeps the legacy stored order filter total and array compatibility', () => {
+    expect(ordersSource).toContain("function readStoredOrderFilter(): Pick<QueryState, 'filter' | 'total'>");
+    expect(ordersSource).toContain("if (Array.isArray(parsed)) return { filter: parsed };");
+    expect(ordersSource).toContain("total: typeof parsed.total === 'number' ? parsed.total : undefined,");
   });
 
   it('keeps pagination updates on the table onChange path only', () => {

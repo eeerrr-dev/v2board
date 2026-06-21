@@ -164,7 +164,8 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource).toContain('<LegacyStandaloneTable');
     expect(plansSource).toContain('scrollX={1300}');
     expect(plansSource).toContain('scrollPositionRight={false}');
-    expect(plansSource).toContain('fixedRightRowHeight={75}');
+    expect(plansSource).toContain('fixedRightRowHeight={54}');
+    expect(plansSource).toContain('style={{ height: 54 }}');
     expect(plansSource).toContain('fixedRightChildren={order.map((record, index) => (');
     expect(plansSource).toContain(
       'className="ant-table-align-right ant-table-row-cell-last"',

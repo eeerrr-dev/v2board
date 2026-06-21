@@ -1,0 +1,13 @@
+/* Restored Bootstrap animated progress styles separated from the user Bootstrap recovery layer. */
+.progress-bar-animated {
+  animation: progress-bar-stripes 1s linear infinite;
+}
+
+@keyframes progress-bar-stripes {
+  from {
+    background-position: 1.25rem 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}

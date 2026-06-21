@@ -1,0 +1,14 @@
+/* Restored Ant Design v3 jump ellipsis text. */
+.ant-pagination-jump-prev .ant-pagination-item-ellipsis,
+.ant-pagination-jump-next .ant-pagination-item-ellipsis {
+  position: absolute;
+  inset: 0;
+  display: block;
+  margin: auto;
+  color: rgba(0, 0, 0, 0.25);
+  letter-spacing: 2px;
+  text-align: center;
+  text-indent: 0.13em;
+  opacity: 1;
+  transition: all 0.2s;
+}

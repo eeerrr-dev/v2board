@@ -1,0 +1,26 @@
+/* Restored Ant Design v3 table body cell and row states. */
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid #e8e8e8;
+  transition:
+    all 0.3s,
+    border 0s;
+}
+
+.ant-table-row {
+  transition: background 0.3s;
+}
+
+.ant-table-row-cell-last {
+  border-right: 0;
+}
+
+.ant-table-tbody
+  > tr.ant-table-row-hover:not(.ant-table-expanded-row):not(.ant-table-row-selected)
+  > td,
+.ant-table-tbody > tr:hover:not(.ant-table-expanded-row):not(.ant-table-row-selected) > td,
+.ant-table-thead
+  > tr.ant-table-row-hover:not(.ant-table-expanded-row):not(.ant-table-row-selected)
+  > td,
+.ant-table-thead > tr:hover:not(.ant-table-expanded-row):not(.ant-table-row-selected) > td {
+  background: #e6f6ff;
+}

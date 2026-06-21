@@ -1,0 +1,11 @@
+/* Restored Ant Design v3 pagination page item link styles. */
+.ant-pagination-item a {
+  display: block;
+  padding: 0 6px;
+  color: rgba(0, 0, 0, 0.65);
+  transition: none;
+}
+
+.ant-pagination-item a:hover {
+  text-decoration: none;
+}

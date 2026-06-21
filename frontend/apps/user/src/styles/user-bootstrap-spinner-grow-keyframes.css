@@ -1,0 +1,10 @@
+/* Restored Bootstrap grow spinner keyframes separated from the user Bootstrap recovery layer. */
+@keyframes spinner-grow {
+  0% {
+    transform: scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: none;
+  }
+}

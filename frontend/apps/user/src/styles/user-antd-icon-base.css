@@ -1,0 +1,29 @@
+/* Restored Ant Design v3 icon base and loading spin styles. */
+.anticon {
+  display: inline-block;
+  color: inherit;
+  font-style: normal;
+  line-height: 0;
+  text-align: center;
+  text-rendering: optimizeLegibility;
+  vertical-align: 0.1em;
+}
+
+.anticon > * {
+  line-height: 1;
+}
+
+.anticon svg {
+  display: inline-block;
+}
+
+.anticon-spin {
+  display: inline-block;
+  animation: loadingCircle 1s linear infinite;
+}
+
+@keyframes loadingCircle {
+  to {
+    transform: rotate(1turn);
+  }
+}

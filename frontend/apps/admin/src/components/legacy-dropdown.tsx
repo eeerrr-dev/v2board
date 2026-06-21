@@ -159,6 +159,7 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
   const isControlled = Object.prototype.hasOwnProperty.call(props, 'visible');
   const [open, setOpen] = useState(defaultVisible);
   const [hasOpened, setHasOpened] = useState(defaultVisible || !!visible);
+  const [overlayPinned, setOverlayPinned] = useState(false);
   const [coords, setCoords] = useState<LegacyDropdownCoords>();
   const triggerRef = useRef<HTMLElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
@@ -183,8 +184,14 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
   };
 
   const closeFromOverlayClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!isControlled) setOpen(false);
+    clearDelayTimer();
     onOverlayClick?.(event);
+    if (opensOnClick || opensOnContextMenu) {
+      setOverlayPinned(false);
+      setVisibleState(false);
+      return;
+    }
+    setOverlayPinned(true);
   };
 
   const setCoordsFromSource = (
@@ -245,6 +252,16 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
       if (!target) return;
       if (popupRef.current?.contains(target)) return;
       if (triggerRef.current?.contains(target)) return;
+      if (
+        overlayPinned &&
+        target.closest('.ant-modal, .ant-drawer') &&
+        !target.closest(
+          '.ant-modal-footer, .ant-modal-confirm-btns, .ant-modal-close, .v2board-drawer-action, .ant-drawer-close',
+        )
+      ) {
+        return;
+      }
+      setOverlayPinned(false);
       setVisibleState(false);
     };
 
@@ -254,7 +271,36 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
       document.removeEventListener('mousedown', closeOnOutsidePointer);
       document.removeEventListener('touchstart', closeOnOutsidePointer);
     };
-  }, [actualOpen, opensOnClick, opensOnContextMenu]);
+  }, [actualOpen, opensOnClick, opensOnContextMenu, overlayPinned]);
+
+  useEffect(() => {
+    if (!actualOpen || !overlayPinned || opensOnClick || opensOnContextMenu) return undefined;
+    const closePinnedHoverOverlay = (event: MouseEvent | TouchEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+      if (popupRef.current?.contains(target)) return;
+      if (triggerRef.current?.contains(target)) return;
+      if (
+        target.closest('.ant-modal') &&
+        !target.closest('.ant-modal-footer') &&
+        !target.closest('.ant-modal-confirm-btns') &&
+        !target.closest('.ant-modal-close')
+      ) {
+        return;
+      }
+      setOverlayPinned(false);
+      setVisibleState(false);
+    };
+
+    document.addEventListener('mousedown', closePinnedHoverOverlay, true);
+    document.addEventListener('click', closePinnedHoverOverlay, true);
+    document.addEventListener('touchstart', closePinnedHoverOverlay, true);
+    return () => {
+      document.removeEventListener('mousedown', closePinnedHoverOverlay, true);
+      document.removeEventListener('click', closePinnedHoverOverlay, true);
+      document.removeEventListener('touchstart', closePinnedHoverOverlay, true);
+    };
+  }, [actualOpen, opensOnClick, opensOnContextMenu, overlayPinned]);
 
   useEffect(() => {
     return () => clearDelayTimer();
@@ -353,7 +399,7 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
               onClick={closeFromOverlayClick}
               onMouseEnter={clearDelayTimer}
               onMouseLeave={() => {
-                if (opensOnHover) scheduleVisibleState(false, mouseLeaveDelay);
+                if (opensOnHover && !overlayPinned) scheduleVisibleState(false, mouseLeaveDelay);
               }}
             >
               {actualOverlay}

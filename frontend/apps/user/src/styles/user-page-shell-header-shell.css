@@ -1,0 +1,30 @@
+/* Restored user page header shell states. */
+#page-header {
+  position: relative;
+  width: 100%;
+  margin: 0 auto;
+  background-color: #fff;
+}
+
+#page-container.page-header-fixed #page-header {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  width: auto;
+  min-width: 320px;
+  max-width: 100%;
+  z-index: 1030;
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.02);
+}
+
+#page-container.page-header-fixed #page-header,
+#page-container.page-header-glass #page-header {
+  z-index: 998;
+}
+
+#page-container.page-header-dark #page-header {
+  color: var(--legacy-header-dark-color);
+  background-color: var(--color-brand-500);
+  box-shadow: none;
+}

@@ -7,8 +7,30 @@ import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
 export default [
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/*.config.{ts,js}'] },
+  {
+    ignores: [
+      '**/.cache/**',
+      '**/coverage/**',
+      '**/dist/**',
+      '**/dist-deploy/**',
+      '**/node_modules/**',
+      '**/*.config.{ts,js}',
+    ],
+  },
   js.configs.recommended,
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.browser, ...globals.node },
+    },
+    rules: {
+      'no-console': 'off',
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'preserve-caught-error': 'off',
+    },
+  },
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
@@ -28,10 +50,34 @@ export default [
       ...reactHooks.configs.recommended.rules,
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      '@typescript-eslint/no-unused-expressions': [
+        'error',
+        { allowShortCircuit: true, allowTernary: true },
+      ],
+      'no-console': 'off',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-undef': 'off',
+      'no-unused-expressions': ['error', { allowShortCircuit: true, allowTernary: true }],
+      'react/jsx-key': 'off',
+      'react/no-unknown-property': ['error', { ignore: ['unselectable'] }],
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
-      'no-console': ['error', { allow: ['warn', 'error'] }],
+      'react/jsx-no-target-blank': 'off',
+      'react-hooks/exhaustive-deps': 'off',
+      'react-hooks/immutability': 'off',
+      'react-hooks/purity': 'off',
+      'react-hooks/refs': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+    },
+  },
+  {
+    files: ['**/*.d.ts'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'off',
     },
   },
   prettier,

@@ -1,0 +1,22 @@
+/* Restored desktop mini-sidebar visibility helpers. */
+@media (min-width: 992px) {
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .smini-hide {
+    opacity: 0;
+  }
+
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .smini-show {
+    opacity: 1;
+  }
+
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .smini-hidden {
+    display: none;
+  }
+
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .smini-visible {
+    display: inline-block;
+  }
+
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .smini-visible-block {
+    display: block;
+  }
+}

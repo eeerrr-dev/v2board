@@ -1,0 +1,12 @@
+/* Restored Ant Design v3 drawer body and wrapper sizing. */
+.ant-drawer-body {
+  padding: 24px;
+  font-size: 14px;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+.ant-drawer-wrapper-body {
+  height: 100%;
+  overflow: auto;
+}

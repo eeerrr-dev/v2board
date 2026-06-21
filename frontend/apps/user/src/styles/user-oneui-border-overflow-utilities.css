@@ -1,0 +1,9 @@
+/* Restored packaged OneUI border and overflow utility classes. */
+.rounded { border-radius: 0.25rem !important; }
+.border-0 { border: 0 !important; }
+.overflow-hidden { overflow: hidden !important; }
+.overflow-y-auto {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.text-wrap-break-word { word-wrap: break-word; }

@@ -584,12 +584,12 @@ export default function PlansPage() {
                 isEmpty={order.length === 0}
                 scrollX={1300}
                 scrollPositionRight={false}
-                fixedRightRowHeight={75}
+                fixedRightRowHeight={54}
                 fixedRightChildren={order.map((record, index) => (
                   <tr
                     key={index}
                     className="ant-table-row ant-table-row-level-0"
-                    style={{ height: 75 }}
+                    style={{ height: 54 }}
                     {...legacyTableRowKey(index)}
                   >
                     <td

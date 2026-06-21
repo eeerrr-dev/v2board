@@ -1,0 +1,21 @@
+/* Restored Ant Design v3 danger background ghost button styles. */
+.ant-btn-background-ghost.ant-btn-danger {
+  color: #ff4d4f;
+  text-shadow: none;
+  background-color: transparent;
+  border-color: #ff4d4f;
+}
+
+.ant-btn-background-ghost.ant-btn-danger:focus,
+.ant-btn-background-ghost.ant-btn-danger:hover {
+  color: #ff7875;
+  background-color: transparent;
+  border-color: #ff7875;
+}
+
+.ant-btn-background-ghost.ant-btn-danger.active,
+.ant-btn-background-ghost.ant-btn-danger:active {
+  color: #d9363e;
+  background-color: transparent;
+  border-color: #d9363e;
+}

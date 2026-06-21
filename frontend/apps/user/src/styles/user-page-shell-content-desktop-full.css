@@ -1,0 +1,12 @@
+/* Restored desktop main content-full variant. */
+@media (min-width: 768px) {
+  .content.content-full {
+    padding-bottom: 1.75rem;
+  }
+
+  .content.content-full > .pull,
+  .content.content-full > .pull-b,
+  .content.content-full > .pull-y {
+    margin-bottom: -1.75rem;
+  }
+}

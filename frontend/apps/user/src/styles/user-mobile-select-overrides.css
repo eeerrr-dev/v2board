@@ -1,0 +1,16 @@
+/* Restored mobile plan selector overrides. */
+@media (max-width: 768px) {
+  .v2board-select {
+    padding: 15px 20px;
+    border: 0;
+  }
+
+  .v2board-select-radio {
+    display: unset;
+  }
+
+  .v2board-select.active {
+    margin: 0;
+    border: 0;
+  }
+}

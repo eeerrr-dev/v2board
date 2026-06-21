@@ -1,0 +1,21 @@
+/* Ant Design v3 compatibility layer rebuilt as source-owned component styles. */
+@import './admin-antd-base.css';
+@import './admin-antd-feedback.css';
+@import './admin-antd-buttons.css';
+@import './admin-antd-table.css';
+@import './admin-antd-radio.css';
+@import './admin-antd-checkbox.css';
+@import './admin-antd-dropdown.css';
+@import './admin-antd-spin-pagination.css';
+@import './admin-antd-select.css';
+@import './admin-antd-divider.css';
+@import './admin-antd-tooltip.css';
+@import './admin-antd-switch.css';
+@import './admin-antd-input.css';
+@import './admin-antd-tabs.css';
+@import './admin-antd-calendar.css';
+@import './admin-antd-time-picker.css';
+@import './admin-antd-tag.css';
+@import './admin-antd-drawer.css';
+@import './admin-antd-badge.css';
+@import './admin-antd-menu.css';

@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteErrorBoundary } from './route-error-boundary';
@@ -6,9 +6,8 @@ import { RouteErrorBoundary } from './route-error-boundary';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-function Crash() {
+function Crash(): ReactElement {
   throw new Error('route crashed');
-  return null;
 }
 
 describe('RouteErrorBoundary white-screen guard', () => {

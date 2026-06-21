@@ -1,0 +1,17 @@
+/* Restored Ant Design v3 message status icon colors. */
+.ant-message-success .anticon {
+  color: #52c41a;
+}
+
+.ant-message-error .anticon {
+  color: #f5222d;
+}
+
+.ant-message-warning .anticon {
+  color: #faad14;
+}
+
+.ant-message-info .anticon,
+.ant-message-loading .anticon {
+  color: #1890ff;
+}

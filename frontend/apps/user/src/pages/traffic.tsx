@@ -16,7 +16,9 @@ export default function TrafficPage() {
   const rows = data ?? [];
   const [hoverKey, setHoverKey] = useState<number | null>(null);
   const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(rows.length);
-  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(rows.length);
+  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(rows.length, {
+    bodyRowHeightOffset: 1,
+  });
   const tableClassName = [
     'ant-table',
     'ant-table-default',
@@ -62,7 +64,7 @@ export default function TrafficPage() {
                             span.ant-table-header-column > div > (span.ant-table-column-title,
                             span.ant-table-column-sorter) regardless of sorting; the inner div
                             has no class and the sorter span is empty when no sorter is defined
-                            (components.async.js @799377). */}
+                            in the legacy oracle output. */}
                         <thead className="ant-table-thead">
                           <tr>
                             <th className="">

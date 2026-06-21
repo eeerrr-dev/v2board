@@ -13,7 +13,7 @@ import {
   useGenerateGiftcardMutation,
   useShowCouponMutation,
 } from '@/lib/queries';
-import { admin } from '@v2board/api-client';
+import type { admin } from '@v2board/api-client';
 import { legacyCopyText } from '@/lib/legacy-copy';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
@@ -317,6 +317,7 @@ function CouponPage() {
               headers={headers}
               isEmpty={data.length === 0}
               scrollX={1050}
+              scrollPositionRight="desktop"
               pagination={
                 <LegacyTablePagination
                   current={tablePagination.current}
@@ -670,6 +671,7 @@ function GiftcardPage() {
               headers={headers}
               isEmpty={data.length === 0}
               scrollX={1050}
+              scrollPositionRight="desktop"
               pagination={
                 <LegacyTablePagination
                   current={tablePagination.current}

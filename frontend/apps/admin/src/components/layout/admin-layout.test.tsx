@@ -1,5 +1,6 @@
 import { act } from 'react';
 import { readFileSync } from 'node:fs';
+import { enable as enableDarkReader } from 'darkreader';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,6 +25,13 @@ vi.mock('@v2board/api-client', () => ({
 vi.mock('@/lib/api', () => ({
   apiClient: {},
 }));
+
+vi.mock('darkreader', () => ({
+  disable: vi.fn(),
+  enable: vi.fn(),
+}));
+
+const enableDarkReaderMock = vi.mocked(enableDarkReader);
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -62,7 +70,7 @@ function resetAdminLayoutMocks() {
   window.localStorage.clear();
   document.cookie = 'dark_mode=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
   document.documentElement.className = '';
-  window.webpackJsonp = undefined;
+  enableDarkReaderMock.mockClear();
   const scrollTo = vi.fn();
   Object.defineProperty(window, 'scrollTo', {
     configurable: true,
@@ -380,7 +388,18 @@ describe('AdminLayout legacy dark mode behavior', () => {
 
     expect(document.cookie).toContain('dark_mode=1');
     expect(window.localStorage.getItem('dark_mode')).toBeNull();
-    expect(document.documentElement.classList.contains('v2board-dark-mode')).toBe(true);
+    expect(enableDarkReaderMock).toHaveBeenCalledWith({ brightness: 100, contrast: 90, sepia: 10 });
     expect(darkButton.innerHTML).toContain('fa-moon');
+  });
+
+  it('renders the original dark mode cookie state without owning global startup', async () => {
+    document.cookie = 'dark_mode=1;path=/';
+
+    await renderLayout();
+
+    expect(enableDarkReaderMock).not.toHaveBeenCalled();
+    expect(
+      container.querySelector<HTMLButtonElement>('#page-header .dropdown button')!.innerHTML,
+    ).toContain('fa-moon');
   });
 });

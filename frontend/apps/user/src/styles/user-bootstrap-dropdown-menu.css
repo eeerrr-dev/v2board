@@ -1,0 +1,21 @@
+/* Restored Bootstrap dropdown menu shell. */
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1000;
+  display: none;
+  float: left;
+  min-width: 12rem;
+  padding: 0.5rem 0;
+  margin: 0.125rem 0 0;
+  font-size: 1rem;
+  color: #495057;
+  text-align: left;
+  list-style: none;
+  background-color: #fff;
+  background-clip: padding-box;
+  border: 0 solid #e2e8f2;
+  border-radius: 0.25rem;
+  box-shadow: 0 0.25rem 2rem rgba(0, 0, 0, 0.08);
+}

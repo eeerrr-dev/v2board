@@ -23,14 +23,14 @@ export function LanguageMenu({
 }: LanguageMenuProps) {
   // The original is umi's SelectLang: an antd Dropdown (trigger:click, placement:topCenter)
   // that clones its trigger adding `ant-dropdown-trigger` (+`ant-dropdown-open` when open)
-  // and portals the overlay Menu to document.body (components.async.js renderOverlay /
-  // umi.js rc-trigger @2089800). Reproduce both — the trigger className and the body portal.
+  // and portals the overlay Menu to document.body. Reproduce both — the trigger className
+  // and the body portal.
   const triggerRef = useRef<HTMLElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ left: number; top: number } | null>(null);
-  // antd keeps the overlay mounted and runs the "slide-down" leave animation on close
-  // (placement contains "top" → transitionName "slide-down", umi.js @694300). antd applies
+  // antd keeps the overlay mounted and runs the "slide-down" leave animation on close.
+  // For top placements, antd applies
   // it to the px-positioned popup wrapper; here the wrapper carries the translate(-50%,-100%)
   // that anchors its bottom-center to the trigger top (rc-align points ["bc","tc"], offset
   // [0,-4]), so the scaleY keyframe runs on the inner .ant-dropdown-menu instead — visually

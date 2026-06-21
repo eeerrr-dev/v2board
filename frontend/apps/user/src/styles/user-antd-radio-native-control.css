@@ -1,0 +1,18 @@
+/* Restored Ant Design v3 native radio control base styles. */
+.ant-radio {
+  box-sizing: border-box;
+  position: relative;
+  display: inline-block;
+  margin: 0;
+  padding: 0;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 14px;
+  font-variant: tabular-nums;
+  line-height: 1.5;
+  list-style: none;
+  white-space: nowrap;
+  vertical-align: sub;
+  outline: none;
+  cursor: pointer;
+  font-feature-settings: 'tnum';
+}

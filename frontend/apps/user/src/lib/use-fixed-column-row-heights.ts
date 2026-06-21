@@ -1,30 +1,100 @@
 import { useCallback, useLayoutEffect, useRef } from 'react';
 
+interface FixedColumnRowHeightOptions {
+  bodyRowHeightOffset?: number;
+}
+
+function measuredHeight(element: Element | null): number | null {
+  if (!element) return null;
+  const height = element.getBoundingClientRect().height;
+  return height > 0 ? height : null;
+}
+
+function writeHeight(row: HTMLElement, height: number | null): void {
+  row.style.height = height ? `${height}px` : 'auto';
+}
+
+function collectBodyRowsByKey(rows: Element[]): Map<string, number> {
+  const heights = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.getAttribute('data-row-key');
+    const height = measuredHeight(row);
+    if (key !== null && height !== null) {
+      heights.set(key, height);
+    }
+  }
+  return heights;
+}
+
+export function syncFixedColumnRowHeights(
+  mainTable: HTMLTableElement,
+  fixedTable: HTMLTableElement,
+  options: FixedColumnRowHeightOptions = {},
+): void {
+  const tableNode = mainTable.closest('.ant-table') ?? mainTable;
+  const tableHeight = tableNode.getBoundingClientRect().height;
+  if (tableHeight <= 0) return;
+  const bodyRowHeightOffset = options.bodyRowHeightOffset ?? 0;
+
+  const fixedHeaderRows = Array.from(
+    fixedTable.querySelectorAll<HTMLElement>('thead > tr'),
+  );
+  const mainHeadHeight = measuredHeight(mainTable.querySelector('thead'));
+  const headerHeight =
+    mainHeadHeight && fixedHeaderRows.length > 1
+      ? mainHeadHeight / fixedHeaderRows.length
+      : mainHeadHeight;
+  for (const row of fixedHeaderRows) {
+    writeHeight(row, headerHeight);
+  }
+
+  const mainBodyRows = Array.from(mainTable.querySelectorAll('tbody .ant-table-row'));
+  const mainRowsByKey = collectBodyRowsByKey(mainBodyRows);
+  const fixedBodyRows = Array.from(
+    fixedTable.querySelectorAll<HTMLElement>('tbody .ant-table-row'),
+  );
+
+  fixedBodyRows.forEach((row, index) => {
+    const key = row.getAttribute('data-row-key');
+    const mainHeight =
+      key !== null ? mainRowsByKey.get(key) ?? null : measuredHeight(mainBodyRows[index] ?? null);
+    writeHeight(row, mainHeight === null ? null : mainHeight + bodyRowHeightOffset);
+  });
+}
+
 // Mirrors antd v3 Table.syncFixedTableRowHeight: a table with a fixed column renders the
-// fixed column in its own table, so antd measures every row of the main (scrolling) table
-// and stamps that height onto the matching fixed-table row to keep the two aligned. The
-// main table keeps its natural height; only the fixed table's <tr>s get an inline height.
-// Rows correspond one-to-one by document order (thead row first, then each body row).
-// antd v3 calls this after every update for fixed-column tables, not just when the
-// data length changes, because content can wrap differently while the row count stays the same.
-export function useFixedColumnRowHeights(_rowCount: number) {
+// fixed column in its own table, so antd measures the main table and stamps heights onto
+// matching fixed-table rows. Body rows match by data-row-key, just like the bundled
+// rc-table implementation's fixedColumnsBodyRowsHeight store.
+// antd v3 calls this after every update for fixed-column tables, not just when the data
+// length changes, because content can wrap differently while the row count stays the same.
+export function useFixedColumnRowHeights(
+  _rowCount: number,
+  options: FixedColumnRowHeightOptions = {},
+) {
   const mainTableRef = useRef<HTMLTableElement | null>(null);
   const fixedTableRef = useRef<HTMLTableElement | null>(null);
+  const bodyRowHeightOffset = options.bodyRowHeightOffset ?? 0;
 
   const sync = useCallback(() => {
     const main = mainTableRef.current;
     const fixed = fixedTableRef.current;
     if (!main || !fixed) return;
-    const mainRows = main.querySelectorAll('tr');
-    const fixedRows = fixed.querySelectorAll('tr');
-    fixedRows.forEach((row, index) => {
-      const height = mainRows[index]?.getBoundingClientRect().height;
-      row.style.height = height ? `${height}px` : 'auto';
-    });
-  }, []);
+    syncFixedColumnRowHeights(main, fixed, { bodyRowHeightOffset });
+  }, [bodyRowHeightOffset]);
 
   useLayoutEffect(() => {
     sync();
+    const frame = window.requestAnimationFrame(sync);
+    let cancelled = false;
+    const fontsReady = document.fonts?.ready;
+    void fontsReady?.then(() => {
+      if (!cancelled) sync();
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
   });
 
   useLayoutEffect(() => {

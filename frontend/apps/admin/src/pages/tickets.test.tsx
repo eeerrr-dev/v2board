@@ -58,11 +58,28 @@ const mocks = vi.hoisted(() => {
     makeAdminTicket,
     params: {} as Record<string, string>,
     closeTicketMutate: vi.fn(),
+    messageClose: vi.fn(),
+    messageDestroy: vi.fn(),
+    messageOpen: vi.fn(),
+    replyTicketMutateAsync: vi.fn(),
     ticketRefetch: vi.fn(),
     ticketQueries: [] as Array<Record<string, unknown>>,
     adminUserInfoIds: [] as Array<number | null | undefined>,
     adminTicket: makeAdminTicket() as ReturnType<typeof makeAdminTicket> | undefined,
     adminTicketError: false,
+  };
+});
+
+vi.mock('antd', () => {
+  return {
+    App: {
+      useApp: () => ({
+        message: {
+          destroy: mocks.messageDestroy,
+          open: mocks.messageOpen,
+        },
+      }),
+    },
   };
 });
 
@@ -117,7 +134,7 @@ vi.mock('@/lib/queries', () => ({
   }),
   useReplyTicketMutation: () => ({
     isPending: false,
-    mutateAsync: vi.fn(),
+    mutateAsync: mocks.replyTicketMutateAsync,
   }),
   useAdminPlans: () => ({
     data: [{ id: 1, name: '基础套餐' }],
@@ -158,7 +175,14 @@ vi.mock('@/lib/queries', () => ({
 beforeEach(() => {
   mocks.params = {};
   mocks.closeTicketMutate.mockClear();
+  mocks.messageClose.mockClear();
+  mocks.messageDestroy.mockClear();
+  mocks.messageOpen.mockReset();
+  mocks.messageOpen.mockReturnValue(mocks.messageClose);
+  mocks.replyTicketMutateAsync.mockReset();
+  mocks.replyTicketMutateAsync.mockResolvedValue(true);
   mocks.ticketRefetch.mockClear();
+  mocks.ticketRefetch.mockResolvedValue(undefined);
   mocks.ticketQueries = [];
   mocks.adminUserInfoIds = [];
   mocks.adminTicket = mocks.makeAdminTicket();
@@ -201,6 +225,9 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).toContain('最后回复');
     expect(html).toContain('支付问题');
     expect(html).toContain('高');
+    expect(html).toContain(
+      '<span class="ant-badge-status-dot ant-badge-status-error"></span><span class="ant-badge-status-text">待回复</span>',
+    );
     expect(html).toContain('待回复');
     expect(html).toContain('已完成');
     expect(html).toContain(dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm'));
@@ -487,6 +514,7 @@ describe('TicketsPage legacy ticket manager', () => {
   it('uses the bundled reply-status filter header and dropdown shape', () => {
     expect(ticketsSource).toContain("'ant-table-column-has-actions ant-table-column-has-filters'");
     expect(ticketsSource).toContain('<LegacyFilterIcon');
+    expect(ticketsSource).toContain('filled');
     expect(ticketsSource).toContain('title="筛选"');
     expect(ticketsSource).toContain('className="ant-dropdown-trigger"');
     expect(ticketsSource).toContain('ant-table-filter-dropdown');
@@ -552,8 +580,12 @@ describe('TicketsPage legacy ticket manager', () => {
       '<span onClick={() => current?.user_id && setTrafficOpen(true)}>',
     );
     expect(ticketsSource).toContain('key={current?.user_id}');
-    expect(ticketsSource).toContain("messageApi.loading('发送中')");
-    expect(ticketsSource).toContain('messageApi.destroy()');
+    expect(ticketsSource).toContain("const replyMessageKey = 'v2board-admin-ticket-reply';");
+    expect(ticketsSource).toContain('const closeReplyMessage = messageApi.open({');
+    expect(ticketsSource).toContain("content: '发送中'");
+    expect(ticketsSource).toContain('duration: 0');
+    expect(ticketsSource).toContain("type: 'loading'");
+    expect(ticketsSource).toContain('closeReplyMessage();');
     expect(html).not.toContain('ant-drawer');
     expect(html).not.toContain('ant-card');
   });
@@ -594,6 +626,67 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(html).toContain('font-size-sm text-muted my-2 text-center');
   });
 
+  it('sends admin chat replies on Enter, refetches, and clears the legacy input', async () => {
+    mocks.params = { ticket_id: '1' };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    let root: Root | null = createRoot(container);
+
+    await act(async () => {
+      root!.render(<TicketsPage />);
+      await Promise.resolve();
+    });
+
+    const input = container.querySelector<HTMLInputElement>('.js-chat-input')!;
+
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        input,
+        'Parity admin reply send',
+      );
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const enter = new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' });
+    Object.defineProperty(enter, 'keyCode', { value: 13 });
+
+    await act(async () => {
+      input.dispatchEvent(enter);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.messageOpen).toHaveBeenCalledWith({
+      content: '发送中',
+      duration: 0,
+      key: 'v2board-admin-ticket-reply',
+      type: 'loading',
+    });
+    expect(mocks.replyTicketMutateAsync).toHaveBeenCalledWith({
+      id: '1',
+      message: 'Parity admin reply send',
+    });
+    expect(mocks.messageClose).toHaveBeenCalledTimes(1);
+    expect(mocks.ticketRefetch).toHaveBeenCalledTimes(1);
+    expect(input.value).toBe('');
+    expect(mocks.messageOpen.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.replyTicketMutateAsync.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.replyTicketMutateAsync.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.messageClose.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.messageClose.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.ticketRefetch.mock.invocationCallOrder[0]!,
+    );
+
+    await act(async () => {
+      root?.unmount();
+      root = null;
+    });
+    container.remove();
+  });
+
   it('keeps the old chat reply message state lifetime', () => {
     const replyBlock = ticketsSource.slice(
       ticketsSource.indexOf('const sendReply = async () => {'),
@@ -608,13 +701,15 @@ describe('TicketsPage legacy ticket manager', () => {
       'const [message, setMessage] = useState<string | undefined>(undefined);',
     );
     expect(replyBlock).toContain('await reply.mutateAsync({ id: ticketId, message });');
-    expect(replyBlock).toContain('messageApi.destroy();');
+    expect(replyBlock).toContain("const replyMessageKey = 'v2board-admin-ticket-reply';");
+    expect(replyBlock).toContain('const closeReplyMessage = messageApi.open({');
+    expect(replyBlock).toContain('closeReplyMessage();');
     expect(replyBlock).toContain('await ticket.refetch();');
     expect(replyBlock).toContain("if (inputRef.current) inputRef.current.value = '';");
     expect(replyBlock.indexOf('await reply.mutateAsync({ id: ticketId, message });')).toBeLessThan(
-      replyBlock.indexOf('messageApi.destroy();'),
+      replyBlock.indexOf('closeReplyMessage();'),
     );
-    expect(replyBlock.indexOf('messageApi.destroy();')).toBeLessThan(
+    expect(replyBlock.indexOf('closeReplyMessage();')).toBeLessThan(
       replyBlock.indexOf('await ticket.refetch();'),
     );
     expect(replyBlock.indexOf('await ticket.refetch();')).toBeLessThan(

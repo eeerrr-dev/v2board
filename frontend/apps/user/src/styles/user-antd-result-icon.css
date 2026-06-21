@@ -1,0 +1,9 @@
+/* Restored Ant Design v3 result icon layout. */
+.ant-result-icon {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.ant-result-icon > .anticon {
+  font-size: 72px;
+}

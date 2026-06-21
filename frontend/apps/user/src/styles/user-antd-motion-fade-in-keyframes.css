@@ -1,0 +1,9 @@
+/* Restored Ant Design v3 fade-in keyframe. */
+@keyframes antFadeIn {
+  0% {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

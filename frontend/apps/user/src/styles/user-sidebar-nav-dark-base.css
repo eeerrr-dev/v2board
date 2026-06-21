@@ -1,0 +1,19 @@
+/* Restored OneUI dark sidebar/header navigation base colors. */
+.nav-main-dark .nav-main-heading,
+.page-header-dark #page-header .nav-main-heading,
+.sidebar-dark #sidebar .nav-main-heading {
+  color: var(--legacy-nav-dark-heading);
+}
+
+.nav-main-dark .nav-main-link,
+.page-header-dark #page-header .nav-main-link,
+.sidebar-dark #sidebar .nav-main-link {
+  color: var(--legacy-nav-dark-link);
+  font-weight: 400;
+}
+
+.nav-main-dark .nav-main-link > .nav-main-link-icon,
+.page-header-dark #page-header .nav-main-link > .nav-main-link-icon,
+.sidebar-dark #sidebar .nav-main-link > .nav-main-link-icon {
+  color: var(--legacy-nav-icon-dark);
+}

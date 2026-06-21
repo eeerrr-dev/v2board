@@ -81,7 +81,7 @@ describe('createApiClient', () => {
       data: { tutorials: [{ id: 1, title: 'Windows' }], safe_area_var: { top: 0 } },
     });
     mock.onGet('/user/tutorial/fetch?id=1').reply(200, {
-      data: { id: 1, title: 'Windows', steps: '[{\"title\":\"Install\"}]' },
+      data: { id: 1, title: 'Windows', steps: '[{"title":"Install"}]' },
     });
 
     await expect(userEndpoints.fetchTutorials(client)).resolves.toEqual({

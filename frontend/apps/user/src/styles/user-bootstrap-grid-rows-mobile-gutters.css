@@ -1,0 +1,12 @@
+/* Restored Bootstrap mobile row gutter adjustment. */
+@media (max-width: 767.98px) {
+  .row:not(.gutters-tiny):not(.no-gutters) {
+    margin-right: -0.4375rem;
+    margin-left: -0.4375rem;
+  }
+  .row:not(.gutters-tiny):not(.no-gutters) > .col,
+  .row:not(.gutters-tiny):not(.no-gutters) > [class*='col-'] {
+    padding-right: 0.4375rem;
+    padding-left: 0.4375rem;
+  }
+}

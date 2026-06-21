@@ -151,6 +151,12 @@ describe('TrafficPage bundled-theme table', () => {
     expect(html.match(/data-row-key="1"/g)).toHaveLength(2);
   });
 
+  it('keeps the bordered-wrapper fixed-row height offset used by the bundled table', () => {
+    expect(trafficSource).toContain('useFixedColumnRowHeights(rows.length, {');
+    expect(trafficSource).toContain('bodyRowHeightOffset: 1');
+    expect(trafficSource).not.toContain('fixedBodyRowExtraPixel');
+  });
+
   it('keeps the legacy charged total coercion expression', () => {
     expect(trafficSource).toContain(
       '(upload + download) * (row.server_rate as unknown as number)',

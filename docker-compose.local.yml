@@ -1,0 +1,213 @@
+#
+# Local development only. This is not a production deployment file.
+# Dependency, cache, build, and runtime output are kept in Docker volumes so
+# Composer/pnpm/Vite/Laravel do not write generated files into the host repo.
+#
+services:
+  app:
+    build:
+      context: .
+    image: v2board-app
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        set -e
+        if [ ! -f /app/artisan ]; then
+          tar \
+            --exclude=.git \
+            --exclude=.claude \
+            --exclude=.env \
+            --exclude=docker-compose.yml \
+            --exclude=docker-compose.local.yml \
+            --exclude=node_modules \
+            --exclude=vendor \
+            --exclude=frontend/node_modules \
+            --exclude=frontend/.pnpm-store \
+            --exclude=frontend/dist \
+            --exclude=frontend/dist-deploy \
+            -C /src -cf - . | tar -C /app -xf -
+        fi
+        exec /app/docker/entrypoint.sh php -d variables_order=EGPCS artisan serve --host=0.0.0.0 --port=8000
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/src:ro
+      - app-workspace:/app
+      - vendor-data:/app/vendor
+    networks:
+      default:
+        aliases:
+          - laravel
+
+  horizon:
+    build:
+      context: .
+    image: v2board-app
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        set -e
+        until [ -x /app/docker/entrypoint.sh ]; do
+          echo "[horizon] waiting for app workspace..."
+          sleep 2
+        done
+        exec /app/docker/entrypoint.sh php artisan horizon
+    environment:
+      ROLE: horizon
+    depends_on:
+      app:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - app-workspace:/app
+      - vendor-data:/app/vendor
+
+  scheduler:
+    build:
+      context: .
+    image: v2board-app
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        set -e
+        until [ -x /app/docker/entrypoint.sh ]; do
+          echo "[scheduler] waiting for app workspace..."
+          sleep 2
+        done
+        exec /app/docker/entrypoint.sh php artisan schedule:work
+    environment:
+      ROLE: scheduler
+    depends_on:
+      app:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - app-workspace:/app
+      - vendor-data:/app/vendor
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: v2board-frontend
+    working_dir: /app/frontend
+    entrypoint:
+      - sh
+      - -lc
+      - |
+        set -e
+        if [ ! -f /app/frontend/package.json ]; then
+          mkdir -p /app/frontend
+          tar \
+            --exclude=node_modules \
+            --exclude=.pnpm-store \
+            --exclude=dist \
+            --exclude=dist-deploy \
+            -C /src/frontend -cf - . | tar -C /app/frontend -xf -
+        fi
+        corepack enable
+        corepack prepare pnpm@11.0.0 --activate
+        pnpm config set store-dir /app/frontend/.pnpm-store
+        HUSKY=0 pnpm install --frozen-lockfile
+        pnpm --filter @v2board/user --filter @v2board/admin --parallel run dev
+    environment:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      PLAYWRIGHT_BROWSERS_PATH: /app/frontend/.cache/ms-playwright
+      VITE_API_BASE: http://app:8000
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "5173:5173"
+      - "5174:5174"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./frontend:/src/frontend:ro
+      - frontend-workspace:/app/frontend
+      - frontend-deploy:/app/frontend/dist-deploy
+      - frontend-visual-artifacts:/app/frontend/.cache/visual-parity
+      - frontend-interaction-artifacts:/app/frontend/.cache/interaction-parity
+      - frontend-node_modules:/app/frontend/node_modules
+      - frontend-pnpm-store:/app/frontend/.pnpm-store
+      - frontend-playwright-cache:/app/frontend/.cache/ms-playwright
+      - frontend-admin-node_modules:/app/frontend/apps/admin/node_modules
+      - frontend-user-node_modules:/app/frontend/apps/user/node_modules
+      - frontend-api-client-node_modules:/app/frontend/packages/api-client/node_modules
+      - frontend-config-node_modules:/app/frontend/packages/config/node_modules
+      - frontend-i18n-node_modules:/app/frontend/packages/i18n/node_modules
+      - frontend-types-node_modules:/app/frontend/packages/types/node_modules
+
+  mysql:
+    image: mysql:8.0
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: v2board
+      MYSQL_USER: v2board
+      MYSQL_PASSWORD: v2board
+      MYSQL_ROOT_PASSWORD: v2board
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pv2board"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:latest
+    environment:
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  app-workspace:
+  vendor-data:
+  mysql-data:
+  frontend-workspace:
+  frontend-deploy:
+  frontend-visual-artifacts:
+  frontend-interaction-artifacts:
+  frontend-node_modules:
+  frontend-pnpm-store:
+  frontend-playwright-cache:
+  frontend-admin-node_modules:
+  frontend-user-node_modules:
+  frontend-api-client-node_modules:
+  frontend-config-node_modules:
+  frontend-i18n-node_modules:
+  frontend-types-node_modules:

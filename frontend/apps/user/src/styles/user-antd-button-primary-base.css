@@ -1,0 +1,8 @@
+/* Restored Ant Design v3 primary button base variant. */
+.ant-btn-primary {
+  color: #fff;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.12);
+  background-color: var(--legacy-ant-primary);
+  border-color: var(--legacy-ant-primary);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.045);
+}

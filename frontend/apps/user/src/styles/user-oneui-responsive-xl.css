@@ -1,0 +1,9 @@
+/* Restored packaged xl breakpoint OneUI utilities. */
+@media (min-width: 1200px) {
+  .mx-xl-0 { margin-right: 0 !important; margin-left: 0 !important; }
+  .mt-xl-0 { margin-top: 0 !important; }
+  .col-xl-5 {
+    flex: 0 0 41.666667%;
+    max-width: 41.666667%;
+  }
+}

@@ -1,0 +1,29 @@
+/* Restored desktop mini-sidebar collapsed navigation layout. */
+@media (min-width: 992px) {
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .nav-main {
+    transform: translateX(-1.125rem);
+  }
+
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .nav-main .nav-main-link-icon {
+    transform: translateX(0.75rem);
+  }
+
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .nav-main .nav-main-heading,
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .nav-main .nav-main-link-badge,
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .nav-main .nav-main-link-name {
+    opacity: 0;
+  }
+
+  .sidebar-mini.sidebar-o
+    #sidebar:not(:hover)
+    .nav-main
+    .nav-main-item.open
+    > .nav-main-link-submenu,
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .nav-main .nav-main-link.active {
+    border-radius: 0;
+  }
+
+  .sidebar-mini.sidebar-o #sidebar:not(:hover) .nav-main > .nav-main-item > .nav-main-submenu {
+    display: none;
+  }
+}

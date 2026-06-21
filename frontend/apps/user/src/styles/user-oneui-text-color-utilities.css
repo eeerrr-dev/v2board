@@ -1,0 +1,12 @@
+/* Restored packaged OneUI text color utility classes used by the user app. */
+.text-light { color: #f8f9fa !important; }
+.text-white { color: #fff !important; }
+.text-black { color: #000 !important; }
+.text-white-75 { color: rgba(255, 255, 255, 0.75) !important; }
+.text-primary { color: var(--color-brand-500) !important; }
+.text-info { color: #3c90df !important; }
+.text-muted { color: #6c757d !important; }
+.text-gray-light { color: #e9ecef !important; }
+.text-danger { color: #e04f1a !important; }
+a.text-danger:hover,
+a.text-danger:focus { color: #852f0f !important; }

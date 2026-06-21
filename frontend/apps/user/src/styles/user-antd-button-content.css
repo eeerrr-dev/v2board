@@ -1,0 +1,30 @@
+/* Restored Ant Design v3 button link overlay and icon spacing. */
+.ant-btn > a:only-child {
+  color: currentColor;
+}
+
+.ant-btn > a:only-child::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: transparent;
+  content: '';
+}
+
+.ant-btn > i,
+.ant-btn > span {
+  display: inline-block;
+  transition: margin-left 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  pointer-events: none;
+}
+
+.ant-btn .anticon {
+  transition: margin-left 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+.ant-btn > .anticon + span,
+.ant-btn > span + .anticon {
+  margin-left: 8px;
+}

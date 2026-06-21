@@ -1,0 +1,8 @@
+/* Restored Bootstrap input-group shell layout. */
+.input-group {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  width: 100%;
+}

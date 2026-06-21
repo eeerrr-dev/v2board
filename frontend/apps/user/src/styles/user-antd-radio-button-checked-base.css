@@ -1,0 +1,18 @@
+/* Restored Ant Design v3 checked radio button base state. */
+.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  z-index: 1;
+  color: var(--legacy-ant-primary);
+  background: #fff;
+  border-color: var(--legacy-ant-primary);
+  box-shadow: -1px 0 0 0 var(--legacy-ant-primary);
+}
+
+.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)::before {
+  background-color: var(--legacy-ant-primary) !important;
+  opacity: 0.1;
+}
+
+.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):first-child {
+  border-color: var(--legacy-ant-primary);
+  box-shadow: none !important;
+}

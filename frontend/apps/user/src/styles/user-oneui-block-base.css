@@ -1,0 +1,11 @@
+/* Restored OneUI block base shell styles. */
+.block {
+  margin-bottom: 1.75rem;
+  background-color: #fff;
+  box-shadow: 0 1px 3px rgba(219, 226, 239, 0.5), 0 1px 2px rgba(219, 226, 239, 0.5);
+}
+
+.block .block,
+.content-side .block {
+  box-shadow: none;
+}

@@ -1,0 +1,27 @@
+/* Restored Ant Design v3 notification notice content styles. */
+.ant-notification-notice {
+  position: relative;
+  margin-bottom: 16px;
+  padding: 16px 24px;
+  overflow: hidden;
+  line-height: 1.5;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.ant-notification-notice-message {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: rgba(0, 0, 0, 0.85);
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.ant-notification-notice-description {
+  font-size: 14px;
+}
+
+.ant-notification-notice-closable .ant-notification-notice-message {
+  padding-right: 24px;
+}

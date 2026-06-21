@@ -1,0 +1,7 @@
+/* Restored custom HTML table text wrapping. */
+.custom-html-style table td,
+.custom-html-style table th {
+  word-break: break-all;
+  word-wrap: break-word;
+  white-space: normal;
+}

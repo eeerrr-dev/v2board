@@ -111,6 +111,7 @@ export default function NoticesPage() {
               headers={headers}
               isEmpty={dataSource.length === 0}
               scrollX={950}
+              scrollPositionRight="desktop"
               fixedRightChildren={dataSource.map((row, index) => (
                 <tr
                   key={index}

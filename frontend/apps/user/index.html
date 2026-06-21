@@ -1,19 +1,10 @@
 <!doctype html>
 <html>
   <!--
-    Dev entry. Mirrors public/theme/default/dashboard.blade.php so `pnpm dev`
-    (:5173) boots with the SAME legacy contract as production: the original
-    components.chunk.css + umi.css, window.settings, and the per-locale i18n
-    maps. The rewrite's own styles come from main.tsx (globals.css, injected
-    by Vite) and the per-color theme CSS is added at runtime by
-    applyLegacySettings. The /theme/* assets are served from repo public/theme
-    by legacyThemePlugin. Only main.tsx replaces the original umi.js app entry;
-    the original vendors/components chunks stay before it in body order to
-    provide bundled helpers such as DarkReader.
+    Dev entry for the source replica. It mirrors the legacy blade's
+    window.settings shape, while main.tsx owns JS, CSS, and i18n in development.
   -->
   <head>
-    <link rel="stylesheet" href="/theme/default/assets/components.chunk.css" />
-    <link rel="stylesheet" href="/theme/default/assets/umi.css" />
     <meta charset="utf-8" />
     <meta
       name="viewport"
@@ -27,7 +18,6 @@
     <script>
       window.settings = {
         title: 'V2Board',
-        assets_path: '/theme/default/assets',
         theme: {
           sidebar: 'light',
           header: 'dark',
@@ -40,13 +30,6 @@
         logo: '',
       };
     </script>
-    <script src="/theme/default/assets/i18n/zh-CN.js"></script>
-    <script src="/theme/default/assets/i18n/zh-TW.js"></script>
-    <script src="/theme/default/assets/i18n/en-US.js"></script>
-    <script src="/theme/default/assets/i18n/ja-JP.js"></script>
-    <script src="/theme/default/assets/i18n/vi-VN.js"></script>
-    <script src="/theme/default/assets/i18n/ko-KR.js"></script>
-    <script src="/theme/default/assets/i18n/fa-IR.js"></script>
   </head>
   <body>
     <div id="root"></div>
@@ -371,8 +354,6 @@
         schedule();
       })();
     </script>
-    <script src="/theme/default/assets/vendors.async.js"></script>
-    <script src="/theme/default/assets/components.async.js"></script>
     <script type="module" src="/src/main.tsx?v=20260607-white-screen-recovery-37"></script>
   </body>
 </html>

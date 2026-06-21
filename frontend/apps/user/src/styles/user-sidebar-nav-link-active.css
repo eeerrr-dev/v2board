@@ -1,0 +1,6 @@
+/* Restored OneUI sidebar nav active and hover state. */
+.nav-main-link.active,
+.nav-main-link:hover {
+  color: #000;
+  background-color: var(--legacy-active-bg);
+}

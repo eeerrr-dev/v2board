@@ -17,13 +17,24 @@ import { HashRouter, Navigate, useLocation } from 'react-router-dom';
 import App, { ADMIN_LEGACY_ROUTE_PATHS } from './App';
 import { RouteBoundaryElement } from './components/route-error-boundary';
 import { LegacyConfirmProvider } from './components/legacy-confirm';
-import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyAdminLegacySettings } from './lib/legacy-settings';
+import { applyInitialDarkMode } from './lib/dark-mode';
+import './styles/admin-antd-v3.css';
+import './styles/admin-markdown-editor.css';
+import './styles/admin-icon-fonts.css';
+import './styles/admin-runtime-base.css';
+import './styles/admin-bootstrap-v4.css';
+import './styles/admin-bootstrap-utilities.css';
+import './styles/admin-oneui-core.css';
+import './styles/admin-oneui-utilities.css';
+import './styles/admin-animations.css';
+import './styles/admin-plugin-widgets.css';
+import './styles/admin-rtl-support.css';
+import './styles/admin-app-overrides.css';
 import './styles/antd-v5-compat.css';
 
 const legacyHashRouteOptions = {
   authenticatedFallback: '/dashboard',
-  canonicalPath: '/',
   guestFallback: '/login',
   nestedPrefixes: ADMIN_LEGACY_ROUTE_PATHS,
   publicRoutes: ['/', '/login'],

@@ -1,0 +1,25 @@
+/* Restored Bootstrap primary button color states used by the legacy user theme. */
+.btn-primary {
+  color: #fff;
+  background-color: var(--color-brand-500);
+  border-color: var(--color-brand-500);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  color: #fff;
+  background-color: var(--legacy-primary-hover);
+  border-color: var(--legacy-primary-hover-border);
+}
+
+.btn-primary:focus {
+  box-shadow: 0 0 0 0.2rem var(--legacy-primary-focus-shadow);
+}
+
+.btn-primary:not(:disabled):not(.disabled).active,
+.btn-primary:not(:disabled):not(.disabled):active,
+.show > .btn-primary.dropdown-toggle {
+  color: #fff;
+  background-color: var(--legacy-primary-active);
+  border-color: var(--legacy-primary-active-border);
+}

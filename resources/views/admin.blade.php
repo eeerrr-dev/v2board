@@ -2,9 +2,16 @@
 <html>
 
 <head>
-    <link rel="stylesheet" href="/assets/admin/components.chunk.css?v={{$version}}">
-    <link rel="stylesheet" href="/assets/admin/umi.css?v={{$version}}">
-    <link rel="stylesheet" href="/assets/admin/custom.css?v={{$version}}">
+    @php
+        $assetVersion = function ($path) use ($version) {
+            $assetPath = public_path($path);
+            return file_exists($assetPath) ? filemtime($assetPath) : $version;
+        };
+    @endphp
+    <link rel="stylesheet" href="/assets/admin/umi.css?v={{$assetVersion('assets/admin/umi.css')}}">
+    @if (file_exists(public_path("/assets/admin/custom.css")))
+        <link rel="stylesheet" href="/assets/admin/custom.css?v={{$assetVersion('assets/admin/custom.css')}}">
+    @endif
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no">
     <title>{{$title}}</title>
@@ -28,9 +35,10 @@
 
 <body>
 <div id="root"></div>
-<script src="/assets/admin/vendors.async.js?v={{$version}}"></script>
-<script src="/assets/admin/components.async.js?v={{$version}}"></script>
-<script src="/assets/admin/umi.js?v={{$version}}"></script>
+<script src="/assets/admin/umi.js?v={{$assetVersion('assets/admin/umi.js')}}"></script>
+@if (file_exists(public_path("/assets/admin/custom.js")))
+    <script src="/assets/admin/custom.js?v={{$assetVersion('assets/admin/custom.js')}}"></script>
+@endif
 </body>
 
 </html>

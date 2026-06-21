@@ -1,0 +1,5 @@
+/* Restored Ant Design v3 carousel bottom dot placement. */
+.ant-carousel .slick-dots-bottom,
+.slick-dots-bottom {
+  bottom: 12px;
+}

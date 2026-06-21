@@ -1,0 +1,14 @@
+/* Restored Ant Design v3 primary button interaction states. */
+.ant-btn-primary:focus,
+.ant-btn-primary:hover {
+  color: #fff;
+  background-color: var(--legacy-ant-hover);
+  border-color: var(--legacy-ant-hover);
+}
+
+.ant-btn-primary.active,
+.ant-btn-primary:active {
+  color: #fff;
+  background-color: var(--legacy-ant-active);
+  border-color: var(--legacy-ant-active);
+}

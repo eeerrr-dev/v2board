@@ -1,0 +1,14 @@
+/* Restored user form-group styles separated from the user component recovery layer. */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  display: inline-block;
+  font-weight: 600;
+  margin-bottom: 0.375rem;
+}
+
+.form-group .custom-control-label {
+  margin-bottom: 0;
+}

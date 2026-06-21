@@ -1,0 +1,8 @@
+/* Restored Ant Design v3 fixed-column mirror cell hiding. */
+.ant-table-scroll table .ant-table-fixed-columns-in-body:not([colspan]) {
+  color: transparent;
+}
+
+.ant-table-scroll table .ant-table-fixed-columns-in-body:not([colspan]) > * {
+  visibility: hidden;
+}

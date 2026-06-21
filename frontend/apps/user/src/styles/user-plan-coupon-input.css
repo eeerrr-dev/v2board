@@ -1,0 +1,12 @@
+/* Restored checkout coupon input contrast. */
+.v2board-input-coupon {
+  color: #fff !important;
+  background: rgba(0, 0, 0, 0.02) !important;
+  border: unset !important;
+}
+
+.v2board-input-coupon:focus {
+  color: #fff;
+  background: unset;
+  box-shadow: unset;
+}

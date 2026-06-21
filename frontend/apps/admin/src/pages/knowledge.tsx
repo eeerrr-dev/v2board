@@ -975,9 +975,8 @@ function KnowledgeEditor({
               <label htmlFor="example-text-input-alt">语言</label>
               <LegacySelect
                 placeholder="请选择知识语言"
-                defaultValue={knowledge.language || 1}
                 style={{ width: '100%' }}
-                value={knowledge.language}
+                defaultValue={knowledge.language || 1}
                 options={LEGACY_KNOWLEDGE_LOCALE_OPTIONS}
                 onChange={(value) => formChange('language', value)}
               />
@@ -1138,6 +1137,7 @@ export default function KnowledgePage() {
               headers={headers}
               isEmpty={orderedKnowledge.length === 0}
               scrollX={750}
+              scrollPositionRight="desktop"
               fixedRightChildren={orderedKnowledge.map((row, index) => (
                 <tr
                   key={index}

@@ -1,0 +1,17 @@
+/* Restored Ant Design v3 badge processing state. */
+.ant-badge-status-processing {
+  position: relative;
+  background-color: #1890ff;
+}
+
+.ant-badge-status-processing::after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: 1px solid #1890ff;
+  border-radius: 50%;
+  animation: ant-status-processing 1.2s ease-in-out infinite;
+  content: '';
+}

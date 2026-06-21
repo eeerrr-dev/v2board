@@ -1,0 +1,26 @@
+/* Restored Ant Design v3 slick track layout styles. */
+.ant-carousel .slick-slider .slick-list,
+.ant-carousel .slick-slider .slick-track {
+  transform: translateZ(0);
+}
+
+.ant-carousel .slick-track {
+  position: relative;
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+.ant-carousel .slick-track::before,
+.ant-carousel .slick-track::after {
+  display: table;
+  content: '';
+}
+
+.ant-carousel .slick-track::after {
+  clear: both;
+}
+
+.slick-loading .ant-carousel .slick-track {
+  visibility: hidden;
+}

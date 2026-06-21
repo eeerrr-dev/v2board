@@ -30,6 +30,8 @@ type LegacySelectMode = LegacyMultipleSelectMode | 'single';
 export interface LegacySelectOption {
   value: LegacySelectValue;
   label: ReactNode;
+  selectedLabel?: ReactNode;
+  selectedTitle?: string;
   disabled?: boolean;
   groupKey?: string;
   groupLabel?: ReactNode;
@@ -190,7 +192,7 @@ function getLegacySelectTitle(option: Pick<LegacySelectOption, 'label' | 'title'
   return option.value === null || option.value === undefined ? undefined : String(option.value);
 }
 
-function LegacySelectOption(_props: LegacySelectOptionProps) {
+function LegacySelectOptionComponent(_props: LegacySelectOptionProps) {
   return null;
 }
 
@@ -223,7 +225,7 @@ function collectLegacySelectOptions(children: ReactNode) {
       const groupKey = String(groupChild.key ?? groupLabel ?? index);
       Children.forEach(groupChild.props.children, (optionChild) => {
         if (!isValidElement<LegacySelectOptionProps>(optionChild)) return;
-        if (optionChild.type !== LegacySelectOption) return;
+        if (optionChild.type !== LegacySelectOptionComponent) return;
         collected.push(
           optionFromElement(optionChild, {
             key: groupKey,
@@ -234,7 +236,7 @@ function collectLegacySelectOptions(children: ReactNode) {
       });
       return;
     }
-    if (child.type !== LegacySelectOption) return;
+    if (child.type !== LegacySelectOptionComponent) return;
     collected.push(optionFromElement(child as ReactElement<LegacySelectOptionProps>));
   });
   return collected;
@@ -301,22 +303,37 @@ function LegacySelectComponent({
   const multipleValues = normalizeLegacyMultipleValue(
     multiple ? (effectiveValue as LegacyMultipleSelectValue | undefined) : undefined,
   );
-  const selected = multiple ? undefined : options.find((item) => item.value === singleValue);
+  const selected = multiple
+    ? undefined
+    : options.find((item) => legacySelectValuesEqual(item.value, singleValue));
+  const hasUnmatchedControlledSingleValue =
+    !multiple &&
+    isControlled &&
+    selected === undefined &&
+    singleValue !== null &&
+    singleValue !== undefined;
+  const hasUnmatchedNaNSingleValue =
+    !multiple &&
+    selected === undefined &&
+    typeof singleValue === 'number' &&
+    Number.isNaN(singleValue);
   const selectedLabel = selected
-    ? selected.label
-    : singleValue == null
-      ? null
-      : String(singleValue);
+    ? (selected.selectedLabel ?? selected.label)
+    : hasUnmatchedControlledSingleValue || hasUnmatchedNaNSingleValue
+      ? String(singleValue)
+      : null;
   const selectedTitle =
     selected !== undefined
-      ? getLegacySelectTitle(selected)
-      : singleValue == null
-        ? undefined
-        : String(singleValue);
+      ? (selected.selectedTitle ?? getLegacySelectTitle(selected))
+      : hasUnmatchedControlledSingleValue || hasUnmatchedNaNSingleValue
+        ? String(singleValue)
+        : undefined;
   const enabledOptions = getEnabledOptions(options);
   const initialActiveValue = selected?.value ?? enabledOptions[0]?.value ?? null;
   const isEmpty = options.length === 0;
-  const hasValue = multiple ? multipleValues.length > 0 : singleValue !== null && singleValue !== undefined;
+  const hasValue = multiple
+    ? multipleValues.length > 0
+    : selected !== undefined || hasUnmatchedControlledSingleValue || hasUnmatchedNaNSingleValue;
   const showClear = allowClear && !disabled && (hasValue || searchValue.length > 0);
 
   const setSelectOpen = useCallback(
@@ -935,7 +952,7 @@ function LegacySelectComponent({
 }
 
 export const LegacySelect = Object.assign(LegacySelectComponent, {
-  Option: LegacySelectOption,
+  Option: LegacySelectOptionComponent,
   OptGroup: LegacySelectOptGroup,
   SECRET_COMBOBOX_MODE_DO_NOT_USE: 'SECRET_COMBOBOX_MODE_DO_NOT_USE',
 });

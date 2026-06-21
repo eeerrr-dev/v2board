@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import type { QueueWorkloadItem } from '@v2board/types';
 import { useQueueStats, useQueueWorkload } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
 import {

@@ -1,0 +1,15 @@
+/* Restored user sidebar content-side child spacing. */
+.content-side .block,
+.content-side .items-push > div,
+.content-side .push,
+.content-side p {
+  margin-bottom: 1.125rem;
+}
+
+.content-side .items-push-2x > div {
+  margin-bottom: 2.25rem;
+}
+
+.content-side .items-push-3x > div {
+  margin-bottom: 3.375rem;
+}

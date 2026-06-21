@@ -1,0 +1,28 @@
+/* Restored desktop sidebar open layout. */
+@media (min-width: 992px) {
+  #sidebar {
+    width: 250px;
+  }
+
+  #page-container.sidebar-o {
+    padding-left: 250px;
+  }
+
+  #page-container.sidebar-o #sidebar {
+    transform: translateX(0) translateY(0) translateZ(0);
+  }
+
+  #page-container.page-header-fixed.sidebar-o #page-header {
+    padding-left: 250px;
+  }
+
+  #page-container.page-header-fixed.sidebar-o #page-header .overlay-header,
+  #page-container.page-header-glass.sidebar-o #page-header .overlay-header {
+    left: 250px;
+  }
+
+  #page-container.side-scroll #sidebar .content-header,
+  #page-container.side-scroll #sidebar .content-side {
+    width: 250px !important;
+  }
+}

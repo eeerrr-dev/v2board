@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyAdminLegacySettings,
@@ -7,6 +10,11 @@ import {
   getAdminSecurePath,
   getAdminTitle,
 } from './legacy-settings';
+
+const legacySettingsSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'legacy-settings.ts'),
+  'utf8',
+);
 
 describe('admin legacy settings', () => {
   let appendedThemeLink: HTMLLinkElement | null;
@@ -61,7 +69,9 @@ describe('admin legacy settings', () => {
     expect(window.settings.secure_path).toBe('admin');
     expect(document.title).toBe('Legacy Admin');
     expect(appendedThemeLink?.rel).toBe('stylesheet');
-    expect(appendedThemeLink?.getAttribute('href')).toBe('/assets/admin/theme/green.css');
+    expect(appendedThemeLink?.getAttribute('data-v2board-admin-theme-color')).toBe('green');
+    expect(appendedThemeLink?.getAttribute('href')).toContain('/src/styles/themes/green.css');
+    expect(appendedThemeLink?.getAttribute('href')).not.toContain('/assets/admin/theme/');
   });
 
   it('stringifies a missing title the same way as the packaged admin script', () => {
@@ -72,7 +82,7 @@ describe('admin legacy settings', () => {
     expect(document.title).toBe('undefined');
   });
 
-  it('uses the original relative theme href when window.settings.host is set', () => {
+  it('does not load packaged theme css when window.settings.host is set', () => {
     window.settings = {
       title: 'Legacy Admin',
       host: 'https://api.example.com',
@@ -82,6 +92,19 @@ describe('admin legacy settings', () => {
 
     applyAdminLegacySettings();
 
-    expect(appendedThemeLink?.getAttribute('href')).toBe('./theme/darkblue.css');
+    expect(appendedThemeLink?.getAttribute('data-v2board-admin-theme-color')).toBe('darkblue');
+    expect(appendedThemeLink?.getAttribute('href')).toContain('/src/styles/themes/darkblue.css');
+    expect(appendedThemeLink?.getAttribute('href')).not.toContain('/assets/admin/theme/');
+    expect(document.head.innerHTML).not.toContain('/assets/admin/theme/');
+    expect(document.head.innerHTML).not.toContain('./theme/');
+  });
+
+  it('uses stable source and deploy theme paths instead of bundled css url imports', () => {
+    expect(legacySettingsSource).toContain("'/src/styles/themes'");
+    expect(legacySettingsSource).toContain("'/assets/admin/themes'");
+    expect(legacySettingsSource).toContain("['black', 'darkblue', 'default', 'green']");
+    expect(legacySettingsSource).not.toContain('.css?url');
+    expect(legacySettingsSource).not.toContain("new URL('../styles/themes/");
+    expect(legacySettingsSource).not.toContain('/assets/admin/theme/');
   });
 });

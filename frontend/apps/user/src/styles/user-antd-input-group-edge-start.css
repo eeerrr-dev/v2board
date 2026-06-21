@@ -1,0 +1,6 @@
+/* Restored Ant Design v3 input group leading edge radius reset. */
+.ant-input-group > .ant-input:first-child,
+.ant-input-group-addon:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}

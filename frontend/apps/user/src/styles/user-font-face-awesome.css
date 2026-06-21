@@ -1,0 +1,19 @@
+@font-face {
+  font-family: 'Font Awesome 5 Free';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src:
+    url('../assets/fonts/fa-regular-400.ac21cac3.woff2') format('woff2'),
+    url('../assets/fonts/fa-regular-400.5623624d.woff') format('woff');
+}
+
+@font-face {
+  font-family: 'Font Awesome 5 Free';
+  font-style: normal;
+  font-weight: 900;
+  font-display: block;
+  src:
+    url('../assets/fonts/fa-solid-900.d6d8d5da.woff2') format('woff2'),
+    url('../assets/fonts/fa-solid-900.3ded831d.woff') format('woff');
+}

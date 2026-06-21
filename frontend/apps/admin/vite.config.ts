@@ -3,10 +3,10 @@ import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import {
   buildAppViteConfig,
-  legacyAdminAssetsPlugin,
   legacyNavigationRedirectPlugin,
   legacyViteClientStubPlugin,
   localHorizonStatsPlugin,
+  rejectPackagedAdminAssetsPlugin,
   stripViteClientPlugin,
 } from '@v2board/config/vite';
 
@@ -16,9 +16,9 @@ export default defineConfig({
   plugins: [
     legacyNavigationRedirectPlugin(),
     legacyViteClientStubPlugin(),
+    rejectPackagedAdminAssetsPlugin(),
     react(),
     stripViteClientPlugin(),
-    legacyAdminAssetsPlugin(),
     localHorizonStatsPlugin(),
   ],
   optimizeDeps: {

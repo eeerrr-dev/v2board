@@ -1,0 +1,16 @@
+/* Restored Ant Design v3 horizontal drawer open geometry. */
+.ant-drawer-left.ant-drawer-open,
+.ant-drawer-right.ant-drawer-open {
+  width: 100%;
+  transition: transform 0.3s cubic-bezier(0.7, 0.3, 0.1, 1);
+}
+
+.ant-drawer-left.ant-drawer-open.no-mask,
+.ant-drawer-right.ant-drawer-open.no-mask {
+  width: 0;
+}
+
+.ant-drawer-left.ant-drawer-open .ant-drawer-content-wrapper {
+  transform: translateX(0);
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+}

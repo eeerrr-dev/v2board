@@ -1,0 +1,16 @@
+/* Restored Ant Design v3 checked radio button interaction states. */
+.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):hover {
+  color: var(--legacy-ant-hover);
+  border-color: var(--legacy-ant-hover);
+  box-shadow: -1px 0 0 0 var(--legacy-ant-hover);
+}
+
+.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):active {
+  color: var(--legacy-ant-active);
+  border-color: var(--legacy-ant-active);
+  box-shadow: -1px 0 0 0 var(--legacy-ant-active);
+}
+
+.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):focus-within {
+  outline: 3px solid var(--legacy-ant-radio-button-focus-shadow);
+}

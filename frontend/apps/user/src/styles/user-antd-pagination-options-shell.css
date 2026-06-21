@@ -1,0 +1,16 @@
+/* Restored Ant Design v3 pagination size changer shell styles. */
+.ant-pagination-slash {
+  margin: 0 10px 0 5px;
+}
+
+.ant-pagination-options {
+  display: inline-block;
+  margin-left: 16px;
+  vertical-align: middle;
+}
+
+.ant-pagination-options-size-changer.ant-select {
+  display: inline-block;
+  width: auto;
+  margin-right: 8px;
+}

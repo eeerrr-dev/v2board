@@ -1,0 +1,12 @@
+/* Restored Ant Design v3 radio button group size variants. */
+.ant-radio-group-large .ant-radio-button-wrapper {
+  height: 40px;
+  font-size: 16px;
+  line-height: 38px;
+}
+
+.ant-radio-group-small .ant-radio-button-wrapper {
+  height: 24px;
+  padding: 0 7px;
+  line-height: 22px;
+}

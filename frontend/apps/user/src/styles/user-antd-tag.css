@@ -1,0 +1,19 @@
+/* Restored Ant Design v3 tag styles separated from the user component recovery layer. */
+.ant-tag {
+  display: inline-block;
+  height: auto;
+  margin-right: 8px;
+  padding: 0 7px;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  background: #fafafa;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.ant-tag:last-child {
+  margin-right: 0;
+}

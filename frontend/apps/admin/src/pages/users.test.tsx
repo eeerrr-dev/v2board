@@ -770,6 +770,9 @@ describe('UsersPage legacy user manager', () => {
     expect(rowActionSource).toContain('<LegacyEditIcon /> 编辑');
     expect(rowActionSource).toContain("runUserAction('assign', row)");
     expect(rowActionSource).toContain('<LegacyPlusIcon /> 分配订单');
+    expect(rowActionSource).toContain(
+      '<LegacyDropdownMenuItem key="copy" onClick={(event) => event.stopPropagation()}>',
+    );
     expect(rowActionSource).toContain("runUserAction('copy', row)");
     expect(rowActionSource).toContain('<LegacyCopyIcon /> 复制订阅URL');
     expect(rowActionSource).toContain("runUserAction('reset', row)");
@@ -813,6 +816,13 @@ describe('UsersPage legacy user manager', () => {
     expect(toolbarSource).not.toContain('items: [');
   });
 
+  it('carries the current user total into the legacy order filter jump payload', () => {
+    expect(usersSource).toContain(
+      "JSON.stringify({ filter: [{ key, condition, value }], total: users.data?.total })",
+    );
+    expect(usersSource).not.toContain('JSON.stringify([{ key, condition, value }])');
+  });
+
   it('keeps the toolbar operation dropdown on the original default trigger', () => {
     const toolbarSource = usersSource.slice(
       usersSource.indexOf('className="v2board-table-action"'),
@@ -845,6 +855,8 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain('void banUsers');
     expect(usersSource).toContain('void deleteAll');
     expect(usersSource).toContain('.mutateAsync(query.filter)');
+    expect(usersSource.match(/okText: 'OK'/g)).toHaveLength(2);
+    expect(usersSource.match(/cancelText: 'Cancel'/g)).toHaveLength(2);
     expect(usersSource).not.toContain('onOk: () =>\n        resetSecret');
     expect(usersSource).not.toContain('onOk: () =>\n        remove');
     expect(usersSource).not.toContain('onOk: () => banUsers.mutateAsync(query.filter)');

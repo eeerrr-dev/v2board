@@ -216,7 +216,6 @@ function resetMocks() {
   mocks.subscribeIsLoading = false;
   mocks.toastSuccess.mockReset();
   window.settings = {
-    assets_path: '/theme/default/assets',
     title: 'V2Board',
   };
 }
@@ -346,7 +345,10 @@ describe('DashboardPage bundled-theme actions', () => {
     expect(container.innerHTML).toContain('item___yrtOv subsrcibe-for-link');
     expect(container.innerHTML).toContain('复制订阅地址');
     expect(container.innerHTML).toContain('导入到 Hiddify');
-    expect(container.innerHTML).toContain('/theme/default/assets/./images/icon/Hiddify.png');
+    expect(container.querySelector('img[src*="Hiddify"]')?.getAttribute('src')).toContain(
+      'Hiddify.png',
+    );
+    expect(container.innerHTML).not.toContain('/theme/default/assets/');
 
     const copy = Array.from(container.querySelectorAll('.item___yrtOv')).find(
       (item) => item.textContent === '复制订阅地址',
@@ -377,10 +379,10 @@ describe('DashboardPage bundled-theme actions', () => {
     const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
 
     expect(source).toContain('<div\n          key={Math.random()}');
-    expect(source).toContain(
-      "src={`${window.settings?.assets_path || ''}/./images/icon/${target.title}.png`}",
-    );
+    expect(source).toContain('src={SUBSCRIBE_TARGET_ICONS[target.title]}');
+    expect(source).toContain("import hiddifyIcon from '../assets/images/icon/Hiddify.png';");
     expect(source).not.toContain('key={target.title}');
+    expect(source).not.toContain("window.settings?.assets_path || ''");
     expect(source).not.toContain("window.settings?.assets_path ?? ''");
   });
 

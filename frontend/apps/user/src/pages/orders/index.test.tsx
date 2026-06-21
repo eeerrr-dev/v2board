@@ -174,6 +174,12 @@ describe('OrdersPage bundled-theme table', () => {
     expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
   });
 
+  it('keeps the fixed-row height offset used by the bundled orders table', () => {
+    expect(ordersSource).toContain('useFixedColumnRowHeights(orders.length, {');
+    expect(ordersSource).toContain('bodyRowHeightOffset: 1');
+    expect(ordersSource).not.toContain('fixedBodyRowExtraPixel');
+  });
+
   it('keeps bundled mobile order rows keyed by the table fallback index', () => {
     const mobileSource = ordersSource.slice(
       ordersSource.indexOf('{mobile ? ('),

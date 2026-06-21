@@ -1,0 +1,11 @@
+/* Restored Ant Design v3 carousel active dot state. */
+.ant-carousel .slick-dots li.slick-active button {
+  width: 24px;
+  background: #fff;
+  opacity: 1;
+}
+
+.ant-carousel .slick-dots li.slick-active button:hover,
+.ant-carousel .slick-dots li.slick-active button:focus {
+  opacity: 1;
+}

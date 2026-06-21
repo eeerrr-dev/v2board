@@ -1,0 +1,16 @@
+/* Restored Ant Design v3 table content and scroll containers. */
+.ant-table-content {
+  position: relative;
+  border-radius: 4px 4px 0 0;
+}
+
+.ant-table-scroll {
+  overflow: auto;
+  overflow-x: hidden;
+}
+
+/* rc-table sizes the inner table with inline `width:900px` (its scroll.x); this
+   makes it fill containers wider than 900px, matching antd's scroll-table layout. */
+.ant-table-scroll table {
+  min-width: 100%;
+}

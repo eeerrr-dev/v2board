@@ -1,0 +1,8 @@
+/* Restored Bootstrap color utility styles separated from the user Bootstrap recovery layer. */
+.bg-white {
+  background-color: #fff !important;
+}
+
+.text-dark {
+  color: #343a40 !important;
+}

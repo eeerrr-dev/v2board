@@ -548,6 +548,11 @@ describe('ServersPage legacy server group route', () => {
     expect(html).toContain(
       'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
     );
+    expect(html).toContain('class="anticon anticon-filter ant-dropdown-trigger"');
+    expect(html).toContain(
+      'd="M880.1 154H143.9c-24.5 0-39.8 26.7-27.5 48L349 597.4V838c0 17.7 14.2 32 31.8 32h262.4c17.6 0 31.8-14.3 31.8-32V597.4L907.7 202c12.2-21.3-3.1-48-27.6-48z"',
+    );
+    expect(html).not.toContain('M613 561.4');
     expect(html).toContain('class="ant-table-align-left" style="text-align:left"');
     expect(html).toContain('class="ant-table-align-center" style="text-align:center"');
     expect(html).toContain('节点ID');
@@ -748,6 +753,10 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain("import { LegacyTag } from '@/components/legacy-tag';");
     expect(serversSource).toContain('const LEGACY_DROPDOWN_HOVER_CLOSE_DELAY = 100;');
     expect(serversSource).not.toContain('const LEGACY_DROPDOWN_HOVER_CLOSE_DELAY = 120;');
+    expect(serversSource).toContain('if (!open) return undefined;');
+    expect(serversSource).not.toContain('if (!open || !opensOnClick) return undefined;');
+    expect(serversSource).toContain('if (opensOnClick) setOpen(false);');
+    expect(serversSource).not.toContain('onClick={() => setOpen(false)}');
     expect(managePageSource).toContain('<LegacyDropdown');
     expect(managePageSource).toContain('overlay={');
     expect(managePageSource).toContain('<LegacyDropdownMenu>');
@@ -950,7 +959,10 @@ describe('ServersPage legacy server group route', () => {
       '...parentCandidates.map((node) => ({ value: node.id, label: node.name })),',
     );
     expect(serversSource).toContain('const groupOptions: LegacySelectOption[] = groups.map');
+    expect(serversSource).toContain('value: String(group.id)');
     expect(serversSource).toContain('const routeOptions: LegacySelectOption[] = routes.map');
+    expect(serversSource).toContain('label: route.id');
+    expect(serversSource).not.toContain('label: route.remarks');
     expect(serversSource).toContain("getValueProps={(value) => ({ value: value || '' })}");
     expect(serversSource).toContain(
       "<LegacySelect style={{ width: '100%' }} options={parentOptions} />",
@@ -1016,6 +1028,20 @@ describe('ServersPage legacy server group route', () => {
     expect(getLegacyServerInitialValues('trojan')).not.toHaveProperty('network');
     expect(getLegacyServerInitialValues('vless')).not.toHaveProperty('network');
     expect(serversSource.match(/name="network" initialValue="tcp"/g)).toHaveLength(2);
+  });
+
+  it('keeps edit-node initialization on the saved record instead of applying new-node defaults', () => {
+    const values = getLegacyServerInitialValues('shadowsocks', {
+      name: 'Tokyo',
+      host: 'jp.example.com',
+    } as unknown as Parameters<typeof getLegacyServerInitialValues>[1]);
+
+    expect(values).toEqual({
+      name: 'Tokyo',
+      host: 'jp.example.com',
+    });
+    expect(values).not.toHaveProperty('rate');
+    expect(values).not.toHaveProperty('cipher');
   });
 
   it('keeps original V2node edit values instead of forcing TLS during initialization', () => {
@@ -1130,9 +1156,7 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain("Form.useWatch('obfs', form)");
     expect(getLegacyServerInitialValues('shadowsocks').cipher).toBe('chacha20-ietf-poly1305');
     expect(getLegacyServerInitialValues('v2node').cipher).toBeUndefined();
-    expect(serversSource).toContain(
-      '<Form.Item noStyle name="cipher" initialValue="chacha20-ietf-poly1305">',
-    );
+    expect(serversSource).toContain("initialValue={editing ? undefined : 'chacha20-ietf-poly1305'}");
     expect(serversSource).toContain('<Form.Item noStyle name="cipher" initialValue="aes-128-gcm">');
     expect(serversSource).toContain('加密算法');
     expect(serversSource).toContain('aes-128-gcm');
@@ -1551,6 +1575,11 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('preserves the original /server/manage row right-click menu outside sort mode', () => {
+    const managePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerManagePage'),
+      serversSource.indexOf('function NodeEditDrawer'),
+    );
+
     expect(serversSource).toContain('id="v2board-table-dropdown"');
     expect(serversSource).toContain(
       'ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical',
@@ -1567,7 +1596,13 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain('<LegacyFormIcon /> 编辑');
     expect(serversSource).toContain('<LegacyCopyIcon /> 复制');
     expect(serversSource).toContain('<LegacyDeleteIcon /> 删除');
-    expect(serversSource).toContain('{contextDropdown}\n            </LegacyDragSort>');
+    expect(managePageSource).toContain('{contextDropdown}');
+    expect(managePageSource.indexOf('{contextDropdown}')).toBeGreaterThan(
+      managePageSource.indexOf('<div className="ant-table-wrapper">'),
+    );
+    expect(managePageSource.indexOf('{contextDropdown}')).toBeLessThan(
+      managePageSource.indexOf('</LegacyDragSort>'),
+    );
     expect(serversSource).not.toContain('<FormOutlined /> 编辑');
     expect(serversSource).toContain("runNodeAction('copy', contextRecord)");
     expect(serversSource).toContain("runNodeAction('delete', contextRecord)");
@@ -1583,19 +1618,33 @@ describe('ServersPage legacy server group route', () => {
   });
 
   it('preserves the legacy remembered server table page size habit', () => {
+    const managePageSource = serversSource.slice(
+      serversSource.indexOf('function ServerManagePage'),
+      serversSource.indexOf('function NodeEditDrawer'),
+    );
+    const wrapperSource = managePageSource.slice(
+      managePageSource.indexOf('<div className="ant-table-wrapper">'),
+      managePageSource.indexOf('{contextDropdown}'),
+    );
+
     expect(serversSource).toContain("const LEGACY_HABIT_KEY = 'habit'");
     expect(serversSource).toContain(
       "const LEGACY_SERVER_PAGE_SIZE_KEY = 'server_manage_page_size'",
     );
     expect(serversSource).toContain('function readLegacyServerPageSize()');
     expect(serversSource).toContain('useState(readLegacyServerPageSize)');
+    expect(serversSource).toContain('LegacyTablePagination');
+    expect(serversSource).toContain('mini={false}');
     expect(serversSource).toContain(
-      'const visibleNodes = sortMode ? filteredNodes : filteredNodes.slice(0, pageSize);',
+      'filteredNodes.slice((activePage - 1) * pageSize, activePage * pageSize);',
     );
     expect(serversSource).toContain(
-      'const changeServerPageSize = (_current: number, size: number) =>',
+      'const changeServerPagination = (pagination: LegacyTablePaginationChange) =>',
     );
-    expect(serversSource).toContain('writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, size)');
+    expect(serversSource).toContain(
+      'writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, pagination.pageSize)',
+    );
+    expect(wrapperSource).toContain('<LegacyTablePagination');
     expect(serversSource).toContain(
       'const legacyHabit = stored as unknown as Record<string, unknown>;',
     );
@@ -1678,7 +1727,8 @@ describe('ServersPage legacy server group route', () => {
     expect(managePageSource).toContain('<LegacyInput');
     expect(managePageSource).toContain('placeholder="输入任意关键字搜索"');
     expect(managePageSource).toContain('className="ant-input ml-2"');
-    expect(managePageSource).toContain('onChange={(event) => setSearchKey(event.target.value)}');
+    expect(managePageSource).toContain('setSearchKey(event.target.value);');
+    expect(managePageSource).toContain('setCurrentPage(1);');
     expect(managePageSource).not.toContain(
       '<Input\n              placeholder="输入任意关键字搜索"',
     );

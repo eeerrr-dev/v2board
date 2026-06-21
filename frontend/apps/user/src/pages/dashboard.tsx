@@ -24,6 +24,20 @@ import { legacyHref } from '@/lib/legacy-href';
 import { toast } from '@/lib/legacy-toast';
 import { useTransitionStatus } from '@/lib/use-transition-status';
 import { lockLegacyDrawerBodyScroll } from '@/lib/legacy-body-scroll';
+import clashForAndroidIcon from '../assets/images/icon/Clash For Android.png';
+import clashForWindowsIcon from '../assets/images/icon/Clash For Windows.png';
+import clashMetaForAndroidIcon from '../assets/images/icon/ClashMeta For Android.png';
+import clashMetaForWindowsIcon from '../assets/images/icon/ClashMeta For Windows.png';
+import clashMetaIcon from '../assets/images/icon/ClashMeta.png';
+import clashXIcon from '../assets/images/icon/ClashX.png';
+import hiddifyIcon from '../assets/images/icon/Hiddify.png';
+import nekoBoxForAndroidIcon from '../assets/images/icon/NekoBox For Android.png';
+import quantumultXIcon from '../assets/images/icon/QuantumultX.png';
+import shadowrocketIcon from '../assets/images/icon/Shadowrocket.png';
+import singBoxIcon from '../assets/images/icon/Sing-box.png';
+import stashIcon from '../assets/images/icon/Stash.png';
+import surfboardIcon from '../assets/images/icon/Surfboard.png';
+import surgeIcon from '../assets/images/icon/Surge.png';
 
 interface Shortcut {
   to: string;
@@ -32,6 +46,23 @@ interface Shortcut {
   descKey: string;
   onClick?: () => void;
 }
+
+const SUBSCRIBE_TARGET_ICONS: Record<string, string> = {
+  'Clash For Android': clashForAndroidIcon,
+  'Clash For Windows': clashForWindowsIcon,
+  'ClashMeta For Android': clashMetaForAndroidIcon,
+  'ClashMeta For Windows': clashMetaForWindowsIcon,
+  ClashMeta: clashMetaIcon,
+  ClashX: clashXIcon,
+  Hiddify: hiddifyIcon,
+  'NekoBox For Android': nekoBoxForAndroidIcon,
+  QuantumultX: quantumultXIcon,
+  Shadowrocket: shadowrocketIcon,
+  'Sing-box': singBoxIcon,
+  Stash: stashIcon,
+  Surfboard: surfboardIcon,
+  Surge: surgeIcon,
+};
 
 export default function DashboardPage() {
   const { t } = useTranslation();
@@ -125,18 +156,12 @@ export default function DashboardPage() {
   const expired = isLegacyExpired(sub?.expired_at ?? null);
   const canRenew = isLegacyRenewable(sub);
   const resetAvailable = Boolean(
-    hasPlan &&
-      sub?.plan?.reset_price &&
-      usedPctRounded >= 80 &&
-      !expired,
+    hasPlan && sub?.plan?.reset_price && usedPctRounded >= 80 && !expired,
   );
   const shouldShowTrafficAlert = Boolean(usedPctRounded >= 80 && usedPctRounded < 100 && !expired);
   const trafficAlertResetAvailable = Boolean(sub?.plan?.reset_price);
   const canNewPeriod = Boolean(
-    hasPlan &&
-      sub?.allow_new_period &&
-      usedPctRounded >= 100 &&
-      !expired,
+    hasPlan && sub?.allow_new_period && usedPctRounded >= 100 && !expired,
   );
   const noticeList = notices.data ?? [];
   // Map the track position back to the real slide the dots highlight (positions 0 and
@@ -299,8 +324,8 @@ export default function DashboardPage() {
 
   const renderSubscribeBox = () => (
     // Original uses only the CSS-module hashes (umi.js @36900): box
-    // `oneClickSubscribe___2t9Xg`, items `item___yrtOv …`. globals.css styles those
-    // hashes directly; no extra v2board-* class is present in the original DOM.
+    // `oneClickSubscribe___2t9Xg`, items `item___yrtOv …`. user-subscribe-list.css
+    // styles those hashes directly; no extra v2board-* class is present in the original DOM.
     <div className="oneClickSubscribe___2t9Xg" ref={subscribeBoxRef}>
       <div className="item___yrtOv subsrcibe-for-link" onClick={copyUrl}>
         <div>
@@ -323,11 +348,11 @@ export default function DashboardPage() {
           }}
         >
           <div>
-            <img
-              src={`${window.settings?.assets_path || ''}/./images/icon/${target.title}.png`}
-            />
+            <img src={SUBSCRIBE_TARGET_ICONS[target.title]} />
           </div>
-          <div>{t('dashboard.import_to')} {target.title}</div>
+          <div>
+            {t('dashboard.import_to')} {target.title}
+          </div>
         </div>
       ))}
       <div style={{ padding: 10 }}>
@@ -646,7 +671,9 @@ export default function DashboardPage() {
                               <AntBtn
                                 type="button"
                                 className="ant-btn ant-btn-primary"
-                                onClick={() => navigate(canRenew ? `/plan/${legacySub.plan_id}` : '/plan')}
+                                onClick={() =>
+                                  navigate(canRenew ? `/plan/${legacySub.plan_id}` : '/plan')
+                                }
                               >
                                 {canRenew
                                   ? t('dashboard.renew_subscribe')
@@ -732,7 +759,8 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
       {mobileSubscribe ? (
-        subscribeDrawerStatus !== 'exited' && createPortal(
+        subscribeDrawerStatus !== 'exited' &&
+        createPortal(
           <div
             ref={subscribeDrawerRef}
             tabIndex={-1}
@@ -746,10 +774,7 @@ export default function DashboardPage() {
               }
             }}
           >
-            <div
-              className="ant-drawer-mask"
-              onClick={() => setSubscribeOpen(false)}
-            />
+            <div className="ant-drawer-mask" onClick={() => setSubscribeOpen(false)} />
             <div
               className="ant-drawer-content-wrapper"
               style={subscribeHeight ? { height: subscribeHeight } : undefined}
@@ -787,10 +812,7 @@ export default function DashboardPage() {
           style={{ textAlign: 'center' }}
           zIndex={2000}
         >
-          <QRCode
-            value={subscribeUrl}
-            renderAs="canvas"
-          />
+          <QRCode value={subscribeUrl} renderAs="canvas" />
           <div style={{ marginTop: 10 }}>{t('dashboard.qrcode_client_tip')}</div>
         </DialogContent>
       </Dialog>

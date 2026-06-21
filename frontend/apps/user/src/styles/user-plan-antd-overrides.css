@@ -1,0 +1,8 @@
+/* Restored plan-page Ant Design spacing overrides. */
+.ant-tag:last-child {
+  margin: 0;
+}
+
+.ant-tabs-bar {
+  margin-bottom: 0;
+}

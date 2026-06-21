@@ -164,6 +164,80 @@ describe('LegacyTabs', () => {
     expect(tabBar.querySelector('.ant-tabs-nav-container')).not.toBeNull();
   });
 
+  it('shows old Ant Design 3 tab arrows when horizontal tabs overflow', async () => {
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    const rect = (width: number, height = 48) =>
+      ({
+        bottom: height,
+        height,
+        left: 0,
+        right: width,
+        top: 0,
+        width,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      const element = this as HTMLElement;
+      if (element.classList.contains('ant-tabs-nav-container')) return rect(390);
+      if (element.classList.contains('ant-tabs-nav-wrap')) return rect(326);
+      if (element.classList.contains('ant-tabs-nav')) return rect(720);
+      return originalGetBoundingClientRect.call(this);
+    };
+
+    try {
+      await act(async () => {
+        root.render(
+          <LegacyTabs defaultActiveKey="site">
+            <LegacyTabs.TabPane tab="站点" key="site">
+              站点内容
+            </LegacyTabs.TabPane>
+            <LegacyTabs.TabPane tab="邮件" key="mail">
+              邮件内容
+            </LegacyTabs.TabPane>
+            <LegacyTabs.TabPane tab="安全" key="safe">
+              安全内容
+            </LegacyTabs.TabPane>
+            <LegacyTabs.TabPane tab="支付" key="payment">
+              支付内容
+            </LegacyTabs.TabPane>
+            <LegacyTabs.TabPane tab="订阅" key="subscribe">
+              订阅内容
+            </LegacyTabs.TabPane>
+            <LegacyTabs.TabPane tab="审计" key="audit">
+              审计内容
+            </LegacyTabs.TabPane>
+          </LegacyTabs>,
+        );
+      });
+
+      const navContainer = container.querySelector<HTMLElement>('.ant-tabs-nav-container')!;
+      const previous = container.querySelector<HTMLElement>('.ant-tabs-tab-prev')!;
+      const next = container.querySelector<HTMLElement>('.ant-tabs-tab-next')!;
+
+      expect(navContainer.classList.contains('ant-tabs-nav-container-scrolling')).toBe(true);
+      expect(previous.classList.contains('ant-tabs-tab-arrow-show')).toBe(true);
+      expect(previous.classList.contains('ant-tabs-tab-btn-disabled')).toBe(true);
+      expect(next.classList.contains('ant-tabs-tab-arrow-show')).toBe(true);
+      expect(next.classList.contains('ant-tabs-tab-btn-disabled')).toBe(false);
+
+      await act(async () => {
+        next.click();
+      });
+
+      expect(
+        container
+          .querySelector<HTMLElement>('.ant-tabs-nav')
+          ?.style.transform,
+      ).toBe('translate3d(-326px, 0px, 0px)');
+      expect(previous.classList.contains('ant-tabs-tab-btn-disabled')).toBe(false);
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
+  });
+
   it('matches old animated=false classes and keeps active content unshifted', () => {
     const html = renderToStaticMarkup(
       <LegacyTabs activeKey="safe" animated={false}>

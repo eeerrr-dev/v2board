@@ -1,0 +1,4 @@
+/* Restored Ant Design v3 click wave colour token. */
+html {
+  --antd-wave-shadow-color: var(--legacy-ant-primary);
+}

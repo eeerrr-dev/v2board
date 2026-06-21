@@ -1,0 +1,26 @@
+/* Restored desktop main content pull helpers. */
+@media (min-width: 768px) {
+  .content > .pull-t,
+  .content > .pull-y {
+    margin-top: -1.75rem;
+  }
+
+  .content > .pull-b,
+  .content > .pull-y {
+    margin-bottom: -1px;
+  }
+
+  .content > .pull-r,
+  .content > .pull-x {
+    margin-right: -1.75rem;
+  }
+
+  .content > .pull-r,
+  .content > .pull-x {
+    margin-left: -1.75rem;
+  }
+
+  .content > .pull {
+    margin: -1.75rem -1.75rem -1px;
+  }
+}

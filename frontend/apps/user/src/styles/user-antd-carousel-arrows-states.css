@@ -1,0 +1,21 @@
+/* Restored Ant Design v3 carousel arrow interaction states. */
+.ant-carousel .slick-next:focus,
+.ant-carousel .slick-next:hover,
+.ant-carousel .slick-prev:focus,
+.ant-carousel .slick-prev:hover {
+  color: transparent;
+  background: transparent;
+  outline: none;
+}
+
+.ant-carousel .slick-next:focus::before,
+.ant-carousel .slick-next:hover::before,
+.ant-carousel .slick-prev:focus::before,
+.ant-carousel .slick-prev:hover::before {
+  opacity: 1;
+}
+
+.ant-carousel .slick-next.slick-disabled::before,
+.ant-carousel .slick-prev.slick-disabled::before {
+  opacity: 0.25;
+}

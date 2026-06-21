@@ -3,7 +3,6 @@ export type LegacyTone = 'light' | 'dark';
 
 export interface LegacySettings {
   title?: string;
-  assets_path?: string;
   theme?: {
     sidebar?: LegacyTone;
     header?: LegacyTone;
@@ -396,9 +395,8 @@ export function getLegacyTheme() {
 export function applyLegacySettings(): void {
   const root = document.documentElement;
   const settings = getLegacySettings();
-  const { color, palette } = getLegacyTheme();
+  const { palette } = getLegacyTheme();
 
-  applyLegacyThemeCss(color, Boolean(settings.host));
   root.style.setProperty('--color-brand-400', palette.primaryHover);
   root.style.setProperty('--color-brand-500', palette.primary);
   root.style.setProperty('--color-brand-600', palette.primaryActive);
@@ -456,14 +454,4 @@ export function applyLegacySettings(): void {
   root.style.setProperty('--antd-wave-shadow-color', palette.primary);
 
   document.title = String(settings.title);
-}
-
-function applyLegacyThemeCss(color: LegacyThemeColor, hasHost: boolean): void {
-  const href = hasHost
-    ? `./theme/${color}.css`
-    : `/theme/default/assets/theme/${color}.css`;
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = href;
-  document.getElementsByTagName('head')[0]?.appendChild(link);
 }

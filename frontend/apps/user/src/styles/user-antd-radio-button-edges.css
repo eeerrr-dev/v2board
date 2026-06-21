@@ -1,0 +1,24 @@
+/* Restored Ant Design v3 radio button separator and corner styles. */
+.ant-radio-button-wrapper:not(:first-child)::before {
+  position: absolute;
+  top: 0;
+  left: -1px;
+  display: block;
+  width: 1px;
+  height: 100%;
+  background-color: #d9d9d9;
+  content: '';
+}
+
+.ant-radio-button-wrapper:first-child {
+  border-left: 1px solid #d9d9d9;
+  border-radius: 4px 0 0 4px;
+}
+
+.ant-radio-button-wrapper:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.ant-radio-button-wrapper:first-child:last-child {
+  border-radius: 4px;
+}

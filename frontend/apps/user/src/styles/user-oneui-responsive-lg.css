@@ -1,0 +1,12 @@
+/* Restored packaged lg breakpoint OneUI utilities. */
+@media (min-width: 992px) {
+  .d-lg-none { display: none !important; }
+  .d-lg-inline { display: inline !important; }
+  .justify-content-lg-center { justify-content: center !important; }
+  .px-lg-4 { padding-right: 1.5rem !important; padding-left: 1.5rem !important; }
+  .py-lg-4 { padding-top: 1.5rem !important; padding-bottom: 1.5rem !important; }
+  .col-lg-8 {
+    flex: 0 0 66.666667%;
+    max-width: 66.666667%;
+  }
+}

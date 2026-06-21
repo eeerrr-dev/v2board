@@ -117,6 +117,8 @@ export interface LegacyTablePaginationChange {
   total?: number;
 }
 
+type LegacyScrollPositionRight = boolean | 'desktop';
+
 const LEGACY_PAGER_RANGE = 2;
 const LEGACY_PAGE_SIZE_SUFFIX = '条/页';
 
@@ -173,10 +175,15 @@ function getLegacyPageItems(currentPage: number, pageCount: number): LegacyPagin
   return items;
 }
 
-function getLegacyPageSizeOptions(pageSizeOptions: number[] | undefined): LegacySelectOption[] {
+function getLegacyPageSizeOptions(
+  pageSizeOptions: number[] | undefined,
+  mini: boolean,
+): LegacySelectOption[] {
   return (pageSizeOptions ?? []).map((option) => ({
     value: option,
     label: `${option} ${LEGACY_PAGE_SIZE_SUFFIX}`,
+    selectedLabel: mini ? String(option) : undefined,
+    selectedTitle: mini ? String(option) : undefined,
   }));
 }
 
@@ -199,12 +206,14 @@ function LegacyPaginationJumpIcon({ direction }: { direction: 'prev' | 'next' })
 
 export function LegacyTablePagination({
   current,
+  mini = true,
   pageSizeOptions,
   pageSize,
   total,
   onChange,
 }: {
   current: number;
+  mini?: boolean;
   pageSizeOptions?: number[];
   pageSize: number;
   total?: number;
@@ -215,7 +224,7 @@ export function LegacyTablePagination({
   const previousDisabled = currentPage <= 1;
   const nextDisabled = currentPage >= pageCount;
   const pageItems = getLegacyPageItems(currentPage, pageCount);
-  const sizeOptions = getLegacyPageSizeOptions(pageSizeOptions);
+  const sizeOptions = getLegacyPageSizeOptions(pageSizeOptions, mini);
   const changePage = (next: number) => {
     const bounded = Math.min(Math.max(next, 1), pageCount);
     if (bounded === currentPage) return;
@@ -229,7 +238,12 @@ export function LegacyTablePagination({
   };
 
   return (
-    <ul className="ant-pagination ant-table-pagination mini" {...LEGACY_UNSELECTABLE_ATTRIBUTE}>
+    <ul
+      className={['ant-pagination', 'ant-table-pagination', mini ? 'mini' : undefined]
+        .filter(Boolean)
+        .join(' ')}
+      {...LEGACY_UNSELECTABLE_ATTRIBUTE}
+    >
       <li
         title="上一页"
         className={`${previousDisabled ? 'ant-pagination-disabled ' : ''}ant-pagination-prev`}
@@ -284,7 +298,7 @@ export function LegacyTablePagination({
       {pageSizeOptions ? (
         <li className="ant-pagination-options">
           <LegacySelect
-            size="small"
+            size={mini ? 'small' : undefined}
             className="ant-pagination-options-size-changer"
             dropdownMatchSelectWidth={false}
             getPopupContainer={(trigger) => trigger.parentElement}
@@ -376,7 +390,7 @@ export function LegacyStandaloneTable({
   fixedRightChildren,
   fixedRightRowHeight,
   pagination,
-  scrollPositionRight = true,
+  scrollPositionRight = false,
   scrollX,
 }: {
   className?: string;
@@ -386,15 +400,19 @@ export function LegacyStandaloneTable({
   fixedRightChildren?: ReactNode;
   fixedRightRowHeight?: number;
   pagination?: ReactNode;
-  scrollPositionRight?: boolean;
+  scrollPositionRight?: LegacyScrollPositionRight;
   scrollX?: number;
 }) {
   const fixedRightHeaders =
     scrollX === undefined ? [] : headers.filter((header) => header.fixedRight);
+  const resolvedScrollPositionRight =
+    scrollPositionRight === 'desktop'
+      ? typeof window === 'undefined' || window.innerWidth >= 768
+      : scrollPositionRight;
   const scrollClassName =
     scrollX === undefined
       ? 'ant-table-scroll-position-left'
-      : scrollPositionRight
+      : resolvedScrollPositionRight
         ? 'ant-table-scroll-position-left ant-table-scroll-position-right'
         : 'ant-table-scroll-position-left';
 

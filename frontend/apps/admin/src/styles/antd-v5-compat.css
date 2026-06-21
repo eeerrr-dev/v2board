@@ -4,6 +4,13 @@
  * `.ant-spin { display: none }` rule hides that wrapper. Keep this scoped to
  * Table's internal Spin so the hand-built LegacySpin still matches the bundle.
  */
+.ant-app {
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
 .ant-table-wrapper > .ant-spin {
   position: relative;
   display: block;
@@ -19,6 +26,15 @@
 .ant-table-wrapper > .ant-spin > .ant-spin-container {
   position: relative;
   opacity: 1;
+}
+
+/*
+ * Legacy Ant Design 3 removes message notices quickly after `message.destroy`.
+ * Ant Design 6 keeps leaving notices in the DOM during rc-motion; hide only the
+ * message leave phase so completed admin ticket replies no longer show "发送中".
+ */
+.ant-message [class*='-leave'] {
+  display: none !important;
 }
 
 .ace_editor {

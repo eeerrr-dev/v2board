@@ -1,0 +1,5 @@
+/* Restored packaged background image helper. */
+.bg-image {
+  background-position: 0 50%;
+  background-size: cover;
+}

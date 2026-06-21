@@ -1,0 +1,23 @@
+/* Restored desktop mini-sidebar content reveal states. */
+@media (min-width: 992px) {
+  .sidebar-mini.sidebar-o #sidebar .content-header,
+  .sidebar-mini.sidebar-o #sidebar .content-side {
+    width: 250px;
+    transform: translateX(186px) translateY(0) translateZ(0);
+    transition: transform 0.45s cubic-bezier(0.2, 0.61, 0.42, 0.97);
+    will-change: transform;
+  }
+
+  .sidebar-mini.sidebar-o #sidebar .content-header {
+    position: relative;
+    z-index: 1;
+  }
+
+  .sidebar-mini.sidebar-o #sidebar:hover,
+  .sidebar-mini.sidebar-o #sidebar:hover .content-header,
+  .sidebar-mini.sidebar-o #sidebar:hover .content-side,
+  .sidebar-mini.sidebar-o.sidebar-r #sidebar .content-header,
+  .sidebar-mini.sidebar-o.sidebar-r #sidebar .content-side {
+    transform: translateX(0);
+  }
+}

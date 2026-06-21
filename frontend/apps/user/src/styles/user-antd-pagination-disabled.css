@@ -1,0 +1,17 @@
+/* Restored Ant Design v3 pagination disabled states. */
+.ant-pagination-disabled,
+.ant-pagination-disabled:focus,
+.ant-pagination-disabled:hover {
+  cursor: not-allowed;
+}
+
+.ant-pagination-disabled .ant-pagination-item-link,
+.ant-pagination-disabled:focus .ant-pagination-item-link,
+.ant-pagination-disabled:focus a,
+.ant-pagination-disabled:hover .ant-pagination-item-link,
+.ant-pagination-disabled:hover a,
+.ant-pagination-disabled a {
+  color: rgba(0, 0, 0, 0.25);
+  border-color: #d9d9d9;
+  cursor: not-allowed;
+}

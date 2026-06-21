@@ -1,0 +1,20 @@
+/* Restored guest auth language trigger and menu item styles. */
+.v2board-auth-lang-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.v2board-login-i18n-btn {
+  cursor: pointer;
+  magin-top: 2.5;
+  float: right;
+}
+
+.v2board-lang-item {
+  padding: 10px 20px;
+}
+
+.v2board-lang-item:hover {
+  background: #eee;
+}

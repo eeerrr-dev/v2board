@@ -1,0 +1,33 @@
+/* Restored Ant Design Mobile list item base and ripple styles. */
+.am-list-item {
+  position: relative;
+  display: flex;
+  min-height: 44px;
+  padding-left: 15px;
+  overflow: hidden;
+  vertical-align: middle;
+  background-color: #fff;
+  align-items: center;
+  transition: background-color 0.2s;
+}
+
+.am-list-item .am-list-ripple {
+  position: absolute;
+  display: inline-block;
+  overflow: hidden;
+  cursor: pointer;
+  background: transparent;
+  border-radius: 100%;
+  outline: none;
+  transform: scale(0);
+  transition:
+    box-shadow 0.2s cubic-bezier(0.4, 0, 1, 1),
+    background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: box-shadow, transform;
+}
+
+.am-list-item .am-list-ripple.am-list-ripple-animate {
+  background-color: hsla(0, 0%, 62%, 0.2);
+  animation: ripple 1s linear;
+}

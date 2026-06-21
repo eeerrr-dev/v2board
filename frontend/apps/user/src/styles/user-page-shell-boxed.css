@@ -1,0 +1,5 @@
+/* Restored boxed main content width constraints. */
+#page-container.main-content-boxed > #main-container .content,
+#page-container.main-content-boxed > #page-header .content-header {
+  max-width: 1200px;
+}

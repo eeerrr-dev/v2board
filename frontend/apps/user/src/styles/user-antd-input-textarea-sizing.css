@@ -1,0 +1,22 @@
+/* Restored Ant Design v3 textarea and input size variants. */
+textarea.ant-input {
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  line-height: 1.5;
+  vertical-align: bottom;
+  transition:
+    all 0.3s,
+    height 0s;
+}
+
+.ant-input-lg {
+  height: 40px;
+  padding: 6px 11px;
+  font-size: 16px;
+}
+
+.ant-input-sm {
+  height: 24px;
+  padding: 1px 7px;
+}

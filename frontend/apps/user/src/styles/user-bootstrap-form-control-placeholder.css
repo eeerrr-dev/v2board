@@ -1,0 +1,5 @@
+/* Restored Bootstrap form-control placeholder state. */
+.form-control::placeholder {
+  color: #6c757d;
+  opacity: 1;
+}

@@ -1,0 +1,14 @@
+/* Restored page-level and mobile main content overrides. */
+#page-container .content {
+  background-color: var(--color-page) !important;
+}
+
+@media (max-width: 768px) {
+  .content {
+    padding: 0 !important;
+  }
+
+  .content.content-full {
+    padding-bottom: 0;
+  }
+}

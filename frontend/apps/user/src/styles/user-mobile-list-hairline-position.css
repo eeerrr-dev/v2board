@@ -1,0 +1,27 @@
+/* Restored Ant Design Mobile retina list hairline placement rules. */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 2dppx) {
+  html:not([data-scale]) .am-list-body::before {
+    top: 0;
+    right: auto;
+    bottom: auto;
+    transform-origin: 50% 50%;
+  }
+
+  html:not([data-scale]) .am-list-body::after {
+    top: auto;
+    right: auto;
+    bottom: 0;
+    transform-origin: 50% 100%;
+  }
+
+  html:not([data-scale]) .am-list-body div:not(:last-child) .am-list-line {
+    border-bottom: none;
+  }
+
+  html:not([data-scale]) .am-list-body div:not(:last-child) .am-list-line::after {
+    top: auto;
+    right: auto;
+    bottom: 0;
+    transform-origin: 50% 100%;
+  }
+}

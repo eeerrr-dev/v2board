@@ -324,6 +324,15 @@ describe('CouponsPage legacy routes', () => {
     expect(source.match(/legacy(Coupon|Giftcard)Query = query;/g)).toHaveLength(2);
     expect(source).not.toContain('setQuery({ ...query, total:');
     expect(source).not.toContain('setQueryState({ ...query, total:');
+    expect(queriesSource).toContain('function withoutLegacyTotal(query: admin.AdminPageQuery)');
+    expect(queriesSource).toContain(
+      'const { total: _total, ...nextQuery } = query as admin.AdminPageQuery & { total?: unknown };',
+    );
+    expect(queriesSource).toContain('const requestQuery = withoutLegacyTotal(query);');
+    expect(queriesSource).toContain('queryKey: adminKeys.coupons(requestQuery)');
+    expect(queriesSource).toContain('queryFn: () => admin.fetchCoupons(apiClient, requestQuery)');
+    expect(queriesSource).toContain('queryKey: adminKeys.giftcards(requestQuery)');
+    expect(queriesSource).toContain('queryFn: () => admin.fetchGiftcards(apiClient, requestQuery)');
   });
 
   it('renders coupon and giftcard lists with the legacy standalone table instead of AntD5 Table props', () => {

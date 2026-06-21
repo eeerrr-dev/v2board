@@ -1,0 +1,41 @@
+/* Restored Ant Design v3 ghost and dashed button variants. */
+.ant-btn-ghost {
+  color: rgba(0, 0, 0, 0.65);
+  background-color: transparent;
+  border-color: #d9d9d9;
+}
+
+.ant-btn-ghost:focus,
+.ant-btn-ghost:hover {
+  color: var(--legacy-ant-hover);
+  background-color: transparent;
+  border-color: var(--legacy-ant-hover);
+}
+
+.ant-btn-ghost.active,
+.ant-btn-ghost:active {
+  color: var(--legacy-ant-active);
+  background-color: transparent;
+  border-color: var(--legacy-ant-active);
+}
+
+.ant-btn-dashed {
+  color: rgba(0, 0, 0, 0.65);
+  background-color: #fff;
+  border-color: #d9d9d9;
+  border-style: dashed;
+}
+
+.ant-btn-dashed:focus,
+.ant-btn-dashed:hover {
+  color: var(--legacy-ant-hover);
+  background-color: #fff;
+  border-color: var(--legacy-ant-hover);
+}
+
+.ant-btn-dashed.active,
+.ant-btn-dashed:active {
+  color: var(--legacy-ant-active);
+  background-color: #fff;
+  border-color: var(--legacy-ant-active);
+}

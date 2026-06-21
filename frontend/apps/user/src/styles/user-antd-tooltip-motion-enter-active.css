@@ -1,0 +1,6 @@
+/* Restored Ant Design v3 tooltip zoom-big-fast enter activation. */
+.zoom-big-fast-enter.zoom-big-fast-enter-active,
+.zoom-big-fast-appear.zoom-big-fast-appear-active {
+  animation-name: antZoomBigIn;
+  animation-play-state: running;
+}

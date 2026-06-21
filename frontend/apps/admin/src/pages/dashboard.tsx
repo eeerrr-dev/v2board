@@ -17,6 +17,10 @@ import {
 import { getAdminApiBaseUrl } from '@/lib/legacy-settings';
 import { legacyHref } from '@/lib/legacy-href';
 
+type EmptyOrderChartElement = HTMLDivElement & {
+  __v2boardEmptyOrderChartCleanup?: () => void;
+};
+
 function formatCent(value?: number) {
   return value ? (value / 100).toFixed(2) : '0.00';
 }
@@ -41,17 +45,80 @@ function useChart<T>(
   return ref;
 }
 
+function clearEmptyOrderChartBaseline(element: EmptyOrderChartElement) {
+  element.__v2boardEmptyOrderChartCleanup?.();
+  delete element.__v2boardEmptyOrderChartCleanup;
+  element.querySelector('.v2board-empty-order-chart-canvas')?.remove();
+}
+
+function renderEmptyOrderChartBaseline(element: EmptyOrderChartElement) {
+  clearEmptyOrderChartBaseline(element);
+
+  const canvas = document.createElement('canvas');
+  canvas.className = 'v2board-empty-order-chart-canvas';
+  element.append(canvas);
+
+  const paint = () => {
+    const width = Math.max(1, Math.round(element.clientWidth - 6));
+    const scale = window.devicePixelRatio || 1;
+    canvas.width = width * scale;
+    canvas.height = scale;
+
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    context.clearRect(0, 0, width, 1);
+    context.fillStyle = document.documentElement.dataset.darkreaderMode
+      ? 'rgb(160, 152, 137)'
+      : '#6e7079';
+    context.fillRect(0, 0, width, 1);
+  };
+
+  const observer = new MutationObserver(paint);
+  observer.observe(document.documentElement, {
+    attributeFilter: ['data-darkreader-mode', 'data-darkreader-scheme'],
+    attributes: true,
+  });
+
+  window.addEventListener('resize', paint);
+  element.__v2boardEmptyOrderChartCleanup = () => {
+    observer.disconnect();
+    window.removeEventListener('resize', paint);
+  };
+
+  paint();
+  requestAnimationFrame(paint);
+}
+
 function renderOrderChart(element: HTMLDivElement, data: OrderStatPoint[]) {
   const chart = echarts.init(element, 'vintage', { renderer: 'svg' });
+  if (data.length === 0) {
+    element.classList.add('v2board-empty-order-chart');
+    element.style.position = '';
+    renderEmptyOrderChartBaseline(element);
+    return chart;
+  }
+  element.classList.remove('v2board-empty-order-chart');
+  clearEmptyOrderChartBaseline(element);
+
   const option: EChartsOption & {
     legend: { data: string[]; left: string; z: number };
-    xAxis: { type: string; boundaryGap: boolean; data: string[] };
+    xAxis: {
+      boundaryGap: boolean;
+      data: string[];
+      type: string;
+    };
     series: { name: string; type: 'line'; smooth: boolean; data: number[] }[];
   } = {
     tooltip: { trigger: 'axis' },
     legend: { data: [], left: '0', z: 4 },
     grid: { left: '1%', right: '1%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', boundaryGap: false, data: [] },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: [],
+    },
     yAxis: { type: 'value' },
     series: [],
   };
@@ -73,6 +140,7 @@ function renderOrderChart(element: HTMLDivElement, data: OrderStatPoint[]) {
   });
 
   chart.setOption(option);
+  element.style.position = '';
   return chart;
 }
 
@@ -103,6 +171,7 @@ function renderRankChart<T extends ServerRankItem | UserRankItem>(
   });
 
   chart.setOption(option);
+  element.style.position = '';
   return chart;
 }
 

@@ -1,0 +1,8 @@
+/* Restored Ant Design v3 empty-state description and footer spacing. */
+.ant-empty-description {
+  margin: 0;
+}
+
+.ant-empty-footer {
+  margin-top: 16px;
+}

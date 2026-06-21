@@ -1,0 +1,29 @@
+/* Restored Ant Design v3 pagination control shell styles. */
+.ant-pagination-jump-prev,
+.ant-pagination-jump-next,
+.ant-pagination-prev {
+  margin-right: 8px;
+}
+
+.ant-pagination-jump-prev,
+.ant-pagination-jump-next,
+.ant-pagination-prev,
+.ant-pagination-next {
+  display: inline-block;
+  min-width: 32px;
+  height: 32px;
+  color: rgba(0, 0, 0, 0.65);
+  font-family: Arial;
+  line-height: 32px;
+  text-align: center;
+  vertical-align: middle;
+  list-style: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.ant-pagination-prev,
+.ant-pagination-next {
+  outline: 0;
+}

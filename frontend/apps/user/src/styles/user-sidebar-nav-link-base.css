@@ -1,0 +1,15 @@
+/* Restored OneUI sidebar nav base links. */
+.nav-main-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 2.25rem;
+  margin: 2px 0;
+  padding: 0.5rem 0.625rem;
+  color: var(--legacy-nav-link);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  letter-spacing: 0.0125em;
+  border-radius: 0.2rem;
+}

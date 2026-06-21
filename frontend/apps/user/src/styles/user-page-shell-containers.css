@@ -1,0 +1,22 @@
+/* Restored user page container and main shell sizing. */
+#page-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100%;
+  margin: 0 auto;
+}
+
+#main-container {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  max-width: 100%;
+  background-color: var(--color-page) !important;
+}
+
+#page-container.page-header-fixed #main-container {
+  padding-top: 3.25rem;
+}

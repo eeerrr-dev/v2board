@@ -1,0 +1,12 @@
+/* Restored custom HTML list typography and spacing. */
+.custom-html-style ol,
+.custom-html-style ul {
+  font-size: 14px;
+  line-height: 28px;
+  padding-left: 36px;
+}
+
+.custom-html-style li {
+  margin-bottom: 8px;
+  line-height: 1.7;
+}

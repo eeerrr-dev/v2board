@@ -544,13 +544,13 @@ describe('legacy i18n dictionaries', () => {
     expect(window.g_lang).toBe('zh-CN');
   });
 
-  it('does not use an exact supported navigator language without legacy storage', () => {
-    Object.defineProperty(window.navigator, 'language', { value: 'en-US', configurable: true });
+  it('bootstraps the provider from the exact supported navigator language like the bundled app', () => {
+    Object.defineProperty(window.navigator, 'language', { value: 'en-US@posix', configurable: true });
 
     const i18n = createI18n();
 
-    expect(window.localStorage.getItem('umi_locale')).toBeNull();
-    expect(i18n.language).toBe('zh-CN');
-    expect(window.g_lang).toBe('zh-CN');
+    expect(window.localStorage.getItem('umi_locale')).toBe('en-US');
+    expect(i18n.language).toBe('en-US');
+    expect(window.g_lang).toBe('en-US');
   });
 });

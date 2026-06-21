@@ -1,0 +1,19 @@
+/* Restored packaged mobile type scale overrides. */
+@media (max-width: 767.98px) {
+  .display-4 { font-size: 2.333333rem; }
+  .font-size-h1,
+  .h1,
+  h1 { font-size: 1.875rem; }
+  .h2,
+  h2 { font-size: 1.5rem; }
+  .font-size-h3,
+  .h3,
+  h3 { font-size: 1.25rem; }
+  .h4,
+  h4 { font-size: 1.125rem; }
+  .font-size-h5,
+  .h5,
+  .h6,
+  h5,
+  h6 { font-size: 1rem; }
+}

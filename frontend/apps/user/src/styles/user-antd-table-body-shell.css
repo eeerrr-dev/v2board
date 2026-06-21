@@ -1,0 +1,9 @@
+/* Restored Ant Design v3 table body state shell. */
+.ant-table-body {
+  transition: opacity 0.3s;
+}
+
+.ant-table-empty .ant-table-body {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}

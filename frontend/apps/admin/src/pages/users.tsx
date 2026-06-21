@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type AnchorHTMLAttributes } from 'react';
 import { App } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -332,7 +332,7 @@ export default function UsersPage() {
   const jumpOrderFilter = (key: string, condition: string, value: string | number) => {
     window.sessionStorage.setItem(
       'v2board-admin-order-filter',
-      JSON.stringify([{ key, condition, value }]),
+      JSON.stringify({ filter: [{ key, condition, value }], total: users.data?.total }),
     );
     navigate('/order');
   };
@@ -471,7 +471,7 @@ export default function UsersPage() {
               <LegacyPlusIcon /> 分配订单
             </a>
           </LegacyDropdownMenuItem>
-          <LegacyDropdownMenuItem key="copy">
+          <LegacyDropdownMenuItem key="copy" onClick={(event) => event.stopPropagation()}>
             <a onClick={() => runUserAction('copy', row)}>
               <LegacyCopyIcon /> 复制订阅URL
             </a>
@@ -571,6 +571,8 @@ export default function UsersPage() {
                               void legacyConfirm({
                                 title: '提醒',
                                 content: '确定要进行封禁吗？',
+                                okText: 'OK',
+                                cancelText: 'Cancel',
                                 onOk: () => {
                                   void banUsers
                                     .mutateAsync(query.filter)
@@ -592,6 +594,8 @@ export default function UsersPage() {
                               void legacyConfirm({
                                 title: '提醒',
                                 content: '确定要进行删除吗？',
+                                okText: 'OK',
+                                cancelText: 'Cancel',
                                 onOk: () => {
                                   void deleteAll
                                     .mutateAsync(query.filter)

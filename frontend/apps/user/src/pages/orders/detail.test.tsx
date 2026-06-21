@@ -170,18 +170,19 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     vi.useRealTimers();
   });
 
-  it('keeps the bundled-theme three-row product-info block', () => {
+  it('keeps the bundled-theme traffic-only product-info block', () => {
     const html = renderToStaticMarkup(<OrderDetailPage />);
 
-    expect(html).toContain('order.product_name');
-    expect(html).toContain('Legacy Plan');
-    expect(html).toContain('order.product_period');
-    expect(html).toContain('plan.monthly');
+    expect(html).toContain('order.product_info');
+    expect(html).not.toContain('order.product_name');
+    expect(html).not.toContain('Legacy Plan</span>');
+    expect(html).not.toContain('order.product_period');
+    expect(html).not.toContain('plan.monthly</span>');
     expect(html).toContain('order.product_traffic');
     expect(html).toContain('123 GB');
   });
 
-  it('keeps the bundled-theme deposit product-info as the single recharge row', () => {
+  it('keeps the bundled-theme deposit product-name row', () => {
     orderState.data = {
       ...orderState.data!,
       period: 'deposit',
@@ -195,6 +196,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
 
     const html = renderToStaticMarkup(<OrderDetailPage />);
 
+    expect(html).toContain('order.product_info');
     expect(html).toContain('order.product_name');
     expect(html).toContain('充值');
     expect(html).not.toContain('order.product_period');

@@ -1,0 +1,38 @@
+/* Restored Ant Design v3 input control base and placeholder styles. */
+.ant-input {
+  box-sizing: border-box;
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  margin: 0;
+  height: 32px;
+  padding: 4px 11px;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 14px;
+  font-variant: tabular-nums;
+  line-height: 1.5;
+  list-style: none;
+  background-color: #fff;
+  background-image: none;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  transition: all 0.3s;
+  font-feature-settings: 'tnum';
+}
+
+.ant-input::-moz-placeholder {
+  color: #bfbfbf;
+  opacity: 1;
+}
+
+.ant-input:-ms-input-placeholder {
+  color: #bfbfbf;
+}
+
+.ant-input::-webkit-input-placeholder {
+  color: #bfbfbf;
+}
+
+.ant-input:placeholder-shown {
+  text-overflow: ellipsis;
+}

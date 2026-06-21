@@ -1,0 +1,18 @@
+/* Restored Ant Design v3 Spin root and spinning state. */
+.ant-spin {
+  position: absolute;
+  display: none;
+  color: #0665d0;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  vertical-align: middle;
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.78, 0.14, 0.15, 0.86);
+}
+
+.ant-spin-spinning {
+  position: static;
+  display: inline-block;
+  opacity: 1;
+}

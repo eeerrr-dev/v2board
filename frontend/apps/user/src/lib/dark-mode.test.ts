@@ -1,12 +1,22 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { disable as disableDarkReader, enable as enableDarkReader } from 'darkreader';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyInitialDarkMode, isDarkModeEnabled, setDarkMode } from './dark-mode';
+
+vi.mock('darkreader', () => ({
+  disable: vi.fn(),
+  enable: vi.fn(),
+}));
+
+const disableDarkReaderMock = vi.mocked(disableDarkReader);
+const enableDarkReaderMock = vi.mocked(enableDarkReader);
 
 describe('dark mode legacy storage', () => {
   beforeEach(() => {
     document.cookie = 'dark_mode=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     document.documentElement.className = '';
     window.localStorage.clear();
-    window.webpackJsonp = undefined;
+    disableDarkReaderMock.mockClear();
+    enableDarkReaderMock.mockClear();
   });
 
   it('reads dark mode from the legacy cookie', () => {
@@ -22,101 +32,37 @@ describe('dark mode legacy storage', () => {
     expect(isDarkModeEnabled()).toBe(false);
     expect(() => applyInitialDarkMode()).not.toThrow();
     expect(document.documentElement.classList.contains('v2board-dark-mode')).toBe(false);
+    expect(enableDarkReaderMock).not.toHaveBeenCalled();
   });
 
-  it('writes the legacy cookie without using localStorage', () => {
+  it('enables DarkReader with the original options and writes the legacy cookie', () => {
     setDarkMode(true);
 
     expect(document.cookie).toContain('dark_mode=1');
     expect(window.localStorage.getItem('dark_mode')).toBeNull();
-    expect(document.documentElement.classList.contains('v2board-dark-mode')).toBe(true);
+    expect(enableDarkReaderMock).toHaveBeenCalledWith({ brightness: 100, contrast: 90, sepia: 10 });
   });
 
-  it('uses the legacy bundled DarkReader module when it is loaded', () => {
-    let enabledWith: unknown;
-    let disabled = false;
-    window.webpackJsonp = [
-      [
-        [2],
-        {
-          nDCI: (
-            _module: { exports: unknown },
-            exports: Record<string, unknown>,
-          ) => {
-            exports.enable = (options: unknown) => {
-              enabledWith = options;
-            };
-            exports.disable = () => {
-              disabled = true;
-            };
-          },
-        },
-      ],
-    ];
-
-    setDarkMode(true);
-    expect(enabledWith).toEqual({ brightness: 100, contrast: 90, sepia: 10 });
-    expect(document.documentElement.classList.contains('v2board-dark-mode')).toBe(false);
-
+  it('disables DarkReader and keeps the original cookie key', () => {
     setDarkMode(false);
-    expect(disabled).toBe(true);
+
+    expect(document.cookie).toContain('dark_mode=0');
+    expect(disableDarkReaderMock).toHaveBeenCalledOnce();
   });
 
-  it('matches the legacy startup by not disabling DarkReader when the cookie is absent', () => {
-    let enabled = false;
-    let disabled = false;
-    window.webpackJsonp = [
-      [
-        [2],
-        {
-          nDCI: (
-            _module: { exports: unknown },
-            exports: Record<string, unknown>,
-          ) => {
-            exports.enable = () => {
-              enabled = true;
-            };
-            exports.disable = () => {
-              disabled = true;
-            };
-          },
-        },
-      ],
-    ];
-
+  it('matches legacy startup by not disabling DarkReader when the cookie is absent', () => {
     applyInitialDarkMode();
 
-    expect(enabled).toBe(false);
-    expect(disabled).toBe(false);
-    expect(document.documentElement.classList.contains('v2board-dark-mode')).toBe(false);
+    expect(enableDarkReaderMock).not.toHaveBeenCalled();
+    expect(disableDarkReaderMock).not.toHaveBeenCalled();
   });
 
-  it('enables the legacy bundled DarkReader on startup when the cookie is set', () => {
-    let enabledWith: unknown;
-    let disabled = false;
+  it('enables DarkReader on startup when the cookie is set', () => {
     document.cookie = 'dark_mode=1;path=/';
-    window.webpackJsonp = [
-      [
-        [2],
-        {
-          nDCI: (
-            _module: { exports: unknown },
-            exports: Record<string, unknown>,
-          ) => {
-            exports.enable = (options: unknown) => {
-              enabledWith = options;
-            };
-            exports.disable = () => {
-              disabled = true;
-            };
-          },
-        },
-      ],
-    ];
 
     applyInitialDarkMode();
 
-    expect(enabledWith).toEqual({ brightness: 100, contrast: 90, sepia: 10 });
-    expect(disabled).toBe(false);
+    expect(enableDarkReaderMock).toHaveBeenCalledWith({ brightness: 100, contrast: 90, sepia: 10 });
+    expect(disableDarkReaderMock).not.toHaveBeenCalled();
   });
 });

@@ -137,6 +137,12 @@ describe('user legacy entrypoint', () => {
     expect(indexSource).toContain('new MutationObserver(schedule).observe(observerTarget');
     expect(indexSource).toContain("current.searchParams.set('__v2board_entry_recover'");
     expect(indexSource).toContain('data-v2board-white-screen-fallback="1"');
+    expect(indexSource).not.toContain('/theme/default/assets/components.chunk.css');
+    expect(indexSource).not.toContain('/theme/default/assets/umi.css');
+    expect(indexSource).not.toContain('/theme/default/assets/vendors.async.js');
+    expect(indexSource).not.toContain('/theme/default/assets/components.async.js');
+    expect(indexSource).not.toContain('/theme/default/assets/i18n/');
+    expect(indexSource).not.toContain('/theme/default/assets/');
     expect(
       indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;"),
     ).toBeLessThan(

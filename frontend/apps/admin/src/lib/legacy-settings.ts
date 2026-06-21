@@ -18,6 +18,9 @@ declare global {
   }
 }
 
+const ADMIN_THEME_COLORS = new Set(['black', 'darkblue', 'default', 'green']);
+const ADMIN_THEME_BASE_HREF = import.meta.env.PROD ? '/assets/admin/themes' : '/src/styles/themes';
+
 export function getAdminSettings(): AdminLegacySettings {
   return window.settings ?? {};
 }
@@ -57,9 +60,14 @@ export function getAdminSecurePath(): string | null {
 }
 
 function applyAdminThemeCss(settings: AdminLegacySettings): void {
-  const link = document.createElement('link');
-  const color = settings.theme?.color;
-  link.rel = 'stylesheet';
-  link.href = settings.host ? `./theme/${color}.css` : `/assets/admin/theme/${color}.css`;
-  document.getElementsByTagName('head')[0]?.appendChild(link);
+  const requestedColor = settings.theme?.color ?? 'default';
+  const color = ADMIN_THEME_COLORS.has(requestedColor) ? requestedColor : 'default';
+  let link = document.querySelector<HTMLLinkElement>('link[data-v2board-admin-theme-color]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'stylesheet';
+    document.getElementsByTagName('head')[0]?.appendChild(link);
+  }
+  link.setAttribute('data-v2board-admin-theme-color', color);
+  link.href = `${ADMIN_THEME_BASE_HREF}/${color}.css`;
 }

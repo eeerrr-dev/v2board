@@ -18,9 +18,9 @@ import { useTransitionStatus } from '@/lib/use-transition-status';
 // table headers live inside `.ant-table-body{overflow-y:hidden!important}`, where a pure-CSS
 // ::after tooltip would be clipped — so reproduce the portal here. The overlay is
 // `.ant-tooltip > (.ant-tooltip-arrow, .ant-tooltip-inner[role=tooltip])` — there is no
-// `-content` wrapper in this antd build (rc-tooltip getPopupElement returns [arrow, inner],
-// umi.js @1034200). The deployed theme already styles `.ant-tooltip*`, so reusing those
-// classes inherits the original's dark bubble + arrow.
+// `-content` wrapper in this antd build; rc-tooltip returns [arrow, inner]. The
+// deployed theme already styles `.ant-tooltip*`, so reusing those classes inherits
+// the original's dark bubble + arrow.
 export function LegacyTooltip({
   title,
   children,
@@ -116,7 +116,7 @@ export function LegacyTooltip({
 
   // antd renders `visible ? cloneElement(child, {className: classNames(child.props.className,
   // 'ant-tooltip-open')}) : child` — a single valid element is shown directly (no wrapper), and
-  // multi-child / text content is wrapped in a style-less span (components.async.js @28224). We
+  // multi-child / text content is wrapped in a style-less span. We
   // always clone to attach the hover handlers the original gets from its rc-trigger wrapper, but
   // only fold in `ant-tooltip-open` while open, leaving the child's className verbatim when closed
   // (so no trailing space and no empty `class=""`).

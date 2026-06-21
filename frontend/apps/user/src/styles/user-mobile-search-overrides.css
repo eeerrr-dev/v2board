@@ -1,0 +1,11 @@
+/* Restored mobile search bar overrides. */
+@media (max-width: 768px) {
+  .v2board-searchbar {
+    width: 50%;
+  }
+
+  .v2board-knowledge-search-bar input,
+  .v2board-knowledge-search-bar button {
+    border-radius: 0;
+  }
+}

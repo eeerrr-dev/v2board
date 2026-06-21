@@ -1,0 +1,8 @@
+/* Restored Bootstrap alert shell styles separated from the user Bootstrap recovery layer. */
+.alert {
+  position: relative;
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 1rem;
+  border: 0 solid transparent;
+  border-radius: 0.25rem;
+}

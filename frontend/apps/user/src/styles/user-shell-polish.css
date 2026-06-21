@@ -1,0 +1,9 @@
+/* Restored user shell table and header polish separated from the user app recovery layer. */
+.ant-table-thead > tr > th {
+  background: #fff !important;
+}
+
+.v2board-container-title {
+  flex: 1 1;
+  color: #fff;
+}

@@ -1,0 +1,18 @@
+/* Restored mobile alert and notification overrides. */
+@media (max-width: 768px) {
+  .alert {
+    margin-bottom: 0;
+  }
+
+  .ant-notification {
+    top: 0 !important;
+    right: 0;
+    left: 0;
+    width: 100%;
+    max-width: unset;
+  }
+
+  .ant-notification-notice {
+    border-radius: 0 !important;
+  }
+}

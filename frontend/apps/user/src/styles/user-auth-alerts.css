@@ -1,0 +1,18 @@
+/* Restored guest auth and notice alert accents. */
+.v2board-no-access {
+  position: relative;
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 1rem;
+  color: #855c0d;
+  background-color: #ffefd1;
+  border: 0 solid transparent;
+  border-radius: 0.25rem;
+}
+
+.v2board-notice-background {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  height: 100%;
+  opacity: 0.1;
+}

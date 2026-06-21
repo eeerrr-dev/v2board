@@ -1,0 +1,11 @@
+/* Restored Bootstrap button icon offsets. */
+.btn .fa,
+.btn .si {
+  position: relative;
+  top: 1px;
+}
+
+.btn-group-sm > .btn .fa,
+.btn.btn-sm .fa {
+  top: 0;
+}

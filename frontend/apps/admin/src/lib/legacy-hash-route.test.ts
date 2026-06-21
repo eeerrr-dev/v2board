@@ -110,6 +110,21 @@ describe('normalizeLegacyHashRoute', () => {
     expect(window.location.hash).toBe('#/dashboard');
   });
 
+  it('preserves the deployed admin pathname when no canonical path is supplied', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    setUrl('/admin#/dashboard');
+
+    normalizeLegacyHashRoute({
+      authenticatedFallback: '/dashboard',
+      guestFallback: '/login',
+      publicRoutes: ['/', '/login'],
+      routes: ['/', '/dashboard', '/login'],
+    });
+
+    expect(window.location.pathname).toBe('/admin');
+    expect(window.location.hash).toBe('#/dashboard');
+  });
+
   it('keeps dynamic detail routes as known routes', () => {
     window.localStorage.setItem('authorization', 'jwt');
     setUrl('/#/ticket/7');

@@ -1,0 +1,18 @@
+/* Restored Ant Design v3 active carousel slide input styles. */
+.ant-carousel .slick-list .slick-slide {
+  pointer-events: none;
+}
+
+.ant-carousel .slick-list .slick-slide input.ant-checkbox-input,
+.ant-carousel .slick-list .slick-slide input.ant-radio-input {
+  visibility: hidden;
+}
+
+.ant-carousel .slick-list .slick-slide.slick-active {
+  pointer-events: auto;
+}
+
+.ant-carousel .slick-list .slick-slide.slick-active input.ant-checkbox-input,
+.ant-carousel .slick-list .slick-slide.slick-active input.ant-radio-input {
+  visibility: visible;
+}

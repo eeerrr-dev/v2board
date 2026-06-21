@@ -4,7 +4,8 @@
 /public/storage
 /public/env.example.js
 /public/favicon.ico
-/public/assets/admin/custom.css
+/public/assets/admin/*
+/public/theme/default/assets/*
 /storage/*.key
 /vendor
 .env

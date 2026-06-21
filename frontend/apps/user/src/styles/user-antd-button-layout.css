@@ -1,0 +1,39 @@
+/* Restored Ant Design v3 block, anchor, and search button layout details. */
+.ant-btn-block {
+  display: block;
+  width: 100%;
+}
+
+.ant-btn:empty {
+  vertical-align: top;
+}
+
+.ant-btn-sm {
+  height: 24px;
+  padding: 0 7px;
+  font-size: 14px;
+  border-radius: 4px;
+}
+
+.ant-btn:active > span,
+.ant-btn:focus > span {
+  position: relative;
+}
+
+a.ant-btn {
+  padding-top: 0.1px;
+  line-height: 30px;
+}
+
+a.ant-btn-lg {
+  line-height: 38px;
+}
+
+a.ant-btn-sm {
+  line-height: 22px;
+}
+
+.ant-input-search-button {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}

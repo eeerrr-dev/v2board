@@ -1,0 +1,11 @@
+/* Restored packaged sm breakpoint OneUI utilities. */
+@media (min-width: 576px) {
+  .d-sm-inline-block { display: inline-block !important; }
+  .d-sm-flex { display: flex !important; }
+  .mx-sm-0 { margin-right: 0 !important; margin-left: 0 !important; }
+  .pb-sm-3 { padding-bottom: 1rem !important; }
+  .mb-sm-4 { margin-bottom: 1.5rem !important; }
+  .mb-sm-7 { margin-bottom: 6rem !important; }
+  .justify-content-sm-between { justify-content: space-between !important; }
+  .align-items-sm-center { align-items: center !important; }
+}

@@ -1,0 +1,4 @@
+/* Restored mobile sidebar open transform. */
+.sidebar-o-xs #sidebar {
+  transform: translateX(0) translateY(0) translateZ(0);
+}

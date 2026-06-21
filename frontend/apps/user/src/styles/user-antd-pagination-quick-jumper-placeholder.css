@@ -1,0 +1,17 @@
+/* Restored Ant Design v3 pagination quick jumper placeholder styles. */
+.ant-pagination-options-quick-jumper input::-moz-placeholder {
+  color: #bfbfbf;
+  opacity: 1;
+}
+
+.ant-pagination-options-quick-jumper input:-ms-input-placeholder {
+  color: #bfbfbf;
+}
+
+.ant-pagination-options-quick-jumper input::-webkit-input-placeholder {
+  color: #bfbfbf;
+}
+
+.ant-pagination-options-quick-jumper input:placeholder-shown {
+  text-overflow: ellipsis;
+}

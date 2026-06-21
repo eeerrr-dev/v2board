@@ -100,8 +100,8 @@ function getCookie(name: string): string {
 function getLegacyBootstrapLocale(): string | undefined {
   const cookieLocale = normalizeLegacyBootstrapLocale(getCookie('i18n'));
   if (cookieLocale) return cookieLocale;
-  const navigatorLocale = normalizeLegacyBootstrapLocale(window.navigator.language);
-  return LEGACY_NAVIGATOR_LOCALES[navigatorLocale?.split('-')[0] ?? ''];
+  const navigatorLanguage = window.navigator.language?.trim().split(/[-_@]/)[0]?.toLowerCase();
+  return LEGACY_NAVIGATOR_LOCALES[navigatorLanguage ?? ''];
 }
 
 function getLegacyProviderLocale(fallback: SupportedLocale): SupportedLocale {
@@ -127,7 +127,8 @@ export function legacySetLocale(locale: string | undefined, reload = true): void
   if (locale !== undefined && !isLegacyLocaleFormat(locale)) {
     throw new Error('setLocale lang format error');
   }
-  if (legacyGetLocale() === locale) return;
+  const persisted = window.localStorage.getItem('umi_locale') || window.g_lang;
+  if (locale !== undefined && persisted === locale) return;
   window.g_lang = locale;
   window.localStorage.setItem('umi_locale', locale || '');
   if (reload) window.location.reload();

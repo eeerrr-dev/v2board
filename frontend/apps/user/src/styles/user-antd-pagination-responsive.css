@@ -1,0 +1,13 @@
+/* Restored Ant Design v3 responsive pagination visibility. */
+@media only screen and (max-width: 992px) {
+  .ant-pagination-item-after-jump-prev,
+  .ant-pagination-item-before-jump-next {
+    display: none;
+  }
+}
+
+@media only screen and (max-width: 576px) {
+  .ant-pagination-options {
+    display: none;
+  }
+}

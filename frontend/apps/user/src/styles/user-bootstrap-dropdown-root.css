@@ -1,0 +1,4 @@
+/* Restored Bootstrap dropdown root positioning. */
+.dropdown {
+  position: relative;
+}

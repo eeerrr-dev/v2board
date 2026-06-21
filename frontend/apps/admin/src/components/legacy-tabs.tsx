@@ -178,6 +178,12 @@ function LegacyTabsComponent(props: LegacyTabsProps) {
   const [innerActiveKey, setInnerActiveKey] = useState(initialActiveKey);
   const actualActiveKey = isControlled ? (activeKey ?? '') : innerActiveKey;
   const [visitedKeys, setVisitedKeys] = useState(() => new Set([initialActiveKey]));
+  const [navScrolling, setNavScrolling] = useState(false);
+  const [navOffset, setNavOffset] = useState(0);
+  const [maxNavOffset, setMaxNavOffset] = useState(0);
+  const navContainerRef = useRef<HTMLDivElement | null>(null);
+  const navWrapRef = useRef<HTMLDivElement | null>(null);
+  const navRef = useRef<HTMLDivElement | null>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const activeIndex = Math.max(
     0,
@@ -219,6 +225,34 @@ function LegacyTabsComponent(props: LegacyTabsProps) {
     setInkStyle({ left: tab.offsetLeft, width: tab.offsetWidth });
   }, [actualActiveKey, panes]);
 
+  useLayoutEffect(() => {
+    if (!horizontalTabBar) return;
+    let frame = 0;
+
+    const readWidth = (element: HTMLElement | null) =>
+      element ? element.getBoundingClientRect().width || element.scrollWidth : 0;
+
+    const measure = () => {
+      const containerWidth = readWidth(navContainerRef.current);
+      const navWidth = readWidth(navRef.current);
+      const availableWidth = Math.max(0, containerWidth - 64);
+      const scrolling = navWidth > containerWidth + 0.5;
+      const nextMaxOffset = scrolling ? Math.max(0, navWidth - availableWidth) : 0;
+
+      setNavScrolling(scrolling);
+      setMaxNavOffset(nextMaxOffset);
+      setNavOffset((current) => Math.min(current, nextMaxOffset));
+    };
+
+    measure();
+    frame = window.requestAnimationFrame(measure);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', measure);
+    };
+  }, [horizontalTabBar, panes]);
+
   const activate = (key: string) => {
     const pane = panes.find((item) => item.key === key);
     if (!pane || pane.disabled || key === actualActiveKey) return;
@@ -255,6 +289,15 @@ function LegacyTabsComponent(props: LegacyTabsProps) {
     activate(getNextActiveKey(panes, actualActiveKey, forward));
   };
 
+  const scrollNav = (direction: -1 | 1) => {
+    if (!navScrolling) return;
+    const step = navWrapRef.current?.getBoundingClientRect().width || 64;
+    setNavOffset((current) => {
+      const next = current + direction * step;
+      return Math.max(0, Math.min(maxNavOffset, next));
+    });
+  };
+
   const tabsClassName = mergeClassName(
     prefixCls,
     `${prefixCls}-${tabPosition}`,
@@ -278,6 +321,21 @@ function LegacyTabsComponent(props: LegacyTabsProps) {
     isCardType && `${prefixCls}-card-content`,
   );
   const contentStyle = tabPaneAnimated ? { marginLeft: `${-activeIndex * 100}%` } : undefined;
+  const navContainerClassName = mergeClassName(
+    `${prefixCls}-nav-container`,
+    navScrolling && `${prefixCls}-nav-container-scrolling`,
+  );
+  const previousTabClassName = mergeClassName(
+    `${prefixCls}-tab-prev`,
+    navScrolling && `${prefixCls}-tab-arrow-show`,
+    (!navScrolling || navOffset <= 0) && `${prefixCls}-tab-btn-disabled`,
+  );
+  const nextTabClassName = mergeClassName(
+    `${prefixCls}-tab-next`,
+    navScrolling && `${prefixCls}-tab-arrow-show`,
+    (!navScrolling || navOffset >= maxNavOffset) && `${prefixCls}-tab-btn-disabled`,
+  );
+  const navStyle = navOffset > 0 ? { transform: `translate3d(${-navOffset}px, 0px, 0px)` } : undefined;
   const extraContent =
     tabBarExtraContent !== undefined && tabBarExtraContent !== null ? (
       <div
@@ -288,10 +346,11 @@ function LegacyTabsComponent(props: LegacyTabsProps) {
       </div>
     ) : null;
   const tabBarContent = (
-    <div className={`${prefixCls}-nav-container`}>
+    <div ref={navContainerRef} className={navContainerClassName}>
       <span
         unselectable={'unselectable' as 'on'}
-        className={`${prefixCls}-tab-prev ${prefixCls}-tab-btn-disabled`}
+        className={previousTabClassName}
+        onClick={() => scrollNav(-1)}
       >
         <span className={`${prefixCls}-tab-prev-icon`}>
           <LegacyLeftIcon prefixCls={prefixCls} />
@@ -299,21 +358,24 @@ function LegacyTabsComponent(props: LegacyTabsProps) {
       </span>
       <span
         unselectable={'unselectable' as 'on'}
-        className={`${prefixCls}-tab-next ${prefixCls}-tab-btn-disabled`}
+        className={nextTabClassName}
+        onClick={() => scrollNav(1)}
       >
         <span className={`${prefixCls}-tab-next-icon`}>
           <LegacyRightIcon prefixCls={prefixCls} />
         </span>
       </span>
-      <div className={`${prefixCls}-nav-wrap`}>
+      <div ref={navWrapRef} className={`${prefixCls}-nav-wrap`}>
         <div className={`${prefixCls}-nav-scroll`}>
           <div
+            ref={navRef}
             className={mergeClassName(
               `${prefixCls}-nav`,
               inkBarAnimated
                 ? `${prefixCls}-nav-animated`
                 : `${prefixCls}-nav-no-animated`,
             )}
+            style={navStyle}
           >
             <div>
               {panes.map((pane) => {

@@ -414,6 +414,11 @@ describe('ProfilePage legacy gift card flow', () => {
 
     const passwordInputs = container.querySelectorAll<HTMLInputElement>('input[type="password"]');
     expect(passwordInputs).toHaveLength(3);
+    expect(Array.from(passwordInputs).map((input) => input.getAttribute('type'))).toEqual([
+      'password',
+      'password',
+      'password',
+    ]);
 
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
@@ -431,6 +436,11 @@ describe('ProfilePage legacy gift card flow', () => {
         'new-password',
       );
       passwordInputs[2]!.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(Array.from(passwordInputs).map((input) => input.getAttribute('type'))).toEqual([
+        'password',
+        'password',
+        'password',
+      ]);
       const saveButton = Array.from(container.querySelectorAll('button')).find(
         (button) => button.textContent === '保存',
       );

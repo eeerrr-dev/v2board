@@ -1,0 +1,24 @@
+/* Restored OneUI block-content pull helpers. */
+.block-content > .pull-t,
+.block-content > .pull-y {
+  margin-top: -1.25rem;
+}
+
+.block-content > .pull-b,
+.block-content > .pull-y {
+  margin-bottom: -1px;
+}
+
+.block-content > .pull-r,
+.block-content > .pull-x {
+  margin-right: -1.25rem;
+}
+
+.block-content > .pull-r,
+.block-content > .pull-x {
+  margin-left: -1.25rem;
+}
+
+.block-content > .pull {
+  margin: -1.25rem -1.25rem -1px;
+}

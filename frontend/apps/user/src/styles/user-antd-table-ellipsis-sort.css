@@ -1,0 +1,15 @@
+/* Restored Ant Design v3 table ellipsis and sorted header styles. */
+.ant-table-row-cell-ellipsis,
+.ant-table-row-cell-ellipsis .ant-table-column-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ant-table-row-cell-ellipsis .ant-table-column-title {
+  display: block;
+}
+
+.ant-table-thead > tr > th.ant-table-column-sort {
+  background: #f5f5f5;
+}

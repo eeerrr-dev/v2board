@@ -1,0 +1,26 @@
+/* Restored OneUI RTL layout support separated from the monolithic recovery layer. */
+#page-container.rtl-support{direction:rtl;text-align:right}
+#page-container.rtl-support .breadcrumb.breadcrumb-alt .breadcrumb-item+.breadcrumb-item:before{content:"\F104"}
+#page-container.rtl-support .breadcrumb-item+.breadcrumb-item{padding-right:.5rem;padding-left:0}
+#page-container.rtl-support .breadcrumb-item+.breadcrumb-item:before{padding-right:0;padding-left:.5rem}
+@media (min-width:992px){#page-container.rtl-support.sidebar-mini.sidebar-o.sidebar-r #sidebar .content-header,#page-container.rtl-support.sidebar-mini.sidebar-o.sidebar-r #sidebar .content-side{transform:translateX(-186px) translateY(0) translateZ(0)}
+#page-container.rtl-support.sidebar-mini.sidebar-o.sidebar-r #sidebar:hover .content-header,#page-container.rtl-support.sidebar-mini.sidebar-o.sidebar-r #sidebar:hover .content-side{transform:translateX(0)}
+#page-container.rtl-support.sidebar-mini.sidebar-o.sidebar-r #sidebar:not(:hover) .nav-main{transform:translateX(1.125rem)}
+#page-container.rtl-support.sidebar-mini.sidebar-o.sidebar-r #sidebar:not(:hover) .nav-main .nav-main-link-icon{transform:translateX(-1rem)}
+}
+#page-container.rtl-support .nav-main{padding-left:auto;padding-right:0}
+#page-container.rtl-support .nav-main-link .nav-main-link-icon{margin-right:0;margin-left:.625rem}
+#page-container.rtl-support .nav-main-link .nav-main-link-badge{margin-right:.625rem;margin-left:auto;padding-right:.375rem;padding-left:.375rem;font-size:.75rem}
+#page-container.rtl-support .nav-main-link.nav-main-link-submenu{padding-right:.625rem;padding-left:2rem}
+#page-container.rtl-support .nav-main-link.nav-main-link-submenu:after,#page-container.rtl-support .nav-main-link.nav-main-link-submenu:before{right:auto;left:.625rem}
+#page-container.rtl-support .nav-main-submenu{padding-right:2.25rem;padding-left:0}
+#page-container.rtl-support .nav-main-submenu .nav-main-link{padding-right:0;padding-left:.625rem}
+#page-container.rtl-support .nav-main-submenu .nav-main-link.nav-main-link-submenu{padding-left:2rem}
+#page-container.rtl-support .nav-main-submenu .nav-main-submenu{padding-right:.75rem;padding-left:0}
+@media (min-width:992px){#page-container.rtl-support .nav-main-horizontal .nav-main-submenu{left:auto;right:0;padding-left:auto;padding-right:0}
+#page-container.rtl-support .nav-main-horizontal .nav-main-submenu.nav-main-submenu-left{right:auto;left:0}
+#page-container.rtl-support .nav-main-horizontal .nav-main-submenu .nav-main-link{padding-left:.625rem;padding-right:1rem}
+#page-container.rtl-support .nav-main-horizontal .nav-main-submenu .nav-main-link.nav-main-link-submenu:before{content:"\F104"}
+#page-container.rtl-support .nav-main-horizontal .nav-main-submenu .nav-main-link.nav-main-link-submenu:after{content:"\F105"}
+#page-container.rtl-support .nav-main-horizontal .nav-main-submenu .nav-main-submenu{left:-100%;right:auto}
+}

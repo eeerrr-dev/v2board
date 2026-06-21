@@ -1,0 +1,24 @@
+/* Restored Bootstrap alert color variants separated from the user Bootstrap recovery layer. */
+.alert-danger {
+  color: #74290e;
+  background-color: #f9dcd1;
+  border-color: #f6cebf;
+}
+
+.alert-warning {
+  color: #855c0d;
+  background-color: #ffefd1;
+  border-color: #ffe9bf;
+}
+
+.alert-info {
+  color: #1f4b74;
+  background-color: #d8e9f9;
+  border-color: #c8e0f6;
+}
+
+.alert-dark {
+  color: #1b1e21;
+  background-color: #d6d8d9;
+  border-color: #c6c8ca;
+}

@@ -1,0 +1,37 @@
+/* Restored Ant Design v3 slick slide state styles. */
+.ant-carousel .slick-slide {
+  display: none;
+  float: left;
+  height: 100%;
+  min-height: 1px;
+}
+
+[dir='rtl'] .ant-carousel .slick-slide {
+  float: right;
+}
+
+.ant-carousel .slick-slide img {
+  display: block;
+}
+
+.ant-carousel .slick-slide.slick-loading img {
+  display: none;
+}
+
+.ant-carousel .slick-slide.dragging img {
+  pointer-events: none;
+}
+
+.ant-carousel .slick-initialized .slick-slide {
+  display: block;
+}
+
+.ant-carousel .slick-loading .slick-slide {
+  visibility: hidden;
+}
+
+.ant-carousel .slick-vertical .slick-slide {
+  display: block;
+  height: auto;
+  border: 1px solid transparent;
+}

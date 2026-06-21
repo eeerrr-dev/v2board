@@ -1,0 +1,31 @@
+/* Restored Ant Design v3 primary button group border cascade. */
+.ant-btn-group .ant-btn-primary:not(:first-child):not(:last-child) {
+  border-right-color: var(--legacy-ant-hover);
+  border-left-color: var(--legacy-ant-hover);
+}
+
+.ant-btn-group .ant-btn-primary:not(:first-child):not(:last-child):disabled {
+  border-color: #d9d9d9;
+}
+
+.ant-btn-group .ant-btn-primary:first-child:not(:last-child) {
+  border-right-color: var(--legacy-ant-hover);
+}
+
+.ant-btn-group .ant-btn-primary:first-child:not(:last-child)[disabled] {
+  border-right-color: #d9d9d9;
+}
+
+.ant-btn-group .ant-btn-primary:last-child:not(:first-child),
+.ant-btn-group .ant-btn-primary + .ant-btn-primary {
+  border-left-color: var(--legacy-ant-hover);
+}
+
+.ant-btn-group .ant-btn-primary:last-child:not(:first-child)[disabled],
+.ant-btn-group .ant-btn-primary + .ant-btn-primary[disabled] {
+  border-left-color: #d9d9d9;
+}
+
+.ant-btn-group .ant-btn-primary + .ant-btn:not(.ant-btn-primary):not([disabled]) {
+  border-left-color: transparent;
+}

@@ -1,0 +1,6 @@
+/* Restored trade number single-line truncation utility. */
+.v2board-trade-no {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

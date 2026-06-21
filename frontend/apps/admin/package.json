@@ -22,6 +22,7 @@
     "antd": "^6.4.3",
     "axios": "catalog:",
     "dayjs": "catalog:",
+    "darkreader": "4.9.125",
     "echarts": "^6.1.0",
     "i18next": "catalog:",
     "markdown-it": "^14.2.0",

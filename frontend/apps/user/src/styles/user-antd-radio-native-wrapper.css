@@ -1,0 +1,16 @@
+/* Restored Ant Design v3 native radio wrapper styles. */
+.ant-radio-wrapper {
+  box-sizing: border-box;
+  position: relative;
+  display: inline-block;
+  margin: 0 8px 0 0;
+  padding: 0;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 14px;
+  font-variant: tabular-nums;
+  line-height: 1.5;
+  list-style: none;
+  white-space: nowrap;
+  cursor: pointer;
+  font-feature-settings: 'tnum';
+}

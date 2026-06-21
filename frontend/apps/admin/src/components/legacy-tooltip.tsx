@@ -209,8 +209,8 @@ function wrapDisabledElement(element: ReactElement<TooltipElementProps>) {
 
 // antd v3 Tooltip portals `.ant-tooltip > (.ant-tooltip-arrow, .ant-tooltip-inner)`
 // directly to document.body and follows rc-trigger's 0.1s hover enter/leave delay.
-// The admin shell already loads the bundled theme CSS, so keeping the legacy classes
-// preserves the original bubble, arrow, and zoom-big-fast animation.
+// The admin shell loads source-owned Ant Design v3 parity styles, so keeping the
+// legacy classes preserves the original bubble, arrow, and zoom-big-fast animation.
 export function LegacyTooltip(props: LegacyTooltipProps) {
   const {
     title,

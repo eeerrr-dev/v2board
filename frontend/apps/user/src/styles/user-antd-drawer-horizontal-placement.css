@@ -1,0 +1,10 @@
+/* Restored Ant Design v3 left/right drawer closed placement. */
+.ant-drawer-left .ant-drawer-content-wrapper {
+  left: 0;
+  transform: translateX(-100%);
+}
+
+.ant-drawer-right .ant-drawer-content-wrapper {
+  right: 0;
+  transform: translateX(100%);
+}

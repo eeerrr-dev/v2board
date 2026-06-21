@@ -1,0 +1,25 @@
+/* Restored Ant Design v3 jump hover icon positioning and color. */
+.ant-pagination-jump-prev .ant-pagination-item-container .ant-pagination-item-link-icon,
+.ant-pagination-jump-next .ant-pagination-item-container .ant-pagination-item-link-icon {
+  display: inline-block;
+  color: var(--legacy-ant-primary);
+  font-size: 12px;
+  letter-spacing: -1px;
+  opacity: 0;
+  transform: scale(1) rotate(0deg);
+  transition: all 0.2s;
+}
+
+:root .ant-pagination-jump-prev .ant-pagination-item-container .ant-pagination-item-link-icon,
+:root .ant-pagination-jump-next .ant-pagination-item-container .ant-pagination-item-link-icon {
+  font-size: 12px;
+}
+
+.ant-pagination-jump-prev .ant-pagination-item-container .ant-pagination-item-link-icon-svg,
+.ant-pagination-jump-next .ant-pagination-item-container .ant-pagination-item-link-icon-svg {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  margin: auto;
+}

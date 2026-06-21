@@ -135,15 +135,20 @@ interface QueryState {
   filter: AdminFilter[];
 }
 
-function readStoredOrderFilter(): AdminFilter[] {
-  if (typeof window === 'undefined') return [];
+function readStoredOrderFilter(): Pick<QueryState, 'filter' | 'total'> {
+  if (typeof window === 'undefined') return { filter: [] };
   const stored = window.sessionStorage.getItem('v2board-admin-order-filter');
-  if (!stored) return [];
+  if (!stored) return { filter: [] };
   window.sessionStorage.removeItem('v2board-admin-order-filter');
   try {
-    return JSON.parse(stored) as AdminFilter[];
+    const parsed = JSON.parse(stored) as AdminFilter[] | Pick<QueryState, 'filter' | 'total'>;
+    if (Array.isArray(parsed)) return { filter: parsed };
+    return {
+      filter: Array.isArray(parsed.filter) ? parsed.filter : [],
+      total: typeof parsed.total === 'number' ? parsed.total : undefined,
+    };
   } catch {
-    return [];
+    return { filter: [] };
   }
 }
 
@@ -386,9 +391,10 @@ export default function OrdersPage() {
   const [query, setQuery] = useState<QueryState>(() => {
     const storedFilter = readStoredOrderFilter();
     return {
-      current: storedFilter.length > 0 ? 1 : 0,
+      current: storedFilter.filter.length > 0 ? 1 : 0,
       pageSize: 10,
-      filter: storedFilter,
+      total: storedFilter.total,
+      filter: storedFilter.filter,
     };
   });
   const [detailId, setDetailId] = useState<number>();

@@ -1,0 +1,10 @@
+/* Restored custom HTML blockquote styles. */
+.custom-html-style blockquote {
+  position: relative;
+  margin: 16px 0;
+  padding: 5px 8px 5px 30px;
+  background: rgba(102, 128, 153, 0.05);
+  color: #333;
+  border: none;
+  border-left: 10px solid #d6dbdf;
+}

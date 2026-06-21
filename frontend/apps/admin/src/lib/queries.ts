@@ -33,6 +33,11 @@ export const adminKeys = {
   themeTemplates: ['admin', 'config', 'themeTemplates'] as const,
 };
 
+function withoutLegacyTotal(query: admin.AdminPageQuery) {
+  const { total: _total, ...nextQuery } = query as admin.AdminPageQuery & { total?: unknown };
+  return nextQuery;
+}
+
 export const useStat = () =>
   useQuery({
     queryKey: adminKeys.stat,
@@ -138,17 +143,21 @@ export const useAdminTicket = (id?: number | string) =>
     enabled: id != null,
   });
 
-export const useAdminCoupons = (query: admin.AdminPageQuery) =>
-  useQuery({
-    queryKey: adminKeys.coupons(query),
-    queryFn: () => admin.fetchCoupons(apiClient, query),
+export const useAdminCoupons = (query: admin.AdminPageQuery) => {
+  const requestQuery = withoutLegacyTotal(query);
+  return useQuery({
+    queryKey: adminKeys.coupons(requestQuery),
+    queryFn: () => admin.fetchCoupons(apiClient, requestQuery),
   });
+};
 
-export const useAdminGiftcards = (query: admin.AdminPageQuery) =>
-  useQuery({
-    queryKey: adminKeys.giftcards(query),
-    queryFn: () => admin.fetchGiftcards(apiClient, query),
+export const useAdminGiftcards = (query: admin.AdminPageQuery) => {
+  const requestQuery = withoutLegacyTotal(query);
+  return useQuery({
+    queryKey: adminKeys.giftcards(requestQuery),
+    queryFn: () => admin.fetchGiftcards(apiClient, requestQuery),
   });
+};
 
 export const useAdminKnowledge = () =>
   useQuery({ queryKey: adminKeys.knowledge, queryFn: () => admin.fetchKnowledge(apiClient) });

@@ -1,0 +1,13 @@
+/* Restored Ant Design v3 Spin dot item base styles. */
+.ant-spin-dot-item {
+  position: absolute;
+  display: block;
+  width: 9px;
+  height: 9px;
+  background-color: #0665d0;
+  border-radius: 100%;
+  transform: scale(0.75);
+  transform-origin: 50% 50%;
+  opacity: 0.3;
+  animation: antSpinMove 1s linear infinite alternate;
+}

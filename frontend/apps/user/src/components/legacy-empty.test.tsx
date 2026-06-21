@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { LegacyEmpty } from './legacy-empty';
+import { readUserStyles } from '../test/read-user-styles';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ i18n: { language: 'en-US' } }),
@@ -21,7 +21,7 @@ describe('LegacyEmpty antd class names', () => {
   });
 
   it('keeps the legacy antd Empty spacing and image heights in CSS', () => {
-    const css = readFileSync('src/styles/globals.css', 'utf8');
+    const css = readUserStyles();
 
     expect(css).toContain('.ant-empty {\n  margin: 0 8px;');
     expect(css).toContain('.ant-empty-normal .ant-empty-image {\n  height: 40px;');

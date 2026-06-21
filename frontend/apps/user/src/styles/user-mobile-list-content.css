@@ -1,0 +1,19 @@
+/* Restored Ant Design Mobile list primary content text. */
+.am-list-content {
+  flex: 1 1;
+  width: auto;
+  padding-top: 7px;
+  padding-bottom: 7px;
+  overflow: hidden;
+  color: #000;
+  font-size: 17px;
+  line-height: 1.5;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.am-list-line-multiple .am-list-content {
+  padding-top: 0;
+  padding-bottom: 0;
+}

@@ -1,9 +1,7 @@
-// Verbatim antd v3 icon SVG path data, extracted from the original theme bundle
-// (public/theme/default/assets/components.async.js, the `u(name, theme, i(viewBox,
-// ...paths))` icon factory). The original renders every anticon as an inline antd
-// SVG — its umi.css bundles Font Awesome only for the author's explicit `fa-*`
-// chrome icons, never for anticons. Each entry is the exact theme variant the app
-// renders at its use sites (filled status icons, outlined action icons), so a name
+// Verbatim antd v3 icon SVG path data, mirrored from the legacy oracle's icon
+// factory. The original renders every anticon as an inline antd SVG; its Font
+// Awesome bundle is only for the author's explicit `fa-*` chrome icons. Each
+// entry is the exact theme variant the app renders at its use sites, so a name
 // maps to a single path set here.
 
 export interface AntIconData {

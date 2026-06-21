@@ -1,0 +1,10 @@
+/* Restored responsive sidebar toggle visibility. */
+.sidebar-toggle {
+  display: none;
+}
+
+@media (max-width: 991.98px) {
+  .sidebar-toggle {
+    display: block !important;
+  }
+}

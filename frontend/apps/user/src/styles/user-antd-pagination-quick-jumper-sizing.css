@@ -1,0 +1,22 @@
+/* Restored Ant Design v3 pagination quick jumper sizing styles. */
+textarea.ant-pagination-options-quick-jumper input {
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  line-height: 1.5;
+  vertical-align: bottom;
+  transition:
+    all 0.3s,
+    height 0s;
+}
+
+.ant-pagination-options-quick-jumper input-lg {
+  height: 40px;
+  padding: 6px 11px;
+  font-size: 16px;
+}
+
+.ant-pagination-options-quick-jumper input-sm {
+  height: 24px;
+  padding: 1px 7px;
+}

@@ -1,0 +1,15 @@
+/* Restored user sidebar full-height content-side variant. */
+.content-side.content-side-full {
+  height: calc(100% - 70px);
+  padding-bottom: 1.125rem;
+}
+
+.content-side.content-side-full > .pull,
+.content-side.content-side-full > .pull-b,
+.content-side.content-side-full > .pull-y {
+  margin-bottom: -1.125rem;
+}
+
+.content-side.content-side-full::-webkit-scrollbar {
+  display: none;
+}

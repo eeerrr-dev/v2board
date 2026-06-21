@@ -13,7 +13,10 @@ const queriesSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'),
   'utf8',
 );
-
+const adminAppOverridesSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../styles/admin-app-overrides.css'),
+  'utf8',
+);
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
 }));
@@ -162,6 +165,54 @@ describe('DashboardPage legacy OneUI layout', () => {
   it('keeps the original rank chart in-place reverse behavior', () => {
     expect(dashboardSource).toContain('data.reverse().forEach((item) => {');
     expect(dashboardSource).not.toContain('[...data].reverse()');
+  });
+
+  it('keeps the recovered empty order chart baseline isolated to the fallback path', () => {
+    const orderChartBlock = dashboardSource.slice(
+      dashboardSource.indexOf('function renderOrderChart'),
+      dashboardSource.indexOf('function renderRankChart'),
+    );
+
+    expect(orderChartBlock).toContain('if (data.length === 0) {');
+    expect(orderChartBlock).toContain("element.classList.add('v2board-empty-order-chart');");
+    expect(dashboardSource).toContain('function renderEmptyOrderChartBaseline');
+    expect(dashboardSource).toContain("canvas.className = 'v2board-empty-order-chart-canvas';");
+    expect(dashboardSource).toContain("'rgb(160, 152, 137)'");
+    expect(dashboardSource).toContain("'#6e7079'");
+    expect(dashboardSource).toContain('document.documentElement.dataset.darkreaderMode');
+    expect(dashboardSource).toContain("attributeFilter: ['data-darkreader-mode', 'data-darkreader-scheme']");
+    expect(orderChartBlock).toContain('renderEmptyOrderChartBaseline(element);');
+    expect(orderChartBlock.indexOf("element.style.position = '';")).toBeLessThan(
+      orderChartBlock.indexOf('return chart;'),
+    );
+    expect(orderChartBlock).toContain("element.classList.remove('v2board-empty-order-chart');");
+    expect(adminAppOverridesSource).toContain('#orderChart .v2board-empty-order-chart-canvas');
+    expect(adminAppOverridesSource).toContain('bottom: 26px;');
+    expect(adminAppOverridesSource).toContain('height: 1px;');
+    expect(adminAppOverridesSource).toContain('position: absolute;');
+    expect(adminAppOverridesSource).not.toContain('background-image: linear-gradient');
+    expect(adminAppOverridesSource).not.toContain('border-top: 1px solid currentColor;');
+    expect(orderChartBlock).toContain('return chart;');
+  });
+
+  it('keeps the legacy order chart axis options without an injected axis line', () => {
+    const orderChartBlock = dashboardSource.slice(
+      dashboardSource.indexOf('function renderOrderChart'),
+      dashboardSource.indexOf('function renderRankChart'),
+    );
+
+    expect(orderChartBlock).toContain(
+      "const chart = echarts.init(element, 'vintage', { renderer: 'svg' });",
+    );
+    expect(orderChartBlock).toContain(
+      "xAxis: {\n      type: 'category',\n      boundaryGap: false,\n      data: [],\n    },",
+    );
+    expect(orderChartBlock).not.toContain('axisLine');
+    expect(orderChartBlock).not.toContain('#6e7079');
+  });
+
+  it('keeps chart containers at the legacy static positioning after ECharts init', () => {
+    expect(dashboardSource.match(/element\.style\.position = '';/g)).toHaveLength(3);
   });
 
   it('keeps the original rank tooltip axis payload assumption', () => {

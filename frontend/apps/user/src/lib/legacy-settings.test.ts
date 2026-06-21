@@ -29,7 +29,7 @@ describe('legacy settings bootstrap', () => {
     document.body.innerHTML = '';
   });
 
-  it('uses the packaged theme css path when no service host is configured', () => {
+  it('applies the selected theme from source variables without loading packaged css', () => {
     window.settings = {
       title: 'Legacy Title',
       theme: { color: 'green', sidebar: 'light', header: 'dark' },
@@ -37,10 +37,7 @@ describe('legacy settings bootstrap', () => {
 
     applyLegacySettings();
 
-    const link = appendedThemeLink;
-    expect(link?.rel).toBe('stylesheet');
-    expect(link?.hasAttribute('data-v2board-theme-color')).toBe(false);
-    expect(link?.getAttribute('href')).toBe('/theme/default/assets/theme/green.css');
+    expect(appendedThemeLink).toBeNull();
     expect(document.documentElement.style.getPropertyValue('--legacy-ant-radio-focus-shadow')).toBe(
       'rgba(49, 151, 149, 0.08)',
     );
@@ -50,7 +47,7 @@ describe('legacy settings bootstrap', () => {
     expect(document.title).toBe('Legacy Title');
   });
 
-  it('uses the relative theme css path when service host is configured', () => {
+  it('does not fall back to packaged theme css when service host is configured', () => {
     window.settings = {
       title: 'Hosted',
       host: 'https://example.test',
@@ -59,8 +56,10 @@ describe('legacy settings bootstrap', () => {
 
     applyLegacySettings();
 
-    const link = appendedThemeLink;
-    expect(link?.getAttribute('href')).toBe('./theme/black.css');
+    expect(appendedThemeLink).toBeNull();
+    expect(document.documentElement.style.getPropertyValue('--legacy-ant-radio-focus-shadow')).toBe(
+      'rgba(52, 58, 64, 0.08)',
+    );
   });
 
   it('matches the legacy title assignment for a missing title', () => {

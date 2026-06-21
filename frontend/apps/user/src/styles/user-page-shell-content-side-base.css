@@ -1,0 +1,7 @@
+/* Restored user sidebar content-side base shell. */
+.content-side {
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.125rem 1.125rem 1px;
+  overflow-x: hidden;
+}

@@ -1,0 +1,7 @@
+/* Restored Ant Design v3 link button base variant. */
+.ant-btn-link {
+  color: var(--legacy-ant-primary);
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}

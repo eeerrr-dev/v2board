@@ -1,0 +1,10 @@
+/* Restored Bootstrap custom control active and alignment overrides. */
+.custom-control-input:not(:disabled):active ~ .custom-control-label::before {
+  color: #fff;
+  background-color: #8dc1fc;
+  border-color: #8dc1fc;
+}
+
+.custom-control-label::after {
+  left: -1.25rem;
+}

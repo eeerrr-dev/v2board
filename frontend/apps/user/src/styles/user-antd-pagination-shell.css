@@ -1,0 +1,41 @@
+/* Restored Ant Design v3 pagination shell, table placement, and total text. */
+.ant-table-pagination.ant-pagination {
+  float: right;
+  margin: 16px !important;
+}
+
+.ant-pagination {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 14px;
+  font-variant: tabular-nums;
+  line-height: 1.5;
+  list-style: none;
+  font-feature-settings: 'tnum';
+}
+
+.ant-pagination ol,
+.ant-pagination ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ant-pagination::after {
+  display: block;
+  clear: both;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  content: ' ';
+}
+
+.ant-pagination-total-text {
+  display: inline-block;
+  height: 32px;
+  margin-right: 8px;
+  line-height: 30px;
+  vertical-align: middle;
+}

@@ -1,0 +1,23 @@
+/* Restored Ant Design v3 drawer mask and fade animation. */
+.ant-drawer-mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  filter: alpha(opacity=45);
+  transition:
+    opacity 0.3s linear,
+    height 0s ease 0.3s;
+}
+
+@keyframes antdDrawerFadeIn {
+  0% {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

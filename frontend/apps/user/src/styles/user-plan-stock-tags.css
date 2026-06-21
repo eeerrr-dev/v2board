@@ -1,0 +1,8 @@
+/* Restored plan inventory labels. */
+.v2board-sold-out-tag {
+  padding: 2px 8px;
+  color: #fff;
+  font-size: 13px;
+  background-color: #c12c1f;
+  border-radius: 100px;
+}

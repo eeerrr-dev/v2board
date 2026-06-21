@@ -1,0 +1,14 @@
+/* Restored Ant Design v3 badge count wrapper alignment. */
+.ant-badge-not-a-wrapper:not(.ant-badge-status) {
+  vertical-align: middle;
+}
+
+.ant-badge-not-a-wrapper .ant-scroll-number {
+  position: relative;
+  top: auto;
+  display: block;
+}
+
+.ant-badge-not-a-wrapper .ant-badge-count {
+  transform: none;
+}

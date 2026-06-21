@@ -1,0 +1,8 @@
+/* Restored Ant Design v3 carousel previous arrow. */
+.ant-carousel .slick-prev {
+  left: -25px;
+}
+
+.ant-carousel .slick-prev::before {
+  content: '\2190';
+}

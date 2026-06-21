@@ -27,7 +27,6 @@ import { admin } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
 import { i18nGet } from '@/lib/errors';
 import { legacyCopyText } from '@/lib/legacy-copy';
-import { formatDateTime } from '@v2board/config/format';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
@@ -68,8 +67,10 @@ import {
   type LegacySelectValue,
 } from '@/components/legacy-select';
 import {
+  LegacyTablePagination,
   LegacyStandaloneTable,
   legacyTableRowKey as legacyRowKey,
+  type LegacyTablePaginationChange,
   type LegacyStandaloneTableHeader,
 } from '@/components/legacy-standalone-table';
 import { LegacyDivider } from '@/components/legacy-divider';
@@ -557,7 +558,7 @@ function LegacyDropdown({ children, overlay, trigger }: LegacyDropdownProps) {
   };
 
   useEffect(() => {
-    if (!open || !opensOnClick) return undefined;
+    if (!open) return undefined;
     const closeOnOutsideClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
       if (!target) return;
@@ -568,7 +569,7 @@ function LegacyDropdown({ children, overlay, trigger }: LegacyDropdownProps) {
 
     document.addEventListener('click', closeOnOutsideClick);
     return () => document.removeEventListener('click', closeOnOutsideClick);
-  }, [open, opensOnClick]);
+  }, [open]);
 
   useEffect(() => {
     return () => clearCloseTimer();
@@ -613,7 +614,9 @@ function LegacyDropdown({ children, overlay, trigger }: LegacyDropdownProps) {
                 left: coords.left,
                 minWidth: coords.minWidth,
               }}
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                if (opensOnClick) setOpen(false);
+              }}
               onMouseEnter={clearCloseTimer}
               onMouseLeave={scheduleHoverClose}
             >
@@ -1271,7 +1274,6 @@ function LegacyServerMobileNodeList({
 }
 
 function ServerManagePage() {
-  const { message } = App.useApp();
   const nodes = useServerNodes();
   const groups = useServerGroups();
   const routes = useServerRoutes();
@@ -1283,6 +1285,7 @@ function ServerManagePage() {
   const [sortMode, setSortMode] = useState(false);
   const [orderedNodes, setOrderedNodes] = useState<admin.ServerNode[]>(() => nodes.data ?? []);
   const [sortingLoading, setSortingLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(readLegacyServerPageSize);
   const [contextRecord, setContextRecord] = useState<admin.ServerNode | null>(null);
   const [contextMenu, setContextMenu] = useState<{ top: number; left: number } | null>(null);
@@ -1389,10 +1392,17 @@ function ServerManagePage() {
   ]
     .filter(Boolean)
     .join(' ');
-  const visibleNodes = sortMode ? filteredNodes : filteredNodes.slice(0, pageSize);
-  const changeServerPageSize = (_current: number, size: number) => {
-    setPageSize(size);
-    writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, size);
+  const pageCount = Math.max(1, Math.ceil(filteredNodes.length / pageSize));
+  const activePage = Math.min(currentPage, pageCount);
+  const visibleNodes = sortMode
+    ? filteredNodes
+    : filteredNodes.slice((activePage - 1) * pageSize, activePage * pageSize);
+  const changeServerPagination = (pagination: LegacyTablePaginationChange) => {
+    setCurrentPage(pagination.current);
+    if (pagination.pageSize !== pageSize) {
+      setPageSize(pagination.pageSize);
+      writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, pagination.pageSize);
+    }
   };
   const rowHandlers = (record: admin.ServerNode) =>
     sortMode
@@ -1423,7 +1433,7 @@ function ServerManagePage() {
     </span>
   );
   const filterIcon = (
-    <LegacyFilterIcon title="筛选" tabIndex={-1} className="ant-dropdown-trigger" />
+    <LegacyFilterIcon filled title="筛选" tabIndex={-1} className="ant-dropdown-trigger" />
   );
   const sorterIcon = (
     <span className="ant-table-column-sorter">
@@ -1517,7 +1527,10 @@ function ServerManagePage() {
               placeholder="输入任意关键字搜索"
               style={{ width: 200 }}
               className="ant-input ml-2"
-              onChange={(event) => setSearchKey(event.target.value)}
+              onChange={(event) => {
+                setSearchKey(event.target.value);
+                setCurrentPage(1);
+              }}
             />
             {!mobile && (
               <LegacyButton
@@ -1833,21 +1846,19 @@ function ServerManagePage() {
                     </div>
                   </div>
                 </div>
+                {!sortMode && filteredNodes.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <LegacyTablePagination
+                      current={activePage}
+                      mini={false}
+                      pageSize={pageSize}
+                      pageSizeOptions={[10, 50, 100, 500]}
+                      total={filteredNodes.length}
+                      onChange={changeServerPagination}
+                    />
+                  </div>
+                )}
               </div>
-              {!sortMode && filteredNodes.length > pageSize && (
-                <div className="ant-table-pagination ant-pagination">
-                  <select
-                    value={pageSize}
-                    onChange={(event) => changeServerPageSize(1, Number(event.target.value))}
-                  >
-                    {[10, 50, 100, 500].map((size) => (
-                      <option key={size} value={size}>
-                        {size} 条/页
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
               {contextDropdown}
             </LegacyDragSort>
           )}
@@ -1892,12 +1903,12 @@ function NodeEditDrawer({
     ...parentCandidates.map((node) => ({ value: node.id, label: node.name })),
   ];
   const groupOptions: LegacySelectOption[] = groups.map((group) => ({
-    value: group.id,
+    value: String(group.id),
     label: group.name,
   }));
   const routeOptions: LegacySelectOption[] = routes.map((route) => ({
     value: route.id,
-    label: route.remarks,
+    label: route.id,
   }));
 
   const showChildDrawer = (title?: string, field?: string) => {
@@ -2074,7 +2085,12 @@ function NodeEditDrawer({
             </div>
           )}
         </div>
-        <ServerTypeFields type={type} form={form} showChildDrawer={showChildDrawer} />
+        <ServerTypeFields
+          editing={Boolean(id)}
+          type={type}
+          form={form}
+          showChildDrawer={showChildDrawer}
+        />
         <div className="form-group">
           <label>
             <LegacyTooltip placement="top">
@@ -2190,6 +2206,7 @@ export function getLegacyServerInitialValues(
   type: admin.ServerTypeName,
   record?: Partial<admin.ServerNode>,
 ): Record<string, unknown> {
+  const editing = Boolean(record);
   const normalizedRecord: Record<string, unknown> = record
     ? { ...(record as Record<string, unknown>) }
     : {};
@@ -2227,15 +2244,19 @@ export function getLegacyServerInitialValues(
       : {};
 
   return {
-    rate: 1,
-    ...tuicDefaults,
-    ...shadowsocksDefaults,
-    ...vmessDefaults,
-    ...trojanDefaults,
-    ...hysteriaDefaults,
-    ...vlessDefaults,
-    ...anyTlsDefaults,
-    ...v2nodeDefaults,
+    ...(editing
+      ? {}
+      : {
+          rate: 1,
+          ...tuicDefaults,
+          ...shadowsocksDefaults,
+          ...vmessDefaults,
+          ...trojanDefaults,
+          ...hysteriaDefaults,
+          ...vlessDefaults,
+          ...anyTlsDefaults,
+          ...v2nodeDefaults,
+        }),
     ...normalizedRecord,
   };
 }
@@ -3102,10 +3123,12 @@ function V2nodeFields({
 }
 
 function ServerTypeFields({
+  editing,
   type,
   form,
   showChildDrawer,
 }: {
+  editing: boolean;
   type: admin.ServerTypeName;
   form: FormInstance;
   showChildDrawer: (title?: string, field?: string) => void;
@@ -3126,7 +3149,11 @@ function ServerTypeFields({
       <>
         <div className="form-group">
           <label>加密算法</label>
-          <Form.Item noStyle name="cipher" initialValue="chacha20-ietf-poly1305">
+          <Form.Item
+            noStyle
+            name="cipher"
+            initialValue={editing ? undefined : 'chacha20-ietf-poly1305'}
+          >
             <LegacySelect style={{ width: '100%' }} options={LEGACY_SHADOWSOCKS_CIPHER_OPTIONS} />
           </Form.Item>
         </div>

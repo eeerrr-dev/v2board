@@ -1,0 +1,8 @@
+/* Restored custom HTML table row borders and alternating row state. */
+.custom-html-style table tr {
+  border: 1px solid #efefef;
+}
+
+.custom-html-style table tr:nth-child(2n) {
+  background-color: transparent;
+}

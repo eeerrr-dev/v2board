@@ -1,0 +1,8 @@
+/* Restored Bootstrap form-control focus state. */
+.form-control:focus {
+  color: #495057;
+  background-color: #fff;
+  border-color: var(--legacy-form-focus-border);
+  outline: 0;
+  box-shadow: 0 0 0 0.2rem var(--legacy-form-focus-shadow);
+}

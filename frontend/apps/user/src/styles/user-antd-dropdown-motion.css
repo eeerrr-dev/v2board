@@ -1,0 +1,39 @@
+/* Restored Ant Design v3 top-center dropdown slide motion. */
+@keyframes antSlideDownOut {
+  0% {
+    transform: scaleY(1);
+    transform-origin: 100% 100%;
+    opacity: 1;
+  }
+  to {
+    transform: scaleY(0.8);
+    transform-origin: 100% 100%;
+    opacity: 0;
+  }
+}
+
+.ant-dropdown-placement-topCenter .ant-dropdown-menu.slide-down-enter {
+  opacity: 0;
+  animation-duration: 0.2s;
+  animation-fill-mode: both;
+  animation-play-state: paused;
+  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.ant-dropdown-placement-topCenter .ant-dropdown-menu.slide-down-leave {
+  animation-duration: 0.2s;
+  animation-fill-mode: both;
+  animation-play-state: paused;
+  animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);
+}
+
+.ant-dropdown-placement-topCenter .ant-dropdown-menu.slide-down-enter.slide-down-enter-active {
+  animation-name: antSlideDownIn;
+  animation-play-state: running;
+}
+
+.ant-dropdown-placement-topCenter .ant-dropdown-menu.slide-down-leave.slide-down-leave-active {
+  animation-name: antSlideDownOut;
+  animation-play-state: running;
+  pointer-events: none;
+}

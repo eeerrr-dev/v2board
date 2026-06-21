@@ -1,0 +1,11 @@
+/* Restored OneUI sidebar nav headings. */
+.nav-main-heading {
+  padding-top: 1.75rem;
+  padding-bottom: 0.25rem;
+  padding-left: 0.625rem;
+  color: var(--legacy-nav-heading);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.075rem;
+  text-transform: uppercase;
+}

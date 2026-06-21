@@ -1,0 +1,10 @@
+/* Restored OneUI sidebar submenu shell spacing. */
+.nav-main-submenu {
+  padding-left: 2.5rem;
+  height: 0;
+  overflow: hidden;
+  list-style: none;
+  background-color: var(--legacy-nav-submenu-bg);
+  border-bottom-right-radius: 0.2rem;
+  border-bottom-left-radius: 0.2rem;
+}
