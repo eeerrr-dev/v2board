@@ -307,6 +307,11 @@ const interactionScenarios = [
     scenarioLabel: 'user-dashboard',
   },
   {
+    label: 'user-dashboard-subscribe-import-links',
+    run: runDashboardSubscribeImportLinksInteraction,
+    scenarioLabel: 'user-dashboard',
+  },
+  {
     label: 'user-dashboard-notice-carousel',
     run: runDashboardNoticeCarouselInteraction,
     scenarioLabel: 'user-dashboard',
@@ -314,6 +319,13 @@ const interactionScenarios = [
   {
     label: 'user-dashboard-reset-package-confirm',
     run: runDashboardResetPackageConfirmInteraction,
+    scenarioLabel: 'user-dashboard',
+  },
+  {
+    delayUserNewPeriodMs: 200,
+    label: 'user-dashboard-new-period-confirm',
+    newPeriodSubscribe: true,
+    run: runDashboardNewPeriodConfirmInteraction,
     scenarioLabel: 'user-dashboard',
   },
   {
@@ -794,6 +806,13 @@ const subscribeFixture = {
   transfer_enable: 1000 * 1024 * 1024 * 1024,
   u: 650 * 1024 * 1024 * 1024,
   uuid: 'visual-parity-user',
+};
+const newPeriodSubscribeFixture = {
+  ...subscribeFixture,
+  allow_new_period: 1,
+  d: 450 * 1024 * 1024 * 1024,
+  reset_day: 0,
+  u: 550 * 1024 * 1024 * 1024,
 };
 const planFixtures = [
   {
@@ -2416,6 +2435,19 @@ async function runDashboardSubscribeDrawerInteraction(page) {
   return { before, copied, opened, qr };
 }
 
+async function runDashboardSubscribeImportLinksInteraction(page) {
+  const before = await dashboardSubscribeImportLinksState(page);
+  await clickVisibleAt(page, '.v2board-shortcuts-item', 1);
+  await page.waitForSelector('.oneClickSubscribe___2t9Xg', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForTimeout(350);
+  const opened = await dashboardSubscribeImportLinksState(page);
+
+  return { before, opened };
+}
+
 async function runDashboardNoticeCarouselInteraction(page) {
   const before = await dashboardNoticeCarouselState(page);
   await clickVisibleAt(page, '.slick-dots li button', 1);
@@ -2477,6 +2509,54 @@ async function runDashboardResetPackageConfirmInteraction(page) {
     orderSaveRequests: (page.__visualParityUserOrderSaveRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
+  };
+}
+
+async function runDashboardNewPeriodConfirmInteraction(page) {
+  const initialNewPeriodCount = page.__visualParityUserNewPeriodCount ?? 0;
+  const initialSubscribeFetchCount = page.__visualParityUserSubscribeFetchCount ?? 0;
+  const before = await dashboardNewPeriodConfirmState(page);
+
+  await clickFirstVisibleText(page, 'a, button', ['提前开启流量周期']);
+  await page.waitForSelector('.ant-modal-confirm, .ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForTimeout(150);
+  const opened = await dashboardNewPeriodConfirmState(page);
+
+  await clickFirstVisible(
+    page,
+    '.ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+  );
+  await waitForVisibleElementsHidden(page, '.ant-modal-confirm, .ant-modal');
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserNewPeriodCount',
+    initialNewPeriodCount + 1,
+  );
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserSubscribeFetchCount',
+    initialSubscribeFetchCount + 1,
+  );
+  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForTimeout(150);
+  const confirmed = await dashboardNewPeriodConfirmState(page);
+
+  return {
+    before,
+    confirmed,
+    hash: await page.evaluate(() => window.location.hash),
+    newPeriodRequests: (page.__visualParityUserNewPeriodRequests ?? []).map((request) =>
+      request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
+    ),
+    opened,
+    subscribeFetchDelta:
+      (page.__visualParityUserSubscribeFetchCount ?? 0) - initialSubscribeFetchCount,
   };
 }
 
@@ -5055,6 +5135,29 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`dashboard subscribe drawer did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'user-dashboard-subscribe-import-links' &&
+    (result.before?.boxCount !== 0 ||
+      result.opened?.boxCount < 1 ||
+      (!result.opened?.drawerOpenCount && !result.opened?.modalCount) ||
+      result.opened?.items?.length < 4 ||
+      !jsonIncludesAny(result.opened?.itemTexts, ['复制订阅地址', 'Copy Subscription URL']) ||
+      !jsonIncludesAny(result.opened?.itemTexts, ['扫描二维码订阅', 'Scan QR code to subscribe']) ||
+      !JSON.stringify(result.opened?.itemTexts).includes('Hiddify') ||
+      !JSON.stringify(result.opened?.itemTexts).includes('Sing-box') ||
+      !JSON.stringify(result.opened?.itemClasses).includes('subsrcibe-for-link') ||
+      !JSON.stringify(result.opened?.itemClasses).includes('subscribe-for-qrcode') ||
+      !JSON.stringify(result.opened?.itemClasses).includes('hiddify') ||
+      !JSON.stringify(result.opened?.itemClasses).includes('sing-box') ||
+      !result.opened?.items?.some(
+        (item) => item.className?.includes('hiddify') && item.imageCount >= 1,
+      ) ||
+      !result.opened?.items?.some(
+        (item) => item.className?.includes('sing-box') && item.imageCount >= 1,
+      ))
+  ) {
+    throw new Error(`dashboard subscribe import links did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
     label === 'user-dashboard-notice-carousel' &&
     (result.before?.dotCount < 2 ||
       result.afterDot?.activeDotIndex !== 1 ||
@@ -5082,6 +5185,21 @@ function assertUsefulInteraction(label, result) {
     throw new Error(
       `dashboard reset package confirm did not match legacy save-order behavior: ${JSON.stringify(result)}`,
     );
+  }
+  if (
+    label === 'user-dashboard-new-period-confirm' &&
+    (result.before?.newPeriodTriggerCount < 1 ||
+      result.opened?.modalCount < 1 ||
+      !result.opened?.title?.length ||
+      !result.opened?.content?.length ||
+      result.opened?.buttons?.length < 2 ||
+      result.confirmed?.modalCount !== 0 ||
+      result.newPeriodRequests?.length !== 1 ||
+      result.subscribeFetchDelta < 1 ||
+      !result.hash?.includes('/dashboard') ||
+      !jsonIncludesAny(result.confirmed?.toastTexts, ['提前开启流量周期成功']))
+  ) {
+    throw new Error(`dashboard new-period confirm did not match legacy behavior: ${JSON.stringify(result)}`);
   }
   if (
     label === 'user-dashboard-alert-links' &&
@@ -7093,6 +7211,36 @@ async function dashboardSubscribeState(page) {
   };
 }
 
+async function dashboardSubscribeImportLinksState(page) {
+  const items = await page.evaluate(() => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+    };
+    return Array.from(document.querySelectorAll('.oneClickSubscribe___2t9Xg .item___yrtOv'))
+      .filter(isVisible)
+      .map((item) => ({
+        className: item.className,
+        iconCount: item.querySelectorAll('i').length,
+        imageCount: item.querySelectorAll('img').length,
+        text: (item.textContent ?? '').trim().replace(/\s+/g, ' '),
+      }));
+  });
+
+  return {
+    bodyOverflow: await page.evaluate(() => document.body.style.overflow),
+    boxCount: await visibleCount(page, '.oneClickSubscribe___2t9Xg'),
+    drawerOpenCount: await visibleCount(page, '.ant-drawer-open'),
+    itemClasses: items.map((item) => item.className),
+    items,
+    itemTexts: items.map((item) => item.text),
+    modalCount: await visibleCount(page, '.ant-modal'),
+    shortcutTexts: await visibleTexts(page, '.v2board-shortcuts-item', 4),
+    tutorialButtons: await visibleTexts(page, '.oneClickSubscribe___2t9Xg .ant-btn', 2),
+  };
+}
+
 async function dashboardNoticeCarouselState(page) {
   const dotState = await page.evaluate(() => {
     const isVisible = (element) => {
@@ -7135,6 +7283,31 @@ async function dashboardResetPackageConfirmState(page) {
     modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
     resetTriggerCount,
     title: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 4),
+  };
+}
+
+async function dashboardNewPeriodConfirmState(page) {
+  const newPeriodTriggerCount = await page.evaluate(() => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+    };
+    return Array.from(document.querySelectorAll('a, button')).filter((element) => {
+      const text = (element.textContent ?? '').trim().replace(/\s+/g, ' ');
+      return isVisible(element) && text === '提前开启流量周期';
+    }).length;
+  });
+
+  return {
+    buttons: await visibleTexts(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 4),
+    content: await visibleTexts(page, '.ant-modal-confirm-content, .ant-modal-body', 4),
+    hash: await page.evaluate(() => window.location.hash),
+    modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
+    newPeriodCount: page.__visualParityUserNewPeriodCount ?? 0,
+    newPeriodTriggerCount,
+    title: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 4),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -8676,6 +8849,15 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         requestData,
       ];
     }
+    if (pathname === '/api/v1/user/newPeriod') {
+      page.__visualParityLastUserNewPeriod = requestData;
+      page.__visualParityUserNewPeriodCount =
+        (page.__visualParityUserNewPeriodCount ?? 0) + 1;
+      page.__visualParityUserNewPeriodRequests = [
+        ...(page.__visualParityUserNewPeriodRequests ?? []),
+        requestData,
+      ];
+    }
     if (pathname === '/api/v1/user/order/save') {
       page.__visualParityLastUserOrderSave = requestData;
       page.__visualParityUserOrderSaveCount = (page.__visualParityUserOrderSaveCount ?? 0) + 1;
@@ -8902,6 +9084,9 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     }
     if (pathname === '/api/v1/user/transfer' && interaction.delayUserTransferMs) {
       await delay(interaction.delayUserTransferMs);
+    }
+    if (pathname === '/api/v1/user/newPeriod' && interaction.delayUserNewPeriodMs) {
+      await delay(interaction.delayUserNewPeriodMs);
     }
     if (pathname === '/api/v1/user/order/checkout' && interaction.delayUserOrderCheckoutMs) {
       await delay(interaction.delayUserOrderCheckoutMs);
@@ -9133,7 +9318,7 @@ function apiFixtureResponse(
     case '/api/v1/user/unbindTelegram':
       return body(true);
     case '/api/v1/user/getSubscribe':
-      return body(subscribeFixture);
+      return body(interaction?.newPeriodSubscribe ? newPeriodSubscribeFixture : subscribeFixture);
     case '/api/v1/user/getStat':
       return body([2, 3, 0]);
     case '/api/v1/user/plan/fetch':
@@ -9147,6 +9332,8 @@ function apiFixtureResponse(
       if (requestData?.period === 'deposit') return body(profileDepositTradeNo);
       if (requestData?.period === 'reset_price') return body(dashboardResetPackageTradeNo);
       return body('VISUAL2026110099');
+    case '/api/v1/user/newPeriod':
+      return body(true);
     case '/api/v1/user/order/fetch':
       return body(orderFixtures);
     case '/api/v1/user/order/detail':
