@@ -379,6 +379,24 @@ const interactionScenarios = [
     scenarioLabel: 'user-order-detail',
   },
   {
+    delayUserOrderCheckoutMs: 200,
+    label: 'user-order-qr-checkout',
+    run: runOrderQrCheckoutInteraction,
+    scenarioLabel: 'user-order-detail',
+  },
+  {
+    label: 'user-order-stripe-disabled-checkout',
+    run: runOrderStripeDisabledCheckoutInteraction,
+    scenarioLabel: 'user-order-detail',
+  },
+  {
+    checkoutRedirectUrl: '/#/order/VISUAL2026110001?cashier=visual',
+    delayUserOrderCheckoutMs: 200,
+    label: 'user-order-redirect-checkout',
+    run: runOrderRedirectCheckoutInteraction,
+    scenarioLabel: 'user-order-detail',
+  },
+  {
     label: 'user-node-table-scroll',
     run: runNodeTableScrollInteraction,
     scenarioLabel: 'user-node',
@@ -406,6 +424,18 @@ const interactionScenarios = [
   {
     label: 'user-invite-generate',
     run: runInviteGenerateInteraction,
+    scenarioLabel: 'user-invite',
+  },
+  {
+    delayUserTransferMs: 200,
+    label: 'user-invite-transfer-modal',
+    run: runInviteTransferModalInteraction,
+    scenarioLabel: 'user-invite',
+  },
+  {
+    delayUserWithdrawMs: 200,
+    label: 'user-invite-withdraw-modal',
+    run: runInviteWithdrawModalInteraction,
     scenarioLabel: 'user-invite',
   },
   {
@@ -1183,7 +1213,7 @@ const userCommConfigFixture = {
   stripe_pk: null,
   telegram_discuss_link: null,
   withdraw_close: 0,
-  withdraw_methods: [],
+  withdraw_methods: ['Alipay', 'USDT'],
 };
 const adminConfigFixture = {
   site: {
@@ -2809,6 +2839,70 @@ async function runOrderPaymentMethodInteraction(page) {
   return { after, before };
 }
 
+async function runOrderQrCheckoutInteraction(page) {
+  const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
+  const before = await orderCheckoutState(page);
+  await clickFirstVisible(page, '#cashier .btn-block.btn-primary');
+  await page.waitForTimeout(100);
+  const loading = await orderCheckoutState(page);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserOrderCheckoutCount',
+    initialCheckoutCount + 1,
+  );
+  await page.waitForSelector('.v2board-payment-qrcode svg, .v2board-payment-qrcode canvas', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForTimeout(150);
+  const opened = await orderCheckoutState(page);
+  return {
+    before,
+    checkoutRequests: clonePageRequests(page.__visualParityUserOrderCheckoutRequests),
+    loading,
+    opened,
+  };
+}
+
+async function runOrderStripeDisabledCheckoutInteraction(page) {
+  await waitForOrderPaymentMethodCount(page);
+  const before = await orderCheckoutState(page);
+  await clickVisibleAt(page, '#cashier .v2board-select', 1);
+  await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
+  await waitForCreditCardSection(page);
+  await page.waitForTimeout(150);
+  const selected = await orderCheckoutState(page);
+  return {
+    before,
+    checkoutRequests: clonePageRequests(page.__visualParityUserOrderCheckoutRequests),
+    selected,
+  };
+}
+
+async function runOrderRedirectCheckoutInteraction(page) {
+  const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
+  await waitForOrderPaymentMethodCount(page);
+  await clickVisibleAt(page, '#cashier .v2board-select', 2);
+  await page.waitForTimeout(100);
+  const selected = await orderCheckoutState(page);
+  await clickFirstVisible(page, '#cashier .btn-block.btn-primary');
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserOrderCheckoutCount',
+    initialCheckoutCount + 1,
+  );
+  await page.waitForFunction(() => window.location.hash.includes('cashier=visual'), {
+    timeout: 5_000,
+  });
+  await page.waitForTimeout(150);
+  const redirected = await orderCheckoutState(page);
+  return {
+    checkoutRequests: clonePageRequests(page.__visualParityUserOrderCheckoutRequests),
+    redirected,
+    selected,
+  };
+}
+
 async function runNodeTableScrollInteraction(page) {
   const before = await legacyAntTableScrollState(page);
   await setLegacyAntTableScrollLeft(page, 'right');
@@ -2877,6 +2971,72 @@ async function runInviteGenerateInteraction(page) {
   await page.waitForTimeout(100);
   const after = await inviteState(page);
   return { after, before };
+}
+
+async function runInviteTransferModalInteraction(page) {
+  const initialInfoFetchCount = page.__visualParityUserInfoFetchCount ?? 0;
+  const before = await inviteFinanceDialogState(page);
+  await clickFirstVisibleText(page, 'button, .ant-btn', ['划转', 'Transfer']);
+  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await page.waitForTimeout(100);
+  const opened = await inviteFinanceDialogState(page);
+  await fillVisibleAt(page, '.ant-modal input:not([disabled])', 0, '12.34');
+  await page.waitForTimeout(100);
+  const filled = await inviteFinanceDialogState(page);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await page.waitForTimeout(100);
+  const saving = await inviteFinanceDialogState(page);
+  await waitForPagePropertyAtLeast(page, '__visualParityUserTransferCount', 1);
+  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await page.waitForTimeout(250);
+  const closed = await inviteFinanceDialogState(page);
+  return {
+    before,
+    closed,
+    filled,
+    infoFetchDelta: (page.__visualParityUserInfoFetchCount ?? 0) - initialInfoFetchCount,
+    opened,
+    saving,
+    transferRequests: clonePageRequests(page.__visualParityUserTransferRequests),
+  };
+}
+
+async function runInviteWithdrawModalInteraction(page) {
+  const before = await inviteFinanceDialogState(page);
+  await clickFirstVisibleText(page, 'button, .ant-btn', [
+    '推广佣金提现',
+    'Invitation Commission Withdrawal',
+  ]);
+  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await page.waitForTimeout(100);
+  const opened = await inviteFinanceDialogState(page);
+  await clickFirstVisible(page, '.ant-modal .ant-select-selection');
+  await page.waitForSelector('.ant-select-dropdown-menu-item', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForTimeout(100);
+  const dropdown = await inviteFinanceDialogState(page);
+  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Alipay']);
+  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await fillVisibleAt(page, '.ant-modal input.ant-input', 0, 'parity-account@example.com');
+  await page.waitForTimeout(100);
+  const filled = await inviteFinanceDialogState(page);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await page.waitForTimeout(100);
+  const saving = await inviteFinanceDialogState(page);
+  await waitForPagePropertyAtLeast(page, '__visualParityUserWithdrawCount', 1);
+  await page.waitForFunction(() => window.location.hash.includes('/ticket'), { timeout: 5_000 });
+  await page.waitForTimeout(250);
+  const navigated = await inviteFinanceDialogState(page);
+  return {
+    before,
+    dropdown,
+    filled,
+    navigated,
+    saving,
+    withdrawRequests: clonePageRequests(page.__visualParityUserWithdrawRequests),
+  };
 }
 
 async function runUserInviteTooltipsInteraction(page) {
@@ -4693,6 +4853,12 @@ function jsonIncludesAny(value, candidates) {
   return candidates.some((candidate) => json.includes(candidate));
 }
 
+function clonePageRequests(requests = []) {
+  return (requests ?? []).map((request) =>
+    request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
+  );
+}
+
 function sortForStableJson(value) {
   if (Array.isArray(value)) {
     return value.map(sortForStableJson);
@@ -5113,6 +5279,45 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`order payment method did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'user-order-qr-checkout' &&
+    (result.before?.activeIndex !== 0 ||
+      result.loading?.submitButton?.disabled !== true ||
+      result.checkoutRequests?.length !== 1 ||
+      result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
+      Number(result.checkoutRequests?.[0]?.method) !== 1 ||
+      result.opened?.modalCount < 1 ||
+      result.opened?.qrSvgCount + result.opened?.qrCanvasCount < 1 ||
+      !jsonIncludesAny(result.opened?.modalTexts, ['等待支付中', 'Waiting for payment']))
+  ) {
+    throw new Error(`order QR checkout did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'user-order-stripe-disabled-checkout' &&
+    (result.before?.activeIndex !== 0 ||
+      result.selected?.activeIndex !== 1 ||
+      result.selected?.stripePublicKeyCount < 1 ||
+      !jsonIncludesAny(result.selected?.creditCardTexts, ['信用卡', 'credit card']) ||
+      result.selected?.submitButton?.disabled !== true ||
+      result.checkoutRequests?.length !== 0 ||
+      !jsonIncludesAny(result.selected?.methodTexts, ['Stripe']))
+  ) {
+    throw new Error(
+      `order Stripe disabled checkout did not produce observable state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'user-order-redirect-checkout' &&
+    (result.selected?.activeIndex !== 2 ||
+      result.checkoutRequests?.length !== 1 ||
+      result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
+      Number(result.checkoutRequests?.[0]?.method) !== 3 ||
+      !result.redirected?.hash?.includes('cashier=visual'))
+  ) {
+    throw new Error(
+      `order redirect checkout did not produce observable state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
     label === 'user-node-table-scroll' &&
     (!JSON.stringify(result.before?.rows).includes('Hong Kong 01') ||
       !JSON.stringify(result.before?.rows).includes('Tokyo 02') ||
@@ -5197,6 +5402,31 @@ function assertUsefulInteraction(label, result) {
       result.after?.generateButton?.disabled)
   ) {
     throw new Error(`invite generate did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'user-invite-transfer-modal' &&
+    (result.before?.modalCount !== 0 ||
+      result.opened?.modalCount !== 1 ||
+      !jsonIncludesAny(result.opened?.titles, [
+        '推广佣金划转至余额',
+        'Transfer Invitation Commission to Account Balance',
+      ]) ||
+      !jsonIncludesAny(result.opened?.labels, ['划转金额', 'Transfer amount']) ||
+      !JSON.stringify(result.filled?.inputValues).includes('12.34') ||
+      result.transferRequests?.length !== 1 ||
+      Number(result.transferRequests?.[0]?.transfer_amount) !== 1234 ||
+      result.closed?.modalCount !== 0)
+  ) {
+    throw new Error(
+      `invite transfer modal did not match legacy behavior: ${JSON.stringify(result)}`,
+    );
+  }
+  if (label === 'user-invite-withdraw-modal') {
+    if (!result.withdrawRequests?.length) {
+      throw new Error(
+        `invite withdraw modal did not match legacy behavior: ${JSON.stringify(result)}`,
+      );
+    }
   }
   if (
     label === 'user-ticket-reply-send' &&
@@ -7121,6 +7351,21 @@ async function inviteState(page) {
   };
 }
 
+async function inviteFinanceDialogState(page) {
+  return {
+    buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
+    dropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 8),
+    hash: await page.evaluate(() => window.location.hash),
+    inputValues: await visibleInputValues(page, '.ant-modal input'),
+    labels: await visibleTexts(page, '.ant-modal .form-group label', 8),
+    modalCount: await visibleCount(page, '.ant-modal'),
+    selectedValues: await visibleTexts(page, '.ant-modal .ant-select-selection-selected-value', 4),
+    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 4),
+    titles: await visibleTexts(page, '.ant-modal-title', 2),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+  };
+}
+
 async function adminCouponModalState(page) {
   return {
     addonTexts: await visibleTexts(page, '.ant-modal .ant-input-group-addon', 6),
@@ -7354,6 +7599,43 @@ async function orderPaymentState(page) {
     summaryBlocks: await visibleTexts(page, '#cashier .col-md-4 .block', 4),
     submitButton: await firstElementState(page, '#cashier .btn-block.btn-primary'),
   };
+}
+
+async function orderCheckoutState(page) {
+  return {
+    ...(await orderPaymentState(page)),
+    creditCardTexts: await visibleTexts(page, '#cashier h3, #cashier .fa-user-shield, #cashier .mt-3.mb-5', 6),
+    hash: await page.evaluate(() => window.location.hash),
+    modalCount: await visibleCount(page, '.ant-modal'),
+    modalTexts: await visibleTexts(page, '.ant-modal', 4),
+    qrCanvasCount: await visibleCount(page, '.v2board-payment-qrcode canvas'),
+    qrSvgCount: await visibleCount(page, '.v2board-payment-qrcode svg'),
+    stripePublicKeyCount: page.__visualParityUserStripePublicKeyCount ?? 0,
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+  };
+}
+
+async function waitForOrderPaymentMethodCount(page) {
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll('#cashier .v2board-select')).filter((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+      }).length >= 3,
+    { timeout: 5_000 },
+  );
+}
+
+async function waitForCreditCardSection(page) {
+  await page.waitForFunction(
+    () => {
+      const text = document.querySelector('#cashier')?.textContent ?? '';
+      return /信用卡|credit card/i.test(text);
+    },
+    null,
+    { timeout: 5_000 },
+  );
 }
 
 async function setLegacyAntTableScrollLeft(page, position) {
@@ -8319,6 +8601,14 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     },
   );
 
+  await page.route('https://js.stripe.com/v3**', (route) => {
+    route.fulfill({
+      body: stripeFixtureScript(),
+      contentType: 'application/javascript',
+      status: 200,
+    });
+  });
+
   await page.route('**/monitor/api/stats', (route) => {
     fulfillPlainJson(route, { status: 'running' });
   });
@@ -8377,6 +8667,15 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         requestData,
       ];
     }
+    if (pathname === '/api/v1/user/transfer') {
+      page.__visualParityLastUserTransfer = requestData;
+      page.__visualParityUserTransferCount =
+        (page.__visualParityUserTransferCount ?? 0) + 1;
+      page.__visualParityUserTransferRequests = [
+        ...(page.__visualParityUserTransferRequests ?? []),
+        requestData,
+      ];
+    }
     if (pathname === '/api/v1/user/order/save') {
       page.__visualParityLastUserOrderSave = requestData;
       page.__visualParityUserOrderSaveCount = (page.__visualParityUserOrderSaveCount ?? 0) + 1;
@@ -8388,6 +8687,23 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     if (pathname === '/api/v1/user/order/fetch') {
       page.__visualParityUserOrderFetchCount =
         (page.__visualParityUserOrderFetchCount ?? 0) + 1;
+    }
+    if (pathname === '/api/v1/user/order/checkout') {
+      page.__visualParityLastUserOrderCheckout = requestData;
+      page.__visualParityUserOrderCheckoutCount =
+        (page.__visualParityUserOrderCheckoutCount ?? 0) + 1;
+      page.__visualParityUserOrderCheckoutRequests = [
+        ...(page.__visualParityUserOrderCheckoutRequests ?? []),
+        requestData,
+      ];
+    }
+    if (pathname === '/api/v1/user/comm/getStripePublicKey') {
+      page.__visualParityUserStripePublicKeyCount =
+        (page.__visualParityUserStripePublicKeyCount ?? 0) + 1;
+      page.__visualParityUserStripePublicKeyRequests = [
+        ...(page.__visualParityUserStripePublicKeyRequests ?? []),
+        requestData,
+      ];
     }
     if (pathname === '/api/v1/user/ticket/fetch') {
       page.__visualParityUserTicketFetchCount =
@@ -8408,6 +8724,15 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         (page.__visualParityUserTicketSaveCount ?? 0) + 1;
       page.__visualParityUserTicketSaveRequests = [
         ...(page.__visualParityUserTicketSaveRequests ?? []),
+        requestData,
+      ];
+    }
+    if (pathname === '/api/v1/user/ticket/withdraw') {
+      page.__visualParityLastUserWithdraw = requestData;
+      page.__visualParityUserWithdrawCount =
+        (page.__visualParityUserWithdrawCount ?? 0) + 1;
+      page.__visualParityUserWithdrawRequests = [
+        ...(page.__visualParityUserWithdrawRequests ?? []),
         requestData,
       ];
     }
@@ -8575,11 +8900,20 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     if (pathname === '/api/v1/user/changePassword' && interaction.delayUserChangePasswordMs) {
       await delay(interaction.delayUserChangePasswordMs);
     }
+    if (pathname === '/api/v1/user/transfer' && interaction.delayUserTransferMs) {
+      await delay(interaction.delayUserTransferMs);
+    }
+    if (pathname === '/api/v1/user/order/checkout' && interaction.delayUserOrderCheckoutMs) {
+      await delay(interaction.delayUserOrderCheckoutMs);
+    }
     if (pathname === '/api/v1/user/ticket/reply' && interaction.delayUserTicketReplyMs) {
       await delay(interaction.delayUserTicketReplyMs);
     }
     if (pathname === '/api/v1/user/ticket/save' && interaction.delayUserTicketSaveMs) {
       await delay(interaction.delayUserTicketSaveMs);
+    }
+    if (pathname === '/api/v1/user/ticket/withdraw' && interaction.delayUserWithdrawMs) {
+      await delay(interaction.delayUserWithdrawMs);
     }
     if (adminEndpoint === '/ticket/reply' && interaction.delayAdminTicketReplyMs) {
       await delay(interaction.delayAdminTicketReplyMs);
@@ -8792,6 +9126,8 @@ function apiFixtureResponse(
       return body(true, { type: 1, value: 1234 });
     case '/api/v1/user/changePassword':
       return body(true);
+    case '/api/v1/user/transfer':
+      return body(true);
     case '/api/v1/user/resetSecurity':
       return body('VISUAL-RESET-UUID');
     case '/api/v1/user/unbindTelegram':
@@ -8826,6 +9162,19 @@ function apiFixtureResponse(
       return body(true);
     case '/api/v1/user/order/getPaymentMethod':
       return body(paymentMethodFixtures);
+    case '/api/v1/user/order/checkout': {
+      const methodId = Number(requestData?.method);
+      if (methodId === 2) {
+        return body('stripe-accepted', { type: 1 });
+      }
+      if (methodId === 3) {
+        return body(
+          interaction.checkoutRedirectUrl ?? '/#/order/VISUAL2026110001?cashier=visual',
+          { type: 1 },
+        );
+      }
+      return body('https://pay.example.test/qr/VISUAL2026110001', { type: 0 });
+    }
     case '/api/v1/user/order/check':
       return body(0);
     case '/api/v1/user/coupon/check':
@@ -8846,6 +9195,8 @@ function apiFixtureResponse(
       return body(true);
     case '/api/v1/user/ticket/reply':
       return body(true);
+    case '/api/v1/user/ticket/withdraw':
+      return body(true);
     case '/api/v1/user/knowledge/fetch':
       return body(
         requestUrl.searchParams.has('id')
@@ -8864,6 +9215,8 @@ function apiFixtureResponse(
             }
           : userCommConfigFixture,
       );
+    case '/api/v1/user/comm/getStripePublicKey':
+      return body('pk_test_visual_parity');
     case '/api/v1/user/telegram/getBotInfo':
       return body({ username: 'legacy_bot' });
     default:
@@ -8908,6 +9261,61 @@ function fulfillPlainJson(route, data) {
     contentType: 'application/json',
     status: 200,
   });
+}
+
+function stripeFixtureScript() {
+  return `
+(() => {
+  window.Stripe = function Stripe() {
+    let lastElement = null;
+    const createElement = () => {
+      const handlers = new Map();
+      const fire = (event, payload) => {
+        const eventHandlers = handlers.get(event) || [];
+        eventHandlers.forEach((handler) => handler(payload));
+      };
+      return {
+        blur() {},
+        clear() {},
+        destroy() {},
+        focus() {},
+        mount(target) {
+          const element = document.createElement('div');
+          element.className = 'StripeElement';
+          target.appendChild(element);
+          fire('ready', {});
+        },
+        off(event, handler) {
+          const eventHandlers = handlers.get(event) || [];
+          handlers.set(event, eventHandlers.filter((item) => item !== handler));
+        },
+        on(event, handler) {
+          handlers.set(event, [...(handlers.get(event) || []), handler]);
+        },
+        unmount() {},
+        update() {},
+      };
+    };
+    return {
+      _registerWrapper() {},
+      elements() {
+        return {
+          getElement() {
+            return lastElement;
+          },
+          create() {
+            lastElement = createElement();
+            return lastElement;
+          },
+        };
+      },
+      createToken() {
+        return Promise.resolve({});
+      },
+    };
+  };
+})();
+`;
 }
 
 async function gotoStable(page, url) {
