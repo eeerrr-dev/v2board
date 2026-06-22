@@ -312,6 +312,47 @@ const interactionScenarios = [
     scenarioLabel: 'user-dashboard',
   },
   {
+    label: 'user-dashboard-subscribe-import-ios-ua',
+    run: runDashboardSubscribeImportLinksInteractionFor([
+      'Hiddify',
+      'Sing-box',
+      'Shadowrocket',
+      'QuantumultX',
+      'Surge',
+      'Stash',
+    ]),
+    scenarioLabel: 'user-dashboard',
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  },
+  {
+    label: 'user-dashboard-subscribe-import-android-ua',
+    run: runDashboardSubscribeImportLinksInteractionFor([
+      'Hiddify',
+      'Sing-box',
+      'NekoBox For Android',
+      'ClashMeta For Android',
+      'Surfboard',
+    ]),
+    scenarioLabel: 'user-dashboard',
+    userAgent:
+      'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
+  },
+  {
+    label: 'user-dashboard-subscribe-import-macos-ua',
+    run: runDashboardSubscribeImportLinksInteractionFor(['Hiddify', 'Sing-box', 'ClashX']),
+    scenarioLabel: 'user-dashboard',
+    userAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  },
+  {
+    label: 'user-dashboard-subscribe-import-windows-ua',
+    run: runDashboardSubscribeImportLinksInteractionFor(['Hiddify', 'Sing-box', 'ClashMeta']),
+    scenarioLabel: 'user-dashboard',
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  },
+  {
     label: 'user-dashboard-notice-carousel',
     run: runDashboardNoticeCarouselInteraction,
     scenarioLabel: 'user-dashboard',
@@ -814,6 +855,19 @@ const newPeriodSubscribeFixture = {
   reset_day: 0,
   u: 550 * 1024 * 1024 * 1024,
 };
+const subscribeTargetTitles = [
+  'Hiddify',
+  'Sing-box',
+  'Shadowrocket',
+  'QuantumultX',
+  'Surge',
+  'Stash',
+  'ClashX',
+  'ClashMeta',
+  'NekoBox For Android',
+  'ClashMeta For Android',
+  'Surfboard',
+];
 const planFixtures = [
   {
     capacity_limit: null,
@@ -2233,7 +2287,10 @@ async function runInteractionTargetWithFreshBrowser(url, scenario, interaction, 
 }
 
 async function runInteractionTarget(browser, url, scenario, interaction, viewport, target) {
-  const context = await browser.newContext({ viewport });
+  const context = await browser.newContext({
+    viewport,
+    ...(interaction.userAgent ? { userAgent: interaction.userAgent } : {}),
+  });
   const page = await context.newPage();
   try {
     await preparePageForInteraction(page, url, scenario, target, interaction);
@@ -2436,16 +2493,22 @@ async function runDashboardSubscribeDrawerInteraction(page) {
 }
 
 async function runDashboardSubscribeImportLinksInteraction(page) {
-  const before = await dashboardSubscribeImportLinksState(page);
-  await clickVisibleAt(page, '.v2board-shortcuts-item', 1);
-  await page.waitForSelector('.oneClickSubscribe___2t9Xg', {
-    state: 'visible',
-    timeout: 5_000,
-  });
-  await page.waitForTimeout(350);
-  const opened = await dashboardSubscribeImportLinksState(page);
+  return await runDashboardSubscribeImportLinksInteractionFor(['Hiddify', 'Sing-box'])(page);
+}
 
-  return { before, opened };
+function runDashboardSubscribeImportLinksInteractionFor(expectedTargets) {
+  return async (page) => {
+    const before = await dashboardSubscribeImportLinksState(page);
+    await clickVisibleAt(page, '.v2board-shortcuts-item', 1);
+    await page.waitForSelector('.oneClickSubscribe___2t9Xg', {
+      state: 'visible',
+      timeout: 5_000,
+    });
+    await page.waitForTimeout(350);
+    const opened = await dashboardSubscribeImportLinksState(page);
+
+    return { before, expectedTargets, opened };
+  };
 }
 
 async function runDashboardNoticeCarouselInteraction(page) {
@@ -4933,6 +4996,21 @@ function jsonIncludesAny(value, candidates) {
   return candidates.some((candidate) => json.includes(candidate));
 }
 
+function dashboardSubscribeTargetsMatch(result) {
+  const expectedTargets = result.expectedTargets ?? [];
+  const itemTexts = result.opened?.itemTexts ?? [];
+  const presentTargets = subscribeTargetTitles.filter((target) =>
+    itemTexts.some((text) => text.endsWith(target)),
+  );
+  return (
+    result.before?.boxCount === 0 &&
+    result.opened?.boxCount >= 1 &&
+    Boolean(result.opened?.drawerOpenCount || result.opened?.modalCount) &&
+    expectedTargets.every((target) => presentTargets.includes(target)) &&
+    presentTargets.every((target) => expectedTargets.includes(target))
+  );
+}
+
 function clonePageRequests(requests = []) {
   return (requests ?? []).map((request) =>
     request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
@@ -5156,6 +5234,13 @@ function assertUsefulInteraction(label, result) {
       ))
   ) {
     throw new Error(`dashboard subscribe import links did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label.startsWith('user-dashboard-subscribe-import-') &&
+    label.endsWith('-ua') &&
+    !dashboardSubscribeTargetsMatch(result)
+  ) {
+    throw new Error(`dashboard subscribe UA targets did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'user-dashboard-notice-carousel' &&
@@ -7238,6 +7323,7 @@ async function dashboardSubscribeImportLinksState(page) {
     modalCount: await visibleCount(page, '.ant-modal'),
     shortcutTexts: await visibleTexts(page, '.v2board-shortcuts-item', 4),
     tutorialButtons: await visibleTexts(page, '.oneClickSubscribe___2t9Xg .ant-btn', 2),
+    userAgent: await page.evaluate(() => window.navigator.userAgent),
   };
 }
 
