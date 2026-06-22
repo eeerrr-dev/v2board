@@ -139,6 +139,32 @@ describe('createApiClient', () => {
     expect((result as { type?: unknown }).type).toBeUndefined();
   });
 
+  it('keeps checkout transport failures out of the global legacy error hook', async () => {
+    const onError = vi.fn();
+    const client = createApiClient({ baseURL: '/api/v1', onError });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/user/order/checkout').networkError();
+
+    await expect(userEndpoints.checkoutOrder(client, { trade_no: 'T1', method: 1 })).rejects.toMatchObject({
+      status: 0,
+      message: 'Network Error',
+    });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('keeps non-checkout transport failures on the global legacy error hook', async () => {
+    const onError = vi.fn();
+    const client = createApiClient({ baseURL: '/api/v1', onError });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onGet('/test').networkError();
+
+    await expect(client.request({ url: '/test', method: 'GET' })).rejects.toMatchObject({
+      status: 0,
+      message: 'Network Error',
+    });
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
   it('keeps invite detail totals as the direct envelope field', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);

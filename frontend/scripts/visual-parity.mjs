@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { deflateSync, inflateSync } from 'node:zlib';
-import { chromium } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
 
 // Oracle-only parity harness.
 // This script reads packaged assets only from Docker /tmp so restored source can
@@ -27,9 +27,12 @@ const parityMode = process.env.VISUAL_PARITY_MODE ?? 'screenshots';
 const scenarioFilter = process.env.VISUAL_PARITY_FILTER ?? '';
 const viewportFilter = process.env.VISUAL_PARITY_VIEWPORT_FILTER ?? '';
 const browserMode = process.env.VISUAL_PARITY_FRESH_BROWSER ?? 'auto';
+const browserName = process.env.VISUAL_PARITY_BROWSER ?? 'chromium';
 const navigationAttempts = Number(process.env.VISUAL_PARITY_NAVIGATION_ATTEMPTS ?? '3');
 const navigationTimeout = Number(process.env.VISUAL_PARITY_NAVIGATION_TIMEOUT ?? '45000');
 const fontWaitTimeout = Number(process.env.VISUAL_PARITY_FONT_WAIT_TIMEOUT ?? '5000');
+const browserTypes = { chromium, firefox, webkit };
+const browserType = browserTypes[browserName];
 const LEGACY_GB_BYTES = 1_073_741_824;
 const crc32Table = Array.from({ length: 256 }, (_, value) => {
   let current = value;
@@ -49,6 +52,14 @@ const scenarios = [
     label: 'user-dashboard',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    forceUserUnauthorized: true,
+    label: 'user-dashboard-session-expired',
+    path: '/#/dashboard',
+    postReadyDelay: 300,
+    readySelector: '.v2board-auth-box',
   },
   {
     authenticated: true,
@@ -100,6 +111,14 @@ const scenarios = [
   },
   {
     authenticated: true,
+    label: 'user-plans-long-data',
+    longData: true,
+    path: '/#/plan',
+    postReadyDelay: 300,
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
     label: 'user-plans-sold-out',
     path: '/#/plan',
     readySelector: '.block-link-pop button[disabled]',
@@ -133,6 +152,14 @@ const scenarios = [
   },
   {
     authenticated: true,
+    label: 'user-orders-long-data',
+    longData: true,
+    path: '/#/order',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
     emptyOrders: true,
     label: 'user-orders-empty',
     path: '/#/order',
@@ -148,6 +175,14 @@ const scenarios = [
     authenticated: true,
     label: 'user-node',
     path: '/#/node',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-long-data',
+    longData: true,
+    path: '/#/node',
+    postReadyDelay: 300,
     readySelector: '.ant-table-tbody tr',
   },
   {
@@ -186,6 +221,14 @@ const scenarios = [
     authenticated: true,
     label: 'user-ticket-detail',
     path: '/#/ticket/7',
+    readySelector: '.js-chat-input',
+  },
+  {
+    authenticated: true,
+    label: 'user-ticket-detail-long-thread',
+    longData: true,
+    path: '/#/ticket/7',
+    postReadyDelay: 300,
     readySelector: '.js-chat-input',
   },
   {
@@ -405,6 +448,15 @@ const scenarios = [
   },
   {
     authenticated: true,
+    forceAdminUnauthorized: true,
+    forceCheckLoginNotAdmin: true,
+    label: 'admin-dashboard-session-expired',
+    path: `/${adminPath}#/dashboard`,
+    postReadyDelay: 300,
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    authenticated: true,
     darkMode: true,
     label: 'admin-dashboard-dark',
     path: `/${adminPath}#/dashboard`,
@@ -431,8 +483,28 @@ const scenarios = [
   },
   {
     authenticated: true,
+    label: 'admin-orders-long-data',
+    longData: true,
+    path: `/${adminPath}#/order`,
+    postReadyDelay: 500,
+    readySelector: '.ant-table-tbody tr',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
+    authenticated: true,
     label: 'admin-users',
     path: `/${adminPath}#/user`,
+    readySelector: '.ant-table-tbody tr',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
+    authenticated: true,
+    label: 'admin-users-long-data',
+    longData: true,
+    path: `/${adminPath}#/user`,
+    postReadyDelay: 500,
     readySelector: '.ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
@@ -490,6 +562,16 @@ const scenarios = [
     label: 'admin-server-manage',
     path: `/${adminPath}#/server/manage`,
     postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/server/group`,
+  },
+  {
+    authenticated: true,
+    label: 'admin-server-manage-long-data',
+    longData: true,
+    path: `/${adminPath}#/server/manage`,
+    postReadyDelay: 500,
     readySelector: '.ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/server/group`,
@@ -560,6 +642,11 @@ const interactionScenarios = [
     label: 'user-dashboard-header-language-dropdown',
     run: runDashboardHeaderLanguageDropdownInteraction,
     scenarioLabel: 'user-dashboard',
+  },
+  {
+    label: 'user-session-expired-redirect',
+    run: runSessionExpiredRedirectInteraction,
+    scenarioLabel: 'user-dashboard-session-expired',
   },
   {
     label: 'user-dashboard-avatar-dropdown',
@@ -735,6 +822,12 @@ const interactionScenarios = [
     scenarioLabel: 'user-order-detail',
   },
   {
+    label: 'user-order-checkout-network-failure',
+    orderCheckoutNetworkError: true,
+    run: runOrderCheckoutFailureInteraction,
+    scenarioLabel: 'user-order-detail',
+  },
+  {
     label: 'user-order-stripe-disabled-checkout',
     run: runOrderStripeDisabledCheckoutInteraction,
     scenarioLabel: 'user-order-detail',
@@ -849,6 +942,12 @@ const interactionScenarios = [
     scenarioLabel: 'admin-dashboard',
   },
   {
+    label: 'admin-session-expired-redirect',
+    run: runSessionExpiredRedirectInteraction,
+    scenarioLabel: 'admin-dashboard-session-expired',
+    viewports: ['desktop'],
+  },
+  {
     label: 'admin-dashboard-commission-shortcut',
     run: runAdminDashboardCommissionShortcutInteraction,
     scenarioLabel: 'admin-dashboard',
@@ -903,6 +1002,16 @@ const interactionScenarios = [
   {
     label: 'admin-server-vless-reality-matrix',
     run: runAdminServerVlessRealityMatrixInteraction,
+    scenarioLabel: 'admin-server-manage',
+  },
+  {
+    label: 'admin-server-protocol-field-matrix',
+    run: runAdminServerProtocolFieldMatrixInteraction,
+    scenarioLabel: 'admin-server-manage',
+  },
+  {
+    label: 'admin-server-v2node-protocol-matrix',
+    run: runAdminServerV2nodeProtocolMatrixInteraction,
     scenarioLabel: 'admin-server-manage',
   },
   {
@@ -1728,22 +1837,25 @@ const adminQueueWorkloadFixtures = [
 const adminOrderStatFixtures = [];
 const adminServerRankFixtures = [];
 const adminUserRankFixtures = [];
-const adminPlanStoreFixtures = planFixtures.map((plan) => {
-  const next = { ...plan };
-  for (const key of [
-    'month_price',
-    'quarter_price',
-    'half_year_price',
-    'year_price',
-    'two_year_price',
-    'three_year_price',
-    'onetime_price',
-    'reset_price',
-  ]) {
-    next[key] = next[key] !== null ? next[key] / 100 : null;
-  }
-  return next;
-});
+const adminPlanStoreFixtures = toAdminPlanStoreFixtures(planFixtures);
+function toAdminPlanStoreFixtures(plans) {
+  return plans.map((plan) => {
+    const next = { ...plan };
+    for (const key of [
+      'month_price',
+      'quarter_price',
+      'half_year_price',
+      'year_price',
+      'two_year_price',
+      'three_year_price',
+      'onetime_price',
+      'reset_price',
+    ]) {
+      next[key] = next[key] !== null ? next[key] / 100 : null;
+    }
+    return next;
+  });
+}
 const adminServerGroupFixtures = [
   {
     created_at: 1_700_000_000,
@@ -1928,16 +2040,19 @@ const adminUserFixtures = [
     uuid: 'expired-user-uuid',
   },
 ];
-const adminUserStoreFixtures = adminUserFixtures.map((user) => ({
-  ...user,
-  balance: legacyScaledFixed(user.balance, 100),
-  commission_balance: legacyScaledFixed(user.commission_balance, 100),
-  d: legacyScaledFixed(user.d, LEGACY_GB_BYTES),
-  password: '',
-  total_used: legacyScaledFixed(user.total_used, LEGACY_GB_BYTES),
-  transfer_enable: legacyScaledFixed(user.transfer_enable, LEGACY_GB_BYTES),
-  u: legacyScaledFixed(user.u, LEGACY_GB_BYTES),
-}));
+const adminUserStoreFixtures = toAdminUserStoreFixtures(adminUserFixtures);
+function toAdminUserStoreFixtures(users) {
+  return users.map((user) => ({
+    ...user,
+    balance: legacyScaledFixed(user.balance, 100),
+    commission_balance: legacyScaledFixed(user.commission_balance, 100),
+    d: legacyScaledFixed(user.d, LEGACY_GB_BYTES),
+    password: '',
+    total_used: legacyScaledFixed(user.total_used, LEGACY_GB_BYTES),
+    transfer_enable: legacyScaledFixed(user.transfer_enable, LEGACY_GB_BYTES),
+    u: legacyScaledFixed(user.u, LEGACY_GB_BYTES),
+  }));
+}
 const adminTicketFixtures = [
   {
     created_at: 1_700_000_000,
@@ -1994,6 +2109,109 @@ const adminTicketFixtures = [
   },
 ];
 const adminTicketDetailFixture = { ...adminTicketFixtures[0], user_id: null };
+const longDataText =
+  'Very Long Legacy Parity Name With Many Segments 2026 Enterprise International Edge Case';
+const longPlanFixtures = Array.from({ length: 6 }, (_, index) => ({
+  ...planFixtures[index % planFixtures.length],
+  capacity_limit: index % 2 === 0 ? 9999 : null,
+  content: `<p>${longDataText} plan body ${index + 1}</p><p>Multiple long benefit lines should wrap like legacy.</p>`,
+  count: 900 + index,
+  id: 100 + index,
+  month_price: 990 + index * 111,
+  name: `${longDataText} Plan ${index + 1}`,
+  sort: index + 1,
+  transfer_enable: 10_000 + index * 1000,
+}));
+const longOrderFixtures = Array.from({ length: 12 }, (_, index) => ({
+  ...orderFixtures[index % orderFixtures.length],
+  created_at: 1_700_000_000 + index * 86_400,
+  period: index % 2 === 0 ? 'month_price' : 'year_price',
+  plan: longPlanFixtures[index % longPlanFixtures.length],
+  plan_id: longPlanFixtures[index % longPlanFixtures.length].id,
+  status: index % 4,
+  total_amount: 990 + index * 1234,
+  trade_no: `VISUALLONG2026${String(index + 1).padStart(4, '0')}`,
+  updated_at: 1_700_000_000 + index * 86_400 + 3600,
+}));
+const longUserServerFixtures = Array.from({ length: 10 }, (_, index) => ({
+  ...serverFixtures[index % serverFixtures.length],
+  cache_key: `long-server-${index + 1}`,
+  host: `very-long-node-hostname-${index + 1}.international-edge-parity.example.test`,
+  id: 100 + index,
+  is_online: index % 3 === 0 ? 0 : 1,
+  name: `${longDataText} Node ${index + 1}`,
+  port: 10_000 + index,
+  rate: String(1 + index / 10),
+  tags: ['IEPL', 'Netflix', 'Long Region Tag', `Region-${index + 1}`],
+  type: index % 2 === 0 ? 'shadowsocks' : 'trojan',
+}));
+const longTicketFixtures = Array.from({ length: 10 }, (_, index) => ({
+  ...ticketFixtures[index % ticketFixtures.length],
+  id: 100 + index,
+  level: index % 3,
+  reply_status: index % 2,
+  status: index % 4 === 0 ? 1 : 0,
+  subject: `${longDataText} Ticket Subject ${index + 1}`,
+  updated_at: 1_700_000_000 + index * 7200,
+}));
+const longTicketDetailFixture = {
+  ...ticketDetailFixture,
+  subject: `${longDataText} Ticket Detail Subject`,
+  message: Array.from({ length: 10 }, (_, index) => ({
+    created_at: 1_700_000_000 + index * 600,
+    is_me: index % 2,
+    message: `${longDataText} message bubble ${index + 1}. This message intentionally contains a long sentence to verify legacy wrapping and scroll behavior.`,
+  })),
+};
+const longAdminServerNodeFixtures = Array.from({ length: 12 }, (_, index) => ({
+  ...adminServerNodeFixtures[index % adminServerNodeFixtures.length],
+  available_status: index % 3,
+  group_id: ['1'],
+  host: `long-admin-node-${index + 1}.operations-control-plane.example.test`,
+  id: 100 + index,
+  is_online: index % 2,
+  name: `${longDataText} Admin Node ${index + 1}`,
+  online: 100 + index,
+  port: 20_000 + index,
+  rate: String(1 + index / 5),
+  route_id: [1, 2],
+  server_port: 30_000 + index,
+  show: index % 2,
+  type: ['shadowsocks', 'vmess', 'trojan', 'vless'][index % 4],
+}));
+const longAdminOrderFixtures = Array.from({ length: 12 }, (_, index) => ({
+  ...adminOrderFixtures[index % adminOrderFixtures.length],
+  created_at: 1_700_000_000 + index * 43_200,
+  id: 100 + index,
+  plan_id: longPlanFixtures[index % longPlanFixtures.length].id,
+  plan_name: `${longDataText} Admin Order Plan ${index + 1}`,
+  status: index % 4,
+  total_amount: 990 + index * 2345,
+  trade_no: `ADMINLONG2026${String(index + 1).padStart(4, '0')}`,
+  updated_at: 1_700_000_000 + index * 43_200 + 1800,
+  user_id: 100 + index,
+}));
+const longAdminUserFixtures = Array.from({ length: 12 }, (_, index) => ({
+  ...adminUserFixtures[index % adminUserFixtures.length],
+  alive_ip: index,
+  balance: 999_999 + index,
+  banned: index % 5 === 0 ? 1 : 0,
+  commission_balance: 123_456 + index,
+  d: 1024 * 1024 * 1024 * (index + 1),
+  email: `very.long.user.identity.${index + 1}.for.parity.matrix@example-operations.test`,
+  expired_at: 1_893_456_000 + index * 86_400,
+  group_id: 1,
+  id: 100 + index,
+  ips: `203.0.113.${index + 1}, 2001:db8::${index + 1}`,
+  plan_id: longPlanFixtures[index % longPlanFixtures.length].id,
+  plan_name: `${longDataText} User Plan ${index + 1}`,
+  subscribe_url: `https://example.com/api/v1/client/subscribe?token=long-user-${index + 1}`,
+  token: `long-user-token-${index + 1}`,
+  total_used: 1024 * 1024 * 1024 * (index + 5),
+  transfer_enable: 1024 * 1024 * 1024 * (index + 50),
+  u: 1024 * 1024 * 1024 * (index + 2),
+  uuid: `long-user-uuid-${index + 1}`,
+}));
 const adminPaymentFixtures = [
   {
     config: {
@@ -2185,6 +2403,12 @@ const chromiumArgs = [
   '--no-sandbox',
 ];
 
+function launchBrowser() {
+  const launchOptions =
+    browserName === 'chromium' ? { args: chromiumArgs, headless: true } : { headless: true };
+  return browserType.launch(launchOptions);
+}
+
 function shouldUseFreshBrowser(scenario, viewport) {
   if (['0', 'false', 'shared'].includes(browserMode)) {
     return false;
@@ -2206,6 +2430,10 @@ if (!selectedViewports.length) {
   throw new Error(
     `No visual parity viewports matched VISUAL_PARITY_VIEWPORT_FILTER=${viewportFilter}`,
   );
+}
+
+if (!browserType) {
+  throw new Error(`Unsupported VISUAL_PARITY_BROWSER=${browserName}`);
 }
 const metricSelectors = [
   'body',
@@ -2402,7 +2630,7 @@ try {
       await writeReport();
       if (result.diffRatio > maxDiffRatio || result.averageDelta > maxAverageDelta) {
         failures.push(
-          `${result.label}/${result.viewport}: diff ${(result.diffRatio * 100).toFixed(2)}%, ` +
+          `${result.label}/${result.viewport}/${result.browser}: diff ${(result.diffRatio * 100).toFixed(2)}%, ` +
             `average delta ${result.averageDelta.toFixed(2)}`,
         );
       }
@@ -2423,21 +2651,21 @@ if (failures.length) {
 console.log('Visual parity OK: source screenshots match the packaged oracle threshold.');
 for (const item of report) {
   console.log(
-    `  ${item.label}/${item.viewport}: diff ${(item.diffRatio * 100).toFixed(3)}%, ` +
+    `  ${item.label}/${item.viewport}/${item.browser}: diff ${(item.diffRatio * 100).toFixed(3)}%, ` +
       `average delta ${item.averageDelta.toFixed(3)}`,
   );
 }
 console.log(`Artifacts: ${artifactDir}`);
 
 async function compareScenario(oracleBaseUrl, scenario, viewport) {
-  const name = `${scenario.label}-${viewport.label}`;
+  const name = `${scenario.label}-${viewport.label}-${browserName}`;
   const useFreshBrowser = shouldUseFreshBrowser(scenario, viewport);
 
   let sourceCapture;
   let oracleCapture;
 
   if (!useFreshBrowser) {
-    const browser = await chromium.launch({ args: chromiumArgs, headless: true });
+    const browser = await launchBrowser();
     try {
       try {
         sourceCapture = await captureScenario(
@@ -2536,6 +2764,7 @@ async function compareScenario(oracleBaseUrl, scenario, viewport) {
 
   return {
     averageDelta: diff.averageDelta,
+    browser: browserName,
     diffPixels: diff.diffPixelCount,
     diffRatio: diff.diffRatio,
     height: diff.height,
@@ -2596,7 +2825,10 @@ async function runInteractionParity(oracleBaseUrl) {
 
   for (const interaction of selectedInteractions) {
     const scenario = scenarioByLabel(interaction.scenarioLabel);
-    for (const viewport of selectedViewports) {
+    const interactionViewports = interaction.viewports
+      ? selectedViewports.filter((viewport) => interaction.viewports.includes(viewport.label))
+      : selectedViewports;
+    for (const viewport of interactionViewports) {
       const name = `${interaction.label}-${viewport.label}`;
       let sourceResult;
       let oracleResult;
@@ -2621,6 +2853,7 @@ async function runInteractionParity(oracleBaseUrl) {
 
       const passed = stableJson(sourceResult) === stableJson(oracleResult);
       const item = {
+        browser: browserName,
         interaction: interaction.label,
         oracle: oracleResult,
         passed,
@@ -2646,13 +2879,13 @@ async function runInteractionParity(oracleBaseUrl) {
 
   console.log('Interaction parity OK: source interactions match the packaged oracle.');
   for (const item of report) {
-    console.log(`  ${item.interaction}/${item.viewport}: OK`);
+    console.log(`  ${item.interaction}/${item.viewport}/${item.browser}: OK`);
   }
   console.log(`Artifacts: ${artifactDir}`);
 }
 
 async function runInteractionTargetWithFreshBrowser(url, scenario, interaction, viewport, target) {
-  const browser = await chromium.launch({ args: chromiumArgs, headless: true });
+  const browser = await launchBrowser();
   try {
     return await runInteractionTarget(browser, url, scenario, interaction, viewport, target);
   } finally {
@@ -2708,17 +2941,17 @@ async function preparePageForInteraction(page, url, scenario, target, interactio
   if (scenario.warmupPath) {
     await gotoStable(page, new URL(scenario.warmupPath, url).toString());
     if (target === 'oracle' && scenario.seedLegacyAdminStore) {
-      await seedLegacyAdminStore(page);
+      await seedLegacyAdminStore(page, scenario);
     }
     await navigateAfterWarmup(page, url);
   } else {
     await gotoStable(page, url);
   }
   if (target === 'oracle' && scenario.seedLegacyAdminStore) {
-    await seedLegacyAdminStore(page);
+    await seedLegacyAdminStore(page, scenario);
   }
   if (scenario.readySelector) {
-    await page.waitForSelector(scenario.readySelector, { state: 'visible', timeout: 10_000 });
+    await waitForReadySelector(page, scenario.readySelector, diagnostics);
   }
   if (scenario.postReadyDelay) {
     await page.waitForTimeout(scenario.postReadyDelay);
@@ -2796,6 +3029,54 @@ async function runDashboardHeaderLanguageDropdownInteraction(page) {
   await waitForVisibleText(page, '.ant-dropdown-menu-item', 'English');
   await page.waitForTimeout(150);
   return languageDropdownPlacementState(page);
+}
+
+async function runSessionExpiredRedirectInteraction(page) {
+  await page.waitForFunction(
+    () =>
+      window.location.hash.includes('/login') &&
+      Boolean(document.querySelector('.v2board-auth-box')),
+    { timeout: 5_000 },
+  );
+  return readSessionExpiredRedirectState(page);
+}
+
+async function readSessionExpiredRedirectState(page) {
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await page.waitForLoadState('domcontentloaded', { timeout: 2_000 }).catch(() => undefined);
+    await page.waitForLoadState('networkidle', { timeout: 2_000 }).catch(() => undefined);
+    await page.waitForTimeout(150);
+    try {
+      return await page.evaluate(() => {
+        const visibleText = (selector, limit) =>
+          Array.from(document.querySelectorAll(selector))
+            .filter((element) => {
+              const rect = element.getBoundingClientRect();
+              const style = window.getComputedStyle(element);
+              return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+            })
+            .slice(0, limit)
+            .map((element) => (element.textContent ?? '').trim().replace(/\s+/g, ' '))
+            .filter(Boolean);
+        return {
+          authData: window.localStorage.getItem('authorization'),
+          hash: window.location.hash,
+          loginBoxCount: document.querySelectorAll('.v2board-auth-box').length,
+          titleTexts: visibleText(
+            '.v2board-auth-box h1, .v2board-auth-box h2, .v2board-auth-box h3',
+            4,
+          ),
+        };
+      });
+    } catch (error) {
+      lastError = error;
+      if (!String(error?.message ?? error).includes('Execution context was destroyed')) {
+        throw error;
+      }
+    }
+  }
+  throw lastError ?? new Error('Unable to read session expired redirect state');
 }
 
 async function runUserDashboardAvatarDropdownInteraction(page) {
@@ -4146,6 +4427,62 @@ async function runAdminThemeSettingsInteraction(page) {
   return { closed, opened };
 }
 
+async function openAdminServerNodeDrawerForType(page, typeLabel) {
+  await page.locator('.v2board-table-action .ant-dropdown-trigger').first().hover();
+  await page.waitForTimeout(150);
+  await clickFirstVisible(page, '.v2board-table-action .ant-dropdown-trigger');
+  await waitForVisibleText(page, '.ant-dropdown-menu-item', typeLabel);
+  const menuOpened = await adminServerNodeDrawerState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', [typeLabel]);
+  await page.waitForSelector('.ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-drawer-title', '新建节点');
+  await page.mouse.move(1, 1);
+  await page.waitForTimeout(150);
+  return { menuOpened, opened: await adminServerNodeDrawerState(page) };
+}
+
+async function closeAdminServerNodeDrawer(page) {
+  await closeVisibleAdminServerDrawers(page);
+  return adminServerNodeDrawerState(page);
+}
+
+async function closeVisibleAdminServerDrawers(page) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if ((await visibleCount(page, '.ant-drawer-open')) === 0) {
+      await page.waitForTimeout(100);
+      return;
+    }
+    const clicked = await page.evaluate(() => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      };
+      const buttons = Array.from(document.querySelectorAll('.ant-drawer-open .ant-drawer-close'))
+        .filter(isVisible)
+        .sort((left, right) => left.getBoundingClientRect().x - right.getBoundingClientRect().x);
+      const button = buttons.at(-1);
+      if (!(button instanceof HTMLElement)) return false;
+      button.click();
+      return true;
+    });
+    if (!clicked) break;
+    await page.waitForTimeout(250);
+  }
+  const remaining = await visibleCount(page, '.ant-drawer-open');
+  if (remaining > 0) {
+    throw new Error(`Timed out closing admin server drawers; ${remaining} remained visible`);
+  }
+}
+
 async function runAdminServerCreateNodeDrawerInteraction(page) {
   const before = await adminServerNodeDrawerState(page);
   await page.locator('.v2board-table-action .ant-dropdown-trigger').first().hover();
@@ -4228,6 +4565,139 @@ async function runAdminServerVlessRealityMatrixInteraction(page) {
       structuredClone(request),
     ),
   };
+}
+
+async function runAdminServerProtocolFieldMatrixInteraction(page) {
+  const snapshots = {};
+  const mark = (step) => page.__visualParityDiagnostics?.push(`protocol matrix: ${step}`);
+
+  {
+    mark('open Shadowsocks');
+    const { menuOpened, opened } = await openAdminServerNodeDrawerForType(page, 'Shadowsocks');
+    mark('Shadowsocks select HTTP obfs');
+    await selectLegacyFormOption(page, '.ant-drawer-open', '混淆', ['HTTP']);
+    snapshots.shadowsocks = {
+      httpObfs: await adminServerNodeDrawerState(page),
+      menuOpened,
+      opened,
+    };
+    mark('close Shadowsocks');
+    snapshots.shadowsocks.closed = await closeAdminServerNodeDrawer(page);
+  }
+
+  {
+    mark('open VMess');
+    const { menuOpened, opened } = await openAdminServerNodeDrawerForType(page, 'VMess');
+    mark('VMess select TLS');
+    await selectLegacyFormOption(page, '.ant-drawer-open', 'TLS', ['支持']);
+    mark('VMess select transport gRPC');
+    await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['gRPC']);
+    snapshots.vmess = {
+      grpcTls: await adminServerNodeDrawerState(page),
+      menuOpened,
+      opened,
+    };
+    mark('close VMess');
+    snapshots.vmess.closed = await closeAdminServerNodeDrawer(page);
+  }
+
+  {
+    mark('open Trojan');
+    const { menuOpened, opened } = await openAdminServerNodeDrawerForType(page, 'Trojan');
+    await fillVisibleAt(page, '.ant-drawer-open .ant-input', 5, 'trojan-sni.example.test');
+    mark('Trojan select allow insecure');
+    await selectLegacyFormOption(page, '.ant-drawer-open', '允许不安全', ['是']);
+    mark('Trojan select WebSocket');
+    await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['WebSocket']);
+    snapshots.trojan = {
+      webSocket: await adminServerNodeDrawerState(page),
+      menuOpened,
+      opened,
+    };
+    mark('close Trojan');
+    snapshots.trojan.closed = await closeAdminServerNodeDrawer(page);
+  }
+
+  {
+    mark('open Hysteria');
+    const { menuOpened, opened } = await openAdminServerNodeDrawerForType(page, 'Hysteria');
+    mark('Hysteria select v2');
+    await selectLegacyFormOption(page, '.ant-drawer-open', 'HYSTERIA版本', ['v2']);
+    mark('Hysteria select salamander');
+    await selectLegacyFormOption(page, '.ant-drawer-open', '混淆方式obfs', ['salamander']);
+    snapshots.hysteria = {
+      hysteria2: await adminServerNodeDrawerState(page),
+      menuOpened,
+      opened,
+    };
+    mark('close Hysteria');
+    snapshots.hysteria.closed = await closeAdminServerNodeDrawer(page);
+  }
+
+  {
+    mark('open Tuic');
+    const { menuOpened, opened } = await openAdminServerNodeDrawerForType(page, 'Tuic');
+    mark('Tuic select disable SNI');
+    await selectLegacyFormOption(page, '.ant-drawer-open', '禁用SNI', ['是']);
+    mark('Tuic select relay mode');
+    await selectLegacyFormOption(page, '.ant-drawer-open', '数据包中继模式', ['quic']);
+    mark('Tuic select congestion');
+    await selectLegacyFormOption(page, '.ant-drawer-open', '拥塞控制算法', ['bbr']);
+    snapshots.tuic = {
+      quic: await adminServerNodeDrawerState(page),
+      menuOpened,
+      opened,
+    };
+    mark('close Tuic');
+    snapshots.tuic.closed = await closeAdminServerNodeDrawer(page);
+  }
+
+  {
+    mark('open AnyTLS');
+    const { menuOpened, opened } = await openAdminServerNodeDrawerForType(page, 'AnyTLS');
+    await fillVisibleAt(page, '.ant-drawer-open .ant-input', 5, 'anytls-sni.example.test');
+    snapshots.anytls = {
+      filled: await adminServerNodeDrawerState(page),
+      menuOpened,
+      opened,
+    };
+    mark('close AnyTLS');
+    snapshots.anytls.closed = await closeAdminServerNodeDrawer(page);
+  }
+
+  return snapshots;
+}
+
+async function runAdminServerV2nodeProtocolMatrixInteraction(page) {
+  const { menuOpened, opened } = await openAdminServerNodeDrawerForType(page, 'V2node');
+  await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['Shadowsocks']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['HTTP伪装']);
+  const shadowsocks = await adminServerNodeDrawerState(page);
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['VLess']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['Reality']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['WebSocket']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '加密方式', ['MLKEM768X25519PLUS']);
+  const vless = await adminServerNodeDrawerState(page);
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['Trojan']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['TLS']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['gRPC']);
+  const trojan = await adminServerNodeDrawerState(page);
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['Hysteria2']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '混淆方式obfs', ['salamander']);
+  const hysteria2 = await adminServerNodeDrawerState(page);
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['Tuic']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '数据包中继模式', ['quic']);
+  const tuic = await adminServerNodeDrawerState(page);
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['AnyTLS']);
+  const anytls = await adminServerNodeDrawerState(page);
+  const closed = await closeAdminServerNodeDrawer(page);
+
+  return { anytls, closed, hysteria2, menuOpened, opened, shadowsocks, trojan, tuic, vless };
 }
 
 async function runAdminServerEditNodeDrawerInteraction(page) {
@@ -5830,7 +6300,34 @@ function normalizeInteractionResult(label, result) {
     const { dropdownItems: _dropdownItems, ...modal } = normalized.modal;
     return { ...normalized, modal };
   }
+  if (
+    label === 'admin-server-protocol-field-matrix' ||
+    label === 'admin-server-v2node-protocol-matrix'
+  ) {
+    return normalizeAdminServerProtocolMatrixResult(normalized);
+  }
   return normalized;
+}
+
+function normalizeAdminServerProtocolMatrixResult(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.filter((item) => item !== ''))].sort((left, right) =>
+      String(left).localeCompare(String(right)),
+    );
+  }
+  if (!value || typeof value !== 'object') return value;
+  const {
+    dropdownCount: _dropdownCount,
+    dropdownItems: _dropdownItems,
+    selectDropdownItems: _selectDropdownItems,
+    tableRows: _tableRows,
+    ...rest
+  } = value;
+  return Object.fromEntries(
+    Object.entries(rest)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, normalizeAdminServerProtocolMatrixResult(nested)]),
+  );
 }
 
 function normalizeSelectDropdownInteractionResult(label, result) {
@@ -5894,6 +6391,13 @@ function assertUsefulInteraction(label, result) {
       !result.items?.includes('繁體中文'))
   ) {
     throw new Error(`dashboard language dropdown did not match legacy placement: ${JSON.stringify(result)}`);
+  }
+  if (
+    (label === 'user-session-expired-redirect' ||
+      label === 'admin-session-expired-redirect') &&
+    (!String(result.hash ?? '').includes('/login') || result.loginBoxCount !== 1)
+  ) {
+    throw new Error(`session expiry did not redirect like legacy: ${JSON.stringify(result)}`);
   }
   if (
     label === 'user-dashboard-avatar-dropdown' &&
@@ -6286,6 +6790,20 @@ function assertUsefulInteraction(label, result) {
       !result.after?.hash?.includes('/order/VISUAL2026110001'))
   ) {
     throw new Error(`order QR checkout failure did not preserve legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'user-order-checkout-network-failure' &&
+    (result.before?.activeIndex !== 0 ||
+      result.loading?.submitButton?.disabled !== true ||
+      result.checkoutRequests?.length !== 1 ||
+      result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
+      Number(result.checkoutRequests?.[0]?.method) !== 1 ||
+      result.after?.modalCount !== 0 ||
+      result.after?.qrSvgCount + result.after?.qrCanvasCount !== 0 ||
+      result.after?.submitButton?.disabled !== true ||
+      !result.after?.hash?.includes('/order/VISUAL2026110001'))
+  ) {
+    throw new Error(`order network checkout failure did not preserve legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'user-order-stripe-disabled-checkout' &&
@@ -6856,6 +7374,56 @@ function assertUsefulInteraction(label, result) {
   ) {
     throw new Error(
       `admin server vless reality matrix did not produce observable state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'admin-server-protocol-field-matrix' &&
+    (!jsonIncludes(result.shadowsocks?.menuOpened?.dropdownItems, 'Shadowsocks') ||
+      !jsonIncludes(result.shadowsocks?.opened?.labels, '加密算法') ||
+      !jsonIncludes(result.shadowsocks?.httpObfs?.selectedValues, 'HTTP') ||
+      !jsonIncludes(result.shadowsocks?.httpObfs?.labels, '混淆') ||
+      !jsonIncludes(result.vmess?.opened?.labels, 'TLS') ||
+      !jsonIncludes(result.vmess?.grpcTls?.selectedValues, '支持') ||
+      !jsonIncludes(result.vmess?.grpcTls?.selectedValues, 'gRPC') ||
+      !jsonIncludes(result.trojan?.opened?.labels, '允许不安全') ||
+      !jsonIncludes(result.trojan?.webSocket?.selectedValues, '是') ||
+      !jsonIncludes(result.trojan?.webSocket?.selectedValues, 'WebSocket') ||
+      !jsonIncludes(result.hysteria?.opened?.labels, 'HYSTERIA版本') ||
+      !jsonIncludes(result.hysteria?.hysteria2?.selectedValues, 'v2') ||
+      !jsonIncludes(result.hysteria?.hysteria2?.selectedValues, 'salamander') ||
+      !jsonIncludes(result.tuic?.opened?.labels, '数据包中继模式') ||
+      !jsonIncludes(result.tuic?.quic?.selectedValues, 'quic') ||
+      !jsonIncludes(result.tuic?.quic?.selectedValues, 'bbr') ||
+      !jsonIncludes(result.anytls?.opened?.labels, '编辑填充方案') ||
+      !jsonIncludes(result.anytls?.filled?.inputValues, 'anytls-sni.example.test') ||
+      result.anytls?.closed?.drawerCount !== 0)
+  ) {
+    throw new Error(
+      `admin server protocol field matrix did not produce observable state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'admin-server-v2node-protocol-matrix' &&
+    (!jsonIncludes(result.menuOpened?.dropdownItems, 'V2node') ||
+      !jsonIncludes(result.opened?.labels, '节点协议') ||
+      !jsonIncludes(result.shadowsocks?.selectedValues, 'Shadowsocks') ||
+      !jsonIncludes(result.shadowsocks?.selectedValues, 'HTTP伪装') ||
+      !jsonIncludes(result.vless?.selectedValues, 'VLess') ||
+      !jsonIncludes(result.vless?.selectedValues, 'Reality') ||
+      !jsonIncludes(result.vless?.selectedValues, 'WebSocket') ||
+      !jsonIncludes(result.vless?.selectedValues, 'MLKEM768X25519PLUS') ||
+      !jsonIncludes(result.trojan?.selectedValues, 'Trojan') ||
+      !jsonIncludes(result.trojan?.selectedValues, 'TLS') ||
+      !jsonIncludes(result.trojan?.selectedValues, 'gRPC') ||
+      !jsonIncludes(result.hysteria2?.selectedValues, 'Hysteria2') ||
+      !jsonIncludes(result.hysteria2?.selectedValues, 'salamander') ||
+      !jsonIncludes(result.tuic?.selectedValues, 'Tuic') ||
+      !jsonIncludes(result.tuic?.selectedValues, 'quic') ||
+      !jsonIncludes(result.anytls?.selectedValues, 'AnyTLS') ||
+      result.closed?.drawerCount !== 0)
+  ) {
+    throw new Error(
+      `admin server v2node protocol matrix did not produce observable state: ${JSON.stringify(result)}`,
     );
   }
   if (
@@ -9095,13 +9663,19 @@ async function selectLegacyFormOption(
   optionTexts,
   { waitForHidden = true } = {},
 ) {
-  await openLegacySelectByLabel(page, rootSelector, labelText);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', optionTexts[0]);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', optionTexts);
-  if (waitForHidden) {
-    await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
-  } else {
-    await page.waitForTimeout(100);
+  try {
+    await openLegacySelectByLabel(page, rootSelector, labelText);
+    await waitForVisibleText(page, '.ant-select-dropdown-menu-item', optionTexts[0]);
+    await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', optionTexts);
+    if (waitForHidden) {
+      await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+    } else {
+      await page.waitForTimeout(100);
+    }
+  } catch (error) {
+    throw new Error(
+      `Failed selecting ${labelText} -> ${optionTexts.join(' / ')}: ${error.message}`,
+    );
   }
 }
 
@@ -9427,7 +10001,7 @@ async function fillVisibleAt(page, selector, index, value) {
 }
 
 async function captureScenarioWithFreshBrowser(url, scenario, viewport, target) {
-  const browser = await chromium.launch({ args: chromiumArgs, headless: true });
+  const browser = await launchBrowser();
   try {
     return await captureScenario(browser, url, scenario, viewport, target);
   } finally {
@@ -9470,18 +10044,17 @@ async function capturePage(page, url, scenario, target) {
   if (scenario.warmupPath) {
     await gotoStable(page, new URL(scenario.warmupPath, url).toString());
     if (target === 'oracle' && scenario.seedLegacyAdminStore) {
-      await seedLegacyAdminStore(page);
+      await seedLegacyAdminStore(page, scenario);
     }
     await navigateAfterWarmup(page, url);
   } else {
     await gotoStable(page, url);
   }
   if (target === 'oracle' && scenario.seedLegacyAdminStore) {
-    await seedLegacyAdminStore(page);
+    await seedLegacyAdminStore(page, scenario);
   }
   if (scenario.readySelector) {
-    await page
-      .waitForSelector(scenario.readySelector, { state: 'visible', timeout: 10_000 })
+    await waitForReadySelector(page, scenario.readySelector, diagnostics)
       .catch(async (error) => {
         const snapshot = await readDebugSnapshot(page);
         throw new Error(
@@ -9757,6 +10330,14 @@ async function waitForFixedColumnLayout(page) {
 
 async function captureViewportPng(page) {
   await page.addStyleTag({ content: captureStabilityStyle }).catch(() => undefined);
+  if (browserName !== 'chromium') {
+    return page.screenshot({
+      animations: 'disabled',
+      caret: 'hide',
+      fullPage: false,
+      type: 'png',
+    });
+  }
   const session = await page.context().newCDPSession(page);
   try {
     const { data } = await session.send('Page.captureScreenshot', {
@@ -9821,6 +10402,33 @@ async function readDebugSnapshot(page) {
     title,
     url: page.url(),
   };
+}
+
+async function waitForReadySelector(page, selector, diagnostics = [], timeout = 10_000) {
+  const deadline = Date.now() + timeout;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      const visible = await page.evaluate((readySelector) => {
+        const element = document.querySelector(readySelector);
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      }, selector);
+      if (visible) return;
+    } catch (error) {
+      lastError = error;
+      diagnostics.push(`ready selector retry ${selector}: ${error.message}`);
+    }
+    await page.waitForTimeout(100);
+  }
+  throw lastError ?? new Error(`Ready selector ${selector} did not become visible`);
 }
 
 async function installApiFixtures(page, scenario, target, interaction = {}) {
@@ -10200,6 +10808,10 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
       await route.abort('timedout');
       return;
     }
+    if (pathname === '/api/v1/user/order/checkout' && interaction.orderCheckoutNetworkError) {
+      await route.abort('failed');
+      return;
+    }
 
     if (pathname === '/api/v1/user/update' && interaction.delayUserUpdateMs) {
       await delay(interaction.delayUserUpdateMs);
@@ -10295,6 +10907,14 @@ function apiFixtureResponse(
   const error = (message, code = 400) => ({ code, data: null, message });
   const httpError = (message, status = 500) => ({ code: status, data: null, httpStatus: status, message });
 
+  if (scenario.forceUserUnauthorized && pathname === '/api/v1/user/info') {
+    return httpError('auth required', 403);
+  }
+
+  if (scenario.forceAdminUnauthorized && adminEndpoint) {
+    return httpError('auth required', 403);
+  }
+
   if (adminEndpoint) {
     if (/^\/server\/[^/]+\/save$/.test(adminEndpoint)) return body(true);
 
@@ -10344,7 +10964,7 @@ function apiFixtureResponse(
       case '/stat/getUserTodayRank':
         return body(adminUserRankFixtures);
       case '/plan/fetch':
-        return body(planFixtures);
+        return body(adminPlanFixturesFor(scenario));
       case '/plan/save':
         return body(true);
       case '/payment/fetch':
@@ -10365,7 +10985,7 @@ function apiFixtureResponse(
       case '/server/group/save':
         return body(true);
       case '/server/manage/getNodes':
-        return body(adminServerNodeFixtures);
+        return body(adminServerNodeFixturesFor(scenario));
       case '/server/route/fetch':
         return body(adminServerRouteFixtures);
       case '/system/getQueueStats':
@@ -10373,11 +10993,14 @@ function apiFixtureResponse(
       case '/system/getQueueWorkload':
         return body(adminQueueWorkloadFixtures);
       case '/order/fetch':
-        return body(adminOrderFixtures, { total: adminOrderFixtures.length });
+        return body(adminOrderFixturesFor(scenario), {
+          total: adminOrderFixturesFor(scenario).length,
+        });
       case '/order/detail': {
         const requestedId = requestData?.id == null ? 1 : Number(requestData.id);
         return body(
-          adminOrderFixtures.find((order) => order.id === requestedId) ?? adminOrderFixtures[0],
+          adminOrderFixturesFor(scenario).find((order) => order.id === requestedId) ??
+            adminOrderFixtures[0],
         );
       }
       case '/order/assign':
@@ -10387,12 +11010,15 @@ function apiFixtureResponse(
       case '/order/update':
         return body(true);
       case '/user/fetch':
-        return body(adminUserFixtures, { total: adminUserFixtures.length });
+        return body(adminUserFixturesFor(scenario), { total: adminUserFixturesFor(scenario).length });
       case '/user/getUserInfoById': {
         const requestedId = requestUrl.searchParams.has('id')
           ? Number(requestUrl.searchParams.get('id'))
           : 1;
-        return body(adminUserFixtures.find((user) => user.id === requestedId) ?? adminUserFixtures[0]);
+        return body(
+          adminUserFixturesFor(scenario).find((user) => user.id === requestedId) ??
+            adminUserFixtures[0],
+        );
       }
       case '/stat/getStatUser':
         return body(trafficFixtures, { total: 25 });
@@ -10430,7 +11056,10 @@ function apiFixtureResponse(
         token: 'visual-parity-token',
       });
     case '/api/v1/user/checkLogin':
-      return body({ is_admin: isAdminScenario, is_login: true });
+      return body({
+        is_admin: isAdminScenario && !scenario.forceCheckLoginNotAdmin,
+        is_login: !(scenario.forceUserUnauthorized || scenario.forceAdminUnauthorized),
+      });
     case '/api/v1/user/info':
       return body(
         interaction?.telegramBoundProfile
@@ -10461,13 +11090,7 @@ function apiFixtureResponse(
       return body(
         requestUrl.searchParams.has('id')
           ? userPlanFixtureById(requestUrl.searchParams.get('id'), scenario)
-          : scenario.emptyPlans
-          ? []
-          : scenario.soldOutPlans
-          ? planFixtures.map((plan) =>
-              plan.id === 2 ? { ...plan, capacity_limit: 0 } : plan,
-            )
-          : planFixtures,
+          : userPlanFixturesFor(scenario),
       );
     case '/api/v1/user/order/save':
       if (requestData?.period === 'deposit') return body(profileDepositTradeNo);
@@ -10476,14 +11099,19 @@ function apiFixtureResponse(
     case '/api/v1/user/newPeriod':
       return body(true);
     case '/api/v1/user/order/fetch':
-      return body(scenario.emptyOrders ? [] : orderFixtures);
+      return body(userOrderFixturesFor(scenario));
     case '/api/v1/user/order/detail':
       return body(
         requestUrl.searchParams.get('trade_no') === dashboardResetPackageTradeNo
           ? dashboardResetPackageOrderFixture
           : requestUrl.searchParams.get('trade_no') === profileDepositTradeNo
           ? profileDepositOrderFixture
-          : orderFixtures.find((order) => order.trade_no === requestUrl.searchParams.get('trade_no')) ??
+          : userOrderFixturesFor(scenario).find(
+              (order) => order.trade_no === requestUrl.searchParams.get('trade_no'),
+            ) ??
+              orderFixtures.find(
+                (order) => order.trade_no === requestUrl.searchParams.get('trade_no'),
+              ) ??
               orderFixtures[0],
       );
     case '/api/v1/user/order/cancel':
@@ -10510,7 +11138,7 @@ function apiFixtureResponse(
       if (interaction?.couponError) return error('优惠券无效');
       return body(couponCheckFixture);
     case '/api/v1/user/server/fetch':
-      return body(scenario.emptyServers ? [] : serverFixtures);
+      return body(userServerFixturesFor(scenario));
     case '/api/v1/user/stat/getTrafficLog':
       return body(trafficFixtures);
     case '/api/v1/user/invite/fetch':
@@ -10522,10 +11150,10 @@ function apiFixtureResponse(
     case '/api/v1/user/ticket/fetch':
       return body(
         requestUrl.searchParams.has('id')
-          ? ticketDetailFixture
+          ? userTicketDetailFixtureFor(scenario)
           : scenario.emptyTickets
           ? []
-          : ticketFixtures,
+          : userTicketFixturesFor(scenario),
       );
     case '/api/v1/user/ticket/save':
       if (interaction?.ticketSaveError) return error('工单内容不能为空');
@@ -10569,6 +11197,54 @@ function userKnowledgeFixtureById(id) {
   );
 }
 
+function userPlanFixturesFor(scenario = {}) {
+  if (scenario.emptyPlans) return [];
+  if (scenario.longData) return longPlanFixtures;
+  if (scenario.soldOutPlans) {
+    return planFixtures.map((plan) => (plan.id === 2 ? { ...plan, capacity_limit: 0 } : plan));
+  }
+  return planFixtures;
+}
+
+function userOrderFixturesFor(scenario = {}) {
+  if (scenario.emptyOrders) return [];
+  if (scenario.longData) return longOrderFixtures;
+  return orderFixtures;
+}
+
+function userServerFixturesFor(scenario = {}) {
+  if (scenario.emptyServers) return [];
+  if (scenario.longData) return longUserServerFixtures;
+  return serverFixtures;
+}
+
+function userTicketFixturesFor(scenario = {}) {
+  if (scenario.emptyTickets) return [];
+  if (scenario.longData) return longTicketFixtures;
+  return ticketFixtures;
+}
+
+function userTicketDetailFixtureFor(scenario = {}) {
+  if (scenario.longData) return longTicketDetailFixture;
+  return ticketDetailFixture;
+}
+
+function adminPlanFixturesFor(scenario = {}) {
+  return scenario.longData ? longPlanFixtures : planFixtures;
+}
+
+function adminServerNodeFixturesFor(scenario = {}) {
+  return scenario.longData ? longAdminServerNodeFixtures : adminServerNodeFixtures;
+}
+
+function adminOrderFixturesFor(scenario = {}) {
+  return scenario.longData ? longAdminOrderFixtures : adminOrderFixtures;
+}
+
+function adminUserFixturesFor(scenario = {}) {
+  return scenario.longData ? longAdminUserFixtures : adminUserFixtures;
+}
+
 function userSubscribeFixtureFor(scenario = {}, interaction = {}) {
   if (interaction?.newPeriodSubscribe) return newPeriodSubscribeFixture;
   if (scenario.noSubscription) return noSubscriptionFixture;
@@ -10579,7 +11255,9 @@ function userSubscribeFixtureFor(scenario = {}, interaction = {}) {
 }
 
 function userPlanFixtureById(id, scenario = {}) {
-  const plan = planFixtures.find((item) => String(item.id) === String(id)) ?? planFixtures[0];
+  const plan =
+    userPlanFixturesFor(scenario).find((item) => String(item.id) === String(id)) ??
+    planFixtures[0];
   if (scenario.nonRenewablePlan) return { ...plan, renew: 0 };
   return plan;
 }
@@ -10767,7 +11445,7 @@ async function seedLegacyAdminTicketDetailStore(page) {
   );
 }
 
-async function seedLegacyAdminStore(page) {
+async function seedLegacyAdminStore(page, scenario = {}) {
   await page
     .waitForFunction(() => window.g_app?._store, null, { timeout: 5_000 })
     .catch(() => undefined);
@@ -10898,13 +11576,13 @@ async function seedLegacyAdminStore(page) {
         ),
         knowledges: adminKnowledgeFixtures,
         notices: adminNoticeFixtures,
-        orders: adminOrderFixtures,
+        orders: adminOrderFixturesFor(scenario),
         payments: adminPaymentFixtures,
-        plans: adminPlanStoreFixtures,
+        plans: toAdminPlanStoreFixtures(adminPlanFixturesFor(scenario)),
         queueStats: adminQueueStatsFixture,
         queueWorkload: adminQueueWorkloadFixtures,
         serverGroups: adminServerGroupFixtures,
-        serverNodes: adminServerNodeFixtures,
+        serverNodes: adminServerNodeFixturesFor(scenario),
         serverRoutes: adminServerRouteFixtures,
         stat: adminStatFixture,
         themes: adminThemeFixtures,
@@ -10912,7 +11590,7 @@ async function seedLegacyAdminStore(page) {
         ticketDetail: adminTicketDetailFixture,
         tickets: adminTicketFixtures,
         userInfo: userInfoFixture,
-        users: adminUserStoreFixtures,
+        users: toAdminUserStoreFixtures(adminUserFixturesFor(scenario)),
       },
     );
     await page.waitForTimeout(50);

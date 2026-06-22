@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, type ReactNode } from 'react';
 import { ConfigProvider, App as AntdApp, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 import { createI18n } from '@v2board/i18n';
 import {
@@ -19,6 +19,7 @@ import { RouteBoundaryElement } from './components/route-error-boundary';
 import { LegacyConfirmProvider } from './components/legacy-confirm';
 import { applyAdminLegacySettings } from './lib/legacy-settings';
 import { applyInitialDarkMode } from './lib/dark-mode';
+import { redirectToLegacyLogin } from './lib/api';
 import './styles/admin-antd-v3.css';
 import './styles/admin-markdown-editor.css';
 import './styles/admin-icon-fonts.css';
@@ -65,8 +66,20 @@ applyInitialDarkMode();
 
 const i18n = createI18n();
 const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error) => {
+      if (isUnauthorizedError(error)) redirectToLegacyLogin();
+    },
+  }),
   defaultOptions: { queries: { staleTime: 0, retry: false, refetchOnWindowFocus: false } },
 });
+
+function isUnauthorizedError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const status = (error as { status?: unknown }).status;
+  const responseStatus = (error as { response?: { status?: unknown } }).response?.status;
+  return status === 403 || responseStatus === 403;
+}
 
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');

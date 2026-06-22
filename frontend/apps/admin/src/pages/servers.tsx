@@ -27,6 +27,7 @@ import { admin } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
 import { i18nGet } from '@/lib/errors';
 import { legacyCopyText } from '@/lib/legacy-copy';
+import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
@@ -1400,6 +1401,7 @@ function ServerManagePage() {
   const visibleNodes = sortMode
     ? filteredNodes
     : filteredNodes.slice((activePage - 1) * pageSize, activePage * pageSize);
+  const manageFixedColumnHeights = useFixedColumnRowHeights(visibleNodes.length);
   const changeServerPagination = (pagination: LegacyTablePaginationChange) => {
     setCurrentPage(pagination.current);
     if (pagination.pageSize !== pageSize) {
@@ -1580,7 +1582,11 @@ function ServerManagePage() {
                             className="ant-table-body"
                             style={{ overflowX: 'scroll' }}
                           >
-                            <table className="ant-table-fixed" style={{ width: 1300 }}>
+                            <table
+                              ref={manageFixedColumnHeights.mainTableRef}
+                              className="ant-table-fixed"
+                              style={{ width: 1300 }}
+                            >
                               <colgroup>
                                 <col style={{ width: 150, minWidth: 150 }} />
                                 <col />
@@ -1779,7 +1785,10 @@ function ServerManagePage() {
                             <div className="ant-table-fixed-right">
                               <div className="ant-table-body-outer">
                                 <div className="ant-table-body-inner">
-                                  <table className="ant-table-fixed">
+                                  <table
+                                    ref={manageFixedColumnHeights.fixedTableRef}
+                                    className="ant-table-fixed"
+                                  >
                                     <colgroup>
                                       <col style={{ width: 100, minWidth: 100 }} />
                                     </colgroup>

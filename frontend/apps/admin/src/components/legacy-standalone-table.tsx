@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode, Ref } from 'react';
 import {
   LegacyCaretDownIcon,
   LegacyCaretUpIcon,
@@ -9,6 +9,7 @@ import {
 } from './legacy-ant-icon';
 import { LegacyEmpty } from './legacy-empty';
 import { LegacySelect, type LegacySelectOption, type LegacySelectValue } from './legacy-select';
+import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
 
 const LEGACY_ROW_KEY_ATTRIBUTE = `data-${'row-key'}`;
 const LEGACY_UNSELECTABLE_ATTRIBUTE = { unselectable: 'unselectable' } as Record<string, string>;
@@ -316,10 +317,12 @@ function LegacyStandaloneTableBody({
   headers,
   children,
   scrollX,
+  tableRef,
 }: {
   headers: LegacyStandaloneTableHeader[];
   children: ReactNode;
   scrollX?: number;
+  tableRef?: Ref<HTMLTableElement>;
 }) {
   if (scrollX === undefined) {
     return (
@@ -339,7 +342,7 @@ function LegacyStandaloneTableBody({
 
   return (
     <div tabIndex={-1} className="ant-table-body" style={{ overflowX: 'scroll' }}>
-      <table className="ant-table-fixed" style={{ width: scrollX }}>
+      <table ref={tableRef} className="ant-table-fixed" style={{ width: scrollX }}>
         <colgroup>
           {headers.map((_, index) => (
             <col key={index} />
@@ -356,10 +359,12 @@ function LegacyStandaloneTableFixedRight({
   headers,
   children,
   rowHeight = 54,
+  tableRef,
 }: {
   headers: LegacyStandaloneTableHeader[];
   children: ReactNode;
   rowHeight?: number;
+  tableRef?: Ref<HTMLTableElement>;
 }) {
   if (headers.length === 0) return null;
 
@@ -367,7 +372,7 @@ function LegacyStandaloneTableFixedRight({
     <div className="ant-table-fixed-right">
       <div className="ant-table-body-outer">
         <div className="ant-table-body-inner">
-          <table className="ant-table-fixed">
+          <table ref={tableRef} className="ant-table-fixed">
             <colgroup>
               {headers.map((_, index) => (
                 <col key={index} />
@@ -405,6 +410,12 @@ export function LegacyStandaloneTable({
 }) {
   const fixedRightHeaders =
     scrollX === undefined ? [] : headers.filter((header) => header.fixedRight);
+  const fixedRightRowCount = Array.isArray(fixedRightChildren)
+    ? fixedRightChildren.length
+    : fixedRightChildren
+      ? 1
+      : 0;
+  const fixedColumnHeights = useFixedColumnRowHeights(fixedRightRowCount);
   const resolvedScrollPositionRight =
     scrollPositionRight === 'desktop'
       ? typeof window === 'undefined' || window.innerWidth >= 768
@@ -438,7 +449,11 @@ export function LegacyStandaloneTable({
               ) : (
                 <>
                   <div className="ant-table-scroll">
-                    <LegacyStandaloneTableBody headers={headers} scrollX={scrollX}>
+                    <LegacyStandaloneTableBody
+                      headers={headers}
+                      scrollX={scrollX}
+                      tableRef={fixedColumnHeights.mainTableRef}
+                    >
                       {children}
                     </LegacyStandaloneTableBody>
                     {isEmpty ? (
@@ -450,6 +465,7 @@ export function LegacyStandaloneTable({
                   <LegacyStandaloneTableFixedRight
                     headers={fixedRightHeaders}
                     rowHeight={fixedRightRowHeight}
+                    tableRef={fixedColumnHeights.fixedTableRef}
                   >
                     {fixedRightChildren}
                   </LegacyStandaloneTableFixedRight>

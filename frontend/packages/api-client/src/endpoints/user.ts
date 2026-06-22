@@ -118,6 +118,7 @@ export const checkoutOrder = async (
     url: '/user/order/checkout',
     method: 'POST',
     data: payload,
+    skipLegacyGlobalError: true,
   });
   return { type: env.type as OrderCheckoutResult['type'], data: env.data };
 };

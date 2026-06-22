@@ -288,6 +288,15 @@ describe('admin legacy entrypoint', () => {
   });
 
   it('does not install timed query freshness or automatic retry absent from the bundled admin models', () => {
+    expect(mainSource).toContain("import { redirectToLegacyLogin } from './lib/api';");
+    expect(mainSource).toContain('queryCache: new QueryCache({');
+    expect(mainSource).toContain('if (isUnauthorizedError(error)) redirectToLegacyLogin();');
+    expect(mainSource).toContain('function isUnauthorizedError(error: unknown): boolean');
+    expect(mainSource).toContain('const status = (error as { status?: unknown }).status;');
+    expect(mainSource).toContain(
+      "(error as { response?: { status?: unknown } }).response?.status",
+    );
+    expect(mainSource).toContain('return status === 403 || responseStatus === 403;');
     expect(mainSource).toContain(
       'defaultOptions: { queries: { staleTime: 0, retry: false, refetchOnWindowFocus: false } },',
     );
@@ -860,9 +869,10 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain("'content-type': 'application/json'");
     expect(visualParitySource).toContain("readySelector: '.block-transparent.bg-image'");
     expect(visualParitySource).toContain("readySelector: '.js-chat-input'");
-    expect(visualParitySource).toContain(
-      'const browser = await chromium.launch({ args: chromiumArgs, headless: true });',
-    );
+    expect(visualParitySource).toContain("const browserName = process.env.VISUAL_PARITY_BROWSER ?? 'chromium';");
+    expect(visualParitySource).toContain('const browserTypes = { chromium, firefox, webkit };');
+    expect(visualParitySource).toContain('function launchBrowser()');
+    expect(visualParitySource).toContain('return browserType.launch(launchOptions);');
     expect(visualParitySource).toContain('await browser.close();');
     expect(visualParitySource).toContain('async function captureScenarioWithFreshBrowser');
     expect(visualParitySource).toContain("const browserMode = process.env.VISUAL_PARITY_FRESH_BROWSER ?? 'auto';");
@@ -873,7 +883,7 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain('if (!useFreshBrowser) {');
     expect(visualParitySource).toContain('async function writeReport()');
     expect(visualParitySource).toContain('await writeReport();');
-    expect(visualParitySource.indexOf('const browser = await chromium.launch')).toBeGreaterThan(
+    expect(visualParitySource.indexOf('const browser = await launchBrowser();')).toBeGreaterThan(
       visualParitySource.indexOf('for (const viewport of selectedViewports) {'),
     );
     const sharedBrowserStart = visualParitySource.indexOf('if (!useFreshBrowser) {');

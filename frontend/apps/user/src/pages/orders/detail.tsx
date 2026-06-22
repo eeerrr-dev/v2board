@@ -183,6 +183,7 @@ export default function OrderDetailPage() {
       return;
     }
     setPaying(true);
+    let keepLegacyLoading = false;
     try {
       const result = await user.checkoutOrder(apiClient, {
         trade_no: tradeNo,
@@ -200,9 +201,12 @@ export default function OrderDetailPage() {
         window.location.href = result.data;
         toast.info('正在前往收银台');
       }
-    } catch {
+    } catch (error) {
+      if (isLegacyCheckoutNetworkError(error)) {
+        keepLegacyLoading = true;
+      }
     } finally {
-      setPaying(false);
+      if (!keepLegacyLoading) setPaying(false);
     }
   };
 
@@ -551,6 +555,15 @@ function calculatePreHandlingAmount(order: Order, method?: PaymentMethod) {
     ? order.total_amount * ((method.handling_fee_percent as number) / 100) +
         (method.handling_fee_fixed as number)
     : 0;
+}
+
+function isLegacyCheckoutNetworkError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'status' in error &&
+    (error as { status?: unknown }).status === 0
+  );
 }
 
 function OrderResult({ status }: { status?: number }) {

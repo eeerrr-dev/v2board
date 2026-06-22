@@ -1,17 +1,27 @@
 import { createApiClient } from '@v2board/api-client';
 import type { ApiError } from '@v2board/api-client';
 import { legacyGetLocale } from '@v2board/i18n';
-import { getAuthData, logout } from './auth';
+import { getAuthData } from './auth';
 import { i18nGet } from './errors';
 import { getLegacySettings } from './legacy-settings';
 import { toast } from './legacy-toast';
 
 let redirectingToLogin = false;
+const LEGACY_AUTH_STORAGE_KEY = 'authorization';
 
 function redirectToLegacyLogin(): void {
   if (redirectingToLogin) return;
   redirectingToLogin = true;
-  window.location.href = `${window.location.origin}/#/login`;
+  const authData = getAuthData();
+  if (authData !== null) {
+    window.localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+  }
+  window.location.hash = '#/login';
+  if (authData !== null) {
+    window.setTimeout(() => {
+      window.localStorage.setItem(LEGACY_AUTH_STORAGE_KEY, authData);
+    }, 50);
+  }
 }
 
 export const apiClient = createApiClient({
@@ -19,7 +29,6 @@ export const apiClient = createApiClient({
   getAuthData: () => getAuthData(),
   getLocale: () => getRequestLocale(),
   onUnauthorized: () => {
-    logout();
     redirectToLegacyLogin();
   },
   onError: (error: ApiError) => {

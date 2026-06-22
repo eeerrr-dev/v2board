@@ -377,6 +377,52 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     expect(document.querySelector('.v2board-payment-qrcode svg')).not.toBeNull();
   });
 
+  it('keeps checkout stuck in the legacy loading state after a status-0 transport failure', async () => {
+    checkoutOrder.mockRejectedValue({ status: 0, message: 'Network Error' });
+
+    await act(async () => {
+      root.render(<OrderDetailPage />);
+    });
+
+    const checkoutButton = [...document.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('order.checkout'),
+    ) as HTMLButtonElement | undefined;
+    expect(checkoutButton).toBeDefined();
+
+    await act(async () => {
+      checkoutButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(checkoutButton?.disabled).toBe(true);
+    expect(checkoutButton?.textContent).not.toContain('order.checkout');
+    expect(orderDetailSource).toContain('isLegacyCheckoutNetworkError(error)');
+    expect(orderDetailSource).toContain('(error as { status?: unknown }).status === 0');
+  });
+
+  it('restores the checkout button after a non-transport checkout failure', async () => {
+    checkoutOrder.mockRejectedValue({ status: 500, message: '支付失败' });
+
+    await act(async () => {
+      root.render(<OrderDetailPage />);
+    });
+
+    const checkoutButton = [...document.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('order.checkout'),
+    ) as HTMLButtonElement | undefined;
+    expect(checkoutButton).toBeDefined();
+
+    await act(async () => {
+      checkoutButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(checkoutButton?.disabled).toBe(false);
+    expect(checkoutButton?.textContent).toContain('order.checkout');
+  });
+
   it('drops the locally injected payment fee after the paid poll detail refresh replaces the order', async () => {
     paymentState.data = [
       {

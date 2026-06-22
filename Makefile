@@ -1,4 +1,4 @@
-.PHONY: up down logs shell reset sync ps doctor public-bundle-audit replica-audit parity-config-audit legacy-oracle-check legacy-oracle-up legacy-oracle-serve legacy-oracle-down deploy-smoke deploy-public-sync deploy-public-check deploy-public-ensure visual-smoke visual-parity interaction-parity clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
+.PHONY: up down logs shell reset sync ps doctor public-bundle-audit replica-audit parity-config-audit legacy-oracle-check legacy-oracle-up legacy-oracle-serve legacy-oracle-down deploy-smoke deploy-public-sync deploy-public-check deploy-public-ensure visual-smoke visual-parity browser-parity interaction-parity clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
 
 DC := $(shell \
 	if docker compose version >/dev/null 2>&1; then echo "docker compose"; \
@@ -18,6 +18,7 @@ FRONTEND_FAST_INSTALL := if [ ! -x /app/frontend/node_modules/.bin/playwright ];
 FRONTEND_BOOTSTRAP := $(FRONTEND_SETUP) && $(FRONTEND_INSTALL)
 FRONTEND_FAST_BOOTSTRAP := $(FRONTEND_SETUP) && $(FRONTEND_FAST_INSTALL)
 PLAYWRIGHT_CHROMIUM_BOOTSTRAP := if ! find /app/frontend/.cache/ms-playwright -path "*/chrome-linux/chrome" -type f 2>/dev/null | grep -q .; then pnpm exec playwright install chromium >/dev/null; fi
+PLAYWRIGHT_BROWSER_BOOTSTRAP := browser="$${VISUAL_PARITY_BROWSER:-chromium}"; case "$$browser" in chromium) marker="*/chrome-linux/chrome" ;; firefox) marker="*/firefox/firefox" ;; webkit) marker="*/pw_run.sh" ;; *) echo "Unsupported VISUAL_PARITY_BROWSER=$$browser"; exit 1 ;; esac; if ! find /app/frontend/.cache/ms-playwright -path "$$marker" -type f 2>/dev/null | grep -q .; then pnpm exec playwright install "$$browser" >/dev/null; fi
 LEGACY_ORACLE_REF_FILE := frontend/fixtures/legacy-oracle.ref
 LEGACY_ORACLE_REF ?= $(shell test -s $(LEGACY_ORACLE_REF_FILE) && sed -n '1p' $(LEGACY_ORACLE_REF_FILE))
 LEGACY_ORACLE_CONTAINER ?= $(COMPOSE_PROJECT)-legacy-oracle
@@ -61,11 +62,11 @@ LEGACY_ORACLE_REQUIRED_PATHS := \
 VISUAL_SOURCE_BASE_URL ?= http://host.docker.internal:8000
 VISUAL_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/visual-parity
 INTERACTION_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/interaction-parity
-INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-persistence user-dashboard-header-language-dropdown user-dashboard-avatar-dropdown user-dashboard-dark-mode-persistence user-dashboard-subscribe-drawer user-dashboard-subscribe-import-links user-dashboard-subscribe-import-ios-ua user-dashboard-subscribe-import-android-ua user-dashboard-subscribe-import-macos-ua user-dashboard-subscribe-import-windows-ua user-dashboard-notice-carousel user-dashboard-reset-package-confirm user-dashboard-new-period-confirm user-dashboard-alert-links user-profile-deposit-modal user-profile-reset-subscribe-confirm user-profile-telegram-bind-modal user-profile-telegram-unbind-confirm user-profile-preference-switches user-profile-redeem-giftcard user-profile-redeem-giftcard-api-500 user-profile-redeem-giftcard-timeout user-profile-change-password-success \
-	user-plans-filter-tabs user-plan-checkout-coupon user-plan-checkout-coupon-error user-order-payment-method user-order-qr-checkout user-order-qr-checkout-failure user-order-stripe-disabled-checkout user-order-stripe-token-checkout user-order-redirect-checkout \
+INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-persistence user-dashboard-header-language-dropdown user-session-expired-redirect user-dashboard-avatar-dropdown user-dashboard-dark-mode-persistence user-dashboard-subscribe-drawer user-dashboard-subscribe-import-links user-dashboard-subscribe-import-ios-ua user-dashboard-subscribe-import-android-ua user-dashboard-subscribe-import-macos-ua user-dashboard-subscribe-import-windows-ua user-dashboard-notice-carousel user-dashboard-reset-package-confirm user-dashboard-new-period-confirm user-dashboard-alert-links user-profile-deposit-modal user-profile-reset-subscribe-confirm user-profile-telegram-bind-modal user-profile-telegram-unbind-confirm user-profile-preference-switches user-profile-redeem-giftcard user-profile-redeem-giftcard-api-500 user-profile-redeem-giftcard-timeout user-profile-change-password-success \
+	user-plans-filter-tabs user-plan-checkout-coupon user-plan-checkout-coupon-error user-order-payment-method user-order-qr-checkout user-order-qr-checkout-failure user-order-checkout-network-failure user-order-stripe-disabled-checkout user-order-stripe-token-checkout user-order-redirect-checkout \
 	user-node-table-scroll user-node-tooltips user-traffic-table-scroll user-traffic-total-tooltip user-knowledge-drawer user-invite-generate user-invite-transfer-modal user-invite-transfer-insufficient-balance user-invite-withdraw-modal user-invite-tooltips user-ticket-reply-send \
-	user-ticket-create-submit user-ticket-create-validation-failure admin-ticket-reply-send admin-tickets-reply-filter admin-dashboard-dark-mode-persistence admin-dashboard-avatar-dropdown admin-dashboard-commission-shortcut user-order-cancel-confirm \
-	admin-plan-create-drawer admin-plan-create-group-select-dropdown admin-plan-reset-method-matrix admin-plan-edit-drawer admin-plan-renew-tooltip admin-config-tabs admin-theme-settings-modal admin-server-create-node-drawer admin-server-vless-reality-matrix admin-server-edit-node-drawer admin-server-route-create-modal admin-server-route-edit-modal admin-server-group-create-modal admin-server-group-edit-modal admin-payment-create-modal admin-payment-edit-modal admin-payment-plugin-field-matrix admin-payment-notify-tooltip \
+	user-ticket-create-submit user-ticket-create-validation-failure admin-ticket-reply-send admin-tickets-reply-filter admin-dashboard-dark-mode-persistence admin-dashboard-avatar-dropdown admin-session-expired-redirect admin-dashboard-commission-shortcut user-order-cancel-confirm \
+	admin-plan-create-drawer admin-plan-create-group-select-dropdown admin-plan-reset-method-matrix admin-plan-edit-drawer admin-plan-renew-tooltip admin-config-tabs admin-theme-settings-modal admin-server-create-node-drawer admin-server-vless-reality-matrix admin-server-protocol-field-matrix admin-server-v2node-protocol-matrix admin-server-edit-node-drawer admin-server-route-create-modal admin-server-route-edit-modal admin-server-group-create-modal admin-server-group-edit-modal admin-payment-create-modal admin-payment-edit-modal admin-payment-plugin-field-matrix admin-payment-notify-tooltip \
 	admin-order-detail-modal admin-order-status-tooltips admin-order-assign-modal admin-order-status-dropdown admin-order-commission-dropdown \
 	admin-coupon-create-modal admin-coupon-range-picker admin-coupon-type-matrix admin-coupon-edit-modal admin-giftcard-create-modal admin-giftcard-edit-modal admin-notice-create-modal admin-notice-edit-modal admin-knowledge-create-drawer admin-knowledge-edit-drawer admin-users-filter-input admin-users-filter-field-select-dropdown admin-users-filter-expiry-picker admin-user-bulk-ban-confirm admin-user-bulk-delete-confirm admin-user-create-modal admin-user-create-plan-select-dropdown admin-user-create-expiry-picker admin-user-send-mail-modal admin-user-reset-secret-confirm admin-user-delete-confirm admin-user-copy-action admin-user-edit-action admin-user-assign-action admin-user-orders-action admin-user-invite-action admin-user-traffic-action
 INTERACTION_PARITY_RETRIES ?= 4
@@ -82,9 +83,13 @@ VISUAL_PARITY_APP_READY ?= 0
 VISUAL_PARITY_FILTER ?=
 VISUAL_PARITY_INTERACTION_FILTER ?=
 VISUAL_PARITY_VIEWPORT_FILTER ?=
+VISUAL_PARITY_BROWSER ?= chromium
 VISUAL_PARITY_SKIP_DEPLOY ?= 0
-VISUAL_PARITY_SCENARIOS ?= user-home-root user-login user-register-rich user-forget user-dashboard user-dashboard-no-subscription user-dashboard-expired-subscription user-dashboard-traffic-used-up user-dashboard-device-limit-reached user-dashboard-banned user-dashboard-dark user-plans user-plans-sold-out user-plans-empty user-plan-checkout user-plan-checkout-non-renewable user-orders user-orders-empty user-order-detail user-node user-node-empty user-traffic user-invite user-tickets user-tickets-empty user-ticket-detail user-knowledge user-profile user-home-root-zh-tw user-login-zh-tw user-register-rich-zh-tw user-forget-zh-tw user-dashboard-zh-tw user-plans-zh-tw user-plan-checkout-zh-tw user-orders-zh-tw user-order-detail-zh-tw user-node-zh-tw user-traffic-zh-tw user-invite-zh-tw user-tickets-zh-tw user-ticket-detail-zh-tw user-knowledge-zh-tw user-profile-zh-tw user-home-root-en-us user-login-en-us user-register-rich-en-us user-forget-en-us user-dashboard-en-us user-plans-en-us user-plan-checkout-en-us user-orders-en-us user-order-detail-en-us user-node-en-us user-traffic-en-us user-invite-en-us user-tickets-en-us user-ticket-detail-en-us user-knowledge-en-us user-profile-en-us admin-dashboard admin-dashboard-dark admin-plans admin-orders admin-users admin-tickets admin-ticket-detail admin-config admin-theme admin-system admin-server-groups admin-server-manage admin-server-routes admin-payments admin-coupons admin-giftcards admin-notices admin-knowledge admin-root admin-login
+VISUAL_PARITY_SCENARIOS ?= user-home-root user-login user-register-rich user-forget user-dashboard user-dashboard-session-expired user-dashboard-no-subscription user-dashboard-expired-subscription user-dashboard-traffic-used-up user-dashboard-device-limit-reached user-dashboard-banned user-dashboard-dark user-plans user-plans-long-data user-plans-sold-out user-plans-empty user-plan-checkout user-plan-checkout-non-renewable user-orders user-orders-long-data user-orders-empty user-order-detail user-node user-node-long-data user-node-empty user-traffic user-invite user-tickets user-tickets-empty user-ticket-detail user-ticket-detail-long-thread user-knowledge user-profile user-home-root-zh-tw user-login-zh-tw user-register-rich-zh-tw user-forget-zh-tw user-dashboard-zh-tw user-plans-zh-tw user-plan-checkout-zh-tw user-orders-zh-tw user-order-detail-zh-tw user-node-zh-tw user-traffic-zh-tw user-invite-zh-tw user-tickets-zh-tw user-ticket-detail-zh-tw user-knowledge-zh-tw user-profile-zh-tw user-home-root-en-us user-login-en-us user-register-rich-en-us user-forget-en-us user-dashboard-en-us user-plans-en-us user-plan-checkout-en-us user-orders-en-us user-order-detail-en-us user-node-en-us user-traffic-en-us user-invite-en-us user-tickets-en-us user-ticket-detail-en-us user-knowledge-en-us user-profile-en-us admin-dashboard admin-dashboard-session-expired admin-dashboard-dark admin-plans admin-orders admin-orders-long-data admin-users admin-users-long-data admin-tickets admin-ticket-detail admin-config admin-theme admin-system admin-server-groups admin-server-manage admin-server-manage-long-data admin-server-routes admin-payments admin-coupons admin-giftcards admin-notices admin-knowledge admin-root admin-login
 VISUAL_PARITY_VIEWPORTS ?= desktop mobile
+BROWSER_PARITY_BROWSERS ?= chromium firefox webkit
+BROWSER_PARITY_SCENARIOS ?= user-login user-dashboard user-orders-long-data admin-login admin-dashboard admin-server-manage-long-data
+BROWSER_PARITY_VIEWPORTS ?= desktop
 VISUAL_PARITY_CHECK_EACH_SHARD ?= 0
 DEPLOY_BUILD_PAUSE_SERVICES ?= app frontend horizon scheduler mysql redis mailpit
 DEPLOY_RESUME_SERVICES ?= mysql redis mailpit app
@@ -92,7 +97,7 @@ DEPLOY_FINAL_RESUME_SERVICES ?= mysql redis mailpit app
 DEPLOY_NODE_OPTIONS ?= --max-old-space-size=256
 DEPLOY_PUBLIC_ENSURE_RETRIES ?= 3
 DEPLOY_PUBLIC_ENSURE_RETRY_DELAY ?= 20
-VISUAL_PARITY_NODE_OPTIONS ?= --max-old-space-size=128
+VISUAL_PARITY_NODE_OPTIONS ?= --max-old-space-size=256
 VISUAL_PARITY_FRESH_BROWSER ?= auto
 VISUAL_PARITY_PAUSE_SERVICES ?= frontend horizon scheduler
 VISUAL_PARITY_RESUME_SERVICES ?= mysql redis mailpit app
@@ -511,8 +516,9 @@ visual-parity: legacy-oracle-check
 						-e VISUAL_PARITY_FILTER=$$scenario \
 						-e VISUAL_PARITY_INTERACTION_FILTER="$(VISUAL_PARITY_INTERACTION_FILTER)" \
 						-e VISUAL_PARITY_VIEWPORT_FILTER=$$viewport \
+						-e VISUAL_PARITY_BROWSER=$(VISUAL_PARITY_BROWSER) \
 						-e VISUAL_PARITY_FRESH_BROWSER=$(VISUAL_PARITY_FRESH_BROWSER) \
-						-w /app/frontend frontend -lc 'rm -rf /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && mkdir -p /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && tar -C /tmp/v2board-legacy-oracle -xf - && $(FRONTEND_FAST_BOOTSTRAP) && $(PLAYWRIGHT_CHROMIUM_BOOTSTRAP) && node scripts/visual-parity.mjs'; then \
+						-w /app/frontend frontend -lc 'rm -rf /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && mkdir -p /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && tar -C /tmp/v2board-legacy-oracle -xf - && $(FRONTEND_FAST_BOOTSTRAP) && $(PLAYWRIGHT_BROWSER_BOOTSTRAP) && node scripts/visual-parity.mjs'; then \
 						status=0; \
 					else \
 						status=$$?; \
@@ -641,8 +647,9 @@ visual-parity: legacy-oracle-check
 					-e VISUAL_PARITY_FILTER="$${VISUAL_PARITY_FILTER:-}" \
 					-e VISUAL_PARITY_INTERACTION_FILTER="$(VISUAL_PARITY_INTERACTION_FILTER)" \
 					-e VISUAL_PARITY_VIEWPORT_FILTER="$${VISUAL_PARITY_VIEWPORT_FILTER:-}" \
+					-e VISUAL_PARITY_BROWSER=$(VISUAL_PARITY_BROWSER) \
 					-e VISUAL_PARITY_FRESH_BROWSER=$(VISUAL_PARITY_FRESH_BROWSER) \
-					-w /app/frontend frontend -lc 'rm -rf /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && mkdir -p /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && tar -C /tmp/v2board-legacy-oracle -xf - && $(FRONTEND_FAST_BOOTSTRAP) && $(PLAYWRIGHT_CHROMIUM_BOOTSTRAP) && node scripts/visual-parity.mjs'; then \
+					-w /app/frontend frontend -lc 'rm -rf /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && mkdir -p /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && tar -C /tmp/v2board-legacy-oracle -xf - && $(FRONTEND_FAST_BOOTSTRAP) && $(PLAYWRIGHT_BROWSER_BOOTSTRAP) && node scripts/visual-parity.mjs'; then \
 					status=0; \
 				else \
 					status=$$?; \
@@ -668,8 +675,38 @@ visual-parity: legacy-oracle-check
 		fi; \
 		if [ "$(VISUAL_PARITY_RESTART_SERVICES)" != "0" ]; then \
 		$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-	fi; \
+		fi; \
 		exit $$status
+
+browser-parity: legacy-oracle-check
+	@if [ "$(VISUAL_PARITY_SKIP_DEPLOY)" = "1" ]; then \
+		$(MAKE) --no-print-directory deploy-public-ensure || exit $$?; \
+	else \
+		$(MAKE) --no-print-directory deploy-smoke || exit $$?; \
+	fi; \
+	$(DCF) up -d app >/dev/null; \
+	status=0; \
+	for browser in $(BROWSER_PARITY_BROWSERS); do \
+		for viewport in $(BROWSER_PARITY_VIEWPORTS); do \
+			for scenario in $(BROWSER_PARITY_SCENARIOS); do \
+				echo "Browser parity shard: $$browser/$$scenario/$$viewport"; \
+				VISUAL_PARITY_BROWSER=$$browser \
+				VISUAL_PARITY_FILTER=$$scenario \
+				VISUAL_PARITY_VIEWPORT_FILTER=$$viewport \
+				VISUAL_PARITY_SKIP_DEPLOY=1 \
+				VISUAL_PARITY_PUBLIC_CHECKED=1 \
+				VISUAL_PARITY_APP_READY=1 \
+				VISUAL_PARITY_ARTIFACT_DIR="$(VISUAL_PARITY_ARTIFACT_DIR)/browser-$$browser-$$scenario-$$viewport" \
+				$(MAKE) --no-print-directory visual-parity || status=$$?; \
+				if [ "$${status:-0}" -ne 0 ]; then \
+					$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
+					exit $$status; \
+				fi; \
+			done; \
+		done; \
+	done; \
+	$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
+	echo "Browser parity OK: configured browser shards passed."
 
 interaction-parity:
 	@case "$(INTERACTION_PARITY_ARTIFACT_DIR)" in \

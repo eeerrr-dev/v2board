@@ -1,6 +1,6 @@
 import { createApiClient } from '@v2board/api-client';
 import type { App } from 'antd';
-import { getAuthData, logout } from './auth';
+import { getAuthData, setAuthData } from './auth';
 import { i18nGet } from './errors';
 import { getAdminApiBaseUrl, getAdminSecurePath } from './legacy-settings';
 
@@ -11,10 +11,41 @@ export function bindMessageApi(api: ReturnType<typeof App.useApp>['message']): v
 
 let redirectingToLogin = false;
 
-function redirectToLegacyLogin(): void {
+export function redirectToLegacyLogin(): void {
   if (redirectingToLogin) return;
   redirectingToLogin = true;
-  window.location.href = `${window.location.origin}/#/login`;
+  const authData = getAuthData();
+  if (authData !== null) {
+    setAuthData(null);
+  }
+  replaceLegacyLoginHash();
+  if (authData !== null) {
+    restoreAuthAfterLoginRendered(authData);
+  }
+}
+
+function replaceLegacyLoginHash(): void {
+  const oldUrl = window.location.href;
+  window.history.replaceState(
+    window.history.state,
+    '',
+    `${window.location.pathname}${window.location.search}#/login`,
+  );
+  window.dispatchEvent(
+    new HashChangeEvent('hashchange', { oldURL: oldUrl, newURL: window.location.href }),
+  );
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+function restoreAuthAfterLoginRendered(authData: string): void {
+  const restore = (): void => {
+    if (document.querySelector('.v2board-auth-box')) {
+      setAuthData(authData);
+      return;
+    }
+    window.setTimeout(restore, 100);
+  };
+  window.setTimeout(restore, 0);
 }
 
 export const apiClient = createApiClient({
@@ -23,7 +54,6 @@ export const apiClient = createApiClient({
   adminSecurePath: () => getAdminSecurePath(),
   nullFormValue: 'empty',
   onUnauthorized: () => {
-    logout();
     redirectToLegacyLogin();
   },
   onError: (error) => {

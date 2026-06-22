@@ -81,15 +81,24 @@ describe('admin api legacy path resolution', () => {
     }
   });
 
-  it('clears auth and redirects once to the hash login route on 403', () => {
-    expect(apiSource).toContain('logout();');
+  it('keeps auth and redirects once to the hash login route on 403', () => {
+    expect(apiSource).not.toContain('logout();');
     expect(apiSource).toContain('let redirectingToLogin = false;');
     expect(apiSource).toContain('if (redirectingToLogin) return;');
     expect(apiSource).toContain('redirectingToLogin = true;');
-    expect(apiSource).toContain(
-      'window.location.href = `${window.location.origin}/#/login`;',
-    );
+    expect(apiSource).toContain('setAuthData(null);');
+    expect(apiSource).toContain('replaceLegacyLoginHash();');
+    expect(apiSource).toContain("`${window.location.pathname}${window.location.search}#/login`");
+    expect(apiSource).toContain("new HashChangeEvent('hashchange'");
+    expect(apiSource).toContain("new PopStateEvent('popstate')");
+    expect(apiSource).toContain('restoreAuthAfterLoginRendered(authData);');
+    expect(apiSource).toContain("document.querySelector('.v2board-auth-box')");
+    expect(apiSource).toContain('setAuthData(authData);');
+    expect(apiSource).toContain('window.setTimeout(restore, 0);');
+    expect(apiSource).not.toContain('attemptsLeft <= 0');
+    expect(apiSource).not.toContain('data-v2board-admin-redirect');
     expect(apiSource).not.toContain('window.location.pathname}#/login');
+    expect(apiSource).not.toContain('window.location.href = `${window.location.origin}/#/login`;');
     expect(apiSource).not.toContain(
       'window.location.href = window.location.origin + window.location.pathname;',
     );

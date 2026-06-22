@@ -30,6 +30,10 @@ export interface ApiClientOptions {
   nullFormValue?: 'omit' | 'empty';
 }
 
+export interface ApiRequestConfig extends AxiosRequestConfig {
+  skipLegacyGlobalError?: boolean;
+}
+
 export interface BackendEnvelope<T> {
   code?: number;
   data: T;
@@ -42,8 +46,8 @@ export interface BackendEnvelope<T> {
 
 export interface ApiClient {
   axios: AxiosInstance;
-  request: <T>(config: AxiosRequestConfig) => Promise<T>;
-  requestEnvelope: <T>(config: AxiosRequestConfig) => Promise<BackendEnvelope<T>>;
+  request: <T>(config: ApiRequestConfig) => Promise<T>;
+  requestEnvelope: <T>(config: ApiRequestConfig) => Promise<BackendEnvelope<T>>;
   resolveAdminPath: (path: string) => string;
 }
 
@@ -92,7 +96,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const apiError = new ApiError(status, message, error.response?.data);
       if (status === 403) {
         options.onUnauthorized?.(apiError);
-      } else {
+      } else if (!skipLegacyGlobalError(error.config)) {
         options.onError?.(apiError);
       }
       return Promise.reject(apiError);
@@ -101,11 +105,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
   return {
     axios: instance,
-    request: async <T,>(config: AxiosRequestConfig) => {
+    request: async <T,>(config: ApiRequestConfig) => {
       const response = await instance.request<BackendEnvelope<T>>(config);
       return unwrapLegacyEnvelope(response.data, response.status, options).data;
     },
-    requestEnvelope: async <T,>(config: AxiosRequestConfig) => {
+    requestEnvelope: async <T,>(config: ApiRequestConfig) => {
       const response = await instance.request<BackendEnvelope<T>>(config);
       return unwrapLegacyEnvelope(response.data, response.status, options);
     },
@@ -115,6 +119,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       return `/${securePath}${path}`;
     },
   };
+}
+
+function skipLegacyGlobalError(config: unknown): boolean {
+  return Boolean((config as ApiRequestConfig | undefined)?.skipLegacyGlobalError);
 }
 
 function unwrapLegacyEnvelope<T>(
