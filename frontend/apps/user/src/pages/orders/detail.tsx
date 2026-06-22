@@ -190,7 +190,7 @@ export default function OrderDetailPage() {
         token: isStripePayment ? stripeToken?.id : undefined,
       });
       if (isStripePayment) {
-        toast.loading(t('order.stripe_verifying'), { duration: 5000 });
+        toast.loading('请稍等，我们正在验证该笔支付', { duration: 5000 });
         return;
       }
       if (result.type === 0) {

@@ -108,6 +108,7 @@ interface DropdownCoords {
 }
 
 type LegacyTransitionStatus = 'enter' | 'entering' | 'entered' | 'leave' | 'leaving' | 'exited';
+const LEGACY_SELECT_OPEN_EVENT = 'v2board:legacy-select-open';
 
 function classNames(...values: Array<string | false | undefined>) {
   return values.filter(Boolean).join(' ');
@@ -281,8 +282,10 @@ function LegacySelectComponent({
   const searchValueRef = useRef('');
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const blurTimer = useRef<number | undefined>(undefined);
+  const selectIdRef = useRef(Symbol('legacy-select'));
   const [ariaId, setAriaId] = useState('');
   const [openState, setOpenState] = useState(defaultOpen);
+  const [forceHidden, setForceHidden] = useState(false);
   const [focused, setFocused] = useState(false);
   const [searchValue, setSearchValue] = useState('');
   const [activeValue, setActiveValue] = useState<LegacySelectValue | null>(null);
@@ -335,6 +338,12 @@ function LegacySelectComponent({
   const setSelectOpen = useCallback(
     (nextOpen: boolean) => {
       if (disabled && nextOpen) return;
+      if (nextOpen) {
+        setForceHidden(false);
+        window.dispatchEvent(
+          new CustomEvent(LEGACY_SELECT_OPEN_EVENT, { detail: selectIdRef.current }),
+        );
+      }
       if (open !== nextOpen) {
         onDropdownVisibleChange?.(nextOpen);
       }
@@ -344,6 +353,19 @@ function LegacySelectComponent({
     },
     [disabled, onDropdownVisibleChange, open, openProp],
   );
+
+  useEffect(() => {
+    const hideWhenSiblingOpens = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      if (event.detail === selectIdRef.current) return;
+      if (openProp !== undefined) return;
+      if (!open && dropdownStatus === 'exited') return;
+      setOpenState(false);
+      setForceHidden(true);
+    };
+    window.addEventListener(LEGACY_SELECT_OPEN_EVENT, hideWhenSiblingOpens);
+    return () => window.removeEventListener(LEGACY_SELECT_OPEN_EVENT, hideWhenSiblingOpens);
+  }, [dropdownStatus, open, openProp]);
 
   const slideClass =
     dropdownStatus === 'leave'
@@ -604,7 +626,7 @@ function LegacySelectComponent({
               isEmpty && 'ant-select-dropdown--empty',
               coords.placement === 'topLeft' && 'ant-select-dropdown-placement-topLeft',
               coords.placement === 'bottomLeft' && 'ant-select-dropdown-placement-bottomLeft',
-              dropdownStatus === 'exited' && 'ant-select-dropdown-hidden',
+              (forceHidden || dropdownStatus === 'exited') && 'ant-select-dropdown-hidden',
               slideClass,
             )}
             style={{

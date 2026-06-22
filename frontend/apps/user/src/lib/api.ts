@@ -23,6 +23,7 @@ export const apiClient = createApiClient({
     redirectToLegacyLogin();
   },
   onError: (error: ApiError) => {
+    if (isLegacyTimeoutError(error)) return;
     toast.error(i18nGet('请求失败'), { description: error.message });
   },
 });
@@ -35,4 +36,8 @@ function getApiBaseUrl(): string {
 
 export function getRequestLocale(): string {
   return legacyGetLocale();
+}
+
+function isLegacyTimeoutError(error: ApiError): boolean {
+  return error.status === 0 && /timeout/i.test(error.message);
 }

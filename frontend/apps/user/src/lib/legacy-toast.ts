@@ -115,9 +115,7 @@ function createNotification(
   notice.innerHTML = `
     <div class="ant-notification-notice-content">
       <div class="ant-notification-notice-with-icon">
-        ${notificationIconHtml(type)}
-        <div class="ant-notification-notice-message">${escapeHtml(message)}</div>
-        <div class="ant-notification-notice-description">${escapeHtml(description)}</div>
+        ${notificationIconHtml(type)}<div class="ant-notification-notice-message">${escapeHtml(message)}</div><div class="ant-notification-notice-description">${escapeHtml(description)}</div>
       </div>
     </div>
     <a tabindex="0" class="ant-notification-notice-close">${notificationCloseHtml()}</a>

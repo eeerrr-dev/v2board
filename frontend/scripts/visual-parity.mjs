@@ -52,6 +52,41 @@ const scenarios = [
   },
   {
     authenticated: true,
+    label: 'user-dashboard-no-subscription',
+    noSubscription: true,
+    path: '/#/dashboard',
+    readySelector: '.fa-plus',
+  },
+  {
+    authenticated: true,
+    expiredSubscription: true,
+    label: 'user-dashboard-expired-subscription',
+    path: '/#/dashboard',
+    readySelector: '.text-danger',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-traffic-used-up',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar.bg-danger',
+    trafficUsedUp: true,
+  },
+  {
+    authenticated: true,
+    deviceLimitReached: true,
+    label: 'user-dashboard-device-limit-reached',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar',
+  },
+  {
+    authenticated: true,
+    bannedUser: true,
+    label: 'user-dashboard-banned',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
     darkMode: true,
     label: 'user-dashboard-dark',
     path: '/#/dashboard',
@@ -65,15 +100,43 @@ const scenarios = [
   },
   {
     authenticated: true,
+    label: 'user-plans-sold-out',
+    path: '/#/plan',
+    readySelector: '.block-link-pop button[disabled]',
+    soldOutPlans: true,
+  },
+  {
+    authenticated: true,
+    emptyPlans: true,
+    label: 'user-plans-empty',
+    path: '/#/plan',
+    readySelector: '.spinner-grow',
+  },
+  {
+    authenticated: true,
     label: 'user-plan-checkout',
     path: '/#/plan/1',
     readySelector: '#cashier',
   },
   {
     authenticated: true,
+    label: 'user-plan-checkout-non-renewable',
+    nonRenewablePlan: true,
+    path: '/#/plan/1',
+    readySelector: '.ant-result-info',
+  },
+  {
+    authenticated: true,
     label: 'user-orders',
     path: '/#/order',
     readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    emptyOrders: true,
+    label: 'user-orders-empty',
+    path: '/#/order',
+    readySelector: '.ant-table-placeholder .ant-empty',
   },
   {
     authenticated: true,
@@ -86,6 +149,13 @@ const scenarios = [
     label: 'user-node',
     path: '/#/node',
     readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    emptyServers: true,
+    label: 'user-node-empty',
+    path: '/#/node',
+    readySelector: '.alert.alert-dark',
   },
   {
     authenticated: true,
@@ -107,6 +177,13 @@ const scenarios = [
   },
   {
     authenticated: true,
+    emptyTickets: true,
+    label: 'user-tickets-empty',
+    path: '/#/ticket',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
     label: 'user-ticket-detail',
     path: '/#/ticket/7',
     readySelector: '.js-chat-input',
@@ -120,6 +197,200 @@ const scenarios = [
   {
     authenticated: true,
     label: 'user-profile',
+    path: '/#/profile',
+    readySelector: '.ant-switch',
+  },
+  {
+    label: 'user-home-root-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/',
+    readySelector: '.v2board-auth-box',
+  },
+  { label: 'user-login-zh-tw', locale: 'zh-TW', path: '/#/login' },
+  {
+    label: 'user-register-rich-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/register?code=INVITE2026',
+  },
+  { label: 'user-forget-zh-tw', locale: 'zh-TW', path: '/#/forgetpassword' },
+  {
+    authenticated: true,
+    label: 'user-dashboard-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/plan',
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/plan/1',
+    readySelector: '#cashier',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/order',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-order-detail-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/order/VISUAL2026110001',
+    readySelector: '.v2board-order-info',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/node',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-traffic-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/traffic',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-invite-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/invite',
+    readySelector: '.ant-pagination',
+  },
+  {
+    authenticated: true,
+    label: 'user-tickets-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/ticket',
+    readySelector: '.ant-table-fixed-right',
+  },
+  {
+    authenticated: true,
+    label: 'user-ticket-detail-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/ticket/7',
+    readySelector: '.js-chat-input',
+  },
+  {
+    authenticated: true,
+    label: 'user-knowledge-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/knowledge',
+    readySelector: '.list-group-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-profile-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/profile',
+    readySelector: '.ant-switch',
+  },
+  {
+    label: 'user-home-root-en-us',
+    locale: 'en-US',
+    path: '/#/',
+    readySelector: '.v2board-auth-box',
+  },
+  { label: 'user-login-en-us', locale: 'en-US', path: '/#/login' },
+  {
+    label: 'user-register-rich-en-us',
+    locale: 'en-US',
+    path: '/#/register?code=INVITE2026',
+  },
+  { label: 'user-forget-en-us', locale: 'en-US', path: '/#/forgetpassword' },
+  {
+    authenticated: true,
+    label: 'user-dashboard-en-us',
+    locale: 'en-US',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-en-us',
+    locale: 'en-US',
+    path: '/#/plan',
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-en-us',
+    locale: 'en-US',
+    path: '/#/plan/1',
+    readySelector: '#cashier',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-en-us',
+    locale: 'en-US',
+    path: '/#/order',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-order-detail-en-us',
+    locale: 'en-US',
+    path: '/#/order/VISUAL2026110001',
+    readySelector: '.v2board-order-info',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-en-us',
+    locale: 'en-US',
+    path: '/#/node',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-traffic-en-us',
+    locale: 'en-US',
+    path: '/#/traffic',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-invite-en-us',
+    locale: 'en-US',
+    path: '/#/invite',
+    readySelector: '.ant-pagination',
+  },
+  {
+    authenticated: true,
+    label: 'user-tickets-en-us',
+    locale: 'en-US',
+    path: '/#/ticket',
+    readySelector: '.ant-table-fixed-right',
+  },
+  {
+    authenticated: true,
+    label: 'user-ticket-detail-en-us',
+    locale: 'en-US',
+    path: '/#/ticket/7',
+    readySelector: '.js-chat-input',
+  },
+  {
+    authenticated: true,
+    label: 'user-knowledge-en-us',
+    locale: 'en-US',
+    path: '/#/knowledge',
+    readySelector: '.list-group-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-profile-en-us',
+    locale: 'en-US',
     path: '/#/profile',
     readySelector: '.ant-switch',
   },
@@ -411,6 +682,19 @@ const interactionScenarios = [
     scenarioLabel: 'user-profile',
   },
   {
+    delayUserRedeemGiftcardMs: 200,
+    label: 'user-profile-redeem-giftcard-api-500',
+    redeemGiftcardHttpError: true,
+    run: runProfileRedeemGiftcardFailureInteraction,
+    scenarioLabel: 'user-profile',
+  },
+  {
+    label: 'user-profile-redeem-giftcard-timeout',
+    redeemGiftcardTimeout: true,
+    run: runProfileRedeemGiftcardFailureInteraction,
+    scenarioLabel: 'user-profile',
+  },
+  {
     delayUserChangePasswordMs: 200,
     label: 'user-profile-change-password-success',
     run: runProfileChangePasswordSuccessInteraction,
@@ -427,6 +711,12 @@ const interactionScenarios = [
     scenarioLabel: 'user-plan-checkout',
   },
   {
+    couponError: true,
+    label: 'user-plan-checkout-coupon-error',
+    run: runPlanCheckoutCouponErrorInteraction,
+    scenarioLabel: 'user-plan-checkout',
+  },
+  {
     label: 'user-order-payment-method',
     run: runOrderPaymentMethodInteraction,
     scenarioLabel: 'user-order-detail',
@@ -438,9 +728,23 @@ const interactionScenarios = [
     scenarioLabel: 'user-order-detail',
   },
   {
+    delayUserOrderCheckoutMs: 200,
+    label: 'user-order-qr-checkout-failure',
+    orderCheckoutError: true,
+    run: runOrderCheckoutFailureInteraction,
+    scenarioLabel: 'user-order-detail',
+  },
+  {
     label: 'user-order-stripe-disabled-checkout',
     run: runOrderStripeDisabledCheckoutInteraction,
     scenarioLabel: 'user-order-detail',
+  },
+  {
+    delayUserOrderCheckoutMs: 200,
+    label: 'user-order-stripe-token-checkout',
+    run: runOrderStripeTokenCheckoutInteraction,
+    scenarioLabel: 'user-order-detail',
+    stripeToken: 'tok_visual_parity_success',
   },
   {
     checkoutRedirectUrl: '/#/order/VISUAL2026110001?cashier=visual',
@@ -486,6 +790,13 @@ const interactionScenarios = [
     scenarioLabel: 'user-invite',
   },
   {
+    delayUserTransferMs: 200,
+    label: 'user-invite-transfer-insufficient-balance',
+    run: runInviteTransferFailureInteraction,
+    scenarioLabel: 'user-invite',
+    transferError: true,
+  },
+  {
     delayUserWithdrawMs: 200,
     label: 'user-invite-withdraw-modal',
     run: runInviteWithdrawModalInteraction,
@@ -507,6 +818,13 @@ const interactionScenarios = [
     label: 'user-ticket-create-submit',
     run: runUserTicketCreateModalInteraction,
     scenarioLabel: 'user-tickets',
+  },
+  {
+    delayUserTicketSaveMs: 200,
+    label: 'user-ticket-create-validation-failure',
+    run: runUserTicketCreateValidationFailureInteraction,
+    scenarioLabel: 'user-tickets',
+    ticketSaveError: true,
   },
   {
     delayAdminTicketReplyMs: 200,
@@ -552,6 +870,11 @@ const interactionScenarios = [
     scenarioLabel: 'admin-plans',
   },
   {
+    label: 'admin-plan-reset-method-matrix',
+    run: runAdminPlanResetMethodMatrixInteraction,
+    scenarioLabel: 'admin-plans',
+  },
+  {
     delayAdminPlanSaveMs: 200,
     label: 'admin-plan-edit-drawer',
     run: runAdminPlanEditDrawerInteraction,
@@ -575,6 +898,11 @@ const interactionScenarios = [
   {
     label: 'admin-server-create-node-drawer',
     run: runAdminServerCreateNodeDrawerInteraction,
+    scenarioLabel: 'admin-server-manage',
+  },
+  {
+    label: 'admin-server-vless-reality-matrix',
+    run: runAdminServerVlessRealityMatrixInteraction,
     scenarioLabel: 'admin-server-manage',
   },
   {
@@ -617,6 +945,12 @@ const interactionScenarios = [
     scenarioLabel: 'admin-payments',
   },
   {
+    delayAdminPaymentSaveMs: 200,
+    label: 'admin-payment-plugin-field-matrix',
+    run: runAdminPaymentPluginFieldMatrixInteraction,
+    scenarioLabel: 'admin-payments',
+  },
+  {
     label: 'admin-payment-notify-tooltip',
     run: runAdminPaymentNotifyTooltipInteraction,
     scenarioLabel: 'admin-payments',
@@ -655,6 +989,12 @@ const interactionScenarios = [
   {
     label: 'admin-coupon-range-picker',
     run: runAdminCouponRangePickerInteraction,
+    scenarioLabel: 'admin-coupons',
+  },
+  {
+    delayAdminCouponGenerateMs: 200,
+    label: 'admin-coupon-type-matrix',
+    run: runAdminCouponTypeMatrixInteraction,
     scenarioLabel: 'admin-coupons',
   },
   {
@@ -816,6 +1156,10 @@ const userInfoFixture = {
   transfer_enable: 1000 * 1024 * 1024 * 1024,
   uuid: 'visual-parity-user',
 };
+const bannedUserInfoFixture = {
+  ...userInfoFixture,
+  banned: 1,
+};
 const subscribeFixture = {
   alive_ip: 2,
   allow_new_period: 0,
@@ -854,6 +1198,35 @@ const newPeriodSubscribeFixture = {
   d: 450 * 1024 * 1024 * 1024,
   reset_day: 0,
   u: 550 * 1024 * 1024 * 1024,
+};
+const noSubscriptionFixture = {
+  ...subscribeFixture,
+  alive_ip: 0,
+  d: 0,
+  device_limit: null,
+  expired_at: null,
+  plan: null,
+  plan_id: null,
+  reset_day: null,
+  transfer_enable: 0,
+  u: 0,
+};
+const expiredSubscriptionFixture = {
+  ...subscribeFixture,
+  expired_at: 1_650_000_000,
+  reset_day: null,
+};
+const trafficUsedUpSubscribeFixture = {
+  ...subscribeFixture,
+  allow_new_period: 1,
+  d: 0,
+  reset_day: 0,
+  u: subscribeFixture.transfer_enable,
+};
+const deviceLimitReachedSubscribeFixture = {
+  ...subscribeFixture,
+  alive_ip: 7,
+  device_limit: 5,
 };
 const subscribeTargetTitles = [
   'Hiddify',
@@ -1064,6 +1437,7 @@ const couponCheckFixture = {
   updated_at: 1_700_000_000,
   value: 10,
 };
+const couponErrorCode = 'BADCODE';
 const serverFixtures = [
   {
     cache_key: 'server-1',
@@ -2305,7 +2679,8 @@ async function runInteractionTarget(browser, url, scenario, interaction, viewpor
     }));
     throw new Error(
       `${interaction.label}/${viewport.label}/${target}: ${error.message}\n` +
-        `URL: ${snapshot.url}\nTitle: ${snapshot.title}\nBody: ${snapshot.body}`,
+        `URL: ${snapshot.url}\nTitle: ${snapshot.title}\nBody: ${snapshot.body}\n` +
+        `Diagnostics: ${(page.__visualParityDiagnostics ?? []).slice(-40).join(' | ')}`,
     );
   } finally {
     await context.close();
@@ -2319,7 +2694,7 @@ async function preparePageForInteraction(page, url, scenario, target, interactio
     diagnostics.push(`${message.type()}: ${message.text()}`);
   });
   page.on('pageerror', (error) => {
-    diagnostics.push(`pageerror: ${error.message}`);
+    diagnostics.push(`pageerror: ${error.stack || error.message}`);
   });
   page.on('requestfailed', (request) => {
     diagnostics.push(`requestfailed ${request.method()} ${request.url()}: ${request.failure()?.errorText}`);
@@ -2894,6 +3269,39 @@ async function runProfileRedeemGiftcardInteraction(page) {
   };
 }
 
+async function runProfileRedeemGiftcardFailureInteraction(page) {
+  const initialInfoFetchCount = page.__visualParityUserInfoFetchCount ?? 0;
+  const initialRedeemCount = page.__visualParityUserRedeemGiftcardCount ?? 0;
+  const before = await profileRedeemGiftcardState(page);
+
+  await page
+    .locator('input[placeholder*="Gift Card"], input[placeholder*="礼品卡"]')
+    .first()
+    .fill('CARD-FAIL');
+  await page.waitForTimeout(100);
+  const filled = await profileRedeemGiftcardState(page);
+
+  await clickProfileRedeemGiftcardButton(page);
+  await waitForProfileRedeemGiftcardLoading(page);
+  const loading = await profileRedeemGiftcardState(page);
+
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserRedeemGiftcardCount',
+    initialRedeemCount + 1,
+  );
+  await page.waitForTimeout(350);
+  const after = await profileRedeemGiftcardState(page);
+
+  return {
+    after,
+    before,
+    filled,
+    infoFetchDelta: (page.__visualParityUserInfoFetchCount ?? 0) - initialInfoFetchCount,
+    loading,
+  };
+}
+
 async function runProfileChangePasswordSuccessInteraction(page) {
   const before = await profileChangePasswordState(page);
 
@@ -2953,6 +3361,34 @@ async function runPlanCheckoutCouponInteraction(page) {
   };
 }
 
+async function runPlanCheckoutCouponErrorInteraction(page) {
+  const initialCouponCheckCount = page.__visualParityUserCouponCheckCount ?? 0;
+  const before = {
+    activePeriods: await visibleTexts(page, '#cashier .v2board-select.active', 2),
+    summaryBlocks: await visibleTexts(page, '#cashier .col-md-4 .block', 4),
+  };
+  await fillFirstVisible(page, '.v2board-input-coupon', couponErrorCode);
+  await clickCouponVerifyButton(page);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserCouponCheckCount',
+    initialCouponCheckCount + 1,
+  );
+  await page.waitForTimeout(250);
+  const after = {
+    activePeriods: await visibleTexts(page, '#cashier .v2board-select.active', 2),
+    couponInput: await firstInputValue(page, '.v2board-input-coupon'),
+    summaryBlocks: await visibleTexts(page, '#cashier .col-md-4 .block', 4),
+    submitButton: await firstElementState(page, '#cashier .btn-block.btn-primary'),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+  };
+  return {
+    after,
+    before,
+    couponRequests: clonePageRequests(page.__visualParityUserCouponCheckRequests),
+  };
+}
+
 async function runOrderPaymentMethodInteraction(page) {
   await page.waitForFunction(
     () =>
@@ -3007,6 +3443,27 @@ async function runOrderQrCheckoutInteraction(page) {
   };
 }
 
+async function runOrderCheckoutFailureInteraction(page) {
+  const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
+  const before = await orderCheckoutState(page);
+  await clickFirstVisible(page, '#cashier .btn-block.btn-primary');
+  await page.waitForTimeout(100);
+  const loading = await orderCheckoutState(page);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserOrderCheckoutCount',
+    initialCheckoutCount + 1,
+  );
+  await page.waitForTimeout(250);
+  const after = await orderCheckoutState(page);
+  return {
+    after,
+    before,
+    checkoutRequests: clonePageRequests(page.__visualParityUserOrderCheckoutRequests),
+    loading,
+  };
+}
+
 async function runOrderStripeDisabledCheckoutInteraction(page) {
   await waitForOrderPaymentMethodCount(page);
   const before = await orderCheckoutState(page);
@@ -3017,6 +3474,38 @@ async function runOrderStripeDisabledCheckoutInteraction(page) {
   const selected = await orderCheckoutState(page);
   return {
     before,
+    checkoutRequests: clonePageRequests(page.__visualParityUserOrderCheckoutRequests),
+    selected,
+  };
+}
+
+async function runOrderStripeTokenCheckoutInteraction(page) {
+  const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
+  await waitForOrderPaymentMethodCount(page);
+  const before = await orderCheckoutState(page);
+  await clickVisibleAt(page, '#cashier .v2board-select', 1);
+  await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
+  await waitForCreditCardSection(page);
+  await page.waitForFunction(
+    () => {
+      const button = document.querySelector('#cashier .btn-block.btn-primary');
+      return button instanceof HTMLButtonElement && !button.disabled;
+    },
+    { timeout: 5_000 },
+  );
+  await page.waitForTimeout(150);
+  const selected = await orderCheckoutState(page);
+  await clickFirstVisible(page, '#cashier .btn-block.btn-primary');
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserOrderCheckoutCount',
+    initialCheckoutCount + 1,
+  );
+  await page.waitForTimeout(350);
+  const checkedOut = await orderCheckoutState(page);
+  return {
+    before,
+    checkedOut,
     checkoutRequests: clonePageRequests(page.__visualParityUserOrderCheckoutRequests),
     selected,
   };
@@ -3136,6 +3625,38 @@ async function runInviteTransferModalInteraction(page) {
   return {
     before,
     closed,
+    filled,
+    infoFetchDelta: (page.__visualParityUserInfoFetchCount ?? 0) - initialInfoFetchCount,
+    opened,
+    saving,
+    transferRequests: clonePageRequests(page.__visualParityUserTransferRequests),
+  };
+}
+
+async function runInviteTransferFailureInteraction(page) {
+  const initialInfoFetchCount = page.__visualParityUserInfoFetchCount ?? 0;
+  const initialTransferCount = page.__visualParityUserTransferCount ?? 0;
+  const before = await inviteFinanceDialogState(page);
+  await clickFirstVisibleText(page, 'button, .ant-btn', ['划转', 'Transfer']);
+  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await page.waitForTimeout(100);
+  const opened = await inviteFinanceDialogState(page);
+  await fillVisibleAt(page, '.ant-modal input:not([disabled])', 0, '99999.99');
+  await page.waitForTimeout(100);
+  const filled = await inviteFinanceDialogState(page);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await page.waitForTimeout(100);
+  const saving = await inviteFinanceDialogState(page);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserTransferCount',
+    initialTransferCount + 1,
+  );
+  await page.waitForTimeout(250);
+  const after = await inviteFinanceDialogState(page);
+  return {
+    after,
+    before,
     filled,
     infoFetchDelta: (page.__visualParityUserInfoFetchCount ?? 0) - initialInfoFetchCount,
     opened,
@@ -3293,6 +3814,37 @@ async function runUserTicketCreateModalInteraction(page) {
   };
 }
 
+async function runUserTicketCreateValidationFailureInteraction(page) {
+  const initialTicketFetchCount = page.__visualParityUserTicketFetchCount ?? 0;
+  const initialTicketSaveCount = page.__visualParityUserTicketSaveCount ?? 0;
+  const before = await userTicketCreateModalState(page);
+  await clickFirstVisible(page, '.block-header .block-options .btn, .block-header .block-options button');
+  await page.waitForSelector('.ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForTimeout(100);
+  const opened = await userTicketCreateModalState(page);
+  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await page.waitForTimeout(100);
+  const saving = await userTicketCreateModalState(page);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserTicketSaveCount',
+    initialTicketSaveCount + 1,
+  );
+  await page.waitForTimeout(250);
+  const after = await userTicketCreateModalState(page);
+  return {
+    after,
+    before,
+    opened,
+    saveRequests: clonePageRequests(page.__visualParityUserTicketSaveRequests),
+    saving,
+    ticketFetchDelta: (page.__visualParityUserTicketFetchCount ?? 0) - initialTicketFetchCount,
+  };
+}
+
 async function runOrderCancelConfirmInteraction(page) {
   const cancelLinkTexts = ['Cancel', '取消'];
   const initialOrderCancelCount = page.__visualParityUserOrderCancelCount ?? 0;
@@ -3444,6 +3996,53 @@ async function runAdminPlanCreateGroupSelectDropdownInteraction(page) {
   return { before, opened };
 }
 
+async function runAdminPlanResetMethodMatrixInteraction(page) {
+  const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
+  await clickFirstVisible(page, '.bg-white .ant-btn');
+  await page.waitForSelector('.ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-drawer-title', '新建订阅');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Reset Matrix');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '<p>Reset method matrix</p>');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, '10.00');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 9, '2.00');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 10, '128');
+  await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default']);
+  await openLegacySelectByLabel(page, '.ant-drawer-open', '流量重置方式');
+  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '每年1月1日');
+  const resetDropdown = await adminPlanDrawerState(page);
+  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['每月1号']);
+  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  const monthlyFirst = await adminPlanDrawerState(page);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '流量重置方式', ['不重置']);
+  const neverReset = await adminPlanDrawerState(page);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '流量重置方式', ['每月1号']);
+  const final = await adminPlanDrawerState(page);
+  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanSaveCount', 1);
+  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, '.ant-drawer-title');
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminPlanFetchCount',
+    initialPlanFetchCount + 1,
+  );
+  const closed = await adminPlanDrawerState(page);
+  return {
+    closed,
+    final,
+    monthlyFirst,
+    neverReset,
+    planFetchDelta: (page.__visualParityAdminPlanFetchCount ?? 0) - initialPlanFetchCount,
+    resetDropdown,
+    saveRequests: (page.__visualParityAdminPlanSaveRequests ?? []).map((request) =>
+      structuredClone(request),
+    ),
+  };
+}
+
 async function runAdminPlanEditDrawerInteraction(page) {
   const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
   const before = await adminPlanDrawerState(page);
@@ -3577,6 +4176,58 @@ async function runAdminServerCreateNodeDrawerInteraction(page) {
   await waitForVisibleElementsHidden(page, '.ant-drawer-open');
   const closed = await adminServerNodeDrawerState(page);
   return { before, closed, drawerOpened, groupDropdown, groupSelected, menuOpened };
+}
+
+async function runAdminServerVlessRealityMatrixInteraction(page) {
+  const initialNodeFetchCount = page.__visualParityAdminServerNodeFetchCount ?? 0;
+  const before = await adminServerNodeDrawerState(page);
+  await page.locator('.v2board-table-action .ant-dropdown-trigger').first().hover();
+  await page.waitForTimeout(150);
+  await clickFirstVisible(page, '.v2board-table-action .ant-dropdown-trigger');
+  await waitForVisibleText(page, '.ant-dropdown-menu-item', 'VLess');
+  const menuOpened = await adminServerNodeDrawerState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['VLess']);
+  await page.waitForSelector('.ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-drawer-title', '新建节点');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity VLess Reality');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '3.5');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, 'vless.example.test');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 3, '443');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 4, '10443');
+  await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default'], {
+    waitForHidden: false,
+  });
+  await page.keyboard.press('Escape').catch(() => undefined);
+  const opened = await adminServerNodeDrawerState(page);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['Reality']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['TCP']);
+  await waitForVisibleText(page, '.ant-drawer-open .form-group label', 'XTLS流控算法');
+  await selectLegacyFormOption(page, '.ant-drawer-open', 'XTLS流控算法', ['xtls-rprx-vision']);
+  const realityTcp = await adminServerNodeDrawerState(page);
+  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminServerNodeSaveCount', 1);
+  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminServerNodeFetchCount',
+    initialNodeFetchCount + 1,
+  );
+  const closed = await adminServerNodeDrawerState(page);
+  return {
+    before,
+    closed,
+    menuOpened,
+    nodeFetchDelta:
+      (page.__visualParityAdminServerNodeFetchCount ?? 0) - initialNodeFetchCount,
+    opened,
+    realityTcp,
+    saveRequests: (page.__visualParityAdminServerNodeSaveRequests ?? []).map((request) =>
+      structuredClone(request),
+    ),
+  };
 }
 
 async function runAdminServerEditNodeDrawerInteraction(page) {
@@ -3862,6 +4513,59 @@ async function runAdminPaymentEditModalInteraction(page) {
   };
 }
 
+async function runAdminPaymentPluginFieldMatrixInteraction(page) {
+  const initialPaymentFetchCount = page.__visualParityAdminPaymentFetchCount ?? 0;
+  await clickFirstVisibleText(page, 'button', ['添加支付方式']);
+  await page.waitForSelector('.ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), {
+    timeout: 5_000,
+  });
+  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Plugin Matrix');
+  const alipay = await adminPaymentModalState(page);
+  await selectLegacyFormOption(page, '.ant-modal', '接口文件', ['MGate']);
+  await waitForVisibleText(page, '.ant-modal label', 'Token');
+  await fillFirstVisible(page, '.ant-modal input[placeholder="请输入 MGate Token"]', 'mgate_matrix_token');
+  await page.waitForTimeout(100);
+  const mgate = await adminPaymentModalState(page);
+  await selectLegacyFormOption(page, '.ant-modal', '接口文件', ['StripeCheckout']);
+  await waitForVisibleText(page, '.ant-modal label', 'Secret Key');
+  await fillFirstVisible(
+    page,
+    '.ant-modal input[placeholder="请输入 Stripe Publishable Key"]',
+    'pk_matrix_plugin',
+  );
+  await fillFirstVisible(
+    page,
+    '.ant-modal input[placeholder="请输入 Stripe Secret Key"]',
+    'sk_matrix_plugin',
+  );
+  await page.waitForTimeout(100);
+  const stripe = await adminPaymentModalState(page);
+  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminPaymentSaveCount', 1);
+  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminPaymentFetchCount',
+    initialPaymentFetchCount + 1,
+  );
+  const closed = await adminPaymentModalState(page);
+  return {
+    alipay,
+    closed,
+    mgate,
+    paymentFetchDelta:
+      (page.__visualParityAdminPaymentFetchCount ?? 0) - initialPaymentFetchCount,
+    saveRequests: (page.__visualParityAdminPaymentSaveRequests ?? []).map((request) =>
+      structuredClone(request),
+    ),
+    stripe,
+  };
+}
+
 async function runAdminPaymentNotifyTooltipInteraction(page) {
   return hoverAllTooltipTargetsInteraction(page, ['.ant-table-thead .anticon-question-circle']);
 }
@@ -4014,6 +4718,48 @@ async function runAdminCouponRangePickerInteraction(page) {
   await page.waitForTimeout(150);
   const opened = await legacyRangePickerState(page);
   return { before, opened };
+}
+
+async function runAdminCouponTypeMatrixInteraction(page) {
+  const initialCouponFetchCount = page.__visualParityAdminCouponFetchCount ?? 0;
+  await clickFirstVisible(page, '.bg-white .ant-btn');
+  await page.waitForSelector('.ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-modal-title', '新建优惠券');
+  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Ratio Coupon');
+  await fillVisibleAt(page, '.ant-modal .ant-input', 1, 'RATIO2026');
+  await fillVisibleAt(page, '.ant-modal input[type="number"], .ant-modal .ant-input', 2, '15');
+  const amount = await adminCouponModalState(page);
+  await selectLegacyFormOption(page, '.ant-modal', '优惠信息', ['按比例优惠']);
+  await page.waitForTimeout(100);
+  const ratio = await adminCouponModalState(page);
+  await selectLegacyFormOption(page, '.ant-modal', '指定订阅', ['Pro'], { waitForHidden: false });
+  await page.keyboard.press('Escape').catch(() => undefined);
+  await selectLegacyFormOption(page, '.ant-modal', '指定周期', ['月付'], { waitForHidden: false });
+  await page.keyboard.press('Escape').catch(() => undefined);
+  await page.waitForTimeout(100);
+  const limited = await adminCouponModalState(page);
+  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminCouponGenerateCount', 1);
+  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminCouponFetchCount',
+    initialCouponFetchCount + 1,
+  );
+  const closed = await adminCouponModalState(page);
+  return {
+    amount,
+    closed,
+    couponFetchDelta: (page.__visualParityAdminCouponFetchCount ?? 0) - initialCouponFetchCount,
+    generateRequests: (page.__visualParityAdminCouponGenerateRequests ?? []).map((request) =>
+      structuredClone(request),
+    ),
+    limited,
+    ratio,
+  };
 }
 
 async function runAdminCouponEditModalInteraction(page) {
@@ -4961,6 +5707,7 @@ async function userTicketCreateModalState(page) {
     selectDropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 6),
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
     titles: await visibleTexts(page, '.ant-modal-title', 2),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -4991,8 +5738,12 @@ function stableJson(value) {
   return JSON.stringify(sortForStableJson(value));
 }
 
+function jsonIncludes(value, candidate) {
+  return String(JSON.stringify(value) ?? '').includes(candidate);
+}
+
 function jsonIncludesAny(value, candidates) {
-  const json = JSON.stringify(value);
+  const json = String(JSON.stringify(value) ?? '');
   return candidates.some((candidate) => json.includes(candidate));
 }
 
@@ -5429,6 +6180,24 @@ function assertUsefulInteraction(label, result) {
       `profile redeem giftcard did not match legacy behavior: ${JSON.stringify(result)}`,
     );
   }
+  if (['user-profile-redeem-giftcard-api-500', 'user-profile-redeem-giftcard-timeout'].includes(label)) {
+    const requiresLoadingSample = label === 'user-profile-redeem-giftcard-api-500';
+    const expectsStuckLoading = label === 'user-profile-redeem-giftcard-timeout';
+    if (
+      !jsonIncludesAny(result.before?.blockTitles, ['礼品卡', 'Gift Card']) ||
+      result.filled?.inputValue !== 'CARD-FAIL' ||
+      (requiresLoadingSample && !result.loading?.redeemButton?.loading) ||
+      result.after?.redeemRequests?.length !== 1 ||
+      result.after?.redeemRequests?.[0]?.giftcard !== 'CARD-FAIL' ||
+      result.after?.inputValue !== 'CARD-FAIL' ||
+      result.after?.redeemButton?.loading !== expectsStuckLoading ||
+      result.infoFetchDelta !== 0
+    ) {
+      throw new Error(
+        `profile redeem giftcard failure did not preserve legacy state: ${JSON.stringify(result)}`,
+      );
+    }
+  }
   if (
     label === 'user-profile-change-password-success' &&
     (!jsonIncludesAny(result.before?.blockTitles, ['修改密码', 'Change Password']) ||
@@ -5471,6 +6240,17 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`plan checkout coupon did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'user-plan-checkout-coupon-error' &&
+    (result.after?.couponInput !== couponErrorCode ||
+      result.couponRequests?.length !== 1 ||
+      result.couponRequests?.[0]?.code !== couponErrorCode ||
+      String(result.couponRequests?.[0]?.plan_id) !== '1' ||
+      JSON.stringify(result.after?.summaryBlocks).includes(couponCheckFixture.name) ||
+      stableJson(result.before?.summaryBlocks) !== stableJson(result.after?.summaryBlocks))
+  ) {
+    throw new Error(`plan checkout coupon error did not preserve legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
     label === 'user-order-payment-method' &&
     (result.before?.activeIndex !== 0 ||
       result.after?.activeIndex !== 2 ||
@@ -5495,6 +6275,19 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`order QR checkout did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'user-order-qr-checkout-failure' &&
+    (result.before?.activeIndex !== 0 ||
+      result.checkoutRequests?.length !== 1 ||
+      result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
+      Number(result.checkoutRequests?.[0]?.method) !== 1 ||
+      result.after?.modalCount !== 0 ||
+      result.after?.qrSvgCount + result.after?.qrCanvasCount !== 0 ||
+      result.after?.submitButton?.disabled !== false ||
+      !result.after?.hash?.includes('/order/VISUAL2026110001'))
+  ) {
+    throw new Error(`order QR checkout failure did not preserve legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
     label === 'user-order-stripe-disabled-checkout' &&
     (result.before?.activeIndex !== 0 ||
       result.selected?.activeIndex !== 1 ||
@@ -5506,6 +6299,26 @@ function assertUsefulInteraction(label, result) {
   ) {
     throw new Error(
       `order Stripe disabled checkout did not produce observable state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'user-order-stripe-token-checkout' &&
+    (result.before?.activeIndex !== 0 ||
+      result.selected?.activeIndex !== 1 ||
+      result.selected?.stripePublicKeyCount < 1 ||
+      result.selected?.submitButton?.disabled !== false ||
+      result.checkoutRequests?.length !== 1 ||
+      result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
+      Number(result.checkoutRequests?.[0]?.method) !== 2 ||
+      result.checkoutRequests?.[0]?.token !== 'tok_visual_parity_success' ||
+      !jsonIncludesAny(result.checkedOut?.toastTexts, [
+        '正在验证',
+        'Please wait while we verify this payment',
+        'Verifying',
+      ]))
+  ) {
+    throw new Error(
+      `order Stripe token checkout did not produce observable state: ${JSON.stringify(result)}`,
     );
   }
   if (
@@ -5624,6 +6437,21 @@ function assertUsefulInteraction(label, result) {
       `invite transfer modal did not match legacy behavior: ${JSON.stringify(result)}`,
     );
   }
+  if (
+    label === 'user-invite-transfer-insufficient-balance' &&
+    (result.before?.modalCount !== 0 ||
+      result.opened?.modalCount !== 1 ||
+      !JSON.stringify(result.filled?.inputValues).includes('99999.99') ||
+      result.transferRequests?.length !== 1 ||
+      Number(result.transferRequests?.[0]?.transfer_amount) !== 9999999 ||
+      result.after?.modalCount !== 1 ||
+      !JSON.stringify(result.after?.inputValues).includes('99999.99') ||
+      result.infoFetchDelta !== 0)
+  ) {
+    throw new Error(
+      `invite transfer failure did not preserve legacy state: ${JSON.stringify(result)}`,
+    );
+  }
   if (label === 'user-invite-withdraw-modal') {
     if (!result.withdrawRequests?.length) {
       throw new Error(
@@ -5680,6 +6508,19 @@ function assertUsefulInteraction(label, result) {
   ) {
     throw new Error(
       `user ticket create submit did not match legacy behavior: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'user-ticket-create-validation-failure' &&
+    (result.before?.modalCount !== 0 ||
+      result.opened?.modalCount !== 1 ||
+      result.saveRequests?.length !== 1 ||
+      result.after?.modalCount !== 1 ||
+      result.after?.inputValues?.some((value) => value !== '') ||
+      result.ticketFetchDelta !== 0)
+  ) {
+    throw new Error(
+      `ticket create validation failure did not preserve legacy state: ${JSON.stringify(result)}`,
     );
   }
   if (
@@ -5791,6 +6632,30 @@ function assertUsefulInteraction(label, result) {
     !legacySelectDropdownHasOpened(result, ['Default'])
   ) {
     throw new Error(`admin plan create group select did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-plan-reset-method-matrix' &&
+    (!JSON.stringify(result.resetDropdown?.dropdownItems).includes('跟随系统设置') ||
+      !JSON.stringify(result.resetDropdown?.dropdownItems).includes('每月1号') ||
+      !JSON.stringify(result.resetDropdown?.dropdownItems).includes('按月重置') ||
+      !JSON.stringify(result.resetDropdown?.dropdownItems).includes('不重置') ||
+      !JSON.stringify(result.resetDropdown?.dropdownItems).includes('每年1月1日') ||
+      !JSON.stringify(result.resetDropdown?.dropdownItems).includes('按年重置') ||
+      !JSON.stringify(result.monthlyFirst?.selectedValues).includes('每月1号') ||
+      !JSON.stringify(result.neverReset?.selectedValues).includes('不重置') ||
+      !JSON.stringify(result.final?.selectedValues).includes('每月1号') ||
+      result.saveRequests?.length !== 1 ||
+      result.saveRequests?.[0]?.name !== 'Parity Reset Matrix' ||
+      result.saveRequests?.[0]?.content !== '<p>Reset method matrix</p>' ||
+      String(result.saveRequests?.[0]?.month_price) !== '1000' ||
+      String(result.saveRequests?.[0]?.reset_price) !== '200' ||
+      String(result.saveRequests?.[0]?.transfer_enable) !== '128' ||
+      String(result.saveRequests?.[0]?.group_id) !== '1' ||
+      String(result.saveRequests?.[0]?.reset_traffic_method) !== '0' ||
+      result.planFetchDelta < 1 ||
+      result.closed?.drawerCount !== 0)
+  ) {
+    throw new Error(`admin plan reset matrix did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'admin-plan-edit-drawer' &&
@@ -5910,6 +6775,32 @@ function assertUsefulInteraction(label, result) {
     );
   }
   if (
+    label === 'admin-payment-plugin-field-matrix' &&
+    (result.alipay?.modalCount !== 1 ||
+      !JSON.stringify(result.alipay?.selectedPayment).includes('AlipayF2F') ||
+      !JSON.stringify(result.alipay?.labels).includes('密钥') ||
+      !JSON.stringify(result.alipay?.labels).includes('商户ID') ||
+      !JSON.stringify(result.mgate?.selectedPayment).includes('MGate') ||
+      !JSON.stringify(result.mgate?.labels).includes('Token') ||
+      !JSON.stringify(result.mgate?.inputValues).includes('mgate_matrix_token') ||
+      !JSON.stringify(result.stripe?.selectedPayment).includes('StripeCheckout') ||
+      !JSON.stringify(result.stripe?.labels).includes('Publishable Key') ||
+      !JSON.stringify(result.stripe?.labels).includes('Secret Key') ||
+      !JSON.stringify(result.stripe?.inputValues).includes('pk_matrix_plugin') ||
+      !JSON.stringify(result.stripe?.inputValues).includes('sk_matrix_plugin') ||
+      result.saveRequests?.length !== 1 ||
+      result.saveRequests?.[0]?.name !== 'Parity Plugin Matrix' ||
+      result.saveRequests?.[0]?.payment !== 'StripeCheckout' ||
+      result.saveRequests?.[0]?.['config[publishable_key]'] !== 'pk_matrix_plugin' ||
+      result.saveRequests?.[0]?.['config[secret_key]'] !== 'sk_matrix_plugin' ||
+      result.paymentFetchDelta < 1 ||
+      result.closed?.modalCount !== 0)
+  ) {
+    throw new Error(
+      `admin payment plugin matrix did not produce observable state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
     label === 'admin-server-create-node-drawer' &&
     (result.before?.drawerCount !== 0 ||
       result.menuOpened?.dropdownCount !== 1 ||
@@ -5931,6 +6822,41 @@ function assertUsefulInteraction(label, result) {
       result.closed?.drawerCount !== 0)
   ) {
     throw new Error(`admin server node drawer did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-server-vless-reality-matrix' &&
+    (result.before?.drawerCount !== 0 ||
+      result.menuOpened?.dropdownCount !== 1 ||
+      !jsonIncludes(result.menuOpened?.dropdownItems, 'VLess') ||
+      result.opened?.drawerCount !== 1 ||
+      !jsonIncludes(result.opened?.labels, '节点地址') ||
+      !jsonIncludes(result.opened?.labels, '安全性') ||
+      !jsonIncludes(result.opened?.labels, '传输协议') ||
+      !jsonIncludes(result.opened?.labels, 'XTLS流控算法') ||
+      !jsonIncludes(result.opened?.selectedValues, 'Default') ||
+      !jsonIncludes(result.realityTcp?.selectedValues, 'Reality') ||
+      !jsonIncludes(result.realityTcp?.selectedValues, 'TCP') ||
+      !jsonIncludes(result.realityTcp?.selectedValues, 'xtls-rprx-vision') ||
+      !jsonIncludes(result.realityTcp?.inputValues, 'Parity VLess Reality') ||
+      !jsonIncludes(result.realityTcp?.inputValues, 'vless.example.test') ||
+      result.saveRequests?.length !== 1 ||
+      result.saveRequests?.[0]?.__endpoint !== '/server/vless/save' ||
+      result.saveRequests?.[0]?.__type !== 'vless' ||
+      result.saveRequests?.[0]?.name !== 'Parity VLess Reality' ||
+      String(result.saveRequests?.[0]?.rate) !== '3.5' ||
+      result.saveRequests?.[0]?.host !== 'vless.example.test' ||
+      String(result.saveRequests?.[0]?.port) !== '443' ||
+      String(result.saveRequests?.[0]?.server_port) !== '10443' ||
+      String(result.saveRequests?.[0]?.tls) !== '2' ||
+      result.saveRequests?.[0]?.network !== 'tcp' ||
+      result.saveRequests?.[0]?.flow !== 'xtls-rprx-vision' ||
+      String(result.saveRequests?.[0]?.['group_id[0]']) !== '1' ||
+      result.nodeFetchDelta < 1 ||
+      result.closed?.drawerCount !== 0)
+  ) {
+    throw new Error(
+      `admin server vless reality matrix did not produce observable state: ${JSON.stringify(result)}`,
+    );
   }
   if (
     label === 'admin-server-edit-node-drawer' &&
@@ -6150,6 +7076,27 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.footerTexts).includes('确 定'))
   ) {
     throw new Error(`admin coupon range picker did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-coupon-type-matrix' &&
+    (result.amount?.modalCount !== 1 ||
+      !jsonIncludes(result.amount?.selectedValues, '按金额优惠') ||
+      !jsonIncludes(result.amount?.addonTexts, '¥') ||
+      !jsonIncludes(result.ratio?.selectedValues, '按比例优惠') ||
+      !jsonIncludes(result.ratio?.addonTexts, '%') ||
+      !jsonIncludes(result.limited?.selectedValues, 'Pro') ||
+      !jsonIncludes(result.limited?.selectedValues, '月付') ||
+      result.generateRequests?.length !== 1 ||
+      result.generateRequests?.[0]?.name !== 'Parity Ratio Coupon' ||
+      result.generateRequests?.[0]?.code !== 'RATIO2026' ||
+      String(result.generateRequests?.[0]?.type) !== '2' ||
+      String(result.generateRequests?.[0]?.value) !== '15' ||
+      String(result.generateRequests?.[0]?.['limit_plan_ids[0]']) !== '1' ||
+      result.generateRequests?.[0]?.['limit_period[0]'] !== 'month_price' ||
+      result.couponFetchDelta < 1 ||
+      result.closed?.modalCount !== 0)
+  ) {
+    throw new Error(`admin coupon type matrix did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'admin-coupon-edit-modal' &&
@@ -8104,6 +9051,60 @@ async function clickFirstVisibleText(page, selector, texts) {
   );
 }
 
+async function openLegacySelectByLabel(page, rootSelector, labelText) {
+  await page.evaluate(
+    ({ labelText: targetLabel, rootSelector: targetRoot }) => {
+      const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      };
+      const roots = Array.from(document.querySelectorAll(targetRoot)).filter(isVisible);
+      for (const root of roots) {
+        const labels = Array.from(root.querySelectorAll('.form-group label, label')).filter(
+          isVisible,
+        );
+        const label = labels.find((candidate) =>
+          normalize(candidate.textContent).includes(targetLabel),
+        );
+        const group = label?.closest('.form-group');
+        const trigger = group
+          ? Array.from(group.querySelectorAll('.ant-select-selection')).find(isVisible)
+          : null;
+        if (trigger instanceof HTMLElement) {
+          trigger.click();
+          return;
+        }
+      }
+      throw new Error(`No visible legacy select with label ${targetLabel} in ${targetRoot}`);
+    },
+    { labelText, rootSelector },
+  );
+}
+
+async function selectLegacyFormOption(
+  page,
+  rootSelector,
+  labelText,
+  optionTexts,
+  { waitForHidden = true } = {},
+) {
+  await openLegacySelectByLabel(page, rootSelector, labelText);
+  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', optionTexts[0]);
+  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', optionTexts);
+  if (waitForHidden) {
+    await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  } else {
+    await page.waitForTimeout(100);
+  }
+}
+
 async function clickCouponVerifyButton(page) {
   await page.evaluate(() => {
     const isVisible = (element) => {
@@ -8832,7 +9833,7 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
   let adminGroupsResolved = false;
 
   await page.addInitScript(
-    ({ authenticated, darkMode, preserveRuntimeDarkMode }) => {
+    ({ authenticated, darkMode, locale, preserveRuntimeDarkMode }) => {
       const initializeDarkModeCookie = () => {
         document.cookie = darkMode
           ? 'dark_mode=1;path=/'
@@ -8852,17 +9853,24 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
       } else {
         window.localStorage.removeItem('authorization');
       }
+      if (locale) {
+        window.g_lang = locale;
+        window.g_langSeparator = '-';
+        window.localStorage.setItem('umi_locale', locale);
+        document.cookie = `i18n=${encodeURIComponent(locale)};path=/`;
+      }
     },
     {
       authenticated: Boolean(scenario.authenticated),
       darkMode: Boolean(scenario.darkMode),
+      locale: scenario.locale ?? '',
       preserveRuntimeDarkMode: Boolean(interaction.preserveRuntimeDarkMode),
     },
   );
 
   await page.route('https://js.stripe.com/v3**', (route) => {
     route.fulfill({
-      body: stripeFixtureScript(),
+      body: stripeFixtureScript({ token: interaction.stripeToken }),
       contentType: 'application/javascript',
       status: 200,
     });
@@ -8890,6 +9898,7 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
       await waitForAdminGroups(adminGroupsReady);
     }
     const requestData = readRequestData(route.request());
+    const adminServerNodeSaveMatch = /^\/server\/([^/]+)\/save$/.exec(adminEndpoint ?? '');
     if (pathname === '/api/v1/user/info') {
       page.__visualParityUserInfoFetchCount = (page.__visualParityUserInfoFetchCount ?? 0) + 1;
     }
@@ -8914,6 +9923,8 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     }
     if (pathname === '/api/v1/user/redeemgiftcard') {
       page.__visualParityLastUserRedeemGiftcard = requestData;
+      page.__visualParityUserRedeemGiftcardCount =
+        (page.__visualParityUserRedeemGiftcardCount ?? 0) + 1;
       page.__visualParityUserRedeemGiftcardRequests = [
         ...(page.__visualParityUserRedeemGiftcardRequests ?? []),
         requestData,
@@ -8962,6 +9973,15 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         (page.__visualParityUserOrderCheckoutCount ?? 0) + 1;
       page.__visualParityUserOrderCheckoutRequests = [
         ...(page.__visualParityUserOrderCheckoutRequests ?? []),
+        requestData,
+      ];
+    }
+    if (pathname === '/api/v1/user/coupon/check') {
+      page.__visualParityLastUserCouponCheck = requestData;
+      page.__visualParityUserCouponCheckCount =
+        (page.__visualParityUserCouponCheckCount ?? 0) + 1;
+      page.__visualParityUserCouponCheckRequests = [
+        ...(page.__visualParityUserCouponCheckRequests ?? []),
         requestData,
       ];
     }
@@ -9049,6 +10069,23 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
       page.__visualParityAdminServerGroupSaveRequests = [
         ...(page.__visualParityAdminServerGroupSaveRequests ?? []),
         requestData,
+      ];
+    }
+    if (adminEndpoint === '/server/manage/getNodes') {
+      page.__visualParityAdminServerNodeFetchCount =
+        (page.__visualParityAdminServerNodeFetchCount ?? 0) + 1;
+    }
+    if (adminServerNodeSaveMatch) {
+      page.__visualParityLastAdminServerNodeSave = requestData;
+      page.__visualParityAdminServerNodeSaveCount =
+        (page.__visualParityAdminServerNodeSaveCount ?? 0) + 1;
+      page.__visualParityAdminServerNodeSaveRequests = [
+        ...(page.__visualParityAdminServerNodeSaveRequests ?? []),
+        {
+          ...requestData,
+          __endpoint: adminEndpoint,
+          __type: adminServerNodeSaveMatch[1],
+        },
       ];
     }
     if (adminEndpoint === '/coupon/fetch') {
@@ -9159,6 +10196,11 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
       });
     }
 
+    if (pathname === '/api/v1/user/redeemgiftcard' && interaction.redeemGiftcardTimeout) {
+      await route.abort('timedout');
+      return;
+    }
+
     if (pathname === '/api/v1/user/update' && interaction.delayUserUpdateMs) {
       await delay(interaction.delayUserUpdateMs);
     }
@@ -9250,8 +10292,12 @@ function apiFixtureResponse(
   const pathname = requestUrl.pathname;
   const adminEndpoint = adminFixtureEndpoint(pathname);
   const body = (data, extra = {}) => ({ code: 200, data, ...extra });
+  const error = (message, code = 400) => ({ code, data: null, message });
+  const httpError = (message, status = 500) => ({ code: status, data: null, httpStatus: status, message });
 
   if (adminEndpoint) {
+    if (/^\/server\/[^/]+\/save$/.test(adminEndpoint)) return body(true);
+
     switch (adminEndpoint) {
       case '/config/fetch':
         return body(adminConfigFixture);
@@ -9389,29 +10435,38 @@ function apiFixtureResponse(
       return body(
         interaction?.telegramBoundProfile
           ? { ...userInfoFixture, telegram_id: 12345 }
+          : scenario.bannedUser
+          ? bannedUserInfoFixture
           : userInfoFixture,
       );
     case '/api/v1/user/update':
       return body(true);
     case '/api/v1/user/redeemgiftcard':
+      if (interaction?.redeemGiftcardHttpError) return httpError('Server Error', 500);
       return body(true, { type: 1, value: 1234 });
     case '/api/v1/user/changePassword':
       return body(true);
     case '/api/v1/user/transfer':
+      if (interaction?.transferError) return error('余额不足');
       return body(true);
     case '/api/v1/user/resetSecurity':
       return body('VISUAL-RESET-UUID');
     case '/api/v1/user/unbindTelegram':
       return body(true);
     case '/api/v1/user/getSubscribe':
-      return body(interaction?.newPeriodSubscribe ? newPeriodSubscribeFixture : subscribeFixture);
+      return body(userSubscribeFixtureFor(scenario, interaction));
     case '/api/v1/user/getStat':
       return body([2, 3, 0]);
     case '/api/v1/user/plan/fetch':
       return body(
         requestUrl.searchParams.has('id')
-          ? planFixtures.find((plan) => String(plan.id) === requestUrl.searchParams.get('id')) ??
-              planFixtures[0]
+          ? userPlanFixtureById(requestUrl.searchParams.get('id'), scenario)
+          : scenario.emptyPlans
+          ? []
+          : scenario.soldOutPlans
+          ? planFixtures.map((plan) =>
+              plan.id === 2 ? { ...plan, capacity_limit: 0 } : plan,
+            )
           : planFixtures,
       );
     case '/api/v1/user/order/save':
@@ -9421,7 +10476,7 @@ function apiFixtureResponse(
     case '/api/v1/user/newPeriod':
       return body(true);
     case '/api/v1/user/order/fetch':
-      return body(orderFixtures);
+      return body(scenario.emptyOrders ? [] : orderFixtures);
     case '/api/v1/user/order/detail':
       return body(
         requestUrl.searchParams.get('trade_no') === dashboardResetPackageTradeNo
@@ -9436,6 +10491,7 @@ function apiFixtureResponse(
     case '/api/v1/user/order/getPaymentMethod':
       return body(paymentMethodFixtures);
     case '/api/v1/user/order/checkout': {
+      if (interaction?.orderCheckoutError) return error('支付失败');
       const methodId = Number(requestData?.method);
       if (methodId === 2) {
         return body('stripe-accepted', { type: 1 });
@@ -9451,9 +10507,10 @@ function apiFixtureResponse(
     case '/api/v1/user/order/check':
       return body(0);
     case '/api/v1/user/coupon/check':
+      if (interaction?.couponError) return error('优惠券无效');
       return body(couponCheckFixture);
     case '/api/v1/user/server/fetch':
-      return body(serverFixtures);
+      return body(scenario.emptyServers ? [] : serverFixtures);
     case '/api/v1/user/stat/getTrafficLog':
       return body(trafficFixtures);
     case '/api/v1/user/invite/fetch':
@@ -9463,8 +10520,15 @@ function apiFixtureResponse(
     case '/api/v1/user/invite/save':
       return body(true);
     case '/api/v1/user/ticket/fetch':
-      return body(requestUrl.searchParams.has('id') ? ticketDetailFixture : ticketFixtures);
+      return body(
+        requestUrl.searchParams.has('id')
+          ? ticketDetailFixture
+          : scenario.emptyTickets
+          ? []
+          : ticketFixtures,
+      );
     case '/api/v1/user/ticket/save':
+      if (interaction?.ticketSaveError) return error('工单内容不能为空');
       return body(true);
     case '/api/v1/user/ticket/reply':
       return body(true);
@@ -9505,6 +10569,21 @@ function userKnowledgeFixtureById(id) {
   );
 }
 
+function userSubscribeFixtureFor(scenario = {}, interaction = {}) {
+  if (interaction?.newPeriodSubscribe) return newPeriodSubscribeFixture;
+  if (scenario.noSubscription) return noSubscriptionFixture;
+  if (scenario.expiredSubscription) return expiredSubscriptionFixture;
+  if (scenario.trafficUsedUp) return trafficUsedUpSubscribeFixture;
+  if (scenario.deviceLimitReached) return deviceLimitReachedSubscribeFixture;
+  return subscribeFixture;
+}
+
+function userPlanFixtureById(id, scenario = {}) {
+  const plan = planFixtures.find((item) => String(item.id) === String(id)) ?? planFixtures[0];
+  if (scenario.nonRenewablePlan) return { ...plan, renew: 0 };
+  return plan;
+}
+
 function legacyScaledFixed(value, divisor) {
   return (Number(value) / divisor).toFixed(2);
 }
@@ -9521,10 +10600,11 @@ function delay(ms) {
 }
 
 function fulfillApiResponse(route, body) {
+  const { httpStatus = 200, ...payload } = body;
   return route.fulfill({
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
     contentType: 'application/json',
-    status: 200,
+    status: httpStatus,
   });
 }
 
@@ -9536,9 +10616,11 @@ function fulfillPlainJson(route, data) {
   });
 }
 
-function stripeFixtureScript() {
+function stripeFixtureScript({ token = null } = {}) {
+  const tokenPayload = token ? { id: token, object: 'token' } : null;
   return `
 (() => {
+  const visualStripeToken = ${JSON.stringify(tokenPayload)};
   window.Stripe = function Stripe() {
     let lastElement = null;
     const createElement = () => {
@@ -9546,6 +10628,10 @@ function stripeFixtureScript() {
       const fire = (event, payload) => {
         const eventHandlers = handlers.get(event) || [];
         eventHandlers.forEach((handler) => handler(payload));
+      };
+      const fireTokenReady = () => {
+        if (!visualStripeToken) return;
+        setTimeout(() => fire('change', { complete: true, empty: false }), 0);
       };
       return {
         blur() {},
@@ -9557,6 +10643,7 @@ function stripeFixtureScript() {
           element.className = 'StripeElement';
           target.appendChild(element);
           fire('ready', {});
+          fireTokenReady();
         },
         off(event, handler) {
           const eventHandlers = handlers.get(event) || [];
@@ -9564,6 +10651,7 @@ function stripeFixtureScript() {
         },
         on(event, handler) {
           handlers.set(event, [...(handlers.get(event) || []), handler]);
+          if (event === 'change') fireTokenReady();
         },
         unmount() {},
         update() {},
@@ -9571,6 +10659,7 @@ function stripeFixtureScript() {
     };
     return {
       _registerWrapper() {},
+      registerAppInfo() {},
       elements() {
         return {
           getElement() {
@@ -9583,6 +10672,12 @@ function stripeFixtureScript() {
         };
       },
       createToken() {
+        return Promise.resolve(visualStripeToken ? { token: visualStripeToken } : {});
+      },
+      createPaymentMethod() {
+        return Promise.resolve({});
+      },
+      confirmCardPayment() {
         return Promise.resolve({});
       },
     };

@@ -609,14 +609,17 @@ function LegacyDropdown({ children, overlay, trigger }: LegacyDropdownProps) {
               ref={popupRef}
               className={legacyDropdownClassName(open)}
               style={{
+                display: open ? undefined : 'none',
                 position: 'fixed',
                 top: coords.top,
                 left: coords.left,
                 minWidth: coords.minWidth,
               }}
               onClick={() => {
-                if (opensOnClick) setOpen(false);
+                setOpen(false);
               }}
+              onClickCapture={() => setOpen(false)}
+              onMouseDownCapture={() => setOpen(false)}
               onMouseEnter={clearCloseTimer}
               onMouseLeave={scheduleHoverClose}
             >

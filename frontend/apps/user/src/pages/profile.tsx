@@ -44,6 +44,7 @@ export default function ProfilePage() {
   const oldPasswordRef = useRef<HTMLInputElement>(null);
   const newPasswordRef = useRef<HTMLInputElement>(null);
   const confirmPasswordRef = useRef<HTMLInputElement>(null);
+  const [redeemTimeoutStuck, setRedeemTimeoutStuck] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [telegramOpen, setTelegramOpen] = useState(false);
   const [updatingPref, setUpdatingPref] = useState({
@@ -107,11 +108,14 @@ export default function ProfilePage() {
       toast.error(t('profile.redeem_placeholder'));
       return;
     }
+    setRedeemTimeoutStuck(false);
     try {
       const result = await redeem.mutateAsync(giftcard);
       void info.refetch();
       toast.success(`兑换成功: ${redeemGiftcardText(result.type, result.value)}`);
-    } catch {}
+    } catch (error) {
+      if (isLegacyTimeoutError(error)) setRedeemTimeoutStuck(true);
+    }
   };
 
   const onReset = () => {
@@ -170,6 +174,7 @@ export default function ProfilePage() {
   const copyBindCommand = () => {
     legacyCopyText(`/bind ${subscribe?.subscribe_url}`);
   };
+  const redeemLoading = redeem.isPending || redeemTimeoutStuck;
 
   return (
     <>
@@ -223,12 +228,12 @@ export default function ProfilePage() {
             </div>
             <AntBtn
               type="button"
-              className={`ant-btn ant-btn-primary${redeem.isPending ? ' ant-btn-loading' : ''}`}
+              className={`ant-btn ant-btn-primary${redeemLoading ? ' ant-btn-loading' : ''}`}
               onClick={() => {
-                if (!redeem.isPending) void onRedeem();
+                if (!redeemLoading) void onRedeem();
               }}
             >
-              {redeem.isPending && <LegacyLoadingIcon />}
+              {redeemLoading && <LegacyLoadingIcon />}
               {t('profile.redeem_submit')}
             </AntBtn>
           </div>
@@ -578,6 +583,10 @@ function redeemGiftcardText(type: number, value: number) {
     default:
       return '未知类型';
   }
+}
+
+function isLegacyTimeoutError(error: unknown) {
+  return error instanceof Error && /timeout/i.test(error.message);
 }
 
 function formatCentsPlain(cents: number) {

@@ -755,8 +755,8 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).not.toContain('const LEGACY_DROPDOWN_HOVER_CLOSE_DELAY = 120;');
     expect(serversSource).toContain('if (!open) return undefined;');
     expect(serversSource).not.toContain('if (!open || !opensOnClick) return undefined;');
-    expect(serversSource).toContain('if (opensOnClick) setOpen(false);');
-    expect(serversSource).not.toContain('onClick={() => setOpen(false)}');
+    expect(serversSource).toContain('onClick={() => {\n                setOpen(false);');
+    expect(serversSource).not.toContain('if (opensOnClick) setOpen(false);');
     expect(managePageSource).toContain('<LegacyDropdown');
     expect(managePageSource).toContain('overlay={');
     expect(managePageSource).toContain('<LegacyDropdownMenu>');

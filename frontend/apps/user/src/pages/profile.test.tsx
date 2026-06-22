@@ -268,6 +268,38 @@ describe('ProfilePage legacy gift card flow', () => {
     expect(mocks.toastSuccess).toHaveBeenCalledWith('兑换成功: 账户余额 12.34');
   });
 
+  it('keeps the legacy stuck loading state when gift card redeem times out', async () => {
+    mocks.redeem.mockRejectedValue(new Error('timeout exceeded'));
+
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    const giftCardInput = container.querySelector<HTMLInputElement>(
+      'input[placeholder="请输入礼品卡"]',
+    );
+    expect(giftCardInput).toBeTruthy();
+
+    await act(async () => {
+      giftCardInput!.value = 'CARD-FAIL';
+      giftCardInput!.dispatchEvent(new Event('input', { bubbles: true }));
+      const redeemButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === '兑换',
+      );
+      redeemButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const redeemButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('兑换'),
+    );
+    expect(mocks.redeem).toHaveBeenCalledWith('CARD-FAIL');
+    expect(mocks.refetchInfo).not.toHaveBeenCalled();
+    expect(redeemButton?.className).toContain('ant-btn-loading');
+  });
+
   it('keeps the legacy profile block copy and telegram binding modal content', async () => {
     mocks.comm = {
       currency: 'USD',

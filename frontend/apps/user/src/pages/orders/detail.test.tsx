@@ -315,6 +315,11 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     );
   });
 
+  it('keeps the bundled-theme hard-coded Stripe verification loading message', () => {
+    expect(orderDetailSource).toContain("toast.loading('请稍等，我们正在验证该笔支付', { duration: 5000 })");
+    expect(orderDetailSource).not.toContain("toast.loading(t('order.stripe_verifying')");
+  });
+
   it('keeps the bundled-theme QR code props for payment polling', () => {
     const modalSource = orderDetailSource.slice(
       orderDetailSource.indexOf('<DialogContent'),

@@ -684,4 +684,70 @@ describe('LegacySelect', () => {
 
     expect(onDropdownVisibleChange).toHaveBeenLastCalledWith(false);
   });
+
+  it('hides a closed single dropdown immediately when another select opens', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const host = container;
+
+    await act(async () => {
+      root?.render(
+        <>
+          <LegacySelect
+            defaultValue="tcp"
+            options={[
+              { value: 'tcp', label: 'TCP' },
+              { value: 'ws', label: 'WebSocket' },
+            ]}
+          />
+          <LegacySelect
+            defaultValue={null}
+            options={[
+              { value: null, label: '无' },
+              { value: 'xtls-rprx-vision', label: 'xtls-rprx-vision' },
+            ]}
+          />
+        </>,
+      );
+      await Promise.resolve();
+    });
+
+    const selections = host.querySelectorAll<HTMLElement>('.ant-select-selection');
+
+    await act(async () => {
+      selections[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+
+    const firstDropdown = Array.from(
+      document.body.querySelectorAll<HTMLElement>('.ant-select-dropdown'),
+    ).find((item) => item.textContent?.includes('WebSocket'));
+    expect(firstDropdown?.className).not.toContain('ant-select-dropdown-hidden');
+
+    const webSocketOption = Array.from(
+      document.body.querySelectorAll<HTMLElement>('.ant-select-dropdown-menu-item'),
+    ).find((item) => item.textContent === 'WebSocket');
+
+    await act(async () => {
+      webSocketOption?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(firstDropdown?.className).not.toContain('ant-select-dropdown-hidden');
+
+    await act(async () => {
+      selections[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+
+    expect(firstDropdown?.className).toContain('ant-select-dropdown-hidden');
+    const visibleDropdowns = Array.from(
+      document.body.querySelectorAll<HTMLElement>('.ant-select-dropdown'),
+    ).filter((item) => !item.className.includes('ant-select-dropdown-hidden'));
+    expect(visibleDropdowns).toHaveLength(1);
+    expect(visibleDropdowns[0]?.textContent).toContain('xtls-rprx-vision');
+  });
 });

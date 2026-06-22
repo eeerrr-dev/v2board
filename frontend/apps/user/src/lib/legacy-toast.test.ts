@@ -38,4 +38,12 @@ describe('legacy toast behavior', () => {
 
     expect(document.querySelectorAll('.ant-notification-notice')).toHaveLength(2);
   });
+
+  it('keeps legacy notification message and description text adjacent', () => {
+    toast.error('Request failed', { description: 'Server Error' });
+
+    expect(document.querySelector('.ant-notification-notice')?.textContent).toContain(
+      'Request failedServer Error',
+    );
+  });
 });
