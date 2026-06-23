@@ -263,6 +263,7 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<AdminUserRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [mailOpen, setMailOpen] = useState(false);
+  const [toolbarDropdownVisible, setToolbarDropdownVisible] = useState(false);
   const [assigning, setAssigning] = useState<AdminUserRow | null>(null);
   const [trafficUser, setTrafficUser] = useState<AdminUserRow | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -552,6 +553,8 @@ export default function UsersPage() {
                     </LegacyButton>
                   </LegacyFilterDrawer>
                   <LegacyDropdown
+                    visible={toolbarDropdownVisible}
+                    onVisibleChange={setToolbarDropdownVisible}
                     overlay={
                       <LegacyDropdownMenu>
                         <LegacyDropdownMenuItem key="csv">
@@ -577,7 +580,12 @@ export default function UsersPage() {
                           </a>
                         </LegacyDropdownMenuItem>
                         <LegacyDropdownMenuItem key="mail">
-                          <a onClick={() => setMailOpen(true)}>
+                          <a
+                            onClick={() => {
+                              setToolbarDropdownVisible(false);
+                              setMailOpen(true);
+                            }}
+                          >
                             <LegacyMailIcon /> 发送邮件
                           </a>
                         </LegacyDropdownMenuItem>
@@ -821,8 +829,9 @@ export default function UsersPage() {
             .then(() => {
               message.success('已加入队列执行');
               setMailOpen(false);
+              setToolbarDropdownVisible(true);
             })
-            .catch((error) => showError(message, error))
+            .catch(() => undefined)
         }
       />
 

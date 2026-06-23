@@ -111,15 +111,15 @@ describe('parity config audit helpers', () => {
     expect(
       formatAuditSuccess({
         adminRouteCount: 19,
-        browserScenarioCount: 12,
+        browserScenarioCount: 18,
         browserViewportCount: 2,
         failures: [],
-        interactionScenarioCount: 148,
+        interactionScenarioCount: 155,
         userRouteCount: 16,
         visualScenarioCount: 144,
       }),
     ).toBe(
-      'Parity config audit OK: Makefile tracks 144 visual scenarios, 148 interaction scenarios, 12 browser scenarios across 2 viewports, parity covers 16 user routes plus 19 admin routes, and dev entry route mirrors are aligned.',
+      'Parity config audit OK: Makefile tracks 144 visual scenarios, 155 interaction scenarios, 18 browser scenarios across 2 viewports, parity covers 16 user routes plus 19 admin routes, and dev entry route mirrors are aligned.',
     );
   });
 });

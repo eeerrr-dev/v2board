@@ -46,9 +46,7 @@ export default function OrdersPage() {
   const [activeMobileKey, setActiveMobileKey] = useState<number | null>(null);
   const mobile = isLegacyMobile();
   const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(orders.length);
-  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(orders.length, {
-    bodyRowHeightOffset: 1,
-  });
+  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(orders.length);
   const desktopTableClassName = [
     'ant-table',
     'ant-table-default',

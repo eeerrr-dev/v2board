@@ -801,9 +801,14 @@ describe('UsersPage legacy user manager', () => {
       'return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;',
     );
     expect(toolbarSource).toContain('<LegacyDropdown');
+    expect(toolbarSource).toContain('visible={toolbarDropdownVisible}');
+    expect(toolbarSource).toContain('onVisibleChange={setToolbarDropdownVisible}');
     expect(toolbarSource).toContain('overlay={');
     expect(toolbarSource).toContain('<LegacyFileExcelIcon /> 导出CSV');
-    expect(toolbarSource).toContain('onClick={() => setMailOpen(true)}');
+    expect(toolbarSource).toContain('setToolbarDropdownVisible(false);');
+    expect(toolbarSource).toContain('setMailOpen(true);');
+    expect(usersSource).toContain('setToolbarDropdownVisible(true);');
+    expect(usersSource).toContain('.catch(() => undefined)');
     expect(toolbarSource).toContain('<LegacyMailIcon /> 发送邮件');
     expect(toolbarSource).toContain(
       '<LegacyDropdownMenuItem key="ban" disabled={!query.filter.length}>',
@@ -903,9 +908,15 @@ describe('UsersPage legacy user manager', () => {
     const deleteAllStart = usersSource.indexOf('void deleteAll');
     const deleteAllMutate = usersSource.indexOf('.mutateAsync(query.filter)', deleteAllStart);
     const deleteAllRefetch = usersSource.indexOf('void users.refetch();', deleteAllMutate);
-    const bulkActionBlock = usersSource.slice(
-      usersSource.indexOf('<LegacyDropdown\n                    overlay={'),
-      usersSource.indexOf('<LegacyButton className="ant-btn ml-2"', usersSource.indexOf('void deleteAll')),
+    const banMenuStart = usersSource.indexOf('<LegacyDropdownMenuItem key="ban"');
+    const deleteAllMenuStart = usersSource.indexOf(
+      '<LegacyDropdownMenuItem key="delete"',
+      banMenuStart,
+    );
+    const banActionBlock = usersSource.slice(banMenuStart, deleteAllMenuStart);
+    const deleteAllActionBlock = usersSource.slice(
+      deleteAllMenuStart,
+      usersSource.indexOf('</LegacyDropdownMenu>', usersSource.indexOf('void deleteAll')),
     );
 
     expect(banStart).toBeGreaterThan(-1);
@@ -914,8 +925,12 @@ describe('UsersPage legacy user manager', () => {
     expect(deleteAllStart).toBeGreaterThan(-1);
     expect(deleteAllMutate).toBeGreaterThan(deleteAllStart);
     expect(deleteAllRefetch).toBeGreaterThan(deleteAllMutate);
-    expect(bulkActionBlock.match(/\.catch\(\(\) => undefined\);/g)).toHaveLength(2);
-    expect(bulkActionBlock).not.toContain('.catch((error) => showError(message, error));');
+    expect(banMenuStart).toBeGreaterThan(-1);
+    expect(deleteAllMenuStart).toBeGreaterThan(banMenuStart);
+    expect(banActionBlock).toContain('.catch(() => undefined);');
+    expect(deleteAllActionBlock).toContain('.catch(() => undefined);');
+    expect(banActionBlock).not.toContain('.catch((error) => showError(message, error));');
+    expect(deleteAllActionBlock).not.toContain('.catch((error) => showError(message, error));');
 
     const banUsersHook = adminQueriesSource.slice(
       adminQueriesSource.indexOf('export function useBanUsersMutation()'),

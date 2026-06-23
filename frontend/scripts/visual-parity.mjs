@@ -1125,6 +1125,13 @@ const interactionScenarios = [
     scenarioLabel: 'user-dashboard-session-expired',
   },
   {
+    forceUserUnauthorizedStatus: 401,
+    label: 'user-auth-401-no-redirect',
+    readySelector: '.v2board-shortcuts-item',
+    run: runUnauthorizedHttp401NoRedirectInteraction,
+    scenarioLabel: 'user-dashboard-session-expired',
+  },
+  {
     label: 'user-dashboard-avatar-dropdown',
     run: runUserDashboardAvatarDropdownInteraction,
     scenarioLabel: 'user-dashboard',
@@ -1386,6 +1393,12 @@ const interactionScenarios = [
     scenarioLabel: 'user-knowledge',
   },
   {
+    extremeKnowledgeContent: true,
+    label: 'user-knowledge-extreme-content-matrix',
+    run: runUserKnowledgeExtremeContentMatrixInteraction,
+    scenarioLabel: 'user-knowledge',
+  },
+  {
     label: 'user-knowledge-fetch-timeout',
     run: runFetchFailureStateInteraction,
     scenarioLabel: 'user-knowledge-timeout',
@@ -1415,6 +1428,14 @@ const interactionScenarios = [
     scenarioLabel: 'user-invite',
   },
   {
+    delayUserTransferMs: 200,
+    delayUserWithdrawMs: 200,
+    label: 'user-invite-finance-submit-matrix',
+    run: runInviteFinanceSubmitMatrixInteraction,
+    scenarioLabel: 'user-invite',
+    withdrawErrorAccount: 'fail-account',
+  },
+  {
     label: 'user-invite-tooltips',
     run: runUserInviteTooltipsInteraction,
     scenarioLabel: 'user-invite',
@@ -1424,6 +1445,15 @@ const interactionScenarios = [
     label: 'user-ticket-reply-send',
     run: runUserTicketReplySendInteraction,
     scenarioLabel: 'user-ticket-detail',
+  },
+  {
+    delayUserTicketCloseMs: 200,
+    delayUserTicketReplyMs: 200,
+    label: 'user-ticket-error-matrix',
+    run: runUserTicketErrorMatrixInteraction,
+    scenarioLabel: 'user-ticket-detail',
+    ticketCloseError: true,
+    ticketReplyErrorMessage: 'Parity failed reply',
   },
   {
     label: 'user-tickets-fetch-timeout',
@@ -1473,6 +1503,13 @@ const interactionScenarios = [
   {
     label: 'admin-session-expired-redirect',
     run: runSessionExpiredRedirectInteraction,
+    scenarioLabel: 'admin-dashboard-session-expired',
+  },
+  {
+    forceAdminUnauthorizedStatus: 401,
+    label: 'admin-auth-401-no-redirect',
+    readySelector: '#page-container',
+    run: runUnauthorizedHttp401NoRedirectInteraction,
     scenarioLabel: 'admin-dashboard-session-expired',
   },
   {
@@ -1528,6 +1565,18 @@ const interactionScenarios = [
     label: 'admin-plan-renew-tooltip',
     run: runAdminPlanRenewTooltipInteraction,
     scenarioLabel: 'admin-plans',
+  },
+  {
+    adminNoticeDropError: true,
+    adminNoticeShowError: true,
+    adminPlanDropError: true,
+    adminPlanUpdateError: true,
+    adminServerSortError: true,
+    delayAdminMutationMs: 200,
+    label: 'admin-mutation-failure-matrix',
+    run: runAdminMutationFailureMatrixInteraction,
+    scenarioLabel: 'admin-plans',
+    viewports: ['desktop'],
   },
   {
     label: 'admin-config-tabs',
@@ -1882,6 +1931,13 @@ const interactionScenarios = [
   {
     label: 'admin-user-send-mail-modal',
     run: runAdminUserSendMailModalInteraction,
+    scenarioLabel: 'admin-users',
+  },
+  {
+    adminUserSendMailFailureSubject: 'Parity Mail Failure',
+    delayAdminUserSendMailMs: 200,
+    label: 'admin-user-send-mail-submit-matrix',
+    run: runAdminUserSendMailSubmitMatrixInteraction,
     scenarioLabel: 'admin-users',
   },
   {
@@ -2431,6 +2487,38 @@ const knowledgeFixtures = {
       sort: 2,
       title: 'Router Guide',
       updated_at: 1_700_086_400,
+    },
+  ],
+};
+const extremeKnowledgeFixtures = {
+  EdgeCases: [
+    {
+      body:
+        '<h2>Extreme Legacy Body</h2>' +
+        '<p>extreme-knowledge-token-2026 keeps long inline content, numbers 1234567890, and punctuation aligned.</p>' +
+        '<pre>curl --location https://very-long-hostname.edge-parity.example.test/client/subscribe?token=visual</pre>' +
+        '<ul><li>Nested legacy list item alpha</li><li>Nested legacy list item beta with a very long phrase that should wrap.</li></ul>',
+      category: 'EdgeCases',
+      created_at: 1_700_200_000,
+      id: 301,
+      language: 'en-US',
+      show: 1,
+      sort: 1,
+      title: 'Extreme Legacy Knowledge Matrix Article With Long Title 2026',
+      updated_at: 1_700_200_000,
+    },
+  ],
+  Reference: [
+    {
+      body: '<p>Reference article body for extreme matrix secondary category.</p>',
+      category: 'Reference',
+      created_at: 1_700_286_400,
+      id: 302,
+      language: 'en-US',
+      show: 1,
+      sort: 2,
+      title: 'Reference Matrix Article',
+      updated_at: 1_700_286_400,
     },
   ],
 };
@@ -3668,8 +3756,9 @@ async function preparePageForInteraction(page, url, scenario, target, interactio
   if (target === 'oracle' && scenario.seedLegacyAdminStore) {
     await seedLegacyAdminStore(page, scenario);
   }
-  if (scenario.readySelector) {
-    await waitForReadySelector(page, scenario.readySelector, diagnostics);
+  const readySelector = interaction.readySelector ?? scenario.readySelector;
+  if (readySelector) {
+    await waitForReadySelector(page, readySelector, diagnostics);
   }
   if (scenario.postReadyDelay) {
     await page.waitForTimeout(scenario.postReadyDelay);
@@ -3779,6 +3868,11 @@ async function runSessionExpiredRedirectInteraction(page) {
   return readSessionExpiredRedirectState(page);
 }
 
+async function runUnauthorizedHttp401NoRedirectInteraction(page) {
+  await page.waitForTimeout(500);
+  return readUnauthorizedHttp401NoRedirectState(page);
+}
+
 async function readSessionExpiredRedirectState(page) {
   let lastError;
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -3815,6 +3909,28 @@ async function readSessionExpiredRedirectState(page) {
     }
   }
   throw lastError ?? new Error('Unable to read session expired redirect state');
+}
+
+async function readUnauthorizedHttp401NoRedirectState(page) {
+  return page.evaluate(() => {
+    const visibleText = (selector, limit) =>
+      Array.from(document.querySelectorAll(selector))
+        .filter((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = window.getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        })
+        .slice(0, limit)
+        .map((element) => (element.textContent ?? '').trim().replace(/\s+/g, ' '))
+        .filter(Boolean);
+    return {
+      authData: window.localStorage.getItem('authorization'),
+      dashboardTexts: visibleText('.block-title, .content-heading, .alert, .nav-main-link', 12),
+      hash: window.location.hash,
+      loginBoxCount: document.querySelectorAll('.v2board-auth-box').length,
+      pageContainerCount: document.querySelectorAll('#page-container').length,
+    };
+  });
 }
 
 async function runUserDashboardAvatarDropdownInteraction(page) {
@@ -4655,6 +4771,23 @@ async function runKnowledgeDrawerInteraction(page) {
   return { before, closed, opened };
 }
 
+async function runUserKnowledgeExtremeContentMatrixInteraction(page) {
+  await fillFirstVisible(page, '.v2board-knowledge-search-bar input', 'extreme legacy');
+  await page.waitForTimeout(350);
+  const filtered = await knowledgeState(page);
+  await clickFirstVisible(page, '.list-group-item');
+  await page.waitForSelector('.ant-drawer-open .ant-drawer-title', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForFunction(
+    () => document.querySelector('.ant-drawer-title')?.textContent?.includes('Extreme Legacy'),
+    { timeout: 5_000 },
+  );
+  const opened = await knowledgeState(page);
+  return { filtered, opened };
+}
+
 async function runInviteGenerateInteraction(page) {
   const before = await inviteState(page);
   await clickFirstVisible(page, '.block-header .block-options .btn');
@@ -4765,6 +4898,86 @@ async function runInviteWithdrawModalInteraction(page) {
   };
 }
 
+async function runInviteFinanceSubmitMatrixInteraction(page) {
+  const initialInfoFetchCount = page.__visualParityUserInfoFetchCount ?? 0;
+  const initialTransferCount = page.__visualParityUserTransferCount ?? 0;
+  const initialWithdrawCount = page.__visualParityUserWithdrawCount ?? 0;
+  const before = await inviteFinanceDialogState(page);
+
+  await clickFirstVisibleText(page, 'button, .ant-btn', ['划转', 'Transfer']);
+  await waitForVisibleElementCountAtLeast(page, '.ant-modal', 1);
+  const transferEmptyOpened = await inviteFinanceDialogState(page);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserTransferCount',
+    initialTransferCount + 1,
+  );
+  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await page.waitForTimeout(250);
+  const transferEmptyClosed = await inviteFinanceDialogState(page);
+
+  await clickFirstVisibleText(page, 'button, .ant-btn', [
+    '推广佣金提现',
+    'Invitation Commission Withdrawal',
+  ]);
+  await waitForVisibleElementCountAtLeast(page, '.ant-modal', 1);
+  const withdrawOpened = await inviteFinanceDialogState(page);
+  await clickFirstVisible(page, '.ant-modal .ant-select-selection');
+  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Alipay');
+  const withdrawDropdown = await inviteFinanceDialogState(page);
+  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Alipay']);
+  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await fillVisibleAt(page, '.ant-modal input.ant-input', 0, 'fail-account');
+  const withdrawFailureFilled = await inviteFinanceDialogState(page);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserWithdrawCount',
+    initialWithdrawCount + 1,
+  );
+  await page.waitForTimeout(350);
+  const withdrawFailed = await inviteFinanceDialogState(page);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 0);
+  await waitForVisibleElementsHidden(page, '.ant-modal');
+
+  await clickFirstVisibleText(page, 'button, .ant-btn', [
+    '推广佣金提现',
+    'Invitation Commission Withdrawal',
+  ]);
+  await waitForVisibleElementCountAtLeast(page, '.ant-modal', 1);
+  await clickFirstVisible(page, '.ant-modal .ant-select-selection');
+  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'USDT');
+  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['USDT']);
+  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await fillVisibleAt(page, '.ant-modal input.ant-input', 0, 'success-account');
+  const withdrawSuccessFilled = await inviteFinanceDialogState(page);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserWithdrawCount',
+    initialWithdrawCount + 2,
+  );
+  await page.waitForFunction(() => window.location.hash.includes('/ticket'), { timeout: 5_000 });
+  await page.waitForTimeout(250);
+  const withdrawSucceeded = await inviteFinanceDialogState(page);
+
+  return {
+    before,
+    infoFetchDelta: (page.__visualParityUserInfoFetchCount ?? 0) - initialInfoFetchCount,
+    transferEmptyClosed,
+    transferEmptyOpened,
+    transferRequests: clonePageRequests(page.__visualParityUserTransferRequests),
+    withdrawDropdown,
+    withdrawFailed,
+    withdrawFailureFilled,
+    withdrawOpened,
+    withdrawRequests: clonePageRequests(page.__visualParityUserWithdrawRequests),
+    withdrawSuccessFilled,
+    withdrawSucceeded,
+  };
+}
+
 async function runUserInviteTooltipsInteraction(page) {
   return hoverAllTooltipTargetsInteraction(page, ['.anticon-question-circle']);
 }
@@ -4799,6 +5012,55 @@ async function runUserTicketReplySendInteraction(page) {
     ),
     sent,
     ticketFetchDelta: (page.__visualParityUserTicketFetchCount ?? 0) - initialTicketFetchCount,
+  };
+}
+
+async function runUserTicketErrorMatrixInteraction(page) {
+  const initialTicketFetchCount = page.__visualParityUserTicketFetchCount ?? 0;
+  const initialReplyCount = page.__visualParityUserTicketReplyCount ?? 0;
+  const initialCloseCount = page.__visualParityUserTicketCloseCount ?? 0;
+  await fillFirstVisible(page, '.js-chat-input', 'Parity failed reply');
+  await page.waitForTimeout(100);
+  const replyFilled = await ticketReplyState(page);
+  await page.locator('.js-chat-input').first().press('Enter');
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserTicketReplyCount',
+    initialReplyCount + 1,
+  );
+  await page.waitForTimeout(350);
+  const replyFailed = await ticketReplyState(page);
+
+  await page.evaluate(() => {
+    window.location.hash = '#/ticket';
+  });
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserTicketFetchCount',
+    initialTicketFetchCount + 1,
+  );
+  await page.waitForSelector('.ant-table-tbody tr', { state: 'visible', timeout: 5_000 });
+  await page.waitForTimeout(150);
+  const listBeforeClose = await userTicketListState(page);
+  const listFetchCount = page.__visualParityUserTicketFetchCount ?? 0;
+  await clickFirstVisibleText(page, '.ant-table-tbody a', ['关闭', 'Close']);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserTicketCloseCount',
+    initialCloseCount + 1,
+  );
+  await page.waitForTimeout(350);
+  const closeFailed = await userTicketListState(page);
+
+  return {
+    closeFailed,
+    closeFetchDelta: (page.__visualParityUserTicketFetchCount ?? 0) - listFetchCount,
+    closeRequests: clonePageRequests(page.__visualParityUserTicketCloseRequests),
+    listBeforeClose,
+    replyFailed,
+    replyFilled,
+    replyFetchDelta: listFetchCount - initialTicketFetchCount,
+    replyRequests: clonePageRequests(page.__visualParityUserTicketReplyRequests),
   };
 }
 
@@ -5258,6 +5520,87 @@ async function runAdminPlanEditDrawerInteraction(page) {
 
 async function runAdminPlanRenewTooltipInteraction(page) {
   return hoverTooltipInteraction(page, ['.ant-table-thead .anticon-question-circle']);
+}
+
+async function runAdminMutationFailureMatrixInteraction(page) {
+  const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
+  const beforePlan = await adminMutationFailureState(page);
+  await clickVisibleAt(page, '.ant-table-tbody .ant-switch', 0);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanUpdateCount', 1);
+  await page.waitForTimeout(350);
+  const planSwitchFailed = await adminMutationFailureState(page);
+
+  await clickAdminOrderRowAction(page, 'Pro', '操作');
+  await waitForVisibleText(page, '.ant-dropdown-menu-item', '删除');
+  const planDeleteDropdown = await adminMutationFailureState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item', ['删除']);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanDropCount', 1);
+  await page.waitForTimeout(350);
+  const planDeleteFailed = await adminMutationFailureState(page);
+
+  const initialNoticeFetchCount = page.__visualParityAdminNoticeFetchCount ?? 0;
+  await page.evaluate(() => {
+    window.location.hash = '/notice';
+  });
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminNoticeFetchCount',
+    initialNoticeFetchCount + 1,
+  );
+  await page.waitForSelector('.ant-table-tbody tr', { state: 'visible', timeout: 5_000 });
+  await page.waitForTimeout(150);
+  const beforeNotice = await adminMutationFailureState(page);
+  await clickVisibleAt(page, '.ant-table-tbody .ant-switch', 0);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminNoticeShowCount', 1);
+  await page.waitForTimeout(350);
+  const noticeSwitchFailed = await adminMutationFailureState(page);
+  await clickFirstVisibleText(page, '.ant-table-tbody a', ['删除']);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminNoticeDropCount', 1);
+  await page.waitForTimeout(350);
+  const noticeDeleteFailed = await adminMutationFailureState(page);
+
+  const initialServerFetchCount = page.__visualParityAdminServerNodeFetchCount ?? 0;
+  await page.evaluate(() => {
+    window.location.hash = '/server/manage';
+  });
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminServerNodeFetchCount',
+    initialServerFetchCount + 1,
+  );
+  await waitForVisibleText(page, 'button, .ant-btn', '编辑排序');
+  const beforeServerSort = await adminMutationFailureState(page);
+  await clickFirstVisibleText(page, 'button, .ant-btn', ['编辑排序']);
+  await waitForVisibleText(page, 'button, .ant-btn', '保存排序');
+  await page.waitForTimeout(150);
+  const serverSortMode = await adminMutationFailureState(page);
+  await clickFirstVisibleText(page, 'button, .ant-btn', ['保存排序']);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminServerSortCount', 1);
+  await page.waitForTimeout(350);
+  const serverSortFailed = await adminMutationFailureState(page);
+
+  return {
+    beforeNotice,
+    beforePlan,
+    beforeServerSort,
+    fetchDeltas: {
+      notice: (page.__visualParityAdminNoticeFetchCount ?? 0) - initialNoticeFetchCount,
+      plan: (page.__visualParityAdminPlanFetchCount ?? 0) - initialPlanFetchCount,
+      server: (page.__visualParityAdminServerNodeFetchCount ?? 0) - initialServerFetchCount,
+    },
+    noticeDeleteFailed,
+    noticeDropRequests: clonePageRequests(page.__visualParityAdminNoticeDropRequests),
+    noticeShowRequests: clonePageRequests(page.__visualParityAdminNoticeShowRequests),
+    noticeSwitchFailed,
+    planDeleteDropdown,
+    planDeleteFailed,
+    planDropRequests: clonePageRequests(page.__visualParityAdminPlanDropRequests),
+    planSwitchFailed,
+    planUpdateRequests: clonePageRequests(page.__visualParityAdminPlanUpdateRequests),
+    serverSortFailed,
+    serverSortMode,
+    serverSortRequests: clonePageRequests(page.__visualParityAdminServerSortRequests),
+  };
 }
 
 async function runAdminTicketsReplyFilterInteraction(page) {
@@ -7085,6 +7428,57 @@ async function runAdminUserSendMailModalInteraction(page) {
   return { before, closed, dropdown, filled, opened };
 }
 
+async function runAdminUserSendMailSubmitMatrixInteraction(page) {
+  const initialSendMailCount = page.__visualParityAdminUserSendMailCount ?? 0;
+  const before = await adminUserSendMailModalState(page);
+
+  await openAdminUserToolbarDropdown(page, '发送邮件');
+  const successDropdown = await adminUserSendMailModalState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['发送邮件']);
+  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await waitForVisibleText(page, '.ant-modal-title', '发送邮件');
+  await fillVisibleAt(page, '.ant-modal input:not([disabled])', 0, 'Parity Mail Submit Success');
+  await fillVisibleAt(page, '.ant-modal textarea.ant-input', 0, 'Queued success body');
+  const successFilled = await adminUserSendMailModalState(page);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminUserSendMailCount',
+    initialSendMailCount + 1,
+  );
+  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await page.waitForTimeout(350);
+  const successClosed = await adminUserSendMailModalState(page);
+
+  await openAdminUserToolbarDropdown(page, '发送邮件');
+  const failureDropdown = await adminUserSendMailModalState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['发送邮件']);
+  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await waitForVisibleText(page, '.ant-modal-title', '发送邮件');
+  await fillVisibleAt(page, '.ant-modal input:not([disabled])', 0, 'Parity Mail Failure');
+  await fillVisibleAt(page, '.ant-modal textarea.ant-input', 0, 'Queued failure body');
+  const failureFilled = await adminUserSendMailModalState(page);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminUserSendMailCount',
+    initialSendMailCount + 2,
+  );
+  await page.waitForTimeout(350);
+  const failureKept = await adminUserSendMailModalState(page);
+
+  return {
+    before,
+    failureDropdown,
+    failureFilled,
+    failureKept,
+    sendMailRequests: clonePageRequests(page.__visualParityAdminUserSendMailRequests),
+    successClosed,
+    successDropdown,
+    successFilled,
+  };
+}
+
 async function runAdminUserResetSecretConfirmInteraction(page) {
   const before = await adminUserConfirmState(page);
   await clickFirstVisibleText(page, '.ant-table-tbody a', ['操作']);
@@ -7557,6 +7951,7 @@ async function adminUserSendMailModalState(page) {
     labels: await visibleTexts(page, '.ant-modal .form-group label', 6),
     modalCount,
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
     titles: await visibleTexts(page, '.ant-modal-title', 2),
     toolbarButtons: await visibleTexts(page, '.v2board-table-action .ant-btn', 6),
   };
@@ -7775,6 +8170,16 @@ async function ticketReplyState(page) {
     inputValue: await firstInputValue(page, '.js-chat-input'),
     messageTexts: await visibleTexts(page, '.js-chat-messages', 6),
     sendButton: await firstElementState(page, '.js-chat-form button, .js-chat-form .ant-btn'),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+  };
+}
+
+async function userTicketListState(page) {
+  return {
+    actionLinks: await visibleTexts(page, '.ant-table-tbody a', 8),
+    closeCount: page.__visualParityUserTicketCloseCount ?? 0,
+    hash: await page.evaluate(() => window.location.hash),
+    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
   };
 }
@@ -8002,6 +8407,16 @@ function assertUsefulInteraction(label, result) {
     (!String(result.hash ?? '').includes('/login') || result.loginBoxCount !== 1)
   ) {
     throw new Error(`session expiry did not redirect like legacy: ${JSON.stringify(result)}`);
+  }
+  if (
+    (label === 'user-auth-401-no-redirect' || label === 'admin-auth-401-no-redirect') &&
+    (String(result.hash ?? '').includes('/login') ||
+      result.loginBoxCount !== 0 ||
+      result.pageContainerCount < 1 ||
+      !result.authData ||
+      !jsonIncludesAny(result.dashboardTexts, ['仪表盘', 'Dashboard']))
+  ) {
+    throw new Error(`HTTP 401 auth state did not match legacy no-redirect behavior: ${JSON.stringify(result)}`);
   }
   if (
     label === 'user-dashboard-avatar-dropdown' &&
@@ -8609,6 +9024,19 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`knowledge drawer did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'user-knowledge-extreme-content-matrix' &&
+    (result.filtered?.searchValue !== 'extreme legacy' ||
+      !jsonIncludes(result.filtered?.articleTitles, 'Extreme Legacy Knowledge Matrix') ||
+      result.opened?.drawerOpenCount !== 1 ||
+      !jsonIncludes(result.opened?.drawerTitles, 'Extreme Legacy Knowledge Matrix') ||
+      !jsonIncludes(result.opened?.drawerBodies, 'extreme-knowledge-token-2026') ||
+      !jsonIncludes(result.opened?.drawerBodies, 'very-long-hostname'))
+  ) {
+    throw new Error(
+      `knowledge extreme content matrix did not produce observable state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
     label === 'user-invite-generate' &&
     (!JSON.stringify(result.before?.tableRows).includes('INVITE2026') ||
       !JSON.stringify(result.before?.tableRows).includes('WELCOME') ||
@@ -8658,6 +9086,28 @@ function assertUsefulInteraction(label, result) {
     }
   }
   if (
+    label === 'user-invite-finance-submit-matrix' &&
+    (result.before?.modalCount !== 0 ||
+      result.transferEmptyOpened?.modalCount !== 1 ||
+      result.transferRequests?.length !== 1 ||
+      result.transferEmptyClosed?.modalCount !== 0 ||
+      result.withdrawOpened?.modalCount !== 1 ||
+      !jsonIncludes(result.withdrawDropdown?.dropdownItems, 'Alipay') ||
+      !jsonIncludes(result.withdrawDropdown?.dropdownItems, 'USDT') ||
+      !jsonIncludes(result.withdrawFailureFilled?.inputValues, 'fail-account') ||
+      result.withdrawFailed?.modalCount !== 1 ||
+      !jsonIncludes(result.withdrawFailed?.inputValues, 'fail-account') ||
+      result.withdrawRequests?.length !== 2 ||
+      result.withdrawRequests?.[0]?.withdraw_account !== 'fail-account' ||
+      result.withdrawRequests?.[1]?.withdraw_account !== 'success-account' ||
+      result.withdrawRequests?.[1]?.withdraw_method !== 'USDT' ||
+      !String(result.withdrawSucceeded?.hash ?? '').includes('/ticket'))
+  ) {
+    throw new Error(
+      `invite finance submit matrix did not match legacy behavior: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
     label === 'user-ticket-reply-send' &&
     (result.filled?.inputValue !== 'Parity reply send' ||
       !jsonIncludesAny(result.loading?.toastTexts, ['发送中']) ||
@@ -8671,6 +9121,20 @@ function assertUsefulInteraction(label, result) {
     throw new Error(
       `user ticket reply send did not match legacy behavior: ${JSON.stringify(result)}`,
     );
+  }
+  if (
+    label === 'user-ticket-error-matrix' &&
+    (result.replyFilled?.inputValue !== 'Parity failed reply' ||
+      result.replyRequests?.length !== 1 ||
+      result.replyRequests?.[0]?.message !== 'Parity failed reply' ||
+      result.replyFailed?.inputValue !== 'Parity failed reply' ||
+      result.closeRequests?.length !== 1 ||
+      String(result.closeRequests?.[0]?.id) !== '7' ||
+      !String(result.closeFailed?.hash ?? '').includes('/ticket') ||
+      !jsonIncludes(result.closeFailed?.tableRows, 'Need help') ||
+      result.closeFetchDelta !== 0)
+  ) {
+    throw new Error(`user ticket error matrix did not preserve legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'admin-ticket-reply-send' &&
@@ -8797,6 +9261,29 @@ function assertUsefulInteraction(label, result) {
       !jsonIncludesAny(result.opened?.texts, ['续费', 'renew']))
   ) {
     throw new Error(`admin plan renew tooltip did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-mutation-failure-matrix' &&
+    (!jsonIncludes(result.beforePlan?.tableRows, 'Pro') ||
+      result.planUpdateRequests?.length !== 1 ||
+      String(result.planUpdateRequests?.[0]?.id) !== '1' ||
+      String(result.planUpdateRequests?.[0]?.show) !== '0' ||
+      result.planDropRequests?.length !== 1 ||
+      String(result.planDropRequests?.[0]?.id) !== '1' ||
+      !jsonIncludes(result.beforeNotice?.tableRows, 'Notice A') ||
+      result.noticeShowRequests?.length !== 1 ||
+      String(result.noticeShowRequests?.[0]?.id) !== '1' ||
+      result.noticeDropRequests?.length !== 1 ||
+      String(result.noticeDropRequests?.[0]?.id) !== '1' ||
+      !jsonIncludes(result.beforeServerSort?.tableRows, 'Tokyo 01') ||
+      !jsonIncludes(result.serverSortMode?.buttons, '保存排序') ||
+      result.serverSortRequests?.length !== 1 ||
+      result.serverSortFailed?.requestCounts?.serverSort !== 1 ||
+      result.fetchDeltas?.plan !== 0)
+  ) {
+    throw new Error(
+      `admin mutation failure matrix did not preserve legacy state: ${JSON.stringify(result)}`,
+    );
   }
   if (
     label === 'admin-plan-create-drawer' &&
@@ -9966,6 +10453,28 @@ function assertUsefulInteraction(label, result) {
       result.closed?.modalCount !== 0)
   ) {
     throw new Error(`admin user send mail modal did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-user-send-mail-submit-matrix' &&
+    (!jsonIncludes(result.before?.tableRows, 'visual-user@example.com') ||
+      !jsonIncludes(result.successDropdown?.dropdownItems, '发送邮件') ||
+      !jsonIncludes(result.successFilled?.inputValues, 'Parity Mail Submit Success') ||
+      !jsonIncludes(result.successFilled?.inputValues, 'Queued success body') ||
+      result.successClosed?.modalCount !== 0 ||
+      !jsonIncludes(result.failureDropdown?.dropdownItems, '发送邮件') ||
+      !jsonIncludes(result.failureFilled?.inputValues, 'Parity Mail Failure') ||
+      !jsonIncludes(result.failureFilled?.inputValues, 'Queued failure body') ||
+      result.failureKept?.modalCount !== 1 ||
+      !jsonIncludes(result.failureKept?.inputValues, 'Parity Mail Failure') ||
+      result.sendMailRequests?.length !== 2 ||
+      result.sendMailRequests?.[0]?.subject !== 'Parity Mail Submit Success' ||
+      result.sendMailRequests?.[0]?.content !== 'Queued success body' ||
+      result.sendMailRequests?.[1]?.subject !== 'Parity Mail Failure' ||
+      result.sendMailRequests?.[1]?.content !== 'Queued failure body')
+  ) {
+    throw new Error(
+      `admin user send mail submit matrix did not preserve legacy state: ${JSON.stringify(result)}`,
+    );
   }
   if (
     label === 'admin-user-reset-secret-confirm' &&
@@ -11374,6 +11883,41 @@ async function adminPlanDrawerState(page) {
   };
 }
 
+async function adminMutationFailureState(page) {
+  const switches = await page.evaluate(() => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+    };
+    return Array.from(document.querySelectorAll('.ant-switch'))
+      .filter(isVisible)
+      .map((element) => ({
+        checked: Boolean(element.matches('.ant-switch-checked, [aria-checked="true"]')),
+        disabled: Boolean(element.matches(':disabled, .ant-switch-disabled')),
+        loading: Boolean(
+          element.matches('.ant-switch-loading') ||
+            element.querySelector('.ant-switch-loading-icon'),
+        ),
+      }));
+  });
+  return {
+    buttons: await visibleTexts(page, 'button, .ant-btn', 12),
+    dropdownItems: await visibleTexts(page, '.ant-dropdown-menu-item', 10),
+    hash: await page.evaluate(() => window.location.hash),
+    requestCounts: {
+      noticeDrop: page.__visualParityAdminNoticeDropCount ?? 0,
+      noticeShow: page.__visualParityAdminNoticeShowCount ?? 0,
+      planDrop: page.__visualParityAdminPlanDropCount ?? 0,
+      planUpdate: page.__visualParityAdminPlanUpdateCount ?? 0,
+      serverSort: page.__visualParityAdminServerSortCount ?? 0,
+    },
+    switches,
+    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 8),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 6),
+  };
+}
+
 async function adminKnowledgeDrawerState(page) {
   return {
     actionButtons: await visibleTexts(page, '.ant-drawer-open .v2board-drawer-action .ant-btn', 4),
@@ -11940,6 +12484,24 @@ async function waitForVisibleElementsHidden(page, selector) {
     },
     selector,
     { timeout: 5_000 },
+  );
+}
+
+async function waitForVisibleElementCountAtLeast(page, selector, minCount, timeout = 5_000) {
+  await page.waitForFunction(
+    ({ minCount: targetMinCount, selector: targetSelector }) => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+      };
+      return (
+        Array.from(document.querySelectorAll(targetSelector)).filter(isVisible).length >=
+        targetMinCount
+      );
+    },
+    { minCount, selector },
+    { timeout },
   );
 }
 
@@ -12790,6 +13352,15 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         requestData,
       ];
     }
+    if (pathname === '/api/v1/user/ticket/close') {
+      page.__visualParityLastUserTicketClose = requestData;
+      page.__visualParityUserTicketCloseCount =
+        (page.__visualParityUserTicketCloseCount ?? 0) + 1;
+      page.__visualParityUserTicketCloseRequests = [
+        ...(page.__visualParityUserTicketCloseRequests ?? []),
+        requestData,
+      ];
+    }
     if (pathname === '/api/v1/user/ticket/save') {
       page.__visualParityLastUserTicketSave = requestData;
       page.__visualParityUserTicketSaveCount =
@@ -12870,6 +13441,24 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         requestData,
       ];
     }
+    if (adminEndpoint === '/plan/update') {
+      page.__visualParityLastAdminPlanUpdate = requestData;
+      page.__visualParityAdminPlanUpdateCount =
+        (page.__visualParityAdminPlanUpdateCount ?? 0) + 1;
+      page.__visualParityAdminPlanUpdateRequests = [
+        ...(page.__visualParityAdminPlanUpdateRequests ?? []),
+        requestData,
+      ];
+    }
+    if (adminEndpoint === '/plan/drop') {
+      page.__visualParityLastAdminPlanDrop = requestData;
+      page.__visualParityAdminPlanDropCount =
+        (page.__visualParityAdminPlanDropCount ?? 0) + 1;
+      page.__visualParityAdminPlanDropRequests = [
+        ...(page.__visualParityAdminPlanDropRequests ?? []),
+        requestData,
+      ];
+    }
     if (adminEndpoint === '/server/group/fetch') {
       page.__visualParityAdminServerGroupFetchCount =
         (page.__visualParityAdminServerGroupFetchCount ?? 0) + 1;
@@ -12886,6 +13475,15 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     if (adminEndpoint === '/server/manage/getNodes') {
       page.__visualParityAdminServerNodeFetchCount =
         (page.__visualParityAdminServerNodeFetchCount ?? 0) + 1;
+    }
+    if (adminEndpoint === '/server/manage/sort') {
+      page.__visualParityLastAdminServerSort = requestData;
+      page.__visualParityAdminServerSortCount =
+        (page.__visualParityAdminServerSortCount ?? 0) + 1;
+      page.__visualParityAdminServerSortRequests = [
+        ...(page.__visualParityAdminServerSortRequests ?? []),
+        requestData,
+      ];
     }
     if (adminServerNodeSaveMatch) {
       page.__visualParityLastAdminServerNodeSave = requestData;
@@ -12949,6 +13547,24 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         (page.__visualParityAdminNoticeSaveCount ?? 0) + 1;
       page.__visualParityAdminNoticeSaveRequests = [
         ...(page.__visualParityAdminNoticeSaveRequests ?? []),
+        requestData,
+      ];
+    }
+    if (adminEndpoint === '/notice/show') {
+      page.__visualParityLastAdminNoticeShow = requestData;
+      page.__visualParityAdminNoticeShowCount =
+        (page.__visualParityAdminNoticeShowCount ?? 0) + 1;
+      page.__visualParityAdminNoticeShowRequests = [
+        ...(page.__visualParityAdminNoticeShowRequests ?? []),
+        requestData,
+      ];
+    }
+    if (adminEndpoint === '/notice/drop') {
+      page.__visualParityLastAdminNoticeDrop = requestData;
+      page.__visualParityAdminNoticeDropCount =
+        (page.__visualParityAdminNoticeDropCount ?? 0) + 1;
+      page.__visualParityAdminNoticeDropRequests = [
+        ...(page.__visualParityAdminNoticeDropRequests ?? []),
         requestData,
       ];
     }
@@ -13035,6 +13651,15 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         requestData,
       ];
     }
+    if (adminEndpoint === '/user/sendMail') {
+      page.__visualParityLastAdminUserSendMail = requestData;
+      page.__visualParityAdminUserSendMailCount =
+        (page.__visualParityAdminUserSendMailCount ?? 0) + 1;
+      page.__visualParityAdminUserSendMailRequests = [
+        ...(page.__visualParityAdminUserSendMailRequests ?? []),
+        requestData,
+      ];
+    }
     if (
       adminEndpoint === '/user/fetch' &&
       Array.from(requestUrl.searchParams.values()).includes('invite_user_id')
@@ -13106,6 +13731,9 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     if (pathname === '/api/v1/user/ticket/reply' && interaction.delayUserTicketReplyMs) {
       await delay(interaction.delayUserTicketReplyMs);
     }
+    if (pathname === '/api/v1/user/ticket/close' && interaction.delayUserTicketCloseMs) {
+      await delay(interaction.delayUserTicketCloseMs);
+    }
     if (pathname === '/api/v1/user/ticket/save' && interaction.delayUserTicketSaveMs) {
       await delay(interaction.delayUserTicketSaveMs);
     }
@@ -13133,6 +13761,18 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     if (adminEndpoint === '/plan/save' && interaction.delayAdminPlanSaveMs) {
       await delay(interaction.delayAdminPlanSaveMs);
     }
+    if (
+      [
+        '/notice/drop',
+        '/notice/show',
+        '/plan/drop',
+        '/plan/update',
+        '/server/manage/sort',
+      ].includes(adminEndpoint ?? '') &&
+      interaction.delayAdminMutationMs
+    ) {
+      await delay(interaction.delayAdminMutationMs);
+    }
     if (adminEndpoint === '/server/group/save' && interaction.delayAdminServerGroupSaveMs) {
       await delay(interaction.delayAdminServerGroupSaveMs);
     }
@@ -13149,6 +13789,9 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
       interaction.delayAdminUserMutationMs
     ) {
       await delay(interaction.delayAdminUserMutationMs);
+    }
+    if (adminEndpoint === '/user/sendMail' && interaction.delayAdminUserSendMailMs) {
+      await delay(interaction.delayAdminUserSendMailMs);
     }
     if (pathname === '/api/v1/user/unbindTelegram' && interaction.delayUserUnbindTelegramMs) {
       await delay(interaction.delayUserUnbindTelegramMs);
@@ -13194,11 +13837,17 @@ function apiFixtureResponse(
   const httpError = (message, status = 500) => ({ code: status, data: null, httpStatus: status, message });
 
   if (scenario.forceUserUnauthorized && pathname === '/api/v1/user/info') {
-    return httpError('auth required', 403);
+    return httpError(
+      'auth required',
+      interaction.forceUserUnauthorizedStatus ?? scenario.forceUserUnauthorizedStatus ?? 403,
+    );
   }
 
   if (scenario.forceAdminUnauthorized && adminEndpoint) {
-    return httpError('auth required', 403);
+    return httpError(
+      'auth required',
+      interaction.forceAdminUnauthorizedStatus ?? scenario.forceAdminUnauthorizedStatus ?? 403,
+    );
   }
 
   if (adminEndpoint) {
@@ -13258,6 +13907,12 @@ function apiFixtureResponse(
       case '/notice/save':
         if (interaction?.adminNoticeSaveError) return error('公告保存失败');
         return body(true);
+      case '/notice/show':
+        if (interaction?.adminNoticeShowError) return error('公告显示状态保存失败');
+        return body(true);
+      case '/notice/drop':
+        if (interaction?.adminNoticeDropError) return error('公告删除失败');
+        return body(true);
       case '/stat/getOverride':
         return body(adminStatFixture);
       case '/stat/getOrder':
@@ -13272,6 +13927,14 @@ function apiFixtureResponse(
         return body(adminPlanFixturesFor(scenario));
       case '/plan/save':
         if (interaction?.adminPlanSaveError) return error('订阅保存失败');
+        return body(true);
+      case '/plan/update':
+        if (interaction?.adminPlanUpdateError) return error('订阅开关失败');
+        return body(true);
+      case '/plan/drop':
+        if (interaction?.adminPlanDropError) return error('订阅删除失败');
+        return body(true);
+      case '/plan/sort':
         return body(true);
       case '/payment/fetch':
         return body(adminPaymentFixtures);
@@ -13296,6 +13959,9 @@ function apiFixtureResponse(
         return body(true);
       case '/server/manage/getNodes':
         return body(adminServerNodeFixturesFor(scenario));
+      case '/server/manage/sort':
+        if (interaction?.adminServerSortError) return error('节点排序失败');
+        return body(true);
       case '/server/route/fetch':
         return body(adminServerRouteFixtures);
       case '/system/getQueueStats':
@@ -13339,6 +14005,11 @@ function apiFixtureResponse(
           httpStatus: 200,
           rawBody: 'id,email\n1,visual-user@example.com\n',
         };
+      case '/user/sendMail':
+        if (requestData?.subject === interaction?.adminUserSendMailFailureSubject) {
+          return error('邮件加入队列失败');
+        }
+        return body(true);
       case '/user/getUserInfoById': {
         const requestedId = requestUrl.searchParams.has('id')
           ? Number(requestUrl.searchParams.get('id'))
@@ -13362,6 +14033,8 @@ function apiFixtureResponse(
         }
         return body(adminTicketFixtures, { total: adminTicketFixtures.length });
       case '/ticket/reply':
+        return body(true);
+      case '/ticket/close':
         return body(true);
       default:
         return body(null);
@@ -13489,14 +14162,29 @@ function apiFixtureResponse(
       if (interaction?.ticketSaveError) return error('工单内容不能为空');
       return body(true);
     case '/api/v1/user/ticket/reply':
+      if (
+        interaction?.ticketReplyError ||
+        requestData?.message === interaction?.ticketReplyErrorMessage
+      ) {
+        return error('工单回复失败');
+      }
+      return body(true);
+    case '/api/v1/user/ticket/close':
+      if (interaction?.ticketCloseError) return error('工单关闭失败');
       return body(true);
     case '/api/v1/user/ticket/withdraw':
+      if (
+        interaction?.withdrawError ||
+        requestData?.withdraw_account === interaction?.withdrawErrorAccount
+      ) {
+        return error('提现失败');
+      }
       return body(true);
     case '/api/v1/user/knowledge/fetch':
       return body(
         requestUrl.searchParams.has('id')
-          ? userKnowledgeFixtureById(requestUrl.searchParams.get('id'))
-          : knowledgeFixtures,
+          ? userKnowledgeFixtureById(requestUrl.searchParams.get('id'), interaction)
+          : userKnowledgeFixturesFor(interaction),
       );
     case '/api/v1/user/notice/fetch':
       return body(noticeFixtures);
@@ -13519,12 +14207,14 @@ function apiFixtureResponse(
   }
 }
 
-function userKnowledgeFixtureById(id) {
-  return (
-    Object.values(knowledgeFixtures)
-      .flat()
-      .find((knowledge) => String(knowledge.id) === String(id)) ?? knowledgeFixtures.General[0]
-  );
+function userKnowledgeFixturesFor(interaction = {}) {
+  return interaction.extremeKnowledgeContent ? extremeKnowledgeFixtures : knowledgeFixtures;
+}
+
+function userKnowledgeFixtureById(id, interaction = {}) {
+  const fixtures = userKnowledgeFixturesFor(interaction);
+  const articles = Object.values(fixtures).flat();
+  return articles.find((knowledge) => String(knowledge.id) === String(id)) ?? articles[0];
 }
 
 function userPlanFixturesFor(scenario = {}) {

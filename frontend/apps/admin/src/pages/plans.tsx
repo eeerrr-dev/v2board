@@ -452,9 +452,6 @@ export default function PlansPage() {
       onSuccess: () => {
         void plans.refetch();
       },
-      onError: (error) => {
-        if (error instanceof Error) message.error(i18nGet(error.message));
-      },
     });
   };
 
@@ -464,9 +461,6 @@ export default function PlansPage() {
       {
         onSuccess: () => {
           void plans.refetch();
-        },
-        onError: (error) => {
-          if (error instanceof Error) message.error(i18nGet(error.message));
         },
       },
     );

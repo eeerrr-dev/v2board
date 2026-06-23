@@ -177,9 +177,9 @@ describe('OrdersPage bundled-theme table', () => {
     expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
   });
 
-  it('keeps the fixed-row height offset used by the bundled orders table', () => {
-    expect(ordersSource).toContain('useFixedColumnRowHeights(orders.length, {');
-    expect(ordersSource).toContain('bodyRowHeightOffset: 1');
+  it('keeps the bundled orders table fixed rows matched to the main row height', () => {
+    expect(ordersSource).toContain('useFixedColumnRowHeights(orders.length)');
+    expect(ordersSource).not.toContain('bodyRowHeightOffset: 1');
     expect(ordersSource).not.toContain('fixedBodyRowExtraPixel');
   });
 

@@ -931,6 +931,7 @@ describe('admin legacy entrypoint', () => {
     const interactionLabels = [
       'user-login-form-language',
       'user-login-language-persistence',
+      'user-auth-401-no-redirect',
       'user-dashboard-dark-mode-persistence',
       'user-dashboard-subscribe-drawer',
       'user-dashboard-notice-carousel',
@@ -949,17 +950,22 @@ describe('admin legacy entrypoint', () => {
       'user-node-table-scroll',
       'user-traffic-table-scroll',
       'user-knowledge-drawer',
+      'user-knowledge-extreme-content-matrix',
       'user-invite-generate',
+      'user-invite-finance-submit-matrix',
       'user-ticket-reply-send',
+      'user-ticket-error-matrix',
       'user-ticket-create-submit',
       'user-order-cancel-confirm',
       'admin-ticket-reply-send',
       'admin-tickets-reply-filter',
+      'admin-auth-401-no-redirect',
       'admin-dashboard-dark-mode-persistence',
       'admin-dashboard-commission-shortcut',
       'admin-config-tabs',
       'admin-plan-create-drawer',
       'admin-plan-edit-drawer',
+      'admin-mutation-failure-matrix',
       'admin-theme-settings-modal',
       'admin-config-save-failure-matrix',
       'admin-server-create-node-drawer',
@@ -991,6 +997,7 @@ describe('admin legacy entrypoint', () => {
       'admin-user-export-download-matrix',
       'admin-user-create-modal',
       'admin-user-send-mail-modal',
+      'admin-user-send-mail-submit-matrix',
       'admin-user-reset-secret-confirm',
       'admin-user-delete-confirm',
       'admin-user-copy-action',
@@ -1010,11 +1017,16 @@ describe('admin legacy entrypoint', () => {
       'async function runLoginLanguagePersistenceInteraction(page)',
     );
     expect(visualParitySource).toContain('async function runDarkModePersistenceInteraction(page)');
+    expect(visualParitySource).toContain('async function runUnauthorizedHttp401NoRedirectInteraction(page)');
+    expect(visualParitySource).toContain('async function runUserKnowledgeExtremeContentMatrixInteraction(page)');
+    expect(visualParitySource).toContain('async function runInviteFinanceSubmitMatrixInteraction(page)');
+    expect(visualParitySource).toContain('async function runUserTicketErrorMatrixInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminTicketsReplyFilterInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminThemeSettingsInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminConfigSaveFailureMatrixInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminPlanCreateDrawerInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminPlanEditDrawerInteraction(page)');
+    expect(visualParitySource).toContain('async function runAdminMutationFailureMatrixInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminServerCreateNodeDrawerInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminServerEditNodeDrawerInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminServerRouteCreateModalInteraction(page)');
@@ -1041,6 +1053,7 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain('async function runAdminUserExportDownloadMatrixInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserCreateModalInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserSendMailModalInteraction(page)');
+    expect(visualParitySource).toContain('async function runAdminUserSendMailSubmitMatrixInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserResetSecretConfirmInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserDeleteConfirmInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserCopyActionInteraction(page)');
@@ -1060,14 +1073,19 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain("case '/config/save':");
     expect(visualParitySource).toContain("case '/theme/saveThemeConfig':");
     expect(visualParitySource).toContain("case '/plan/save':");
+    expect(visualParitySource).toContain("case '/plan/update':");
+    expect(visualParitySource).toContain("case '/plan/drop':");
     expect(visualParitySource).toContain("case '/coupon/generate':");
     expect(visualParitySource).toContain("case '/giftcard/generate':");
     expect(visualParitySource).toContain("case '/knowledge/save':");
     expect(visualParitySource).toContain("case '/notice/save':");
+    expect(visualParitySource).toContain("case '/notice/show':");
+    expect(visualParitySource).toContain("case '/notice/drop':");
     expect(visualParitySource).toContain("case '/order/detail':");
     expect(visualParitySource).toContain("case '/order/assign':");
     expect(visualParitySource).toContain('Parity Created Group');
     expect(visualParitySource).toContain("case '/server/group/save':");
+    expect(visualParitySource).toContain("case '/server/manage/sort':");
     expect(visualParitySource).toContain("__visualParityAdminServerGroupSaveRequests");
     expect(visualParitySource).toContain("delayAdminServerGroupSaveMs: 200");
     expect(visualParitySource).toContain(
@@ -1083,8 +1101,10 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain("case '/user/ban':");
     expect(visualParitySource).toContain("case '/user/allDel':");
     expect(visualParitySource).toContain("case '/user/dumpCSV':");
+    expect(visualParitySource).toContain("case '/user/sendMail':");
     expect(visualParitySource).toContain("case '/user/getUserInfoById':");
     expect(visualParitySource).toContain("case '/stat/getStatUser':");
+    expect(visualParitySource).toContain("case '/api/v1/user/ticket/close':");
     expect(visualParitySource).toContain('adminPaymentFormFixtures');
     expect(visualParitySource).toContain("scenarioLabel: 'admin-ticket-detail'");
     expect(visualParitySource).toContain("scenarioLabel: 'admin-tickets'");
@@ -1102,7 +1122,10 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain('Parity Plan');
     expect(visualParitySource).toContain('Parity Edited Plan');
     expect(visualParitySource).toContain("__visualParityAdminPlanSaveRequests");
+    expect(visualParitySource).toContain("__visualParityAdminPlanUpdateRequests");
+    expect(visualParitySource).toContain("__visualParityAdminPlanDropRequests");
     expect(visualParitySource).toContain("delayAdminPlanSaveMs: 200");
+    expect(visualParitySource).toContain("delayAdminMutationMs: 200");
     expect(visualParitySource).toContain("result.saveRequests?.[0]?.name !== 'Parity Plan'");
     expect(visualParitySource).toContain("String(result.saveRequests?.[0]?.month_price) !== '1234'");
     expect(visualParitySource).toContain(
@@ -1128,6 +1151,8 @@ describe('admin legacy entrypoint', () => {
     );
     expect(visualParitySource).toContain("String(result.generateRequests?.[0]?.value) !== '45'");
     expect(visualParitySource).toContain("__visualParityAdminNoticeSaveRequests");
+    expect(visualParitySource).toContain("__visualParityAdminNoticeShowRequests");
+    expect(visualParitySource).toContain("__visualParityAdminNoticeDropRequests");
     expect(visualParitySource).toContain("delayAdminNoticeSaveMs: 200");
     expect(visualParitySource).toContain("result.saveRequests?.[0]?.title !== 'Parity Notice'");
     expect(visualParitySource).toContain(
@@ -1153,6 +1178,9 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain('Parity Edited Notice');
     expect(visualParitySource).toContain('parity.created');
     expect(visualParitySource).toContain('Parity Mail Subject');
+    expect(visualParitySource).toContain('Parity Mail Submit Success');
+    expect(visualParitySource).toContain('Parity Mail Failure');
+    expect(visualParitySource).toContain("__visualParityAdminUserSendMailRequests");
     expect(visualParitySource).toContain('重置UUID及订阅URL');
     expect(visualParitySource).toContain('assign-user@example.com');
     expect(visualParitySource).toContain("__visualParityLastAdminOrderPaid");
@@ -1177,6 +1205,9 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain("__visualParityAdminUserAllDeleteRequests");
     expect(visualParitySource).toContain("__visualParityAdminUserDumpCsvRequests");
     expect(visualParitySource).toContain("__visualParityAdminUserUpdateRequests");
+    expect(visualParitySource).toContain("__visualParityAdminServerSortRequests");
+    expect(visualParitySource).toContain("__visualParityUserTicketCloseRequests");
+    expect(visualParitySource).toContain('extreme-knowledge-token-2026');
     expect(visualParitySource).toContain('VISUAL2026110001');
     expect(visualParitySource).toContain('VISUAL2026110002');
     expect(visualParitySource).toContain('用户管理');
