@@ -23,6 +23,7 @@ export type LegacyStandaloneTableHeader = {
   fixedRight?: boolean;
   onClick?: () => void;
   sortable?: boolean;
+  sortOrder?: 'ASC' | 'DESC';
   suffix?: ReactNode;
 };
 
@@ -48,9 +49,11 @@ function legacyHeaderClassName(
 }
 
 function LegacyStandaloneTableHeaderCell({
+  sortOrder,
   sortable,
   title,
 }: {
+  sortOrder?: 'ASC' | 'DESC';
   sortable?: boolean;
   title: ReactNode;
 }) {
@@ -64,8 +67,12 @@ function LegacyStandaloneTableHeaderCell({
               title="排序"
               className="ant-table-column-sorter-inner ant-table-column-sorter-inner-full"
             >
-              <LegacyCaretUpIcon className="ant-table-column-sorter-up off" />
-              <LegacyCaretDownIcon className="ant-table-column-sorter-down off" />
+              <LegacyCaretUpIcon
+                className={`ant-table-column-sorter-up ${sortOrder === 'ASC' ? 'on' : 'off'}`}
+              />
+              <LegacyCaretDownIcon
+                className={`ant-table-column-sorter-down ${sortOrder === 'DESC' ? 'on' : 'off'}`}
+              />
             </div>
           </span>
         ) : (
@@ -103,7 +110,11 @@ function LegacyStandaloneTableHead({
                     : undefined
             }
           >
-            <LegacyStandaloneTableHeaderCell sortable={header.sortable} title={header.title} />
+            <LegacyStandaloneTableHeaderCell
+              sortOrder={header.sortOrder}
+              sortable={header.sortable}
+              title={header.title}
+            />
             {header.suffix}
           </th>
         ))}
@@ -206,8 +217,9 @@ function legacyPaginationChange(
   return {
     current,
     pageSize,
+    ...(mini ? { size: 'small' as const } : {}),
     ...(pageSizeOptions
-      ? { pageSizeOptions, showSizeChanger: true, ...(mini ? { size: 'small' as const } : {}) }
+      ? { pageSizeOptions, showSizeChanger: true }
       : {}),
     total,
   };

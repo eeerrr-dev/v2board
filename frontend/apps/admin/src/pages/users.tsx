@@ -228,6 +228,7 @@ function downloadGeneratedUserCsv(buffer: unknown) {
 }
 
 const LEGACY_SORTABLE_CELL_CLASS = 'ant-table-column-has-actions ant-table-column-has-sorters';
+const LEGACY_USER_PAGE_SIZE_OPTIONS = [10, 50, 100, 150];
 
 function userRowKey(index: number) {
   return legacyTableRowKey(index);
@@ -377,7 +378,7 @@ export default function UsersPage() {
             message.success('删除成功');
             void users.refetch();
           })
-          .catch((error) => showError(message, error));
+          .catch(() => undefined);
       },
     });
 
@@ -400,6 +401,9 @@ export default function UsersPage() {
     setQuery((state) => ({
       ...state,
       current: 1,
+      pageSizeOptions: LEGACY_USER_PAGE_SIZE_OPTIONS,
+      showSizeChanger: true,
+      size: 'small',
       sort,
       sort_type: state.sort === sort && state.sort_type === 'ASC' ? 'DESC' : 'ASC',
     }));
@@ -407,6 +411,7 @@ export default function UsersPage() {
     title,
     className: LEGACY_SORTABLE_CELL_CLASS,
     onClick: () => sortUserTable(sort),
+    sortOrder: query.sort === sort ? query.sort_type : undefined,
     sortable: true,
   });
   const headers: LegacyStandaloneTableHeader[] = [
@@ -591,7 +596,7 @@ export default function UsersPage() {
                                     .then(() => {
                                       void users.refetch();
                                     })
-                                    .catch((error) => showError(message, error));
+                                    .catch(() => undefined);
                                 },
                               });
                             }}
@@ -614,7 +619,7 @@ export default function UsersPage() {
                                     .then(() => {
                                       void users.refetch();
                                     })
-                                    .catch((error) => showError(message, error));
+                                    .catch(() => undefined);
                                 },
                               });
                             }}
@@ -648,7 +653,7 @@ export default function UsersPage() {
                   current={query.current}
                   pageSize={query.pageSize}
                   total={users.data?.total}
-                  pageSizeOptions={[10, 50, 100, 150]}
+                  pageSizeOptions={LEGACY_USER_PAGE_SIZE_OPTIONS}
                   onChange={updateTablePagination}
                 />
               }

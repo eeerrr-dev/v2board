@@ -115,7 +115,7 @@ describe('UserTrafficModal', () => {
 
     expect(mocks.useAdminUserTraffic).toHaveBeenLastCalledWith(
       1,
-      { current: 2, pageSize: 10, total: 25 },
+      { current: 2, pageSize: 10, size: 'small', total: 25 },
       true,
     );
 

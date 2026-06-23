@@ -171,7 +171,7 @@ describe('LegacyDropdown', () => {
     expect(dropdown.className).toContain('ant-dropdown-hidden');
   });
 
-  it('keeps default hover dropdown overlays visible after menu item clicks', async () => {
+  it('hides default hover dropdown overlays after menu item clicks', async () => {
     vi.useFakeTimers();
     const onOverlayClick = vi.fn();
 
@@ -200,34 +200,35 @@ describe('LegacyDropdown', () => {
     });
 
     expect(onOverlayClick).toHaveBeenCalledTimes(1);
-    expect(dropdown.className).not.toContain('ant-dropdown-hidden');
+    expect(dropdown.className).toContain('ant-dropdown-hidden');
 
     await act(async () => {
-      dropdown.dispatchEvent(
+      trigger.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      vi.advanceTimersByTime(150);
+      await Promise.resolve();
+    });
+    expect(dropdown.className).toContain('ant-dropdown-hidden');
+
+    await act(async () => {
+      trigger.dispatchEvent(
         new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }),
       );
       vi.advanceTimersByTime(100);
     });
-    expect(dropdown.className).not.toContain('ant-dropdown-hidden');
-
-    const modal = document.createElement('div');
-    modal.className = 'ant-modal';
-    const confirmButtons = document.createElement('div');
-    confirmButtons.className = 'ant-modal-confirm-btns';
-    modal.appendChild(confirmButtons);
-    document.body.appendChild(modal);
-
-    await act(async () => {
-      modal.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      await Promise.resolve();
-    });
-    expect(dropdown.className).not.toContain('ant-dropdown-hidden');
-
-    await act(async () => {
-      confirmButtons.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
     expect(dropdown.className).toContain('ant-dropdown-hidden');
+
+    await act(async () => {
+      document.dispatchEvent(
+        new MouseEvent('mousemove', { bubbles: true, clientX: 1, clientY: 1 }),
+      );
+    });
+
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      vi.advanceTimersByTime(150);
+      await Promise.resolve();
+    });
+    expect(dropdown.className).not.toContain('ant-dropdown-hidden');
     vi.useRealTimers();
   });
 

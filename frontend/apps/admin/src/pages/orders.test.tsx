@@ -433,6 +433,12 @@ describe('OrdersPage legacy order manager', () => {
     expect(ordersSource).toContain('<LegacyTablePagination');
     expect(ordersSource).toContain('onChange={updateTablePagination}');
     expect(ordersSource).toContain('...pagination,');
+    expect(ordersSource).toContain('function legacyOrderTableRows<T>(rows: T[], current: number, pageSize: number)');
+    expect(ordersSource).toContain(
+      'const visibleRows = legacyOrderTableRows(\n    tableData,\n    tablePagination.current,\n    tablePagination.pageSize,\n  );',
+    );
+    expect(ordersSource).toContain('{visibleRows.map((row, index) => (');
+    expect(ordersSource).not.toContain('{tableData.map((row, index) => (');
     expect(ordersSource).not.toContain('current: pagination.current ?? state.current');
     expect(ordersSource).not.toContain('pageSize: pagination.pageSize ?? state.pageSize');
     expect(ordersSource).not.toContain('total: pagination.total');

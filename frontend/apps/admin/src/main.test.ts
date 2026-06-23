@@ -961,6 +961,7 @@ describe('admin legacy entrypoint', () => {
       'admin-plan-create-drawer',
       'admin-plan-edit-drawer',
       'admin-theme-settings-modal',
+      'admin-config-save-failure-matrix',
       'admin-server-create-node-drawer',
       'admin-server-edit-node-drawer',
       'admin-server-route-create-modal',
@@ -973,6 +974,7 @@ describe('admin legacy entrypoint', () => {
       'admin-order-assign-modal',
       'admin-order-status-dropdown',
       'admin-order-commission-dropdown',
+      'admin-orders-filter-pagination-matrix',
       'admin-coupon-create-modal',
       'admin-coupon-edit-modal',
       'admin-giftcard-create-modal',
@@ -982,18 +984,23 @@ describe('admin legacy entrypoint', () => {
       'admin-knowledge-create-drawer',
       'admin-knowledge-edit-drawer',
       'admin-users-filter-input',
+      'admin-users-sort-matrix',
       'admin-user-bulk-ban-confirm',
       'admin-user-bulk-delete-confirm',
+      'admin-user-destructive-failure-matrix',
+      'admin-user-export-download-matrix',
       'admin-user-create-modal',
       'admin-user-send-mail-modal',
       'admin-user-reset-secret-confirm',
       'admin-user-delete-confirm',
       'admin-user-copy-action',
       'admin-user-edit-action',
+      'admin-user-update-validation-failure',
       'admin-user-assign-action',
       'admin-user-orders-action',
       'admin-user-invite-action',
       'admin-user-traffic-action',
+      'admin-users-extreme-viewport-matrix',
     ];
     for (const label of interactionLabels) {
       expect(visualParitySource).toContain(`label: '${label}'`);
@@ -1005,6 +1012,7 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain('async function runDarkModePersistenceInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminTicketsReplyFilterInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminThemeSettingsInteraction(page)');
+    expect(visualParitySource).toContain('async function runAdminConfigSaveFailureMatrixInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminPlanCreateDrawerInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminPlanEditDrawerInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminServerCreateNodeDrawerInteraction(page)');
@@ -1019,6 +1027,7 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain('async function runAdminOrderAssignModalInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminOrderStatusDropdownInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminOrderCommissionDropdownInteraction(page)');
+    expect(visualParitySource).toContain('async function runAdminOrdersFilterPaginationMatrixInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminCouponEditModalInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminGiftcardCreateModalInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminGiftcardEditModalInteraction(page)');
@@ -1028,21 +1037,28 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain('async function runAdminKnowledgeEditDrawerInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserBulkBanConfirmInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserBulkDeleteConfirmInteraction(page)');
+    expect(visualParitySource).toContain('async function runAdminUserDestructiveFailureMatrixInteraction(page)');
+    expect(visualParitySource).toContain('async function runAdminUserExportDownloadMatrixInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserCreateModalInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserSendMailModalInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserResetSecretConfirmInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserDeleteConfirmInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserCopyActionInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserEditActionInteraction(page)');
+    expect(visualParitySource).toContain('async function runAdminUserUpdateValidationFailureInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserAssignActionInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserOrdersActionInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserInviteActionInteraction(page)');
     expect(visualParitySource).toContain('async function runAdminUserTrafficActionInteraction(page)');
+    expect(visualParitySource).toContain('async function runAdminUsersSortMatrixInteraction(page)');
+    expect(visualParitySource).toContain('async function runAdminUsersExtremeViewportMatrixInteraction(page)');
     expect(visualParitySource).toContain('function readRequestData(request)');
     expect(visualParitySource).toContain("waitForVisibleElementsHidden(page, '.ant-select-dropdown')");
     expect(visualParitySource).toContain("case '/payment/getPaymentMethods':");
     expect(visualParitySource).toContain("case '/payment/getPaymentForm':");
     expect(visualParitySource).toContain("case '/payment/save':");
+    expect(visualParitySource).toContain("case '/config/save':");
+    expect(visualParitySource).toContain("case '/theme/saveThemeConfig':");
     expect(visualParitySource).toContain("case '/plan/save':");
     expect(visualParitySource).toContain("case '/coupon/generate':");
     expect(visualParitySource).toContain("case '/giftcard/generate':");
@@ -1062,6 +1078,11 @@ describe('admin legacy entrypoint', () => {
     );
     expect(visualParitySource).toContain("case '/order/paid':");
     expect(visualParitySource).toContain("case '/order/update':");
+    expect(visualParitySource).toContain("case '/user/update':");
+    expect(visualParitySource).toContain("case '/user/delUser':");
+    expect(visualParitySource).toContain("case '/user/ban':");
+    expect(visualParitySource).toContain("case '/user/allDel':");
+    expect(visualParitySource).toContain("case '/user/dumpCSV':");
     expect(visualParitySource).toContain("case '/user/getUserInfoById':");
     expect(visualParitySource).toContain("case '/stat/getStatUser':");
     expect(visualParitySource).toContain('adminPaymentFormFixtures');
@@ -1149,6 +1170,13 @@ describe('admin legacy entrypoint', () => {
     );
     expect(visualParitySource).toContain("__visualParityLastAdminFilteredUserFetchQuery");
     expect(visualParitySource).toContain("__visualParityLastAdminUserTrafficQuery");
+    expect(visualParitySource).toContain("__visualParityAdminConfigSaveRequests");
+    expect(visualParitySource).toContain("__visualParityAdminThemeSaveRequests");
+    expect(visualParitySource).toContain("__visualParityAdminUserDeleteRequests");
+    expect(visualParitySource).toContain("__visualParityAdminUserBanRequests");
+    expect(visualParitySource).toContain("__visualParityAdminUserAllDeleteRequests");
+    expect(visualParitySource).toContain("__visualParityAdminUserDumpCsvRequests");
+    expect(visualParitySource).toContain("__visualParityAdminUserUpdateRequests");
     expect(visualParitySource).toContain('VISUAL2026110001');
     expect(visualParitySource).toContain('VISUAL2026110002');
     expect(visualParitySource).toContain('用户管理');

@@ -870,11 +870,17 @@ describe('UsersPage legacy user manager', () => {
     const resetRefetch = usersSource.indexOf('void users.refetch();', resetSuccess);
     const deleteSuccess = usersSource.indexOf("message.success('删除成功')");
     const deleteRefetch = usersSource.indexOf('void users.refetch();', deleteSuccess);
+    const deleteUserBlock = usersSource.slice(
+      usersSource.indexOf('const deleteUser ='),
+      usersSource.indexOf('const runUserAction ='),
+    );
 
     expect(resetSuccess).toBeGreaterThan(-1);
     expect(resetRefetch).toBeGreaterThan(resetSuccess);
     expect(deleteSuccess).toBeGreaterThan(-1);
     expect(deleteRefetch).toBeGreaterThan(deleteSuccess);
+    expect(deleteUserBlock).toContain('.catch(() => undefined);');
+    expect(deleteUserBlock).not.toContain('.catch((error) => showError(message, error));');
 
     const deleteUserHook = adminQueriesSource.slice(
       adminQueriesSource.indexOf('export function useDeleteUserMutation()'),
@@ -897,6 +903,10 @@ describe('UsersPage legacy user manager', () => {
     const deleteAllStart = usersSource.indexOf('void deleteAll');
     const deleteAllMutate = usersSource.indexOf('.mutateAsync(query.filter)', deleteAllStart);
     const deleteAllRefetch = usersSource.indexOf('void users.refetch();', deleteAllMutate);
+    const bulkActionBlock = usersSource.slice(
+      usersSource.indexOf('<LegacyDropdown\n                    overlay={'),
+      usersSource.indexOf('<LegacyButton className="ant-btn ml-2"', usersSource.indexOf('void deleteAll')),
+    );
 
     expect(banStart).toBeGreaterThan(-1);
     expect(banMutate).toBeGreaterThan(banStart);
@@ -904,6 +914,8 @@ describe('UsersPage legacy user manager', () => {
     expect(deleteAllStart).toBeGreaterThan(-1);
     expect(deleteAllMutate).toBeGreaterThan(deleteAllStart);
     expect(deleteAllRefetch).toBeGreaterThan(deleteAllMutate);
+    expect(bulkActionBlock.match(/\.catch\(\(\) => undefined\);/g)).toHaveLength(2);
+    expect(bulkActionBlock).not.toContain('.catch((error) => showError(message, error));');
 
     const banUsersHook = adminQueriesSource.slice(
       adminQueriesSource.indexOf('export function useBanUsersMutation()'),
@@ -978,6 +990,12 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain(
       "sort_type: state.sort === sort && state.sort_type === 'ASC' ? 'DESC' : 'ASC'",
     );
+    expect(usersSource).toContain('const LEGACY_USER_PAGE_SIZE_OPTIONS = [10, 50, 100, 150];');
+    expect(usersSource).toContain('pageSizeOptions: LEGACY_USER_PAGE_SIZE_OPTIONS,');
+    expect(usersSource).toContain('showSizeChanger: true,');
+    expect(usersSource).toContain("size: 'small',");
+    expect(usersSource).toContain('sortOrder: query.sort === sort ? query.sort_type : undefined,');
+    expect(usersSource).toContain('pageSizeOptions={LEGACY_USER_PAGE_SIZE_OPTIONS}');
     expect(usersSource).toContain('function legacyUserTableRows<T>(rows: T[], current: number, pageSize: number)');
     expect(usersSource).toContain('if (rows.length <= pageSize) return rows;');
     expect(usersSource).toContain('const visibleRows = legacyUserTableRows(data, query.current, query.pageSize);');

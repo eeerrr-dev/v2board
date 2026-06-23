@@ -157,8 +157,8 @@ function ThemeSettingsButton({
       await saveConfig.mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) });
       await onSaved();
       message.success('保存成功');
-    } catch (error) {
-      showError(message, error);
+    } catch {
+      // Legacy theme settings keep the modal open without showing a local error toast.
     }
   };
 
@@ -287,7 +287,7 @@ function SystemConfigPage() {
           message.success('保存成功');
           void config.refetch();
         })
-        .catch((error) => showError(message, error));
+        .catch(() => undefined);
     }, 1500);
   };
 

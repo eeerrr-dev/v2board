@@ -82,6 +82,24 @@ describe('LegacyStandaloneTable', () => {
     expect(html).not.toContain('10 条/页');
   });
 
+  it('renders old sorter active arrow classes', () => {
+    const headers: LegacyStandaloneTableHeader[] = [
+      { title: '状态', sortable: true, sortOrder: 'ASC' },
+      { title: '加入时间', sortable: true, sortOrder: 'DESC' },
+    ];
+    const html = renderToStaticMarkup(
+      <LegacyStandaloneTable headers={headers} isEmpty={false}>
+        <tr className="ant-table-row ant-table-row-level-0">
+          <td>正常</td>
+          <td>2023/11/14 22:13</td>
+        </tr>
+      </LegacyStandaloneTable>,
+    );
+
+    expect(html).toContain('class="anticon anticon-caret-up ant-table-column-sorter-up on"');
+    expect(html).toContain('class="anticon anticon-caret-down ant-table-column-sorter-down on"');
+  });
+
   it('keeps the initial scroll class on the left so the fixed-right shadow is visible', () => {
     const headers: LegacyStandaloneTableHeader[] = [
       { title: 'ID' },
@@ -305,6 +323,7 @@ describe('LegacyStandaloneTable', () => {
     expect(onChange).toHaveBeenLastCalledWith({
       current: 1,
       pageSize: 10,
+      size: 'small',
       total: 30,
     });
 
@@ -316,6 +335,7 @@ describe('LegacyStandaloneTable', () => {
     expect(onChange).toHaveBeenLastCalledWith({
       current: 3,
       pageSize: 10,
+      size: 'small',
       total: 30,
     });
   });

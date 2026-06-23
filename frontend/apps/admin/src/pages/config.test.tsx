@@ -327,6 +327,24 @@ describe('ConfigPage legacy theme config', () => {
     expect(configHook).not.toContain('adminKeys.config');
   });
 
+  it('keeps theme and system config save failures quiet like the bundled admin app', () => {
+    const themeSaveStart = configSource.indexOf(
+      'await saveConfig.mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) });',
+    );
+    const themeSaveEnd = configSource.indexOf('return (', themeSaveStart);
+    const systemSaveStart = configSource.indexOf(
+      'save\n        .mutateAsync(nextGroup as Partial<AdminConfigFlat>)',
+    );
+    const systemSaveEnd = configSource.indexOf('}, 1500);', systemSaveStart);
+    const themeSaveBlock = configSource.slice(themeSaveStart, themeSaveEnd);
+    const systemSaveBlock = configSource.slice(systemSaveStart, systemSaveEnd);
+
+    expect(themeSaveBlock).toContain('} catch {');
+    expect(themeSaveBlock).not.toContain('showError(message, error)');
+    expect(systemSaveBlock).toContain('.catch(() => undefined)');
+    expect(systemSaveBlock).not.toContain('showError(message, error)');
+  });
+
   it('keeps the original dynamic theme field structure and option rendering', () => {
     expect(configSource).toContain('{Object.entries(themeItems).map(([key, theme]) => {');
     const themeCardBlock = configSource.slice(

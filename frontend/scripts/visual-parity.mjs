@@ -1535,6 +1535,15 @@ const interactionScenarios = [
     scenarioLabel: 'admin-config',
   },
   {
+    adminConfigSaveError: true,
+    adminThemeSaveError: true,
+    delayAdminConfigSaveMs: 200,
+    delayAdminThemeSaveMs: 200,
+    label: 'admin-config-save-failure-matrix',
+    run: runAdminConfigSaveFailureMatrixInteraction,
+    scenarioLabel: 'admin-config',
+  },
+  {
     label: 'admin-theme-settings-modal',
     run: runAdminThemeSettingsInteraction,
     scenarioLabel: 'admin-theme',
@@ -1675,6 +1684,11 @@ const interactionScenarios = [
     scenarioLabel: 'admin-orders',
   },
   {
+    label: 'admin-orders-filter-pagination-matrix',
+    run: runAdminOrdersFilterPaginationMatrixInteraction,
+    scenarioLabel: 'admin-orders-long-data',
+  },
+  {
     label: 'admin-orders-fetch-api-500',
     run: runFetchFailureStateInteraction,
     scenarioLabel: 'admin-orders-api-500',
@@ -1812,6 +1826,11 @@ const interactionScenarios = [
     scenarioLabel: 'admin-users-long-data',
   },
   {
+    label: 'admin-users-sort-matrix',
+    run: runAdminUsersSortMatrixInteraction,
+    scenarioLabel: 'admin-users-long-data',
+  },
+  {
     label: 'admin-users-fetch-api-500',
     run: runFetchFailureStateInteraction,
     scenarioLabel: 'admin-users-api-500',
@@ -1829,6 +1848,20 @@ const interactionScenarios = [
   {
     label: 'admin-user-bulk-delete-confirm',
     run: runAdminUserBulkDeleteConfirmInteraction,
+    scenarioLabel: 'admin-users',
+  },
+  {
+    adminUserAllDeleteError: true,
+    adminUserBanError: true,
+    adminUserDeleteError: true,
+    delayAdminUserMutationMs: 200,
+    label: 'admin-user-destructive-failure-matrix',
+    run: runAdminUserDestructiveFailureMatrixInteraction,
+    scenarioLabel: 'admin-users',
+  },
+  {
+    label: 'admin-user-export-download-matrix',
+    run: runAdminUserExportDownloadMatrixInteraction,
     scenarioLabel: 'admin-users',
   },
   {
@@ -1872,6 +1905,13 @@ const interactionScenarios = [
     scenarioLabel: 'admin-users',
   },
   {
+    adminUserUpdateError: true,
+    delayAdminUserMutationMs: 200,
+    label: 'admin-user-update-validation-failure',
+    run: runAdminUserUpdateValidationFailureInteraction,
+    scenarioLabel: 'admin-users',
+  },
+  {
     label: 'admin-user-assign-action',
     run: runAdminUserAssignActionInteraction,
     scenarioLabel: 'admin-users',
@@ -1890,6 +1930,12 @@ const interactionScenarios = [
     label: 'admin-user-traffic-action',
     run: runAdminUserTrafficActionInteraction,
     scenarioLabel: 'admin-users',
+  },
+  {
+    label: 'admin-users-extreme-viewport-matrix',
+    run: runAdminUsersExtremeViewportMatrixInteraction,
+    scenarioLabel: 'admin-users-long-data',
+    viewports: ['desktop'],
   },
 ];
 const guestConfigFixture = {
@@ -4379,7 +4425,13 @@ async function runOrderPaymentMethodInteraction(page) {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
       };
       return Array.from(document.querySelectorAll('#cashier .v2board-select'))
         .filter(isVisible)
@@ -4937,6 +4989,53 @@ async function runAdminConfigTabsInteraction(page) {
   return { before, second, third };
 }
 
+async function runAdminConfigSaveFailureMatrixInteraction(page) {
+  const initialConfigFetchCount = page.__visualParityAdminConfigFetchCount ?? 0;
+  const initialThemeFetchCount = page.__visualParityAdminThemeFetchCount ?? 0;
+  const before = await adminConfigSaveFailureState(page);
+  await fillVisibleAt(
+    page,
+    '.block.border-bottom input.form-control, .block.border-bottom textarea.form-control',
+    0,
+    'Parity Config Failure',
+  );
+  await page.waitForTimeout(150);
+  const edited = await adminConfigSaveFailureState(page);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminConfigSaveCount', 1, 7_000);
+  await page.waitForTimeout(350);
+  const configFailed = await adminConfigSaveFailureState(page);
+
+  await page.evaluate(() => {
+    window.location.hash = '/config/theme';
+  });
+  await page.waitForSelector('.block-transparent.bg-image', { state: 'visible', timeout: 5_000 });
+  await page.waitForTimeout(500);
+  const themeBefore = await adminThemeSaveFailureState(page);
+  await clickFirstVisibleText(page, 'button', ['主题设置']);
+  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await waitForVisibleText(page, '.ant-modal-title', '配置默认主题主题');
+  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Theme Failure');
+  await page.waitForTimeout(100);
+  const themeFilled = await adminThemeSaveFailureState(page);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminThemeSaveCount', 1, 5_000);
+  await page.waitForTimeout(350);
+  const themeFailed = await adminThemeSaveFailureState(page);
+
+  return {
+    before,
+    configFailed,
+    configFetchDelta: (page.__visualParityAdminConfigFetchCount ?? 0) - initialConfigFetchCount,
+    configSaveRequests: clonePageRequests(page.__visualParityAdminConfigSaveRequests),
+    edited,
+    themeBefore,
+    themeFailed,
+    themeFetchDelta: (page.__visualParityAdminThemeFetchCount ?? 0) - initialThemeFetchCount,
+    themeFilled,
+    themeSaveRequests: clonePageRequests(page.__visualParityAdminThemeSaveRequests),
+  };
+}
+
 async function runAdminPlanCreateDrawerInteraction(page) {
   const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
   const before = await adminPlanDrawerState(page);
@@ -5193,7 +5292,13 @@ async function runAdminThemeSettingsInteraction(page) {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
       };
       return !Array.from(document.querySelectorAll('.ant-modal')).some(isVisible);
     },
@@ -5796,7 +5901,13 @@ async function runAdminPaymentCreateModalInteraction(page) {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
       };
       return !Array.from(document.querySelectorAll('.ant-modal')).some(isVisible);
     },
@@ -6056,6 +6167,35 @@ async function runAdminOrderCommissionDropdownInteraction(page) {
     opened,
     updateRequest: page.__visualParityLastAdminOrderUpdate ?? null,
   };
+}
+
+async function runAdminOrdersFilterPaginationMatrixInteraction(page) {
+  const before = await adminOrderFilterPaginationState(page);
+  page.__visualParityLastAdminOrderFetchQuery = null;
+  await clickFirstVisible(page, '.bg-white .ant-btn, .ant-btn');
+  await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
+  await fillFirstVisible(page, '.v2board-filter-drawer .ant-input', 'VISUAL202611');
+  await clickFirstVisibleText(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', [
+    '检索',
+    '检 索',
+  ]);
+  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForPageProperty(page, '__visualParityLastAdminOrderFetchQuery');
+  await page.waitForTimeout(250);
+  const filtered = await adminOrderFilterPaginationState(page);
+
+  page.__visualParityLastAdminOrderFetchQuery = null;
+  await page.waitForSelector('.ant-pagination-item-2', { state: 'visible', timeout: 5_000 });
+  await clickFirstVisible(page, '.ant-pagination-item-2');
+  await waitForPageProperty(page, '__visualParityLastAdminOrderFetchQuery');
+  await page.waitForTimeout(250);
+  const page2 = await adminOrderFilterPaginationState(page);
+
+  return { before, filtered, page2 };
 }
 
 async function runAdminCouponCreateModalInteraction(page) {
@@ -6693,6 +6833,21 @@ async function runAdminUsersPaginationMatrixInteraction(page) {
   return { before, page2, pageSize50, sizeDropdown };
 }
 
+async function runAdminUsersSortMatrixInteraction(page) {
+  const before = await adminUserSortState(page);
+  page.__visualParityLastAdminUserFetchQuery = null;
+  await clickFirstVisibleText(page, '.ant-table-thead th', ['状态']);
+  await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
+  await page.waitForTimeout(250);
+  const asc = await adminUserSortState(page);
+  page.__visualParityLastAdminUserFetchQuery = null;
+  await clickFirstVisibleText(page, '.ant-table-thead th', ['状态']);
+  await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
+  await page.waitForTimeout(250);
+  const desc = await adminUserSortState(page);
+  return { asc, before, desc };
+}
+
 async function runAdminUserBulkBanConfirmInteraction(page) {
   return runAdminUserBulkConfirmInteraction(page, '批量封禁', '确定要进行封禁吗？');
 }
@@ -6733,6 +6888,133 @@ async function runAdminUserBulkConfirmInteraction(page, actionText, contentText)
   await waitForVisibleElementsHidden(page, '.ant-modal-confirm, .ant-modal');
   const closed = await adminUserBulkActionState(page);
   return { actionText, before, closed, contentText, dropdown, filtered, opened };
+}
+
+async function runAdminUserDestructiveFailureMatrixInteraction(page) {
+  const initialFetchCount = page.__visualParityAdminUserFetchCount ?? 0;
+  const before = await adminUserDestructiveFailureState(page);
+  await clickFirstVisibleText(page, '.ant-table-tbody a', ['操作']);
+  await waitForVisibleText(page, '.ant-dropdown-menu-item', '删除用户');
+  const deleteDropdown = await adminUserDestructiveFailureState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['删除用户']);
+  await page.waitForSelector('.ant-modal-confirm, .ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-modal-confirm-title, .ant-modal-title', '删除用户');
+  const deleteOpened = await adminUserDestructiveFailureState(page);
+  await clickVisibleAt(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 1);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminUserDeleteCount', 1);
+  await waitForVisibleElementsHidden(page, '.ant-modal-confirm, .ant-modal');
+  await page.waitForTimeout(350);
+  const deleteFailed = await adminUserDestructiveFailureState(page);
+
+  page.__visualParityLastAdminUserFetchQuery = null;
+  await clickFirstVisible(page, '.v2board-table-action .ant-btn, .ant-btn');
+  await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
+  await fillFirstVisible(page, '.v2board-filter-drawer .ant-input', 'visual@example.com');
+  await clickFirstVisibleText(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', [
+    '检索',
+    '检 索',
+  ]);
+  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
+  const filterFetchCount = page.__visualParityAdminUserFetchCount ?? 0;
+  const filtered = await adminUserDestructiveFailureState(page);
+
+  await openAdminUserToolbarDropdown(page, '批量封禁');
+  const banDropdown = await adminUserDestructiveFailureState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['批量封禁']);
+  await page.waitForSelector('.ant-modal-confirm, .ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-modal-confirm-title, .ant-modal-title', '提醒');
+  const banOpened = await adminUserDestructiveFailureState(page);
+  await clickVisibleAt(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 1);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminUserBanCount', 1);
+  await waitForVisibleElementsHidden(page, '.ant-modal-confirm, .ant-modal');
+  await page.waitForTimeout(350);
+  const banFailed = await adminUserDestructiveFailureState(page);
+
+  await openAdminUserToolbarDropdown(page, '批量删除');
+  const allDeleteDropdown = await adminUserDestructiveFailureState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['批量删除']);
+  await page.waitForSelector('.ant-modal-confirm, .ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-modal-confirm-title, .ant-modal-title', '提醒');
+  const allDeleteOpened = await adminUserDestructiveFailureState(page);
+  await clickVisibleAt(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 1);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminUserAllDeleteCount', 1);
+  await waitForVisibleElementsHidden(page, '.ant-modal-confirm, .ant-modal');
+  await page.waitForTimeout(350);
+  const allDeleteFailed = await adminUserDestructiveFailureState(page);
+
+  return {
+    allDeleteDropdown,
+    allDeleteFailed,
+    allDeleteOpened,
+    allDeleteRequests: clonePageRequests(page.__visualParityAdminUserAllDeleteRequests),
+    banDropdown,
+    banFailed,
+    banOpened,
+    banRequests: clonePageRequests(page.__visualParityAdminUserBanRequests),
+    before,
+    deleteDropdown,
+    deleteFailed,
+    deleteOpened,
+    deleteRequests: clonePageRequests(page.__visualParityAdminUserDeleteRequests),
+    filtered,
+    initialFetchDelta: filterFetchCount - initialFetchCount,
+    mutationFetchDelta: (page.__visualParityAdminUserFetchCount ?? 0) - filterFetchCount,
+  };
+}
+
+async function openAdminUserToolbarDropdown(page, itemText) {
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(150);
+  await page.hover('.v2board-table-action .ant-dropdown-trigger');
+  await waitForVisibleText(page, '.ant-dropdown-menu-item', itemText);
+}
+
+async function runAdminUserExportDownloadMatrixInteraction(page) {
+  await installDownloadProbe(page);
+  const before = await adminUserExportDownloadState(page);
+  page.__visualParityLastAdminUserFetchQuery = null;
+  await clickFirstVisible(page, '.v2board-table-action .ant-btn, .ant-btn');
+  await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
+  await fillFirstVisible(page, '.v2board-filter-drawer .ant-input', 'visual@example.com');
+  await clickFirstVisibleText(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', [
+    '检索',
+    '检 索',
+  ]);
+  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
+  const filtered = await adminUserExportDownloadState(page);
+  await page.hover('.v2board-table-action .ant-dropdown-trigger');
+  await waitForVisibleText(page, '.ant-dropdown-menu-item', '导出CSV');
+  const dropdown = await adminUserExportDownloadState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['导出CSV']);
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminUserDumpCsvCount', 1);
+  await page.waitForTimeout(350);
+  const downloaded = await adminUserExportDownloadState(page);
+  return {
+    before,
+    downloaded,
+    dropdown,
+    dumpCsvRequests: clonePageRequests(page.__visualParityAdminUserDumpCsvRequests),
+    filtered,
+  };
 }
 
 async function runAdminUserCreateModalInteraction(page) {
@@ -6879,6 +7161,39 @@ async function runAdminUserEditActionInteraction(page) {
   return { before, drawer, opened };
 }
 
+async function runAdminUserUpdateValidationFailureInteraction(page) {
+  const initialUserFetchCount = page.__visualParityAdminUserFetchCount ?? 0;
+  const before = await adminUserEditActionState(page);
+  await clickFirstVisibleText(page, '.ant-table-tbody a', ['操作']);
+  await waitForVisibleText(page, '.ant-dropdown-menu-item', '编辑');
+  const dropdown = await adminUserEditActionState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['编辑']);
+  await page.waitForSelector('.ant-drawer-open', { state: 'visible', timeout: 5_000 });
+  await waitForVisibleText(page, '.ant-drawer-title', '用户管理');
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll('.ant-drawer-open .ant-input')).some(
+        (element) => element instanceof HTMLInputElement && element.value === 'visual-user@example.com',
+      ),
+    { timeout: 5_000 },
+  );
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'invalid-email');
+  await page.waitForTimeout(100);
+  const edited = await adminUserEditActionState(page);
+  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminUserUpdateCount', 1);
+  await page.waitForTimeout(350);
+  const failed = await adminUserEditActionState(page);
+  return {
+    before,
+    dropdown,
+    edited,
+    failed,
+    updateRequests: clonePageRequests(page.__visualParityAdminUserUpdateRequests),
+    userFetchDelta: (page.__visualParityAdminUserFetchCount ?? 0) - initialUserFetchCount,
+  };
+}
+
 async function runAdminUserAssignActionInteraction(page) {
   const before = await adminUserAssignActionState(page);
   await clickFirstVisibleText(page, '.ant-table-tbody a', ['操作']);
@@ -6952,12 +7267,54 @@ async function runAdminUserTrafficActionInteraction(page) {
   return { before, modal, opened };
 }
 
+async function runAdminUsersExtremeViewportMatrixInteraction(page) {
+  const before = await adminUsersExtremeViewportState(page);
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.waitForTimeout(600);
+  const narrowed = await adminUsersExtremeViewportState(page);
+  await clickFirstVisible(page, '.v2board-table-action .ant-btn, .ant-btn');
+  await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
+  await page.waitForTimeout(150);
+  const filterDrawer = await adminUsersExtremeViewportState(page);
+  return { before, filterDrawer, narrowed };
+}
+
 async function adminThemeModalState(page) {
   return {
     inputValues: await visibleInputValues(page, '.ant-modal .ant-input'),
     labels: await visibleTexts(page, '.ant-modal label', 10),
     modalCount: await visibleCount(page, '.ant-modal'),
     titles: await visibleTexts(page, '.ant-modal-title', 4),
+  };
+}
+
+async function adminConfigSaveFailureState(page) {
+  return {
+    activeTabs: await visibleTexts(page, '.ant-tabs-tab-active', 4),
+    blockLoadingCount: await visibleCount(page, '.block-mode-loading'),
+    inputValues: await visibleInputValues(
+      page,
+      '.block.border-bottom input.form-control, .block.border-bottom textarea.form-control',
+    ),
+    saveCount: page.__visualParityAdminConfigSaveCount ?? 0,
+    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 4),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 6),
+  };
+}
+
+async function adminThemeSaveFailureState(page) {
+  return {
+    buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
+    inputValues: await visibleInputValues(page, '.ant-modal .ant-input'),
+    modalCount: await visibleCount(page, '.ant-modal'),
+    saveCount: page.__visualParityAdminThemeSaveCount ?? 0,
+    themeCards: await visibleTexts(page, '.block-transparent.bg-image h3', 4),
+    titles: await visibleTexts(page, '.ant-modal-title', 4),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 6),
   };
 }
 
@@ -7095,6 +7452,19 @@ async function adminOrderCommissionDropdownState(page) {
   };
 }
 
+async function adminOrderFilterPaginationState(page) {
+  return {
+    activePage: await visibleTexts(page, '.ant-pagination-item-active', 2),
+    drawerCount: await visibleCount(page, '.v2board-filter-drawer.ant-drawer-open, .ant-drawer-open'),
+    filterQuery: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminOrderFetchQuery),
+    pageItems: await visibleTexts(page, '.ant-pagination-item', 8),
+    rowTexts: await visibleTexts(page, '.ant-table-tbody tr', 6),
+    sorterCount: await visibleCount(page, '.ant-table-column-has-sorters'),
+    tableHeaders: await visibleTexts(page, '.ant-table-thead th', 12),
+    toolbarButtons: await visibleTexts(page, '.bg-white .ant-btn', 6),
+  };
+}
+
 async function adminTicketsReplyFilterState(page) {
   return page.evaluate(() => {
     const isVisible = (element) => {
@@ -7169,6 +7539,15 @@ async function adminUserCreateModalState(page) {
   };
 }
 
+async function adminUserSortState(page) {
+  return {
+    query: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminUserFetchQuery),
+    rowTexts: await visibleTexts(page, '.ant-table-tbody tr', 6),
+    sorterClasses: await visibleClassNames(page, '.ant-table-column-sorter-up, .ant-table-column-sorter-down', 8),
+    tableHeaders: await visibleTexts(page, '.ant-table-thead th', 14),
+  };
+}
+
 async function adminUserSendMailModalState(page) {
   const modalCount = await visibleCount(page, '.ant-modal');
   return {
@@ -7222,6 +7601,98 @@ async function adminUserBulkActionState(page) {
   };
 }
 
+async function adminUserDestructiveFailureState(page) {
+  const modalCount = await visibleCount(page, '.ant-modal-confirm, .ant-modal');
+  return {
+    buttons: await visibleTexts(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 4),
+    content: await visibleTexts(page, '.ant-modal-confirm-content, .ant-modal-body', 4),
+    deleteCount: page.__visualParityAdminUserDeleteCount ?? 0,
+    allDeleteCount: page.__visualParityAdminUserAllDeleteCount ?? 0,
+    banCount: page.__visualParityAdminUserBanCount ?? 0,
+    drawerCount: await visibleCount(page, '.ant-drawer-open'),
+    dropdownItems: modalCount ? [] : await visibleTexts(page, '.ant-dropdown-menu-item', 10),
+    filterQuery: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminUserFetchQuery),
+    modalCount,
+    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
+    titles: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 2),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 6),
+    toolbarButtons: await visibleTexts(page, '.v2board-table-action .ant-btn', 8),
+    triggerTexts: await visibleTexts(page, '.ant-table-tbody a', 10),
+  };
+}
+
+async function adminUserExportDownloadState(page) {
+  const probe = await page.evaluate(() => ({
+    downloads: window.__visualParityDownloads ?? [],
+    objectUrls: window.__visualParityObjectUrls ?? [],
+    revokedUrls: window.__visualParityRevokedUrls ?? [],
+  }));
+  return {
+    dropdownItems: await visibleTexts(page, '.ant-dropdown-menu-item', 10),
+    filterQuery: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminUserFetchQuery),
+    probe: normalizeDownloadProbe(probe),
+    requestCount: page.__visualParityAdminUserDumpCsvCount ?? 0,
+    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
+    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 6),
+    toolbarButtons: await visibleTexts(page, '.v2board-table-action .ant-btn', 8),
+  };
+}
+
+function normalizeDownloadProbe(probe) {
+  const normalizeDownloadName = (value) =>
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.csv$/.test(value) ? '<timestamp>.csv' : value;
+  return {
+    downloads: (probe.downloads ?? []).map((download) => ({
+      ...download,
+      download: normalizeDownloadName(download.download ?? ''),
+    })),
+    objectUrls: probe.objectUrls ?? [],
+    revokedUrls: probe.revokedUrls ?? [],
+  };
+}
+
+async function installDownloadProbe(page) {
+  await page.evaluate(() => {
+    window.__visualParityDownloads = [];
+    window.__visualParityObjectUrls = [];
+    window.__visualParityRevokedUrls = [];
+    Object.defineProperty(window.URL, 'createObjectURL', {
+      configurable: true,
+      value(blob) {
+        const url = `blob:visual-parity-${window.__visualParityObjectUrls.length + 1}`;
+        window.__visualParityObjectUrls.push({
+          size: typeof blob?.size === 'number' ? blob.size : null,
+          type: blob?.type ?? '',
+          url,
+        });
+        return url;
+      },
+    });
+    Object.defineProperty(window.URL, 'revokeObjectURL', {
+      configurable: true,
+      value(url) {
+        window.__visualParityRevokedUrls.push(url);
+      },
+    });
+    const originalAnchorClick = window.HTMLAnchorElement.prototype.click;
+    Object.defineProperty(window.HTMLAnchorElement.prototype, 'click', {
+      configurable: true,
+      value() {
+        const download = this.getAttribute('download') || this.download || '';
+        const href = this.href || this.getAttribute('href') || '';
+        if (!download && !href.startsWith('blob:visual-parity-')) {
+          return originalAnchorClick.call(this);
+        }
+        window.__visualParityDownloads.push({
+          download,
+          href,
+        });
+        return undefined;
+      },
+    });
+  });
+}
+
 async function adminUserAssignActionState(page) {
   return {
     dropdownItems: await visibleTexts(page, '.ant-dropdown-menu-item', 10),
@@ -7250,6 +7721,38 @@ async function adminUserTrafficActionState(page) {
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
     trafficQuery: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminUserTrafficQuery),
     triggerTexts: await visibleTexts(page, '.ant-table-tbody a', 10),
+  };
+}
+
+async function adminUsersExtremeViewportState(page) {
+  const layout = await page.evaluate(() => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+    };
+    const tableBody = Array.from(document.querySelectorAll('.ant-table-body')).find(isVisible);
+    const drawer = Array.from(document.querySelectorAll('.ant-drawer-open')).find(isVisible);
+    return {
+      bodyClass: document.body.className,
+      drawerOpen: Boolean(drawer),
+      fixedRightCount: Array.from(document.querySelectorAll('.ant-table-fixed-right')).filter(
+        isVisible,
+      ).length,
+      hasHorizontalOverflow: tableBody ? tableBody.scrollWidth > tableBody.clientWidth : false,
+      tableBodyPresent: Boolean(tableBody),
+      viewportHeight: window.innerHeight,
+      viewportWidth: window.innerWidth,
+    };
+  });
+  return {
+    drawerButtons: await visibleTexts(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', 4),
+    drawerTitles: await visibleTexts(page, '.ant-drawer-title', 2),
+    layout,
+    pageItems: await visibleTexts(page, '.ant-pagination-item', 6),
+    tableHeaders: await visibleTexts(page, '.ant-table-thead th', 14),
+    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 4),
+    toolbarButtons: await visibleTexts(page, '.v2board-table-action .ant-btn', 8),
   };
 }
 
@@ -8265,6 +8768,27 @@ function assertUsefulInteraction(label, result) {
     throw new Error('admin config tabs did not change active tab');
   }
   if (
+    label === 'admin-config-save-failure-matrix' &&
+    (!jsonIncludes(result.before?.activeTabs, '站点') ||
+      !jsonIncludes(result.edited?.inputValues, 'Parity Config Failure') ||
+      result.configSaveRequests?.length !== 1 ||
+      result.configSaveRequests?.[0]?.app_name !== 'Parity Config Failure' ||
+      result.configFetchDelta !== 0 ||
+      !jsonIncludes(result.configFailed?.inputValues, 'Parity Config Failure') ||
+      !jsonIncludes(result.themeBefore?.themeCards, '默认主题') ||
+      result.themeFilled?.modalCount !== 1 ||
+      !jsonIncludes(result.themeFilled?.inputValues, 'Parity Theme Failure') ||
+      result.themeSaveRequests?.length !== 1 ||
+      result.themeSaveRequests?.[0]?.name !== 'default' ||
+      !String(result.themeSaveRequests?.[0]?.config ?? '').length ||
+      result.themeFailed?.modalCount !== 1 ||
+      result.themeFetchDelta < 1)
+  ) {
+    throw new Error(
+      `admin config/theme save failure matrix did not preserve legacy state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
     label === 'admin-plan-renew-tooltip' &&
     (result.before?.tooltipCount !== 0 ||
       result.opened?.tooltipCount !== 1 ||
@@ -8926,6 +9450,26 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`admin order commission dropdown did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'admin-orders-filter-pagination-matrix' &&
+    (!jsonIncludes(result.before?.rowTexts, 'ADM...001') ||
+      result.before?.sorterCount !== 0 ||
+      !jsonIncludes(result.before?.toolbarButtons, '过滤器') ||
+      result.filtered?.drawerCount !== 0 ||
+      !jsonIncludes(result.filtered?.filterQuery, 'filter[0][key]') ||
+      !jsonIncludes(result.filtered?.filterQuery, 'trade_no') ||
+      !jsonIncludes(result.filtered?.filterQuery, 'VISUAL202611') ||
+      !jsonIncludes(result.filtered?.activePage, '1') ||
+      !jsonIncludes(result.filtered?.pageItems, '2') ||
+      !jsonIncludes(result.page2?.activePage, '2') ||
+      String(result.page2?.filterQuery?.current) !== '2' ||
+      String(result.page2?.filterQuery?.pageSize) !== '10' ||
+      result.page2?.sorterCount !== 0)
+  ) {
+    throw new Error(
+      `admin orders filter pagination matrix did not match legacy state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
     label === 'admin-coupon-create-modal' &&
     (result.opened?.modalCount !== 1 ||
       !JSON.stringify(result.opened?.titles).includes('新建优惠券') ||
@@ -9270,6 +9814,21 @@ function assertUsefulInteraction(label, result) {
     }
   }
   if (
+    label === 'admin-users-sort-matrix' &&
+    (!jsonIncludes(result.before?.rowTexts, 'very.long.user.identity.1') ||
+      !jsonIncludes(result.before?.tableHeaders, '状态') ||
+      String(result.asc?.query?.sort) !== 'banned' ||
+      String(result.asc?.query?.sort_type) !== 'ASC' ||
+      String(result.asc?.query?.current) !== '1' ||
+      String(result.desc?.query?.sort) !== 'banned' ||
+      String(result.desc?.query?.sort_type) !== 'DESC' ||
+      String(result.desc?.query?.current) !== '1' ||
+      !jsonIncludes(result.asc?.sorterClasses, 'ant-table-column-sorter-up') ||
+      !jsonIncludes(result.desc?.sorterClasses, 'ant-table-column-sorter-down'))
+  ) {
+    throw new Error(`admin users sort matrix did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
     (label === 'admin-user-bulk-ban-confirm' || label === 'admin-user-bulk-delete-confirm') &&
     (!JSON.stringify(result.before?.tableRows).includes('visual-user@example.com') ||
       !JSON.stringify(result.before?.toolbarButtons).includes('过滤器') ||
@@ -9291,6 +9850,52 @@ function assertUsefulInteraction(label, result) {
       JSON.stringify(result.closed?.dropdownItems ?? []) !== '[]')
   ) {
     throw new Error(`admin user bulk confirm did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-user-destructive-failure-matrix' &&
+    (!jsonIncludes(result.before?.tableRows, 'visual-user@example.com') ||
+      !jsonIncludes(result.deleteDropdown?.dropdownItems, '删除用户') ||
+      result.deleteOpened?.modalCount !== 1 ||
+      !jsonIncludes(result.deleteOpened?.titles, '删除用户') ||
+      result.deleteRequests?.length !== 1 ||
+      String(result.deleteRequests?.[0]?.id) !== '1' ||
+      result.deleteFailed?.modalCount !== 0 ||
+      !jsonIncludes(result.filtered?.filterQuery, 'visual@example.com') ||
+      !jsonIncludes(result.banDropdown?.dropdownItems, '批量封禁') ||
+      result.banOpened?.modalCount !== 1 ||
+      !jsonIncludes(result.banOpened?.content, '确定要进行封禁吗？') ||
+      result.banRequests?.length !== 1 ||
+      !jsonIncludes(result.banRequests?.[0], 'visual@example.com') ||
+      result.banFailed?.modalCount !== 0 ||
+      !jsonIncludes(result.allDeleteDropdown?.dropdownItems, '批量删除') ||
+      result.allDeleteOpened?.modalCount !== 1 ||
+      !jsonIncludes(result.allDeleteOpened?.content, '确定要进行删除吗？') ||
+      result.allDeleteRequests?.length !== 1 ||
+      !jsonIncludes(result.allDeleteRequests?.[0], 'visual@example.com') ||
+      result.allDeleteFailed?.modalCount !== 0 ||
+      result.initialFetchDelta < 1 ||
+      result.mutationFetchDelta !== 0)
+  ) {
+    throw new Error(
+      `admin user destructive failure matrix did not preserve legacy state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'admin-user-export-download-matrix' &&
+    (!jsonIncludes(result.before?.toolbarButtons, '操作') ||
+      !jsonIncludes(result.filtered?.filterQuery, 'visual@example.com') ||
+      !jsonIncludes(result.dropdown?.dropdownItems, '导出CSV') ||
+      result.dumpCsvRequests?.length !== 1 ||
+      !jsonIncludes(result.dumpCsvRequests?.[0], 'visual@example.com') ||
+      result.downloaded?.requestCount !== 1 ||
+      result.downloaded?.probe?.downloads?.length !== 1 ||
+      !String(result.downloaded?.probe?.downloads?.[0]?.download ?? '').endsWith('.csv') ||
+      result.downloaded?.probe?.objectUrls?.length !== 1 ||
+      result.downloaded?.probe?.revokedUrls?.length !== 1)
+  ) {
+    throw new Error(
+      `admin user export download matrix did not match legacy state: ${JSON.stringify(result)}`,
+    );
   }
   if (
     label === 'admin-user-create-modal' &&
@@ -9426,6 +10031,23 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`admin user edit action did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'admin-user-update-validation-failure' &&
+    (!jsonIncludes(result.before?.tableRows, 'visual-user@example.com') ||
+      !jsonIncludes(result.dropdown?.dropdownItems, '编辑') ||
+      result.edited?.drawerCount !== 1 ||
+      !jsonIncludes(result.edited?.drawerInputValues, 'invalid-email') ||
+      result.updateRequests?.length !== 1 ||
+      String(result.updateRequests?.[0]?.id) !== '1' ||
+      result.updateRequests?.[0]?.email !== 'invalid-email' ||
+      result.failed?.drawerCount !== 1 ||
+      !jsonIncludes(result.failed?.drawerInputValues, 'invalid-email') ||
+      result.userFetchDelta !== 0)
+  ) {
+    throw new Error(
+      `admin user update validation failure did not preserve legacy state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
     label === 'admin-user-assign-action' &&
     (!JSON.stringify(result.before?.tableRows).includes('visual-user@example.com') ||
       !JSON.stringify(result.before?.triggerTexts).includes('操作') ||
@@ -9490,6 +10112,25 @@ function assertUsefulInteraction(label, result) {
   ) {
     throw new Error(`admin user traffic action did not produce observable state: ${JSON.stringify(result)}`);
   }
+  if (
+    label === 'admin-users-extreme-viewport-matrix' &&
+    (result.before?.layout?.viewportWidth < 600 ||
+      result.narrowed?.layout?.viewportWidth !== 320 ||
+      !result.narrowed?.layout?.tableBodyPresent ||
+      !result.narrowed?.layout?.hasHorizontalOverflow ||
+      result.narrowed?.layout?.fixedRightCount < 1 ||
+      !jsonIncludes(result.narrowed?.toolbarButtons, '过滤器') ||
+      !jsonIncludes(result.narrowed?.toolbarButtons, '操作') ||
+      !jsonIncludes(result.narrowed?.tableHeaders, '邮箱') ||
+      result.filterDrawer?.layout?.drawerOpen !== true ||
+      !jsonIncludes(result.filterDrawer?.drawerTitles, '过滤器') ||
+      (!jsonIncludes(result.filterDrawer?.drawerButtons, '检索') &&
+        !jsonIncludes(result.filterDrawer?.drawerButtons, '检 索')))
+  ) {
+    throw new Error(
+      `admin users extreme viewport matrix did not match legacy state: ${JSON.stringify(result)}`,
+    );
+  }
 }
 
 async function visibleTexts(page, selector, limit = 10) {
@@ -9498,7 +10139,13 @@ async function visibleTexts(page, selector, limit = 10) {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
       };
       return Array.from(document.querySelectorAll(targetSelector))
         .filter(isVisible)
@@ -9516,7 +10163,13 @@ async function visibleClassNames(page, selector, limit = 10) {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
       };
       return Array.from(document.querySelectorAll(targetSelector))
         .filter(isVisible)
@@ -9534,7 +10187,13 @@ async function visibleLinkStates(page, selector, limit = 10) {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
       };
       return Array.from(document.querySelectorAll(targetSelector))
         .filter(isVisible)
@@ -9554,7 +10213,13 @@ async function visibleCount(page, selector) {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
       };
       return Array.from(document.querySelectorAll(targetSelector)).filter(isVisible).length;
     },
@@ -10982,7 +11647,13 @@ async function firstElementState(page, selector) {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        !element.closest('.ant-dropdown-hidden')
+      );
     };
     const normalizeClassName = (value) =>
       String(value)
@@ -11009,7 +11680,13 @@ async function firstInputValue(page, selector) {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        !element.closest('.ant-dropdown-hidden')
+      );
     };
     const element = Array.from(document.querySelectorAll(targetSelector)).find(isVisible);
     return element && 'value' in element ? element.value : '';
@@ -11021,7 +11698,13 @@ async function visibleInputValues(page, selector) {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        !element.closest('.ant-dropdown-hidden')
+      );
     };
     return Array.from(document.querySelectorAll(targetSelector))
       .filter(isVisible)
@@ -11062,7 +11745,13 @@ async function clickFirstVisibleText(page, selector, texts) {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
       };
       const element = Array.from(document.querySelectorAll(targetSelector)).find((candidate) => {
         const text = (candidate.textContent ?? '').trim().replace(/\s+/g, ' ');
@@ -11416,7 +12105,13 @@ async function clickVisibleAt(page, selector, index) {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
       };
       const element = Array.from(document.querySelectorAll(targetSelector)).filter(isVisible)[
         targetIndex
@@ -11436,7 +12131,13 @@ async function visibleElementDomIndex(page, selector, index) {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
       };
       const elements = Array.from(document.querySelectorAll(targetSelector));
       const element = elements.filter(isVisible)[targetIndex];
@@ -12116,6 +12817,32 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         requestData,
       ];
     }
+    if (adminEndpoint === '/config/fetch') {
+      page.__visualParityAdminConfigFetchCount =
+        (page.__visualParityAdminConfigFetchCount ?? 0) + 1;
+    }
+    if (adminEndpoint === '/config/save') {
+      page.__visualParityLastAdminConfigSave = requestData;
+      page.__visualParityAdminConfigSaveCount =
+        (page.__visualParityAdminConfigSaveCount ?? 0) + 1;
+      page.__visualParityAdminConfigSaveRequests = [
+        ...(page.__visualParityAdminConfigSaveRequests ?? []),
+        requestData,
+      ];
+    }
+    if (adminEndpoint === '/theme/getThemes') {
+      page.__visualParityAdminThemeFetchCount =
+        (page.__visualParityAdminThemeFetchCount ?? 0) + 1;
+    }
+    if (adminEndpoint === '/theme/saveThemeConfig') {
+      page.__visualParityLastAdminThemeSave = requestData;
+      page.__visualParityAdminThemeSaveCount =
+        (page.__visualParityAdminThemeSaveCount ?? 0) + 1;
+      page.__visualParityAdminThemeSaveRequests = [
+        ...(page.__visualParityAdminThemeSaveRequests ?? []),
+        requestData,
+      ];
+    }
     if (adminEndpoint === '/order/assign') {
       page.__visualParityLastAdminOrderAssign = requestData;
     }
@@ -12263,6 +12990,51 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         requestUrl.searchParams.entries(),
       );
     }
+    if (adminEndpoint === '/user/update') {
+      page.__visualParityLastAdminUserUpdate = requestData;
+      page.__visualParityAdminUserUpdateCount =
+        (page.__visualParityAdminUserUpdateCount ?? 0) + 1;
+      page.__visualParityAdminUserUpdateRequests = [
+        ...(page.__visualParityAdminUserUpdateRequests ?? []),
+        requestData,
+      ];
+    }
+    if (adminEndpoint === '/user/delUser') {
+      page.__visualParityLastAdminUserDelete = requestData;
+      page.__visualParityAdminUserDeleteCount =
+        (page.__visualParityAdminUserDeleteCount ?? 0) + 1;
+      page.__visualParityAdminUserDeleteRequests = [
+        ...(page.__visualParityAdminUserDeleteRequests ?? []),
+        requestData,
+      ];
+    }
+    if (adminEndpoint === '/user/ban') {
+      page.__visualParityLastAdminUserBan = requestData;
+      page.__visualParityAdminUserBanCount =
+        (page.__visualParityAdminUserBanCount ?? 0) + 1;
+      page.__visualParityAdminUserBanRequests = [
+        ...(page.__visualParityAdminUserBanRequests ?? []),
+        requestData,
+      ];
+    }
+    if (adminEndpoint === '/user/allDel') {
+      page.__visualParityLastAdminUserAllDelete = requestData;
+      page.__visualParityAdminUserAllDeleteCount =
+        (page.__visualParityAdminUserAllDeleteCount ?? 0) + 1;
+      page.__visualParityAdminUserAllDeleteRequests = [
+        ...(page.__visualParityAdminUserAllDeleteRequests ?? []),
+        requestData,
+      ];
+    }
+    if (adminEndpoint === '/user/dumpCSV') {
+      page.__visualParityLastAdminUserDumpCsv = requestData;
+      page.__visualParityAdminUserDumpCsvCount =
+        (page.__visualParityAdminUserDumpCsvCount ?? 0) + 1;
+      page.__visualParityAdminUserDumpCsvRequests = [
+        ...(page.__visualParityAdminUserDumpCsvRequests ?? []),
+        requestData,
+      ];
+    }
     if (
       adminEndpoint === '/user/fetch' &&
       Array.from(requestUrl.searchParams.values()).includes('invite_user_id')
@@ -12364,6 +13136,20 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     if (adminEndpoint === '/server/group/save' && interaction.delayAdminServerGroupSaveMs) {
       await delay(interaction.delayAdminServerGroupSaveMs);
     }
+    if (adminEndpoint === '/config/save' && interaction.delayAdminConfigSaveMs) {
+      await delay(interaction.delayAdminConfigSaveMs);
+    }
+    if (adminEndpoint === '/theme/saveThemeConfig' && interaction.delayAdminThemeSaveMs) {
+      await delay(interaction.delayAdminThemeSaveMs);
+    }
+    if (
+      ['/user/update', '/user/delUser', '/user/ban', '/user/allDel'].includes(
+        adminEndpoint ?? '',
+      ) &&
+      interaction.delayAdminUserMutationMs
+    ) {
+      await delay(interaction.delayAdminUserMutationMs);
+    }
     if (pathname === '/api/v1/user/unbindTelegram' && interaction.delayUserUnbindTelegramMs) {
       await delay(interaction.delayUserUnbindTelegramMs);
     }
@@ -12430,6 +13216,9 @@ function apiFixtureResponse(
     switch (adminEndpoint) {
       case '/config/fetch':
         return body(adminConfigFixture);
+      case '/config/save':
+        if (interaction?.adminConfigSaveError) return error('配置保存失败');
+        return body(true);
       case '/config/getEmailTemplate':
         return body(adminEmailTemplateFixtures);
       case '/config/getThemeTemplate':
@@ -12438,6 +13227,9 @@ function apiFixtureResponse(
         return body(adminThemeFixtures);
       case '/theme/getThemeConfig':
         return body({ homepage: 'V2Board' });
+      case '/theme/saveThemeConfig':
+        if (interaction?.adminThemeSaveError) return error('主题配置保存失败');
+        return body(true);
       case '/coupon/fetch':
         return body(adminCouponFixtures, { total: adminCouponFixtures.length });
       case '/coupon/generate':
@@ -12529,6 +13321,24 @@ function apiFixtureResponse(
         return body(true);
       case '/user/fetch':
         return body(adminUserFixturesFor(scenario), { total: adminUserFixturesFor(scenario).length });
+      case '/user/update':
+        if (interaction?.adminUserUpdateError) return error('邮箱格式错误');
+        return body(true);
+      case '/user/delUser':
+        if (interaction?.adminUserDeleteError) return error('用户删除失败');
+        return body(true);
+      case '/user/ban':
+        if (interaction?.adminUserBanError) return error('用户封禁失败');
+        return body(true);
+      case '/user/allDel':
+        if (interaction?.adminUserAllDeleteError) return error('用户批量删除失败');
+        return body(true);
+      case '/user/dumpCSV':
+        return {
+          contentType: 'text/csv',
+          httpStatus: 200,
+          rawBody: 'id,email\n1,visual-user@example.com\n',
+        };
       case '/user/getUserInfoById': {
         const requestedId = requestUrl.searchParams.has('id')
           ? Number(requestUrl.searchParams.get('id'))
@@ -12800,10 +13610,17 @@ function delay(ms) {
 }
 
 function fulfillApiResponse(route, body) {
-  const { httpStatus = 200, ...payload } = body;
+  const { contentType = 'application/json', httpStatus = 200, rawBody, ...payload } = body;
+  if (rawBody !== undefined) {
+    return route.fulfill({
+      body: rawBody,
+      contentType,
+      status: httpStatus,
+    });
+  }
   return route.fulfill({
     body: JSON.stringify(payload),
-    contentType: 'application/json',
+    contentType,
     status: httpStatus,
   });
 }

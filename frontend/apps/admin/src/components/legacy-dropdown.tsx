@@ -96,6 +96,16 @@ function secondsToMs(value: number) {
   return value * 1000;
 }
 
+function pointInsideElement(element: HTMLElement, clientX: number, clientY: number) {
+  const rect = element.getBoundingClientRect();
+  return (
+    clientX >= rect.left &&
+    clientX <= rect.right &&
+    clientY >= rect.top &&
+    clientY <= rect.bottom
+  );
+}
+
 function triggerSourceFromElement(element: HTMLElement): LegacyDropdownCoords['source'] {
   const rect = element.getBoundingClientRect();
   return {
@@ -160,6 +170,7 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
   const [open, setOpen] = useState(defaultVisible);
   const [hasOpened, setHasOpened] = useState(defaultVisible || !!visible);
   const [overlayPinned, setOverlayPinned] = useState(false);
+  const [hoverSuppressed, setHoverSuppressed] = useState(false);
   const [coords, setCoords] = useState<LegacyDropdownCoords>();
   const triggerRef = useRef<HTMLElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
@@ -184,6 +195,8 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
   };
 
   const closeFromOverlayClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('.ant-dropdown-menu-item-disabled')) return;
     clearDelayTimer();
     onOverlayClick?.(event);
     if (opensOnClick || opensOnContextMenu) {
@@ -191,7 +204,9 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
       setVisibleState(false);
       return;
     }
-    setOverlayPinned(true);
+    if (opensOnHover) setHoverSuppressed(true);
+    setOverlayPinned(false);
+    setVisibleState(false);
   };
 
   const setCoordsFromSource = (
@@ -303,6 +318,31 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
   }, [actualOpen, opensOnClick, opensOnContextMenu, overlayPinned]);
 
   useEffect(() => {
+    if (!hoverSuppressed) return undefined;
+    const releaseHoverSuppression = (event: MouseEvent | TouchEvent) => {
+      const triggerNode = triggerRef.current;
+      if (!triggerNode) {
+        setHoverSuppressed(false);
+        return;
+      }
+      const points =
+        'touches' in event
+          ? Array.from(event.touches)
+          : [{ clientX: event.clientX, clientY: event.clientY }];
+      if (points.every((point) => !pointInsideElement(triggerNode, point.clientX, point.clientY))) {
+        setHoverSuppressed(false);
+      }
+    };
+
+    document.addEventListener('mousemove', releaseHoverSuppression, true);
+    document.addEventListener('touchstart', releaseHoverSuppression, true);
+    return () => {
+      document.removeEventListener('mousemove', releaseHoverSuppression, true);
+      document.removeEventListener('touchstart', releaseHoverSuppression, true);
+    };
+  }, [hoverSuppressed]);
+
+  useEffect(() => {
     return () => clearDelayTimer();
   }, []);
 
@@ -368,6 +408,7 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
       onMouseEnter: (event: ReactMouseEvent<HTMLElement>) => {
         children.props.onMouseEnter?.(event);
         if (disabled) return;
+        if (hoverSuppressed) return;
         if (opensOnHover) scheduleVisibleState(true, mouseEnterDelay, event.currentTarget);
       },
       onMouseLeave: (event: ReactMouseEvent<HTMLElement>) => {
@@ -396,7 +437,7 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
                 minWidth: coords.minWidth,
                 ...overlayStyle,
               }}
-              onClick={closeFromOverlayClick}
+              onClickCapture={closeFromOverlayClick}
               onMouseEnter={clearDelayTimer}
               onMouseLeave={() => {
                 if (opensOnHover && !overlayPinned) scheduleVisibleState(false, mouseLeaveDelay);

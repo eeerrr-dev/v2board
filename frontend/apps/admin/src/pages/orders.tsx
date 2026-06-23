@@ -168,6 +168,12 @@ function filterButtonClassName(active: boolean) {
   return `ant-btn${active ? ' ant-btn-primary' : ''}`;
 }
 
+function legacyOrderTableRows<T>(rows: T[], current: number, pageSize: number) {
+  if (rows.length <= pageSize) return rows;
+  const page = Math.max(current || 1, 1);
+  return rows.slice((page - 1) * pageSize, page * pageSize);
+}
+
 function showError(message: ReturnType<typeof App.useApp>['message'], error: unknown) {
   if (error instanceof Error) message.error(i18nGet(error.message));
 }
@@ -572,6 +578,11 @@ export default function OrdersPage() {
       ...state,
       ...pagination,
     }));
+  const visibleRows = legacyOrderTableRows(
+    tableData,
+    tablePagination.current,
+    tablePagination.pageSize,
+  );
 
   return (
     <>
@@ -613,7 +624,7 @@ export default function OrdersPage() {
                 />
               }
             >
-              {tableData.map((row, index) => (
+              {visibleRows.map((row, index) => (
                 <tr
                   key={index}
                   className="ant-table-row ant-table-row-level-0"
