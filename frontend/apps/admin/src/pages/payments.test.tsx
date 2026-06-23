@@ -227,7 +227,9 @@ describe('PaymentsPage legacy payment config', () => {
   it('keeps the original page loading state during payment refetches and sorting', () => {
     expect(source).toContain('const [legacySortLoading, setLegacySortLoading] = useState(false);');
     expect(source).toContain('setLegacySortLoading(true);');
-    expect(source).toContain('loading={payments.isFetching || legacySortLoading}');
+    expect(source).toContain(
+      'loading={legacyFetchLoading(payments.isFetching, payments.error) || legacySortLoading}',
+    );
     expect(source).not.toContain('loading={payments.isFetching || sort.isPending}');
     expect(source).not.toContain('loading={payments.isLoading}');
   });

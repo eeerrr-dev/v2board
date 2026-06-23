@@ -836,7 +836,9 @@ describe('UsersPage legacy user manager', () => {
 
   it('keeps the original refetch loading mask around the whole user table block', () => {
     expect(usersSource).toContain("import { LegacySpin } from '@/components/legacy-spin';");
-    expect(usersSource).toContain('<LegacySpin loading={users.isFetching}>');
+    expect(usersSource).toContain(
+      '<LegacySpin loading={legacyFetchLoading(users.isFetching, users.error)}>',
+    );
     expect(usersSource).not.toContain('loading={users.isLoading}');
   });
 
@@ -970,10 +972,18 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain('const queryClient = useQueryClient();');
     expect(usersSource).toContain("queryClient.removeQueries({ queryKey: ['admin', 'users'] });");
     expect(usersSource).toContain("queryClient.removeQueries({ queryKey: ['admin', 'user'] });");
-    expect(usersSource).toContain('return { ...state, ...pagination };');
+    expect(usersSource).toContain(
+      "return { ...state, sort_type: state.sort_type ?? 'DESC', ...pagination };",
+    );
     expect(usersSource).toContain(
       "sort_type: state.sort === sort && state.sort_type === 'ASC' ? 'DESC' : 'ASC'",
     );
+    expect(usersSource).toContain('function legacyUserTableRows<T>(rows: T[], current: number, pageSize: number)');
+    expect(usersSource).toContain('if (rows.length <= pageSize) return rows;');
+    expect(usersSource).toContain('const visibleRows = legacyUserTableRows(data, query.current, query.pageSize);');
+    expect(usersSource).toContain('isEmpty={visibleRows.length === 0}');
+    expect(usersSource).toContain('fixedRightChildren={visibleRows.map((row, index) => (');
+    expect(usersSource).toContain('{visibleRows.map((row, index) => {');
     expect(usersSource).not.toContain('current: pagination.current ?? state.current');
     expect(usersSource).not.toContain('const nextPageSize = pagination.pageSize ?? state.pageSize');
   });

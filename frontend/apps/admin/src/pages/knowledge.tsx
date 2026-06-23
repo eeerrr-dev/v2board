@@ -23,6 +23,7 @@ import {
 } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
 import { legacyConfirm } from '@/components/legacy-confirm';
@@ -1113,7 +1114,7 @@ export default function KnowledgePage() {
   );
 
   return (
-    <LegacySpin loading={list.isFetching || sortingLoading}>
+    <LegacySpin loading={legacyFetchLoading(list.isFetching, list.error) || sortingLoading}>
       <div className="block border-bottom">
         <div className="bg-white">
           <div style={{ padding: 15 }}>

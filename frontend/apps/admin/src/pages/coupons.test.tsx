@@ -382,9 +382,12 @@ describe('CouponsPage legacy routes', () => {
 
   it('uses the original fetchLoading-style page spinner for coupon and giftcard refetches', () => {
     const loadingMatches =
-      source.match(/<LegacySpin loading=\{(coupons|giftcards)\.isFetching\}>/g) ?? [];
+      source.match(
+        /<LegacySpin loading=\{legacyFetchLoading\((coupons|giftcards)\.isFetching, \1\.error\)\}>/g,
+      ) ?? [];
 
     expect(loadingMatches).toHaveLength(2);
+    expect(source).toContain("import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';");
     expect(source).not.toContain('loading={coupons.isLoading}');
     expect(source).not.toContain('loading={giftcards.isLoading}');
   });

@@ -114,7 +114,10 @@ function LegacyStandaloneTableHead({
 
 export interface LegacyTablePaginationChange {
   current: number;
+  pageSizeOptions?: number[];
   pageSize: number;
+  showSizeChanger?: boolean;
+  size?: 'small';
   total?: number;
 }
 
@@ -193,6 +196,23 @@ function runLegacyPaginationEnter(event: KeyboardEvent<HTMLElement>, action: () 
   action();
 }
 
+function legacyPaginationChange(
+  current: number,
+  pageSize: number,
+  total: number | undefined,
+  pageSizeOptions: number[] | undefined,
+  mini: boolean,
+): LegacyTablePaginationChange {
+  return {
+    current,
+    pageSize,
+    ...(pageSizeOptions
+      ? { pageSizeOptions, showSizeChanger: true, ...(mini ? { size: 'small' as const } : {}) }
+      : {}),
+    total,
+  };
+}
+
 function LegacyPaginationJumpIcon({ direction }: { direction: 'prev' | 'next' }) {
   const Icon = direction === 'prev' ? LegacyDoubleLeftIcon : LegacyDoubleRightIcon;
   return (
@@ -229,13 +249,21 @@ export function LegacyTablePagination({
   const changePage = (next: number) => {
     const bounded = Math.min(Math.max(next, 1), pageCount);
     if (bounded === currentPage) return;
-    onChange?.({ current: bounded, pageSize, total });
+    onChange?.(legacyPaginationChange(bounded, pageSize, total, pageSizeOptions, mini));
   };
   const changePageSize = (next: LegacySelectValue) => {
     const nextPageSize = Number(next);
     if (!Number.isFinite(nextPageSize) || nextPageSize <= 0 || nextPageSize === pageSize) return;
     const nextPageCount = getLegacyPageCount(total, nextPageSize);
-    onChange?.({ current: Math.min(currentPage, nextPageCount), pageSize: nextPageSize, total });
+    onChange?.(
+      legacyPaginationChange(
+        Math.min(currentPage, nextPageCount),
+        nextPageSize,
+        total,
+        pageSizeOptions,
+        mini,
+      ),
+    );
   };
 
   return (
@@ -473,7 +501,7 @@ export function LegacyStandaloneTable({
               )}
             </div>
           </div>
-          {pagination}
+          {isEmpty ? null : pagination}
         </div>
       </div>
     </div>

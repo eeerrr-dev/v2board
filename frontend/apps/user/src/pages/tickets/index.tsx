@@ -31,8 +31,9 @@ function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTML
 export default function TicketsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const { data, isFetching } = useTickets();
-  const loading = useLegacyFetchLoading(isFetching);
+  const ticketsQuery = useTickets();
+  const { data, isFetching } = ticketsQuery;
+  const loading = useLegacyFetchLoading(isFetching, ticketsQuery.error);
   const save = useSaveTicketMutation();
   const close = useCloseTicketMutation();
   const [open, setOpen] = useState(false);

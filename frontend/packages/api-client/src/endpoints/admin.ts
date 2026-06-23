@@ -22,7 +22,7 @@ import type {
   TicketReplyPayload,
   UserRankItem,
 } from '@v2board/types';
-import type { ApiClient, BackendEnvelope } from '../client';
+import type { ApiClient, ApiRequestConfig, BackendEnvelope } from '../client';
 
 export interface AdminFilter {
   key: string;
@@ -97,8 +97,18 @@ const LEGACY_GB_BYTES = 1_073_741_824;
 const adminGet = <T>(client: ApiClient, path: string, params?: Record<string, unknown>) =>
   client.request<T>({ url: client.resolveAdminPath(path), method: 'GET', params });
 
-const adminGetEnvelope = <T>(client: ApiClient, path: string, params?: Record<string, unknown>) =>
-  client.requestEnvelope<T>({ url: client.resolveAdminPath(path), method: 'GET', params });
+const adminGetEnvelope = <T>(
+  client: ApiClient,
+  path: string,
+  params?: Record<string, unknown>,
+  config?: Pick<ApiRequestConfig, 'skipLegacyGlobalError'>,
+) =>
+  client.requestEnvelope<T>({
+    url: client.resolveAdminPath(path),
+    method: 'GET',
+    params,
+    ...config,
+  });
 
 const adminPost = <T>(client: ApiClient, path: string, data?: Record<string, unknown>) =>
   client.request<T>({ url: client.resolveAdminPath(path), method: 'POST', data });
@@ -246,7 +256,9 @@ export const fetchUsers = async (
   client: ApiClient,
   query: AdminPageQuery = {},
 ): Promise<PageResult<AdminUserRow>> => {
-  const env = await adminGetEnvelope<AdminUserRow[]>(client, '/user/fetch', { ...query });
+  const env = await adminGetEnvelope<AdminUserRow[]>(client, '/user/fetch', { ...query }, {
+    skipLegacyGlobalError: true,
+  });
   return {
     data: env.data.map((user) => normalizeAdminUser(user, { normalizeTotalUsed: true })),
     total: env.total,
@@ -308,7 +320,9 @@ export const fetchOrders = async (
   client: ApiClient,
   query: AdminPageQuery & { is_commission?: 0 | 1 } = {},
 ): Promise<PageResult<AdminOrderRow>> => {
-  const env = await adminGetEnvelope<AdminOrderRow[]>(client, '/order/fetch', { ...query });
+  const env = await adminGetEnvelope<AdminOrderRow[]>(client, '/order/fetch', { ...query }, {
+    skipLegacyGlobalError: true,
+  });
   return { data: env.data, total: env.total };
 };
 

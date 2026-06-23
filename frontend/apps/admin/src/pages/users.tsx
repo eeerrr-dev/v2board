@@ -26,6 +26,7 @@ import { UserTrafficModal } from '@/components/user-traffic-modal';
 import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-filter-drawer';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
 import { LegacyButton } from '@/components/legacy-button';
 import { LegacyDatePicker } from '@/components/legacy-date-picker';
 import {
@@ -79,6 +80,9 @@ import { LegacyTag } from '@/components/legacy-tag';
 type QueryState = {
   current: number;
   pageSize: number;
+  pageSizeOptions?: number[];
+  showSizeChanger?: boolean;
+  size?: 'small';
   total?: number;
   filter: AdminFilter[];
   sort?: string;
@@ -227,6 +231,12 @@ const LEGACY_SORTABLE_CELL_CLASS = 'ant-table-column-has-actions ant-table-colum
 
 function userRowKey(index: number) {
   return legacyTableRowKey(index);
+}
+
+function legacyUserTableRows<T>(rows: T[], current: number, pageSize: number) {
+  if (rows.length <= pageSize) return rows;
+  const page = Math.max(current || 1, 1);
+  return rows.slice((page - 1) * pageSize, page * pageSize);
 }
 
 export default function UsersPage() {
@@ -418,7 +428,7 @@ export default function UsersPage() {
   const updateTablePagination = (pagination: LegacyTablePaginationChange) =>
     setQuery((state) => {
       writeLegacyHabit(LEGACY_USER_PAGE_SIZE_KEY, pagination.pageSize);
-      return { ...state, ...pagination };
+      return { ...state, sort_type: state.sort_type ?? 'DESC', ...pagination };
     });
 
   const renderUserEmail = (row: AdminUserRow) => {
@@ -510,9 +520,11 @@ export default function UsersPage() {
     </LegacyDropdown>
   );
 
+  const visibleRows = legacyUserTableRows(data, query.current, query.pageSize);
+
   return (
     <>
-      <LegacySpin loading={users.isFetching}>
+      <LegacySpin loading={legacyFetchLoading(users.isFetching, users.error)}>
         <div className="block border-bottom">
           <div className="bg-white">
             <div className="v2board-table-action" style={{ padding: 15 }}>
@@ -627,7 +639,7 @@ export default function UsersPage() {
             <LegacyStandaloneTable
               className="v2board-table"
               headers={headers}
-              isEmpty={data.length === 0}
+              isEmpty={visibleRows.length === 0}
               scrollX={1500}
               scrollPositionRight={false}
               fixedRightRowHeight={54}
@@ -640,7 +652,7 @@ export default function UsersPage() {
                   onChange={updateTablePagination}
                 />
               }
-              fixedRightChildren={data.map((row, index) => (
+              fixedRightChildren={visibleRows.map((row, index) => (
                 <tr
                   key={index}
                   className="ant-table-row ant-table-row-level-0"
@@ -656,7 +668,7 @@ export default function UsersPage() {
                 </tr>
               ))}
             >
-              {data.map((row, index) => {
+              {visibleRows.map((row, index) => {
                 const usedOverLimit =
                   parseFloat(String(row.total_used)) > parseFloat(String(row.transfer_enable));
                 return (

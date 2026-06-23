@@ -365,6 +365,12 @@ describe('LegacySelect', () => {
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
     });
 
+    const selectedOption = Array.from(
+      document.body.querySelectorAll<HTMLElement>('.ant-select-dropdown-menu-item'),
+    ).find((item) => item.textContent === 'English');
+    expect(selectedOption?.className).toContain('ant-select-dropdown-menu-item-active');
+    expect(selectedOption?.className).not.toContain('ant-select-dropdown-menu-item-selected');
+
     const option = Array.from(
       document.body.querySelectorAll<HTMLElement>('.ant-select-dropdown-menu-item'),
     ).find((item) => item.textContent === '简体中文');

@@ -20,6 +20,7 @@ import { i18nGet } from '@/lib/errors';
 import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-filter-drawer';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
 import { LegacyButton } from '@/components/legacy-button';
 import {
   LegacyCaretDownIcon,
@@ -575,7 +576,7 @@ export default function OrdersPage() {
   return (
     <>
       <div className="d-flex justify-content-between align-items-center" />
-      <LegacySpin loading={orders.isFetching}>
+      <LegacySpin loading={legacyFetchLoading(orders.isFetching, orders.error)}>
         <div className="block block-rounded">
           <div className="bg-white">
             <div style={{ padding: 15 }}>

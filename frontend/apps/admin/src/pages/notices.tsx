@@ -9,6 +9,7 @@ import {
 } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
 import { LegacyButton } from '@/components/legacy-button';
 import { LegacyModal } from '@/components/legacy-modal';
 import { LegacyLoadingIcon, LegacyPlusIcon } from '@/components/legacy-ant-icon';
@@ -98,7 +99,7 @@ export default function NoticesPage() {
   return (
     <>
       <div className="d-flex justify-content-between align-items-center" />
-      <LegacySpin loading={notices.isFetching}>
+      <LegacySpin loading={legacyFetchLoading(notices.isFetching, notices.error)}>
         <div className="block block-rounded">
           <div className="bg-white">
             <div style={{ padding: 15 }}>

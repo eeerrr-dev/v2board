@@ -38,7 +38,7 @@ describe('LegacyModal', () => {
       '<div class="ant-modal-root"><div class="ant-modal-mask"></div><div tabindex="-1" class="ant-modal-wrap" role="dialog" aria-labelledby="rcDialogTitle',
     );
     expect(modalRoot.querySelector('.ant-modal')?.outerHTML).toContain(
-      '<div class="ant-modal" role="document" style="width: 520px;">',
+      '<div class="ant-modal zoom-appear zoom-appear-active" role="document" style="width: 520px;">',
     );
     expect(modalRoot.querySelectorAll('.ant-modal > div[aria-hidden="true"]')).toHaveLength(2);
     const title = modalRoot.querySelector<HTMLElement>('.ant-modal-title')!;
@@ -81,6 +81,36 @@ describe('LegacyModal', () => {
     expect(ok.outerHTML).toContain('aria-label="图标: loading"');
     ok.click();
     expect(onOk).not.toHaveBeenCalled();
+  });
+
+  it('uses the old default zoom motion classes and honors disabled transition names', async () => {
+    await act(async () => {
+      root.render(
+        <LegacyModal visible title="配置默认主题" onCancel={vi.fn()} onOk={vi.fn()}>
+          <div />
+        </LegacyModal>,
+      );
+    });
+
+    expect(document.querySelector('.ant-modal')?.className).toBe(
+      'ant-modal zoom-appear zoom-appear-active',
+    );
+
+    await act(async () => {
+      root.render(
+        <LegacyModal
+          visible
+          title="配置默认主题"
+          transitionName=""
+          onCancel={vi.fn()}
+          onOk={vi.fn()}
+        >
+          <div />
+        </LegacyModal>,
+      );
+    });
+
+    expect(document.querySelector('.ant-modal')?.className).toBe('ant-modal');
   });
 
   it('supports the old okText and cancelText footer labels', async () => {
@@ -165,7 +195,9 @@ describe('LegacyModal', () => {
     expect(document.querySelector('.ant-modal-wrap')?.className).toBe(
       'ant-modal-wrap ant-modal-centered wrap-extra',
     );
-    expect(document.querySelector('.ant-modal')?.className).toBe('ant-modal modal-extra');
+    expect(document.querySelector('.ant-modal')?.className).toBe(
+      'ant-modal zoom-appear zoom-appear-active modal-extra',
+    );
     expect(document.querySelector('.ant-modal-mask')?.getAttribute('style')).toBe(
       'z-index: 1001; opacity: 0.5;',
     );

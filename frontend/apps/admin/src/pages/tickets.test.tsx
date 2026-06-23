@@ -87,6 +87,16 @@ vi.mock('react-router-dom', () => ({
   useParams: () => mocks.params,
 }));
 
+vi.mock('@/components/user-manage-drawer', () => ({
+  UserManageDrawer: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="user-manage-drawer" /> : null,
+}));
+
+vi.mock('@/components/user-traffic-modal', () => ({
+  UserTrafficModal: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="user-traffic-modal" /> : null,
+}));
+
 vi.mock('@/lib/queries', () => ({
   useAdminTickets: (query: Record<string, unknown>) => {
     mocks.ticketQueries.push(query);
@@ -397,7 +407,9 @@ describe('TicketsPage legacy ticket manager', () => {
   });
 
   it('uses the original fetchLoading-style page spinner for ticket refetches', () => {
-    expect(ticketsSource).toContain('<LegacySpin loading={tickets.isFetching}>');
+    expect(ticketsSource).toContain(
+      '<LegacySpin loading={legacyFetchLoading(tickets.isFetching, tickets.error)}>',
+    );
     expect(ticketsSource).not.toContain('loading={tickets.isLoading}');
   });
 
@@ -628,63 +640,80 @@ describe('TicketsPage legacy ticket manager', () => {
 
   it('sends admin chat replies on Enter, refetches, and clears the legacy input', async () => {
     mocks.params = { ticket_id: '1' };
+    const originalSetTimeout = window.setTimeout.bind(window);
+    const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation(
+      ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+        if (timeout === 5000) return 1 as unknown as ReturnType<typeof window.setTimeout>;
+        return originalSetTimeout(handler, timeout, ...args);
+      }) as typeof window.setTimeout,
+    );
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout').mockImplementation(() => undefined);
     const container = document.createElement('div');
     document.body.appendChild(container);
     let root: Root | null = createRoot(container);
 
-    await act(async () => {
-      root!.render(<TicketsPage />);
-      await Promise.resolve();
-    });
+    try {
+      await act(async () => {
+        root!.render(<TicketsPage />);
+        await Promise.resolve();
+      });
 
-    const input = container.querySelector<HTMLInputElement>('.js-chat-input')!;
+      const input = container.querySelector<HTMLInputElement>('.js-chat-input')!;
 
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        input,
-        'Parity admin reply send',
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+          input,
+          'Parity admin reply send',
+        );
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await Promise.resolve();
+      });
+
+      const enter = new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' });
+      Object.defineProperty(enter, 'keyCode', { value: 13 });
+
+      await act(async () => {
+        input.dispatchEvent(enter);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mocks.messageOpen).toHaveBeenCalledWith({
+        content: '发送中',
+        duration: 0,
+        key: 'v2board-admin-ticket-reply',
+        type: 'loading',
+      });
+      expect(mocks.replyTicketMutateAsync).toHaveBeenCalledWith({
+        id: '1',
+        message: 'Parity admin reply send',
+      });
+      expect(mocks.messageClose).toHaveBeenCalledTimes(1);
+      expect(mocks.ticketRefetch).toHaveBeenCalledTimes(1);
+      expect(input.value).toBe('');
+      expect(mocks.messageOpen.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.replyTicketMutateAsync.mock.invocationCallOrder[0]!,
       );
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      await Promise.resolve();
-    });
+      expect(mocks.replyTicketMutateAsync.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.messageClose.mock.invocationCallOrder[0]!,
+      );
+      expect(mocks.messageClose.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.ticketRefetch.mock.invocationCallOrder[0]!,
+      );
 
-    const enter = new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' });
-    Object.defineProperty(enter, 'keyCode', { value: 13 });
-
-    await act(async () => {
-      input.dispatchEvent(enter);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mocks.messageOpen).toHaveBeenCalledWith({
-      content: '发送中',
-      duration: 0,
-      key: 'v2board-admin-ticket-reply',
-      type: 'loading',
-    });
-    expect(mocks.replyTicketMutateAsync).toHaveBeenCalledWith({
-      id: '1',
-      message: 'Parity admin reply send',
-    });
-    expect(mocks.messageClose).toHaveBeenCalledTimes(1);
-    expect(mocks.ticketRefetch).toHaveBeenCalledTimes(1);
-    expect(input.value).toBe('');
-    expect(mocks.messageOpen.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.replyTicketMutateAsync.mock.invocationCallOrder[0]!,
-    );
-    expect(mocks.replyTicketMutateAsync.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.messageClose.mock.invocationCallOrder[0]!,
-    );
-    expect(mocks.messageClose.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.ticketRefetch.mock.invocationCallOrder[0]!,
-    );
-
-    await act(async () => {
-      root?.unmount();
-      root = null;
-    });
-    container.remove();
+      await act(async () => {
+        root?.unmount();
+        root = null;
+      });
+      container.remove();
+    } finally {
+      if (root) {
+        await act(async () => root?.unmount());
+      }
+      container.remove();
+      setTimeoutSpy.mockRestore();
+      clearTimeoutSpy.mockRestore();
+    }
   });
 
   it('keeps the old chat reply message state lifetime', () => {

@@ -11,8 +11,9 @@ import { formatBytes, formatDate } from '@v2board/config/format';
 
 export default function TrafficPage() {
   const { t } = useTranslation();
-  const { data, isFetching } = useTrafficLog();
-  const loading = useLegacyFetchLoading(isFetching);
+  const trafficQuery = useTrafficLog();
+  const { data, isFetching } = trafficQuery;
+  const loading = useLegacyFetchLoading(isFetching, trafficQuery.error);
   const rows = data ?? [];
   const [hoverKey, setHoverKey] = useState<number | null>(null);
   const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(rows.length);

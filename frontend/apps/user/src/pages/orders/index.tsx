@@ -39,7 +39,7 @@ export default function OrdersPage() {
   const navigate = useNavigate();
   const ordersQuery = useOrders();
   const { data, isFetching } = ordersQuery;
-  const loading = useLegacyFetchLoading(isFetching);
+  const loading = useLegacyFetchLoading(isFetching, ordersQuery.error);
   const cancel = useCancelOrderMutation();
   const orders = data ?? [];
   const [hoverKey, setHoverKey] = useState<number | null>(null);

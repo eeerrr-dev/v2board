@@ -143,6 +143,7 @@ export function LegacyModal({
   style,
   styles,
   title,
+  transitionName = 'zoom',
   visible,
   height,
   width,
@@ -283,7 +284,12 @@ export function LegacyModal({
       >
         <div
           ref={dialogRef}
-          className={classNames(prefixCls, className)}
+          className={classNames(
+            prefixCls,
+            isVisible && transitionName && `${transitionName}-appear`,
+            isVisible && transitionName && `${transitionName}-appear-active`,
+            className,
+          )}
           role="document"
           style={modalStyle(width, height, style, transformOrigin)}
           onMouseDown={() => {

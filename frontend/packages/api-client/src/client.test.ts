@@ -376,6 +376,14 @@ describe('createApiClient', () => {
     await expect(fetchAdminCoupons(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(fetchAdminGiftcards(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(statUser(client, { user_id: 1 })).resolves.toEqual({ data: [], total: undefined });
+    expect(
+      mock.history.get.find((request) => request.url === '/admin-path/user/fetch')
+        ?.skipLegacyGlobalError,
+    ).toBe(true);
+    expect(
+      mock.history.get.find((request) => request.url === '/admin-path/order/fetch')
+        ?.skipLegacyGlobalError,
+    ).toBe(true);
   });
 
   it('normalizes fetched coupon and giftcard amount values to legacy model units', async () => {

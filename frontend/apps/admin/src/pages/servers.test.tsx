@@ -629,9 +629,8 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).not.toContain('Switch,');
     expect(managePageSource).toContain('<div className="ant-table-wrapper">');
     expect(managePageSource).toContain('<div className="ant-spin-nested-loading">');
-    expect(managePageSource).toContain(
-      '<table className="ant-table-fixed" style={{ width: 1300 }}>',
-    );
+    expect(managePageSource).toContain('className="ant-table-fixed"');
+    expect(managePageSource).toContain('style={{ width: 1300 }}');
     expect(managePageSource).toContain('<LegacyEmpty />');
     expect(managePageSource).toContain('<LegacyDragSort');
     expect(managePageSource).toContain('nodeSelector="tr"');
@@ -747,7 +746,9 @@ describe('ServersPage legacy server group route', () => {
       serversSource.indexOf('function NodeEditDrawer'),
     );
 
-    expect(serversSource).toContain('function LegacyDropdown({ children, overlay, trigger }');
+    expect(serversSource).toContain(
+      'function LegacyDropdown({ children, closeOnOverlayClick = true, overlay, trigger }',
+    );
     expect(serversSource).toContain('function LegacyDropdownMenu({ children }');
     expect(serversSource).toContain('function LegacyDropdownMenuItem({');
     expect(serversSource).toContain("import { LegacyTag } from '@/components/legacy-tag';");
@@ -755,9 +756,10 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).not.toContain('const LEGACY_DROPDOWN_HOVER_CLOSE_DELAY = 120;');
     expect(serversSource).toContain('if (!open) return undefined;');
     expect(serversSource).not.toContain('if (!open || !opensOnClick) return undefined;');
-    expect(serversSource).toContain('onClick={() => {\n                setOpen(false);');
+    expect(serversSource).toContain('if (closeOnOverlayClick) setOpen(false);');
     expect(serversSource).not.toContain('if (opensOnClick) setOpen(false);');
     expect(managePageSource).toContain('<LegacyDropdown');
+    expect(managePageSource).toContain('closeOnOverlayClick={false}');
     expect(managePageSource).toContain('overlay={');
     expect(managePageSource).toContain('<LegacyDropdownMenu>');
     expect(managePageSource).toContain('<LegacyButton className="ant-btn">');
@@ -1611,7 +1613,9 @@ describe('ServersPage legacy server group route', () => {
   it('keeps standalone server pages under the original refetch loading mask', () => {
     expect(serversSource).toContain('<LegacySpin loading={groups.isFetching}>');
     expect(serversSource).toContain('<LegacySpin loading={routes.isFetching}>');
-    expect(serversSource).toContain('<LegacySpin loading={nodes.isFetching || sortingLoading}>');
+    expect(serversSource).toContain(
+      '<LegacySpin loading={legacyFetchLoading(nodes.isFetching, nodes.error) || sortingLoading}>',
+    );
     expect(serversSource).not.toContain('<LegacySpin loading={groups.isLoading}>');
     expect(serversSource).not.toContain('<LegacySpin loading={routes.isLoading}>');
     expect(serversSource).not.toContain('<LegacySpin loading={nodes.isLoading}>');

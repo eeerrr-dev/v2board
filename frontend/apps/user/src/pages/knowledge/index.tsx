@@ -30,8 +30,9 @@ export default function KnowledgePage() {
   const language = getRequestLocale();
   const [selectedId, setSelectedId] = useState<number | string | undefined>(undefined);
   const [visibleDetail, setVisibleDetail] = useState<Knowledge | undefined>();
-  const { data, isFetching } = useKnowledge(language, keyword || undefined);
-  const loading = useLegacyFetchLoading(isFetching);
+  const knowledgeQuery = useKnowledge(language, keyword || undefined);
+  const { data, isFetching } = knowledgeQuery;
+  const loading = useLegacyFetchLoading(isFetching, knowledgeQuery.error);
   const knowledgeGroups = data ?? {};
   const detail = useKnowledgeDetail(selectedId, language);
   const refetchDetail = detail.refetch;

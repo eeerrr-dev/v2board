@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertRouteCoverage,
   assertSameOrderedValues,
+  assertSubset,
   extractAssignedRouteArray,
   extractObjectArray,
   extractRouteArray,
@@ -81,6 +82,12 @@ describe('parity config audit helpers', () => {
     ]);
   });
 
+  it('fails when browser parity lists reference missing script labels', () => {
+    expect(assertSubset('browser scenarios', ['user-login', 'missing'], ['user-login'])).toEqual([
+      'browser scenarios has values not defined by visual-parity.mjs: missing',
+    ]);
+  });
+
   it('fails when routes are missing visual parity scenarios', () => {
     expect(
       assertRouteCoverage('user coverage', ['/dashboard', '/profile'], [
@@ -104,13 +111,15 @@ describe('parity config audit helpers', () => {
     expect(
       formatAuditSuccess({
         adminRouteCount: 19,
+        browserScenarioCount: 12,
+        browserViewportCount: 2,
         failures: [],
-        interactionScenarioCount: 65,
+        interactionScenarioCount: 141,
         userRouteCount: 16,
-        visualScenarioCount: 35,
+        visualScenarioCount: 144,
       }),
     ).toBe(
-      'Parity config audit OK: Makefile tracks 35 visual scenarios, 65 interaction scenarios, parity covers 16 user routes plus 19 admin routes, and dev entry route mirrors are aligned.',
+      'Parity config audit OK: Makefile tracks 144 visual scenarios, 141 interaction scenarios, 12 browser scenarios across 2 viewports, parity covers 16 user routes plus 19 admin routes, and dev entry route mirrors are aligned.',
     );
   });
 });

@@ -168,7 +168,9 @@ describe('NoticesPage legacy notice manager', () => {
   });
 
   it('uses the original fetchLoading-style page spinner for notice refetches', () => {
-    expect(source).toContain('<LegacySpin loading={notices.isFetching}>');
+    expect(source).toContain(
+      '<LegacySpin loading={legacyFetchLoading(notices.isFetching, notices.error)}>',
+    );
     expect(source).not.toContain('loading={notices.isLoading}');
   });
 

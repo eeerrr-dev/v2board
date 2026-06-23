@@ -372,7 +372,9 @@ describe('KnowledgePage legacy knowledge manager', () => {
   });
 
   it('uses the original fetchLoading-style page spinner for knowledge refetches', () => {
-    expect(source).toContain('<LegacySpin loading={list.isFetching || sortingLoading}>');
+    expect(source).toContain(
+      '<LegacySpin loading={legacyFetchLoading(list.isFetching, list.error) || sortingLoading}>',
+    );
     expect(source).not.toContain('<LegacySpin loading={list.isLoading}>');
   });
 

@@ -57,7 +57,7 @@ export const apiClient = createApiClient({
     redirectToLegacyLogin();
   },
   onError: (error) => {
-    if (error.status === 0 || error.status >= 500) {
+    if (error.status >= 500) {
       messageApi?.error(i18nGet(error.message));
     }
   },

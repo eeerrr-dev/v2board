@@ -11,6 +11,7 @@ import {
 } from '@/lib/queries';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
 import { LegacyModal } from '@/components/legacy-modal';
@@ -318,7 +319,9 @@ export default function PaymentsPage() {
   return (
     <>
       <div className="d-flex justify-content-between align-items-center" />
-      <LegacySpin loading={payments.isFetching || legacySortLoading}>
+      <LegacySpin
+        loading={legacyFetchLoading(payments.isFetching, payments.error) || legacySortLoading}
+      >
         <div className="block block-rounded">
           <div className="bg-white">
             <div style={{ padding: 15 }}>

@@ -17,6 +17,7 @@ import type { admin } from '@v2board/api-client';
 import { legacyCopyText } from '@/lib/legacy-copy';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
 import { LegacyButton } from '@/components/legacy-button';
 import { LegacyPlusIcon } from '@/components/legacy-ant-icon';
 import {
@@ -304,7 +305,7 @@ function CouponPage() {
 
   return (
     <>
-      <LegacySpin loading={coupons.isFetching}>
+      <LegacySpin loading={legacyFetchLoading(coupons.isFetching, coupons.error)}>
         <div className="block border-bottom">
           <div className="bg-white">
             <div style={{ padding: 15 }}>
@@ -658,7 +659,7 @@ function GiftcardPage() {
 
   return (
     <>
-      <LegacySpin loading={giftcards.isFetching}>
+      <LegacySpin loading={legacyFetchLoading(giftcards.isFetching, giftcards.error)}>
         <div className="block border-bottom">
           <div className="bg-white">
             <div style={{ padding: 15 }}>

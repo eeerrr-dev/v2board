@@ -67,7 +67,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('order.credit_card_security')).toBe(
       '您的信用卡信息只会用于当次扣款，系统并不会保存，我们认为这是最安全的。',
     );
-    expect(i18n.t('traffic.notice')).toBe('流量明细仅保留近月数据以供查询。');
+    expect(i18n.t('traffic.notice')).toBe('流量明细仅保留近一个月数据以供查询。');
     expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
       '已用 1 GB / 总计 10 GB',
     );

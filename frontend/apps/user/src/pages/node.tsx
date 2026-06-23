@@ -12,8 +12,9 @@ export default function NodePage() {
   const navigate = useNavigate();
   // Old componentDidMount dispatches user/getSubscribe before server/fetch.
   const subscribe = useSubscribe({ refetchOnMount: 'always' });
-  const { data, isFetching } = useServers({ refetchOnMount: 'always' });
-  const loading = useLegacyFetchLoading(isFetching);
+  const serversQuery = useServers({ refetchOnMount: 'always' });
+  const { data, isFetching } = serversQuery;
+  const loading = useLegacyFetchLoading(isFetching, serversQuery.error);
   const servers = data ?? [];
   const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(servers.length, {
     syncOnMount: false,

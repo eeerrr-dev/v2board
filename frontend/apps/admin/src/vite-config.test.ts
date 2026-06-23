@@ -70,6 +70,9 @@ describe('admin Vite dev optimizer', () => {
     expect(deployViteConfigSource).not.toContain('components.chunk.css');
     expect(deployViteConfigSource).not.toContain('vendors.async.js');
     expect(deployViteConfigSource).not.toContain('components.async.js');
+    expect(deployViteConfigSource).not.toContain('env.example.js');
+    expect(deployViteConfigSource).not.toContain("'custom.css'");
+    expect(deployViteConfigSource).not.toContain("'custom.js'");
     expect(deployViteConfigSource).toContain('process.env.V2BOARD_DEPLOY_OUT_DIR');
   });
 
@@ -91,6 +94,11 @@ describe('admin Vite dev optimizer', () => {
     expect(buildDeploySource).toContain("'custom.css'");
     expect(buildDeploySource).toContain("'custom.js'");
     expect(buildDeploySource).toContain("Unexpected legacy deploy artifact");
+    expect(buildDeploySource).toContain('for (const name of legacyRootFiles)');
+    expect(buildDeploySource).toContain('await assertAbsent(join(userOut, name));');
+    expect(buildDeploySource).toContain('await assertAbsent(join(adminOut, name));');
+    expect(buildDeploySource).not.toContain("copyFile(join(userDeployRoot, 'custom.css')");
+    expect(buildDeploySource).not.toContain("copyFile(join(userDeployRoot, 'custom.js')");
     expect(buildDeploySource).toContain('async function assertSingleRootEntryFile');
     expect(buildDeploySource).toContain(
       "await assertSingleRootEntryFile('User CSS', userOut, /^umi\\d*\\.css$/, 'umi.css');",

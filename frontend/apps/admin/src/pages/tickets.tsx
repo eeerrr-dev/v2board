@@ -17,6 +17,7 @@ import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
 import { LegacyFilterIcon, LegacySolutionIcon, LegacyUserIcon } from '@/components/legacy-ant-icon';
 import {
   LegacyStandaloneTable,
@@ -259,7 +260,7 @@ function TicketListPage() {
   );
 
   return (
-    <LegacySpin loading={tickets.isFetching}>
+    <LegacySpin loading={legacyFetchLoading(tickets.isFetching, tickets.error)}>
       <div className="block border-bottom">
         <div className="bg-white">
           <div className="p-3">

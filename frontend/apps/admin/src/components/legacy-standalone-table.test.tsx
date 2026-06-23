@@ -111,6 +111,21 @@ describe('LegacyStandaloneTable', () => {
     expect(html).not.toContain('ant-table-scroll-position-right');
   });
 
+  it('hides the old table pagination while the table is empty', () => {
+    const html = renderToStaticMarkup(
+      <LegacyStandaloneTable
+        headers={[{ title: 'ID' }]}
+        isEmpty
+        pagination={<LegacyTablePagination current={1} pageSize={10} total={0} />}
+      >
+        {null}
+      </LegacyStandaloneTable>,
+    );
+
+    expect(html).toContain('class="ant-table-placeholder"');
+    expect(html).not.toContain('ant-table-pagination');
+  });
+
   it('can mirror old desktop-only right-scroll fixed-column shadow state', () => {
     const originalInnerWidth = window.innerWidth;
     const headers: LegacyStandaloneTableHeader[] = [
@@ -222,7 +237,14 @@ describe('LegacyStandaloneTable', () => {
       await Promise.resolve();
     });
 
-    expect(onChange).toHaveBeenLastCalledWith({ current: 15, pageSize: 10, total: 200 });
+    expect(onChange).toHaveBeenLastCalledWith({
+      current: 15,
+      pageSize: 10,
+      pageSizeOptions: [10, 50, 100, 150],
+      showSizeChanger: true,
+      size: 'small',
+      total: 200,
+    });
 
     await act(async () => {
       container
@@ -247,7 +269,14 @@ describe('LegacyStandaloneTable', () => {
       await Promise.resolve();
     });
 
-    expect(onChange).toHaveBeenLastCalledWith({ current: 4, pageSize: 50, total: 200 });
+    expect(onChange).toHaveBeenLastCalledWith({
+      current: 4,
+      pageSize: 50,
+      pageSizeOptions: [10, 50, 100, 150],
+      showSizeChanger: true,
+      size: 'small',
+      total: 200,
+    });
   });
 
   it('handles old prev and next li click hit areas', async () => {
@@ -273,13 +302,21 @@ describe('LegacyStandaloneTable', () => {
       await Promise.resolve();
     });
 
-    expect(onChange).toHaveBeenLastCalledWith({ current: 1, pageSize: 10, total: 30 });
+    expect(onChange).toHaveBeenLastCalledWith({
+      current: 1,
+      pageSize: 10,
+      total: 30,
+    });
 
     await act(async () => {
       next.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(onChange).toHaveBeenLastCalledWith({ current: 3, pageSize: 10, total: 30 });
+    expect(onChange).toHaveBeenLastCalledWith({
+      current: 3,
+      pageSize: 10,
+      total: 30,
+    });
   });
 });

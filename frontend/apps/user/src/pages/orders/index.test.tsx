@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   legacyConfirm: vi.fn(),
   refetchOrders: vi.fn(),
   mobile: false,
+  orderError: undefined as unknown,
   fetching: false,
   orders: [
     {
@@ -88,6 +89,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('@/lib/queries', () => ({
   useOrders: () => ({
     data: mocks.orders,
+    error: mocks.orderError,
     isFetching: mocks.fetching,
     refetch: mocks.refetchOrders,
   }),
@@ -109,6 +111,7 @@ describe('OrdersPage bundled-theme table', () => {
   afterEach(() => {
     document.body.innerHTML = '';
     mocks.mobile = false;
+    mocks.orderError = undefined;
     mocks.fetching = false;
     mocks.orders = defaultOrders();
   });
@@ -215,6 +218,7 @@ describe('OrdersPage legacy cancel action', () => {
     mocks.legacyConfirm.mockClear();
     mocks.refetchOrders.mockClear();
     mocks.mobile = false;
+    mocks.orderError = undefined;
     mocks.fetching = false;
     mocks.orders = defaultOrders();
   });
@@ -351,6 +355,31 @@ describe('OrdersPage legacy cancel action', () => {
     });
 
     expect(container.querySelector('.block.block-rounded')?.className).toContain(
+      'block-mode-loading',
+    );
+  });
+
+  it('keeps the original block loading class after a transport timeout but not an API 500', async () => {
+    mocks.fetching = false;
+    mocks.orderError = { status: 0, message: 'timeout of 30000ms exceeded' };
+
+    await act(async () => {
+      root.render(<OrdersPage />);
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('.block.block-rounded')?.className).toContain(
+      'block-mode-loading',
+    );
+
+    mocks.orderError = { status: 500, message: 'Server Error' };
+
+    await act(async () => {
+      root.render(<OrdersPage />);
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('.block.block-rounded')?.className).not.toContain(
       'block-mode-loading',
     );
   });

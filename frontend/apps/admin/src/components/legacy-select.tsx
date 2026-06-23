@@ -559,7 +559,7 @@ function LegacySelectComponent({
           !item.disabled &&
             activeValue === item.value &&
             'ant-select-dropdown-menu-item-active',
-          itemSelected && 'ant-select-dropdown-menu-item-selected',
+          multiple && itemSelected && 'ant-select-dropdown-menu-item-selected',
           item.disabled && 'ant-select-dropdown-menu-item-disabled',
         )}
         onMouseEnter={() => !item.disabled && setActiveValue(item.value)}

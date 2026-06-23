@@ -55,7 +55,8 @@ describe('UserTrafficModal', () => {
       true,
     );
     expect(html).toContain('class="ant-modal-root"');
-    expect(modal.outerHTML).toContain('<div class="ant-modal" role="document"');
+    expect(modal.classList.contains('ant-modal')).toBe(true);
+    expect(modal.getAttribute('role')).toBe('document');
     expect(modal.getAttribute('style')).toBe(
       'max-width: 1000px; padding: 0px 10px; top: 20px; width: 100%;',
     );

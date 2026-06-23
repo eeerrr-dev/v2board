@@ -25,6 +25,7 @@ const maxAverageDelta = Number(process.env.VISUAL_PARITY_MAX_AVERAGE_DELTA ?? '2
 const channelThreshold = Number(process.env.VISUAL_PARITY_CHANNEL_THRESHOLD ?? '24');
 const parityMode = process.env.VISUAL_PARITY_MODE ?? 'screenshots';
 const scenarioFilter = process.env.VISUAL_PARITY_FILTER ?? '';
+const exactScenarioFilter = process.env.VISUAL_PARITY_EXACT_FILTER === '1';
 const viewportFilter = process.env.VISUAL_PARITY_VIEWPORT_FILTER ?? '';
 const browserMode = process.env.VISUAL_PARITY_FRESH_BROWSER ?? 'auto';
 const browserName = process.env.VISUAL_PARITY_BROWSER ?? 'chromium';
@@ -98,6 +99,28 @@ const scenarios = [
   },
   {
     authenticated: true,
+    bannedUser: true,
+    label: 'user-dashboard-banned-no-subscription',
+    noSubscription: true,
+    path: '/#/dashboard',
+    readySelector: '.fa-plus',
+  },
+  {
+    authenticated: true,
+    expiredTrafficUsedUp: true,
+    label: 'user-dashboard-expired-traffic-used-up',
+    path: '/#/dashboard',
+    readySelector: '.text-danger',
+  },
+  {
+    authenticated: true,
+    deviceLimitExpired: true,
+    label: 'user-dashboard-device-limit-expired',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar',
+  },
+  {
+    authenticated: true,
     darkMode: true,
     label: 'user-dashboard-dark',
     path: '/#/dashboard',
@@ -130,6 +153,14 @@ const scenarios = [
     label: 'user-plans-empty',
     path: '/#/plan',
     readySelector: '.spinner-grow',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-timeout',
+    path: '/#/plan',
+    postReadyDelay: 800,
+    readySelector: '#page-container',
+    userPlansTimeout: true,
   },
   {
     authenticated: true,
@@ -167,6 +198,22 @@ const scenarios = [
   },
   {
     authenticated: true,
+    label: 'user-orders-api-500',
+    path: '/#/order',
+    postReadyDelay: 500,
+    readySelector: '.ant-table',
+    userOrdersHttpError: true,
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-timeout',
+    path: '/#/order',
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
+    userOrdersTimeout: true,
+  },
+  {
+    authenticated: true,
     label: 'user-order-detail',
     path: '/#/order/VISUAL2026110001',
     readySelector: '.v2board-order-info',
@@ -194,9 +241,33 @@ const scenarios = [
   },
   {
     authenticated: true,
+    label: 'user-node-api-500',
+    path: '/#/node',
+    postReadyDelay: 500,
+    readySelector: '.alert.alert-dark',
+    userServersHttpError: true,
+  },
+  {
+    authenticated: true,
+    label: 'user-node-timeout',
+    path: '/#/node',
+    postReadyDelay: 800,
+    readySelector: '#page-container',
+    userServersTimeout: true,
+  },
+  {
+    authenticated: true,
     label: 'user-traffic',
     path: '/#/traffic',
     readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-traffic-timeout',
+    path: '/#/traffic',
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
+    userTrafficTimeout: true,
   },
   {
     authenticated: true,
@@ -216,6 +287,14 @@ const scenarios = [
     label: 'user-tickets-empty',
     path: '/#/ticket',
     readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    label: 'user-tickets-timeout',
+    path: '/#/ticket',
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
+    userTicketsTimeout: true,
   },
   {
     authenticated: true,
@@ -239,9 +318,281 @@ const scenarios = [
   },
   {
     authenticated: true,
+    label: 'user-knowledge-timeout',
+    path: '/#/knowledge',
+    postReadyDelay: 800,
+    readySelector: '#page-container',
+    userKnowledgeTimeout: true,
+  },
+  {
+    authenticated: true,
     label: 'user-profile',
     path: '/#/profile',
     readySelector: '.ant-switch',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-no-subscription-zh-tw',
+    locale: 'zh-TW',
+    noSubscription: true,
+    path: '/#/dashboard',
+    readySelector: '.fa-plus',
+  },
+  {
+    authenticated: true,
+    expiredSubscription: true,
+    label: 'user-dashboard-expired-subscription-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/dashboard',
+    readySelector: '.text-danger',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-traffic-used-up-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar.bg-danger',
+    trafficUsedUp: true,
+  },
+  {
+    authenticated: true,
+    deviceLimitReached: true,
+    label: 'user-dashboard-device-limit-reached-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar',
+  },
+  {
+    authenticated: true,
+    bannedUser: true,
+    label: 'user-dashboard-banned-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    darkMode: true,
+    label: 'user-dashboard-dark-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-long-data-zh-tw',
+    locale: 'zh-TW',
+    longData: true,
+    path: '/#/plan',
+    postReadyDelay: 300,
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-sold-out-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/plan',
+    readySelector: '.block-link-pop button[disabled]',
+    soldOutPlans: true,
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-non-renewable-zh-tw',
+    locale: 'zh-TW',
+    nonRenewablePlan: true,
+    path: '/#/plan/1',
+    readySelector: '.ant-result-info',
+  },
+  {
+    authenticated: true,
+    forceUserUnauthorized: true,
+    label: 'user-dashboard-session-expired-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/dashboard',
+    postReadyDelay: 300,
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    authenticated: true,
+    emptyPlans: true,
+    label: 'user-plans-empty-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/plan',
+    readySelector: '.spinner-grow',
+  },
+  {
+    authenticated: true,
+    emptyOrders: true,
+    label: 'user-orders-empty-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/order',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    emptyServers: true,
+    label: 'user-node-empty-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/node',
+    readySelector: '.alert.alert-dark',
+  },
+  {
+    authenticated: true,
+    emptyTickets: true,
+    label: 'user-tickets-empty-zh-tw',
+    locale: 'zh-TW',
+    path: '/#/ticket',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-long-data-zh-tw',
+    locale: 'zh-TW',
+    longData: true,
+    path: '/#/order',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-long-data-zh-tw',
+    locale: 'zh-TW',
+    longData: true,
+    path: '/#/node',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-no-subscription-en-us',
+    locale: 'en-US',
+    noSubscription: true,
+    path: '/#/dashboard',
+    readySelector: '.fa-plus',
+  },
+  {
+    authenticated: true,
+    expiredSubscription: true,
+    label: 'user-dashboard-expired-subscription-en-us',
+    locale: 'en-US',
+    path: '/#/dashboard',
+    readySelector: '.text-danger',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-traffic-used-up-en-us',
+    locale: 'en-US',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar.bg-danger',
+    trafficUsedUp: true,
+  },
+  {
+    authenticated: true,
+    deviceLimitReached: true,
+    label: 'user-dashboard-device-limit-reached-en-us',
+    locale: 'en-US',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar',
+  },
+  {
+    authenticated: true,
+    bannedUser: true,
+    label: 'user-dashboard-banned-en-us',
+    locale: 'en-US',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    darkMode: true,
+    label: 'user-dashboard-dark-en-us',
+    locale: 'en-US',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-long-data-en-us',
+    locale: 'en-US',
+    longData: true,
+    path: '/#/plan',
+    postReadyDelay: 300,
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-sold-out-en-us',
+    locale: 'en-US',
+    path: '/#/plan',
+    readySelector: '.block-link-pop button[disabled]',
+    soldOutPlans: true,
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-non-renewable-en-us',
+    locale: 'en-US',
+    nonRenewablePlan: true,
+    path: '/#/plan/1',
+    readySelector: '.ant-result-info',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-long-data-en-us',
+    locale: 'en-US',
+    longData: true,
+    path: '/#/order',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    forceUserUnauthorized: true,
+    label: 'user-dashboard-session-expired-en-us',
+    locale: 'en-US',
+    path: '/#/dashboard',
+    postReadyDelay: 300,
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    authenticated: true,
+    emptyPlans: true,
+    label: 'user-plans-empty-en-us',
+    locale: 'en-US',
+    path: '/#/plan',
+    readySelector: '.spinner-grow',
+  },
+  {
+    authenticated: true,
+    emptyOrders: true,
+    label: 'user-orders-empty-en-us',
+    locale: 'en-US',
+    path: '/#/order',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    emptyServers: true,
+    label: 'user-node-empty-en-us',
+    locale: 'en-US',
+    path: '/#/node',
+    readySelector: '.alert.alert-dark',
+  },
+  {
+    authenticated: true,
+    emptyTickets: true,
+    label: 'user-tickets-empty-en-us',
+    locale: 'en-US',
+    path: '/#/ticket',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-long-data-en-us',
+    locale: 'en-US',
+    longData: true,
+    path: '/#/node',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
   },
   {
     label: 'user-home-root-zh-tw',
@@ -474,6 +825,16 @@ const scenarios = [
     warmupPath: `/${adminPath}#/login`,
   },
   {
+    adminPlansTimeout: true,
+    authenticated: true,
+    label: 'admin-plans-timeout',
+    path: `/${adminPath}#/plan`,
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
     authenticated: true,
     label: 'admin-orders',
     path: `/${adminPath}#/order`,
@@ -492,10 +853,60 @@ const scenarios = [
     warmupPath: `/${adminPath}#/login`,
   },
   {
+    adminOrdersHttpError: true,
+    authenticated: true,
+    label: 'admin-orders-api-500',
+    path: `/${adminPath}#/order`,
+    postReadyDelay: 500,
+    readySelector: '.ant-table',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
+    adminOrdersTimeout: true,
+    authenticated: true,
+    label: 'admin-orders-timeout',
+    path: `/${adminPath}#/order`,
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
     authenticated: true,
     label: 'admin-users',
     path: `/${adminPath}#/user`,
     readySelector: '.ant-table-tbody tr',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
+    adminUsersTimeout: true,
+    authenticated: true,
+    label: 'admin-users-timeout',
+    path: `/${adminPath}#/user`,
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
+    adminUsersHttpError: true,
+    authenticated: true,
+    label: 'admin-users-api-500',
+    path: `/${adminPath}#/user`,
+    postReadyDelay: 500,
+    readySelector: '.ant-table',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
+    adminTicketsTimeout: true,
+    authenticated: true,
+    label: 'admin-tickets-timeout',
+    path: `/${adminPath}#/ticket`,
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -577,6 +988,16 @@ const scenarios = [
     warmupPath: `/${adminPath}#/server/group`,
   },
   {
+    adminServerManageTimeout: true,
+    authenticated: true,
+    label: 'admin-server-manage-timeout',
+    path: `/${adminPath}#/server/manage`,
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/server/group`,
+  },
+  {
     authenticated: true,
     label: 'admin-server-routes',
     path: `/${adminPath}#/server/route`,
@@ -593,10 +1014,30 @@ const scenarios = [
     warmupPath: `/${adminPath}#/login`,
   },
   {
+    adminPaymentsTimeout: true,
+    authenticated: true,
+    label: 'admin-payments-timeout',
+    path: `/${adminPath}#/config/payment`,
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
     authenticated: true,
     label: 'admin-coupons',
     path: `/${adminPath}#/coupon`,
     readySelector: '.ant-table-tbody tr',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
+    adminCouponsTimeout: true,
+    authenticated: true,
+    label: 'admin-coupons-timeout',
+    path: `/${adminPath}#/coupon`,
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -609,6 +1050,16 @@ const scenarios = [
     warmupPath: `/${adminPath}#/login`,
   },
   {
+    adminGiftcardsTimeout: true,
+    authenticated: true,
+    label: 'admin-giftcards-timeout',
+    path: `/${adminPath}#/giftcard`,
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
     authenticated: true,
     label: 'admin-notices',
     path: `/${adminPath}#/notice`,
@@ -617,10 +1068,30 @@ const scenarios = [
     warmupPath: `/${adminPath}#/login`,
   },
   {
+    adminNoticesTimeout: true,
+    authenticated: true,
+    label: 'admin-notices-timeout',
+    path: `/${adminPath}#/notice`,
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
     authenticated: true,
     label: 'admin-knowledge',
     path: `/${adminPath}#/knowledge`,
     readySelector: '.ant-table-tbody tr',
+    seedLegacyAdminStore: true,
+    warmupPath: `/${adminPath}#/login`,
+  },
+  {
+    adminKnowledgeTimeout: true,
+    authenticated: true,
+    label: 'admin-knowledge-timeout',
+    path: `/${adminPath}#/knowledge`,
+    postReadyDelay: 800,
+    readySelector: '.ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -636,6 +1107,11 @@ const interactionScenarios = [
   {
     label: 'user-login-language-persistence',
     run: runLoginLanguagePersistenceInteraction,
+    scenarioLabel: 'user-login',
+  },
+  {
+    label: 'user-login-keyboard-tab-focus',
+    run: runLoginKeyboardTabFocusInteraction,
     scenarioLabel: 'user-login',
   },
   {
@@ -793,6 +1269,11 @@ const interactionScenarios = [
     scenarioLabel: 'user-plans',
   },
   {
+    label: 'user-plans-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'user-plans-timeout',
+  },
+  {
     label: 'user-plan-checkout-coupon',
     run: runPlanCheckoutCouponInteraction,
     scenarioLabel: 'user-plan-checkout',
@@ -828,6 +1309,16 @@ const interactionScenarios = [
     scenarioLabel: 'user-order-detail',
   },
   {
+    label: 'user-orders-fetch-api-500',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'user-orders-api-500',
+  },
+  {
+    label: 'user-orders-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'user-orders-timeout',
+  },
+  {
     label: 'user-order-stripe-disabled-checkout',
     run: runOrderStripeDisabledCheckoutInteraction,
     scenarioLabel: 'user-order-detail',
@@ -838,6 +1329,14 @@ const interactionScenarios = [
     run: runOrderStripeTokenCheckoutInteraction,
     scenarioLabel: 'user-order-detail',
     stripeToken: 'tok_visual_parity_success',
+  },
+  {
+    delayUserOrderCheckoutMs: 200,
+    label: 'user-order-stripe-checkout-failure',
+    orderCheckoutError: true,
+    run: runOrderStripeTokenCheckoutFailureInteraction,
+    scenarioLabel: 'user-order-detail',
+    stripeToken: 'tok_visual_parity_failure',
   },
   {
     checkoutRedirectUrl: '/#/order/VISUAL2026110001?cashier=visual',
@@ -852,6 +1351,16 @@ const interactionScenarios = [
     scenarioLabel: 'user-node',
   },
   {
+    label: 'user-node-fetch-api-500',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'user-node-api-500',
+  },
+  {
+    label: 'user-node-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'user-node-timeout',
+  },
+  {
     label: 'user-node-tooltips',
     run: runUserNodeTooltipsInteraction,
     scenarioLabel: 'user-node',
@@ -862,6 +1371,11 @@ const interactionScenarios = [
     scenarioLabel: 'user-traffic',
   },
   {
+    label: 'user-traffic-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'user-traffic-timeout',
+  },
+  {
     label: 'user-traffic-total-tooltip',
     run: runUserTrafficTotalTooltipInteraction,
     scenarioLabel: 'user-traffic',
@@ -870,6 +1384,11 @@ const interactionScenarios = [
     label: 'user-knowledge-drawer',
     run: runKnowledgeDrawerInteraction,
     scenarioLabel: 'user-knowledge',
+  },
+  {
+    label: 'user-knowledge-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'user-knowledge-timeout',
   },
   {
     label: 'user-invite-generate',
@@ -907,6 +1426,11 @@ const interactionScenarios = [
     scenarioLabel: 'user-ticket-detail',
   },
   {
+    label: 'user-tickets-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'user-tickets-timeout',
+  },
+  {
     delayUserTicketSaveMs: 200,
     label: 'user-ticket-create-submit',
     run: runUserTicketCreateModalInteraction,
@@ -931,6 +1455,11 @@ const interactionScenarios = [
     scenarioLabel: 'admin-tickets',
   },
   {
+    label: 'admin-tickets-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-tickets-timeout',
+  },
+  {
     label: 'admin-dashboard-dark-mode-persistence',
     preserveRuntimeDarkMode: true,
     run: runDarkModePersistenceInteraction,
@@ -945,7 +1474,6 @@ const interactionScenarios = [
     label: 'admin-session-expired-redirect',
     run: runSessionExpiredRedirectInteraction,
     scenarioLabel: 'admin-dashboard-session-expired',
-    viewports: ['desktop'],
   },
   {
     label: 'admin-dashboard-commission-shortcut',
@@ -964,13 +1492,30 @@ const interactionScenarios = [
     scenarioLabel: 'admin-plans',
   },
   {
+    adminPlanSaveError: true,
+    delayAdminPlanSaveMs: 200,
+    label: 'admin-plan-save-failure',
+    run: runAdminPlanSaveFailureInteraction,
+    scenarioLabel: 'admin-plans',
+  },
+  {
     label: 'admin-plan-create-group-select-dropdown',
     run: runAdminPlanCreateGroupSelectDropdownInteraction,
     scenarioLabel: 'admin-plans',
   },
   {
+    label: 'admin-plans-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-plans-timeout',
+  },
+  {
     label: 'admin-plan-reset-method-matrix',
     run: runAdminPlanResetMethodMatrixInteraction,
+    scenarioLabel: 'admin-plans',
+  },
+  {
+    label: 'admin-plan-drawer-keyboard-close',
+    run: runAdminPlanDrawerKeyboardCloseInteraction,
     scenarioLabel: 'admin-plans',
   },
   {
@@ -1005,6 +1550,12 @@ const interactionScenarios = [
     scenarioLabel: 'admin-server-manage',
   },
   {
+    adminServerNodeSaveError: true,
+    label: 'admin-server-node-save-failure',
+    run: runAdminServerNodeSaveFailureInteraction,
+    scenarioLabel: 'admin-server-manage',
+  },
+  {
     label: 'admin-server-protocol-field-matrix',
     run: runAdminServerProtocolFieldMatrixInteraction,
     scenarioLabel: 'admin-server-manage',
@@ -1013,6 +1564,16 @@ const interactionScenarios = [
     label: 'admin-server-v2node-protocol-matrix',
     run: runAdminServerV2nodeProtocolMatrixInteraction,
     scenarioLabel: 'admin-server-manage',
+  },
+  {
+    label: 'admin-server-v2node-security-transport-matrix',
+    run: runAdminServerV2nodeSecurityTransportMatrixInteraction,
+    scenarioLabel: 'admin-server-manage',
+  },
+  {
+    label: 'admin-server-manage-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-server-manage-timeout',
   },
   {
     label: 'admin-server-edit-node-drawer',
@@ -1036,6 +1597,13 @@ const interactionScenarios = [
     scenarioLabel: 'admin-server-groups',
   },
   {
+    adminServerGroupSaveError: true,
+    delayAdminServerGroupSaveMs: 200,
+    label: 'admin-server-group-save-failure',
+    run: runAdminServerGroupSaveFailureInteraction,
+    scenarioLabel: 'admin-server-groups',
+  },
+  {
     delayAdminServerGroupSaveMs: 200,
     label: 'admin-server-group-edit-modal',
     run: runAdminServerGroupEditModalInteraction,
@@ -1045,6 +1613,13 @@ const interactionScenarios = [
     delayAdminPaymentSaveMs: 200,
     label: 'admin-payment-create-modal',
     run: runAdminPaymentCreateModalInteraction,
+    scenarioLabel: 'admin-payments',
+  },
+  {
+    adminPaymentSaveError: true,
+    delayAdminPaymentSaveMs: 200,
+    label: 'admin-payment-save-failure',
+    run: runAdminPaymentSaveFailureInteraction,
     scenarioLabel: 'admin-payments',
   },
   {
@@ -1058,6 +1633,16 @@ const interactionScenarios = [
     label: 'admin-payment-plugin-field-matrix',
     run: runAdminPaymentPluginFieldMatrixInteraction,
     scenarioLabel: 'admin-payments',
+  },
+  {
+    label: 'admin-payment-modal-keyboard-close',
+    run: runAdminPaymentModalKeyboardCloseInteraction,
+    scenarioLabel: 'admin-payments',
+  },
+  {
+    label: 'admin-payments-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-payments-timeout',
   },
   {
     label: 'admin-payment-notify-tooltip',
@@ -1090,9 +1675,26 @@ const interactionScenarios = [
     scenarioLabel: 'admin-orders',
   },
   {
+    label: 'admin-orders-fetch-api-500',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-orders-api-500',
+  },
+  {
+    label: 'admin-orders-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-orders-timeout',
+  },
+  {
     delayAdminCouponGenerateMs: 200,
     label: 'admin-coupon-create-modal',
     run: runAdminCouponCreateModalInteraction,
+    scenarioLabel: 'admin-coupons',
+  },
+  {
+    adminCouponGenerateError: true,
+    delayAdminCouponGenerateMs: 200,
+    label: 'admin-coupon-generate-failure',
+    run: runAdminCouponGenerateFailureInteraction,
     scenarioLabel: 'admin-coupons',
   },
   {
@@ -1107,6 +1709,11 @@ const interactionScenarios = [
     scenarioLabel: 'admin-coupons',
   },
   {
+    label: 'admin-coupons-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-coupons-timeout',
+  },
+  {
     delayAdminCouponGenerateMs: 200,
     label: 'admin-coupon-edit-modal',
     run: runAdminCouponEditModalInteraction,
@@ -1119,15 +1726,34 @@ const interactionScenarios = [
     scenarioLabel: 'admin-giftcards',
   },
   {
+    adminGiftcardGenerateError: true,
+    delayAdminGiftcardGenerateMs: 200,
+    label: 'admin-giftcard-generate-failure',
+    run: runAdminGiftcardGenerateFailureInteraction,
+    scenarioLabel: 'admin-giftcards',
+  },
+  {
     delayAdminGiftcardGenerateMs: 200,
     label: 'admin-giftcard-edit-modal',
     run: runAdminGiftcardEditModalInteraction,
     scenarioLabel: 'admin-giftcards',
   },
   {
+    label: 'admin-giftcards-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-giftcards-timeout',
+  },
+  {
     delayAdminNoticeSaveMs: 200,
     label: 'admin-notice-create-modal',
     run: runAdminNoticeCreateModalInteraction,
+    scenarioLabel: 'admin-notices',
+  },
+  {
+    adminNoticeSaveError: true,
+    delayAdminNoticeSaveMs: 200,
+    label: 'admin-notice-save-failure',
+    run: runAdminNoticeSaveFailureInteraction,
     scenarioLabel: 'admin-notices',
   },
   {
@@ -1137,9 +1763,21 @@ const interactionScenarios = [
     scenarioLabel: 'admin-notices',
   },
   {
+    label: 'admin-notices-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-notices-timeout',
+  },
+  {
     delayAdminKnowledgeSaveMs: 200,
     label: 'admin-knowledge-create-drawer',
     run: runAdminKnowledgeCreateDrawerInteraction,
+    scenarioLabel: 'admin-knowledge',
+  },
+  {
+    adminKnowledgeSaveError: true,
+    delayAdminKnowledgeSaveMs: 200,
+    label: 'admin-knowledge-save-failure',
+    run: runAdminKnowledgeSaveFailureInteraction,
     scenarioLabel: 'admin-knowledge',
   },
   {
@@ -1147,6 +1785,11 @@ const interactionScenarios = [
     label: 'admin-knowledge-edit-drawer',
     run: runAdminKnowledgeEditDrawerInteraction,
     scenarioLabel: 'admin-knowledge',
+  },
+  {
+    label: 'admin-knowledge-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-knowledge-timeout',
   },
   {
     label: 'admin-users-filter-input',
@@ -1162,6 +1805,21 @@ const interactionScenarios = [
     label: 'admin-users-filter-expiry-picker',
     run: runAdminUsersFilterExpiryPickerInteraction,
     scenarioLabel: 'admin-users',
+  },
+  {
+    label: 'admin-users-pagination-matrix',
+    run: runAdminUsersPaginationMatrixInteraction,
+    scenarioLabel: 'admin-users-long-data',
+  },
+  {
+    label: 'admin-users-fetch-api-500',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-users-api-500',
+  },
+  {
+    label: 'admin-users-fetch-timeout',
+    run: runFetchFailureStateInteraction,
+    scenarioLabel: 'admin-users-timeout',
   },
   {
     label: 'admin-user-bulk-ban-confirm',
@@ -1336,6 +1994,16 @@ const deviceLimitReachedSubscribeFixture = {
   ...subscribeFixture,
   alive_ip: 7,
   device_limit: 5,
+};
+const expiredTrafficUsedUpSubscribeFixture = {
+  ...trafficUsedUpSubscribeFixture,
+  expired_at: expiredSubscriptionFixture.expired_at,
+  reset_day: null,
+};
+const deviceLimitExpiredSubscribeFixture = {
+  ...deviceLimitReachedSubscribeFixture,
+  expired_at: expiredSubscriptionFixture.expired_at,
+  reset_day: null,
 };
 const subscribeTargetTitles = [
   'Hiddify',
@@ -2389,7 +3057,11 @@ const darkModeStyleTargets = [
   { key: 'dashboardTile', selector: '.v2board-shortcuts-item, .block-link-pop' },
 ];
 const selectedScenarios = scenarioFilter
-  ? scenarios.filter((scenario) => scenario.label.includes(scenarioFilter))
+  ? scenarios.filter((scenario) =>
+      exactScenarioFilter
+        ? scenario.label === scenarioFilter
+        : scenario.label.includes(scenarioFilter),
+    )
   : scenarios;
 const selectedViewports = viewportFilter
   ? viewports.filter((viewport) => viewport.label.includes(viewportFilter))
@@ -3004,6 +3676,26 @@ async function runLoginLanguagePersistenceInteraction(page) {
     before,
     menuItems,
   };
+}
+
+async function runLoginKeyboardTabFocusInteraction(page) {
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    document.body.setAttribute('tabindex', '-1');
+    document.body.focus();
+  });
+  const before = await keyboardFocusState(page);
+  const sequence = [];
+
+  for (const key of ['Tab', 'Tab', 'Tab', 'Shift+Tab']) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(100);
+    sequence.push({ key, focus: await keyboardFocusState(page) });
+  }
+
+  return { before, sequence };
 }
 
 async function runDashboardHeaderLanguageDropdownInteraction(page) {
@@ -3792,6 +4484,38 @@ async function runOrderStripeTokenCheckoutInteraction(page) {
   };
 }
 
+async function runOrderStripeTokenCheckoutFailureInteraction(page) {
+  const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
+  await waitForOrderPaymentMethodCount(page);
+  const before = await orderCheckoutState(page);
+  await clickVisibleAt(page, '#cashier .v2board-select', 1);
+  await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
+  await waitForCreditCardSection(page);
+  await page.waitForFunction(
+    () => {
+      const button = document.querySelector('#cashier .btn-block.btn-primary');
+      return button instanceof HTMLButtonElement && !button.disabled;
+    },
+    { timeout: 5_000 },
+  );
+  await page.waitForTimeout(150);
+  const selected = await orderCheckoutState(page);
+  await clickFirstVisible(page, '#cashier .btn-block.btn-primary');
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityUserOrderCheckoutCount',
+    initialCheckoutCount + 1,
+  );
+  await page.waitForTimeout(350);
+  const after = await orderCheckoutState(page);
+  return {
+    after,
+    before,
+    checkoutRequests: clonePageRequests(page.__visualParityUserOrderCheckoutRequests),
+    selected,
+  };
+}
+
 async function runOrderRedirectCheckoutInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   await waitForOrderPaymentMethodCount(page);
@@ -3814,6 +4538,11 @@ async function runOrderRedirectCheckoutInteraction(page) {
     redirected,
     selected,
   };
+}
+
+async function runFetchFailureStateInteraction(page) {
+  await page.waitForTimeout(500);
+  return fetchFailureState(page);
 }
 
 async function runNodeTableScrollInteraction(page) {
@@ -4262,6 +4991,35 @@ async function runAdminPlanCreateDrawerInteraction(page) {
   };
 }
 
+async function runAdminPlanSaveFailureInteraction(page) {
+  const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
+  const before = await adminPlanDrawerState(page);
+  await clickFirstVisible(page, '.bg-white .ant-btn');
+  await page.waitForSelector('.ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-drawer-title', '新建订阅');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Failed Plan');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '<p>Plan failure body</p>');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, '12.34');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 10, '250');
+  await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default']);
+  await page.waitForTimeout(100);
+  const filled = await adminPlanDrawerState(page);
+  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanSaveCount', 1);
+  await page.waitForTimeout(350);
+  const after = await adminPlanDrawerState(page);
+  return {
+    after,
+    before,
+    filled,
+    planFetchDelta: (page.__visualParityAdminPlanFetchCount ?? 0) - initialPlanFetchCount,
+    saveRequests: clonePageRequests(page.__visualParityAdminPlanSaveRequests),
+  };
+}
+
 async function runAdminPlanCreateGroupSelectDropdownInteraction(page) {
   await clickFirstVisible(page, '.bg-white .ant-btn');
   await page.waitForSelector('.ant-drawer-open', {
@@ -4322,6 +5080,24 @@ async function runAdminPlanResetMethodMatrixInteraction(page) {
       structuredClone(request),
     ),
   };
+}
+
+async function runAdminPlanDrawerKeyboardCloseInteraction(page) {
+  const before = await adminPlanDrawerState(page);
+  await clickFirstVisible(page, '.bg-white .ant-btn');
+  await page.waitForSelector('.ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-drawer-title', '新建订阅');
+  const opened = await adminPlanDrawerState(page);
+  await focusFirstVisible(page, '.ant-drawer-open');
+  const focused = await keyboardFocusState(page);
+  await page.keyboard.press('Escape');
+  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, '.ant-drawer-title');
+  const closed = await adminPlanDrawerState(page);
+  return { before, closed, focused, opened };
 }
 
 async function runAdminPlanEditDrawerInteraction(page) {
@@ -4534,10 +5310,7 @@ async function runAdminServerVlessRealityMatrixInteraction(page) {
   await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, 'vless.example.test');
   await fillVisibleAt(page, '.ant-drawer-open .ant-input', 3, '443');
   await fillVisibleAt(page, '.ant-drawer-open .ant-input', 4, '10443');
-  await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default'], {
-    waitForHidden: false,
-  });
-  await page.keyboard.press('Escape').catch(() => undefined);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default']);
   const opened = await adminServerNodeDrawerState(page);
   await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['Reality']);
   await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['TCP']);
@@ -4564,6 +5337,45 @@ async function runAdminServerVlessRealityMatrixInteraction(page) {
     saveRequests: (page.__visualParityAdminServerNodeSaveRequests ?? []).map((request) =>
       structuredClone(request),
     ),
+  };
+}
+
+async function runAdminServerNodeSaveFailureInteraction(page) {
+  const initialNodeFetchCount = page.__visualParityAdminServerNodeFetchCount ?? 0;
+  const before = await adminServerNodeDrawerState(page);
+  await page.locator('.v2board-table-action .ant-dropdown-trigger').first().hover();
+  await page.waitForTimeout(150);
+  await clickFirstVisible(page, '.v2board-table-action .ant-dropdown-trigger');
+  await waitForVisibleText(page, '.ant-dropdown-menu-item', 'VLess');
+  const menuOpened = await adminServerNodeDrawerState(page);
+  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['VLess']);
+  await page.waitForSelector('.ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-drawer-title', '新建节点');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Failed VLess');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '2.5');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, 'failed-vless.example.test');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 3, '443');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 4, '10443');
+  await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default'], {
+    waitForHidden: false,
+  });
+  await page.keyboard.press('Escape').catch(() => undefined);
+  const filled = await adminServerNodeDrawerState(page);
+  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminServerNodeSaveCount', 1);
+  await page.waitForTimeout(350);
+  const after = await adminServerNodeDrawerState(page);
+  return {
+    after,
+    before,
+    filled,
+    menuOpened,
+    nodeFetchDelta:
+      (page.__visualParityAdminServerNodeFetchCount ?? 0) - initialNodeFetchCount,
+    saveRequests: clonePageRequests(page.__visualParityAdminServerNodeSaveRequests),
   };
 }
 
@@ -4698,6 +5510,50 @@ async function runAdminServerV2nodeProtocolMatrixInteraction(page) {
   const closed = await closeAdminServerNodeDrawer(page);
 
   return { anytls, closed, hysteria2, menuOpened, opened, shadowsocks, trojan, tuic, vless };
+}
+
+async function runAdminServerV2nodeSecurityTransportMatrixInteraction(page) {
+  const { menuOpened, opened } = await openAdminServerNodeDrawerForType(page, 'V2node');
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['VMess']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['无']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['XHTTP']);
+  const vmessNoneXhttp = await adminServerNodeDrawerState(page);
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['TLS']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['gRPC']);
+  const vmessTlsGrpc = await adminServerNodeDrawerState(page);
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['VLess']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['TLS']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['HTTPUpgrade']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '加密方式', ['MLKEM768X25519PLUS']);
+  const vlessTlsHttpUpgrade = await adminServerNodeDrawerState(page);
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['Reality']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['WebSocket']);
+  const vlessRealityWebSocket = await adminServerNodeDrawerState(page);
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['Trojan']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['TLS']);
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['TCP']);
+  const trojanTlsTcp = await adminServerNodeDrawerState(page);
+
+  await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['gRPC']);
+  const trojanTlsGrpc = await adminServerNodeDrawerState(page);
+
+  const closed = await closeAdminServerNodeDrawer(page);
+  return {
+    closed,
+    menuOpened,
+    opened,
+    trojanTlsGrpc,
+    trojanTlsTcp,
+    vlessRealityWebSocket,
+    vlessTlsHttpUpgrade,
+    vmessNoneXhttp,
+    vmessTlsGrpc,
+  };
 }
 
 async function runAdminServerEditNodeDrawerInteraction(page) {
@@ -4835,6 +5691,34 @@ async function runAdminServerGroupCreateModalInteraction(page) {
   };
 }
 
+async function runAdminServerGroupSaveFailureInteraction(page) {
+  const initialGroupFetchCount = page.__visualParityAdminServerGroupFetchCount ?? 0;
+  const before = await adminServerGroupModalState(page);
+  await clickFirstVisibleText(page, 'button', ['添加权限组']);
+  await page.waitForSelector('.ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-modal-title', '创建组');
+  const opened = await adminServerGroupModalState(page);
+  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Failed Group');
+  await page.waitForTimeout(100);
+  const filled = await adminServerGroupModalState(page);
+  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminServerGroupSaveCount', 1);
+  await page.waitForTimeout(350);
+  const after = await adminServerGroupModalState(page);
+  return {
+    after,
+    before,
+    filled,
+    groupFetchDelta:
+      (page.__visualParityAdminServerGroupFetchCount ?? 0) - initialGroupFetchCount,
+    opened,
+    saveRequests: clonePageRequests(page.__visualParityAdminServerGroupSaveRequests),
+  };
+}
+
 async function runAdminServerGroupEditModalInteraction(page) {
   const initialGroupFetchCount = page.__visualParityAdminServerGroupFetchCount ?? 0;
   const before = await adminServerGroupModalState(page);
@@ -4937,6 +5821,32 @@ async function runAdminPaymentCreateModalInteraction(page) {
   };
 }
 
+async function runAdminPaymentSaveFailureInteraction(page) {
+  const initialPaymentFetchCount = page.__visualParityAdminPaymentFetchCount ?? 0;
+  await clickFirstVisibleText(page, 'button', ['添加支付方式']);
+  await page.waitForSelector('.ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await page.waitForFunction(() => document.body.textContent.includes('商户ID'), {
+    timeout: 5_000,
+  });
+  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Failed Pay');
+  await page.waitForTimeout(100);
+  const filled = await adminPaymentModalState(page);
+  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminPaymentSaveCount', 1);
+  await page.waitForTimeout(350);
+  const after = await adminPaymentModalState(page);
+  return {
+    after,
+    filled,
+    paymentFetchDelta:
+      (page.__visualParityAdminPaymentFetchCount ?? 0) - initialPaymentFetchCount,
+    saveRequests: clonePageRequests(page.__visualParityAdminPaymentSaveRequests),
+  };
+}
+
 async function runAdminPaymentEditModalInteraction(page) {
   const initialPaymentFetchCount = page.__visualParityAdminPaymentFetchCount ?? 0;
   const before = await adminPaymentModalState(page);
@@ -5034,6 +5944,23 @@ async function runAdminPaymentPluginFieldMatrixInteraction(page) {
     ),
     stripe,
   };
+}
+
+async function runAdminPaymentModalKeyboardCloseInteraction(page) {
+  const before = await adminPaymentModalState(page);
+  await clickFirstVisibleText(page, 'button', ['添加支付方式']);
+  await page.waitForSelector('.ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-modal-title', '添加支付方式');
+  const opened = await adminPaymentModalState(page);
+  await focusFirstVisible(page, '.ant-modal');
+  const focused = await keyboardFocusState(page);
+  await page.keyboard.press('Escape');
+  await waitForVisibleElementsHidden(page, '.ant-modal');
+  const closed = await adminPaymentModalState(page);
+  return { before, closed, focused, opened };
 }
 
 async function runAdminPaymentNotifyTooltipInteraction(page) {
@@ -5169,6 +6096,30 @@ async function runAdminCouponCreateModalInteraction(page) {
       structuredClone(request),
     ),
     opened,
+  };
+}
+
+async function runAdminCouponGenerateFailureInteraction(page) {
+  const initialCouponFetchCount = page.__visualParityAdminCouponFetchCount ?? 0;
+  await clickFirstVisible(page, '.bg-white .ant-btn');
+  await page.waitForSelector('.ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Failed Coupon');
+  await fillVisibleAt(page, '.ant-modal .ant-input', 1, 'FAIL2026');
+  await fillVisibleAt(page, '.ant-modal input[type="number"], .ant-modal .ant-input', 2, '25');
+  await page.waitForTimeout(100);
+  const filled = await adminCouponModalState(page);
+  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminCouponGenerateCount', 1);
+  await page.waitForTimeout(350);
+  const after = await adminCouponModalState(page);
+  return {
+    after,
+    couponFetchDelta: (page.__visualParityAdminCouponFetchCount ?? 0) - initialCouponFetchCount,
+    filled,
+    generateRequests: clonePageRequests(page.__visualParityAdminCouponGenerateRequests),
   };
 }
 
@@ -5330,6 +6281,32 @@ async function runAdminGiftcardCreateModalInteraction(page) {
   };
 }
 
+async function runAdminGiftcardGenerateFailureInteraction(page) {
+  const initialGiftcardFetchCount = page.__visualParityAdminGiftcardFetchCount ?? 0;
+  const before = await adminGiftcardModalState(page);
+  await clickFirstVisible(page, '.bg-white .ant-btn');
+  await page.waitForSelector('.ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Failed Giftcard');
+  await fillVisibleAt(page, '.ant-modal .ant-input', 1, 'FAIL-GIFT-2026');
+  await page.waitForTimeout(100);
+  const filled = await adminGiftcardModalState(page);
+  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminGiftcardGenerateCount', 1);
+  await page.waitForTimeout(350);
+  const after = await adminGiftcardModalState(page);
+  return {
+    after,
+    before,
+    filled,
+    generateRequests: clonePageRequests(page.__visualParityAdminGiftcardGenerateRequests),
+    giftcardFetchDelta:
+      (page.__visualParityAdminGiftcardFetchCount ?? 0) - initialGiftcardFetchCount,
+  };
+}
+
 async function runAdminGiftcardEditModalInteraction(page) {
   const initialGiftcardFetchCount = page.__visualParityAdminGiftcardFetchCount ?? 0;
   const before = await adminGiftcardModalState(page);
@@ -5422,6 +6399,33 @@ async function runAdminNoticeCreateModalInteraction(page) {
     saveRequests: (page.__visualParityAdminNoticeSaveRequests ?? []).map((request) =>
       structuredClone(request),
     ),
+  };
+}
+
+async function runAdminNoticeSaveFailureInteraction(page) {
+  const initialNoticeFetchCount = page.__visualParityAdminNoticeFetchCount ?? 0;
+  const before = await adminNoticeModalState(page);
+  await clickFirstVisible(page, '.bg-white .ant-btn');
+  await page.waitForSelector('.ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Failed Notice');
+  await fillVisibleAt(page, '.ant-modal textarea.ant-input', 0, 'Parity notice failure body');
+  await fillFirstVisible(page, '.ant-modal .ant-select-search__field', 'failure');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(100);
+  const filled = await adminNoticeModalState(page);
+  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminNoticeSaveCount', 1);
+  await page.waitForTimeout(350);
+  const after = await adminNoticeModalState(page);
+  return {
+    after,
+    before,
+    filled,
+    noticeFetchDelta: (page.__visualParityAdminNoticeFetchCount ?? 0) - initialNoticeFetchCount,
+    saveRequests: clonePageRequests(page.__visualParityAdminNoticeSaveRequests),
   };
 }
 
@@ -5518,6 +6522,42 @@ async function runAdminKnowledgeCreateDrawerInteraction(page) {
     saveRequests: (page.__visualParityAdminKnowledgeSaveRequests ?? []).map((request) =>
       structuredClone(request),
     ),
+  };
+}
+
+async function runAdminKnowledgeSaveFailureInteraction(page) {
+  const initialKnowledgeFetchCount = page.__visualParityAdminKnowledgeFetchCount ?? 0;
+  const before = await adminKnowledgeDrawerState(page);
+  await clickFirstVisible(page, '.bg-white .ant-btn');
+  await page.waitForSelector('.ant-drawer-open', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await waitForVisibleText(page, '.ant-drawer-title', '新增知识');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Failed Knowledge');
+  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, 'Parity');
+  await clickVisibleAt(page, '.ant-drawer-open .ant-select-selection', 0);
+  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'English');
+  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['English']);
+  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await fillFirstVisible(
+    page,
+    '.ant-drawer-open textarea.section-container.input',
+    '# Parity Failed Knowledge\n\nFailure body',
+  );
+  await page.waitForTimeout(100);
+  const filled = await adminKnowledgeDrawerState(page);
+  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await waitForPagePropertyAtLeast(page, '__visualParityAdminKnowledgeSaveCount', 1);
+  await page.waitForTimeout(350);
+  const after = await adminKnowledgeDrawerState(page);
+  return {
+    after,
+    before,
+    filled,
+    knowledgeFetchDelta:
+      (page.__visualParityAdminKnowledgeFetchCount ?? 0) - initialKnowledgeFetchCount,
+    saveRequests: clonePageRequests(page.__visualParityAdminKnowledgeSaveRequests),
   };
 }
 
@@ -5625,6 +6665,32 @@ async function runAdminUsersFilterExpiryPickerInteraction(page) {
   await page.waitForTimeout(150);
   const opened = await legacyDatePickerState(page, '.v2board-filter-drawer');
   return { before, opened };
+}
+
+async function runAdminUsersPaginationMatrixInteraction(page) {
+  await page.waitForSelector('.ant-pagination-item-2', { state: 'visible', timeout: 5_000 });
+  const before = await adminTablePaginationState(page, 'user');
+  page.__visualParityLastAdminUserFetchQuery = null;
+  await clickFirstVisible(page, '.ant-pagination-item-2');
+  await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
+  await page.waitForTimeout(250);
+  const page2 = await adminTablePaginationState(page, 'user');
+  if (page2.sizeChangerCount === 0) {
+    return { before, page2, pageSize50: null, sizeDropdown: { skipped: 'not-visible' } };
+  }
+  page.__visualParityLastAdminUserFetchQuery = null;
+  await clickFirstVisible(page, '.ant-pagination-options-size-changer .ant-select-selection');
+  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '50 条/页');
+  const sizeDropdown = await legacySelectDropdownState(
+    page,
+    '.ant-pagination-options-size-changer',
+  );
+  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['50 条/页']);
+  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
+  await page.waitForTimeout(250);
+  const pageSize50 = await adminTablePaginationState(page, 'user');
+  return { before, page2, pageSize50, sizeDropdown };
 }
 
 async function runAdminUserBulkBanConfirmInteraction(page) {
@@ -5912,6 +6978,26 @@ async function adminDashboardShortcutState(page) {
     orderFetchQuery: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminOrderFetchQuery),
     orderFilter,
     shortcutTexts: await visibleTexts(page, '.js-classic-nav .font-w600', 8),
+  };
+}
+
+async function adminTablePaginationState(page, queryNamespace) {
+  const query =
+    queryNamespace === 'user'
+      ? page.__visualParityLastAdminUserFetchQuery
+      : page.__visualParityLastAdminOrderFetchQuery;
+  return {
+    activePage: await visibleTexts(page, '.ant-pagination-item-active', 2),
+    nextClasses: await visibleClassNames(page, '.ant-pagination-next', 1),
+    pageItems: await visibleTexts(page, '.ant-pagination-item', 8),
+    pageSizeSelection: await visibleTexts(
+      page,
+      '.ant-pagination-options-size-changer .ant-select-selection-selected-value',
+      2,
+    ),
+    query: normalizeAdminOrderFetchQuery(query),
+    rowTexts: await visibleTexts(page, '.ant-table-tbody tr', 6),
+    sizeChangerCount: await visibleCount(page, '.ant-pagination-options-size-changer'),
   };
 }
 
@@ -6379,6 +7465,21 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`login language persistence did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
+    label === 'user-login-keyboard-tab-focus' &&
+    (result.sequence?.length !== 4 ||
+      result.sequence?.[0]?.focus?.tag !== 'a' ||
+      !String(result.sequence?.[0]?.focus?.text ?? '').includes('V2Board') ||
+      result.sequence?.[1]?.focus?.tag !== 'input' ||
+      result.sequence?.[1]?.focus?.type !== 'text' ||
+      result.sequence?.[2]?.focus?.tag !== 'input' ||
+      result.sequence?.[2]?.focus?.type !== 'password' ||
+      result.sequence?.[3]?.focus?.tag !== 'input' ||
+      result.sequence?.[3]?.focus?.type !== 'text' ||
+      result.sequence?.[3]?.focus?.placeholder !== result.sequence?.[1]?.focus?.placeholder)
+  ) {
+    throw new Error(`login keyboard focus order did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
     label === 'user-dashboard-header-language-dropdown' &&
     (result.dropdownCount !== 1 ||
       result.placement !== 'bottomCenter' ||
@@ -6806,6 +7907,63 @@ function assertUsefulInteraction(label, result) {
     throw new Error(`order network checkout failure did not preserve legacy state: ${JSON.stringify(result)}`);
   }
   if (
+    [
+      'admin-coupons-fetch-timeout',
+      'admin-giftcards-fetch-timeout',
+      'admin-knowledge-fetch-timeout',
+      'admin-notices-fetch-timeout',
+      'user-orders-fetch-api-500',
+      'user-node-fetch-api-500',
+      'admin-orders-fetch-api-500',
+      'admin-orders-fetch-timeout',
+      'admin-payments-fetch-timeout',
+      'admin-plans-fetch-timeout',
+      'admin-server-manage-fetch-timeout',
+      'admin-tickets-fetch-timeout',
+      'admin-users-fetch-api-500',
+      'admin-users-fetch-timeout',
+      'user-knowledge-fetch-timeout',
+      'user-node-fetch-timeout',
+      'user-orders-fetch-timeout',
+      'user-plans-fetch-timeout',
+      'user-tickets-fetch-timeout',
+      'user-traffic-fetch-timeout',
+    ].includes(label)
+  ) {
+    const expectedCountKey = {
+      'admin-coupons-fetch-timeout': 'adminCouponFetch',
+      'admin-giftcards-fetch-timeout': 'adminGiftcardFetch',
+      'admin-knowledge-fetch-timeout': 'adminKnowledgeFetch',
+      'admin-notices-fetch-timeout': 'adminNoticeFetch',
+      'admin-orders-fetch-api-500': 'adminOrderFetch',
+      'admin-orders-fetch-timeout': 'adminOrderFetch',
+      'admin-payments-fetch-timeout': 'adminPaymentFetch',
+      'admin-plans-fetch-timeout': 'adminPlanFetch',
+      'admin-server-manage-fetch-timeout': 'adminServerNodeFetch',
+      'admin-tickets-fetch-timeout': 'adminTicketFetch',
+      'admin-users-fetch-api-500': 'adminUserFetch',
+      'admin-users-fetch-timeout': 'adminUserFetch',
+      'user-knowledge-fetch-timeout': 'userKnowledgeFetch',
+      'user-node-fetch-api-500': 'userServerFetch',
+      'user-node-fetch-timeout': 'userServerFetch',
+      'user-orders-fetch-api-500': 'userOrderFetch',
+      'user-orders-fetch-timeout': 'userOrderFetch',
+      'user-plans-fetch-timeout': 'userPlanFetch',
+      'user-tickets-fetch-timeout': 'userTicketFetch',
+      'user-traffic-fetch-timeout': 'userTrafficFetch',
+    }[label];
+    const visibleFallbackCount =
+      (result.alertTexts?.length ?? 0) +
+      (result.emptyTexts?.length ?? 0) +
+      (result.listItemTexts?.length ?? 0) +
+      (result.spinnerCount ?? 0) +
+      (result.tableRows?.length ?? 0) +
+      (result.tables?.length ?? 0);
+    if (!result.requestSeen?.[expectedCountKey] || visibleFallbackCount < 1) {
+      throw new Error(`fetch API 500 state was not observable: ${JSON.stringify(result)}`);
+    }
+  }
+  if (
     label === 'user-order-stripe-disabled-checkout' &&
     (result.before?.activeIndex !== 0 ||
       result.selected?.activeIndex !== 1 ||
@@ -6837,6 +7995,25 @@ function assertUsefulInteraction(label, result) {
   ) {
     throw new Error(
       `order Stripe token checkout did not produce observable state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'user-order-stripe-checkout-failure' &&
+    (result.before?.activeIndex !== 0 ||
+      result.selected?.activeIndex !== 1 ||
+      result.selected?.stripePublicKeyCount < 1 ||
+      result.selected?.submitButton?.disabled !== false ||
+      result.checkoutRequests?.length !== 1 ||
+      result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
+      Number(result.checkoutRequests?.[0]?.method) !== 2 ||
+      result.checkoutRequests?.[0]?.token !== 'tok_visual_parity_failure' ||
+      result.after?.modalCount !== 0 ||
+      result.after?.qrSvgCount + result.after?.qrCanvasCount !== 0 ||
+      result.after?.submitButton?.disabled !== false ||
+      !result.after?.hash?.includes('/order/VISUAL2026110001'))
+  ) {
+    throw new Error(
+      `order Stripe checkout failure did not preserve legacy state: ${JSON.stringify(result)}`,
     );
   }
   if (
@@ -7145,6 +8322,92 @@ function assertUsefulInteraction(label, result) {
   ) {
     throw new Error(`admin plan create drawer did not produce observable state: ${JSON.stringify(result)}`);
   }
+  const adminMutationFailureExpectations = {
+    'admin-coupon-generate-failure': {
+      fetchDeltaKey: 'couponFetchDelta',
+      inputText: 'Parity Failed Coupon',
+      openKey: 'modalCount',
+      requestKey: 'generateRequests',
+      requestMatches: (request) =>
+        request?.name === 'Parity Failed Coupon' && request?.code === 'FAIL2026',
+    },
+    'admin-giftcard-generate-failure': {
+      fetchDeltaKey: 'giftcardFetchDelta',
+      inputText: 'Parity Failed Giftcard',
+      openKey: 'modalCount',
+      requestKey: 'generateRequests',
+      requestMatches: (request) =>
+        request?.name === 'Parity Failed Giftcard' && request?.code === 'FAIL-GIFT-2026',
+    },
+    'admin-knowledge-save-failure': {
+      fetchDeltaKey: 'knowledgeFetchDelta',
+      inputText: 'Parity Failed Knowledge',
+      openKey: 'drawerCount',
+      requestKey: 'saveRequests',
+      requestMatches: (request) =>
+        request?.title === 'Parity Failed Knowledge' &&
+        request?.category === 'Parity' &&
+        request?.language === 'en-US',
+    },
+    'admin-notice-save-failure': {
+      fetchDeltaKey: 'noticeFetchDelta',
+      inputText: 'Parity Failed Notice',
+      openKey: 'modalCount',
+      requestKey: 'saveRequests',
+      requestMatches: (request) => request?.title === 'Parity Failed Notice',
+    },
+    'admin-payment-save-failure': {
+      fetchDeltaKey: 'paymentFetchDelta',
+      inputText: 'Parity Failed Pay',
+      openKey: 'modalCount',
+      requestKey: 'saveRequests',
+      requestMatches: (request) =>
+        request?.name === 'Parity Failed Pay' && request?.payment === 'AlipayF2F',
+    },
+    'admin-plan-save-failure': {
+      fetchDeltaKey: 'planFetchDelta',
+      inputText: 'Parity Failed Plan',
+      openKey: 'drawerCount',
+      requestKey: 'saveRequests',
+      requestMatches: (request) =>
+        request?.name === 'Parity Failed Plan' &&
+        request?.content === '<p>Plan failure body</p>' &&
+        String(request?.month_price) === '1234',
+    },
+    'admin-server-group-save-failure': {
+      fetchDeltaKey: 'groupFetchDelta',
+      inputText: 'Parity Failed Group',
+      openKey: 'modalCount',
+      requestKey: 'saveRequests',
+      requestMatches: (request) => request?.name === 'Parity Failed Group',
+    },
+    'admin-server-node-save-failure': {
+      fetchDeltaKey: 'nodeFetchDelta',
+      inputText: 'Parity Failed VLess',
+      openKey: 'drawerCount',
+      requestKey: 'saveRequests',
+      requestMatches: (request) =>
+        request?.__endpoint === '/server/vless/save' &&
+        request?.name === 'Parity Failed VLess' &&
+        request?.host === 'failed-vless.example.test',
+    },
+  };
+  const mutationFailure = adminMutationFailureExpectations[label];
+  if (mutationFailure) {
+    const after = result.after ?? {};
+    const requests = result[mutationFailure.requestKey] ?? [];
+    if (
+      after[mutationFailure.openKey] !== 1 ||
+      result[mutationFailure.fetchDeltaKey] !== 0 ||
+      requests.length !== 1 ||
+      !mutationFailure.requestMatches(requests[0]) ||
+      !jsonIncludes(after.inputValues, mutationFailure.inputText)
+    ) {
+      throw new Error(
+        `admin mutation failure did not preserve legacy state: ${JSON.stringify(result)}`,
+      );
+    }
+  }
   if (
     label === 'admin-plan-create-group-select-dropdown' &&
     !legacySelectDropdownHasOpened(result, ['Default'])
@@ -7174,6 +8437,16 @@ function assertUsefulInteraction(label, result) {
       result.closed?.drawerCount !== 0)
   ) {
     throw new Error(`admin plan reset matrix did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-plan-drawer-keyboard-close' &&
+    (result.before?.drawerCount !== 0 ||
+      result.opened?.drawerCount !== 1 ||
+      !JSON.stringify(result.opened?.titles).includes('新建订阅') ||
+      result.focused?.tag !== 'div' ||
+      result.closed?.drawerCount !== 0)
+  ) {
+    throw new Error(`admin plan drawer keyboard close did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'admin-plan-edit-drawer' &&
@@ -7319,6 +8592,18 @@ function assertUsefulInteraction(label, result) {
     );
   }
   if (
+    label === 'admin-payment-modal-keyboard-close' &&
+    (result.before?.modalCount !== 0 ||
+      result.opened?.modalCount !== 1 ||
+      !JSON.stringify(result.opened?.titles).includes('添加支付方式') ||
+      result.focused?.tag !== 'div' ||
+      result.closed?.modalCount !== 0)
+  ) {
+    throw new Error(
+      `admin payment modal keyboard close did not match legacy state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
     label === 'admin-server-create-node-drawer' &&
     (result.before?.drawerCount !== 0 ||
       result.menuOpened?.dropdownCount !== 1 ||
@@ -7424,6 +8709,35 @@ function assertUsefulInteraction(label, result) {
   ) {
     throw new Error(
       `admin server v2node protocol matrix did not produce observable state: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    label === 'admin-server-v2node-security-transport-matrix' &&
+    (!jsonIncludes(result.menuOpened?.dropdownItems, 'V2node') ||
+      !jsonIncludes(result.opened?.labels, '节点协议') ||
+      !jsonIncludes(result.vmessNoneXhttp?.selectedValues, 'VMess') ||
+      !jsonIncludes(result.vmessNoneXhttp?.selectedValues, '无') ||
+      !jsonIncludes(result.vmessNoneXhttp?.selectedValues, 'XHTTP') ||
+      !jsonIncludes(result.vmessTlsGrpc?.selectedValues, 'VMess') ||
+      !jsonIncludes(result.vmessTlsGrpc?.selectedValues, 'TLS') ||
+      !jsonIncludes(result.vmessTlsGrpc?.selectedValues, 'gRPC') ||
+      !jsonIncludes(result.vlessTlsHttpUpgrade?.selectedValues, 'VLess') ||
+      !jsonIncludes(result.vlessTlsHttpUpgrade?.selectedValues, 'TLS') ||
+      !jsonIncludes(result.vlessTlsHttpUpgrade?.selectedValues, 'HTTPUpgrade') ||
+      !jsonIncludes(result.vlessTlsHttpUpgrade?.selectedValues, 'MLKEM768X25519PLUS') ||
+      !jsonIncludes(result.vlessRealityWebSocket?.selectedValues, 'VLess') ||
+      !jsonIncludes(result.vlessRealityWebSocket?.selectedValues, 'Reality') ||
+      !jsonIncludes(result.vlessRealityWebSocket?.selectedValues, 'WebSocket') ||
+      !jsonIncludes(result.trojanTlsTcp?.selectedValues, 'Trojan') ||
+      !jsonIncludes(result.trojanTlsTcp?.selectedValues, 'TLS') ||
+      !jsonIncludes(result.trojanTlsTcp?.selectedValues, 'TCP') ||
+      !jsonIncludes(result.trojanTlsGrpc?.selectedValues, 'Trojan') ||
+      !jsonIncludes(result.trojanTlsGrpc?.selectedValues, 'TLS') ||
+      !jsonIncludes(result.trojanTlsGrpc?.selectedValues, 'gRPC') ||
+      result.closed?.drawerCount !== 0)
+  ) {
+    throw new Error(
+      `admin server v2node security transport matrix did not produce observable state: ${JSON.stringify(result)}`,
     );
   }
   if (
@@ -7929,6 +9243,32 @@ function assertUsefulInteraction(label, result) {
   ) {
     throw new Error(`admin users filter expiry picker did not match legacy state: ${JSON.stringify(result)}`);
   }
+  if (label === 'admin-users-pagination-matrix') {
+    const sizeChangerVisible = result.before?.sizeChangerCount === 1;
+    const sizeChangerMismatch = sizeChangerVisible
+      ? !jsonIncludes(result.before?.pageSizeSelection, '10') ||
+        !jsonIncludes(result.sizeDropdown?.dropdownItems, '50 条/页') ||
+        !jsonIncludes(result.pageSize50?.activePage, '1') ||
+        String(result.pageSize50?.query?.current) !== '1' ||
+        String(result.pageSize50?.query?.pageSize) !== '50' ||
+        !jsonIncludes(result.pageSize50?.pageSizeSelection, '50')
+      : result.before?.sizeChangerCount !== 0 ||
+        result.page2?.sizeChangerCount !== 0 ||
+        result.sizeDropdown?.skipped !== 'not-visible' ||
+        result.pageSize50 !== null;
+    if (
+      !jsonIncludes(result.before?.rowTexts, 'very.long.user.identity.1') ||
+      !jsonIncludes(result.before?.pageItems, '2') ||
+      !jsonIncludes(result.page2?.activePage, '2') ||
+      String(result.page2?.query?.current) !== '2' ||
+      String(result.page2?.query?.pageSize) !== '10' ||
+      sizeChangerMismatch
+    ) {
+      throw new Error(
+        `admin users pagination matrix did not match legacy state: ${JSON.stringify(result)}`,
+      );
+    }
+  }
   if (
     (label === 'admin-user-bulk-ban-confirm' || label === 'admin-user-bulk-delete-confirm') &&
     (!JSON.stringify(result.before?.tableRows).includes('visual-user@example.com') ||
@@ -8164,6 +9504,24 @@ async function visibleTexts(page, selector, limit = 10) {
         .filter(isVisible)
         .slice(0, maxItems)
         .map((element) => (element.textContent ?? '').trim().replace(/\s+/g, ' '))
+        .filter(Boolean);
+    },
+    { limit, selector },
+  );
+}
+
+async function visibleClassNames(page, selector, limit = 10) {
+  return page.evaluate(
+    ({ limit: maxItems, selector: targetSelector }) => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+      };
+      return Array.from(document.querySelectorAll(targetSelector))
+        .filter(isVisible)
+        .slice(0, maxItems)
+        .map((element) => (element.className ?? '').toString().trim().replace(/\s+/g, ' '))
         .filter(Boolean);
     },
     { limit, selector },
@@ -9542,6 +10900,83 @@ async function activeTabState(page) {
   });
 }
 
+async function keyboardFocusState(page) {
+  return page.evaluate(() => {
+    const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
+    const normalizeClassName = (value) =>
+      String(value)
+        .split(/\s+/)
+        .filter(Boolean)
+        .sort()
+        .join(' ');
+    const element = document.activeElement;
+    const label =
+      element instanceof HTMLElement
+        ? element.closest('.form-group')?.querySelector('label')?.textContent
+        : '';
+
+    return {
+      ariaLabel: element?.getAttribute?.('aria-label') ?? '',
+      className: normalizeClassName(element?.className ?? ''),
+      id: element?.id ?? '',
+      label: normalize(label),
+      name: element?.getAttribute?.('name') ?? '',
+      placeholder: element?.getAttribute?.('placeholder') ?? '',
+      tag: element?.tagName?.toLowerCase() ?? '',
+      text: normalize(element?.textContent).slice(0, 80),
+      type: element?.getAttribute?.('type') ?? '',
+    };
+  });
+}
+
+async function fetchFailureState(page) {
+  return {
+    alertTexts: await visibleTexts(page, '.alert, .ant-alert', 6),
+    blockLoadingCount: await visibleCount(page, '.block-mode-loading'),
+    emptyTexts: await visibleTexts(page, '.ant-empty, .ant-table-placeholder', 6),
+    hash: await page.evaluate(() => window.location.hash),
+    listItemTexts: await visibleTexts(page, '.am-list-item', 6),
+    requestSeen: {
+      adminCouponFetch: (page.__visualParityAdminCouponFetchCount ?? 0) > 0,
+      adminGiftcardFetch: (page.__visualParityAdminGiftcardFetchCount ?? 0) > 0,
+      adminKnowledgeFetch: (page.__visualParityAdminKnowledgeFetchCount ?? 0) > 0,
+      adminNoticeFetch: (page.__visualParityAdminNoticeFetchCount ?? 0) > 0,
+      adminOrderFetch: (page.__visualParityAdminOrderFetchCount ?? 0) > 0,
+      adminPaymentFetch: (page.__visualParityAdminPaymentFetchCount ?? 0) > 0,
+      adminPlanFetch: (page.__visualParityAdminPlanFetchCount ?? 0) > 0,
+      adminServerNodeFetch: (page.__visualParityAdminServerNodeFetchCount ?? 0) > 0,
+      adminTicketFetch: (page.__visualParityAdminTicketFetchCount ?? 0) > 0,
+      adminUserFetch: (page.__visualParityAdminUserFetchCount ?? 0) > 0,
+      userKnowledgeFetch: (page.__visualParityUserKnowledgeFetchCount ?? 0) > 0,
+      userOrderFetch: (page.__visualParityUserOrderFetchCount ?? 0) > 0,
+      userPlanFetch: (page.__visualParityUserPlanFetchCount ?? 0) > 0,
+      userServerFetch: (page.__visualParityUserServerFetchCount ?? 0) > 0,
+      userTicketFetch: (page.__visualParityUserTicketFetchCount ?? 0) > 0,
+      userTrafficFetch: (page.__visualParityUserTrafficFetchCount ?? 0) > 0,
+    },
+    spinnerCount: await visibleCount(page, '.spinner-grow, .ant-spin-spinning'),
+    tablePlaceholderTexts: await visibleTexts(page, '.ant-table-placeholder', 4),
+    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
+    tables: await page.evaluate(() => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+      };
+      const normalizeClassName = (value) =>
+        String(value)
+          .split(/\s+/)
+          .filter(Boolean)
+          .sort()
+          .join(' ');
+      return Array.from(document.querySelectorAll('.ant-table'))
+        .filter(isVisible)
+        .slice(0, 4)
+        .map((element) => normalizeClassName(element.className));
+    }),
+  };
+}
+
 async function firstElementState(page, selector) {
   return page.evaluate((targetSelector) => {
     const isVisible = (element) => {
@@ -9596,6 +11031,29 @@ async function visibleInputValues(page, selector) {
 
 async function clickFirstVisible(page, selector) {
   await clickVisibleAt(page, selector, 0);
+}
+
+async function focusFirstVisible(page, selector) {
+  await page.evaluate((targetSelector) => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    const element = Array.from(document.querySelectorAll(targetSelector)).find(isVisible);
+    if (!(element instanceof HTMLElement)) {
+      throw new Error(`No visible focus target ${targetSelector}`);
+    }
+    if (!element.hasAttribute('tabindex')) {
+      element.setAttribute('tabindex', '-1');
+    }
+    element.focus();
+  }, selector);
 }
 
 async function clickFirstVisibleText(page, selector, texts) {
@@ -10040,7 +11498,7 @@ async function capturePage(page, url, scenario, target) {
       diagnostics.push(`response ${response.status()} ${response.url()}`);
     }
   });
-  await installApiFixtures(page, scenario);
+  await installApiFixtures(page, scenario, target);
   if (scenario.warmupPath) {
     await gotoStable(page, new URL(scenario.warmupPath, url).toString());
     if (target === 'oracle' && scenario.seedLegacyAdminStore) {
@@ -10433,6 +11891,7 @@ async function waitForReadySelector(page, selector, diagnostics = [], timeout = 
 
 async function installApiFixtures(page, scenario, target, interaction = {}) {
   const isAdminScenario = scenario.label.startsWith('admin-');
+  const effectiveLocale = scenario.locale ?? (isAdminScenario ? '' : 'zh-CN');
   let seededAdminTicketDetailStore = false;
   let resolveAdminGroupsReady;
   const adminGroupsReady = new Promise((resolve) => {
@@ -10471,7 +11930,7 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     {
       authenticated: Boolean(scenario.authenticated),
       darkMode: Boolean(scenario.darkMode),
-      locale: scenario.locale ?? '',
+      locale: effectiveLocale,
       preserveRuntimeDarkMode: Boolean(interaction.preserveRuntimeDarkMode),
     },
   );
@@ -10575,6 +12034,22 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
       page.__visualParityUserOrderFetchCount =
         (page.__visualParityUserOrderFetchCount ?? 0) + 1;
     }
+    if (pathname === '/api/v1/user/plan/fetch' && !requestUrl.searchParams.has('id')) {
+      page.__visualParityUserPlanFetchCount =
+        (page.__visualParityUserPlanFetchCount ?? 0) + 1;
+    }
+    if (pathname === '/api/v1/user/server/fetch') {
+      page.__visualParityUserServerFetchCount =
+        (page.__visualParityUserServerFetchCount ?? 0) + 1;
+    }
+    if (pathname === '/api/v1/user/stat/getTrafficLog') {
+      page.__visualParityUserTrafficFetchCount =
+        (page.__visualParityUserTrafficFetchCount ?? 0) + 1;
+    }
+    if (pathname === '/api/v1/user/knowledge/fetch' && !requestUrl.searchParams.has('id')) {
+      page.__visualParityUserKnowledgeFetchCount =
+        (page.__visualParityUserKnowledgeFetchCount ?? 0) + 1;
+    }
     if (pathname === '/api/v1/user/order/checkout') {
       page.__visualParityLastUserOrderCheckout = requestData;
       page.__visualParityUserOrderCheckoutCount =
@@ -10651,6 +12126,8 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
       page.__visualParityLastAdminOrderUpdate = requestData;
     }
     if (adminEndpoint === '/order/fetch') {
+      page.__visualParityAdminOrderFetchCount =
+        (page.__visualParityAdminOrderFetchCount ?? 0) + 1;
       page.__visualParityLastAdminOrderFetchQuery = Object.fromEntries(requestUrl.searchParams.entries());
     }
     if (adminEndpoint === '/plan/fetch') {
@@ -10780,6 +12257,8 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
       );
     }
     if (adminEndpoint === '/user/fetch') {
+      page.__visualParityAdminUserFetchCount =
+        (page.__visualParityAdminUserFetchCount ?? 0) + 1;
       page.__visualParityLastAdminUserFetchQuery = Object.fromEntries(
         requestUrl.searchParams.entries(),
       );
@@ -10805,6 +12284,27 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     }
 
     if (pathname === '/api/v1/user/redeemgiftcard' && interaction.redeemGiftcardTimeout) {
+      await route.abort('timedout');
+      return;
+    }
+    const shouldTimeout =
+      (scenario.userPlansTimeout && pathname === '/api/v1/user/plan/fetch') ||
+      (scenario.userOrdersTimeout && pathname === '/api/v1/user/order/fetch') ||
+      (scenario.userServersTimeout && pathname === '/api/v1/user/server/fetch') ||
+      (scenario.userTrafficTimeout && pathname === '/api/v1/user/stat/getTrafficLog') ||
+      (scenario.userTicketsTimeout && pathname === '/api/v1/user/ticket/fetch') ||
+      (scenario.userKnowledgeTimeout && pathname === '/api/v1/user/knowledge/fetch') ||
+      (scenario.adminPlansTimeout && adminEndpoint === '/plan/fetch') ||
+      (scenario.adminOrdersTimeout && adminEndpoint === '/order/fetch') ||
+      (scenario.adminUsersTimeout && adminEndpoint === '/user/fetch') ||
+      (scenario.adminTicketsTimeout && adminEndpoint === '/ticket/fetch') ||
+      (scenario.adminServerManageTimeout && adminEndpoint === '/server/manage/getNodes') ||
+      (scenario.adminPaymentsTimeout && adminEndpoint === '/payment/fetch') ||
+      (scenario.adminCouponsTimeout && adminEndpoint === '/coupon/fetch') ||
+      (scenario.adminGiftcardsTimeout && adminEndpoint === '/giftcard/fetch') ||
+      (scenario.adminNoticesTimeout && adminEndpoint === '/notice/fetch') ||
+      (scenario.adminKnowledgeTimeout && adminEndpoint === '/knowledge/fetch');
+    if (shouldTimeout) {
       await route.abort('timedout');
       return;
     }
@@ -10916,7 +12416,16 @@ function apiFixtureResponse(
   }
 
   if (adminEndpoint) {
-    if (/^\/server\/[^/]+\/save$/.test(adminEndpoint)) return body(true);
+    if (scenario.adminOrdersHttpError && adminEndpoint === '/order/fetch') {
+      return httpError('Server Error', 500);
+    }
+    if (scenario.adminUsersHttpError && adminEndpoint === '/user/fetch') {
+      return httpError('Server Error', 500);
+    }
+    if (/^\/server\/(shadowsocks|vmess|trojan|vless|hysteria|tuic|anytls|v2node)\/save$/.test(adminEndpoint)) {
+      if (interaction?.adminServerNodeSaveError) return error('节点保存失败');
+      return body(true);
+    }
 
     switch (adminEndpoint) {
       case '/config/fetch':
@@ -10932,10 +12441,12 @@ function apiFixtureResponse(
       case '/coupon/fetch':
         return body(adminCouponFixtures, { total: adminCouponFixtures.length });
       case '/coupon/generate':
+        if (interaction?.adminCouponGenerateError) return error('优惠券生成失败');
         return body(true);
       case '/giftcard/fetch':
         return body(adminGiftcardFixtures, { total: adminGiftcardFixtures.length });
       case '/giftcard/generate':
+        if (interaction?.adminGiftcardGenerateError) return error('礼品卡生成失败');
         return body(true);
       case '/knowledge/fetch':
         return body(
@@ -10948,10 +12459,12 @@ function apiFixtureResponse(
       case '/knowledge/getCategory':
         return body(Array.from(new Set(adminKnowledgeFixtures.map((knowledge) => knowledge.category))));
       case '/knowledge/save':
+        if (interaction?.adminKnowledgeSaveError) return error('知识保存失败');
         return body(true);
       case '/notice/fetch':
         return body(adminNoticeFixtures, { total: adminNoticeFixtures.length });
       case '/notice/save':
+        if (interaction?.adminNoticeSaveError) return error('公告保存失败');
         return body(true);
       case '/stat/getOverride':
         return body(adminStatFixture);
@@ -10966,10 +12479,12 @@ function apiFixtureResponse(
       case '/plan/fetch':
         return body(adminPlanFixturesFor(scenario));
       case '/plan/save':
+        if (interaction?.adminPlanSaveError) return error('订阅保存失败');
         return body(true);
       case '/payment/fetch':
         return body(adminPaymentFixtures);
       case '/payment/save':
+        if (interaction?.adminPaymentSaveError) return error('支付方式保存失败');
         return body(true);
       case '/payment/getPaymentMethods':
         return body(adminPaymentMethodsFixture);
@@ -10983,6 +12498,9 @@ function apiFixtureResponse(
       case '/server/group/fetch':
         return body(adminServerGroupFixtures);
       case '/server/group/save':
+        if (interaction?.adminServerGroupSaveError) return error('权限组保存失败');
+        return body(true);
+      case '/server/route/save':
         return body(true);
       case '/server/manage/getNodes':
         return body(adminServerNodeFixturesFor(scenario));
@@ -11099,6 +12617,7 @@ function apiFixtureResponse(
     case '/api/v1/user/newPeriod':
       return body(true);
     case '/api/v1/user/order/fetch':
+      if (scenario.userOrdersHttpError) return httpError('Server Error', 500);
       return body(userOrderFixturesFor(scenario));
     case '/api/v1/user/order/detail':
       return body(
@@ -11138,6 +12657,7 @@ function apiFixtureResponse(
       if (interaction?.couponError) return error('优惠券无效');
       return body(couponCheckFixture);
     case '/api/v1/user/server/fetch':
+      if (scenario.userServersHttpError) return httpError('Server Error', 500);
       return body(userServerFixturesFor(scenario));
     case '/api/v1/user/stat/getTrafficLog':
       return body(trafficFixtures);
@@ -11248,6 +12768,8 @@ function adminUserFixturesFor(scenario = {}) {
 function userSubscribeFixtureFor(scenario = {}, interaction = {}) {
   if (interaction?.newPeriodSubscribe) return newPeriodSubscribeFixture;
   if (scenario.noSubscription) return noSubscriptionFixture;
+  if (scenario.expiredTrafficUsedUp) return expiredTrafficUsedUpSubscribeFixture;
+  if (scenario.deviceLimitExpired) return deviceLimitExpiredSubscribeFixture;
   if (scenario.expiredSubscription) return expiredSubscriptionFixture;
   if (scenario.trafficUsedUp) return trafficUsedUpSubscribeFixture;
   if (scenario.deviceLimitReached) return deviceLimitReachedSubscribeFixture;
@@ -11467,6 +12989,16 @@ async function seedLegacyAdminStore(page, scenario = {}) {
         serverGroups,
         serverNodes,
         serverRoutes,
+        skipCoupons,
+        skipGiftcards,
+        skipKnowledge,
+        skipNotices,
+        skipOrders,
+        skipPayments,
+        skipPlans,
+        skipServerManage,
+        skipTickets,
+        skipUsers,
         stat,
         themes,
         themeTemplates,
@@ -11497,14 +13029,16 @@ async function seedLegacyAdminStore(page, scenario = {}) {
           };
           store.__visualParityStateGuard = true;
         }
-        store.dispatch({
-          type: 'user/setState',
-          payload: {
-            pagination: { current: 1, pageSize: 10, total: users.length },
-            userInfo,
-            users,
-          },
-        });
+        if (!skipUsers) {
+          store.dispatch({
+            type: 'user/setState',
+            payload: {
+              pagination: { current: 1, pageSize: 10, total: users.length },
+              userInfo,
+              users,
+            },
+          });
+        }
         store.dispatch({ type: 'stat/save', payload: stat });
         store.dispatch({
           type: 'config/setState',
@@ -11514,57 +13048,75 @@ async function seedLegacyAdminStore(page, scenario = {}) {
             themeTemplate: themeTemplates,
           },
         });
-        store.dispatch({
-          type: 'coupon/setState',
-          payload: {
-            coupons,
-            pagination: { current: 1, pageSize: 10, total: coupons.length },
-          },
-        });
-        store.dispatch({
-          type: 'giftcard/setState',
-          payload: {
-            giftcards,
-            pagination: { current: 1, pageSize: 10, total: giftcards.length },
-          },
-        });
-        store.dispatch({
-          type: 'order/setState',
-          payload: {
-            orders,
-            pagination: { current: 0, pageSize: 10, total: orders.length },
-          },
-        });
-        store.dispatch({ type: 'payment/setState', payload: { payments } });
-        store.dispatch({ type: 'plan/setState', payload: { plans } });
+        if (!skipCoupons) {
+          store.dispatch({
+            type: 'coupon/setState',
+            payload: {
+              coupons,
+              pagination: { current: 1, pageSize: 10, total: coupons.length },
+            },
+          });
+        }
+        if (!skipGiftcards) {
+          store.dispatch({
+            type: 'giftcard/setState',
+            payload: {
+              giftcards,
+              pagination: { current: 1, pageSize: 10, total: giftcards.length },
+            },
+          });
+        }
+        if (!skipOrders) {
+          store.dispatch({
+            type: 'order/setState',
+            payload: {
+              orders,
+              pagination: { current: 0, pageSize: 10, total: orders.length },
+            },
+          });
+        }
+        if (!skipPayments) {
+          store.dispatch({ type: 'payment/setState', payload: { payments } });
+        }
+        if (!skipPlans) {
+          store.dispatch({ type: 'plan/setState', payload: { plans } });
+        }
         store.dispatch({ type: 'theme/setState', payload: themes });
         store.dispatch({
           type: 'system/save',
           payload: { queueStats, queueWorkload },
         });
-        store.dispatch({
-          type: 'knowledge/setState',
-          payload: { categorys: knowledgeCategories, knowledges },
-        });
-        store.dispatch({ type: 'notice/setState', payload: { notices } });
+        if (!skipKnowledge) {
+          store.dispatch({
+            type: 'knowledge/setState',
+            payload: { categorys: knowledgeCategories, knowledges },
+          });
+        }
+        if (!skipNotices) {
+          store.dispatch({ type: 'notice/setState', payload: { notices } });
+        }
         store.dispatch({ type: 'serverGroup/setState', payload: { groups: serverGroups } });
-        store.dispatch({
-          type: 'serverManage/setState',
-          payload: { fetchLoading: false, servers: serverNodes, sortMode: false },
-        });
+        if (!skipServerManage) {
+          store.dispatch({
+            type: 'serverManage/setState',
+            payload: { fetchLoading: false, servers: serverNodes, sortMode: false },
+          });
+        }
         store.dispatch({
           type: 'serverRoute/setState',
           payload: { fetchLoading: false, routes: serverRoutes },
         });
-        store.dispatch({
-          type: 'ticket/setState',
-          payload: {
-            filter: { status: 0 },
-            pagination: { current: 1, pageSize: 10, total: tickets.length },
-            ticket: ticketDetail,
-            tickets,
-          },
-        });
+        if (!skipTickets) {
+          store.dispatch({
+            type: 'ticket/setState',
+            payload: {
+              filter: { status: 0 },
+              pagination: { current: 1, pageSize: 10, total: tickets.length },
+              ticket: ticketDetail,
+              tickets,
+            },
+          });
+        }
       },
       {
         config: adminConfigFixture,
@@ -11582,8 +13134,18 @@ async function seedLegacyAdminStore(page, scenario = {}) {
         queueStats: adminQueueStatsFixture,
         queueWorkload: adminQueueWorkloadFixtures,
         serverGroups: adminServerGroupFixtures,
-        serverNodes: adminServerNodeFixturesFor(scenario),
+        serverNodes: scenario.adminServerManageTimeout ? [] : adminServerNodeFixturesFor(scenario),
         serverRoutes: adminServerRouteFixtures,
+        skipCoupons: Boolean(scenario.adminCouponsTimeout),
+        skipGiftcards: Boolean(scenario.adminGiftcardsTimeout),
+        skipKnowledge: Boolean(scenario.adminKnowledgeTimeout),
+        skipNotices: Boolean(scenario.adminNoticesTimeout),
+        skipOrders: Boolean(scenario.adminOrdersHttpError || scenario.adminOrdersTimeout),
+        skipPayments: Boolean(scenario.adminPaymentsTimeout),
+        skipPlans: Boolean(scenario.adminPlansTimeout),
+        skipServerManage: Boolean(scenario.adminServerManageTimeout),
+        skipTickets: Boolean(scenario.adminTicketsTimeout),
+        skipUsers: Boolean(scenario.adminUsersHttpError || scenario.adminUsersTimeout),
         stat: adminStatFixture,
         themes: adminThemeFixtures,
         themeTemplates: adminThemeTemplateFixtures,

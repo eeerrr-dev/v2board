@@ -194,7 +194,9 @@ describe('PlansPage legacy subscription management', () => {
     expect(plansSource.indexOf('setLegacySortLoading(true);')).toBeLessThan(
       plansSource.indexOf('setOrder(next);'),
     );
-    expect(plansSource).toContain('loading={plans.isFetching || legacySortLoading}');
+    expect(plansSource).toContain(
+      'loading={legacyFetchLoading(plans.isFetching, plans.error) || legacySortLoading}',
+    );
     expect(plansSource).not.toContain('loading={plans.isFetching || sort.isPending}');
     expect(plansSource).not.toContain('plans.isLoading');
     expect(plansSource).not.toContain('loading={Boolean(');

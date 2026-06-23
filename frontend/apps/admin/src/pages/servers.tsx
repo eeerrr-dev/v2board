@@ -30,6 +30,7 @@ import { legacyCopyText } from '@/lib/legacy-copy';
 import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
+import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
 import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
 import { LegacyButton } from '@/components/legacy-button';
 import { LegacyDrawer } from '@/components/legacy-drawer';
@@ -490,6 +491,7 @@ type LegacyDropdownChildProps = {
 
 interface LegacyDropdownProps {
   children: ReactElement<LegacyDropdownChildProps>;
+  closeOnOverlayClick?: boolean;
   overlay: ReactNode;
   trigger?: LegacyDropdownTrigger | LegacyDropdownTrigger[];
 }
@@ -523,7 +525,7 @@ function mergeClassName(...values: Array<string | undefined | false>) {
   return values.filter(Boolean).join(' ');
 }
 
-function LegacyDropdown({ children, overlay, trigger }: LegacyDropdownProps) {
+function LegacyDropdown({ children, closeOnOverlayClick = true, overlay, trigger }: LegacyDropdownProps) {
   const [open, setOpen] = useState(false);
   const [hasOpened, setHasOpened] = useState(false);
   const [coords, setCoords] = useState<LegacyDropdownCoords>();
@@ -617,10 +619,14 @@ function LegacyDropdown({ children, overlay, trigger }: LegacyDropdownProps) {
                 minWidth: coords.minWidth,
               }}
               onClick={() => {
-                setOpen(false);
+                if (closeOnOverlayClick) setOpen(false);
               }}
-              onClickCapture={() => setOpen(false)}
-              onMouseDownCapture={() => setOpen(false)}
+              onClickCapture={() => {
+                if (closeOnOverlayClick) setOpen(false);
+              }}
+              onMouseDownCapture={() => {
+                if (closeOnOverlayClick) setOpen(false);
+              }}
               onMouseEnter={clearCloseTimer}
               onMouseLeave={scheduleHoverClose}
             >
@@ -1499,12 +1505,13 @@ function ServerManagePage() {
   );
 
   return (
-    <LegacySpin loading={nodes.isFetching || sortingLoading}>
+    <LegacySpin loading={legacyFetchLoading(nodes.isFetching, nodes.error) || sortingLoading}>
       <LegacyServerSortPrompt when={sortMode} />
       <div className="block block-bottom undefined">
         <div className="bg-white">
           <div className="v2board-table-action" style={{ padding: 15 }}>
             <LegacyDropdown
+              closeOnOverlayClick={false}
               overlay={
                 <LegacyDropdownMenu>
                   {SERVER_TYPES.map((type) => (

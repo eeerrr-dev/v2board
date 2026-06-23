@@ -870,6 +870,17 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain("readySelector: '.block-transparent.bg-image'");
     expect(visualParitySource).toContain("readySelector: '.js-chat-input'");
     expect(visualParitySource).toContain("const browserName = process.env.VISUAL_PARITY_BROWSER ?? 'chromium';");
+    expect(visualParitySource).toContain(
+      "const exactScenarioFilter = process.env.VISUAL_PARITY_EXACT_FILTER === '1';",
+    );
+    expect(visualParitySource).toContain('scenario.label === scenarioFilter');
+    expect(visualParitySource).toContain(
+      "const effectiveLocale = scenario.locale ?? (isAdminScenario ? '' : 'zh-CN');",
+    );
+    expect(visualParitySource).toContain('locale: effectiveLocale');
+    expect(visualParitySource).toContain(
+      "result.sequence?.[3]?.focus?.placeholder !== result.sequence?.[1]?.focus?.placeholder",
+    );
     expect(visualParitySource).toContain('const browserTypes = { chromium, firefox, webkit };');
     expect(visualParitySource).toContain('function launchBrowser()');
     expect(visualParitySource).toContain('return browserType.launch(launchOptions);');

@@ -104,4 +104,9 @@ describe('admin api legacy path resolution', () => {
     );
     expect(apiSource).not.toContain('window.location.replace');
   });
+
+  it('does not show global toasts for transport timeouts', () => {
+    expect(apiSource).toContain('if (error.status >= 500) {');
+    expect(apiSource).not.toContain('error.status === 0 || error.status >= 500');
+  });
 });

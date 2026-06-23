@@ -47,6 +47,8 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
 
   const makeVisualScenarios = readMakeList(makefile, 'VISUAL_PARITY_SCENARIOS');
   const makeInteractionScenarios = readMakeList(makefile, 'INTERACTION_PARITY_SCENARIOS');
+  const makeBrowserScenarios = readMakeList(makefile, 'BROWSER_PARITY_SCENARIOS');
+  const makeBrowserViewports = readMakeList(makefile, 'BROWSER_PARITY_VIEWPORTS');
   const visualScenarioBlock = extractBlock(
     parityScript,
     'const scenarios = [',
@@ -54,6 +56,12 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
   );
   const visualScenarios = extractLabelsFromBlock(visualScenarioBlock);
   const visualScenarioPaths = extractVisualScenarioPaths(visualScenarioBlock);
+  const viewportBlock = extractBlock(
+    parityScript,
+    'const viewports = [',
+    '];\nconst darkModeStyleTargets =',
+  );
+  const visualViewports = extractLabelsFromBlock(viewportBlock);
   const interactionBlock = extractBlock(
     parityScript,
     'const interactionScenarios = [',
@@ -101,12 +109,16 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
     ...assertUnique('interaction parity script scenarios', interactionScenarios),
     ...assertUnique('Makefile VISUAL_PARITY_SCENARIOS', makeVisualScenarios),
     ...assertUnique('Makefile INTERACTION_PARITY_SCENARIOS', makeInteractionScenarios),
+    ...assertUnique('Makefile BROWSER_PARITY_SCENARIOS', makeBrowserScenarios),
+    ...assertUnique('Makefile BROWSER_PARITY_VIEWPORTS', makeBrowserViewports),
     ...assertSameOrderedList('VISUAL_PARITY_SCENARIOS', makeVisualScenarios, visualScenarios),
     ...assertSameOrderedList(
       'INTERACTION_PARITY_SCENARIOS',
       makeInteractionScenarios,
       interactionScenarios,
     ),
+    ...assertSubset('BROWSER_PARITY_SCENARIOS', makeBrowserScenarios, visualScenarios),
+    ...assertSubset('BROWSER_PARITY_VIEWPORTS', makeBrowserViewports, visualViewports),
     ...assertInteractionTargetsExist(visualScenarios, interactionTargets),
     ...assertRouteCoverage(
       'user visual parity route coverage',
@@ -144,6 +156,8 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
 
   return {
     adminRouteCount: adminRoutes.length,
+    browserScenarioCount: makeBrowserScenarios.length,
+    browserViewportCount: makeBrowserViewports.length,
     failures,
     interactionScenarioCount: interactionScenarios.length,
     userRouteCount: userRoutes.length,
@@ -152,7 +166,7 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
 }
 
 export function formatAuditSuccess(result) {
-  return `Parity config audit OK: Makefile tracks ${result.visualScenarioCount} visual scenarios, ${result.interactionScenarioCount} interaction scenarios, parity covers ${result.userRouteCount} user routes plus ${result.adminRouteCount} admin routes, and dev entry route mirrors are aligned.`;
+  return `Parity config audit OK: Makefile tracks ${result.visualScenarioCount} visual scenarios, ${result.interactionScenarioCount} interaction scenarios, ${result.browserScenarioCount} browser scenarios across ${result.browserViewportCount} viewports, parity covers ${result.userRouteCount} user routes plus ${result.adminRouteCount} admin routes, and dev entry route mirrors are aligned.`;
 }
 
 export function readMakeList(source, name) {
@@ -292,6 +306,15 @@ export function assertSameOrderedValues(name, actual, expected) {
   }
 
   return failures;
+}
+
+export function assertSubset(name, actual, expected) {
+  const expectedSet = new Set(expected);
+  const missing = actual.filter((value) => !expectedSet.has(value));
+
+  return missing.length === 0
+    ? []
+    : [`${name} has values not defined by visual-parity.mjs: ${missing.join(', ')}`];
 }
 
 export function assertInteractionTargetsExist(visualLabels, interactionTargets) {
