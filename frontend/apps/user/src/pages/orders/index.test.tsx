@@ -177,29 +177,21 @@ describe('OrdersPage bundled-theme table', () => {
     expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
   });
 
-  it('keeps the bundled localized long-table fixed row height compensation', () => {
+  it('keeps localized long-table fixed row height compensation behind the runtime policy', () => {
     expect(ordersSource).toContain(
-      "const legacyUserAgent = typeof navigator !== 'undefined' ? navigator.userAgent : ''",
+      "import { legacyOrdersBodyRowHeightOffset } from '@/lib/legacy-runtime';",
     );
     expect(ordersSource).toContain(
-      'const isFirefoxLegacyEngine = /firefox/i.test(legacyUserAgent)',
-    );
-    expect(ordersSource).toContain(
-      "/applewebkit/i.test(legacyUserAgent) && !/(chrome|chromium|crios|edg|firefox)/i.test(legacyUserAgent)",
-    );
-    expect(ordersSource).toContain("const legacyLocale = legacyGetLocale()");
-    expect(ordersSource).toContain(
-      "const isNarrowLegacyViewport = typeof window !== 'undefined' && window.innerWidth < 768",
-    );
-    expect(ordersSource).toContain(
-      "isFirefoxLegacyEngine && legacyLocale === 'ja-JP' && !isNarrowLegacyViewport",
-    );
-    expect(ordersSource).toContain(
-      "(!isFirefoxLegacyEngine && (isWebKitLegacyEngine || ['fa-IR', 'vi-VN'].includes(legacyLocale)))",
+      'const fixedBodyRowHeightOffset = legacyOrdersBodyRowHeightOffset(orders.length);',
     );
     expect(ordersSource).toContain('useFixedColumnRowHeights(orders.length, {');
     expect(ordersSource).toContain('bodyRowHeightOffset: fixedBodyRowHeightOffset');
     expect(ordersSource).toContain('bodyRowHeightOffsetMaxSourceHeight: 54');
+    expect(ordersSource).not.toContain('navigator.userAgent');
+    expect(ordersSource).not.toContain('legacyGetLocale');
+    expect(ordersSource).not.toContain('innerWidth');
+    expect(ordersSource).not.toContain('isFirefoxLegacyEngine');
+    expect(ordersSource).not.toContain('isWebKitLegacyEngine');
     expect(ordersSource).not.toContain('fixedBodyRowExtraPixel');
   });
 

@@ -11,14 +11,32 @@ function legacyLocalePostformat(value: string): string {
   return value.replace(/\d/g, (digit) => PERSIAN_DIGITS[Number(digit)] ?? digit);
 }
 
+function legacyDate(timestamp: number | string | null | undefined): Date | null {
+  const date = new Date(Number(timestamp) * 1000);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function padLegacyDatePart(value: number): string {
+  return `${value}`.padStart(2, '0');
+}
+
+export function formatUserLegacyDate(
+  timestamp: number | string | null | undefined,
+): string {
+  const date = legacyDate(timestamp);
+  if (!date) return 'Invalid date';
+  return legacyLocalePostformat(
+    `${date.getFullYear()}-${padLegacyDatePart(date.getMonth() + 1)}-${padLegacyDatePart(date.getDate())}`,
+  );
+}
+
 export function formatUserLegacyDateSlash(
   timestamp: number | string | null | undefined,
 ): string {
-  const date = new Date(Number(timestamp) * 1000);
-  if (Number.isNaN(date.getTime())) return 'Invalid date';
-  const pad = (value: number) => `${value}`.padStart(2, '0');
+  const date = legacyDate(timestamp);
+  if (!date) return 'Invalid date';
   return legacyLocalePostformat(
-    `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`,
+    `${date.getFullYear()}/${padLegacyDatePart(date.getMonth() + 1)}/${padLegacyDatePart(date.getDate())}`,
   );
 }
 

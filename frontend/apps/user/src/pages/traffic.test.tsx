@@ -157,6 +157,14 @@ describe('TrafficPage bundled-theme table', () => {
     expect(trafficSource).not.toContain('fixedBodyRowExtraPixel');
   });
 
+  it('keeps traffic dates behind the user legacy date formatter', () => {
+    expect(trafficSource).toContain(
+      "import { formatUserLegacyDateSlash } from '@/lib/legacy-date';",
+    );
+    expect(trafficSource).toContain('formatUserLegacyDateSlash(row.record_at)');
+    expect(trafficSource).not.toContain('formatDate(row.record_at).replaceAll');
+  });
+
   it('keeps the legacy charged total coercion expression', () => {
     expect(trafficSource).toContain(
       '(upload + download) * (row.server_rate as unknown as number)',

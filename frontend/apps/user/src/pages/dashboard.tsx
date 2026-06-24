@@ -24,6 +24,7 @@ import { legacyHref } from '@/lib/legacy-href';
 import { toast } from '@/lib/legacy-toast';
 import { useTransitionStatus } from '@/lib/use-transition-status';
 import { lockLegacyDrawerBodyScroll } from '@/lib/legacy-body-scroll';
+import { formatUserLegacyDate, formatUserLegacyDateSlash } from '@/lib/legacy-date';
 import clashForAndroidIcon from '../assets/images/icon/Clash For Android.png';
 import clashForWindowsIcon from '../assets/images/icon/Clash For Windows.png';
 import clashMetaForAndroidIcon from '../assets/images/icon/ClashMeta For Android.png';
@@ -388,7 +389,7 @@ export default function DashboardPage() {
           </p>
         </div>
         <p className="font-size-lg text-white mb-1">{notice.title}</p>
-        <p className="font-w600 text-white-75">{formatLegacyDate(notice.created_at)}</p>
+        <p className="font-w600 text-white-75">{formatUserLegacyDate(notice.created_at)}</p>
       </div>
     </a>
   );
@@ -604,7 +605,7 @@ export default function DashboardPage() {
                           <p className="font-size-sm text-muted">
                             <span>
                               {t('dashboard.expires_in', {
-                                date: formatLegacyDate(legacySub.expired_at).replaceAll('-', '/'),
+                                date: formatUserLegacyDateSlash(legacySub.expired_at),
                                 day: daysLeft,
                               })}
                               {legacySub.reset_day !== null
@@ -898,13 +899,6 @@ function getSubscribeTargets(url: string) {
 
 function isLegacyExpired(expiredAt: number | null | undefined) {
   return expiredAt !== null && expiredAt !== undefined && expiredAt < Date.now() / 1000;
-}
-
-function formatLegacyDate(timestamp: number | string | null | undefined) {
-  const d = new Date(Number(timestamp) * 1000);
-  if (Number.isNaN(d.getTime())) return 'Invalid date';
-  const pad = (n: number) => `${n}`.padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function legacyDaysUntil(timestamp: number | string | null | undefined) {

@@ -7,7 +7,8 @@ import { LegacyTooltip } from '@/components/legacy-tooltip';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
-import { formatBytes, formatDate } from '@v2board/config/format';
+import { formatBytes } from '@v2board/config/format';
+import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
 
 export default function TrafficPage() {
   const { t } = useTranslation();
@@ -141,7 +142,7 @@ export default function TrafficPage() {
                                 onMouseLeave={() => setHoverKey(null)}
                               >
                                 <td>
-                                  {row.record_at ? formatDate(row.record_at).replaceAll('-', '/') : '-'}
+                                  {row.record_at ? formatUserLegacyDateSlash(row.record_at) : '-'}
                                 </td>
                                 <td style={{ textAlign: 'right' }}>
                                   {row.server_rate ? formatBytes(upload) : 0}

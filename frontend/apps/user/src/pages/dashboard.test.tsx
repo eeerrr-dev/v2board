@@ -292,6 +292,18 @@ describe('DashboardPage bundled-theme markup', () => {
     expect(source).not.toContain(') : hasPlan && sub?.plan ? (');
   });
 
+  it('keeps dashboard dates behind the user legacy date formatter', () => {
+    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
+
+    expect(source).toContain(
+      "import { formatUserLegacyDate, formatUserLegacyDateSlash } from '@/lib/legacy-date';",
+    );
+    expect(source).toContain('formatUserLegacyDate(notice.created_at)');
+    expect(source).toContain('formatUserLegacyDateSlash(legacySub.expired_at)');
+    expect(source).not.toContain('function formatLegacyDate');
+    expect(source).not.toContain("formatLegacyDate(legacySub.expired_at).replaceAll('-', '/')");
+  });
+
   it('renders the original loading icon when subscribe has not loaded an email', () => {
     mocks.subscribe = {};
 

@@ -4,6 +4,7 @@ import {
   formatLegacyDateTime,
 } from '@v2board/config/format';
 import {
+  formatUserLegacyDate,
   formatUserLegacyDateMinuteSlash,
   formatUserLegacyDateSlash,
   formatUserLegacyDateTime,
@@ -26,6 +27,7 @@ describe('user legacy date locale postformat', () => {
     expect(formatUserLegacyDateMinuteSlash(1_700_000_000)).toBe(
       formatLegacyDateMinuteSlash(1_700_000_000),
     );
+    expect(formatUserLegacyDate(1_700_000_000)).toBe('2023-11-14');
     expect(formatUserLegacyDateSlash(1_700_000_000)).toBe('2023/11/14');
     expect(formatUserLegacyDateTime(1_700_000_000)).toBe(
       formatLegacyDateTime(1_700_000_000),
@@ -37,6 +39,9 @@ describe('user legacy date locale postformat', () => {
 
     expect(formatUserLegacyDateMinuteSlash(1_700_000_000)).toBe(
       toPersianDigits(formatLegacyDateMinuteSlash(1_700_000_000)),
+    );
+    expect(formatUserLegacyDate(1_700_000_000)).toBe(
+      toPersianDigits('2023-11-14'),
     );
     expect(formatUserLegacyDateSlash(1_700_000_000)).toBe(
       toPersianDigits('2023/11/14'),
