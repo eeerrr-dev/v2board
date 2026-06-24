@@ -1428,7 +1428,11 @@ function ServerManagePage() {
         } satisfies HTMLAttributes<HTMLTableRowElement>);
   const actionCell = (row: admin.ServerNode) => (
     <div>
-      <LegacyDropdown trigger={LEGACY_DROPDOWN_CLICK_TRIGGER} overlay={actionMenu(row)}>
+      <LegacyDropdown
+        closeOnOverlayClick={false}
+        trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+        overlay={actionMenu(row)}
+      >
         <a ref={legacyHref()}>
           操作 <LegacyCaretDownIcon />
         </a>

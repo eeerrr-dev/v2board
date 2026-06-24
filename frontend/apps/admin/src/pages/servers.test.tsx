@@ -803,6 +803,7 @@ describe('ServersPage legacy server group route', () => {
     expect(managePageSource).toContain('<LegacyDropdownMenuItem');
     expect(managePageSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
     expect(managePageSource).toContain('overlay={actionMenu(row)}');
+    expect(managePageSource).toContain('closeOnOverlayClick={false}');
     expect(managePageSource).toContain('actionMenu={actionMenu}');
     expect(serversSource).toContain('overlay={actionMenu(node)}');
     expect(managePageSource).not.toContain('menu={actionMenu');

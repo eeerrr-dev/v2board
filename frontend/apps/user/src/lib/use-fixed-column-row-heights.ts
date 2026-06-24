@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useRef } from 'react';
 
 interface FixedColumnRowHeightOptions {
   bodyRowHeightOffset?: number;
+  bodyRowHeightOffsetMaxSourceHeight?: number;
 }
 
 function measuredHeight(element: Element | null): number | null {
@@ -35,6 +36,8 @@ export function syncFixedColumnRowHeights(
   const tableHeight = tableNode.getBoundingClientRect().height;
   if (tableHeight <= 0) return;
   const bodyRowHeightOffset = options.bodyRowHeightOffset ?? 0;
+  const bodyRowHeightOffsetMaxSourceHeight =
+    options.bodyRowHeightOffsetMaxSourceHeight ?? Number.POSITIVE_INFINITY;
 
   const fixedHeaderRows = Array.from(
     fixedTable.querySelectorAll<HTMLElement>('thead > tr'),
@@ -58,7 +61,11 @@ export function syncFixedColumnRowHeights(
     const key = row.getAttribute('data-row-key');
     const mainHeight =
       key !== null ? mainRowsByKey.get(key) ?? null : measuredHeight(mainBodyRows[index] ?? null);
-    writeHeight(row, mainHeight === null ? null : mainHeight + bodyRowHeightOffset);
+    const offset =
+      mainHeight !== null && mainHeight <= bodyRowHeightOffsetMaxSourceHeight
+        ? bodyRowHeightOffset
+        : 0;
+    writeHeight(row, mainHeight === null ? null : mainHeight + offset);
   });
 }
 
@@ -75,13 +82,18 @@ export function useFixedColumnRowHeights(
   const mainTableRef = useRef<HTMLTableElement | null>(null);
   const fixedTableRef = useRef<HTMLTableElement | null>(null);
   const bodyRowHeightOffset = options.bodyRowHeightOffset ?? 0;
+  const bodyRowHeightOffsetMaxSourceHeight =
+    options.bodyRowHeightOffsetMaxSourceHeight ?? Number.POSITIVE_INFINITY;
 
   const sync = useCallback(() => {
     const main = mainTableRef.current;
     const fixed = fixedTableRef.current;
     if (!main || !fixed) return;
-    syncFixedColumnRowHeights(main, fixed, { bodyRowHeightOffset });
-  }, [bodyRowHeightOffset]);
+    syncFixedColumnRowHeights(main, fixed, {
+      bodyRowHeightOffset,
+      bodyRowHeightOffsetMaxSourceHeight,
+    });
+  }, [bodyRowHeightOffset, bodyRowHeightOffsetMaxSourceHeight]);
 
   useLayoutEffect(() => {
     sync();

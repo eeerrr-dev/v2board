@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { ApiError, createApiClient } from './client';
+import { ApiError, createApiClient, type ApiRequestConfig } from './client';
 import {
   assignOrder,
   dumpUsersCsv,
@@ -376,14 +376,14 @@ describe('createApiClient', () => {
     await expect(fetchAdminCoupons(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(fetchAdminGiftcards(client)).resolves.toEqual({ data: [], total: undefined });
     await expect(statUser(client, { user_id: 1 })).resolves.toEqual({ data: [], total: undefined });
-    expect(
-      mock.history.get.find((request) => request.url === '/admin-path/user/fetch')
-        ?.skipLegacyGlobalError,
-    ).toBe(true);
-    expect(
-      mock.history.get.find((request) => request.url === '/admin-path/order/fetch')
-        ?.skipLegacyGlobalError,
-    ).toBe(true);
+    const userFetchRequest = mock.history.get.find(
+      (request) => request.url === '/admin-path/user/fetch',
+    ) as ApiRequestConfig | undefined;
+    const orderFetchRequest = mock.history.get.find(
+      (request) => request.url === '/admin-path/order/fetch',
+    ) as ApiRequestConfig | undefined;
+    expect(userFetchRequest?.skipLegacyGlobalError).toBe(true);
+    expect(orderFetchRequest?.skipLegacyGlobalError).toBe(true);
   });
 
   it('normalizes fetched coupon and giftcard amount values to legacy model units', async () => {

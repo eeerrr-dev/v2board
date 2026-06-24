@@ -12,11 +12,24 @@ export function legacyMessageKey(value: string): string {
   return value.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, '{$1}');
 }
 
-export function i18nextMessage(value: string): string {
+function legacyPlaceholderNames(value: string): Set<string> {
+  const names = new Set<string>();
+  for (const match of value.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}|\{\s*([A-Za-z0-9_]+)\s*\}/g)) {
+    names.add(match[1] ?? match[2]!);
+  }
+  return names;
+}
+
+export function i18nextMessage(value: string, allowedPlaceholders?: Set<string>): string {
   return value.replace(
     /\{\{\s*([A-Za-z0-9_]+)\s*\}\}|\{\s*([A-Za-z0-9_]+)\s*\}/g,
-    (match, i18nextKey: string | undefined, legacyKey: string | undefined) =>
-      i18nextKey ? `{{${i18nextKey}}}` : legacyKey === 'url' ? match : `{{${legacyKey}}}`,
+    (match, i18nextKey: string | undefined, legacyKey: string | undefined) => {
+      const key = i18nextKey ?? legacyKey!;
+      if (allowedPlaceholders && !allowedPlaceholders.has(key)) {
+        return `{${key}}`;
+      }
+      return i18nextKey ? `{{${i18nextKey}}}` : legacyKey === 'url' ? match : `{{${legacyKey}}}`;
+    },
   );
 }
 
@@ -39,11 +52,12 @@ export function translateLegacyDictionary<T extends TranslationTree>(
   sourceReverse?: Map<string, string>,
 ): T {
   if (typeof tree === 'string') {
-    if (!dict) return i18nextMessage(tree) as T;
     const legacyKey = legacyMessageKey(tree);
+    const allowedPlaceholders = legacyPlaceholderNames(legacyKey);
+    if (!dict) return i18nextMessage(tree, allowedPlaceholders) as T;
     const sourceKey = sourceReverse?.get(tree) ?? sourceReverse?.get(legacyKey);
     const translated = dict[tree] ?? dict[legacyKey] ?? (sourceKey ? dict[sourceKey] : undefined);
-    return i18nextMessage(translated === undefined ? tree : translated) as T;
+    return i18nextMessage(translated === undefined ? tree : translated, allowedPlaceholders) as T;
   }
   if (Array.isArray(tree)) {
     return tree.map((item) => translateLegacyDictionary(item, dict, sourceReverse)) as T;

@@ -62,13 +62,27 @@ LEGACY_ORACLE_REQUIRED_PATHS := \
 VISUAL_SOURCE_BASE_URL ?= http://host.docker.internal:8000
 VISUAL_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/visual-parity
 INTERACTION_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/interaction-parity
-INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-persistence user-login-keyboard-tab-focus user-dashboard-header-language-dropdown user-session-expired-redirect user-auth-401-no-redirect user-dashboard-avatar-dropdown user-dashboard-dark-mode-persistence user-dashboard-subscribe-drawer user-dashboard-subscribe-import-links user-dashboard-subscribe-import-ios-ua user-dashboard-subscribe-import-android-ua user-dashboard-subscribe-import-macos-ua user-dashboard-subscribe-import-windows-ua user-dashboard-notice-carousel user-dashboard-reset-package-confirm user-dashboard-new-period-confirm user-dashboard-alert-links user-profile-deposit-modal user-profile-reset-subscribe-confirm user-profile-telegram-bind-modal user-profile-telegram-unbind-confirm user-profile-preference-switches user-profile-redeem-giftcard user-profile-redeem-giftcard-api-500 user-profile-redeem-giftcard-timeout user-profile-change-password-success \
-	user-plans-filter-tabs user-plans-fetch-timeout user-plan-checkout-coupon user-plan-checkout-coupon-error user-order-payment-method user-order-qr-checkout user-order-qr-checkout-failure user-order-checkout-network-failure user-orders-fetch-api-500 user-orders-fetch-timeout user-order-stripe-disabled-checkout user-order-stripe-token-checkout user-order-stripe-checkout-failure user-order-redirect-checkout \
-	user-node-table-scroll user-node-fetch-api-500 user-node-fetch-timeout user-node-tooltips user-traffic-table-scroll user-traffic-fetch-timeout user-traffic-total-tooltip user-knowledge-drawer user-knowledge-extreme-content-matrix user-knowledge-fetch-timeout user-invite-generate user-invite-transfer-modal user-invite-transfer-insufficient-balance user-invite-withdraw-modal user-invite-finance-submit-matrix user-invite-tooltips user-ticket-reply-send user-ticket-error-matrix user-tickets-fetch-timeout \
-	user-ticket-create-submit user-ticket-create-validation-failure admin-ticket-reply-send admin-tickets-reply-filter admin-tickets-fetch-timeout admin-dashboard-dark-mode-persistence admin-dashboard-avatar-dropdown admin-session-expired-redirect admin-auth-401-no-redirect admin-dashboard-commission-shortcut user-order-cancel-confirm \
-	admin-plan-create-drawer admin-plan-save-failure admin-plan-create-group-select-dropdown admin-plans-fetch-timeout admin-plan-reset-method-matrix admin-plan-drawer-keyboard-close admin-plan-edit-drawer admin-plan-renew-tooltip admin-mutation-failure-matrix admin-config-tabs admin-config-save-failure-matrix admin-theme-settings-modal admin-server-create-node-drawer admin-server-vless-reality-matrix admin-server-node-save-failure admin-server-protocol-field-matrix admin-server-v2node-protocol-matrix admin-server-v2node-security-transport-matrix admin-server-manage-fetch-timeout admin-server-edit-node-drawer admin-server-route-create-modal admin-server-route-edit-modal admin-server-group-create-modal admin-server-group-save-failure admin-server-group-edit-modal admin-payment-create-modal admin-payment-save-failure admin-payment-edit-modal admin-payment-plugin-field-matrix admin-payment-modal-keyboard-close admin-payments-fetch-timeout admin-payment-notify-tooltip \
-	admin-order-detail-modal admin-order-status-tooltips admin-order-assign-modal admin-order-status-dropdown admin-order-commission-dropdown admin-orders-filter-pagination-matrix admin-orders-fetch-api-500 admin-orders-fetch-timeout \
-	admin-coupon-create-modal admin-coupon-generate-failure admin-coupon-range-picker admin-coupon-type-matrix admin-coupons-fetch-timeout admin-coupon-edit-modal admin-giftcard-create-modal admin-giftcard-generate-failure admin-giftcard-edit-modal admin-giftcards-fetch-timeout admin-notice-create-modal admin-notice-save-failure admin-notice-edit-modal admin-notices-fetch-timeout admin-knowledge-create-drawer admin-knowledge-save-failure admin-knowledge-edit-drawer admin-knowledge-fetch-timeout admin-users-filter-input admin-users-filter-field-select-dropdown admin-users-filter-expiry-picker admin-users-pagination-matrix admin-users-sort-matrix admin-users-fetch-api-500 admin-users-fetch-timeout admin-user-bulk-ban-confirm admin-user-bulk-delete-confirm admin-user-destructive-failure-matrix admin-user-export-download-matrix admin-user-create-modal admin-user-create-plan-select-dropdown admin-user-create-expiry-picker admin-user-send-mail-modal admin-user-send-mail-submit-matrix admin-user-reset-secret-confirm admin-user-delete-confirm admin-user-copy-action admin-user-edit-action admin-user-update-validation-failure admin-user-assign-action admin-user-orders-action admin-user-invite-action admin-user-traffic-action admin-users-extreme-viewport-matrix
+INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-persistence user-login-keyboard-tab-focus user-home-root-page-state user-register-form-state user-forget-form-state admin-root-page-state admin-login-form-state \
+	admin-system-queue-state user-dashboard-header-language-dropdown user-session-expired-redirect user-auth-401-no-redirect user-dashboard-avatar-dropdown user-dashboard-dark-mode-persistence user-dashboard-subscribe-drawer user-dashboard-subscribe-import-links \
+	user-dashboard-subscribe-import-ios-ua user-dashboard-subscribe-import-android-ua user-dashboard-subscribe-import-macos-ua user-dashboard-subscribe-import-windows-ua user-dashboard-notice-carousel user-dashboard-reset-package-confirm user-dashboard-new-period-confirm user-dashboard-alert-links \
+	user-profile-deposit-modal user-profile-reset-subscribe-confirm user-profile-telegram-bind-modal user-profile-telegram-unbind-confirm user-profile-preference-switches user-profile-redeem-giftcard user-profile-redeem-giftcard-api-500 user-profile-redeem-giftcard-timeout \
+	user-profile-change-password-success user-plans-filter-tabs user-plans-fetch-timeout user-plan-checkout-coupon user-plan-checkout-coupon-error user-order-payment-method user-order-qr-checkout user-order-qr-checkout-failure \
+	user-order-checkout-network-failure user-orders-fetch-api-500 user-orders-fetch-timeout user-order-stripe-disabled-checkout user-order-stripe-token-checkout user-order-stripe-checkout-failure user-order-redirect-checkout user-node-table-scroll \
+	user-node-fetch-api-500 user-node-fetch-timeout user-node-tooltips user-traffic-table-scroll user-traffic-fetch-timeout user-traffic-total-tooltip user-knowledge-drawer user-knowledge-extreme-content-matrix \
+	user-knowledge-fetch-timeout user-invite-generate user-invite-transfer-modal user-invite-transfer-insufficient-balance user-invite-withdraw-modal user-invite-finance-submit-matrix user-invite-tooltips user-ticket-reply-send \
+	user-ticket-error-matrix user-tickets-fetch-timeout user-ticket-create-submit user-ticket-create-validation-failure admin-ticket-reply-send admin-tickets-reply-filter admin-tickets-fetch-timeout admin-dashboard-dark-mode-persistence \
+	admin-dashboard-avatar-dropdown admin-session-expired-redirect admin-auth-401-no-redirect admin-dashboard-commission-shortcut user-order-cancel-confirm admin-plan-create-drawer admin-plan-save-failure admin-plan-create-group-select-dropdown \
+	admin-plans-fetch-timeout admin-plan-reset-method-matrix admin-plan-drawer-keyboard-close admin-plan-edit-drawer admin-plan-renew-tooltip admin-mutation-failure-matrix admin-config-tabs admin-config-save-failure-matrix \
+	admin-theme-settings-modal admin-server-create-node-drawer admin-server-vless-reality-matrix admin-server-node-save-failure admin-server-protocol-field-matrix admin-server-v2node-protocol-matrix admin-server-v2node-security-transport-matrix admin-server-manage-fetch-timeout \
+	admin-server-edit-node-drawer admin-server-route-create-modal admin-server-route-edit-modal admin-server-group-create-modal admin-server-group-save-failure admin-server-group-edit-modal admin-payment-create-modal admin-payment-save-failure \
+	admin-payment-edit-modal admin-payment-plugin-field-matrix admin-payment-modal-keyboard-close admin-payments-fetch-timeout admin-payment-notify-tooltip admin-order-detail-modal admin-order-status-tooltips admin-order-assign-modal \
+	admin-order-status-dropdown admin-order-commission-dropdown admin-orders-filter-pagination-matrix admin-orders-fetch-api-500 admin-orders-fetch-timeout admin-coupon-create-modal admin-coupon-generate-failure admin-coupon-range-picker \
+	admin-coupon-type-matrix admin-coupons-fetch-timeout admin-coupon-edit-modal admin-giftcard-create-modal admin-giftcard-generate-failure admin-giftcard-edit-modal admin-giftcards-fetch-timeout admin-notice-create-modal \
+	admin-notice-save-failure admin-notice-edit-modal admin-notices-fetch-timeout admin-knowledge-create-drawer admin-knowledge-save-failure admin-knowledge-edit-drawer admin-knowledge-fetch-timeout admin-users-filter-input \
+	admin-users-filter-field-select-dropdown admin-users-filter-expiry-picker admin-users-pagination-matrix admin-users-sort-matrix admin-users-fetch-api-500 admin-users-fetch-timeout admin-user-bulk-ban-confirm admin-user-bulk-delete-confirm \
+	admin-user-destructive-failure-matrix admin-user-export-download-matrix admin-user-create-modal admin-user-create-plan-select-dropdown admin-user-create-expiry-picker admin-user-send-mail-modal admin-user-send-mail-submit-matrix admin-user-reset-secret-confirm \
+	admin-user-delete-confirm admin-user-copy-action admin-user-edit-action admin-user-update-validation-failure admin-user-assign-action admin-user-orders-action admin-user-invite-action admin-user-traffic-action \
+	admin-users-extreme-viewport-matrix
 INTERACTION_PARITY_RETRIES ?= 4
 INTERACTION_PARITY_SHARD_DELAY ?= 20
 INTERACTION_PARITY_PAUSE_SERVICES ?= frontend horizon scheduler
@@ -85,11 +99,45 @@ VISUAL_PARITY_INTERACTION_FILTER ?=
 VISUAL_PARITY_VIEWPORT_FILTER ?=
 VISUAL_PARITY_BROWSER ?= chromium
 VISUAL_PARITY_SKIP_DEPLOY ?= 0
-VISUAL_PARITY_SCENARIOS ?= user-home-root user-login user-register-rich user-forget user-dashboard user-dashboard-session-expired user-dashboard-no-subscription user-dashboard-expired-subscription user-dashboard-traffic-used-up user-dashboard-device-limit-reached user-dashboard-banned user-dashboard-banned-no-subscription user-dashboard-expired-traffic-used-up user-dashboard-device-limit-expired user-dashboard-dark user-plans user-plans-long-data user-plans-sold-out user-plans-empty user-plans-timeout user-plan-checkout user-plan-checkout-non-renewable user-orders user-orders-long-data user-orders-empty user-orders-api-500 user-orders-timeout user-order-detail user-node user-node-long-data user-node-empty user-node-api-500 user-node-timeout user-traffic user-traffic-timeout user-invite user-tickets user-tickets-empty user-tickets-timeout user-ticket-detail user-ticket-detail-long-thread user-knowledge user-knowledge-timeout user-profile user-dashboard-no-subscription-zh-tw user-dashboard-expired-subscription-zh-tw user-dashboard-traffic-used-up-zh-tw user-dashboard-device-limit-reached-zh-tw user-dashboard-banned-zh-tw user-dashboard-dark-zh-tw user-plans-long-data-zh-tw user-plans-sold-out-zh-tw user-plan-checkout-non-renewable-zh-tw user-dashboard-session-expired-zh-tw user-plans-empty-zh-tw user-orders-empty-zh-tw user-node-empty-zh-tw user-tickets-empty-zh-tw user-orders-long-data-zh-tw user-node-long-data-zh-tw user-dashboard-no-subscription-en-us user-dashboard-expired-subscription-en-us user-dashboard-traffic-used-up-en-us user-dashboard-device-limit-reached-en-us user-dashboard-banned-en-us user-dashboard-dark-en-us user-plans-long-data-en-us user-plans-sold-out-en-us user-plan-checkout-non-renewable-en-us user-orders-long-data-en-us user-dashboard-session-expired-en-us user-plans-empty-en-us user-orders-empty-en-us user-node-empty-en-us user-tickets-empty-en-us user-node-long-data-en-us user-home-root-zh-tw user-login-zh-tw user-register-rich-zh-tw user-forget-zh-tw user-dashboard-zh-tw user-plans-zh-tw user-plan-checkout-zh-tw user-orders-zh-tw user-order-detail-zh-tw user-node-zh-tw user-traffic-zh-tw user-invite-zh-tw user-tickets-zh-tw user-ticket-detail-zh-tw user-knowledge-zh-tw user-profile-zh-tw user-home-root-en-us user-login-en-us user-register-rich-en-us user-forget-en-us user-dashboard-en-us user-plans-en-us user-plan-checkout-en-us user-orders-en-us user-order-detail-en-us user-node-en-us user-traffic-en-us user-invite-en-us user-tickets-en-us user-ticket-detail-en-us user-knowledge-en-us user-profile-en-us admin-dashboard admin-dashboard-session-expired admin-dashboard-dark admin-plans admin-plans-timeout admin-orders admin-orders-long-data admin-orders-api-500 admin-orders-timeout admin-users admin-users-timeout admin-users-api-500 admin-tickets-timeout admin-users-long-data admin-tickets admin-ticket-detail admin-config admin-theme admin-system admin-server-groups admin-server-manage admin-server-manage-long-data admin-server-manage-timeout admin-server-routes admin-payments admin-payments-timeout admin-coupons admin-coupons-timeout admin-giftcards admin-giftcards-timeout admin-notices admin-notices-timeout admin-knowledge admin-knowledge-timeout admin-root admin-login
+VISUAL_PARITY_SCENARIOS ?= user-home-root user-login user-register-rich user-forget user-dashboard user-dashboard-session-expired user-dashboard-no-subscription user-dashboard-expired-subscription \
+	user-dashboard-traffic-used-up user-dashboard-device-limit-reached user-dashboard-banned user-dashboard-banned-no-subscription user-dashboard-expired-traffic-used-up user-dashboard-device-limit-expired user-dashboard-dark user-plans \
+	user-plans-long-data user-plans-sold-out user-plans-empty user-plans-timeout user-plan-checkout user-plan-checkout-non-renewable user-orders user-orders-long-data \
+	user-orders-empty user-orders-api-500 user-orders-timeout user-order-detail user-node user-node-long-data user-node-empty user-node-api-500 \
+	user-node-timeout user-traffic user-traffic-timeout user-invite user-tickets user-tickets-empty user-tickets-timeout user-ticket-detail \
+	user-ticket-detail-long-thread user-knowledge user-knowledge-timeout user-profile user-dashboard-no-subscription-zh-tw user-dashboard-expired-subscription-zh-tw user-dashboard-traffic-used-up-zh-tw user-dashboard-device-limit-reached-zh-tw \
+	user-dashboard-banned-zh-tw user-dashboard-dark-zh-tw user-plans-long-data-zh-tw user-plans-sold-out-zh-tw user-plan-checkout-non-renewable-zh-tw user-dashboard-session-expired-zh-tw user-plans-empty-zh-tw user-orders-empty-zh-tw \
+	user-node-empty-zh-tw user-tickets-empty-zh-tw user-orders-long-data-zh-tw user-node-long-data-zh-tw user-dashboard-no-subscription-en-us user-dashboard-expired-subscription-en-us user-dashboard-traffic-used-up-en-us user-dashboard-device-limit-reached-en-us \
+	user-dashboard-banned-en-us user-dashboard-dark-en-us user-plans-long-data-en-us user-plans-sold-out-en-us user-plan-checkout-non-renewable-en-us user-orders-long-data-en-us user-dashboard-session-expired-en-us user-plans-empty-en-us \
+	user-orders-empty-en-us user-node-empty-en-us user-tickets-empty-en-us user-node-long-data-en-us user-home-root-zh-tw user-login-zh-tw user-register-rich-zh-tw user-forget-zh-tw \
+	user-dashboard-zh-tw user-plans-zh-tw user-plan-checkout-zh-tw user-orders-zh-tw user-order-detail-zh-tw user-node-zh-tw user-traffic-zh-tw user-invite-zh-tw \
+	user-tickets-zh-tw user-ticket-detail-zh-tw user-knowledge-zh-tw user-profile-zh-tw user-home-root-en-us user-login-en-us user-register-rich-en-us user-forget-en-us \
+	user-dashboard-en-us user-plans-en-us user-plan-checkout-en-us user-orders-en-us user-order-detail-en-us user-node-en-us user-traffic-en-us user-invite-en-us \
+	user-tickets-en-us user-ticket-detail-en-us user-knowledge-en-us user-profile-en-us user-dashboard-no-subscription-ja-jp user-dashboard-expired-subscription-ja-jp user-dashboard-traffic-used-up-ja-jp user-dashboard-device-limit-reached-ja-jp \
+	user-dashboard-banned-ja-jp user-dashboard-dark-ja-jp user-plans-long-data-ja-jp user-plans-sold-out-ja-jp user-plan-checkout-non-renewable-ja-jp user-dashboard-session-expired-ja-jp user-plans-empty-ja-jp user-orders-empty-ja-jp \
+	user-node-empty-ja-jp user-tickets-empty-ja-jp user-orders-long-data-ja-jp user-node-long-data-ja-jp user-home-root-ja-jp user-login-ja-jp user-register-rich-ja-jp user-forget-ja-jp \
+	user-dashboard-ja-jp user-plans-ja-jp user-plan-checkout-ja-jp user-orders-ja-jp user-order-detail-ja-jp user-node-ja-jp user-traffic-ja-jp user-invite-ja-jp \
+	user-tickets-ja-jp user-ticket-detail-ja-jp user-knowledge-ja-jp user-profile-ja-jp user-dashboard-no-subscription-vi-vn user-dashboard-expired-subscription-vi-vn user-dashboard-traffic-used-up-vi-vn user-dashboard-device-limit-reached-vi-vn \
+	user-dashboard-banned-vi-vn user-dashboard-dark-vi-vn user-plans-long-data-vi-vn user-plans-sold-out-vi-vn user-plan-checkout-non-renewable-vi-vn user-dashboard-session-expired-vi-vn user-plans-empty-vi-vn user-orders-empty-vi-vn \
+	user-node-empty-vi-vn user-tickets-empty-vi-vn user-orders-long-data-vi-vn user-node-long-data-vi-vn user-home-root-vi-vn user-login-vi-vn user-register-rich-vi-vn user-forget-vi-vn \
+	user-dashboard-vi-vn user-plans-vi-vn user-plan-checkout-vi-vn user-orders-vi-vn user-order-detail-vi-vn user-node-vi-vn user-traffic-vi-vn user-invite-vi-vn \
+	user-tickets-vi-vn user-ticket-detail-vi-vn user-knowledge-vi-vn user-profile-vi-vn user-dashboard-no-subscription-ko-kr user-dashboard-expired-subscription-ko-kr user-dashboard-traffic-used-up-ko-kr user-dashboard-device-limit-reached-ko-kr \
+	user-dashboard-banned-ko-kr user-dashboard-dark-ko-kr user-plans-long-data-ko-kr user-plans-sold-out-ko-kr user-plan-checkout-non-renewable-ko-kr user-dashboard-session-expired-ko-kr user-plans-empty-ko-kr user-orders-empty-ko-kr \
+	user-node-empty-ko-kr user-tickets-empty-ko-kr user-orders-long-data-ko-kr user-node-long-data-ko-kr user-home-root-ko-kr user-login-ko-kr user-register-rich-ko-kr user-forget-ko-kr \
+	user-dashboard-ko-kr user-plans-ko-kr user-plan-checkout-ko-kr user-orders-ko-kr user-order-detail-ko-kr user-node-ko-kr user-traffic-ko-kr user-invite-ko-kr \
+	user-tickets-ko-kr user-ticket-detail-ko-kr user-knowledge-ko-kr user-profile-ko-kr user-dashboard-no-subscription-fa-ir user-dashboard-expired-subscription-fa-ir user-dashboard-traffic-used-up-fa-ir user-dashboard-device-limit-reached-fa-ir \
+	user-dashboard-banned-fa-ir user-dashboard-dark-fa-ir user-plans-long-data-fa-ir user-plans-sold-out-fa-ir user-plan-checkout-non-renewable-fa-ir user-dashboard-session-expired-fa-ir user-plans-empty-fa-ir user-orders-empty-fa-ir \
+	user-node-empty-fa-ir user-tickets-empty-fa-ir user-orders-long-data-fa-ir user-node-long-data-fa-ir user-home-root-fa-ir user-login-fa-ir user-register-rich-fa-ir user-forget-fa-ir \
+	user-dashboard-fa-ir user-plans-fa-ir user-plan-checkout-fa-ir user-orders-fa-ir user-order-detail-fa-ir user-node-fa-ir user-traffic-fa-ir user-invite-fa-ir \
+	user-tickets-fa-ir user-ticket-detail-fa-ir user-knowledge-fa-ir user-profile-fa-ir admin-dashboard admin-dashboard-session-expired admin-dashboard-dark admin-plans \
+	admin-plans-timeout admin-orders admin-orders-long-data admin-orders-api-500 admin-orders-timeout admin-users admin-users-timeout admin-users-api-500 \
+	admin-tickets-timeout admin-users-long-data admin-tickets admin-ticket-detail admin-config admin-theme admin-system admin-server-groups \
+	admin-server-manage admin-server-manage-long-data admin-server-manage-timeout admin-server-routes admin-payments admin-payments-timeout admin-coupons admin-coupons-timeout \
+	admin-giftcards admin-giftcards-timeout admin-notices admin-notices-timeout admin-knowledge admin-knowledge-timeout admin-root admin-login
 VISUAL_PARITY_VIEWPORTS ?= desktop mobile
 BROWSER_PARITY_BROWSERS ?= chromium firefox webkit
-BROWSER_PARITY_SCENARIOS ?= user-login user-dashboard user-dashboard-dark user-dashboard-session-expired user-dashboard-banned user-ticket-detail-long-thread user-plans-empty user-orders-long-data user-node-api-500 user-knowledge-timeout admin-login admin-dashboard admin-dashboard-dark admin-orders-api-500 admin-users-long-data admin-knowledge admin-payments-timeout admin-server-manage-long-data
+BROWSER_PARITY_SCENARIOS ?= $(VISUAL_PARITY_SCENARIOS)
 BROWSER_PARITY_VIEWPORTS ?= desktop mobile
+BROWSER_PARITY_BATCH_SIZE ?= 8
 VISUAL_PARITY_CHECK_EACH_SHARD ?= 0
 DEPLOY_BUILD_PAUSE_SERVICES ?= app frontend horizon scheduler mysql redis mailpit
 DEPLOY_RESUME_SERVICES ?= mysql redis mailpit app
@@ -513,6 +561,7 @@ visual-parity: legacy-oracle-check
 						-e VISUAL_PARITY_ADMIN_PATH=$$admin_path \
 						-e VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle \
 						-e VISUAL_PARITY_ARTIFACT_DIR=$$artifact_dir \
+						-e VISUAL_PARITY_SCENARIO_LABELS="$${VISUAL_PARITY_SCENARIO_LABELS:-}" \
 						-e VISUAL_PARITY_FILTER=$$scenario \
 						-e VISUAL_PARITY_EXACT_FILTER="$${VISUAL_PARITY_EXACT_FILTER:-}" \
 						-e VISUAL_PARITY_INTERACTION_FILTER="$(VISUAL_PARITY_INTERACTION_FILTER)" \
@@ -528,10 +577,10 @@ visual-parity: legacy-oracle-check
 					if [ "$$status" -eq 0 ]; then \
 						break; \
 					fi; \
-					if [ "$$status" != "137" ] && [ "$$attempt" -eq 1 ]; then \
-						echo "Visual parity shard failed; rechecking Docker public assets before one retry of $$scenario/$$viewport."; \
+					if [ "$$status" != "137" ] && [ "$$attempt" -le "$(VISUAL_PARITY_RETRIES)" ]; then \
+						echo "Visual parity shard failed; rechecking Docker public assets before retry $$attempt/$(VISUAL_PARITY_RETRIES) of $$scenario/$$viewport."; \
 						needs_public_check=1; \
-						sleep 1; \
+						sleep $(VISUAL_PARITY_RETRY_DELAY); \
 						continue; \
 					fi; \
 					if [ "$$status" != "137" ] || [ "$$attempt" -gt "$(VISUAL_PARITY_RETRIES)" ]; then \
@@ -645,6 +694,7 @@ visual-parity: legacy-oracle-check
 					-e VISUAL_PARITY_ADMIN_PATH=$$admin_path \
 					-e VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle \
 					-e VISUAL_PARITY_ARTIFACT_DIR=$$artifact_dir \
+					-e VISUAL_PARITY_SCENARIO_LABELS="$${VISUAL_PARITY_SCENARIO_LABELS:-}" \
 					-e VISUAL_PARITY_FILTER="$${VISUAL_PARITY_FILTER:-}" \
 					-e VISUAL_PARITY_EXACT_FILTER="$${VISUAL_PARITY_EXACT_FILTER:-}" \
 					-e VISUAL_PARITY_INTERACTION_FILTER="$(VISUAL_PARITY_INTERACTION_FILTER)" \
@@ -660,10 +710,10 @@ visual-parity: legacy-oracle-check
 				if [ "$$status" -eq 0 ]; then \
 					break; \
 				fi; \
-				if [ "$$status" != "137" ] && [ "$$attempt" -eq 1 ]; then \
-					echo "Visual parity filtered run failed; rechecking Docker public assets before one retry."; \
+				if [ "$$status" != "137" ] && [ "$$attempt" -le "$(VISUAL_PARITY_RETRIES)" ]; then \
+					echo "Visual parity filtered run failed; rechecking Docker public assets before retry $$attempt/$(VISUAL_PARITY_RETRIES)."; \
 					needs_public_check=1; \
-					sleep 1; \
+					sleep $(VISUAL_PARITY_RETRY_DELAY); \
 					continue; \
 				fi; \
 				if [ "$$status" != "137" ] || [ "$$attempt" -gt "$(VISUAL_PARITY_RETRIES)" ]; then \
@@ -688,24 +738,53 @@ browser-parity: legacy-oracle-check
 	fi; \
 	$(DCF) up -d app >/dev/null; \
 	status=0; \
+	batch_size="$(BROWSER_PARITY_BATCH_SIZE)"; \
+	case "$$batch_size" in ''|*[!0-9]*|0) echo "BROWSER_PARITY_BATCH_SIZE must be a positive integer."; exit 1 ;; esac; \
 	for browser in $(BROWSER_PARITY_BROWSERS); do \
 		for viewport in $(BROWSER_PARITY_VIEWPORTS); do \
+			batch=""; \
+			batch_count=0; \
+			batch_index=1; \
+			batch_first=""; \
 			for scenario in $(BROWSER_PARITY_SCENARIOS); do \
-				echo "Browser parity shard: $$browser/$$scenario/$$viewport"; \
+				[ -n "$$batch_first" ] || batch_first="$$scenario"; \
+				batch="$${batch:+$$batch }$$scenario"; \
+				batch_count=$$((batch_count + 1)); \
+				if [ "$$batch_count" -ge "$$batch_size" ]; then \
+					echo "Browser parity shard: $$browser/$$viewport batch $$batch_index ($$batch_first..$$scenario)"; \
+					VISUAL_PARITY_BROWSER=$$browser \
+					VISUAL_PARITY_SCENARIO_LABELS="$$batch" \
+					VISUAL_PARITY_VIEWPORT_FILTER=$$viewport \
+					VISUAL_PARITY_SKIP_DEPLOY=1 \
+					VISUAL_PARITY_PUBLIC_CHECKED=1 \
+					VISUAL_PARITY_APP_READY=1 \
+					VISUAL_PARITY_ARTIFACT_DIR="$(VISUAL_PARITY_ARTIFACT_DIR)/browser-$$browser-$$viewport-batch-$$batch_index" \
+					$(MAKE) --no-print-directory visual-parity || status=$$?; \
+					if [ "$${status:-0}" -ne 0 ]; then \
+						$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
+						exit $$status; \
+					fi; \
+					batch=""; \
+					batch_count=0; \
+					batch_index=$$((batch_index + 1)); \
+					batch_first=""; \
+				fi; \
+			done; \
+			if [ -n "$$batch" ]; then \
+				echo "Browser parity shard: $$browser/$$viewport batch $$batch_index ($$batch_first..last)"; \
 				VISUAL_PARITY_BROWSER=$$browser \
-				VISUAL_PARITY_FILTER=$$scenario \
-				VISUAL_PARITY_EXACT_FILTER=1 \
+				VISUAL_PARITY_SCENARIO_LABELS="$$batch" \
 				VISUAL_PARITY_VIEWPORT_FILTER=$$viewport \
 				VISUAL_PARITY_SKIP_DEPLOY=1 \
 				VISUAL_PARITY_PUBLIC_CHECKED=1 \
 				VISUAL_PARITY_APP_READY=1 \
-				VISUAL_PARITY_ARTIFACT_DIR="$(VISUAL_PARITY_ARTIFACT_DIR)/browser-$$browser-$$scenario-$$viewport" \
+				VISUAL_PARITY_ARTIFACT_DIR="$(VISUAL_PARITY_ARTIFACT_DIR)/browser-$$browser-$$viewport-batch-$$batch_index" \
 				$(MAKE) --no-print-directory visual-parity || status=$$?; \
 				if [ "$${status:-0}" -ne 0 ]; then \
 					$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
 					exit $$status; \
 				fi; \
-			done; \
+			fi; \
 		done; \
 	done; \
 	$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \

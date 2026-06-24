@@ -26,7 +26,7 @@ import {
   useUserInfo,
   userKeys,
 } from '@/lib/queries';
-import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
 import { legacyCopyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/legacy-toast';
@@ -260,7 +260,7 @@ export default function InvitePage() {
                                     </a>
                                   </td>
                                   <td className="" style={{ textAlign: 'right' }}>
-                                    {formatLegacyDateMinuteSlash(code.created_at)}
+                                    {formatUserLegacyDateMinuteSlash(code.created_at)}
                                   </td>
                                 </tr>
                               ))}
@@ -352,7 +352,7 @@ export default function InvitePage() {
                                   key={index}
                                 >
                                   <td className="">
-                                    {formatLegacyDateMinuteSlash(row.created_at)}
+                                    {formatUserLegacyDateMinuteSlash(row.created_at)}
                                   </td>
                                   <td className="" style={{ textAlign: 'right' }}>
                                     {(row.get_amount / 100).toFixed(2)}

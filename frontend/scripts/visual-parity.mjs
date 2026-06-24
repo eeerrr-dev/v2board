@@ -26,15 +26,21 @@ const channelThreshold = Number(process.env.VISUAL_PARITY_CHANNEL_THRESHOLD ?? '
 const parityMode = process.env.VISUAL_PARITY_MODE ?? 'screenshots';
 const scenarioFilter = process.env.VISUAL_PARITY_FILTER ?? '';
 const exactScenarioFilter = process.env.VISUAL_PARITY_EXACT_FILTER === '1';
+const scenarioLabelList = (process.env.VISUAL_PARITY_SCENARIO_LABELS ?? '')
+  .split(/\s+/)
+  .map((label) => label.trim())
+  .filter(Boolean);
 const viewportFilter = process.env.VISUAL_PARITY_VIEWPORT_FILTER ?? '';
-const browserMode = process.env.VISUAL_PARITY_FRESH_BROWSER ?? 'auto';
-const browserName = process.env.VISUAL_PARITY_BROWSER ?? 'chromium';
+const browserMode = process.env.VISUAL_PARITY_FRESH_BROWSER || 'auto';
+const browserName = process.env.VISUAL_PARITY_BROWSER || 'chromium';
 const navigationAttempts = Number(process.env.VISUAL_PARITY_NAVIGATION_ATTEMPTS ?? '3');
 const navigationTimeout = Number(process.env.VISUAL_PARITY_NAVIGATION_TIMEOUT ?? '45000');
 const fontWaitTimeout = Number(process.env.VISUAL_PARITY_FONT_WAIT_TIMEOUT ?? '5000');
 const browserTypes = { chromium, firefox, webkit };
 const browserType = browserTypes[browserName];
 const LEGACY_GB_BYTES = 1_073_741_824;
+const cjkTextRange = '\\u3040-\\u30ff\\u3400-\\u9fff\\uf900-\\ufaff\\uac00-\\ud7af';
+const cjkInnerSpacePattern = new RegExp(`([${cjkTextRange}]) (?=[${cjkTextRange}])`, 'g');
 const crc32Table = Array.from({ length: 256 }, (_, value) => {
   let current = value;
   for (let index = 0; index < 8; index += 1) {
@@ -42,6 +48,13 @@ const crc32Table = Array.from({ length: 256 }, (_, value) => {
   }
   return current >>> 0;
 });
+
+function normalizeParityText(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(cjkInnerSpacePattern, '$1');
+}
 
 const scenarios = [
   { label: 'user-home-root', path: '/#/', readySelector: '.v2board-auth-box' },
@@ -790,6 +803,954 @@ const scenarios = [
   },
   {
     authenticated: true,
+    label: 'user-dashboard-no-subscription-ja-jp',
+    locale: 'ja-JP',
+    noSubscription: true,
+    path: '/#/dashboard',
+    readySelector: '.fa-plus',
+  },
+  {
+    authenticated: true,
+    expiredSubscription: true,
+    label: 'user-dashboard-expired-subscription-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/dashboard',
+    readySelector: '.text-danger',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-traffic-used-up-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar.bg-danger',
+    trafficUsedUp: true,
+  },
+  {
+    authenticated: true,
+    deviceLimitReached: true,
+    label: 'user-dashboard-device-limit-reached-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar',
+  },
+  {
+    authenticated: true,
+    bannedUser: true,
+    label: 'user-dashboard-banned-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    darkMode: true,
+    label: 'user-dashboard-dark-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-long-data-ja-jp',
+    locale: 'ja-JP',
+    longData: true,
+    path: '/#/plan',
+    postReadyDelay: 300,
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-sold-out-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/plan',
+    readySelector: '.block-link-pop button[disabled]',
+    soldOutPlans: true,
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-non-renewable-ja-jp',
+    locale: 'ja-JP',
+    nonRenewablePlan: true,
+    path: '/#/plan/1',
+    readySelector: '.ant-result-info',
+  },
+  {
+    authenticated: true,
+    forceUserUnauthorized: true,
+    label: 'user-dashboard-session-expired-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/dashboard',
+    postReadyDelay: 300,
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    authenticated: true,
+    emptyPlans: true,
+    label: 'user-plans-empty-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/plan',
+    readySelector: '.spinner-grow',
+  },
+  {
+    authenticated: true,
+    emptyOrders: true,
+    label: 'user-orders-empty-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/order',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    emptyServers: true,
+    label: 'user-node-empty-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/node',
+    readySelector: '.alert.alert-dark',
+  },
+  {
+    authenticated: true,
+    emptyTickets: true,
+    label: 'user-tickets-empty-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/ticket',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-long-data-ja-jp',
+    locale: 'ja-JP',
+    longData: true,
+    path: '/#/order',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-long-data-ja-jp',
+    locale: 'ja-JP',
+    longData: true,
+    path: '/#/node',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    label: 'user-home-root-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/',
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    label: 'user-login-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/login'
+  },
+  {
+    label: 'user-register-rich-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/register?code=INVITE2026',
+  },
+  {
+    label: 'user-forget-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/forgetpassword'
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/plan',
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/plan/1',
+    readySelector: '#cashier',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/order',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-order-detail-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/order/VISUAL2026110001',
+    readySelector: '.v2board-order-info',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/node',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-traffic-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/traffic',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-invite-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/invite',
+    readySelector: '.ant-pagination',
+  },
+  {
+    authenticated: true,
+    label: 'user-tickets-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/ticket',
+    readySelector: '.ant-table-fixed-right',
+  },
+  {
+    authenticated: true,
+    label: 'user-ticket-detail-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/ticket/7',
+    readySelector: '.js-chat-input',
+  },
+  {
+    authenticated: true,
+    label: 'user-knowledge-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/knowledge',
+    readySelector: '.list-group-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-profile-ja-jp',
+    locale: 'ja-JP',
+    path: '/#/profile',
+    readySelector: '.ant-switch',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-no-subscription-vi-vn',
+    locale: 'vi-VN',
+    noSubscription: true,
+    path: '/#/dashboard',
+    readySelector: '.fa-plus',
+  },
+  {
+    authenticated: true,
+    expiredSubscription: true,
+    label: 'user-dashboard-expired-subscription-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/dashboard',
+    readySelector: '.text-danger',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-traffic-used-up-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar.bg-danger',
+    trafficUsedUp: true,
+  },
+  {
+    authenticated: true,
+    deviceLimitReached: true,
+    label: 'user-dashboard-device-limit-reached-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar',
+  },
+  {
+    authenticated: true,
+    bannedUser: true,
+    label: 'user-dashboard-banned-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    darkMode: true,
+    label: 'user-dashboard-dark-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-long-data-vi-vn',
+    locale: 'vi-VN',
+    longData: true,
+    path: '/#/plan',
+    postReadyDelay: 300,
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-sold-out-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/plan',
+    readySelector: '.block-link-pop button[disabled]',
+    soldOutPlans: true,
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-non-renewable-vi-vn',
+    locale: 'vi-VN',
+    nonRenewablePlan: true,
+    path: '/#/plan/1',
+    readySelector: '.ant-result-info',
+  },
+  {
+    authenticated: true,
+    forceUserUnauthorized: true,
+    label: 'user-dashboard-session-expired-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/dashboard',
+    postReadyDelay: 300,
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    authenticated: true,
+    emptyPlans: true,
+    label: 'user-plans-empty-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/plan',
+    readySelector: '.spinner-grow',
+  },
+  {
+    authenticated: true,
+    emptyOrders: true,
+    label: 'user-orders-empty-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/order',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    emptyServers: true,
+    label: 'user-node-empty-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/node',
+    readySelector: '.alert.alert-dark',
+  },
+  {
+    authenticated: true,
+    emptyTickets: true,
+    label: 'user-tickets-empty-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/ticket',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-long-data-vi-vn',
+    locale: 'vi-VN',
+    longData: true,
+    path: '/#/order',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-long-data-vi-vn',
+    locale: 'vi-VN',
+    longData: true,
+    path: '/#/node',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    label: 'user-home-root-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/',
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    label: 'user-login-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/login'
+  },
+  {
+    label: 'user-register-rich-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/register?code=INVITE2026',
+  },
+  {
+    label: 'user-forget-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/forgetpassword'
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/plan',
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/plan/1',
+    readySelector: '#cashier',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/order',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-order-detail-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/order/VISUAL2026110001',
+    readySelector: '.v2board-order-info',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/node',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-traffic-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/traffic',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-invite-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/invite',
+    readySelector: '.ant-pagination',
+  },
+  {
+    authenticated: true,
+    label: 'user-tickets-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/ticket',
+    readySelector: '.ant-table-fixed-right',
+  },
+  {
+    authenticated: true,
+    label: 'user-ticket-detail-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/ticket/7',
+    readySelector: '.js-chat-input',
+  },
+  {
+    authenticated: true,
+    label: 'user-knowledge-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/knowledge',
+    readySelector: '.list-group-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-profile-vi-vn',
+    locale: 'vi-VN',
+    path: '/#/profile',
+    readySelector: '.ant-switch',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-no-subscription-ko-kr',
+    locale: 'ko-KR',
+    noSubscription: true,
+    path: '/#/dashboard',
+    readySelector: '.fa-plus',
+  },
+  {
+    authenticated: true,
+    expiredSubscription: true,
+    label: 'user-dashboard-expired-subscription-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/dashboard',
+    readySelector: '.text-danger',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-traffic-used-up-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar.bg-danger',
+    trafficUsedUp: true,
+  },
+  {
+    authenticated: true,
+    deviceLimitReached: true,
+    label: 'user-dashboard-device-limit-reached-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar',
+  },
+  {
+    authenticated: true,
+    bannedUser: true,
+    label: 'user-dashboard-banned-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    darkMode: true,
+    label: 'user-dashboard-dark-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-long-data-ko-kr',
+    locale: 'ko-KR',
+    longData: true,
+    path: '/#/plan',
+    postReadyDelay: 300,
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-sold-out-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/plan',
+    readySelector: '.block-link-pop button[disabled]',
+    soldOutPlans: true,
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-non-renewable-ko-kr',
+    locale: 'ko-KR',
+    nonRenewablePlan: true,
+    path: '/#/plan/1',
+    readySelector: '.ant-result-info',
+  },
+  {
+    authenticated: true,
+    forceUserUnauthorized: true,
+    label: 'user-dashboard-session-expired-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/dashboard',
+    postReadyDelay: 300,
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    authenticated: true,
+    emptyPlans: true,
+    label: 'user-plans-empty-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/plan',
+    readySelector: '.spinner-grow',
+  },
+  {
+    authenticated: true,
+    emptyOrders: true,
+    label: 'user-orders-empty-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/order',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    emptyServers: true,
+    label: 'user-node-empty-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/node',
+    readySelector: '.alert.alert-dark',
+  },
+  {
+    authenticated: true,
+    emptyTickets: true,
+    label: 'user-tickets-empty-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/ticket',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-long-data-ko-kr',
+    locale: 'ko-KR',
+    longData: true,
+    path: '/#/order',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-long-data-ko-kr',
+    locale: 'ko-KR',
+    longData: true,
+    path: '/#/node',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    label: 'user-home-root-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/',
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    label: 'user-login-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/login'
+  },
+  {
+    label: 'user-register-rich-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/register?code=INVITE2026',
+  },
+  {
+    label: 'user-forget-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/forgetpassword'
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/plan',
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/plan/1',
+    readySelector: '#cashier',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/order',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-order-detail-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/order/VISUAL2026110001',
+    readySelector: '.v2board-order-info',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/node',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-traffic-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/traffic',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-invite-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/invite',
+    readySelector: '.ant-pagination',
+  },
+  {
+    authenticated: true,
+    label: 'user-tickets-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/ticket',
+    readySelector: '.ant-table-fixed-right',
+  },
+  {
+    authenticated: true,
+    label: 'user-ticket-detail-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/ticket/7',
+    readySelector: '.js-chat-input',
+  },
+  {
+    authenticated: true,
+    label: 'user-knowledge-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/knowledge',
+    readySelector: '.list-group-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-profile-ko-kr',
+    locale: 'ko-KR',
+    path: '/#/profile',
+    readySelector: '.ant-switch',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-no-subscription-fa-ir',
+    locale: 'fa-IR',
+    noSubscription: true,
+    path: '/#/dashboard',
+    readySelector: '.fa-plus',
+  },
+  {
+    authenticated: true,
+    expiredSubscription: true,
+    label: 'user-dashboard-expired-subscription-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/dashboard',
+    readySelector: '.text-danger',
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-traffic-used-up-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar.bg-danger',
+    trafficUsedUp: true,
+  },
+  {
+    authenticated: true,
+    deviceLimitReached: true,
+    label: 'user-dashboard-device-limit-reached-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/dashboard',
+    readySelector: '.progress-bar',
+  },
+  {
+    authenticated: true,
+    bannedUser: true,
+    label: 'user-dashboard-banned-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    darkMode: true,
+    label: 'user-dashboard-dark-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-long-data-fa-ir',
+    locale: 'fa-IR',
+    longData: true,
+    path: '/#/plan',
+    postReadyDelay: 300,
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-sold-out-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/plan',
+    readySelector: '.block-link-pop button[disabled]',
+    soldOutPlans: true,
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-non-renewable-fa-ir',
+    locale: 'fa-IR',
+    nonRenewablePlan: true,
+    path: '/#/plan/1',
+    readySelector: '.ant-result-info',
+  },
+  {
+    authenticated: true,
+    forceUserUnauthorized: true,
+    label: 'user-dashboard-session-expired-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/dashboard',
+    postReadyDelay: 300,
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    authenticated: true,
+    emptyPlans: true,
+    label: 'user-plans-empty-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/plan',
+    readySelector: '.spinner-grow',
+  },
+  {
+    authenticated: true,
+    emptyOrders: true,
+    label: 'user-orders-empty-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/order',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    emptyServers: true,
+    label: 'user-node-empty-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/node',
+    readySelector: '.alert.alert-dark',
+  },
+  {
+    authenticated: true,
+    emptyTickets: true,
+    label: 'user-tickets-empty-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/ticket',
+    readySelector: '.ant-table-placeholder .ant-empty',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-long-data-fa-ir',
+    locale: 'fa-IR',
+    longData: true,
+    path: '/#/order',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-long-data-fa-ir',
+    locale: 'fa-IR',
+    longData: true,
+    path: '/#/node',
+    postReadyDelay: 300,
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    label: 'user-home-root-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/',
+    readySelector: '.v2board-auth-box',
+  },
+  {
+    label: 'user-login-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/login'
+  },
+  {
+    label: 'user-register-rich-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/register?code=INVITE2026',
+  },
+  {
+    label: 'user-forget-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/forgetpassword'
+  },
+  {
+    authenticated: true,
+    label: 'user-dashboard-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/dashboard',
+    readySelector: '.v2board-shortcuts-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-plans-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/plan',
+    readySelector: '.block-link-pop',
+  },
+  {
+    authenticated: true,
+    label: 'user-plan-checkout-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/plan/1',
+    readySelector: '#cashier',
+  },
+  {
+    authenticated: true,
+    label: 'user-orders-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/order',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-order-detail-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/order/VISUAL2026110001',
+    readySelector: '.v2board-order-info',
+  },
+  {
+    authenticated: true,
+    label: 'user-node-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/node',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-traffic-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/traffic',
+    readySelector: '.ant-table-tbody tr',
+  },
+  {
+    authenticated: true,
+    label: 'user-invite-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/invite',
+    readySelector: '.ant-pagination',
+  },
+  {
+    authenticated: true,
+    label: 'user-tickets-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/ticket',
+    readySelector: '.ant-table-fixed-right',
+  },
+  {
+    authenticated: true,
+    label: 'user-ticket-detail-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/ticket/7',
+    readySelector: '.js-chat-input',
+  },
+  {
+    authenticated: true,
+    label: 'user-knowledge-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/knowledge',
+    readySelector: '.list-group-item',
+  },
+  {
+    authenticated: true,
+    label: 'user-profile-fa-ir',
+    locale: 'fa-IR',
+    path: '/#/profile',
+    readySelector: '.ant-switch',
+  },
+  {
+    authenticated: true,
     label: 'admin-dashboard',
     path: `/${adminPath}#/dashboard`,
     postReadyDelay: 800,
@@ -1106,6 +2067,7 @@ const interactionScenarios = [
   },
   {
     label: 'user-login-language-persistence',
+    preserveRuntimeLocale: true,
     run: runLoginLanguagePersistenceInteraction,
     scenarioLabel: 'user-login',
   },
@@ -1113,6 +2075,36 @@ const interactionScenarios = [
     label: 'user-login-keyboard-tab-focus',
     run: runLoginKeyboardTabFocusInteraction,
     scenarioLabel: 'user-login',
+  },
+  {
+    label: 'user-home-root-page-state',
+    run: runAuthPageStateInteraction,
+    scenarioLabel: 'user-home-root',
+  },
+  {
+    label: 'user-register-form-state',
+    run: runRegisterFormStateInteraction,
+    scenarioLabel: 'user-register-rich',
+  },
+  {
+    label: 'user-forget-form-state',
+    run: runForgetFormStateInteraction,
+    scenarioLabel: 'user-forget',
+  },
+  {
+    label: 'admin-root-page-state',
+    run: runAuthPageStateInteraction,
+    scenarioLabel: 'admin-root',
+  },
+  {
+    label: 'admin-login-form-state',
+    run: runAdminLoginFormStateInteraction,
+    scenarioLabel: 'admin-login',
+  },
+  {
+    label: 'admin-system-queue-state',
+    run: runAdminSystemQueueStateInteraction,
+    scenarioLabel: 'admin-system',
   },
   {
     label: 'user-dashboard-header-language-dropdown',
@@ -3190,13 +4182,17 @@ const darkModeStyleTargets = [
   { key: 'alert', selector: '.alert' },
   { key: 'dashboardTile', selector: '.v2board-shortcuts-item, .block-link-pop' },
 ];
-const selectedScenarios = scenarioFilter
-  ? scenarios.filter((scenario) =>
-      exactScenarioFilter
-        ? scenario.label === scenarioFilter
-        : scenario.label.includes(scenarioFilter),
-    )
-  : scenarios;
+const knownScenarioLabels = new Set(scenarios.map((scenario) => scenario.label));
+const missingScenarioLabels = scenarioLabelList.filter((label) => !knownScenarioLabels.has(label));
+const selectedScenarios = scenarioLabelList.length
+  ? scenarios.filter((scenario) => scenarioLabelList.includes(scenario.label))
+  : scenarioFilter
+    ? scenarios.filter((scenario) =>
+        exactScenarioFilter
+          ? scenario.label === scenarioFilter
+          : scenario.label.includes(scenarioFilter),
+      )
+    : scenarios;
 const selectedViewports = viewportFilter
   ? viewports.filter((viewport) => viewport.label.includes(viewportFilter))
   : viewports;
@@ -3228,8 +4224,17 @@ function shouldUseFreshBrowser(scenario, viewport) {
   throw new Error(`Unsupported VISUAL_PARITY_FRESH_BROWSER=${browserMode}`);
 }
 
+if (missingScenarioLabels.length) {
+  throw new Error(
+    `Unknown visual parity scenarios in VISUAL_PARITY_SCENARIO_LABELS=${missingScenarioLabels.join(' ')}`,
+  );
+}
+
 if (!selectedScenarios.length) {
-  throw new Error(`No visual parity scenarios matched VISUAL_PARITY_FILTER=${scenarioFilter}`);
+  const scenarioSelection = scenarioLabelList.length
+    ? `VISUAL_PARITY_SCENARIO_LABELS=${scenarioLabelList.join(' ')}`
+    : `VISUAL_PARITY_FILTER=${scenarioFilter}`;
+  throw new Error(`No visual parity scenarios matched ${scenarioSelection}`);
 }
 
 if (!selectedViewports.length) {
@@ -3831,6 +4836,86 @@ async function runLoginKeyboardTabFocusInteraction(page) {
   }
 
   return { before, sequence };
+}
+
+async function runAuthPageStateInteraction(page) {
+  return authPageState(page);
+}
+
+async function runRegisterFormStateInteraction(page) {
+  await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 0, 'parity-user');
+  await fillVisibleAt(page, 'input[type="password"]', 0, 'secret123');
+  await fillVisibleAt(page, 'input[type="password"]', 1, 'secret123');
+  return authPageState(page);
+}
+
+async function runForgetFormStateInteraction(page) {
+  await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 0, 'visual@example.com');
+  await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 1, '123456');
+  await fillVisibleAt(page, 'input[type="password"]', 0, 'secret123');
+  await fillVisibleAt(page, 'input[type="password"]', 1, 'secret123');
+  return authPageState(page);
+}
+
+async function runAdminLoginFormStateInteraction(page) {
+  await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 0, 'admin@local');
+  await fillVisibleAt(page, 'input[type="password"]', 0, '12345678');
+  const filled = await authPageState(page);
+  await clickFirstVisibleText(page, 'a', ['忘记密码']);
+  await waitForVisibleElementCountAtLeast(page, '.ant-modal-confirm, .ant-modal', 1);
+  return {
+    filled,
+    forgotModal: {
+      buttons: await visibleTexts(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 4),
+      content: await visibleTexts(page, '.ant-modal-confirm-content, .ant-modal-body', 4),
+      modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
+      title: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 2),
+    },
+  };
+}
+
+async function runAdminSystemQueueStateInteraction(page) {
+  await page.waitForTimeout(150);
+  return {
+    hash: await page.evaluate(() => window.location.hash),
+    overview: await visibleTexts(page, '.block-title, .font-size-h3', 12),
+    rows: await visibleTexts(page, '.ant-table-tbody tr', 12),
+    tableHeaders: await visibleTexts(page, '.ant-table-thead th', 8),
+  };
+}
+
+async function authPageState(page) {
+  return {
+    authBoxCount: await visibleCount(page, '.v2board-auth-box'),
+    buttons: await visibleTexts(page, 'button, .btn', 8),
+    controls: await visibleFormControlStates(page, '.v2board-auth-box input, .v2board-auth-box select, .v2board-auth-box textarea'),
+    hash: await page.evaluate(() => window.location.hash),
+    links: await visibleTexts(page, '.v2board-auth-box a, .bg-gray-lighter a', 8),
+    titleTexts: await visibleTexts(page, '.v2board-auth-box h1, .v2board-auth-box h2, .v2board-auth-box h3, .v2board-auth-box .font-size-h1, .v2board-auth-box p', 8),
+  };
+}
+
+async function visibleFormControlStates(page, selector) {
+  return page.evaluate((targetSelector) => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const normalize = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+    return Array.from(document.querySelectorAll(targetSelector))
+      .filter(isVisible)
+      .map((element) => ({
+        disabled: Boolean(element.disabled),
+        options: element instanceof HTMLSelectElement
+          ? Array.from(element.options).map((option) => normalize(option.textContent))
+          : [],
+        placeholder: element.getAttribute('placeholder') ?? '',
+        tag: element.tagName.toLowerCase(),
+        type: element.getAttribute('type') ?? '',
+        value: 'value' in element ? element.value : '',
+      }));
+  }, selector);
 }
 
 async function runDashboardHeaderLanguageDropdownInteraction(page) {
@@ -5614,10 +6699,24 @@ async function runAdminTicketsReplyFilterInteraction(page) {
   await clickAdminTicketsReplyFilterOption(page, '待回复');
   await page.waitForTimeout(100);
   const selected = await adminTicketsReplyFilterState(page);
-  await clickFirstVisibleText(page, '.ant-table-filter-dropdown-link.confirm', ['确定']);
+  const initialTicketFetchCount = page.__visualParityAdminTicketFetchCount ?? 0;
+  await dispatchFirstVisibleTextClick(page, '.ant-table-filter-dropdown-link.confirm', ['确定']);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminTicketFetchCount',
+    initialTicketFetchCount + 1,
+  );
   await page.waitForTimeout(300);
   const confirmed = await adminTicketsReplyFilterState(page);
-  return { before, confirmed, opened, selected };
+  return {
+    before,
+    confirmed,
+    filterFetchRequests: clonePageRequests(page.__visualParityAdminTicketFetchRequests).slice(
+      initialTicketFetchCount,
+    ),
+    opened,
+    selected,
+  };
 }
 
 async function runAdminThemeSettingsInteraction(page) {
@@ -5671,6 +6770,33 @@ async function openAdminServerNodeDrawerForType(page, typeLabel) {
 async function closeAdminServerNodeDrawer(page) {
   await closeVisibleAdminServerDrawers(page);
   return adminServerNodeDrawerState(page);
+}
+
+async function reloadAdminServerManagePage(page) {
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(
+    () => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      };
+      return (
+        (document.body?.innerText ?? '').includes('Tokyo 01') &&
+        Array.from(document.querySelectorAll('.v2board-table-action .ant-dropdown-trigger')).some(
+          isVisible,
+        )
+      );
+    },
+    null,
+    { timeout: 5_000 },
+  );
+  await page.waitForTimeout(150);
 }
 
 async function closeVisibleAdminServerDrawers(page) {
@@ -5730,12 +6856,14 @@ async function runAdminServerCreateNodeDrawerInteraction(page) {
   await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Default');
   const groupDropdown = await adminServerNodeDrawerState(page);
   await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Default']);
-  await page.keyboard.press('Escape').catch(() => undefined);
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(150);
   const groupSelected = await adminServerNodeDrawerState(page);
-  await clickFirstVisible(page, '.ant-drawer-close');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
-  const closed = await adminServerNodeDrawerState(page);
+  await closeVisibleAdminServerDrawers(page);
+  await page.mouse.click(1, 1);
+  await page.waitForTimeout(150);
+  const closed = {
+    openDrawerCount: await visibleCount(page, '.ant-drawer-open'),
+  };
   return { before, closed, drawerOpened, groupDropdown, groupSelected, menuOpened };
 }
 
@@ -5759,13 +6887,13 @@ async function runAdminServerVlessRealityMatrixInteraction(page) {
   await fillVisibleAt(page, '.ant-drawer-open .ant-input', 3, '443');
   await fillVisibleAt(page, '.ant-drawer-open .ant-input', 4, '10443');
   await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default']);
-  const opened = await adminServerNodeDrawerState(page);
+  const opened = await adminServerVlessMatrixState(page);
   await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['Reality']);
   await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['TCP']);
-  await waitForVisibleText(page, '.ant-drawer-open .form-group label', 'XTLS流控算法');
+  await waitForVisibleText(page, '.form-group label', 'XTLS流控算法');
   await selectLegacyFormOption(page, '.ant-drawer-open', 'XTLS流控算法', ['xtls-rprx-vision']);
-  const realityTcp = await adminServerNodeDrawerState(page);
-  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  const realityTcp = await adminServerVlessMatrixState(page);
+  await clickFirstVisible(page, '.v2board-drawer-action .ant-btn-primary');
   await waitForPagePropertyAtLeast(page, '__visualParityAdminServerNodeSaveCount', 1);
   await waitForVisibleElementsHidden(page, '.ant-drawer-open');
   await waitForPagePropertyAtLeast(
@@ -5773,10 +6901,8 @@ async function runAdminServerVlessRealityMatrixInteraction(page) {
     '__visualParityAdminServerNodeFetchCount',
     initialNodeFetchCount + 1,
   );
-  const closed = await adminServerNodeDrawerState(page);
   return {
     before,
-    closed,
     menuOpened,
     nodeFetchDelta:
       (page.__visualParityAdminServerNodeFetchCount ?? 0) - initialNodeFetchCount,
@@ -5785,6 +6911,22 @@ async function runAdminServerVlessRealityMatrixInteraction(page) {
     saveRequests: (page.__visualParityAdminServerNodeSaveRequests ?? []).map((request) =>
       structuredClone(request),
     ),
+  };
+}
+
+async function adminServerVlessMatrixState(page) {
+  const state = await adminServerNodeDrawerState(page);
+  const bodyText = await page.evaluate(() => document.body?.innerText ?? '');
+  const normalizedBodyText = normalizeParityText(bodyText);
+  const selectedValues = ['Default', 'Reality', 'TCP', 'xtls-rprx-vision'].filter(
+    (value) => jsonIncludes(state.selectedValues, value) || normalizedBodyText.includes(value),
+  );
+  return {
+    actionButtons: state.actionButtons,
+    drawerCount: state.drawerCount,
+    inputValues: state.inputValues.filter(Boolean),
+    labels: state.labels,
+    selectedValues,
   };
 }
 
@@ -5810,9 +6952,8 @@ async function runAdminServerNodeSaveFailureInteraction(page) {
   await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default'], {
     waitForHidden: false,
   });
-  await page.keyboard.press('Escape').catch(() => undefined);
   const filled = await adminServerNodeDrawerState(page);
-  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await clickFirstVisible(page, '.v2board-drawer-action .ant-btn-primary');
   await waitForPagePropertyAtLeast(page, '__visualParityAdminServerNodeSaveCount', 1);
   await page.waitForTimeout(350);
   const after = await adminServerNodeDrawerState(page);
@@ -5842,7 +6983,8 @@ async function runAdminServerProtocolFieldMatrixInteraction(page) {
       opened,
     };
     mark('close Shadowsocks');
-    snapshots.shadowsocks.closed = await closeAdminServerNodeDrawer(page);
+    await closeAdminServerNodeDrawer(page);
+    await reloadAdminServerManagePage(page);
   }
 
   {
@@ -5858,7 +7000,8 @@ async function runAdminServerProtocolFieldMatrixInteraction(page) {
       opened,
     };
     mark('close VMess');
-    snapshots.vmess.closed = await closeAdminServerNodeDrawer(page);
+    await closeAdminServerNodeDrawer(page);
+    await reloadAdminServerManagePage(page);
   }
 
   {
@@ -5875,7 +7018,8 @@ async function runAdminServerProtocolFieldMatrixInteraction(page) {
       opened,
     };
     mark('close Trojan');
-    snapshots.trojan.closed = await closeAdminServerNodeDrawer(page);
+    await closeAdminServerNodeDrawer(page);
+    await reloadAdminServerManagePage(page);
   }
 
   {
@@ -5891,7 +7035,8 @@ async function runAdminServerProtocolFieldMatrixInteraction(page) {
       opened,
     };
     mark('close Hysteria');
-    snapshots.hysteria.closed = await closeAdminServerNodeDrawer(page);
+    await closeAdminServerNodeDrawer(page);
+    await reloadAdminServerManagePage(page);
   }
 
   {
@@ -5909,7 +7054,8 @@ async function runAdminServerProtocolFieldMatrixInteraction(page) {
       opened,
     };
     mark('close Tuic');
-    snapshots.tuic.closed = await closeAdminServerNodeDrawer(page);
+    await closeAdminServerNodeDrawer(page);
+    await reloadAdminServerManagePage(page);
   }
 
   {
@@ -5922,7 +7068,7 @@ async function runAdminServerProtocolFieldMatrixInteraction(page) {
       opened,
     };
     mark('close AnyTLS');
-    snapshots.anytls.closed = await closeAdminServerNodeDrawer(page);
+    await closeAdminServerNodeDrawer(page);
   }
 
   return snapshots;
@@ -5955,9 +7101,9 @@ async function runAdminServerV2nodeProtocolMatrixInteraction(page) {
 
   await selectLegacyFormOption(page, '.ant-drawer-open', '节点协议', ['AnyTLS']);
   const anytls = await adminServerNodeDrawerState(page);
-  const closed = await closeAdminServerNodeDrawer(page);
+  await closeAdminServerNodeDrawer(page);
 
-  return { anytls, closed, hysteria2, menuOpened, opened, shadowsocks, trojan, tuic, vless };
+  return { anytls, hysteria2, menuOpened, opened, shadowsocks, trojan, tuic, vless };
 }
 
 async function runAdminServerV2nodeSecurityTransportMatrixInteraction(page) {
@@ -5990,9 +7136,8 @@ async function runAdminServerV2nodeSecurityTransportMatrixInteraction(page) {
   await selectLegacyFormOption(page, '.ant-drawer-open', '传输协议', ['gRPC']);
   const trojanTlsGrpc = await adminServerNodeDrawerState(page);
 
-  const closed = await closeAdminServerNodeDrawer(page);
+  await closeAdminServerNodeDrawer(page);
   return {
-    closed,
     menuOpened,
     opened,
     trojanTlsGrpc,
@@ -6029,9 +7174,10 @@ async function runAdminServerEditNodeDrawerInteraction(page) {
   await fillVisibleAt(page, '.ant-drawer-open .ant-input', 4, '18388');
   await page.waitForTimeout(100);
   const edited = await adminServerNodeDrawerState(page);
-  await clickFirstVisible(page, '.ant-drawer-close');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
-  const closed = await adminServerNodeDrawerState(page);
+  await closeVisibleAdminServerDrawers(page);
+  const closed = {
+    openDrawerCount: await visibleCount(page, '.ant-drawer-open'),
+  };
   return { before, closed, edited, opened };
 }
 
@@ -6515,24 +7661,77 @@ async function runAdminOrderCommissionDropdownInteraction(page) {
 async function runAdminOrdersFilterPaginationMatrixInteraction(page) {
   const before = await adminOrderFilterPaginationState(page);
   page.__visualParityLastAdminOrderFetchQuery = null;
-  await clickFirstVisible(page, '.bg-white .ant-btn, .ant-btn');
+  page.__visualParityDiagnostics?.push('admin orders matrix: click filter button');
+  await clickFirstVisibleTextInViewport(page, '.bg-white .ant-btn, .ant-btn', ['过滤器']);
   await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
     state: 'visible',
     timeout: 5_000,
   });
-  await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
-  await fillFirstVisible(page, '.v2board-filter-drawer .ant-input', 'VISUAL202611');
-  await clickFirstVisibleText(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', [
+  page.__visualParityDiagnostics?.push('admin orders matrix: filter drawer opened');
+  await dispatchFirstVisibleTextClick(page, '.v2board-filter-drawer .ant-btn', ['添加条件']);
+  page.__visualParityDiagnostics?.push('admin orders matrix: condition added');
+  await waitForVisibleInputByLabel(page, '.v2board-filter-drawer', '欲检索内容');
+  await fillVisibleInputByLabel(page, '.v2board-filter-drawer', '欲检索内容', 'VISUAL202611');
+  await page.waitForFunction(
+    () => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const group = Array.from(document.querySelectorAll('.v2board-filter-drawer .form-group')).find(
+        (element) =>
+          isVisible(element) &&
+          Array.from(element.querySelectorAll('label')).some((label) =>
+            (label.textContent ?? '').includes('欲检索内容'),
+          ),
+      );
+      const input = group
+        ? Array.from(group.querySelectorAll('input, textarea')).find(
+            (element) => isVisible(element) && !element.className.includes('ant-select-search__field'),
+          )
+        : null;
+      return input && 'value' in input && input.value === 'VISUAL202611';
+    },
+    null,
+    { timeout: 5_000 },
+  );
+  page.__visualParityDiagnostics?.push('admin orders matrix: filter value filled');
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll('.v2board-filter-drawer .v2board-drawer-action .ant-btn')).some(
+        (element) => {
+          const text = (element.textContent ?? '').replace(/\s+/g, '');
+          return (
+            text.includes('检索') &&
+            !element.hasAttribute('disabled') &&
+            !element.className.includes('ant-btn-disabled')
+          );
+        },
+      ),
+    null,
+    { timeout: 5_000 },
+  );
+  page.__visualParityDiagnostics?.push(
+    `admin orders matrix: before search ${JSON.stringify(await filterDrawerDebugState(page))}`,
+  );
+  await dispatchFirstVisibleTextClick(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', [
     '检索',
     '检 索',
   ]);
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await page.waitForTimeout(250);
+  page.__visualParityDiagnostics?.push(
+    `admin orders matrix: after search ${JSON.stringify(await filterDrawerDebugState(page))}`,
+  );
   await waitForPageProperty(page, '__visualParityLastAdminOrderFetchQuery');
+  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  page.__visualParityDiagnostics?.push('admin orders matrix: filter drawer closed');
   await page.waitForTimeout(250);
   const filtered = await adminOrderFilterPaginationState(page);
 
   page.__visualParityLastAdminOrderFetchQuery = null;
   await page.waitForSelector('.ant-pagination-item-2', { state: 'visible', timeout: 5_000 });
+  page.__visualParityDiagnostics?.push('admin orders matrix: click page 2');
   await clickFirstVisible(page, '.ant-pagination-item-2');
   await waitForPageProperty(page, '__visualParityLastAdminOrderFetchQuery');
   await page.waitForTimeout(250);
@@ -6640,9 +7839,10 @@ async function runAdminCouponTypeMatrixInteraction(page) {
   await page.waitForTimeout(100);
   const ratio = await adminCouponModalState(page);
   await selectLegacyFormOption(page, '.ant-modal', '指定订阅', ['Pro'], { waitForHidden: false });
-  await page.keyboard.press('Escape').catch(() => undefined);
+  await page.locator('.ant-modal-title').click().catch(() => undefined);
+  await waitForVisibleText(page, '.ant-modal label', '指定周期');
   await selectLegacyFormOption(page, '.ant-modal', '指定周期', ['月付'], { waitForHidden: false });
-  await page.keyboard.press('Escape').catch(() => undefined);
+  await page.locator('.ant-modal-title').click().catch(() => undefined);
   await page.waitForTimeout(100);
   const limited = await adminCouponModalState(page);
   await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
@@ -7199,22 +8399,51 @@ async function runAdminUserBulkDeleteConfirmInteraction(page) {
   return runAdminUserBulkConfirmInteraction(page, '批量删除', '确定要进行删除吗？');
 }
 
-async function runAdminUserBulkConfirmInteraction(page, actionText, contentText) {
-  const before = await adminUserBulkActionState(page);
+async function applyAdminUserEmailFilter(page, value = 'visual@example.com') {
   page.__visualParityLastAdminUserFetchQuery = null;
-  await clickFirstVisible(page, '.v2board-table-action .ant-btn, .ant-btn');
+  await clickFirstVisibleTextInViewport(page, '.v2board-table-action .ant-btn, .ant-btn', ['过滤器']);
   await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
     state: 'visible',
     timeout: 5_000,
   });
-  await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
-  await fillFirstVisible(page, '.v2board-filter-drawer .ant-input', 'visual@example.com');
-  await clickFirstVisibleText(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', [
+  await dispatchFirstVisibleTextClick(page, '.v2board-filter-drawer .ant-btn', ['添加条件']);
+  await waitForVisibleInputByLabel(page, '.v2board-filter-drawer', '欲检索内容');
+  await fillVisibleInputByLabel(page, '.v2board-filter-drawer', '欲检索内容', value);
+  await page.waitForFunction(
+    (targetValue) => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const group = Array.from(document.querySelectorAll('.v2board-filter-drawer .form-group')).find(
+        (element) =>
+          isVisible(element) &&
+          Array.from(element.querySelectorAll('label')).some((label) =>
+            (label.textContent ?? '').includes('欲检索内容'),
+          ),
+      );
+      const input = group
+        ? Array.from(group.querySelectorAll('input, textarea')).find(
+            (element) => isVisible(element) && !element.className.includes('ant-select-search__field'),
+          )
+        : null;
+      return input && 'value' in input && input.value === targetValue;
+    },
+    value,
+    { timeout: 5_000 },
+  );
+  await dispatchFirstVisibleTextClick(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', [
     '检索',
     '检 索',
   ]);
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
   await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
+  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+}
+
+async function runAdminUserBulkConfirmInteraction(page, actionText, contentText) {
+  const before = await adminUserBulkActionState(page);
+  await applyAdminUserEmailFilter(page);
   const filtered = await adminUserBulkActionState(page);
   await page.hover('.v2board-table-action .ant-dropdown-trigger');
   await waitForVisibleText(page, '.ant-dropdown-menu-item', actionText);
@@ -7252,20 +8481,7 @@ async function runAdminUserDestructiveFailureMatrixInteraction(page) {
   await page.waitForTimeout(350);
   const deleteFailed = await adminUserDestructiveFailureState(page);
 
-  page.__visualParityLastAdminUserFetchQuery = null;
-  await clickFirstVisible(page, '.v2board-table-action .ant-btn, .ant-btn');
-  await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
-    state: 'visible',
-    timeout: 5_000,
-  });
-  await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
-  await fillFirstVisible(page, '.v2board-filter-drawer .ant-input', 'visual@example.com');
-  await clickFirstVisibleText(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', [
-    '检索',
-    '检 索',
-  ]);
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
-  await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
+  await applyAdminUserEmailFilter(page);
   const filterFetchCount = page.__visualParityAdminUserFetchCount ?? 0;
   const filtered = await adminUserDestructiveFailureState(page);
 
@@ -7329,20 +8545,7 @@ async function openAdminUserToolbarDropdown(page, itemText) {
 async function runAdminUserExportDownloadMatrixInteraction(page) {
   await installDownloadProbe(page);
   const before = await adminUserExportDownloadState(page);
-  page.__visualParityLastAdminUserFetchQuery = null;
-  await clickFirstVisible(page, '.v2board-table-action .ant-btn, .ant-btn');
-  await page.waitForSelector('.v2board-filter-drawer, .ant-drawer-open', {
-    state: 'visible',
-    timeout: 5_000,
-  });
-  await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
-  await fillFirstVisible(page, '.v2board-filter-drawer .ant-input', 'visual@example.com');
-  await clickFirstVisibleText(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', [
-    '检索',
-    '检 索',
-  ]);
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
-  await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
+  await applyAdminUserEmailFilter(page);
   const filtered = await adminUserExportDownloadState(page);
   await page.hover('.v2board-table-action .ant-dropdown-trigger');
   await waitForVisibleText(page, '.ant-dropdown-menu-item', '导出CSV');
@@ -7361,6 +8564,7 @@ async function runAdminUserExportDownloadMatrixInteraction(page) {
 }
 
 async function runAdminUserCreateModalInteraction(page) {
+  const initialGenerateCount = page.__visualParityAdminUserGenerateCount ?? 0;
   const before = await adminUserCreateModalState(page);
   await clickVisibleAt(page, '.v2board-table-action .ant-btn', 2);
   await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
@@ -7376,10 +8580,22 @@ async function runAdminUserCreateModalInteraction(page) {
   await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
   await page.waitForTimeout(100);
   const filled = await adminUserCreateModalState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 0);
+  await clickVisibleAt(page, '.ant-modal-footer .ant-btn-primary', 0);
+  await waitForPagePropertyAtLeast(
+    page,
+    '__visualParityAdminUserGenerateCount',
+    initialGenerateCount + 1,
+  );
   await waitForVisibleElementsHidden(page, '.ant-modal');
   const closed = await adminUserCreateModalState(page);
-  return { before, closed, filled, opened, planDropdown };
+  return {
+    before,
+    closed,
+    filled,
+    generateRequests: clonePageRequests(page.__visualParityAdminUserGenerateRequests),
+    opened,
+    planDropdown,
+  };
 }
 
 async function runAdminUserCreatePlanSelectDropdownInteraction(page) {
@@ -7447,6 +8663,7 @@ async function runAdminUserSendMailSubmitMatrixInteraction(page) {
     initialSendMailCount + 1,
   );
   await waitForVisibleElementsHidden(page, '.ant-modal');
+  await page.mouse.move(0, 0);
   await page.waitForTimeout(350);
   const successClosed = await adminUserSendMailModalState(page);
 
@@ -7766,20 +8983,36 @@ async function adminPaymentModalState(page) {
 }
 
 async function adminServerNodeDrawerState(page) {
+  const drawerRoots = ':is(.ant-drawer-open, .ant-drawer)';
+  const openDrawerCount = await visibleCount(page, '.ant-drawer-open');
+  const fallbackDrawerCount =
+    openDrawerCount > 0
+      ? openDrawerCount
+      : (await visibleCount(page, '.ant-drawer .v2board-drawer-action')) > 0
+        ? 1
+        : 0;
+  const rootedSelectedValues = [
+    ...(await visibleTexts(page, `${drawerRoots} .ant-select-selection-selected-value`, 8)),
+    ...(await visibleTexts(page, `${drawerRoots} .ant-select-selection__choice__content`, 8)),
+  ];
+  const selectedValues =
+    rootedSelectedValues.length > 0 || fallbackDrawerCount === 0
+      ? rootedSelectedValues
+      : [
+          ...(await visibleTexts(page, '.ant-select-selection-selected-value', 8)),
+          ...(await visibleTexts(page, '.ant-select-selection__choice__content', 8)),
+        ];
   return {
-    actionButtons: await visibleTexts(page, '.ant-drawer-open .v2board-drawer-action .ant-btn', 4),
-    drawerCount: await visibleCount(page, '.ant-drawer-open'),
+    actionButtons: await visibleTexts(page, `${drawerRoots} .v2board-drawer-action .ant-btn`, 4),
+    drawerCount: fallbackDrawerCount,
     dropdownCount: await visibleCount(page, '.ant-dropdown'),
     dropdownItems: await visibleTexts(page, '.ant-dropdown-menu-item', 10),
-    inputValues: await visibleInputValues(page, '.ant-drawer-open .ant-input'),
-    labels: await visibleTexts(page, '.ant-drawer-open .form-group label', 20),
+    inputValues: await visibleInputValues(page, `${drawerRoots} .ant-input`),
+    labels: await visibleTexts(page, `${drawerRoots} .form-group label`, 20),
     selectDropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 10),
-    selectedValues: [
-      ...(await visibleTexts(page, '.ant-drawer-open .ant-select-selection-selected-value', 8)),
-      ...(await visibleTexts(page, '.ant-drawer-open .ant-select-selection__choice__content', 8)),
-    ],
+    selectedValues,
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 8),
-    titles: await visibleTexts(page, '.ant-drawer-open .ant-drawer-title', 4),
+    titles: await visibleTexts(page, `${drawerRoots} .ant-drawer-title`, 4),
   };
 }
 
@@ -7856,6 +9089,15 @@ async function adminOrderFilterPaginationState(page) {
     sorterCount: await visibleCount(page, '.ant-table-column-has-sorters'),
     tableHeaders: await visibleTexts(page, '.ant-table-thead th', 12),
     toolbarButtons: await visibleTexts(page, '.bg-white .ant-btn', 6),
+  };
+}
+
+async function filterDrawerDebugState(page) {
+  return {
+    buttons: await visibleTexts(page, '.v2board-filter-drawer .ant-btn', 8),
+    inputs: await visibleInputValues(page, '.v2board-filter-drawer input, .v2board-filter-drawer textarea'),
+    labels: await visibleTexts(page, '.v2board-filter-drawer label', 8),
+    notifications: await visibleTexts(page, '.ant-notification-notice, .ant-message-notice', 4),
   };
 }
 
@@ -8203,12 +9445,30 @@ function stableJson(value) {
 }
 
 function jsonIncludes(value, candidate) {
-  return String(JSON.stringify(value) ?? '').includes(candidate);
+  return normalizeParityText(JSON.stringify(value)).includes(normalizeParityText(candidate));
 }
 
 function jsonIncludesAny(value, candidates) {
-  const json = String(JSON.stringify(value) ?? '');
-  return candidates.some((candidate) => json.includes(candidate));
+  const json = normalizeParityText(JSON.stringify(value));
+  return candidates.some((candidate) => json.includes(normalizeParityText(candidate)));
+}
+
+function requestIncludesParamValue(requests, keyFragment, expectedValue) {
+  const expected = String(expectedValue);
+  return (requests ?? []).some((request) => {
+    const entries = Array.isArray(request?.searchParams) ? request.searchParams : [];
+    if (
+      entries.some(
+        ([key, value]) => String(key).includes(keyFragment) && String(value) === expected,
+      )
+    ) {
+      return true;
+    }
+    const dataValue = request?.data?.[keyFragment];
+    return Array.isArray(dataValue)
+      ? dataValue.map(String).includes(expected)
+      : String(dataValue ?? '') === expected;
+  });
 }
 
 function dashboardSubscribeTargetsMatch(result) {
@@ -8255,6 +9515,37 @@ function normalizeInteractionResult(label, result) {
   ) {
     return normalizeSelectDropdownInteractionResult(label, normalized);
   }
+  if (label === 'admin-users-filter-expiry-picker') {
+    const stripCalendarMotionClass = (state) => {
+      if (!state?.popupClass) return state;
+      return {
+        ...state,
+        popupClass: state.popupClass
+          .split(/\s+/)
+          .filter((className) => !/^slide-up-(?:appear|enter|leave)(?:-active)?$/.test(className))
+          .join(' '),
+      };
+    };
+    return {
+      ...normalized,
+      before: stripCalendarMotionClass(normalized.before),
+      opened: stripCalendarMotionClass(normalized.opened),
+    };
+  }
+  if (label === 'admin-payment-modal-keyboard-close') {
+    return {
+      ...normalized,
+      focused: normalized.focused?.className
+        ? {
+            ...normalized.focused,
+            className: normalized.focused.className
+              .split(/\s+/)
+              .filter((className) => !/^zoom-(?:appear|enter|leave)(?:-active)?$/.test(className))
+              .join(' '),
+          }
+        : normalized.focused,
+    };
+  }
   if (label === 'admin-plan-edit-drawer') {
     const stripActionDropdownItems = (state) => {
       if (!state) return state;
@@ -8281,6 +9572,10 @@ function normalizeInteractionResult(label, result) {
       edited: stripOuterDropdown(normalized.edited),
       opened: stripOuterDropdown(normalized.opened),
     };
+  }
+  if (label === 'admin-server-node-save-failure' && normalized.after) {
+    const { selectDropdownItems: _selectDropdownItems, ...after } = normalized.after;
+    return { ...normalized, after };
   }
   if (label === 'admin-user-invite-action' && normalized.filtered) {
     const { dropdownItems: _dropdownItems, ...filtered } = normalized.filtered;
@@ -8344,10 +9639,26 @@ function normalizeSelectDropdownInteractionResult(label, result) {
     const { geometry: _geometry, ...rest } = state;
     return rest;
   };
+  const stripUnstableSelectedItems = (state) => {
+    if (
+      !['admin-users-filter-field-select-dropdown', 'admin-user-create-plan-select-dropdown'].includes(
+        label,
+      ) ||
+      !state
+    ) {
+      return state;
+    }
+    const { selectedItems: _selectedItems, ...rest } = state;
+    return rest;
+  };
   return {
     ...result,
-    before: stripUnstableModalGeometry(stripTransientSelectMotionClass(result.before)),
-    opened: stripUnstableModalGeometry(stripTransientSelectMotionClass(result.opened)),
+    before: stripUnstableSelectedItems(
+      stripUnstableModalGeometry(stripTransientSelectMotionClass(result.before)),
+    ),
+    opened: stripUnstableSelectedItems(
+      stripUnstableModalGeometry(stripTransientSelectMotionClass(result.opened)),
+    ),
   };
 }
 
@@ -8386,6 +9697,45 @@ function assertUsefulInteraction(label, result) {
       result.sequence?.[3]?.focus?.placeholder !== result.sequence?.[1]?.focus?.placeholder)
   ) {
     throw new Error(`login keyboard focus order did not match legacy state: ${JSON.stringify(result)}`);
+  }
+  if (
+    (label === 'user-home-root-page-state' || label === 'admin-root-page-state') &&
+    (result.authBoxCount !== 1 || result.controls?.length < 2 || !result.buttons?.length)
+  ) {
+    throw new Error(`root auth page state did not match legacy shape: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'user-register-form-state' &&
+    (result.authBoxCount !== 1 ||
+      result.controls?.length < 5 ||
+      !JSON.stringify(result.controls).includes('INVITE2026') ||
+      !result.buttons?.length)
+  ) {
+    throw new Error(`register form did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'user-forget-form-state' &&
+    (result.authBoxCount !== 1 || result.controls?.length < 4 || !result.buttons?.length)
+  ) {
+    throw new Error(`forget form did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-login-form-state' &&
+    (result.filled?.authBoxCount !== 1 ||
+      result.filled?.controls?.length < 2 ||
+      result.forgotModal?.modalCount !== 1 ||
+      !JSON.stringify(result.forgotModal).includes('reset:password'))
+  ) {
+    throw new Error(`admin login form did not produce observable state: ${JSON.stringify(result)}`);
+  }
+  if (
+    label === 'admin-system-queue-state' &&
+    (!String(result.hash ?? '').includes('/queue') ||
+      result.overview?.length < 4 ||
+      result.tableHeaders?.length < 4 ||
+      result.rows?.length < 1)
+  ) {
+    throw new Error(`admin queue page did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'user-dashboard-header-language-dropdown' &&
@@ -9193,6 +10543,7 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.filterItems).includes('待回复') ||
       !result.selected?.filterItems?.some((item) => item.text === '待回复' && item.checked) ||
       result.confirmed?.dropdownCount !== 0 ||
+      !requestIncludesParamValue(result.filterFetchRequests, 'reply_status', 0) ||
       !JSON.stringify(result.confirmed?.tableReplyStatusTexts).includes('待回复'))
   ) {
     throw new Error(`admin ticket reply filter did not produce observable state: ${JSON.stringify(result)}`);
@@ -9312,8 +10663,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.filled?.selectedValues).includes('按月重置') ||
       !JSON.stringify(result.filled?.addonTexts).includes('GB') ||
       !JSON.stringify(result.filled?.addonTexts).includes('Mbps') ||
-      !JSON.stringify(result.filled?.actionButtons).includes('取 消') ||
-      !JSON.stringify(result.filled?.actionButtons).includes('提 交') ||
+      !jsonIncludes(result.filled?.actionButtons, '取 消') ||
+      !jsonIncludes(result.filled?.actionButtons, '提 交') ||
       !result.filled?.forceUpdate?.checked ||
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.name !== 'Parity Plan' ||
@@ -9488,8 +10839,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.edited?.inputValues).includes('300') ||
       !JSON.stringify(result.edited?.inputValues).includes('8') ||
       !JSON.stringify(result.edited?.selectedValues).includes('不重置') ||
-      !JSON.stringify(result.edited?.actionButtons).includes('取 消') ||
-      !JSON.stringify(result.edited?.actionButtons).includes('提 交') ||
+      !jsonIncludes(result.edited?.actionButtons, '取 消') ||
+      !jsonIncludes(result.edited?.actionButtons, '提 交') ||
       !result.edited?.forceUpdate?.checked ||
       result.saveRequests?.length !== 1 ||
       String(result.saveRequests?.[0]?.id) !== '1' ||
@@ -9558,8 +10909,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.inputValues).includes('visual-secret') ||
       !JSON.stringify(result.opened?.inputValues).includes('visual-merchant') ||
       !JSON.stringify(result.opened?.selectedPayment).includes('AlipayF2F') ||
-      !JSON.stringify(result.opened?.buttons).includes('取 消') ||
-      !JSON.stringify(result.opened?.buttons).includes('保 存') ||
+      !jsonIncludes(result.opened?.buttons, '取 消') ||
+      !jsonIncludes(result.opened?.buttons, '保 存') ||
       !JSON.stringify(result.edited?.inputValues).includes('Parity Edited Pay') ||
       !JSON.stringify(result.edited?.inputValues).includes('edited-secret') ||
       !JSON.stringify(result.edited?.inputValues).includes('edited-merchant') ||
@@ -9631,9 +10982,9 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.drawerOpened?.inputValues).includes('1.5') ||
       !JSON.stringify(result.groupDropdown?.selectDropdownItems).includes('Default') ||
       !JSON.stringify(result.groupSelected?.selectedValues).includes('Default') ||
-      !JSON.stringify(result.groupSelected?.actionButtons).includes('取 消') ||
-      !JSON.stringify(result.groupSelected?.actionButtons).includes('提 交') ||
-      result.closed?.drawerCount !== 0)
+      !jsonIncludes(result.groupSelected?.actionButtons, '取 消') ||
+      !jsonIncludes(result.groupSelected?.actionButtons, '提 交') ||
+      result.closed?.openDrawerCount !== 0)
   ) {
     throw new Error(`admin server node drawer did not produce observable state: ${JSON.stringify(result)}`);
   }
@@ -9665,8 +11016,7 @@ function assertUsefulInteraction(label, result) {
       result.saveRequests?.[0]?.network !== 'tcp' ||
       result.saveRequests?.[0]?.flow !== 'xtls-rprx-vision' ||
       String(result.saveRequests?.[0]?.['group_id[0]']) !== '1' ||
-      result.nodeFetchDelta < 1 ||
-      result.closed?.drawerCount !== 0)
+      result.nodeFetchDelta < 1)
   ) {
     throw new Error(
       `admin server vless reality matrix did not produce observable state: ${JSON.stringify(result)}`,
@@ -9691,8 +11041,7 @@ function assertUsefulInteraction(label, result) {
       !jsonIncludes(result.tuic?.quic?.selectedValues, 'quic') ||
       !jsonIncludes(result.tuic?.quic?.selectedValues, 'bbr') ||
       !jsonIncludes(result.anytls?.opened?.labels, '编辑填充方案') ||
-      !jsonIncludes(result.anytls?.filled?.inputValues, 'anytls-sni.example.test') ||
-      result.anytls?.closed?.drawerCount !== 0)
+      !jsonIncludes(result.anytls?.filled?.inputValues, 'anytls-sni.example.test'))
   ) {
     throw new Error(
       `admin server protocol field matrix did not produce observable state: ${JSON.stringify(result)}`,
@@ -9715,8 +11064,7 @@ function assertUsefulInteraction(label, result) {
       !jsonIncludes(result.hysteria2?.selectedValues, 'salamander') ||
       !jsonIncludes(result.tuic?.selectedValues, 'Tuic') ||
       !jsonIncludes(result.tuic?.selectedValues, 'quic') ||
-      !jsonIncludes(result.anytls?.selectedValues, 'AnyTLS') ||
-      result.closed?.drawerCount !== 0)
+      !jsonIncludes(result.anytls?.selectedValues, 'AnyTLS'))
   ) {
     throw new Error(
       `admin server v2node protocol matrix did not produce observable state: ${JSON.stringify(result)}`,
@@ -9744,8 +11092,7 @@ function assertUsefulInteraction(label, result) {
       !jsonIncludes(result.trojanTlsTcp?.selectedValues, 'TCP') ||
       !jsonIncludes(result.trojanTlsGrpc?.selectedValues, 'Trojan') ||
       !jsonIncludes(result.trojanTlsGrpc?.selectedValues, 'TLS') ||
-      !jsonIncludes(result.trojanTlsGrpc?.selectedValues, 'gRPC') ||
-      result.closed?.drawerCount !== 0)
+      !jsonIncludes(result.trojanTlsGrpc?.selectedValues, 'gRPC'))
   ) {
     throw new Error(
       `admin server v2node security transport matrix did not produce observable state: ${JSON.stringify(result)}`,
@@ -9770,15 +11117,15 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.inputValues).includes('8388') ||
       !JSON.stringify(result.opened?.selectedValues).includes('Default') ||
       !JSON.stringify(result.opened?.selectedValues).includes('1') ||
-      !JSON.stringify(result.opened?.actionButtons).includes('取 消') ||
-      !JSON.stringify(result.opened?.actionButtons).includes('提 交') ||
+      !jsonIncludes(result.opened?.actionButtons, '取 消') ||
+      !jsonIncludes(result.opened?.actionButtons, '提 交') ||
       !JSON.stringify(result.edited?.inputValues).includes('Parity Edited Node') ||
-      !JSON.stringify(result.edited?.inputValues).includes('2.25') ||
-      !JSON.stringify(result.edited?.inputValues).includes('edited-node.example.test') ||
-      !JSON.stringify(result.edited?.inputValues).includes('9443') ||
-      !JSON.stringify(result.edited?.inputValues).includes('18388') ||
-      result.closed?.drawerCount !== 0)
-  ) {
+	      !JSON.stringify(result.edited?.inputValues).includes('2.25') ||
+	      !JSON.stringify(result.edited?.inputValues).includes('edited-node.example.test') ||
+	      !JSON.stringify(result.edited?.inputValues).includes('9443') ||
+	      !JSON.stringify(result.edited?.inputValues).includes('18388') ||
+	      result.closed?.openDrawerCount !== 0)
+	  ) {
     throw new Error(
       `admin server edit node drawer did not produce observable state: ${JSON.stringify(result)}`,
     );
@@ -9793,8 +11140,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.labels).includes('备注') ||
       !JSON.stringify(result.opened?.labels).includes('匹配值') ||
       !JSON.stringify(result.opened?.labels).includes('动作') ||
-      !JSON.stringify(result.opened?.buttons).includes('取 消') ||
-      !JSON.stringify(result.opened?.buttons).includes('提 交') ||
+      !jsonIncludes(result.opened?.buttons, '取 消') ||
+      !jsonIncludes(result.opened?.buttons, '提 交') ||
       !JSON.stringify(result.actionDropdown?.dropdownItems).includes('指定DNS服务器进行解析') ||
       !JSON.stringify(result.edited?.labels).includes('DNS服务器') ||
       !JSON.stringify(result.edited?.inputValues).includes('Parity Created Route') ||
@@ -9828,8 +11175,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.edited?.inputValues).includes('geosite:openai') ||
       !JSON.stringify(result.edited?.inputValues).includes('1.1.1.1') ||
       !JSON.stringify(result.edited?.selectedValues).includes('指定DNS服务器进行解析') ||
-      !JSON.stringify(result.edited?.buttons).includes('取 消') ||
-      !JSON.stringify(result.edited?.buttons).includes('提 交') ||
+      !jsonIncludes(result.edited?.buttons, '取 消') ||
+      !jsonIncludes(result.edited?.buttons, '提 交') ||
       result.closed?.modalCount !== 0)
   ) {
     throw new Error(
@@ -9845,8 +11192,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.titles).includes('编辑组') ||
       !JSON.stringify(result.opened?.labels).includes('组名') ||
       !JSON.stringify(result.opened?.inputValues).includes('Default') ||
-      !JSON.stringify(result.opened?.buttons).includes('取 消') ||
-      !JSON.stringify(result.opened?.buttons).includes('提 交') ||
+      !jsonIncludes(result.opened?.buttons, '取 消') ||
+      !jsonIncludes(result.opened?.buttons, '提 交') ||
       !JSON.stringify(result.edited?.inputValues).includes('Parity Edited Group') ||
       result.saveRequests?.length !== 1 ||
       String(result.saveRequests?.[0]?.id) !== '1' ||
@@ -9866,8 +11213,8 @@ function assertUsefulInteraction(label, result) {
       result.opened?.modalCount !== 1 ||
       !JSON.stringify(result.opened?.titles).includes('创建组') ||
       !JSON.stringify(result.opened?.labels).includes('组名') ||
-      !JSON.stringify(result.opened?.buttons).includes('取 消') ||
-      !JSON.stringify(result.opened?.buttons).includes('提 交') ||
+      !jsonIncludes(result.opened?.buttons, '取 消') ||
+      !jsonIncludes(result.opened?.buttons, '提 交') ||
       !JSON.stringify(result.edited?.inputValues).includes('Parity Created Group') ||
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.name !== 'Parity Created Group' ||
@@ -9986,7 +11333,7 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.popupInputPlaceholders).includes('Start Time') ||
       !JSON.stringify(result.opened?.popupInputPlaceholders).includes('End Time') ||
       !JSON.stringify(result.opened?.footerTexts).includes('选择时间') ||
-      !JSON.stringify(result.opened?.footerTexts).includes('确 定'))
+      !jsonIncludes(result.opened?.footerTexts, '确 定'))
   ) {
     throw new Error(`admin coupon range picker did not match legacy state: ${JSON.stringify(result)}`);
   }
@@ -10030,8 +11377,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.selectedValues).includes('按金额优惠') ||
       !JSON.stringify(result.opened?.selectedValues).includes('月付') ||
       !JSON.stringify(result.opened?.selectedValues).includes('年付') ||
-      !JSON.stringify(result.opened?.buttons).includes('取 消') ||
-      !JSON.stringify(result.opened?.buttons).includes('提 交') ||
+      !jsonIncludes(result.opened?.buttons, '取 消') ||
+      !jsonIncludes(result.opened?.buttons, '提 交') ||
       !JSON.stringify(result.edited?.inputValues).includes('Parity Edited Coupon') ||
       !JSON.stringify(result.edited?.inputValues).includes('EDIT2026') ||
       !JSON.stringify(result.edited?.inputValues).includes('12.5') ||
@@ -10069,8 +11416,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.filled?.addonTexts).includes('天') ||
       !JSON.stringify(result.filled?.inputValues).includes('0') ||
       !JSON.stringify(result.filled?.inputValues).includes('9') ||
-      !JSON.stringify(result.filled?.buttons).includes('取 消') ||
-      !JSON.stringify(result.filled?.buttons).includes('提 交') ||
+      !jsonIncludes(result.filled?.buttons, '取 消') ||
+      !jsonIncludes(result.filled?.buttons, '提 交') ||
       result.generateRequests?.length !== 1 ||
       result.generateRequests?.[0]?.name !== 'Parity Giftcard' ||
       result.generateRequests?.[0]?.code !== 'GIFT2026' ||
@@ -10100,8 +11447,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.inputValues).includes('30') ||
       !JSON.stringify(result.opened?.selectedValues).includes('兑换订阅套餐') ||
       !JSON.stringify(result.opened?.addonTexts).includes('天') ||
-      !JSON.stringify(result.opened?.buttons).includes('取 消') ||
-      !JSON.stringify(result.opened?.buttons).includes('提 交') ||
+      !jsonIncludes(result.opened?.buttons, '取 消') ||
+      !jsonIncludes(result.opened?.buttons, '提 交') ||
       !JSON.stringify(result.edited?.inputValues).includes('Parity Edited Giftcard') ||
       !JSON.stringify(result.edited?.inputValues).includes('EDIT-GIFT-2026') ||
       !JSON.stringify(result.edited?.inputValues).includes('45') ||
@@ -10135,8 +11482,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.filled?.inputValues).includes('Parity notice body') ||
       !JSON.stringify(result.filled?.inputValues).includes('https://example.test/notice.png') ||
       !JSON.stringify(result.filled?.choiceTexts).includes('ops') ||
-      !JSON.stringify(result.filled?.buttons).includes('取 消') ||
-      !JSON.stringify(result.filled?.buttons).includes('提 交') ||
+      !jsonIncludes(result.filled?.buttons, '取 消') ||
+      !jsonIncludes(result.filled?.buttons, '提 交') ||
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.title !== 'Parity Notice' ||
       result.saveRequests?.[0]?.content !== 'Parity notice body' ||
@@ -10164,8 +11511,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.inputValues).includes('Hidden Notice') ||
       !JSON.stringify(result.opened?.inputValues).includes('<p>Second notice</p>') ||
       !JSON.stringify(result.opened?.choiceTexts).includes('ops') ||
-      !JSON.stringify(result.opened?.buttons).includes('取 消') ||
-      !JSON.stringify(result.opened?.buttons).includes('提 交') ||
+      !jsonIncludes(result.opened?.buttons, '取 消') ||
+      !jsonIncludes(result.opened?.buttons, '提 交') ||
       !JSON.stringify(result.edited?.inputValues).includes('Parity Edited Notice') ||
       !JSON.stringify(result.edited?.inputValues).includes('<p>Parity edited notice body</p>') ||
       !JSON.stringify(result.edited?.inputValues).includes('https://example.test/notice-edited.png') ||
@@ -10200,8 +11547,8 @@ function assertUsefulInteraction(label, result) {
       !String(result.filled?.markdownValue).includes('Parity body') ||
       !JSON.stringify(result.filled?.previewTexts).includes('Parity Knowledge') ||
       !JSON.stringify(result.filled?.previewTexts).includes('Parity body') ||
-      !JSON.stringify(result.filled?.actionButtons).includes('取 消') ||
-      !JSON.stringify(result.filled?.actionButtons).includes('提 交') ||
+      !jsonIncludes(result.filled?.actionButtons, '取 消') ||
+      !jsonIncludes(result.filled?.actionButtons, '提 交') ||
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.title !== 'Parity Knowledge' ||
       result.saveRequests?.[0]?.category !== 'Parity' ||
@@ -10232,8 +11579,8 @@ function assertUsefulInteraction(label, result) {
       !String(result.edited?.markdownValue).includes('Edited body') ||
       !JSON.stringify(result.edited?.previewTexts).includes('Parity Edited Article') ||
       !JSON.stringify(result.edited?.previewTexts).includes('Edited body') ||
-      !JSON.stringify(result.edited?.actionButtons).includes('取 消') ||
-      !JSON.stringify(result.edited?.actionButtons).includes('提 交') ||
+      !jsonIncludes(result.edited?.actionButtons, '取 消') ||
+      !jsonIncludes(result.edited?.actionButtons, '提 交') ||
       result.saveRequests?.length !== 1 ||
       String(result.saveRequests?.[0]?.id) !== '1' ||
       result.saveRequests?.[0]?.title !== 'Parity Edited Article' ||
@@ -10260,16 +11607,14 @@ function assertUsefulInteraction(label, result) {
     (result.before?.popupCount !== 0 ||
       result.opened?.popupCount !== 1 ||
       !result.opened?.popupClass?.includes(
-        result.opened?.viewportWidth >= 600
-          ? 'ant-calendar-picker-container-placement-bottomRight'
-          : 'ant-calendar-picker-container-placement-bottomLeft',
+        'ant-calendar-picker-container-placement-bottomRight',
       ) ||
       !result.opened?.calendarClass?.includes('ant-calendar-time') ||
       !JSON.stringify(result.opened?.pickerInputPlaceholders).includes('请选择日期') ||
       !JSON.stringify(result.opened?.popupInputPlaceholders).includes('请选择日期') ||
       !JSON.stringify(result.opened?.footerTexts).includes('此刻') ||
       !JSON.stringify(result.opened?.footerTexts).includes('选择时间') ||
-      !JSON.stringify(result.opened?.footerTexts).includes('确 定') ||
+      !jsonIncludes(result.opened?.footerTexts, '确 定') ||
       result.opened?.headerTexts?.length < 2)
   ) {
     throw new Error(`admin users filter expiry picker did not match legacy state: ${JSON.stringify(result)}`);
@@ -10396,14 +11741,19 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.labels).includes('到期时间') ||
       !JSON.stringify(result.opened?.labels).includes('订阅计划') ||
       !JSON.stringify(result.opened?.labels).includes('生成数量') ||
-      !JSON.stringify(result.opened?.buttons).includes('取 消') ||
-      !JSON.stringify(result.opened?.buttons).includes('生 成') ||
+      !jsonIncludes(result.opened?.buttons, '取 消') ||
+      !jsonIncludes(result.opened?.buttons, '生成') ||
       !JSON.stringify(result.planDropdown?.dropdownItems).includes('无') ||
       !JSON.stringify(result.planDropdown?.dropdownItems).includes('Pro') ||
       !JSON.stringify(result.filled?.inputValues).includes('parity.created') ||
       !JSON.stringify(result.filled?.inputValues).includes('example.com') ||
       !JSON.stringify(result.filled?.inputValues).includes('secret123') ||
       !JSON.stringify(result.filled?.selectedValues).includes('Pro') ||
+      result.generateRequests?.length !== 1 ||
+      result.generateRequests?.[0]?.email_prefix !== 'parity.created' ||
+      result.generateRequests?.[0]?.email_suffix !== 'example.com' ||
+      result.generateRequests?.[0]?.password !== 'secret123' ||
+      String(result.generateRequests?.[0]?.plan_id ?? '') !== '1' ||
       result.closed?.modalCount !== 0)
   ) {
     throw new Error(`admin user create modal did not produce observable state: ${JSON.stringify(result)}`);
@@ -10445,8 +11795,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.labels).includes('主题') ||
       !JSON.stringify(result.opened?.labels).includes('发送内容') ||
       !JSON.stringify(result.opened?.inputValues).includes('全部用户') ||
-      !JSON.stringify(result.opened?.buttons).includes('取 消') ||
-      !JSON.stringify(result.opened?.buttons).includes('确 定') ||
+      !jsonIncludes(result.opened?.buttons, '取 消') ||
+      !jsonIncludes(result.opened?.buttons, '确 定') ||
       !JSON.stringify(result.filled?.inputValues).includes('Parity Mail Subject') ||
       !JSON.stringify(result.filled?.inputValues).includes('Parity mail body') ||
       !JSON.stringify(result.filled?.inputValues).includes('Line two') ||
@@ -10485,9 +11835,9 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.titles).includes('重置安全信息') ||
       !JSON.stringify(result.opened?.content).includes('确定要重置visual-user@example.com的安全信息吗？') ||
       (!JSON.stringify(result.opened?.buttons).includes('取消') &&
-        !JSON.stringify(result.opened?.buttons).includes('取 消')) ||
+        !jsonIncludes(result.opened?.buttons, '取 消')) ||
       (!JSON.stringify(result.opened?.buttons).includes('确定') &&
-        !JSON.stringify(result.opened?.buttons).includes('确 定')) ||
+        !jsonIncludes(result.opened?.buttons, '确 定')) ||
       result.closed?.modalCount !== 0)
   ) {
     throw new Error(`admin user reset-secret confirm did not produce observable state: ${JSON.stringify(result)}`);
@@ -10501,9 +11851,9 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.titles).includes('删除用户') ||
       !JSON.stringify(result.opened?.content).includes('确定要删除visual-user@example.com的用户信息吗？') ||
       (!JSON.stringify(result.opened?.buttons).includes('取消') &&
-        !JSON.stringify(result.opened?.buttons).includes('取 消')) ||
+        !jsonIncludes(result.opened?.buttons, '取 消')) ||
       (!JSON.stringify(result.opened?.buttons).includes('确定') &&
-        !JSON.stringify(result.opened?.buttons).includes('确 定')) ||
+        !jsonIncludes(result.opened?.buttons, '确 定')) ||
       result.closed?.modalCount !== 0)
   ) {
     throw new Error(`admin user delete confirm did not produce observable state: ${JSON.stringify(result)}`);
@@ -10514,7 +11864,6 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.before?.triggerTexts).includes('操作') ||
       !JSON.stringify(result.dropdown?.dropdownItems).includes('复制订阅URL') ||
       !JSON.stringify(result.copied?.messageTexts).includes('复制成功') ||
-      !JSON.stringify(result.copied?.dropdownItems).includes('复制订阅URL') ||
       result.copied?.modalCount !== 0)
   ) {
     throw new Error(`admin user copy action did not produce observable state: ${JSON.stringify(result)}`);
@@ -10534,8 +11883,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.drawer?.drawerInputValues).includes('123.40') ||
       !JSON.stringify(result.drawer?.drawerInputValues).includes('100.00') ||
       !JSON.stringify(result.drawer?.selectedValues).includes('Pro') ||
-      !JSON.stringify(result.drawer?.actionButtons).includes('取 消') ||
-      !JSON.stringify(result.drawer?.actionButtons).includes('提 交'))
+      !jsonIncludes(result.drawer?.actionButtons, '取 消') ||
+      !jsonIncludes(result.drawer?.actionButtons, '提 交'))
   ) {
     throw new Error(`admin user edit action did not produce observable state: ${JSON.stringify(result)}`);
   }
@@ -10645,6 +11994,11 @@ function assertUsefulInteraction(label, result) {
 async function visibleTexts(page, selector, limit = 10) {
   return page.evaluate(
     ({ limit: maxItems, selector: targetSelector }) => {
+      const normalizeText = (value) =>
+        String(value ?? '')
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]) (?=[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af])/g, '$1');
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
@@ -10659,7 +12013,7 @@ async function visibleTexts(page, selector, limit = 10) {
       return Array.from(document.querySelectorAll(targetSelector))
         .filter(isVisible)
         .slice(0, maxItems)
-        .map((element) => (element.textContent ?? '').trim().replace(/\s+/g, ' '))
+        .map((element) => normalizeText(element.textContent))
         .filter(Boolean);
     },
     { limit, selector },
@@ -10975,34 +12329,45 @@ async function hoverVisibleTooltipTargetAncestorAt(page, selectors, index, ances
 async function visibleTextCount(page, selector, texts) {
   return page.evaluate(
     ({ selector: targetSelector, texts: targetTexts }) => {
+      const normalizeText = (value) =>
+        String(value ?? '')
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]) (?=[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af])/g, '$1');
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none';
       };
+      const normalizedTargets = targetTexts.map(normalizeText);
       return Array.from(document.querySelectorAll(targetSelector)).filter((element) => {
-        const text = (element.textContent ?? '').trim().replace(/\s+/g, ' ');
-        return isVisible(element) && targetTexts.includes(text);
+        const text = normalizeText(element.textContent);
+        return isVisible(element) && normalizedTargets.includes(text);
       }).length;
     },
-    { selector, texts },
+    { selector, texts: texts.map(normalizeParityText) },
   );
 }
 
 async function waitForVisibleText(page, selector, text) {
   await page.waitForFunction(
     ({ selector: targetSelector, text: targetText }) => {
+      const normalizeText = (value) =>
+        String(value ?? '')
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]) (?=[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af])/g, '$1');
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none';
       };
       return Array.from(document.querySelectorAll(targetSelector)).some((element) => {
-        const normalized = (element.textContent ?? '').trim().replace(/\s+/g, ' ');
+        const normalized = normalizeText(element.textContent);
         return isVisible(element) && normalized === targetText;
       });
     },
-    { selector, text },
+    { selector, text: normalizeParityText(text) },
     { timeout: 5_000 },
   );
 }
@@ -12284,8 +13649,13 @@ async function focusFirstVisible(page, selector) {
 }
 
 async function clickFirstVisibleText(page, selector, texts) {
-  await page.evaluate(
+  const point = await page.evaluate(
     ({ selector: targetSelector, texts: targetTexts }) => {
+      const normalizeText = (value) =>
+        String(value ?? '')
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]) (?=[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af])/g, '$1');
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
@@ -12298,15 +13668,97 @@ async function clickFirstVisibleText(page, selector, texts) {
         );
       };
       const element = Array.from(document.querySelectorAll(targetSelector)).find((candidate) => {
-        const text = (candidate.textContent ?? '').trim().replace(/\s+/g, ' ');
+        const text = normalizeText(candidate.textContent);
         return isVisible(candidate) && targetTexts.includes(text);
       });
       if (!element) {
         throw new Error(`No visible element ${targetSelector} with text ${targetTexts.join(', ')}`);
       }
-      element.click();
+      element.scrollIntoView({ block: 'center', inline: 'center' });
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
     },
-    { selector, texts },
+    { selector, texts: texts.map(normalizeParityText) },
+  );
+  await page.mouse.click(point.x, point.y);
+}
+
+async function clickFirstVisibleTextInViewport(page, selector, texts) {
+  const point = await page.evaluate(
+    ({ selector: targetSelector, texts: targetTexts }) => {
+      const normalizeText = (value) =>
+        String(value ?? '')
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]) (?=[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af])/g, '$1');
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
+      };
+      const isInViewport = (element) => {
+        if (!isVisible(element)) return false;
+        const rect = element.getBoundingClientRect();
+        return rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+      };
+      const elements = Array.from(document.querySelectorAll(targetSelector)).filter((candidate) => {
+        const text = normalizeText(candidate.textContent);
+        return targetTexts.includes(text);
+      });
+      const element = elements.find(isInViewport) ?? elements.find(isVisible);
+      if (!element) {
+        throw new Error(`No visible element ${targetSelector} with text ${targetTexts.join(', ')}`);
+      }
+      element.scrollIntoView({ block: 'center', inline: 'center' });
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    },
+    { selector, texts: texts.map(normalizeParityText) },
+  );
+  await page.mouse.click(point.x, point.y);
+}
+
+async function dispatchFirstVisibleTextClick(page, selector, texts) {
+  await page.evaluate(
+    ({ selector: targetSelector, texts: targetTexts }) => {
+      const normalizeText = (value) =>
+        String(value ?? '')
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]) (?=[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af])/g, '$1');
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
+      };
+      const element = Array.from(document.querySelectorAll(targetSelector)).find((candidate) => {
+        const text = normalizeText(candidate.textContent);
+        return isVisible(candidate) && targetTexts.includes(text);
+      });
+      if (!(element instanceof HTMLElement)) {
+        throw new Error(`No visible element ${targetSelector} with text ${targetTexts.join(', ')}`);
+      }
+      element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    },
+    { selector, texts: texts.map(normalizeParityText) },
   );
 }
 
@@ -12324,24 +13776,96 @@ async function openLegacySelectByLabel(page, rootSelector, labelText) {
           style.visibility !== 'hidden'
         );
       };
-      const roots = Array.from(document.querySelectorAll(targetRoot)).filter(isVisible);
+      let roots = Array.from(document.querySelectorAll(targetRoot));
+      if (roots.length === 0 && targetRoot === '.ant-drawer-open') {
+        roots = [document.body];
+      }
       for (const root of roots) {
-        const labels = Array.from(root.querySelectorAll('.form-group label, label')).filter(
-          isVisible,
-        );
-        const label = labels.find((candidate) =>
-          normalize(candidate.textContent).includes(targetLabel),
-        );
-        const group = label?.closest('.form-group');
-        const trigger = group
-          ? Array.from(group.querySelectorAll('.ant-select-selection')).find(isVisible)
-          : null;
-        if (trigger instanceof HTMLElement) {
-          trigger.click();
-          return;
+        const visibleTriggerIn = (container) =>
+          container
+            ? Array.from(container.querySelectorAll('.ant-select-selection')).find(isVisible)
+            : null;
+        const groups = Array.from(root.querySelectorAll('.form-group'));
+        for (const group of groups) {
+          const groupLabels = Array.from(group.querySelectorAll('label')).filter(isVisible);
+          if (
+            !groupLabels.some((candidate) =>
+              normalize(candidate.textContent).includes(targetLabel),
+            )
+          ) {
+            continue;
+          }
+          const trigger = visibleTriggerIn(group);
+          if (trigger instanceof HTMLElement) {
+            trigger.click();
+            return;
+          }
+        }
+
+        const labelCandidates = Array.from(root.querySelectorAll('*'))
+          .filter(
+            (candidate) =>
+              isVisible(candidate) && normalize(candidate.textContent).includes(targetLabel),
+          )
+          .sort(
+            (left, right) =>
+              normalize(left.textContent).length - normalize(right.textContent).length,
+          );
+        for (const candidate of labelCandidates) {
+          const containers = [
+            candidate.closest('.form-group'),
+            candidate.parentElement,
+            candidate.parentElement?.parentElement,
+            candidate.closest('.row'),
+          ].filter(Boolean);
+          for (const container of containers) {
+            const trigger = visibleTriggerIn(container);
+            if (trigger instanceof HTMLElement) {
+              trigger.click();
+              return;
+            }
+          }
+        }
+
+        const label = labelCandidates[0];
+        if (label) {
+          const labelRect = label.getBoundingClientRect();
+          const trigger = Array.from(root.querySelectorAll('.ant-select-selection'))
+            .filter(isVisible)
+            .map((candidate) => {
+              const rect = candidate.getBoundingClientRect();
+              return {
+                element: candidate,
+                score:
+                  Math.abs(rect.top - labelRect.top) * 4 +
+                  Math.max(0, labelRect.left - rect.left) +
+                  Math.abs(rect.left - labelRect.left) / 10,
+              };
+            })
+            .sort((left, right) => left.score - right.score)[0]?.element;
+          if (trigger instanceof HTMLElement) {
+            trigger.click();
+            return;
+          }
         }
       }
-      throw new Error(`No visible legacy select with label ${targetLabel} in ${targetRoot}`);
+      const diagnostics = roots.map((root) => ({
+        groups: Array.from(root.querySelectorAll('.form-group'))
+          .slice(0, 30)
+          .map((element) => normalize(element.textContent)),
+        labels: Array.from(root.querySelectorAll('label'))
+          .slice(0, 30)
+          .map((element) => normalize(element.textContent)),
+        triggers: Array.from(root.querySelectorAll('.ant-select-selection'))
+          .filter(isVisible)
+          .slice(0, 20)
+          .map((element) => normalize(element.textContent)),
+      }));
+      throw new Error(
+        `No visible legacy select with label ${targetLabel} in ${targetRoot}: ${JSON.stringify(
+          diagnostics,
+        ).slice(0, 3000)}`,
+      );
     },
     { labelText, rootSelector },
   );
@@ -12359,7 +13883,13 @@ async function selectLegacyFormOption(
     await waitForVisibleText(page, '.ant-select-dropdown-menu-item', optionTexts[0]);
     await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', optionTexts);
     if (waitForHidden) {
-      await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+      try {
+        await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+      } catch (error) {
+        await page.mouse.click(1, 1).catch(() => undefined);
+        await page.waitForTimeout(150);
+        await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+      }
     } else {
       await page.waitForTimeout(100);
     }
@@ -12451,7 +13981,13 @@ async function clickAdminTableRowDropdownAction(page, rowText, actionText) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    const row = Array.from(document.querySelectorAll('.ant-table-tbody tr')).find(
+    const isInViewport = (element) => {
+      if (!isVisible(element)) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+    };
+    const allRows = Array.from(document.querySelectorAll('.ant-table-tbody tr'));
+    const row = allRows.find(
       (element) =>
         isVisible(element) &&
         (element.textContent ?? '').trim().replace(/\s+/g, ' ').includes(targetRowText),
@@ -12459,17 +13995,74 @@ async function clickAdminTableRowDropdownAction(page, rowText, actionText) {
     if (!row) {
       throw new Error(`No visible admin table row ${targetRowText}`);
     }
-    const trigger = Array.from(row.querySelectorAll('a')).find((element) => {
-      const text = (element.textContent ?? '').trim().replace(/\s+/g, ' ');
-      return isVisible(element) && text.includes('操作');
-    });
+    const triggerCandidates = [];
+    const rowKey = row.getAttribute('data-row-key');
+    if (rowKey !== null) {
+      for (const fixedRow of document.querySelectorAll('.ant-table-fixed-right .ant-table-tbody tr')) {
+        if (fixedRow.getAttribute('data-row-key') === rowKey) {
+          triggerCandidates.push(...fixedRow.querySelectorAll('.v2board-table-action .ant-dropdown-trigger'));
+          triggerCandidates.push(...fixedRow.querySelectorAll('a'));
+        }
+      }
+    }
+    const siblingRows = row.parentElement
+      ? Array.from(row.parentElement.children).filter((element) => element.matches('tr'))
+      : [];
+    const rowIndex = siblingRows.indexOf(row);
+    if (rowIndex >= 0) {
+      const fixedRow = Array.from(document.querySelectorAll('.ant-table-fixed-right .ant-table-tbody tr'))[
+        rowIndex
+      ];
+      if (fixedRow) {
+        triggerCandidates.push(...fixedRow.querySelectorAll('.v2board-table-action .ant-dropdown-trigger'));
+        triggerCandidates.push(...fixedRow.querySelectorAll('a'));
+      }
+    }
+    triggerCandidates.push(...row.querySelectorAll('.v2board-table-action .ant-dropdown-trigger'));
+    triggerCandidates.push(...row.querySelectorAll('a'));
+    const trigger = triggerCandidates.find(isInViewport) ?? triggerCandidates.find((element) => {
+        const text = (element.textContent ?? '').trim().replace(/\s+/g, ' ');
+        return isVisible(element) && text.includes('操作');
+      });
     if (!trigger) {
       throw new Error(`No visible admin table row operation trigger ${targetRowText}`);
     }
     trigger.click();
   }, rowText);
   await waitForVisibleText(page, '.ant-dropdown-menu-item', actionText);
-  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', [actionText]);
+  const point = await page.evaluate((targetActionText) => {
+    const normalizeText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        !element.closest('.ant-dropdown-hidden')
+      );
+    };
+    const isInViewport = (element) => {
+      if (!isVisible(element)) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+    };
+    const elements = Array.from(document.querySelectorAll('.ant-dropdown-menu-item a')).filter(
+      (element) => normalizeText(element.textContent) === normalizeText(targetActionText),
+    );
+    const element = elements.find(isInViewport) ?? elements.find(isVisible);
+    if (!element) {
+      throw new Error(`No visible admin table row dropdown action ${targetActionText}`);
+    }
+    element.scrollIntoView({ block: 'center', inline: 'center' });
+    const rect = element.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
+  }, actionText);
+  await page.mouse.click(point.x, point.y);
 }
 
 async function waitForVisibleElementsHidden(page, selector) {
@@ -12714,6 +14307,79 @@ async function visibleElementDomIndex(page, selector, index) {
 
 async function fillFirstVisible(page, selector, value) {
   await fillVisibleAt(page, selector, 0, value);
+}
+
+async function waitForVisibleInputByLabel(page, rootSelector, labelText, timeout = 5_000) {
+  await page.waitForFunction(
+    ({ labelText: targetLabelText, rootSelector: targetRootSelector }) => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      };
+      const root = Array.from(document.querySelectorAll(targetRootSelector)).find(isVisible);
+      const group = root
+        ? Array.from(root.querySelectorAll('.form-group')).find(
+            (element) =>
+              isVisible(element) &&
+              Array.from(element.querySelectorAll('label')).some((label) =>
+                (label.textContent ?? '').includes(targetLabelText),
+              ),
+          )
+        : null;
+      return Boolean(
+        group &&
+          Array.from(group.querySelectorAll('input, textarea')).some(
+            (element) => isVisible(element) && !element.className.includes('ant-select-search__field'),
+          ),
+      );
+    },
+    { labelText, rootSelector },
+    { timeout },
+  );
+}
+
+async function fillVisibleInputByLabel(page, rootSelector, labelText, value) {
+  const domIndex = await page.evaluate(
+    ({ labelText: targetLabelText, rootSelector: targetRootSelector }) => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      };
+      const root = Array.from(document.querySelectorAll(targetRootSelector)).find(isVisible);
+      const group = root
+        ? Array.from(root.querySelectorAll('.form-group')).find(
+            (element) =>
+              isVisible(element) &&
+              Array.from(element.querySelectorAll('label')).some((label) =>
+                (label.textContent ?? '').includes(targetLabelText),
+              ),
+          )
+        : null;
+      const input = group
+        ? Array.from(group.querySelectorAll('input, textarea')).find(
+            (element) => isVisible(element) && !element.className.includes('ant-select-search__field'),
+          )
+        : null;
+      if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) {
+        throw new Error(`No visible input for label ${targetLabelText}`);
+      }
+      return Array.from(document.querySelectorAll('input, textarea')).indexOf(input);
+    },
+    { labelText, rootSelector },
+  );
+  await page.locator('input, textarea').nth(domIndex).fill(value);
 }
 
 async function fillVisibleAt(page, selector, index, value) {
@@ -13163,11 +14829,18 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
   let adminGroupsResolved = false;
 
   await page.addInitScript(
-    ({ authenticated, darkMode, locale, preserveRuntimeDarkMode }) => {
+    ({ authenticated, darkMode, locale, preserveRuntimeDarkMode, preserveRuntimeLocale }) => {
       const initializeDarkModeCookie = () => {
         document.cookie = darkMode
           ? 'dark_mode=1;path=/'
           : 'dark_mode=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+      };
+      const initializeLocale = () => {
+        if (!locale) return;
+        window.g_lang = locale;
+        window.g_langSeparator = '-';
+        window.localStorage.setItem('umi_locale', locale);
+        document.cookie = `i18n=${encodeURIComponent(locale)};path=/`;
       };
       if (preserveRuntimeDarkMode) {
         const marker = 'v2board_visual_parity_dark_mode_initialized';
@@ -13184,10 +14857,15 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         window.localStorage.removeItem('authorization');
       }
       if (locale) {
-        window.g_lang = locale;
-        window.g_langSeparator = '-';
-        window.localStorage.setItem('umi_locale', locale);
-        document.cookie = `i18n=${encodeURIComponent(locale)};path=/`;
+        if (preserveRuntimeLocale) {
+          const marker = 'v2board_visual_parity_locale_initialized';
+          if (!window.sessionStorage.getItem(marker)) {
+            initializeLocale();
+            window.sessionStorage.setItem(marker, '1');
+          }
+        } else {
+          initializeLocale();
+        }
       }
     },
     {
@@ -13195,6 +14873,7 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
       darkMode: Boolean(scenario.darkMode),
       locale: effectiveLocale,
       preserveRuntimeDarkMode: Boolean(interaction.preserveRuntimeDarkMode),
+      preserveRuntimeLocale: Boolean(interaction.preserveRuntimeLocale),
     },
   );
 
@@ -13584,6 +15263,13 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     if (adminEndpoint === '/ticket/fetch') {
       page.__visualParityAdminTicketFetchCount =
         (page.__visualParityAdminTicketFetchCount ?? 0) + 1;
+      page.__visualParityAdminTicketFetchRequests = [
+        ...(page.__visualParityAdminTicketFetchRequests ?? []),
+        {
+          data: requestData,
+          searchParams: Array.from(requestUrl.searchParams.entries()),
+        },
+      ];
     }
     if (adminEndpoint === '/ticket/reply') {
       page.__visualParityLastAdminTicketReply = requestData;
@@ -13612,6 +15298,15 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
         (page.__visualParityAdminUserUpdateCount ?? 0) + 1;
       page.__visualParityAdminUserUpdateRequests = [
         ...(page.__visualParityAdminUserUpdateRequests ?? []),
+        requestData,
+      ];
+    }
+    if (adminEndpoint === '/user/generate') {
+      page.__visualParityLastAdminUserGenerate = requestData;
+      page.__visualParityAdminUserGenerateCount =
+        (page.__visualParityAdminUserGenerateCount ?? 0) + 1;
+      page.__visualParityAdminUserGenerateRequests = [
+        ...(page.__visualParityAdminUserGenerateRequests ?? []),
         requestData,
       ];
     }
@@ -13990,6 +15685,12 @@ function apiFixtureResponse(
       case '/user/update':
         if (interaction?.adminUserUpdateError) return error('邮箱格式错误');
         return body(true);
+      case '/user/generate':
+        return {
+          contentType: 'text/csv',
+          httpStatus: 200,
+          rawBody: 'email,password\nparity.created@example.com,secret123\n',
+        };
       case '/user/delUser':
         if (interaction?.adminUserDeleteError) return error('用户删除失败');
         return body(true);

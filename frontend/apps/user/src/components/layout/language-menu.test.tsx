@@ -114,6 +114,44 @@ describe('LanguageMenu antd dropdown behavior', () => {
     ).toEqual(['English', 'فارسی', '日本語', '한국어', 'Tiếng Việt', '简体中文', '繁體中文']);
   });
 
+  it('persists the i18n cookie before triggering the legacy locale reload', () => {
+    document.cookie = 'i18n=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => undefined);
+
+    act(() => {
+      root.render(<LanguageMenu legacyIcon showLabel triggerClassName="v2board-login-i18n-btn" />);
+    });
+
+    const trigger = container.querySelector('.v2board-login-i18n-btn') as HTMLElement;
+    trigger.getBoundingClientRect = () =>
+      ({
+        top: 50,
+        right: 90,
+        bottom: 70,
+        left: 30,
+        width: 60,
+        height: 20,
+        x: 30,
+        y: 50,
+        toJSON: () => {},
+      }) as DOMRect;
+
+    act(() => {
+      trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const zhCN = [...document.body.querySelectorAll('.ant-dropdown-menu-item')].find(
+      (item) => item.textContent === '简体中文',
+    ) as HTMLElement;
+    act(() => {
+      zhCN.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+
+    expect(document.cookie).toContain('i18n=zh-CN');
+    expect(window.localStorage.getItem('umi_locale')).toBe('zh-CN');
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
   it('keeps the top-center dropdown inside the viewport like rc-align overflow adjustment', () => {
     const heightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
     const widthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');

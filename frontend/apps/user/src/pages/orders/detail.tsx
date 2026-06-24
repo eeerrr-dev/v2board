@@ -22,7 +22,7 @@ import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
 import { CheckCircleIcon, InfoCircleIcon, WarningIcon } from '@/components/ant-icon';
 import { toast } from '@/lib/legacy-toast';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
-import { formatLegacyDateTime } from '@v2board/config/format';
+import { formatUserLegacyDateTime } from '@/lib/legacy-date';
 
 const PERIOD_LABEL_KEY: Record<string, string> = {
   month_price: 'plan.monthly',
@@ -297,7 +297,7 @@ export default function OrderDetailPage() {
                 </InfoRow>
               ) : null}
               <InfoRow label={t('order.created_at')}>
-                {formatLegacyDateTime(order.created_at)}
+                {formatUserLegacyDateTime(order.created_at)}
               </InfoRow>
             </div>
           </LegacyBlock>

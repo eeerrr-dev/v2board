@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useState, type AnchorHTMLAttributes } from 'react';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
-import { formatLegacyDateTime, formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { formatUserLegacyDateTime, formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { legacyConfirm } from '@/components/legacy-confirm';
 import { LegacyEmpty } from '@/components/legacy-empty';
 import { isLegacyMobile } from '@/lib/legacy-settings';
@@ -10,6 +10,7 @@ import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
 import { legacyHref } from '@/lib/legacy-href';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
+import { legacyGetLocale } from '@v2board/i18n';
 
 const STATUS_LABEL: Record<number, { key: string; status: string }> = {
   0: { key: 'order.status_unpaid', status: 'error' },
@@ -46,7 +47,24 @@ export default function OrdersPage() {
   const [activeMobileKey, setActiveMobileKey] = useState<number | null>(null);
   const mobile = isLegacyMobile();
   const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(orders.length);
-  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(orders.length);
+  const legacyUserAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  const legacyLocale = legacyGetLocale();
+  const isFirefoxLegacyEngine = /firefox/i.test(legacyUserAgent);
+  const isWebKitLegacyEngine =
+    /applewebkit/i.test(legacyUserAgent) && !/(chrome|chromium|crios|edg|firefox)/i.test(legacyUserAgent);
+  const isNarrowLegacyViewport = typeof window !== 'undefined' && window.innerWidth < 768;
+  const needsFirefoxJapaneseFixedRowOffset =
+    isFirefoxLegacyEngine && legacyLocale === 'ja-JP' && !isNarrowLegacyViewport;
+  const fixedBodyRowHeightOffset =
+    ((!isFirefoxLegacyEngine && (isWebKitLegacyEngine || ['fa-IR', 'vi-VN'].includes(legacyLocale))) ||
+      needsFirefoxJapaneseFixedRowOffset) &&
+    orders.length > 2
+      ? 1
+      : 0;
+  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(orders.length, {
+    bodyRowHeightOffset: fixedBodyRowHeightOffset,
+    bodyRowHeightOffsetMaxSourceHeight: 54,
+  });
   const desktopTableClassName = [
     'ant-table',
     'ant-table-default',
@@ -93,7 +111,7 @@ export default function OrdersPage() {
                     <div className="am-list-line am-list-line-multiple">
                       <div className="am-list-content">
                         {order.plan?.name}{' '}
-                        <div className="am-list-brief">{formatLegacyDateTime(order.created_at)}</div>
+                        <div className="am-list-brief">{formatUserLegacyDateTime(order.created_at)}</div>
                       </div>
                       <div className="am-list-extra">
                         <div>
@@ -238,7 +256,7 @@ export default function OrdersPage() {
                                   {status ? t(status.key) : ''}
                                 </div>
                               </td>
-                              <td className="">{formatLegacyDateMinuteSlash(order.created_at)}</td>
+                              <td className="">{formatUserLegacyDateMinuteSlash(order.created_at)}</td>
                               <td
                                 className="ant-table-fixed-columns-in-body"
                                 style={{ textAlign: 'right' }}

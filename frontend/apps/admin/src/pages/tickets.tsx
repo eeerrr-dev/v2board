@@ -33,6 +33,7 @@ import { LegacyBadge } from '@/components/legacy-badge';
 import { LegacyDivider } from '@/components/legacy-divider';
 
 type TicketQuery = AdminPageQuery & {
+  size?: 'small';
   total?: number;
   status?: number;
   email?: string;
@@ -148,11 +149,16 @@ function TicketListPage() {
     query.reply_status ?? null,
   );
 
-  const filter = (key: keyof TicketQuery, value: TicketQuery[keyof TicketQuery]) => {
+  const filter = (
+    key: keyof TicketQuery,
+    value: TicketQuery[keyof TicketQuery],
+    extra?: Partial<TicketQuery>,
+  ) => {
     setQuery((current) => ({
       ...current,
       current: 1,
       pageSize: 10,
+      ...extra,
       [key]: value,
     }));
   };
@@ -174,7 +180,15 @@ function TicketListPage() {
 
   const confirmReplyStatusFilter = () => {
     setReplyStatusFilterOpen(false);
-    filter('reply_status', replyStatusFilterValue);
+    setQuery((current) => ({
+      current: 1,
+      pageSize: 10,
+      total: tickets.data?.total,
+      size: 'small',
+      ...(current.status === undefined ? {} : { status: current.status }),
+      ...(current.email === undefined ? {} : { email: current.email }),
+      reply_status: replyStatusFilterValue,
+    }));
   };
 
   const clearReplyStatusFilter = () => {

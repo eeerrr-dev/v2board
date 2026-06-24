@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertRouteCoverage,
+  assertSameOrderedList,
   assertSameOrderedValues,
   assertSubset,
   extractAssignedRouteArray,
@@ -9,6 +10,7 @@ import {
   extractVisualScenarioPaths,
   formatAuditSuccess,
   normalizeScenarioRoute,
+  resolveMakeListReferences,
   routePatternMatches,
 } from '../../../scripts/parity-config-audit.mjs';
 
@@ -82,9 +84,28 @@ describe('parity config audit helpers', () => {
     ]);
   });
 
-  it('fails when browser parity lists reference missing script labels', () => {
-    expect(assertSubset('browser scenarios', ['user-login', 'missing'], ['user-login'])).toEqual([
-      'browser scenarios has values not defined by visual-parity.mjs: missing',
+  it('expands Makefile list references for full browser parity coverage', () => {
+    expect(
+      resolveMakeListReferences(['$(VISUAL_PARITY_SCENARIOS)'], {
+        VISUAL_PARITY_SCENARIOS: ['user-login', 'admin-dashboard'],
+      }),
+    ).toEqual(['user-login', 'admin-dashboard']);
+  });
+
+  it('fails when browser parity does not mirror visual scenarios', () => {
+    expect(
+      assertSameOrderedList('BROWSER_PARITY_SCENARIOS', ['user-login'], [
+        'user-login',
+        'admin-dashboard',
+      ]),
+    ).toEqual([
+      'BROWSER_PARITY_SCENARIOS is missing labels from visual-parity.mjs: admin-dashboard',
+    ]);
+  });
+
+  it('fails when browser parity viewports reference missing script labels', () => {
+    expect(assertSubset('browser viewports', ['desktop', 'wide'], ['desktop'])).toEqual([
+      'browser viewports has values not defined by visual-parity.mjs: wide',
     ]);
   });
 
@@ -111,15 +132,15 @@ describe('parity config audit helpers', () => {
     expect(
       formatAuditSuccess({
         adminRouteCount: 19,
-        browserScenarioCount: 18,
+        browserScenarioCount: 272,
         browserViewportCount: 2,
         failures: [],
-        interactionScenarioCount: 155,
+        interactionScenarioCount: 161,
         userRouteCount: 16,
-        visualScenarioCount: 144,
+        visualScenarioCount: 272,
       }),
     ).toBe(
-      'Parity config audit OK: Makefile tracks 144 visual scenarios, 155 interaction scenarios, 18 browser scenarios across 2 viewports, parity covers 16 user routes plus 19 admin routes, and dev entry route mirrors are aligned.',
+      'Parity config audit OK: Makefile tracks 272 visual scenarios, 161 interaction scenarios, 272 browser scenarios across 2 viewports, parity covers 16 user routes plus 19 admin routes, and dev entry route mirrors are aligned.',
     );
   });
 });

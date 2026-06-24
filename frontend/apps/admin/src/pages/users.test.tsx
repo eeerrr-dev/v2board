@@ -770,9 +770,9 @@ describe('UsersPage legacy user manager', () => {
     expect(rowActionSource).toContain('<LegacyEditIcon /> 编辑');
     expect(rowActionSource).toContain("runUserAction('assign', row)");
     expect(rowActionSource).toContain('<LegacyPlusIcon /> 分配订单');
-    expect(rowActionSource).toContain(
-      '<LegacyDropdownMenuItem key="copy" onClick={(event) => event.stopPropagation()}>',
-    );
+    expect(rowActionSource).toContain('key="copy"');
+    expect(rowActionSource).toContain('keepOpenOnClick');
+    expect(rowActionSource).toContain('onClick={(event) => event.stopPropagation()}');
     expect(rowActionSource).toContain("runUserAction('copy', row)");
     expect(rowActionSource).toContain('<LegacyCopyIcon /> 复制订阅URL');
     expect(rowActionSource).toContain("runUserAction('reset', row)");

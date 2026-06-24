@@ -14,7 +14,7 @@ import {
   useSaveTicketMutation,
   useTickets,
 } from '@/lib/queries';
-import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { legacyHref } from '@/lib/legacy-href';
 import type { TicketLevel } from '@v2board/types';
 
@@ -245,10 +245,10 @@ export default function TicketsPage() {
                                 )}
                               </td>
                               <td>
-                                {formatLegacyDateMinuteSlash(ticket.created_at)}
+                                {formatUserLegacyDateMinuteSlash(ticket.created_at)}
                               </td>
                               <td>
-                                {formatLegacyDateMinuteSlash(ticket.updated_at)}
+                                {formatUserLegacyDateMinuteSlash(ticket.updated_at)}
                               </td>
                               <td
                                 className="ant-table-fixed-columns-in-body"

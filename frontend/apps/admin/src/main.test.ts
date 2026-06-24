@@ -869,7 +869,7 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain("'content-type': 'application/json'");
     expect(visualParitySource).toContain("readySelector: '.block-transparent.bg-image'");
     expect(visualParitySource).toContain("readySelector: '.js-chat-input'");
-    expect(visualParitySource).toContain("const browserName = process.env.VISUAL_PARITY_BROWSER ?? 'chromium';");
+    expect(visualParitySource).toContain("const browserName = process.env.VISUAL_PARITY_BROWSER || 'chromium';");
     expect(visualParitySource).toContain(
       "const exactScenarioFilter = process.env.VISUAL_PARITY_EXACT_FILTER === '1';",
     );
@@ -886,7 +886,7 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain('return browserType.launch(launchOptions);');
     expect(visualParitySource).toContain('await browser.close();');
     expect(visualParitySource).toContain('async function captureScenarioWithFreshBrowser');
-    expect(visualParitySource).toContain("const browserMode = process.env.VISUAL_PARITY_FRESH_BROWSER ?? 'auto';");
+    expect(visualParitySource).toContain("const browserMode = process.env.VISUAL_PARITY_FRESH_BROWSER || 'auto';");
     expect(visualParitySource).toContain('function shouldUseFreshBrowser(scenario, viewport)');
     expect(visualParitySource).toContain(
       "return !(scenario.label === 'admin-dashboard' && viewport.label === 'desktop');",

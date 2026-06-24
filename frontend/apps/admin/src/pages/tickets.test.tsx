@@ -385,6 +385,8 @@ describe('TicketsPage legacy ticket manager', () => {
       pageSize: 10,
       status: 0,
       reply_status: [1],
+      size: 'small',
+      total: 42,
     });
 
     await act(async () => {
@@ -531,7 +533,10 @@ describe('TicketsPage legacy ticket manager', () => {
     expect(ticketsSource).toContain('className="ant-dropdown-trigger"');
     expect(ticketsSource).toContain('ant-table-filter-dropdown');
     expect(ticketsSource).toContain('ant-table-filter-dropdown-link confirm');
-    expect(ticketsSource).toContain("filter('reply_status', replyStatusFilterValue)");
+    expect(ticketsSource).toContain('setQuery((current) => ({');
+    expect(ticketsSource).toContain('reply_status: replyStatusFilterValue');
+    expect(ticketsSource).toContain("size: 'small'");
+    expect(ticketsSource).toContain('total: tickets.data?.total');
     expect(ticketsSource).not.toContain('filters: (query.status !== 1 && [');
     expect(ticketsSource).not.toContain("]) as ColumnType<Ticket>['filters'],");
   });

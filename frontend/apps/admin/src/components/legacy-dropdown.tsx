@@ -197,6 +197,10 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
   const closeFromOverlayClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest('.ant-dropdown-menu-item-disabled')) return;
+    if (target?.closest('[data-legacy-dropdown-keep-open="true"]')) {
+      onOverlayClick?.(event);
+      return;
+    }
     clearDelayTimer();
     onOverlayClick?.(event);
     if (opensOnClick || opensOnContextMenu) {
@@ -463,12 +467,14 @@ export function LegacyDropdownMenu({ children }: { children: ReactNode }) {
 export function LegacyDropdownMenuItem({
   children,
   disabled,
+  keepOpenOnClick,
   onClick,
   onContextMenu,
   style,
 }: {
   children?: ReactNode;
   disabled?: boolean;
+  keepOpenOnClick?: boolean;
   onClick?: (event: ReactMouseEvent<HTMLLIElement>) => void;
   onContextMenu?: (event: ReactMouseEvent<HTMLLIElement>) => void;
   style?: CSSProperties;
@@ -481,6 +487,7 @@ export function LegacyDropdownMenuItem({
       )}
       role="menuitem"
       aria-disabled={disabled || undefined}
+      data-legacy-dropdown-keep-open={keepOpenOnClick || undefined}
       style={style}
       onClickCapture={(event) => {
         if (!disabled) return;

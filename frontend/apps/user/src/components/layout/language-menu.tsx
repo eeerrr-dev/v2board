@@ -48,13 +48,11 @@ export function LanguageMenu({
   const locales = getEnabledLocales();
   const currentLabel = SUPPORTED_LOCALES.find((locale) => locale.code === legacyGetLocale())?.label;
 
-  // The original SelectLang.set() calls umi setLocale(e) with one argument, then writes
-  // the i18n cookie. setLocale itself decides whether a reload is needed.
-  const selectLocale = (locale: string) => {
+  const selectLocale = useCallback((locale: string) => {
     setOpen(false);
-    legacySetLocale(locale);
     setLegacyCookie('i18n', locale);
-  };
+    legacySetLocale(locale);
+  }, []);
 
   // rc-align positions the body-portaled overlay with absolute document coordinates.
   // Auth pages use topCenter (bottom-center to trigger top-center, [0,-4]); the
@@ -112,6 +110,19 @@ export function LanguageMenu({
     return () => document.removeEventListener('click', close);
   }, [open]);
 
+  const handleLocaleItemNativeSelect = useCallback(
+    (event: MouseEvent) => {
+      const item = event.currentTarget;
+      if (!(item instanceof HTMLElement)) return;
+      const locale = item.dataset.localeCode;
+      if (!locale) return;
+      event.preventDefault();
+      event.stopPropagation();
+      selectLocale(locale);
+    },
+    [selectLocale],
+  );
+
   const popover =
     dropdownStatus !== 'exited' && coords
       ? createPortal(
@@ -137,13 +148,16 @@ export function LanguageMenu({
               {locales.map((locale) => (
                 <li
                   key={locale.code}
+                  ref={(element) => {
+                    if (element) {
+                      element.onmousedown = handleLocaleItemNativeSelect;
+                      element.onclick = handleLocaleItemNativeSelect;
+                    }
+                  }}
                   className="ant-dropdown-menu-item"
                   role="menuitem"
                   aria-disabled="false"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    selectLocale(locale.code);
-                  }}
+                  data-locale-code={locale.code}
                 >
                   {locale.label}
                 </li>

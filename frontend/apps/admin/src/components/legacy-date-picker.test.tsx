@@ -89,6 +89,31 @@ describe('LegacyDatePicker', () => {
     expect(popup?.querySelector('input[type="datetime-local"]')).toBeNull();
   });
 
+  it('keeps drawer pickers aligned to the right edge on narrow viewports', async () => {
+    const originalInnerWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+
+    await act(async () => {
+      root.render(
+        <div className="v2board-filter-drawer">
+          <LegacyDatePicker showTime style={{ width: '100%' }} onChange={() => undefined} />
+        </div>,
+      );
+    });
+
+    await act(async () => {
+      container
+        .querySelector('.ant-calendar-picker-input')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(document.querySelector('.ant-calendar-picker-container')?.className).toBe(
+      'ant-calendar-picker-container  ant-calendar-picker-container-placement-bottomRight slide-up-appear slide-up-appear-active',
+    );
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
+  });
+
   it('selects a date like the old showTime DatePicker and closes only after OK', async () => {
     const onChange = vi.fn();
     const onOk = vi.fn();

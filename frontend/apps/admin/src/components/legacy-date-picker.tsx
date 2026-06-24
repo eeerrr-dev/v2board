@@ -170,7 +170,7 @@ function LegacyDatePickerComponent({
         rootRef.current?.closest('.ant-drawer, .ant-drawer-open, .v2board-filter-drawer'),
       );
       const nextPlacement =
-        (isInDrawer && window.innerWidth >= 600) || rect.left + popupWidth > window.innerWidth
+        isInDrawer || rect.left + popupWidth > window.innerWidth
           ? 'bottomRight'
           : 'bottomLeft';
       setPopupPlacement(nextPlacement);

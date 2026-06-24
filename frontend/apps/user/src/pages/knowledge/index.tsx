@@ -13,6 +13,7 @@ import { useTransitionStatus } from '@/lib/use-transition-status';
 import { lockLegacyDrawerBodyScroll } from '@/lib/legacy-body-scroll';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { getRequestLocale } from '@/lib/api';
+import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
 import type { Knowledge } from '@v2board/types';
 
 declare global {
@@ -167,7 +168,7 @@ export default function KnowledgePage() {
                       <h5 className="font-size-base mb-1">{item.title}</h5>
                       <small>
                         {t('knowledge.last_update', {
-                          date: formatKnowledgeDate(item.updated_at),
+                          date: formatUserLegacyDateSlash(item.updated_at),
                         })}
                       </small>
                     </a>
@@ -221,10 +222,4 @@ export default function KnowledgePage() {
       )}
     </>
   );
-}
-
-function formatKnowledgeDate(timestamp: number) {
-  const date = new Date(timestamp * 1000);
-  const pad = (value: number) => `${value}`.padStart(2, '0');
-  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
 }

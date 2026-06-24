@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useReplyTicketMutation, useTicket } from '@/lib/queries';
-import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { toast } from '@/lib/legacy-toast';
 
 function legacyTicketMessageLength(data?: { message?: unknown[] }) {
@@ -82,7 +82,7 @@ export default function TicketDetailPage() {
           item.is_me ? (
             <div key={index}>
               <div className="font-size-sm text-muted my-2 text-right">
-                {formatLegacyDateMinuteSlash(item.created_at)}
+                {formatUserLegacyDateMinuteSlash(item.created_at)}
               </div>
               <div className="text-right ml-4">
                 <div className="d-inline-block bg-gray-lighter px-3 py-2 mb-2 mw-100 rounded text-left">
@@ -93,7 +93,7 @@ export default function TicketDetailPage() {
           ) : (
             <div key={index}>
               <div className="font-size-sm text-muted my-2">
-                {formatLegacyDateMinuteSlash(item.created_at)}
+                {formatUserLegacyDateMinuteSlash(item.created_at)}
               </div>
               <div className="mr-4">
                 <div className="d-inline-block bg-success-lighter px-3 py-2 mb-2 mw-100 rounded text-left">

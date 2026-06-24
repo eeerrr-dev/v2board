@@ -55,7 +55,7 @@ describe('legacy i18n dictionaries', () => {
     });
   });
 
-  it('keeps the bundled legacy zh-CN display copy when no dictionary is loaded', () => {
+  it('keeps the bundled legacy zh-CN display copy from source dictionaries', () => {
     setLegacyLocale('zh-CN');
 
     const i18n = createI18n();
@@ -90,9 +90,9 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('auth.tos_html', { url: 'https://example.test' })).toContain(
       'href="{url}"',
     );
-    expect(i18n.t('node.status_tip')).toBe('节点五分钟内节点在线情况');
+    expect(i18n.t('node.status_tip')).toBe('五分钟内节点在线情况');
     expect(i18n.t('ticket.message_placeholder')).toBe('请描述您遇到的问题');
-    expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后会到达你的佣金账户。');
+    expect(i18n.t('invite.pending_hint')).toBe('佣金将会在确认后到达您的佣金账户。');
     expect(i18n.t('plan.pick_title')).toBe('选择最适合您的计划');
     expect(i18n.t('plan.pick_best_for_you')).toBe('选择最适合您的计划');
     expect(i18n.t('plan.select_other')).toBe('选择其它订阅');
@@ -382,12 +382,24 @@ describe('legacy i18n dictionaries', () => {
 
     setLegacyLocale('ja-JP');
     i18n = createI18n();
+    expect(i18n.t('nav.dashboard')).toBe('ダッシュボード');
+    expect(i18n.t('nav.knowledge')).toBe('ナレッジベース');
+    expect(i18n.t('dashboard.plan')).toBe('マイプラン');
+    expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
+      '使用済み 1 GB / 合計 10 GB',
+    );
     expect(i18n.t('common.confirm')).toBe('確定');
     expect(i18n.t('common.save')).toBe('変更を保存');
     expect(i18n.t('auth.submit_register')).toBe('新規登録');
 
     setLegacyLocale('fa-IR');
     i18n = createI18n();
+    expect(i18n.t('nav.dashboard')).toBe('داشبرد');
+    expect(i18n.t('nav.knowledge')).toBe('کار با مستندات');
+    expect(i18n.t('dashboard.plan')).toBe('اشتراک من');
+    expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
+      'استفاده شده 1 GB / مجموع 10 GB',
+    );
     expect(i18n.t('common.cancel')).toBe('انصراف');
     expect(i18n.t('common.save')).toBe('ذخیره کردن');
     expect(i18n.t('auth.submit_register')).toBe('ثبت‌نام');
@@ -497,6 +509,19 @@ describe('legacy i18n dictionaries', () => {
     const i18n = createI18n();
 
     expect(i18n.t('ticket.replied')).toBe('已答复');
+  });
+
+  it('keeps unknown placeholders from bundled legacy translations literal', () => {
+    setLegacyLocale('ko-KR');
+
+    const i18n = createI18n();
+
+    expect(i18n.t('dashboard.used_traffic', { used: '2/5', total: '5' })).toBe(
+      '{date}에 만료됩니다, 만료 {day}이 전',
+    );
+    expect(i18n.t('dashboard.devices_online', { alive_ip: 1, device_limit: 3 })).toBe(
+      '온라인 1/3 장치',
+    );
   });
 
   it('stamps the provider fallback into getLocale for unsupported navigators', () => {

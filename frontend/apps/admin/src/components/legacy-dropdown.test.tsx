@@ -232,6 +232,43 @@ describe('LegacyDropdown', () => {
     vi.useRealTimers();
   });
 
+  it('keeps overlays open when a menu item opts into the old copy-action behavior', async () => {
+    const onOverlayClick = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <LegacyDropdown
+          trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+          overlay={
+            <LegacyDropdownMenu>
+              <LegacyDropdownMenuItem keepOpenOnClick>复制订阅URL</LegacyDropdownMenuItem>
+            </LegacyDropdownMenu>
+          }
+          onOverlayClick={onOverlayClick}
+        >
+          <button type="button">操作</button>
+        </LegacyDropdown>,
+      );
+    });
+
+    const trigger = container.querySelector<HTMLButtonElement>('button')!;
+    mockTriggerRect(trigger);
+
+    await act(async () => {
+      trigger.click();
+    });
+
+    const dropdown = document.body.querySelector<HTMLElement>('.ant-dropdown')!;
+    expect(dropdown.className).not.toContain('ant-dropdown-hidden');
+
+    await act(async () => {
+      dropdown.querySelector<HTMLElement>('.ant-dropdown-menu-item')?.click();
+    });
+
+    expect(onOverlayClick).toHaveBeenCalledTimes(1);
+    expect(dropdown.className).not.toContain('ant-dropdown-hidden');
+  });
+
   it('keeps the old trigger class on disabled dropdown children without opening', async () => {
     await act(async () => {
       root.render(

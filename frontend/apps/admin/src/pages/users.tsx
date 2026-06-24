@@ -487,7 +487,11 @@ export default function UsersPage() {
               <LegacyPlusIcon /> 分配订单
             </a>
           </LegacyDropdownMenuItem>
-          <LegacyDropdownMenuItem key="copy" onClick={(event) => event.stopPropagation()}>
+          <LegacyDropdownMenuItem
+            key="copy"
+            keepOpenOnClick
+            onClick={(event) => event.stopPropagation()}
+          >
             <a onClick={() => runUserAction('copy', row)}>
               <LegacyCopyIcon /> 复制订阅URL
             </a>

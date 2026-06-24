@@ -9,6 +9,7 @@ import jaJP from './locales/ja-JP';
 import viVN from './locales/vi-VN';
 import koKR from './locales/ko-KR';
 import faIR from './locales/fa-IR';
+import { legacyDictionaries } from './locales/legacy-dictionaries';
 import {
   createLegacySourceReverseMap,
   translateLegacyDictionary,
@@ -61,7 +62,7 @@ declare global {
 function getLegacyDictionary(locale: SupportedLocale): Record<string, string> | undefined {
   if (typeof window === 'undefined') return undefined;
   const i18nSettings = (window as unknown as { settings?: { i18n?: LegacyI18nMap } }).settings?.i18n;
-  return i18nSettings?.[locale];
+  return i18nSettings?.[locale] ?? legacyDictionaries[locale];
 }
 
 function isSupportedLocale(locale: string | null | undefined): locale is SupportedLocale {

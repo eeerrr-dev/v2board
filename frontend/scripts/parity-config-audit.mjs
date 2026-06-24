@@ -47,7 +47,10 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
 
   const makeVisualScenarios = readMakeList(makefile, 'VISUAL_PARITY_SCENARIOS');
   const makeInteractionScenarios = readMakeList(makefile, 'INTERACTION_PARITY_SCENARIOS');
-  const makeBrowserScenarios = readMakeList(makefile, 'BROWSER_PARITY_SCENARIOS');
+  const makeBrowserScenarios = resolveMakeListReferences(
+    readMakeList(makefile, 'BROWSER_PARITY_SCENARIOS'),
+    { VISUAL_PARITY_SCENARIOS: makeVisualScenarios },
+  );
   const makeBrowserViewports = readMakeList(makefile, 'BROWSER_PARITY_VIEWPORTS');
   const visualScenarioBlock = extractBlock(
     parityScript,
@@ -117,7 +120,7 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
       makeInteractionScenarios,
       interactionScenarios,
     ),
-    ...assertSubset('BROWSER_PARITY_SCENARIOS', makeBrowserScenarios, visualScenarios),
+    ...assertSameOrderedList('BROWSER_PARITY_SCENARIOS', makeBrowserScenarios, visualScenarios),
     ...assertSubset('BROWSER_PARITY_VIEWPORTS', makeBrowserViewports, visualViewports),
     ...assertInteractionTargetsExist(visualScenarios, interactionTargets),
     ...assertRouteCoverage(
@@ -190,6 +193,18 @@ export function readMakeList(source, name) {
   }
 
   return chunks.join(' ').trim().split(/\s+/).filter(Boolean);
+}
+
+export function resolveMakeListReferences(values, references) {
+  return values.flatMap((value) => {
+    const match = /^\$\(([^)]+)\)$/.exec(value);
+    if (!match) return [value];
+    const resolved = references[match[1]];
+    if (!resolved) {
+      throw new Error(`Unsupported Makefile list reference ${value}`);
+    }
+    return resolved;
+  });
 }
 
 export function extractBlock(source, startMarker, endMarker) {
