@@ -4,7 +4,7 @@ import { ConfigProvider, App as AntdApp, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
-import { createI18n } from '@v2board/i18n';
+import { createI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
 import {
   getNormalizedLegacyHashPath,
   installLegacyDevModuleRecovery,
@@ -65,6 +65,7 @@ applyAdminLegacySettings();
 applyInitialDarkMode();
 
 const i18n = createI18n();
+installLocaleDocumentEnvironment(i18n);
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error) => {

@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
     'order.detail': '订单详情',
     'plan.checkout_title': '确认订单',
   } as Record<string, string>,
+  locale: 'zh-CN',
   location: { pathname: '/dashboard' },
   logout: vi.fn(),
   navigate: vi.fn(),
@@ -42,7 +43,7 @@ vi.mock('react-router-dom', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    i18n: { language: 'zh-CN' },
+    i18n: { language: mocks.locale },
     t: (key: string) => mocks.labels[key] ?? key,
   }),
 }));
@@ -104,6 +105,7 @@ function installLocalStorageStub() {
 function resetMocks() {
   installLocalStorageStub();
   mocks.darkMode = false;
+  mocks.locale = 'zh-CN';
   mocks.location = { pathname: '/dashboard' };
   mocks.logout.mockReset();
   mocks.navigate.mockReset();
@@ -170,6 +172,16 @@ describe('AppLayout bundled-theme markup', () => {
     expect(source).not.toContain('onClick={handleHomeClick}');
     expect(source).not.toContain("document.addEventListener('click'");
     expect(source).not.toContain("document.removeEventListener('click'");
+  });
+
+  it('adds the shared RTL support class for right-to-left locales', () => {
+    mocks.locale = 'fa-IR';
+
+    const html = renderToStaticMarkup(<AppLayout />);
+
+    expect(html).toContain(
+      'id="page-container" class="fa-IR rtl-support sidebar-o',
+    );
   });
 
   it('renders the bundled loading main container when loading is passed', () => {

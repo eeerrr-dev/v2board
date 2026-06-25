@@ -85,6 +85,11 @@ monolithic CSS recovered into `frontend/apps/*/src` is a temporary compatibility
 layer to be broken back into maintainable source styles, not a completed source
 restoration.
 
+When an observed packaged behavior is questionable, classify it with
+`docs/legacy-frontend-behavior-audit.md` before copying, correcting, or testing
+it. The old frontend is an oracle for compatibility, not the only quality
+standard.
+
 For a local end-to-end deployment smoke, run `make deploy-smoke` from the
 repository root. It builds in Docker, syncs `dist-deploy/` into the Docker app
 container's Laravel `public/` tree, and verifies that the source-built user and

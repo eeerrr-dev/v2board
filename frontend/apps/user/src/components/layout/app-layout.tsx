@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { getLegacyLocaleClassName } from '@v2board/i18n';
 import { LanguageMenu } from './language-menu';
 import { useUserInfo } from '@/lib/queries';
 import { logout } from '@/lib/auth';
@@ -89,7 +90,7 @@ function findActiveLabel(pathname: string): string | undefined {
 }
 
 export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps = {}) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const { data: user } = useUserInfo({ refetchOnMount: false });
@@ -105,7 +106,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
   const darkSidebar = legacyTheme.sidebar === 'dark';
   const darkHeader = legacyTheme.header === 'dark';
   const headerButtonClass = darkHeader ? 'btn btn-primary mr-1' : 'btn mr-1';
-  const localeClass = String(window.localStorage.getItem('umi_locale'));
+  const localeClass = getLegacyLocaleClassName(i18n.language);
 
   const go = (to: string) => {
     navigate(to);

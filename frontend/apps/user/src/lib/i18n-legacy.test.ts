@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createI18n, legacyGetLocale } from '@v2board/i18n';
+import {
+  createI18n,
+  getLegacyLocaleClassName,
+  getLocaleDirection,
+  installLocaleDocumentEnvironment,
+  legacyGetLocale,
+} from '@v2board/i18n';
 
 const originalNavigatorLanguage = window.navigator.language;
 
@@ -53,6 +59,35 @@ describe('legacy i18n dictionaries', () => {
       value: originalNavigatorLanguage,
       configurable: true,
     });
+    document.documentElement.removeAttribute('lang');
+    document.documentElement.removeAttribute('dir');
+    delete document.documentElement.dataset.locale;
+    delete document.documentElement.dataset.textDirection;
+  });
+
+  it('centralizes locale direction and document environment for layout adaptation', async () => {
+    setLegacyLocale('fa-IR');
+    const i18n = createI18n();
+    const cleanup = installLocaleDocumentEnvironment(i18n);
+
+    expect(getLocaleDirection('fa-IR')).toBe('rtl');
+    expect(getLegacyLocaleClassName('fa-IR')).toBe('fa-IR rtl-support');
+    expect(getLegacyLocaleClassName('fa-IR', { includeLocale: false })).toBe('rtl-support');
+    expect(document.documentElement.lang).toBe('fa-IR');
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(document.documentElement.dataset.locale).toBe('fa-IR');
+    expect(document.documentElement.dataset.textDirection).toBe('rtl');
+
+    await i18n.changeLanguage('en-US');
+
+    expect(getLocaleDirection('en-US')).toBe('ltr');
+    expect(getLegacyLocaleClassName('en-US')).toBe('en-US');
+    expect(document.documentElement.lang).toBe('en-US');
+    expect(document.documentElement.dir).toBe('ltr');
+    expect(document.documentElement.dataset.locale).toBe('en-US');
+    expect(document.documentElement.dataset.textDirection).toBe('ltr');
+
+    cleanup();
   });
 
   it('keeps the bundled legacy zh-CN display copy from source dictionaries', () => {

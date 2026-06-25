@@ -219,6 +219,7 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('installLegacyDevModuleRecovery');
     expect(mainSource).toContain('installLegacyDevWhiteScreenFallback');
     expect(mainSource).toContain('normalizeLegacyHashRoute');
+    expect(mainSource).toContain('installLocaleDocumentEnvironment');
     expect(mainSource).toContain('getNormalizedLegacyHashPath');
     expect(mainSource).toContain('const legacyHashRouteOptions = {');
     expect(mainSource).toContain("authenticatedFallback: '/dashboard'");
@@ -229,6 +230,7 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain('routes: ADMIN_LEGACY_ROUTE_PATHS');
     expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
+    expect(mainSource).toContain('installLocaleDocumentEnvironment(i18n);');
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
     expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-37';");
     expect(mainSource).toContain(

@@ -103,6 +103,14 @@ describe('AdminLayout legacy shell', () => {
     expect(html).toContain('V2Board v1.7.5');
   });
 
+  it('adds the shared RTL support class for right-to-left locales', () => {
+    window.localStorage.setItem('umi_locale', 'fa-IR');
+
+    const html = renderToStaticMarkup(<AdminLayout />);
+
+    expect(html).toContain('id="page-container" class="rtl-support sidebar-o');
+  });
+
   it('renders the bundled loading main container when loading is passed', () => {
     const html = renderToStaticMarkup(<AdminLayout loading />);
 

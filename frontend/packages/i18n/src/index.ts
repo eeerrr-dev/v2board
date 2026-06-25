@@ -38,6 +38,7 @@ export const SUPPORTED_LOCALES: { code: SupportedLocale; label: string }[] = [
 export const RTL_LOCALES: SupportedLocale[] = ['fa-IR'];
 
 const LEGACY_NAVIGATOR_LOCALES: Record<string, SupportedLocale> = {
+  fa: 'fa-IR',
   ja: 'ja-JP',
   zh: 'zh-CN',
   en: 'en-US',
@@ -67,6 +68,24 @@ function getLegacyDictionary(locale: SupportedLocale): Record<string, string> | 
 
 function isSupportedLocale(locale: string | null | undefined): locale is SupportedLocale {
   return SUPPORTED_LOCALES.some((item) => item.code === locale);
+}
+
+function normalizeSupportedLocale(
+  locale: string | null | undefined,
+  fallback: SupportedLocale,
+): SupportedLocale {
+  const safeFallback = isSupportedLocale(fallback) ? fallback : 'zh-CN';
+  const raw = locale?.trim();
+  if (!raw) return safeFallback;
+  if (isSupportedLocale(raw)) return raw;
+
+  const match = /^([a-z]{2})(?:[-_]?([a-z]{2}))?$/i.exec(raw);
+  if (!match) return safeFallback;
+  const language = match[1]!.toLowerCase();
+  const region = match[2]?.toUpperCase();
+  const normalized = region ? `${language}-${region}` : undefined;
+  if (isSupportedLocale(normalized)) return normalized;
+  return LEGACY_NAVIGATOR_LOCALES[language] ?? safeFallback;
 }
 
 function isLegacyLocaleFormat(locale: string): boolean {
@@ -134,6 +153,59 @@ export function legacySetLocale(locale: string | undefined, reload = true): void
   window.localStorage.setItem('umi_locale', locale || '');
   if (reload) window.location.reload();
   if (window.dispatchEvent) window.dispatchEvent(new Event('languagechange'));
+}
+
+export function getLocaleDirection(
+  locale: string | null | undefined,
+  fallback: SupportedLocale = 'zh-CN',
+): 'ltr' | 'rtl' {
+  const normalized = normalizeSupportedLocale(locale, fallback);
+  return RTL_LOCALES.includes(normalized) ? 'rtl' : 'ltr';
+}
+
+export function getLegacyLocaleClassName(
+  locale: string | null | undefined,
+  {
+    fallback = 'zh-CN',
+    includeLocale = true,
+  }: { fallback?: SupportedLocale; includeLocale?: boolean } = {},
+): string {
+  const normalized = normalizeSupportedLocale(locale, fallback);
+  const classes: string[] = includeLocale ? [normalized] : [];
+  if (getLocaleDirection(normalized, fallback) === 'rtl') classes.push('rtl-support');
+  return classes.join(' ');
+}
+
+export function applyLocaleDocumentEnvironment(
+  locale: string | null | undefined,
+  fallback: SupportedLocale = 'zh-CN',
+): SupportedLocale {
+  const normalized = normalizeSupportedLocale(locale, fallback);
+  if (typeof document !== 'undefined') {
+    const direction = getLocaleDirection(normalized, fallback);
+    document.documentElement.lang = normalized;
+    document.documentElement.dir = direction;
+    document.documentElement.dataset.locale = normalized;
+    document.documentElement.dataset.textDirection = direction;
+  }
+  return normalized;
+}
+
+export function installLocaleDocumentEnvironment(
+  instance: I18nInstance,
+  fallback: SupportedLocale = 'zh-CN',
+): () => void {
+  const apply = (locale?: string) => {
+    applyLocaleDocumentEnvironment(
+      locale ?? instance.resolvedLanguage ?? instance.language,
+      fallback,
+    );
+  };
+  const onLanguageChanged = (locale: string) => apply(locale);
+
+  apply();
+  instance.on('languageChanged', onLanguageChanged);
+  return () => instance.off('languageChanged', onLanguageChanged);
 }
 
 function legacyLocale(locale: SupportedLocale, fallback: Translations): Translations {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { user } from '@v2board/api-client';
+import { getLegacyLocaleClassName, legacyGetLocale } from '@v2board/i18n';
 import { apiClient } from '@/lib/api';
 import { logout } from '@/lib/auth';
 import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
@@ -96,8 +97,11 @@ export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutPr
   const avatarDocumentClickTimer = useRef<number | undefined>(undefined);
   const theme = getTheme();
   const title = titleProp ?? ROUTE_TITLES[location.pathname] ?? '';
+  const localeClass = getLegacyLocaleClassName(legacyGetLocale(), { includeLocale: false });
   const pageClassName =
-    `sidebar-o ${theme.sidebar === 'dark' ? 'sidebar-dark' : ''} ` +
+    `${localeClass ? `${localeClass} ` : ''}sidebar-o ${
+      theme.sidebar === 'dark' ? 'sidebar-dark' : ''
+    } ` +
     `${theme.header === 'dark' ? 'page-header-dark' : ''} ` +
     `side-scroll page-header-fixed main-content-boxed side-trans-enabled ${showNav && 'sidebar-o-xs'}`;
 

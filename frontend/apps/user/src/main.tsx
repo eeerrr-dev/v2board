@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
-import { createI18n } from '@v2board/i18n';
+import { createI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
 import {
   getNormalizedLegacyHashPath,
   installLegacyDevModuleRecovery,
@@ -43,6 +43,7 @@ import './styles/user-custom-html-table-rows.css';
 import './styles/user-custom-html-table-header-cells.css';
 import './styles/user-custom-html-table-body-cells.css';
 import './styles/user-browser-modes.css';
+import './styles/user-rtl-support.css';
 import './styles/user-font-face-awesome.css';
 import './styles/user-font-face-simple-line-icons.css';
 import './styles/user-font-awesome-base.css';
@@ -467,6 +468,7 @@ if (import.meta.env.DEV) {
 }
 applyLegacySettings();
 const i18n = createI18n();
+installLocaleDocumentEnvironment(i18n);
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: false, refetchOnWindowFocus: false },
