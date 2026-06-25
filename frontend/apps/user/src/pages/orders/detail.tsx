@@ -242,12 +242,15 @@ export default function OrderDetailPage() {
             <div className="v2board-order-info">
               {isDeposit ? (
                 <InfoRow label={t('order.product_name')}>充值</InfoRow>
-              ) : null}
-              {!isDeposit && (
-                <InfoRow label={t('order.product_traffic')}>
-                  {transferEnable}
-                  {' GB'}
-                </InfoRow>
+              ) : (
+                <>
+                  <InfoRow label={t('order.product_name')}>{order.plan?.name}</InfoRow>
+                  <InfoRow label={t('order.product_period')}>{periodLabel}</InfoRow>
+                  <InfoRow label={t('order.product_traffic')}>
+                    {transferEnable}
+                    {' GB'}
+                  </InfoRow>
+                </>
               )}
             </div>
           </LegacyBlock>

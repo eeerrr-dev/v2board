@@ -170,14 +170,16 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     vi.useRealTimers();
   });
 
-  it('keeps the bundled-theme traffic-only product-info block', () => {
+  it('renders the bundled-theme three-row product-info block for non-deposit orders', () => {
+    // umi.js order-detail (offset ~702243): the non-deposit branch renders three
+    // rows — 产品名称/plan.name, 类型/周期/periodText, 产品流量/transfer_enable GB.
     const html = renderToStaticMarkup(<OrderDetailPage />);
 
     expect(html).toContain('order.product_info');
-    expect(html).not.toContain('order.product_name');
-    expect(html).not.toContain('Legacy Plan</span>');
-    expect(html).not.toContain('order.product_period');
-    expect(html).not.toContain('plan.monthly</span>');
+    expect(html).toContain('order.product_name');
+    expect(html).toContain('Legacy Plan</span>');
+    expect(html).toContain('order.product_period');
+    expect(html).toContain('plan.monthly</span>');
     expect(html).toContain('order.product_traffic');
     expect(html).toContain('123 GB');
   });
