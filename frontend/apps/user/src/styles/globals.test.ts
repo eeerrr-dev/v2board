@@ -556,9 +556,6 @@ describe('legacy guest auth shell CSS', () => {
     expect(globals).toContain(
       '.v2board-auth-lang-btn {\n  position: absolute;\n  top: 0;\n  right: 0;\n}',
     );
-    expect(globals).toContain(
-      '.v2board-login-i18n-btn {\n  cursor: pointer;\n  float: right;\n}',
-    );
     expect(globals).toContain('.v2board-lang-item {\n  padding: 10px 20px;\n}');
     expect(globals).toContain('.v2board-lang-item:hover {\n  background: #eee;\n}');
     expect(globals).toContain(
@@ -573,25 +570,23 @@ describe('legacy guest auth shell CSS', () => {
     expect(globals.indexOf('.v2board-auth-box {')).toBeLessThan(
       globals.indexOf('.v2board-auth-lang-btn {'),
     );
-    expect(globals.indexOf('.v2board-login-i18n-btn {')).toBeLessThan(
-      globals.indexOf('.v2board-no-access {'),
-    );
+    expect(globals).not.toContain('.v2board-login-i18n-btn {');
     expect(globals.indexOf('.v2board-no-access {')).toBeLessThan(
       globals.indexOf('.v2board-notice-background {'),
     );
   });
 });
 
-describe('2026 login surface presentation CSS', () => {
-  it('keeps the entrance + ambient motion gated behind prefers-reduced-motion', () => {
+describe('2026 auth surface presentation CSS', () => {
+  it('keeps the entrance motion gated behind prefers-reduced-motion and avoids decorative blobs', () => {
     const globals = css();
 
     expect(globals).toContain('@media (prefers-reduced-motion: no-preference) {');
-    expect(globals).toContain('.v2board-login-surface .v2board-login-frame {');
-    expect(globals).toContain('animation: v2board-login-rise');
-    expect(globals).toContain('.v2board-login-aurora {');
-    expect(globals).toContain('@keyframes v2board-login-rise {');
-    expect(globals).toContain('@keyframes v2board-login-aurora-drift {');
+    expect(globals).toContain('.v2board-auth-surface .v2board-auth-frame {');
+    expect(globals).toContain('animation: v2board-auth-rise');
+    expect(globals).toContain('@keyframes v2board-auth-rise {');
+    expect(globals).not.toContain('aurora');
+    expect(globals).not.toContain('blur-3xl');
     // The entrance only animates opacity + transform, so no capture-relevant layout collapse.
     expect(globals).toContain('opacity: 0;\n    transform: translateY(14px);');
   });
@@ -602,17 +597,17 @@ describe('2026 login surface presentation CSS', () => {
     // Vendored Ant Design / OneUI heading rules are unlayered and thus outrank the layered tw:
     // color utilities; the title color is owned by this authored, more-specific rule so it tracks
     // the foreground token (and goes near-white on the dark card) instead of staying antd-black.
-    expect(globals).toContain('.v2board-login-surface .v2board-login-title {');
+    expect(globals).toContain('.v2board-auth-surface .v2board-auth-title {');
     expect(globals).toContain('color: var(--tw-color-foreground);');
   });
 
-  it('scopes the native dark theme to the login surface and yields to DarkReader', () => {
+  it('scopes the native dark theme to the auth surface and yields to DarkReader', () => {
     const globals = css();
 
     expect(globals).toContain('@media (prefers-color-scheme: dark) {');
     // Excludes DarkReader's runtime inversion (data-darkreader-scheme on <html>) to avoid
-    // double-darkening, and is scoped to .v2board-login-surface so no other surface is themed.
-    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-login-surface {');
+    // double-darkening, and is scoped to .v2board-auth-surface so no other surface is themed.
+    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-auth-surface {');
     // The tw: utilities read the PREFIXED theme vars (Tailwind v4 `prefix(tw)` compiles @theme
     // tokens to --tw-color-*), so the dark override must re-point --tw-color-*, not the unprefixed
     // names — otherwise the recolor is inert for every utility-driven surface.
@@ -624,13 +619,23 @@ describe('2026 login surface presentation CSS', () => {
     const globals = css();
 
     expect(globals).toContain(
-      'html:not([data-darkreader-scheme]) .v2board-login-surface .v2board-login-card {',
+      'html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-card {',
     );
     // The edge ring is re-declared (reading the same prefixed token the tw: ring utility uses) so
     // hard-overriding box-shadow does not drop the card border.
     expect(globals).toContain('0 0 0 1px var(--tw-color-border)');
     // Dead --shadow-* token overrides were removed rather than shipped inert.
     expect(globals).not.toContain('--shadow-card: 0 18px 48px');
+  });
+
+  it('themes auth-only portaled feedback without using legacy ant notification classes', () => {
+    const globals = css();
+
+    expect(globals).toContain('.v2board-auth-toast-icon-success {');
+    expect(globals).toContain(
+      'html:not([data-darkreader-scheme]) .v2board-auth-toast-root {',
+    );
+    expect(globals).not.toContain('.v2board-login-i18n-btn {');
   });
 });
 

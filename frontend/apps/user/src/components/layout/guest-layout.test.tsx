@@ -51,12 +51,12 @@ describe('GuestLayout auth shell', () => {
       expect(html).toContain('id="page-container"');
       expect(html).toContain('id="main-container"');
       expect(html).toContain('tw:bg-gradient-to-br');
-      expect(html).toContain('v2board-login-frame');
+      expect(html).toContain('v2board-auth-frame');
       expect(html).toContain('class="guest-probe"');
-      // The 2026 presentation hooks: the surface scope (motion + scoped dark theme) and the two
-      // ambient aurora blobs. See styles/user-login-surface.css.
-      expect(html).toContain('v2board-login-surface');
-      expect((html.match(/v2board-login-aurora/g) ?? []).length).toBe(2);
+      // The 2026 presentation hooks: the surface scope (motion + scoped dark theme) and no
+      // decorative blob/orb layers. See styles/user-auth-surface.css.
+      expect(html).toContain('v2board-auth-surface');
+      expect(html).not.toContain('aurora');
       // Route isolation: the redesigned surface does not use the packaged-oracle flat background
       // layer or the operator background image.
       expect(html).not.toContain('class="v2board-background"');
@@ -66,9 +66,9 @@ describe('GuestLayout auth shell', () => {
     it('uses the same 2026 presentation hooks for register and forgetpassword', () => {
       for (const path of ['/login', '/register', '/forgetpassword']) {
         const html = renderGuest(path);
-        expect(html).toContain('v2board-login-surface');
-        expect(html).toContain('v2board-login-frame');
-        expect((html.match(/v2board-login-aurora/g) ?? []).length).toBe(2);
+        expect(html).toContain('v2board-auth-surface');
+        expect(html).toContain('v2board-auth-frame');
+        expect(html).not.toContain('aurora');
         expect(html).not.toContain('class="v2board-background"');
         expect(html).not.toContain('background-image');
       }

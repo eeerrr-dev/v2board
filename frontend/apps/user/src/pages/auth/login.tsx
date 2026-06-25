@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { AlertCircle } from 'lucide-react';
-import { LanguageMenu } from '@/components/layout/language-menu';
+import { AuthLanguageMenu } from '@/components/layout/auth-language-menu';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardFooter } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
@@ -26,7 +26,7 @@ export default function LoginPage() {
     // The brand title is a semantic <h1> (the page's main heading); the redesign-aware
     // login-language-persistence gate releases its titleText as redesigned presentation instead of
     // pinning the old empty value.
-    <Card className="v2board-login-card">
+    <Card className="v2board-auth-card">
       <form noValidate onSubmit={(event) => void submit(event)} onInput={clearError}>
         <CardBody>
           <div className="tw:mb-7 tw:text-center">
@@ -41,11 +41,11 @@ export default function LoginPage() {
                 />
               </h1>
             ) : (
-              // The title color is owned by an authored rule in user-login-surface.css, not a
+              // The title color is owned by an authored rule in user-auth-surface.css, not a
               // tw:text-foreground utility: vendored (unlayered) `h1{color}` heading rules outrank
               // any layered Tailwind color utility under CSS cascade layers, so the utility would be
               // inert here and the heading would stay antd-black (unreadable on the dark card).
-              <h1 className="v2board-login-title tw:text-2xl tw:font-semibold tw:tracking-tight">
+              <h1 className="v2board-auth-title tw:text-2xl tw:font-semibold tw:tracking-tight">
                 {title || 'V2Board'}
               </h1>
             )}
@@ -119,7 +119,7 @@ export default function LoginPage() {
           {t('auth.forget_password')}
         </a>
         <div className="tw:ml-auto">
-          <LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />
+          <AuthLanguageMenu />
         </div>
       </CardFooter>
     </Card>

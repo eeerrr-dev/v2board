@@ -6,33 +6,17 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Languages } from 'lucide-react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { legacyGetLocale, legacySetLocale, SUPPORTED_LOCALES } from '@v2board/i18n';
-import { setLegacyCookie } from '@/lib/legacy-cookie';
+import {
+  getCurrentLocaleLabel,
+  getEnabledLocales,
+  selectLocale as persistLocaleSelection,
+} from '@/lib/locale-menu';
 import { useTransitionStatus } from '@/lib/use-transition-status';
-
-const I18N_TEXT = Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [locale.code, locale.label]));
-
-function getEnabledLocales() {
-  // The enabled list comes from the operator backend (window.settings.i18n); drop any
-  // locale the frontend no longer bundles a label/translation for instead of rendering
-  // a blank menu item.
-  return window
-    .settings!.i18n!.sort()
-    .filter((code) => code in I18N_TEXT)
-    .map((code) => ({ code, label: I18N_TEXT[code] }));
-}
 
 interface LanguageMenuProps {
   showLabel?: boolean;
   triggerClassName?: string;
   legacyIcon?: boolean;
-  /**
-   * Redesigned auth trigger: token-driven native button + Radix menu. The legacy `legacyIcon` span
-   * path is kept verbatim for surfaces still pinned to the packaged oracle.
-   */
-  reskin?: boolean;
   placement?: 'topCenter' | 'bottomCenter';
 }
 
@@ -40,7 +24,6 @@ export function LanguageMenu({
   showLabel = false,
   triggerClassName,
   legacyIcon = false,
-  reskin = false,
   placement: requestedPlacement,
 }: LanguageMenuProps) {
   // The original is umi's SelectLang: an antd Dropdown (trigger:click) that clones
@@ -66,12 +49,11 @@ export function LanguageMenu({
             ? `${motionName}-enter ${motionName}-enter-active`
             : '';
   const locales = getEnabledLocales();
-  const currentLabel = SUPPORTED_LOCALES.find((locale) => locale.code === legacyGetLocale())?.label;
+  const currentLabel = getCurrentLocaleLabel();
 
   const selectLocale = useCallback((locale: string) => {
     setOpen(false);
-    setLegacyCookie('i18n', locale);
-    legacySetLocale(locale);
+    persistLocaleSelection(locale);
   }, []);
 
   // rc-align positions the body-portaled overlay with absolute document coordinates.
@@ -104,13 +86,11 @@ export function LanguageMenu({
   }, [placement]);
 
   useLayoutEffect(() => {
-    if (reskin) return;
     if (dropdownStatus === 'exited' || !coords || !popupRef.current) return;
     reposition();
-  }, [coords, dropdownStatus, reposition, reskin]);
+  }, [coords, dropdownStatus, reposition]);
 
   useEffect(() => {
-    if (reskin) return;
     if (!open) return;
     reposition();
     window.addEventListener('scroll', reposition, true);
@@ -119,10 +99,9 @@ export function LanguageMenu({
       window.removeEventListener('scroll', reposition, true);
       window.removeEventListener('resize', reposition);
     };
-  }, [open, reposition, reskin]);
+  }, [open, reposition]);
 
   useEffect(() => {
-    if (reskin) return;
     if (!open) return;
     const close = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -131,7 +110,7 @@ export function LanguageMenu({
     };
     document.addEventListener('click', close);
     return () => document.removeEventListener('click', close);
-  }, [open, reskin]);
+  }, [open]);
 
   const handleLocaleItemNativeSelect = useCallback(
     (event: MouseEvent) => {
@@ -191,52 +170,13 @@ export function LanguageMenu({
         )
       : null;
 
-  const triggerClass = `${triggerClassName ?? (showLabel ? 'v2board-login-i18n-btn' : 'btn')} ant-dropdown-trigger${
+  const triggerClass = `${triggerClassName ?? (showLabel ? 'v2board-legacy-auth-language-trigger' : 'btn')} ant-dropdown-trigger${
     open ? ' ant-dropdown-open' : ''
   }`;
-  const reskinTriggerClass = triggerClassName ?? 'v2board-login-i18n-btn';
   const toggleOpen = () => {
     if (!open) reposition();
     setOpen((value) => !value);
   };
-
-  if (showLabel && reskin) {
-    const side = placement === 'bottomCenter' ? 'bottom' : 'top';
-    return (
-      <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
-        <DropdownMenu.Trigger asChild>
-          <button
-            type="button"
-            className={`${reskinTriggerClass} tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-field tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-sm tw:text-foreground-muted tw:transition tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40`}
-          >
-            <Languages aria-hidden="true" className="tw:h-4 tw:w-4" />
-            <span>{currentLabel}</span>
-          </button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            align="center"
-            side={side}
-            sideOffset={4}
-            className="v2board-language-menu-content tw:z-[1050] tw:min-w-36 tw:rounded-card tw:border tw:border-border tw:bg-surface tw:p-1 tw:text-sm tw:text-foreground tw:shadow-card tw:outline-none"
-          >
-            {locales.map((locale) => (
-              <DropdownMenu.Item
-                key={locale.code}
-                className="v2board-language-menu-item tw:cursor-pointer tw:rounded-field tw:px-3 tw:py-2 tw:outline-none tw:transition tw:hover:bg-muted tw:focus:bg-muted"
-                onSelect={(event) => {
-                  event.preventDefault();
-                  selectLocale(locale.code);
-                }}
-              >
-                {locale.label}
-              </DropdownMenu.Item>
-            ))}
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
-    );
-  }
 
   if (showLabel && legacyIcon) {
     return (

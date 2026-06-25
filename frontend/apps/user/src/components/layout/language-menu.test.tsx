@@ -34,10 +34,10 @@ describe('LanguageMenu antd dropdown behavior', () => {
 
   it('removes slide-down enter classes after the rc-animate enter motion ends', () => {
     act(() => {
-      root.render(<LanguageMenu legacyIcon showLabel triggerClassName="v2board-login-i18n-btn" />);
+      root.render(<LanguageMenu legacyIcon showLabel triggerClassName="v2board-legacy-auth-language-trigger" />);
     });
 
-    const trigger = container.querySelector('.v2board-login-i18n-btn') as HTMLElement;
+    const trigger = container.querySelector('.v2board-legacy-auth-language-trigger') as HTMLElement;
     trigger.getBoundingClientRect = () =>
       ({
         top: 50,
@@ -88,10 +88,10 @@ describe('LanguageMenu antd dropdown behavior', () => {
     window.settings = { i18n: legacyI18n };
 
     act(() => {
-      root.render(<LanguageMenu legacyIcon showLabel triggerClassName="v2board-login-i18n-btn" />);
+      root.render(<LanguageMenu legacyIcon showLabel triggerClassName="v2board-legacy-auth-language-trigger" />);
     });
 
-    const trigger = container.querySelector('.v2board-login-i18n-btn') as HTMLElement;
+    const trigger = container.querySelector('.v2board-legacy-auth-language-trigger') as HTMLElement;
     trigger.getBoundingClientRect = () =>
       ({
         top: 50,
@@ -119,10 +119,10 @@ describe('LanguageMenu antd dropdown behavior', () => {
     const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => undefined);
 
     act(() => {
-      root.render(<LanguageMenu legacyIcon showLabel triggerClassName="v2board-login-i18n-btn" />);
+      root.render(<LanguageMenu legacyIcon showLabel triggerClassName="v2board-legacy-auth-language-trigger" />);
     });
 
-    const trigger = container.querySelector('.v2board-login-i18n-btn') as HTMLElement;
+    const trigger = container.querySelector('.v2board-legacy-auth-language-trigger') as HTMLElement;
     trigger.getBoundingClientRect = () =>
       ({
         top: 50,
@@ -170,10 +170,10 @@ describe('LanguageMenu antd dropdown behavior', () => {
 
     try {
       act(() => {
-        root.render(<LanguageMenu legacyIcon showLabel triggerClassName="v2board-login-i18n-btn" />);
+        root.render(<LanguageMenu legacyIcon showLabel triggerClassName="v2board-legacy-auth-language-trigger" />);
       });
 
-      const trigger = container.querySelector('.v2board-login-i18n-btn') as HTMLElement;
+      const trigger = container.querySelector('.v2board-legacy-auth-language-trigger') as HTMLElement;
       trigger.getBoundingClientRect = () =>
         ({
           top: 8,
@@ -260,57 +260,6 @@ describe('LanguageMenu antd dropdown behavior', () => {
         Object.defineProperty(HTMLElement.prototype, 'offsetWidth', widthDescriptor);
       }
     }
-  });
-
-  it('renders the redesigned auth trigger as a native button with a Radix menu', () => {
-    act(() => {
-      root.render(<LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />);
-    });
-
-    const trigger = container.querySelector('.v2board-login-i18n-btn') as HTMLElement;
-    // Native control, not a clickable span: browser-owned focus and Enter/Space activation.
-    expect(trigger.tagName).toBe('BUTTON');
-    expect(trigger.getAttribute('type')).toBe('button');
-    expect(trigger.hasAttribute('role')).toBe(false);
-    expect(trigger.hasAttribute('tabindex')).toBe(false);
-    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
-    expect(trigger.getAttribute('aria-expanded')).toBe('false');
-    expect(container.querySelectorAll('button')).toHaveLength(1);
-
-    trigger.getBoundingClientRect = () =>
-      ({
-        top: 50,
-        right: 90,
-        bottom: 70,
-        left: 30,
-        width: 60,
-        height: 20,
-        x: 30,
-        y: 50,
-        toJSON: () => {},
-      }) as DOMRect;
-
-    act(() => {
-      trigger.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
-    });
-    act(() => {
-      trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    expect(document.body.querySelector('.ant-dropdown-menu')).toBeNull();
-    expect(document.body.querySelector('.v2board-language-menu-content')).not.toBeNull();
-    expect(
-      [...document.body.querySelectorAll('.v2board-language-menu-item')].map(
-        (item) => item.textContent,
-      ),
-    ).toEqual(['English', '简体中文']);
-
-    // Escape dismisses through Radix keyboard handling.
-    act(() => {
-      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    });
-    expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('keys locale menu items by locale code while keeping SelectLang DOM stable', () => {

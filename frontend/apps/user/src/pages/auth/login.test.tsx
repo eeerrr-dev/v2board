@@ -99,13 +99,10 @@ vi.mock('@/lib/queries', () => ({
   },
 }));
 
-vi.mock('@/components/layout/language-menu', () => ({
-  LanguageMenu: () => (
-    <button type="button" className="v2board-login-i18n-btn">
-      <i className="si si-globe pr-1" />
-      <span className="font-size-sm text-muted" style={{ verticalAlign: 'text-bottom' }}>
-        简体中文
-      </span>
+vi.mock('@/components/layout/auth-language-menu', () => ({
+  AuthLanguageMenu: () => (
+    <button type="button" className="v2board-auth-language-trigger">
+      <span>简体中文</span>
     </button>
   ),
 }));
@@ -178,10 +175,10 @@ describe('LoginPage modern markup', () => {
 
     // The brand title is a semantic <h1> (the page's main heading); the redesign-aware
     // persistence gate releases its titleText rather than pinning the old empty value. It carries
-    // the v2board-login-title hook (not a tw:text-foreground utility): vendored unlayered `h1{color}`
+    // the v2board-auth-title hook (not a tw:text-foreground utility): vendored unlayered `h1{color}`
     // rules outrank layered tw: utilities, so the title color is owned by the authored
-    // .v2board-login-title rule — without the class the heading would stay antd-black on the dark card.
-    expect(html).toContain('class="v2board-login-title');
+    // .v2board-auth-title rule — without the class the heading would stay antd-black on the dark card.
+    expect(html).toContain('class="v2board-auth-title');
     expect(html).toContain('>V2Board</h1>');
     expect(html).not.toContain('block-title');
 
@@ -199,8 +196,10 @@ describe('LoginPage modern markup', () => {
     expect(html).toContain('登入');
     expect(html).toContain('注册');
     expect(html).toContain('忘记密码');
-    expect(html).toContain('class="v2board-login-i18n-btn"');
+    expect(html).toContain('class="v2board-auth-language-trigger"');
     expect(html).toContain('简体中文');
+    expect(source).toContain("components/layout/auth-language-menu");
+    expect(source).not.toContain("components/layout/language-menu");
   });
 
   it('renders the operator logo + description and the antd loading icon while login is pending', () => {
@@ -252,7 +251,7 @@ describe('LoginPage bundled-theme behavior', () => {
     const order = controls.map((element) => {
       if (element.tagName === 'INPUT') return element.getAttribute('type');
       if (element.getAttribute('aria-pressed') !== null) return 'reveal';
-      if (element.classList.contains('v2board-login-i18n-btn')) return 'language';
+      if (element.classList.contains('v2board-auth-language-trigger')) return 'language';
       return 'submit';
     });
 

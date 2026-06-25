@@ -2,15 +2,15 @@ import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { KeyRound, Mail } from 'lucide-react';
-import { LanguageMenu } from '@/components/layout/language-menu';
+import { AuthLanguageMenu } from '@/components/layout/auth-language-menu';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardFooter } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { useLegacyRecaptcha } from '@/components/legacy-recaptcha';
 import { useForgetMutation, useGuestConfig, useSendEmailVerifyMutation } from '@/lib/guest';
+import { authToast } from '@/lib/auth-toast';
 import { getLegacyDescription, getLegacyLogo, getLegacyTitle } from '@/lib/legacy-settings';
-import { toast } from '@/lib/legacy-toast';
 import { PasswordField } from './password-field';
 
 function readFormValue(form: HTMLFormElement | null, name: string) {
@@ -57,7 +57,7 @@ export default function ForgetPage() {
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
       if (!sent) return;
-      toast.success('发送成功', { description: '如果没有收到验证码请检查垃圾箱。' });
+      authToast.success('发送成功', { description: '如果没有收到验证码请检查垃圾箱。' });
       startSendEmailVerifyCountdown();
     } catch {}
   };
@@ -65,7 +65,7 @@ export default function ForgetPage() {
   const onForget = async () => {
     const password = readFormValue(formRef.current, 'password');
     if (password !== readFormValue(formRef.current, 'confirm_password')) {
-      toast.error('请求失败', { description: '两次密码输入不同' });
+      authToast.error('请求失败', { description: '两次密码输入不同' });
       return;
     }
     try {
@@ -85,7 +85,7 @@ export default function ForgetPage() {
 
   return (
     <>
-      <Card className="v2board-forget-card">
+      <Card className="v2board-auth-card">
         <form ref={formRef} noValidate onSubmit={submit}>
           <CardBody>
             <div className="tw:mb-7 tw:text-center">
@@ -98,7 +98,7 @@ export default function ForgetPage() {
                   />
                 </h1>
               ) : (
-                <h1 className="v2board-login-title tw:text-2xl tw:font-semibold tw:tracking-tight">
+                <h1 className="v2board-auth-title tw:text-2xl tw:font-semibold tw:tracking-tight">
                   {title || 'V2Board'}
                 </h1>
               )}
@@ -163,7 +163,7 @@ export default function ForgetPage() {
             {t('auth.return_to_login')}
           </a>
           <div className="tw:ml-auto">
-            <LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />
+            <AuthLanguageMenu />
           </div>
         </CardFooter>
       </Card>

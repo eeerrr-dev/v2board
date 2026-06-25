@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Mail, UserPlus } from 'lucide-react';
-import { LanguageMenu } from '@/components/layout/language-menu';
+import { AuthLanguageMenu } from '@/components/layout/auth-language-menu';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardFooter } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
@@ -15,9 +15,9 @@ import {
   useRegisterMutation,
   useSendEmailVerifyMutation,
 } from '@/lib/guest';
+import { authToast } from '@/lib/auth-toast';
 import { i18nGet } from '@/lib/errors';
 import { getLegacyDescription, getLegacyLogo, getLegacyTitle } from '@/lib/legacy-settings';
-import { toast } from '@/lib/legacy-toast';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { PasswordField } from './password-field';
 
@@ -91,19 +91,19 @@ export default function RegisterPage() {
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
       if (!sent) return;
-      toast.success('发送成功', { description: '如果没有收到验证码请检查垃圾箱。' });
+      authToast.success('发送成功', { description: '如果没有收到验证码请检查垃圾箱。' });
       startSendEmailVerifyCountdown();
     } catch {}
   };
 
   const onRegister = async (recaptchaData?: string) => {
     if (config?.tos_url && !tosChecked) {
-      toast.error(i18nGet('请求失败'), { description: t('auth.tos_required') });
+      authToast.error(i18nGet('请求失败'), { description: t('auth.tos_required') });
       return;
     }
     const password = readFormValue(formRef.current, 'password');
     if (password !== readFormValue(formRef.current, 'confirm_password')) {
-      toast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') });
+      authToast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') });
       return;
     }
     try {
@@ -126,7 +126,7 @@ export default function RegisterPage() {
 
   return (
     <>
-      <Card className="v2board-register-card">
+      <Card className="v2board-auth-card">
         <form ref={formRef} noValidate onSubmit={submit}>
           <CardBody>
             <div className="tw:mb-7 tw:text-center">
@@ -139,7 +139,7 @@ export default function RegisterPage() {
                   />
                 </h1>
               ) : (
-                <h1 className="v2board-login-title tw:text-2xl tw:font-semibold tw:tracking-tight">
+                <h1 className="v2board-auth-title tw:text-2xl tw:font-semibold tw:tracking-tight">
                   {title || 'V2Board'}
                 </h1>
               )}
@@ -275,7 +275,7 @@ export default function RegisterPage() {
             {t('auth.return_to_login')}
           </a>
           <div className="tw:ml-auto">
-            <LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />
+            <AuthLanguageMenu />
           </div>
         </CardFooter>
       </Card>

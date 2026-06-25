@@ -1,14 +1,14 @@
 /*
- * Authored V2Board — 2026 login surface presentation.
+ * Authored V2Board — 2026 auth surface presentation.
  *
- * Scoped to the redesigned /login surface only (`.v2board-login-surface`, set on the login route's
- * <main> in guest-layout). Pure presentation: a motion-safe entrance + ambient aurora drift, and a
- * native dark theme that re-points the design tokens for the login subtree.
+ * Scoped to the redesigned auth family (`.v2board-auth-surface`, set on /login, /register, and
+ * /forgetpassword in guest-layout). Pure presentation: a motion-safe entrance and a native dark theme
+ * that re-points the design tokens for the auth subtree.
  *
- * Gate-safe by construction: /login's visual parity is retired (`visualRetired` in
+ * Gate-safe by construction: redesigned auth visual parity is retired (`visualRetired` in
  * visual-parity.mjs), and the behavior/contract gate captures DOM text / form state, never pixels —
- * so animation and color are invisible to it (the entrance only animates opacity + transform, which
- * never collapse an element's layout box, so visibility/geometry-based captures are unaffected).
+ * so animation and color are invisible to it. The entrance only animates opacity + transform, which
+ * never collapse an element's layout box, so visibility/geometry-based captures are unaffected.
  *
  * The dark-theme token overrides live HERE, in a scoped selector — not in @v2board/tokens — so the
  * tokens drift test (styles/tokens.test.ts, which reverse-scans only tokens.css) is untouched.
@@ -17,29 +17,19 @@
  *  - The native dark theme keys off the OS (prefers-color-scheme) only. The app's operator/user
  *    `dark_mode` cookie path is handled separately by DarkReader runtime inversion (which we yield
  *    to via the data-darkreader-scheme guard), so cookie-dark and OS-dark diverge visually here.
- *  - Redesigned auth language menus are Radix overlays with their own `.v2board-language-menu-content`
- *    token scope because they are portaled to document.body, outside `.v2board-login-surface`.
+ *  - Redesigned auth language menus are Radix overlays with their own
+ *    `.v2board-auth-language-menu-content`
+ *    token scope because they are portaled to document.body, outside `.v2board-auth-surface`.
  */
 
-/* Entrance + ambient motion — only when the user has not requested reduced motion. */
+/* Entrance motion — only when the user has not requested reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
-  .v2board-login-surface .v2board-login-frame {
-    animation: v2board-login-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .v2board-login-aurora {
-    /* The infinite transform animation already promotes each blob to a compositor layer, so an
-       explicit will-change (which would never clear for the screen's lifetime) is not needed. */
-    animation: v2board-login-aurora-drift 22s ease-in-out infinite alternate;
-  }
-
-  .v2board-login-aurora:nth-of-type(2) {
-    animation-duration: 28s;
-    animation-direction: alternate-reverse;
+  .v2board-auth-surface .v2board-auth-frame {
+    animation: v2board-auth-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 }
 
-@keyframes v2board-login-rise {
+@keyframes v2board-auth-rise {
   from {
     opacity: 0;
     transform: translateY(14px);
@@ -51,16 +41,6 @@
   }
 }
 
-@keyframes v2board-login-aurora-drift {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-
-  to {
-    transform: translate3d(6%, 4%, 0) scale(1.12);
-  }
-}
-
 /*
  * Brand-title color. The title is a semantic <h1>, and the vendored Ant Design / OneUI bundle ships
  * UNLAYERED heading rules (`h1,h2,h3,...{color}`). Under CSS cascade layers an unlayered rule always
@@ -69,22 +49,28 @@
  * here instead: also unlayered and more specific than the bare `h1` selector, so it wins and tracks
  * the foreground token (navy on light, near-white on dark) in both themes.
  */
-.v2board-login-surface .v2board-login-title {
+.v2board-auth-surface .v2board-auth-title {
   color: var(--tw-color-foreground);
 }
 
+.v2board-auth-toast-icon-success {
+  border-color: rgba(82, 196, 26, 0.3);
+  background: rgba(82, 196, 26, 0.12);
+  color: #237804;
+}
+
 /*
- * Native dark theme for the login surface. Applies only when the OS prefers dark AND DarkReader's
+ * Native dark theme for the auth surface. Applies only when the OS prefers dark AND DarkReader's
  * runtime inversion is NOT active — DarkReader stamps `data-darkreader-scheme` on <html> when the
  * `dark_mode` cookie is set, so excluding it avoids double-darkening the same surface.
  */
 @media (prefers-color-scheme: dark) {
-  html:not([data-darkreader-scheme]) .v2board-login-surface {
+  html:not([data-darkreader-scheme]) .v2board-auth-surface {
     /* Re-point the PREFIXED theme variables the tw: utilities actually read. Tailwind v4 is
        imported with `prefix(tw)`, so `@theme` tokens compile to `--tw-color-*` and every utility
        (tw:bg-surface -> var(--tw-color-surface), tw:text-foreground, tw:from-background, ...) reads
        the prefixed name. These are plain inherited custom properties (not @property-registered), so
-       redeclaring them on this ancestor cascades to the whole login subtree. */
+       redeclaring them on this ancestor cascades to the whole auth subtree. */
     --tw-color-background: #0b1120;
     --tw-color-surface: #131b2e;
     --tw-color-foreground: #e6ebf5;
@@ -109,14 +95,14 @@
    * `tw:ring-1 tw:ring-border`, reading the same prefixed token), a hairline top highlight so the
    * card reads as raised, and a deep drop shadow — so the dark card looks designed for dark.
    */
-  html:not([data-darkreader-scheme]) .v2board-login-surface .v2board-login-card {
+  html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-card {
     box-shadow:
       0 0 0 1px var(--tw-color-border),
       inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
       0 18px 48px -16px rgba(0, 0, 0, 0.65);
   }
 
-  html:not([data-darkreader-scheme]) .v2board-language-menu-content {
+  html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content {
     --tw-color-surface: #131b2e;
     --tw-color-foreground: #e6ebf5;
     --tw-color-muted: #1a2336;
@@ -127,5 +113,27 @@
       0 0 0 1px var(--tw-color-border),
       inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
       0 18px 48px -16px rgba(0, 0, 0, 0.65);
+  }
+
+  html:not([data-darkreader-scheme]) .v2board-auth-toast-root {
+    --tw-color-surface: #131b2e;
+    --tw-color-foreground: #e6ebf5;
+    --tw-color-foreground-muted: #94a3b8;
+    --tw-color-muted: #1a2336;
+    --tw-color-border: #243049;
+    --tw-color-ring: #5b7cf5;
+    --tw-color-destructive: #f87171;
+    --tw-color-destructive-subtle: #2a1414;
+
+    box-shadow:
+      0 0 0 1px var(--tw-color-border),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+      0 18px 48px -16px rgba(0, 0, 0, 0.65);
+  }
+
+  html:not([data-darkreader-scheme]) .v2board-auth-toast-icon-success {
+    border-color: rgba(74, 222, 128, 0.3);
+    background: rgba(20, 83, 45, 0.5);
+    color: #86efac;
   }
 }

@@ -52,9 +52,9 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@/components/layout/language-menu', () => ({
-  LanguageMenu: () => (
-    <button type="button" className="v2board-login-i18n-btn">
+vi.mock('@/components/layout/auth-language-menu', () => ({
+  AuthLanguageMenu: () => (
+    <button type="button" className="v2board-auth-language-trigger">
       简体中文
     </button>
   ),
@@ -85,8 +85,8 @@ vi.mock('@/lib/legacy-settings', () => ({
   getLegacyTitle: () => mocks.settings.title,
 }));
 
-vi.mock('@/lib/legacy-toast', () => ({
-  toast: {
+vi.mock('@/lib/auth-toast', () => ({
+  authToast: {
     error: mocks.toastError,
     success: mocks.toastSuccess,
   },
@@ -149,7 +149,7 @@ describe('RegisterPage modern markup', () => {
 
     const html = renderToStaticMarkup(<RegisterPage />);
 
-    expect(html).toContain('v2board-register-card');
+    expect(html).toContain('v2board-auth-card');
     expect(html).toContain('tw:rounded-card');
     expect(html).toContain('>V2Board</h1>');
     expect(html).toContain('邮箱');
@@ -161,11 +161,15 @@ describe('RegisterPage modern markup', () => {
     expect(html).toContain('href="https://terms.example"');
     expect(html).toContain('返回登入');
     expect(html).toContain('href="#/login"');
-    expect(html).toContain('class="v2board-login-i18n-btn"');
+    expect(html).toContain('class="v2board-auth-language-trigger"');
     expect(html).not.toContain('block block-rounded');
     expect(html).not.toContain('form-control');
     expect(html).not.toContain('btn btn-block');
     expect(html).not.toContain('placeholder=');
+    expect(source).toContain("components/layout/auth-language-menu");
+    expect(source).toContain("lib/auth-toast");
+    expect(source).not.toContain("components/layout/language-menu");
+    expect(source).not.toContain("lib/legacy-toast");
   });
 });
 

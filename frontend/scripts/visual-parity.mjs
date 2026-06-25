@@ -48,7 +48,7 @@ const crc32Table = Array.from({ length: 256 }, (_, value) => {
   }
   return current >>> 0;
 });
-const languageMenuItemSelector = '.ant-dropdown-menu-item, .v2board-language-menu-item';
+const languageMenuItemSelector = '.ant-dropdown-menu-item, .v2board-auth-language-menu-item';
 
 function normalizeParityText(value) {
   return String(value ?? '')
@@ -4068,8 +4068,8 @@ const metricSelectors = [
   '.bg-gray-lighter',
   '.bg-gray-lighter > a',
   '.ant-divider',
-  '.v2board-login-i18n-btn',
-  '.v2board-login-i18n-btn span',
+  '.v2board-auth-language-trigger',
+  '.v2board-auth-language-trigger span',
   '#sidebar',
   '#page-header',
   '#main-container > .content',
@@ -4585,7 +4585,11 @@ async function runRedesignedLoginPageStateInteraction(page) {
 
 async function normalizeRedesignedAuthPageState(page) {
   const state = await authPageState(page);
-  const languageTriggerTexts = await visibleTexts(page, '.v2board-login-i18n-btn', 2);
+  const languageTriggerTexts = await visibleTexts(
+    page,
+    '.v2board-auth-language-trigger, .v2board-login-i18n-btn',
+    2,
+  );
   return {
     ...state,
     // Released as redesigned accessibility: auth surfaces expose language as a native auxiliary
@@ -4612,7 +4616,7 @@ async function runLoginFormLanguageInteraction(page) {
     'visual@example.com',
   );
   await fillFirstVisible(page, 'input[type="password"]', 'secret123');
-  await clickFirstVisibleWithPointer(page, '.v2board-login-i18n-btn, .ant-dropdown-trigger');
+  await clickFirstVisibleWithPointer(page, '.v2board-auth-language-trigger, .ant-dropdown-trigger');
   await page.waitForTimeout(150);
   return {
     email: await firstInputValue(
@@ -4626,7 +4630,7 @@ async function runLoginFormLanguageInteraction(page) {
 
 async function runLoginLanguagePersistenceInteraction(page) {
   const before = await loginLanguagePersistenceState(page);
-  await clickFirstVisibleWithPointer(page, '.v2board-login-i18n-btn, .ant-dropdown-trigger');
+  await clickFirstVisibleWithPointer(page, '.v2board-auth-language-trigger, .ant-dropdown-trigger');
   await page.waitForTimeout(150);
   const menuItems = withoutDroppedLocale(await visibleTexts(page, languageMenuItemSelector, 8));
   const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 3_000 }).catch(
@@ -12217,7 +12221,10 @@ async function loginLanguagePersistenceState(page) {
       cookieI18n: readCookie('i18n'),
       gLang: window.g_lang ?? '',
       storedLocale: window.localStorage.getItem('umi_locale') ?? '',
-      triggerText: normalize(document.querySelector('.v2board-login-i18n-btn')?.textContent),
+      triggerText: normalize(
+        document.querySelector('.v2board-auth-language-trigger, .v2board-login-i18n-btn')
+          ?.textContent,
+      ),
     };
   });
 }
