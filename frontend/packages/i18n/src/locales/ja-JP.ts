@@ -53,6 +53,8 @@ const jaJP: Translations = {
     email: 'E-mail アドレス',
     password: 'パスワード',
     forget_password: 'パスワードをお忘れの方',
+    show_password: 'パスワードを表示',
+    hide_password: 'パスワードを非表示',
     submit_login: 'ログイン',
     submit_register: '新規登録',
   },

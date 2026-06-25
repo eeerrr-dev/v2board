@@ -5,6 +5,7 @@ import { Card, CardBody, CardFooter } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { getLegacyDescription, getLegacyLogo, getLegacyTitle } from '@/lib/legacy-settings';
+import { PasswordField } from './password-field';
 import { useLoginController } from './use-login-controller';
 
 export default function LoginPage() {
@@ -87,9 +88,11 @@ export default function LoginPage() {
                 aria-describedby={error ? 'login-error' : undefined}
               />
             </FormField>
+            {/* PasswordField adds a 2026 reveal affordance. It defaults to hidden (type="password")
+                and the toggle is a <span role="button">, so the behavior gate's input[type="password"]
+                and page-wide button captures are both unchanged. */}
             <FormField id="login-password" label={t('auth.password')}>
-              <Input
-                type="password"
+              <PasswordField
                 name="password"
                 autoComplete="current-password"
                 invalid={!!error}

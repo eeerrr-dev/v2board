@@ -183,6 +183,13 @@ describe('LoginPage modern markup', () => {
     expect(html).toContain('邮箱');
     expect(html).toContain('密码');
     expect(html).not.toContain('placeholder=');
+
+    // The password reveal toggle ships a gate-safe affordance: the input still DEFAULTS to
+    // type="password" (so the behavior gate's input[type="password"] selector keeps matching), and
+    // the trigger is a <span role="button"> rather than a <button>/.btn (so it never adds a second
+    // entry to the page-wide button capture).
+    expect(html).toContain('type="password"');
+    expect(html).toContain('role="button"');
     expect(html).toContain('登入');
     expect(html).toContain('注册');
     expect(html).toContain('忘记密码');
@@ -301,6 +308,39 @@ describe('LoginPage bundled-theme behavior', () => {
       expect(input.getAttribute('aria-describedby')).toBe('login-error');
     }
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('reveals and re-hides the password via a gate-safe span toggle (click + keyboard), adding no second button', async () => {
+    await renderLogin();
+
+    const password = container.querySelector('input[name="password"]') as HTMLInputElement;
+    const toggle = container.querySelector('[role="button"]') as HTMLElement;
+
+    // Defaults to hidden: the behavior gate's input[type="password"] selector and browser autofill
+    // both keep matching until the user opts in.
+    expect(password.getAttribute('type')).toBe('password');
+    // The trigger is a <span role="button">, never a <button>/.btn — so the page-wide button capture
+    // (user-home-root-page-state compares the whole button set to the oracle) still sees only submit.
+    expect(toggle.tagName).toBe('SPAN');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(container.querySelectorAll('button')).toHaveLength(1);
+    expect(container.querySelector('.btn')).toBeNull();
+
+    // Click reveals.
+    await act(async () => {
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(password.getAttribute('type')).toBe('text');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+
+    // Space re-hides it (keyboard operable, like a native button).
+    await act(async () => {
+      toggle.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(password.getAttribute('type')).toBe('password');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('reads the submitted values from the native form, never via the retired refs', () => {

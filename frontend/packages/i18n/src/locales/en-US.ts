@@ -85,6 +85,8 @@ const enUS: Translations = {
     email_placeholder: 'Enter your email',
     password: 'Password',
     password_placeholder: 'Enter your password',
+    show_password: 'Show password',
+    hide_password: 'Hide password',
     new_password: 'New Password',
     old_password: 'Old Password',
     confirm_password: 'Confirm password',

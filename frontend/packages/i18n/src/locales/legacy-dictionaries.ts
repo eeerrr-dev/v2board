@@ -4,6 +4,8 @@ import type { LegacyDictionary } from './legacy-fallback';
 // They replace the old runtime i18n scripts without loading packaged public assets.
 export const legacyDictionaries: Record<string, LegacyDictionary> = {
   "zh-CN": {
+    "显示密码": "显示密码",
+    "隐藏密码": "隐藏密码",
     "请求失败": "请求失败",
     "月付": "月付",
     "季付": "季付",
@@ -254,6 +256,8 @@ export const legacyDictionaries: Record<string, LegacyDictionary> = {
     "您邀请的用户再次邀请用户将按照订单金额乘以分销等级的比例进行分成。": "您邀请的用户再次邀请用户将按照订单金额乘以分销等级的比例进行分成。"
   },
   "zh-TW": {
+    "显示密码": "顯示密碼",
+    "隐藏密码": "隱藏密碼",
     "请求失败": "請求失敗",
     "月付": "月繳制",
     "季付": "季繳",
@@ -504,6 +508,8 @@ export const legacyDictionaries: Record<string, LegacyDictionary> = {
     "您邀请的用户再次邀请用户将按照订单金额乘以分销等级的比例进行分成。": "您邀請的用戶再次邀請用戶將按照訂單金額乘以分銷等級的比例進行分成。"
   },
   "en-US": {
+    "显示密码": "Show password",
+    "隐藏密码": "Hide password",
     "请求失败": "Request failed",
     "月付": "Monthly",
     "季付": "Quarterly",
@@ -754,6 +760,8 @@ export const legacyDictionaries: Record<string, LegacyDictionary> = {
     "您邀请的用户再次邀请用户将按照订单金额乘以分销等级的比例进行分成。": "The users you invite to re-invite users will be divided according to the order amount multiplied by the distribution level."
   },
   "ja-JP": {
+    "显示密码": "パスワードを表示",
+    "隐藏密码": "パスワードを非表示",
     "请求失败": "リクエストエラー",
     "月付": "月間プラン",
     "季付": "3か月プラン",
@@ -1004,6 +1012,8 @@ export const legacyDictionaries: Record<string, LegacyDictionary> = {
     "您邀请的用户再次邀请用户将按照订单金额乘以分销等级的比例进行分成。": "お客様に招待された方が更に別の方を招待された場合、お客様は支払われるオーダーからティア分配分の比率分を受け取ることができます。"
   },
   "vi-VN": {
+    "显示密码": "Hiện mật khẩu",
+    "隐藏密码": "Ẩn mật khẩu",
     "请求失败": "Yêu Cầu Thất Bại",
     "月付": "Tháng",
     "季付": "Hàng Quý",
@@ -1254,6 +1264,8 @@ export const legacyDictionaries: Record<string, LegacyDictionary> = {
     "您邀请的用户再次邀请用户将按照订单金额乘以分销等级的比例进行分成。": "Người dùng mà bạn mời tiếp tục mời sẽ được chia theo số tiền đặt hàng nhân với cấp độ phân phối."
   },
   "ko-KR": {
+    "显示密码": "비밀번호 표시",
+    "隐藏密码": "비밀번호 숨기기",
     "请求失败": "요청실패",
     "月付": "월간",
     "季付": "3개월간",

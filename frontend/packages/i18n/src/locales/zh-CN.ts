@@ -83,6 +83,8 @@ const zhCN = {
     email_placeholder: '请输入邮箱',
     password: '密码',
     password_placeholder: '请输入密码',
+    show_password: '显示密码',
+    hide_password: '隐藏密码',
     new_password: '新密码',
     old_password: '旧密码',
     email_code: '邮箱验证码',
