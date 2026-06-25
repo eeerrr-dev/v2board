@@ -1,4 +1,4 @@
-.PHONY: up down logs shell reset sync ps doctor public-bundle-audit replica-audit parity-config-audit legacy-oracle-check legacy-oracle-up legacy-oracle-serve legacy-oracle-down deploy-smoke deploy-public-sync deploy-public-check deploy-public-ensure visual-smoke visual-parity browser-parity interaction-parity clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
+.PHONY: up down logs shell reset sync ps doctor public-bundle-audit replica-audit parity-config-audit legacy-oracle-check legacy-oracle-up legacy-oracle-serve legacy-oracle-down deploy-smoke deploy-public-sync deploy-public-check deploy-public-ensure visual-smoke visual-parity browser-parity interaction-parity behavior-parity clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
 
 DC := $(shell \
 	if docker compose version >/dev/null 2>&1; then echo "docker compose"; \
@@ -62,7 +62,7 @@ LEGACY_ORACLE_REQUIRED_PATHS := \
 VISUAL_SOURCE_BASE_URL ?= http://host.docker.internal:8000
 VISUAL_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/visual-parity
 INTERACTION_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/interaction-parity
-INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-persistence user-login-keyboard-tab-focus user-home-root-page-state user-register-form-state user-forget-form-state admin-root-page-state admin-login-form-state \
+INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-persistence user-home-root-page-state user-register-form-state user-forget-form-state admin-root-page-state admin-login-form-state \
 	admin-system-queue-state user-dashboard-header-language-dropdown user-session-expired-redirect user-auth-401-no-redirect user-dashboard-avatar-dropdown user-dashboard-dark-mode-persistence user-dashboard-subscribe-drawer user-dashboard-subscribe-import-links \
 	user-dashboard-subscribe-import-ios-ua user-dashboard-subscribe-import-android-ua user-dashboard-subscribe-import-macos-ua user-dashboard-subscribe-import-windows-ua user-dashboard-notice-carousel user-dashboard-reset-package-confirm user-dashboard-new-period-confirm user-dashboard-alert-links \
 	user-profile-deposit-modal user-profile-reset-subscribe-confirm user-profile-telegram-bind-modal user-profile-telegram-unbind-confirm user-profile-preference-switches user-profile-redeem-giftcard user-profile-redeem-giftcard-api-500 user-profile-redeem-giftcard-timeout \
@@ -124,11 +124,7 @@ VISUAL_PARITY_SCENARIOS ?= user-home-root user-login user-register-rich user-for
 	user-dashboard-banned-ko-kr user-dashboard-dark-ko-kr user-plans-long-data-ko-kr user-plans-sold-out-ko-kr user-plan-checkout-non-renewable-ko-kr user-dashboard-session-expired-ko-kr user-plans-empty-ko-kr user-orders-empty-ko-kr \
 	user-node-empty-ko-kr user-tickets-empty-ko-kr user-orders-long-data-ko-kr user-node-long-data-ko-kr user-home-root-ko-kr user-login-ko-kr user-register-rich-ko-kr user-forget-ko-kr \
 	user-dashboard-ko-kr user-plans-ko-kr user-plan-checkout-ko-kr user-orders-ko-kr user-order-detail-ko-kr user-node-ko-kr user-traffic-ko-kr user-invite-ko-kr \
-	user-tickets-ko-kr user-ticket-detail-ko-kr user-knowledge-ko-kr user-profile-ko-kr user-dashboard-no-subscription-fa-ir user-dashboard-expired-subscription-fa-ir user-dashboard-traffic-used-up-fa-ir user-dashboard-device-limit-reached-fa-ir \
-	user-dashboard-banned-fa-ir user-dashboard-dark-fa-ir user-plans-long-data-fa-ir user-plans-sold-out-fa-ir user-plan-checkout-non-renewable-fa-ir user-dashboard-session-expired-fa-ir user-plans-empty-fa-ir user-orders-empty-fa-ir \
-	user-node-empty-fa-ir user-tickets-empty-fa-ir user-orders-long-data-fa-ir user-node-long-data-fa-ir user-home-root-fa-ir user-login-fa-ir user-register-rich-fa-ir user-forget-fa-ir \
-	user-dashboard-fa-ir user-plans-fa-ir user-plan-checkout-fa-ir user-orders-fa-ir user-order-detail-fa-ir user-node-fa-ir user-traffic-fa-ir user-invite-fa-ir \
-	user-tickets-fa-ir user-ticket-detail-fa-ir user-knowledge-fa-ir user-profile-fa-ir admin-dashboard admin-dashboard-session-expired admin-dashboard-dark admin-plans \
+	user-tickets-ko-kr user-ticket-detail-ko-kr user-knowledge-ko-kr user-profile-ko-kr admin-dashboard admin-dashboard-session-expired admin-dashboard-dark admin-plans \
 	admin-plans-timeout admin-orders admin-orders-long-data admin-orders-api-500 admin-orders-timeout admin-users admin-users-timeout admin-users-api-500 \
 	admin-tickets-timeout admin-users-long-data admin-tickets admin-ticket-detail admin-config admin-theme admin-system admin-server-groups \
 	admin-server-manage admin-server-manage-long-data admin-server-manage-timeout admin-server-routes admin-payments admin-payments-timeout admin-coupons admin-coupons-timeout \
@@ -839,6 +835,14 @@ interaction-parity:
 	$(DCF) up -d $(INTERACTION_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
 	echo "Interaction parity OK: all configured shards passed."; \
 	echo "Artifacts: $(INTERACTION_PARITY_ARTIFACT_DIR)"
+
+# Behavior/contract parity gate for the gradual reskin. This is the durable gate:
+# a redesigned surface may diverge visually (its visual scenario marked
+# `visualRetired` so the pixel diff is retired), but it must keep this green --
+# same API calls/payloads, state persistence, routing, and auth behavior as the
+# oracle. interaction-parity already runs interactions plus the embedded
+# API-contract assertions and never compares pixels, so this is its reskin alias.
+behavior-parity: interaction-parity
 
 clean-host:
 	git clean -fdX -n

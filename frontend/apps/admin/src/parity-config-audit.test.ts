@@ -117,6 +117,29 @@ describe('parity config audit helpers', () => {
     ).toEqual(['user coverage is missing screenshot scenarios for routes: /profile']);
   });
 
+  it('extracts the visualRetired flag for redesigned surfaces only', () => {
+    const scenarioBlock = `
+      { label: 'user-login', path: '/#/login', visualRetired: true },
+      { label: 'user-dashboard', path: '/#/dashboard' },
+    `;
+
+    expect(extractVisualScenarioPaths(scenarioBlock)).toEqual([
+      { label: 'user-login', route: '/login', visualRetired: true },
+      { label: 'user-dashboard', route: '/dashboard' },
+    ]);
+  });
+
+  it('retires pixel coverage only when an interaction scenario still gates the route', () => {
+    const scenarios = [{ label: 'user-login', route: '/login', visualRetired: true }];
+
+    expect(assertRouteCoverage('user coverage', ['/login'], scenarios, new Set())).toEqual([
+      'user coverage retired pixel parity without interaction/behavior coverage for routes: /login (user-login)',
+    ]);
+    expect(
+      assertRouteCoverage('user coverage', ['/login'], scenarios, new Set(['user-login'])),
+    ).toEqual([]);
+  });
+
   it('fails when visual parity scenarios point at undeclared routes', () => {
     expect(
       assertRouteCoverage('admin coverage', ['/dashboard'], [

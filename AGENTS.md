@@ -152,22 +152,41 @@ inside the repository.
 - If tests or package commands are needed, run them inside the appropriate
   Docker service with `docker-compose -p v2board -f docker-compose.local.yml exec ...`.
 
-## Frontend Replica Goal
+## Frontend Replica Goal (now in gradual reskin)
 
-The frontend target is a complete source-level replica: function, behavior,
-visual appearance, layout, routing, persistence, edge cases, and deployment
-shape must match the packaged V2Board frontend, but runtime and build output
-must not depend on the packaged legacy bundles.
+The frontend began as a complete source-level replica of the packaged V2Board
+frontend: function, behavior, visual appearance, layout, routing, persistence,
+edge cases, and deployment shape match the packaged oracle, but runtime and
+build output never depend on the packaged legacy bundles. That exact-replica
+milestone is reached and frozen as the git tag `replica-baseline` — the replica
+was the means (turning an unmodifiable packaged bundle into modern, tested,
+modifiable source), not the end.
 
-Treat this as a strict completion standard, not a directionally-correct
-approximation. The restored frontend is not complete until it looks the same,
-lays out the same, behaves the same, persists state the same, routes the same,
-handles edge cases the same, and can be used the same way as the frozen
-packaged oracle. Do not downgrade obvious mismatches to acceptable drift. The
-implementation should also be the cleanest mature source restoration available:
-organized source code, source-owned assets, no hidden runtime dependency on the
-old bundles, no host-generated artifacts, and no temporary bridge presented as
-final work.
+The project is now deliberately diverging from the oracle's *appearance* to
+modernize the UI surface by surface (the "gradual reskin"). This splits the
+parity standard into two tiers that are treated differently:
+
+- **Behavioral / contract parity is the permanent, strict gate.** API calls and
+  payloads, state persistence, routing, the auth/redirect model, i18n behavior,
+  and edge-case handling must still match the oracle and stay green via
+  `make behavior-parity` (the interaction/contract lane). Modernizing a surface
+  changes *how* it looks and is built, never *what* it does.
+- **Visual / pixel parity is a milestone baseline, retired per surface.** A
+  redesigned surface marks its visual scenario(s) `visualRetired: true` in
+  `frontend/scripts/visual-parity.mjs`, which skips the pixel diff against the
+  old oracle (comparing a new design to the old look is meaningless) while
+  keeping the route's behavior gate. `make parity-config-audit` enforces that a
+  route whose visual scenarios are all `visualRetired` still has an
+  interaction/behavior scenario: visual coverage may be retired, behavior
+  coverage may not be silently dropped.
+
+For surfaces NOT yet redesigned, the original strict standard still holds: they
+must look, lay out, behave, persist, route, and handle edge cases exactly like
+the frozen packaged oracle; do not downgrade an un-redesigned mismatch to
+acceptable drift. The implementation should remain the cleanest mature source
+available: organized source code, source-owned assets, no hidden runtime
+dependency on the old bundles, no host-generated artifacts, and no temporary
+bridge presented as final work.
 
 - The old packaged files may be inspected only as a parity oracle or test
   fixture while restoring source behavior. That means ad hoc comparisons against
@@ -197,6 +216,15 @@ final work.
   V2Board source iff its header begins `Authored V2Board` (it carries `___`
   CSS-module classes or `.v2board-*` selectors); every other restored style file
   is vendored third-party CSS.
+- The modern reskin layer uses Tailwind CSS (user app) namespaced with the `tw:`
+  prefix — `@import 'tailwindcss' prefix(tw);` — so utilities render as `tw:flex`,
+  `tw:rounded-2xl`, etc. This prefix is mandatory: the vendored legacy CSS (OneUI,
+  Bootstrap 4, Ant Design v3) is bundled into the same global stylesheet and owns
+  bare class names like `block`, `container`, and `badge`. An unprefixed Tailwind
+  utility silently inherits the vendored component's styles — e.g. Tailwind's `block`
+  display utility picked up OneUI's `.block` card shadow/background. Rule of thumb:
+  bare class names belong to vendored/legacy components; `tw:`-prefixed names are
+  authored reskin utilities. The login surface is the reference pattern.
 - Deployed files may keep legacy-compatible names such as `umi.css` and `umi.js`,
   but those files must be freshly built from `frontend/apps/*/src`, not copied
   from the packaged public tree.
@@ -212,9 +240,12 @@ final work.
   delete-sync semantics such as `rsync -a --delete`.
 - Any temporary bridge to packaged assets must be named as temporary in comments
   and removed as the corresponding source implementation lands.
-- Do not claim the replica is complete unless `make replica-audit` and relevant
-  `make deploy-smoke` / `make visual-smoke` checks are clean, and broader
-  browser-level visual/behavior comparisons prove parity.
+- For a surface still on the replica, do not claim parity is complete unless
+  `make replica-audit` and the relevant `make deploy-smoke` / `make visual-smoke`
+  checks are clean and browser-level visual/behavior comparisons match the
+  oracle. For a redesigned surface, the completion bar is instead: behavior gate
+  green (`make behavior-parity`), the surface's visual scenario(s) marked
+  `visualRetired`, and the new design reviewed — never a silently dropped check.
 
 ## 1. Think Before Coding
 

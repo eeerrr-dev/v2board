@@ -127,11 +127,13 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
       'user visual parity route coverage',
       userRoutes,
       visualScenarioPaths.filter((scenario) => scenario.label.startsWith('user-')),
+      new Set(interactionTargets),
     ),
     ...assertRouteCoverage(
       'admin visual parity route coverage',
       adminRoutes,
       visualScenarioPaths.filter((scenario) => scenario.label.startsWith('admin-')),
+      new Set(interactionTargets),
     ),
     ...assertSameOrderedValues('user dev entry legacyRoutes', userDevRoutes, userRoutes),
     ...assertSameOrderedValues('admin dev entry legacyRoutes', adminDevRoutes, adminRoutes),
@@ -227,14 +229,32 @@ export function extractLabelsFromBlock(block) {
 }
 
 export function extractVisualScenarioPaths(block) {
-  return [
-    ...block.matchAll(
-      /\blabel:\s*'([^']+)'[\s\S]*?\bpath:\s*(?:'([^']+)'|`([^`]+)`)/g,
-    ),
-  ].map((match) => ({
-    label: match[1],
-    route: normalizeScenarioRoute(match[2] ?? match[3]),
-  }));
+  const labelMatches = [...block.matchAll(/\blabel:\s*'([^']+)'/g)];
+
+  return labelMatches.map((labelMatch, index) => {
+    const start = labelMatch.index;
+    const end =
+      index + 1 < labelMatches.length ? labelMatches[index + 1].index : block.length;
+    const segment = block.slice(start, end);
+    const pathMatch = /\bpath:\s*(?:'([^']+)'|`([^`]+)`)/.exec(segment);
+
+    if (!pathMatch) {
+      throw new Error(`Visual parity scenario ${labelMatch[1]} is missing a path`);
+    }
+
+    const scenario = {
+      label: labelMatch[1],
+      route: normalizeScenarioRoute(pathMatch[1] ?? pathMatch[2]),
+    };
+
+    // A redesigned surface marks its visual scenario `visualRetired: true`, which
+    // retires the pixel diff against the old oracle while keeping the behavior gate.
+    if (/\bvisualRetired:\s*true\b/.test(segment)) {
+      scenario.visualRetired = true;
+    }
+
+    return scenario;
+  });
 }
 
 export function extractRouteArray(source, name) {
@@ -341,17 +361,48 @@ export function assertInteractionTargetsExist(visualLabels, interactionTargets) 
     : [`Interaction scenarios reference missing visual scenarios: ${missingTargets.join(', ')}`];
 }
 
-export function assertRouteCoverage(name, routes, scenarios) {
+export function assertRouteCoverage(name, routes, scenarios, behaviorCoveredLabels = new Set()) {
   const failures = [];
-  const uncoveredRoutes = routes.filter(
-    (route) => !scenarios.some((scenario) => routePatternMatches(route, scenario.route)),
-  );
+  const uncoveredRoutes = [];
+  const retiredWithoutBehavior = [];
+
+  for (const route of routes) {
+    const matching = scenarios.filter((scenario) =>
+      routePatternMatches(route, scenario.route),
+    );
+
+    if (matching.length === 0) {
+      uncoveredRoutes.push(route);
+      continue;
+    }
+
+    // A route still on the replica needs at least one active (non-retired) pixel
+    // scenario. A redesigned route may retire all of its pixel scenarios, but only
+    // if an interaction/behavior scenario keeps gating it — visual coverage may be
+    // retired, behavior coverage may not be silently dropped.
+    if (matching.some((scenario) => !scenario.visualRetired)) {
+      continue;
+    }
+
+    if (!matching.some((scenario) => behaviorCoveredLabels.has(scenario.label))) {
+      retiredWithoutBehavior.push({ route, labels: matching.map((scenario) => scenario.label) });
+    }
+  }
+
   const unknownScenarioRoutes = scenarios.filter(
     (scenario) => !routes.some((route) => routePatternMatches(route, scenario.route)),
   );
 
   if (uncoveredRoutes.length > 0) {
     failures.push(`${name} is missing screenshot scenarios for routes: ${uncoveredRoutes.join(', ')}`);
+  }
+
+  if (retiredWithoutBehavior.length > 0) {
+    failures.push(
+      `${name} retired pixel parity without interaction/behavior coverage for routes: ${retiredWithoutBehavior
+        .map((entry) => `${entry.route} (${entry.labels.join(', ')})`)
+        .join('; ')}`,
+    );
   }
 
   if (unknownScenarioRoutes.length > 0) {
