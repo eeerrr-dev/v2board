@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { Languages } from 'lucide-react';
 import { legacyGetLocale, legacySetLocale, SUPPORTED_LOCALES } from '@v2board/i18n';
 import { setLegacyCookie } from '@/lib/legacy-cookie';
 import { useTransitionStatus } from '@/lib/use-transition-status';
@@ -196,11 +197,7 @@ export function LanguageMenu({
     setOpen((value) => !value);
   };
   const handleTriggerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    // role=button semantics: activate on Enter/Space like a native button.
-    if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
-      event.preventDefault();
-      toggleOpen();
-    } else if (event.key === 'Escape' && open) {
+    if (event.key === 'Escape' && open) {
       // Dismiss the open overlay from the keyboard (the click-outside handler is pointer-only).
       event.preventDefault();
       setOpen(false);
@@ -208,44 +205,27 @@ export function LanguageMenu({
   };
 
   if (showLabel && reskin) {
-    // Redesigned /login trigger: a token-driven control that is keyboard-reachable (Tab) and
-    // operable as a button — Enter/Space toggle it, Escape dismisses the open overlay — and is
-    // screen-reader-announced (aria-haspopup/aria-expanded). Arrow-key roving over the portaled
-    // items is intentionally NOT reimplemented here: those `<li role="menuitem">` items are shared
-    // verbatim with the still-pixel-gated legacy triggers and stay pointer-activated.
-    // It stays a <span> (not <button>) so the user-home-root-page-state behavior gate's page-wide
-    // `button, .btn` capture still matches the oracle; the kept `.v2board-login-i18n-btn` class +
-    // visible label keep the language interaction's triggerText byte-identical to the oracle.
+    // Redesigned /login trigger: a token-driven native button. Enter/Space come from browser button
+    // semantics; Escape dismisses the open overlay. Arrow-key roving over the portaled items is
+    // intentionally NOT reimplemented here: those `<li role="menuitem">` items are shared verbatim
+    // with the still-pixel-gated legacy triggers and stay pointer-activated. The redesigned login
+    // behavior gate releases this auxiliary button while still pinning form and routing contracts.
     return (
       <>
-        <span
+        <button
+          type="button"
           ref={(element) => {
             triggerRef.current = element;
           }}
-          className={`${triggerClass} tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-field tw:px-2 tw:py-1 tw:text-sm tw:text-foreground-muted tw:transition tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40`}
-          role="button"
-          tabIndex={0}
+          className={`${triggerClass} tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-field tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-sm tw:text-foreground-muted tw:transition tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40`}
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={toggleOpen}
           onKeyDown={handleTriggerKeyDown}
         >
-          <svg
-            aria-hidden="true"
-            className="tw:h-4 tw:w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="9" />
-            <path d="M3 12h18" />
-            <path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18Z" />
-          </svg>
+          <Languages aria-hidden="true" className="tw:h-4 tw:w-4" />
           <span>{currentLabel}</span>
-        </span>
+        </button>
         {popover}
       </>
     );

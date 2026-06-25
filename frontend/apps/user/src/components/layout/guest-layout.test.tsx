@@ -93,8 +93,8 @@ describe('GuestLayout bundled-theme auth shell', () => {
 
     it('keeps exactly one auth box and adds no page-level button (behavior-gate contract)', () => {
       const html = renderGuest('/login');
-      // user-home-root-page-state asserts authBoxCount === 1 and compares the page-wide button set
-      // to the oracle; the redesigned chrome must contribute neither a second auth box nor a button.
+      // The route chrome must contribute neither a second auth box nor its own controls; the login
+      // component owns the redesigned buttons inside the auth box.
       expect((html.match(/v2board-auth-box/g) ?? []).length).toBe(1);
       expect(html).not.toContain('<button');
       expect(html).not.toContain('class="btn');

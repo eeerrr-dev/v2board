@@ -30,7 +30,9 @@ const mocks = vi.hoisted(() => ({
   labels: {
     'auth.email': '邮箱',
     'auth.forget_password': '忘记密码',
+    'auth.hide_password': '隐藏密码',
     'auth.password': '密码',
+    'auth.show_password': '显示密码',
     'auth.sign_up': '注册',
     'auth.submit_login': '登入',
   } as Record<string, string>,
@@ -99,12 +101,12 @@ vi.mock('@/lib/queries', () => ({
 
 vi.mock('@/components/layout/language-menu', () => ({
   LanguageMenu: () => (
-    <span className="v2board-login-i18n-btn">
+    <button type="button" className="v2board-login-i18n-btn">
       <i className="si si-globe pr-1" />
       <span className="font-size-sm text-muted" style={{ verticalAlign: 'text-bottom' }}>
         简体中文
       </span>
-    </span>
+    </button>
   ),
 }));
 
@@ -188,12 +190,12 @@ describe('LoginPage modern markup', () => {
     expect(html).toContain('密码');
     expect(html).not.toContain('placeholder=');
 
-    // The password reveal toggle ships a gate-safe affordance: the input still DEFAULTS to
-    // type="password" (so the behavior gate's input[type="password"] selector keeps matching), and
-    // the trigger is a <span role="button"> rather than a <button>/.btn (so it never adds a second
-    // entry to the page-wide button capture).
+    // The password reveal toggle ships as a native auxiliary button: the input still DEFAULTS to
+    // type="password" (so the behavior gate's input[type="password"] selector keeps matching),
+    // while the redesigned behavior gate releases the extra semantic button from old pixel-era
+    // button-list parity.
     expect(html).toContain('type="password"');
-    expect(html).toContain('role="button"');
+    expect(html).toContain('aria-pressed="false"');
     expect(html).toContain('登入');
     expect(html).toContain('注册');
     expect(html).toContain('忘记密码');
@@ -243,17 +245,20 @@ describe('LoginPage bundled-theme behavior', () => {
     });
   }
 
-  it('keeps focus order email → password → submit with no tabindex overrides (re-pins retired tab-focus parity)', async () => {
+  it('keeps focus order email → password → reveal → submit → language with no tabindex overrides', async () => {
     await renderLogin();
 
     const controls = Array.from(container.querySelectorAll<HTMLElement>('input, button'));
-    const order = controls.map((element) =>
-      element.tagName === 'INPUT' ? element.getAttribute('type') : 'submit',
-    );
+    const order = controls.map((element) => {
+      if (element.tagName === 'INPUT') return element.getAttribute('type');
+      if (element.getAttribute('aria-pressed') !== null) return 'reveal';
+      if (element.classList.contains('v2board-login-i18n-btn')) return 'language';
+      return 'submit';
+    });
 
     // The email field is a proper type="email"; the redesign-aware gate normalizes the identifier
     // input's type (email -> text) so this modernization is released, not pinned.
-    expect(order).toEqual(['email', 'password', 'submit']);
+    expect(order).toEqual(['email', 'password', 'reveal', 'submit', 'language']);
     expect(controls.every((element) => !element.hasAttribute('tabindex'))).toBe(true);
   });
 
@@ -314,20 +319,19 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it('reveals and re-hides the password via a gate-safe span toggle (click + keyboard), adding no second button', async () => {
+  it('reveals and re-hides the password via a native auxiliary button without submitting', async () => {
     await renderLogin();
 
     const password = container.querySelector('input[name="password"]') as HTMLInputElement;
-    const toggle = container.querySelector('[role="button"]') as HTMLElement;
+    const toggle = container.querySelector('button[aria-pressed]') as HTMLButtonElement;
 
     // Defaults to hidden: the behavior gate's input[type="password"] selector and browser autofill
     // both keep matching until the user opts in.
     expect(password.getAttribute('type')).toBe('password');
-    // The trigger is a <span role="button">, never a <button>/.btn — so the page-wide button capture
-    // (user-home-root-page-state compares the whole button set to the oracle) still sees only submit.
-    expect(toggle.tagName).toBe('SPAN');
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(toggle.getAttribute('type')).toBe('button');
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
-    expect(container.querySelectorAll('button')).toHaveLength(1);
+    expect(container.querySelectorAll('button')).toHaveLength(3);
     expect(container.querySelector('.btn')).toBeNull();
 
     // Click reveals.
@@ -338,9 +342,11 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(password.getAttribute('type')).toBe('text');
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
 
-    // Space re-hides it (keyboard operable, like a native button).
+    expect(mocks.loginMutateAsync).not.toHaveBeenCalled();
+
+    // The browser owns Enter/Space activation for the native button; direct click re-hides it here.
     await act(async () => {
-      toggle.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
     expect(password.getAttribute('type')).toBe('password');

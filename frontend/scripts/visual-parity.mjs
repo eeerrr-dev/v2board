@@ -4572,8 +4572,13 @@ function withoutDroppedLocale(menuItems) {
 // keep the strict runAuthPageStateInteraction (placeholders/brand link still pinned there).
 async function runRedesignedLoginPageStateInteraction(page) {
   const state = await authPageState(page);
+  const languageTriggerTexts = await visibleTexts(page, '.v2board-login-i18n-btn', 2);
   return {
     ...state,
+    // Released as redesigned accessibility: /login now exposes the language trigger as a native
+    // auxiliary button. Keep comparing the actual submit button, but ignore the language button text
+    // that had no button counterpart in the packaged oracle.
+    buttons: state.buttons.filter((text) => !languageTriggerTexts.includes(text)),
     controls: state.controls.map((control) => {
       const behavioral = { ...control };
       // Released as redesigned presentation: the placeholder became the field label, and the

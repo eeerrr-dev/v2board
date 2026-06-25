@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { AlertCircle } from 'lucide-react';
 import { LanguageMenu } from '@/components/layout/language-menu';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardFooter } from '@/components/ui/card';
@@ -60,20 +61,7 @@ export default function LoginPage() {
                 role="alert"
                 className="tw:flex tw:items-start tw:gap-2 tw:rounded-field tw:border tw:border-destructive/30 tw:bg-destructive-subtle tw:px-3.5 tw:py-2.5 tw:text-sm tw:text-destructive"
               >
-                <svg
-                  aria-hidden="true"
-                  className="tw:mt-0.5 tw:h-4 tw:w-4 tw:shrink-0"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M12 8v5" />
-                  <path d="M12 16h.01" />
-                </svg>
+                <AlertCircle aria-hidden="true" className="tw:mt-0.5 tw:h-4 tw:w-4 tw:shrink-0" />
                 <span>{error}</span>
               </div>
             ) : null}
@@ -92,9 +80,8 @@ export default function LoginPage() {
                 aria-describedby={error ? 'login-error' : undefined}
               />
             </FormField>
-            {/* PasswordField adds a 2026 reveal affordance. It defaults to hidden (type="password")
-                and the toggle is a <span role="button">, so the behavior gate's input[type="password"]
-                and page-wide button captures are both unchanged. */}
+            {/* PasswordField adds a 2026 reveal affordance. It defaults to hidden (type="password"),
+                while the reveal control is a native button released by the redesigned behavior gate. */}
             <FormField id="login-password" label={t('auth.password')}>
               <PasswordField
                 name="password"

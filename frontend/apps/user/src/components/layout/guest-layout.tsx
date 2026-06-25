@@ -10,8 +10,8 @@ export function GuestLayout() {
   // /login is the redesigned 2026 surface (route-isolated reskin): a modern gradient backdrop
   // with the polished login card centered. Its single `.v2board-auth-box` is kept so the
   // behavior gate's auth-box-scoped selectors (controls/links/title/authBoxCount in
-  // user-home-root-page-state) still resolve; the brand chrome adds no <button>/.btn and no
-  // auth-box-internal links/headings, so that interaction stays byte-identical to the oracle.
+  // user-home-root-page-state) still resolve; the route chrome adds no extra controls, links, or
+  // headings, so the login component owns all redesigned auth interactions.
   // Visual parity for this surface is retired (see user-login/user-home-root in visual-parity.mjs).
   if (pathname === '/login') {
     return (

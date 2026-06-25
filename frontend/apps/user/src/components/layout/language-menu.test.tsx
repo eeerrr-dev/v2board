@@ -262,21 +262,20 @@ describe('LanguageMenu antd dropdown behavior', () => {
     }
   });
 
-  it('renders the redesigned /login trigger as a keyboard-operable role=button that opens on Enter and closes on Escape', () => {
+  it('renders the redesigned /login trigger as a native button that opens on click and closes on Escape', () => {
     act(() => {
       root.render(<LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />);
     });
 
     const trigger = container.querySelector('.v2board-login-i18n-btn') as HTMLElement;
-    // Accessible control, not a bare clickable <span>: focusable + button semantics for assistive tech.
-    expect(trigger.tagName).toBe('SPAN');
-    expect(trigger.getAttribute('role')).toBe('button');
-    expect(trigger.getAttribute('tabindex')).toBe('0');
+    // Native control, not a clickable span: browser-owned focus and Enter/Space activation.
+    expect(trigger.tagName).toBe('BUTTON');
+    expect(trigger.getAttribute('type')).toBe('button');
+    expect(trigger.hasAttribute('role')).toBe(false);
+    expect(trigger.hasAttribute('tabindex')).toBe(false);
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
-    // Still NOT a native <button>/.btn, so the user-home-root-page-state page-wide button capture
-    // stays byte-identical to the oracle.
-    expect(container.querySelector('button')).toBeNull();
+    expect(container.querySelectorAll('button')).toHaveLength(1);
 
     trigger.getBoundingClientRect = () =>
       ({
@@ -292,7 +291,7 @@ describe('LanguageMenu antd dropdown behavior', () => {
       }) as DOMRect;
 
     act(() => {
-      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
