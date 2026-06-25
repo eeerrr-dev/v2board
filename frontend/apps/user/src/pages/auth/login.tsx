@@ -90,80 +90,82 @@ export default function LoginPage() {
   }, [onLogin]);
 
   return (
-    <div
-      className="block block-rounded block-transparent block-fx-pop w-100 mb-0 overflow-hidden bg-image"
-      style={{ boxShadow: '0 0.5rem 2rem #0000000d' }}
-    >
-      <div className="row no-gutters">
-        <div className="col-md-12 order-md-1 bg-white">
-          <div className="block-content block-content-full px-lg-4 py-md-4 py-lg-4">
-            <div className="mb-3 text-center">
-              <a className="font-size-h1" ref={legacyHref()}>
-                {logo ? (
-                  <img className="v2board-logo mb-3" src={logo} />
-                ) : (
-                  <span className="text-dark">{title || 'V2Board'}</span>
-                )}
-              </a>
-              {description && <p className="font-size-sm text-muted mb-3">{description}</p>}
-            </div>
-            <div className="form-group">
-              <input
-                type="text"
-                className="form-control form-control-alt"
-                placeholder={t('auth.email')}
-                ref={emailRef}
-              />
-            </div>
-            <div className="form-group">
-              <input
-                type="password"
-                className="form-control form-control-alt"
-                placeholder={t('auth.password')}
-                ref={passwordRef}
-              />
-            </div>
-            <div className="form-group mb-0">
-              <button
-                disabled={isPending}
-                type="submit"
-                className="btn btn-block btn-primary font-w400"
-                onClick={() => void onLogin()}
-              >
-                {isPending ? (
-                  <LegacyLoadingIcon />
-                ) : (
-                  <span>
-                    <i className="si si-login mr-1" />
-                    {t('auth.submit_login')}
-                  </span>
-                )}
-              </button>
-            </div>
+    // Authored V2Board — clean-modern reskin of the login surface (Tailwind utilities).
+    // Behavior is preserved (ref-based submit, Enter-key, token login, redirect); only the
+    // presentation diverges from the packaged oracle, so this surface's pixel parity is
+    // retired (see `user-login` visualRetired in visual-parity.mjs). The heading is an
+    // <h2>, never <h1>/.block-title, so the login-language-persistence interaction's
+    // titleText stays '' and keeps matching the oracle.
+    <div className="tw:overflow-hidden tw:rounded-2xl tw:bg-white tw:shadow-[0_10px_40px_-12px_rgba(15,23,42,0.25)] tw:ring-1 tw:ring-slate-900/5">
+      <div className="tw:px-6 tw:py-9 tw:sm:px-9">
+        <div className="tw:mb-7 tw:text-center">
+          {logo ? (
+            <img className="v2board-logo tw:mx-auto tw:mb-3 tw:h-11 tw:w-auto" src={logo} alt={title || 'V2Board'} />
+          ) : (
+            <h2 className="tw:text-2xl tw:font-semibold tw:tracking-tight tw:text-slate-900">
+              {title || 'V2Board'}
+            </h2>
+          )}
+          {description ? <p className="tw:mt-2 tw:text-sm tw:text-slate-500">{description}</p> : null}
+        </div>
+
+        <div className="tw:space-y-5">
+          <div className="tw:space-y-1.5">
+            <label htmlFor="login-email" className="tw:block tw:text-sm tw:font-medium tw:text-slate-700">
+              {t('auth.email')}
+            </label>
+            <input
+              id="login-email"
+              type="text"
+              className="tw:block tw:w-full tw:rounded-lg tw:border tw:border-slate-300 tw:bg-white tw:px-3.5 tw:py-2.5 tw:text-sm tw:text-slate-900 tw:shadow-sm tw:transition tw:placeholder:text-slate-400 tw:focus:border-blue-500 tw:focus:outline-none tw:focus:ring-2 tw:focus:ring-blue-500/25"
+              placeholder={t('auth.email')}
+              ref={emailRef}
+            />
           </div>
+          <div className="tw:space-y-1.5">
+            <label htmlFor="login-password" className="tw:block tw:text-sm tw:font-medium tw:text-slate-700">
+              {t('auth.password')}
+            </label>
+            <input
+              id="login-password"
+              type="password"
+              className="tw:block tw:w-full tw:rounded-lg tw:border tw:border-slate-300 tw:bg-white tw:px-3.5 tw:py-2.5 tw:text-sm tw:text-slate-900 tw:shadow-sm tw:transition tw:placeholder:text-slate-400 tw:focus:border-blue-500 tw:focus:outline-none tw:focus:ring-2 tw:focus:ring-blue-500/25"
+              placeholder={t('auth.password')}
+              ref={passwordRef}
+            />
+          </div>
+          <button
+            disabled={isPending}
+            type="submit"
+            className="tw:flex tw:w-full tw:items-center tw:justify-center tw:gap-2 tw:rounded-lg tw:bg-blue-600 tw:px-4 tw:py-2.5 tw:text-sm tw:font-semibold tw:text-white tw:shadow-sm tw:transition tw:hover:bg-blue-700 tw:focus:outline-none tw:focus:ring-2 tw:focus:ring-blue-500/40 tw:disabled:cursor-not-allowed tw:disabled:opacity-60"
+            onClick={() => void onLogin()}
+          >
+            {isPending ? <LegacyLoadingIcon /> : t('auth.submit_login')}
+          </button>
         </div>
       </div>
-      <div className="text-left bg-gray-lighter p-3 px-4">
+
+      <div className="tw:flex tw:items-center tw:gap-3 tw:border-t tw:border-slate-100 tw:bg-slate-50/80 tw:px-6 tw:py-4 tw:text-sm tw:sm:px-9">
         <a
-          className="font-size-sm text-muted"
+          className="tw:text-slate-500 tw:transition tw:hover:text-slate-900"
           ref={legacyHref()}
           onClick={() => navigate('/register')}
         >
           {t('auth.sign_up')}
         </a>
-        <div className="ant-divider ant-divider-vertical" />
+        <span aria-hidden="true" className="tw:text-slate-300">
+          ·
+        </span>
         <a
-          className="font-size-sm text-muted"
+          className="tw:text-slate-500 tw:transition tw:hover:text-slate-900"
           ref={legacyHref()}
           onClick={() => navigate('/forgetpassword')}
         >
           {t('auth.forget_password')}
         </a>
-        <LanguageMenu
-          legacyIcon
-          showLabel
-          triggerClassName="v2board-login-i18n-btn"
-        />
+        <div className="tw:ml-auto">
+          <LanguageMenu legacyIcon showLabel triggerClassName="v2board-login-i18n-btn" />
+        </div>
       </div>
     </div>
   );

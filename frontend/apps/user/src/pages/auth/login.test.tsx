@@ -130,47 +130,57 @@ async function flushPromises() {
   });
 }
 
-describe('LoginPage bundled-theme markup', () => {
+describe('LoginPage modern markup', () => {
   beforeEach(resetMocks);
 
-  it('renders the original login card, translated placeholders, footer links, and language trigger', () => {
+  it('renders the modern login card, translated placeholders, footer links, and language trigger', () => {
     const html = renderToStaticMarkup(<LoginPage />);
 
-    expect(html).toContain(
-      'block block-rounded block-transparent block-fx-pop w-100 mb-0 overflow-hidden bg-image',
-    );
-    expect(html).toContain('box-shadow:0 0.5rem 2rem #0000000d');
-    expect(html).toContain('class="row no-gutters"');
-    expect(html).toContain('class="col-md-12 order-md-1 bg-white"');
-    expect(html).toContain('class="block-content block-content-full px-lg-4 py-md-4 py-lg-4"');
-    expect(html).toContain('<span class="text-dark">V2Board</span>');
+    // Reskinned shell — the legacy OneUI/Bootstrap markup is retired. Tailwind
+    // utilities carry the `tw:` prefix so they never collide with the globally
+    // bundled vendored `.block`/`.container`/etc. legacy classes.
+    expect(html).toContain('tw:rounded-2xl');
+    // The display utility must stay prefixed (`tw:block`); a bare `block` class would
+    // collide with vendored OneUI `.block` cards and inherit their shadow/background.
+    expect(html).toContain('tw:block');
+    // A bare `block` token (preceded by quote/space, not the `tw:` prefix, and not
+    // part of `block-rounded`) must never appear — that is the OneUI card collision.
+    expect(html).not.toMatch(/[\s"]block[\s"]/);
+    expect(html).not.toContain('block block-rounded block-transparent');
+    expect(html).not.toContain('form-control form-control-alt');
+    expect(html).not.toContain('btn btn-block btn-primary');
+    expect(html).not.toContain('bg-gray-lighter');
+
+    // The heading must stay an <h2> (never <h1>/.block-title) so the
+    // user-login-language-persistence interaction's titleText stays '' versus the oracle.
+    expect(html).toContain('>V2Board</h2>');
+    expect(html).not.toContain('<h1');
+    expect(html).not.toContain('block-title');
+
     expect(html).toContain('placeholder="邮箱"');
     expect(html).toContain('placeholder="密码"');
-    expect(html).toContain('class="si si-login mr-1"');
     expect(html).toContain('登入');
-    expect(html).toContain('class="text-left bg-gray-lighter p-3 px-4"');
     expect(html).toContain('注册');
-    expect(html).toContain('class="ant-divider ant-divider-vertical"');
     expect(html).toContain('忘记密码');
     expect(html).toContain('class="v2board-login-i18n-btn"');
-    expect(html).toContain('class="si si-globe pr-1"');
     expect(html).toContain('简体中文');
   });
 
-  it('renders the legacy logo, description, and antd loading icon while login is pending', () => {
+  it('renders the operator logo + description and the antd loading icon while login is pending', () => {
     mocks.isPending = true;
     mocks.settings.description = 'Legacy description';
     mocks.settings.logo = '/theme/logo.png';
 
     const html = renderToStaticMarkup(<LoginPage />);
 
-    expect(html).toContain('class="v2board-logo mb-3"');
+    expect(html).toContain('v2board-logo');
     expect(html).toContain('src="/theme/logo.png"');
-    expect(html).toContain('class="font-size-sm text-muted mb-3"');
+    expect(html).toContain('alt="V2Board"');
     expect(html).toContain('Legacy description');
     expect(html).toContain('disabled=""');
     expect(html).toContain('class="anticon anticon-loading"');
-    expect(html).not.toContain('class="si si-login mr-1"');
+    // The submit label is hidden behind the spinner while pending.
+    expect(html).not.toContain('登入');
   });
 });
 
@@ -197,6 +207,18 @@ describe('LoginPage bundled-theme behavior', () => {
       await Promise.resolve();
     });
   }
+
+  it('keeps focus order email → password → submit with no tabindex overrides (re-pins retired tab-focus parity)', async () => {
+    await renderLogin();
+
+    const controls = Array.from(container.querySelectorAll<HTMLElement>('input, button'));
+    const order = controls.map((element) =>
+      element.tagName === 'INPUT' ? element.getAttribute('type') : 'submit',
+    );
+
+    expect(order).toEqual(['text', 'password', 'submit']);
+    expect(controls.every((element) => !element.hasAttribute('tabindex'))).toBe(true);
+  });
 
   it('submits ref values, stores auth data, fetches user info, and pushes the redirect', async () => {
     mocks.params = new URLSearchParams('redirect=order');
