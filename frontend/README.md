@@ -69,12 +69,12 @@ there, not on the local host workspace. Deploy with delete-sync semantics so old
 packaged files cannot survive beside the source-built bundle:
 
 ```bash
-rsync -a --delete dist-deploy/theme/default/ /path/to/v2board/public/theme/default/
-rsync -a --delete dist-deploy/assets/admin/ /path/to/v2board/public/assets/admin/
+rsync -a --delete dist-deploy/theme/default/ /path/to/v2board/backend/laravel/public/theme/default/
+rsync -a --delete dist-deploy/assets/admin/ /path/to/v2board/backend/laravel/public/assets/admin/
 ```
 
 The repository does not track generated frontend files under
-`public/theme/default/assets/` or `public/assets/admin/`. Those directories are
+`backend/laravel/public/theme/default/assets/` or `backend/laravel/public/assets/admin/`. Those directories are
 deployment targets only. The deploy output intentionally keeps legacy-compatible
 entry names such as `umi.css` and `umi.js`, but those files must come from the
 current source build, never from the packaged public tree.
@@ -126,4 +126,4 @@ copy them from the packaged public tree.
 - Every HTTP call goes through `@v2board/api-client`.
 - User app never imports antd; admin app never imports tailwind.
 - TanStack Query owns server state; Zustand owns session/UI state.
-- i18next keys are the English string from `resources/lang/en-US.json`.
+- i18next keys are the English string from `backend/laravel/resources/lang/en-US.json`.
