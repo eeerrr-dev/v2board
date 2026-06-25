@@ -43,7 +43,6 @@ import './styles/user-custom-html-table-rows.css';
 import './styles/user-custom-html-table-header-cells.css';
 import './styles/user-custom-html-table-body-cells.css';
 import './styles/user-browser-modes.css';
-import './styles/user-rtl-support.css';
 import './styles/user-font-face-awesome.css';
 import './styles/user-font-face-simple-line-icons.css';
 import './styles/user-font-awesome-base.css';

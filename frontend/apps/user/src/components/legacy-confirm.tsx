@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getLocaleAntdMessages } from '@v2board/i18n';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { AntBtn } from '@/components/ant-btn';
 import { QuestionCircleIcon } from '@/components/ant-icon';
@@ -184,21 +185,9 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
   return Boolean(value && typeof (value as PromiseLike<unknown>).then === 'function');
 }
 
+// antd Modal.confirm OK/Cancel text comes from the antd locale pack; sourced from
+// the shared registry (en-US fallback for unknown locales, matching antd).
 export function getLegacyConfirmDefaultText(locale: string | undefined) {
-  switch (locale) {
-    case 'zh-CN':
-      return { okText: '确 定', cancelText: '取 消' };
-    case 'zh-TW':
-      return { okText: '確 定', cancelText: '取 消' };
-    case 'ja-JP':
-      return { okText: 'OK', cancelText: 'キャンセル' };
-    case 'ko-KR':
-      return { okText: '확인', cancelText: '취소' };
-    case 'vi-VN':
-      return { okText: 'Đồng ý', cancelText: 'Hủy' };
-    case 'fa-IR':
-      return { okText: 'تایید', cancelText: 'لغو' };
-    default:
-      return { okText: 'OK', cancelText: 'Cancel' };
-  }
+  const { okText, cancelText } = getLocaleAntdMessages(locale);
+  return { okText, cancelText };
 }

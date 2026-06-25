@@ -95,68 +95,6 @@ describe('syncFixedColumnRowHeights', () => {
     expect(document.querySelector<HTMLElement>('#fixed-b')?.style.height).toBe('40px');
   });
 
-  it('can apply the legacy fixed-body offset used by bordered table wrappers', () => {
-    document.body.innerHTML = `
-      <div class="ant-table">
-        <table id="main">
-          <thead><tr><th>Action</th></tr></thead>
-          <tbody><tr class="ant-table-row" data-row-key="a"><td>A</td></tr></tbody>
-        </table>
-        <table id="fixed">
-          <thead><tr><th>Action</th></tr></thead>
-          <tbody><tr class="ant-table-row" data-row-key="a" id="fixed-a"><td>A</td></tr></tbody>
-        </table>
-      </div>
-    `;
-
-    setHeight(document.querySelector('.ant-table'), 180);
-    setHeight(document.querySelector('#main thead'), 54);
-    setHeight(document.querySelector('#main .ant-table-row'), 54);
-
-    syncFixedColumnRowHeights(
-      document.querySelector<HTMLTableElement>('#main')!,
-      document.querySelector<HTMLTableElement>('#fixed')!,
-      { bodyRowHeightOffset: 1 },
-    );
-
-    expect(document.querySelector<HTMLElement>('#fixed-a')?.style.height).toBe('55px');
-  });
-
-  it('limits the legacy fixed-body offset to rows at or under the source-height threshold', () => {
-    document.body.innerHTML = `
-      <div class="ant-table">
-        <table id="main">
-          <thead><tr><th>Action</th></tr></thead>
-          <tbody>
-            <tr class="ant-table-row" data-row-key="plain" id="main-plain"><td>Plain</td></tr>
-            <tr class="ant-table-row" data-row-key="wrapped" id="main-wrapped"><td>Wrapped</td></tr>
-          </tbody>
-        </table>
-        <table id="fixed">
-          <thead><tr><th>Action</th></tr></thead>
-          <tbody>
-            <tr class="ant-table-row" data-row-key="plain" id="fixed-plain"><td>Plain</td></tr>
-            <tr class="ant-table-row" data-row-key="wrapped" id="fixed-wrapped"><td>Wrapped</td></tr>
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    setHeight(document.querySelector('.ant-table'), 180);
-    setHeight(document.querySelector('#main thead'), 54);
-    setHeight(document.querySelector('#main-plain'), 54);
-    setHeight(document.querySelector('#main-wrapped'), 75);
-
-    syncFixedColumnRowHeights(
-      document.querySelector<HTMLTableElement>('#main')!,
-      document.querySelector<HTMLTableElement>('#fixed')!,
-      { bodyRowHeightOffset: 1, bodyRowHeightOffsetMaxSourceHeight: 54 },
-    );
-
-    expect(document.querySelector<HTMLElement>('#fixed-plain')?.style.height).toBe('55px');
-    expect(document.querySelector<HTMLElement>('#fixed-wrapped')?.style.height).toBe('75px');
-  });
-
   it('does not stamp row heights while the table is hidden', () => {
     document.body.innerHTML = `
       <div class="ant-table">

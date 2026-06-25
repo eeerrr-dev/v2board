@@ -1,3 +1,4 @@
+import { getLocaleAntdMessages } from '@v2board/i18n';
 import { getCurrentLocale } from './errors';
 import { ANT_ICONS, type AntIconName } from './ant-icons';
 
@@ -202,7 +203,8 @@ const NOTIFICATION_ICONS: Record<Exclude<ToastType, 'loading'>, AntIconName> = {
 // <svg ...><path/>…</svg></i>. Mirrors components/ant-icon.tsx.
 function antIconHtml(name: AntIconName, extraClass = ''): string {
   const { viewBox, paths } = ANT_ICONS[name];
-  const word = getCurrentLocale() === 'zh-CN' ? '图标' : 'icon';
+  // Sourced from the shared registry, exactly as components/ant-icon.tsx.
+  const word = getLocaleAntdMessages(getCurrentLocale()).iconWord;
   const className = `anticon anticon-${name}${extraClass ? ` ${extraClass}` : ''}`;
   const svgClass = name === 'loading' ? ' class="anticon-spin"' : '';
   const svgPaths = paths.map((d) => `<path d="${d}" />`).join('');

@@ -30,7 +30,6 @@ import './styles/admin-oneui-core.css';
 import './styles/admin-oneui-utilities.css';
 import './styles/admin-animations.css';
 import './styles/admin-plugin-widgets.css';
-import './styles/admin-rtl-support.css';
 import './styles/admin-app-overrides.css';
 import './styles/antd-v5-compat.css';
 

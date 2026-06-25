@@ -18,9 +18,7 @@ export default function TrafficPage() {
   const rows = data ?? [];
   const [hoverKey, setHoverKey] = useState<number | null>(null);
   const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(rows.length);
-  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(rows.length, {
-    bodyRowHeightOffset: 1,
-  });
+  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(rows.length);
   const tableClassName = [
     'ant-table',
     'ant-table-default',

@@ -184,10 +184,6 @@ const adminPluginWidgetsSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'styles/admin-plugin-widgets.css'),
   'utf8',
 );
-const adminRtlSupportSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), 'styles/admin-rtl-support.css'),
-  'utf8',
-);
 const visualParitySource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/visual-parity.mjs'),
   'utf8',
@@ -348,7 +344,6 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain("import './styles/admin-oneui-utilities.css';");
     expect(mainSource).toContain("import './styles/admin-animations.css';");
     expect(mainSource).toContain("import './styles/admin-plugin-widgets.css';");
-    expect(mainSource).toContain("import './styles/admin-rtl-support.css';");
     expect(mainSource).toContain("import './styles/admin-app-overrides.css';");
     expect(mainSource).toContain("import './styles/antd-v5-compat.css';");
     expect(mainSource.indexOf("import './styles/admin-antd-v3.css';")).toBeLessThan(
@@ -379,9 +374,6 @@ describe('admin legacy entrypoint', () => {
       mainSource.indexOf("import './styles/admin-plugin-widgets.css';"),
     );
     expect(mainSource.indexOf("import './styles/admin-plugin-widgets.css';")).toBeLessThan(
-      mainSource.indexOf("import './styles/admin-rtl-support.css';"),
-    );
-    expect(mainSource.indexOf("import './styles/admin-rtl-support.css';")).toBeLessThan(
       mainSource.indexOf("import './styles/admin-app-overrides.css';"),
     );
     expect(mainSource.indexOf("import './styles/admin-app-overrides.css';")).toBeLessThan(
@@ -652,7 +644,6 @@ describe('admin legacy entrypoint', () => {
     expectCssNotContains(adminOneuiCoreSource, '.align-baseline{vertical-align:baseline!important}');
     expect(adminOneuiCoreSource).not.toContain('.animated{animation-duration');
     expect(adminOneuiCoreSource).not.toContain('[data-simplebar]');
-    expect(adminOneuiCoreSource).not.toContain('#page-container.rtl-support');
   });
 
   it('keeps V2Board-specific admin overrides out of the Bootstrap v4 component layer', () => {
@@ -735,7 +726,6 @@ describe('admin legacy entrypoint', () => {
     expect(adminAnimationsSource).toContain('@keyframes slideOutUp');
     expect(adminAnimationsSource).toContain('.slideOutUp{animation-name:slideOutUp');
     expect(adminAnimationsSource).not.toContain('[data-simplebar]');
-    expect(adminAnimationsSource).not.toContain('#page-container.rtl-support');
   });
 
   it('keeps OneUI utility color and typography classes out of the Bootstrap v4 component layer', () => {
@@ -752,7 +742,6 @@ describe('admin legacy entrypoint', () => {
     expect(adminOneuiUtilitiesSource).toContain('.text-xplay-lighter{color:#f3c2bc!important}');
     expect(adminOneuiUtilitiesSource).not.toContain('.animated{animation-duration');
     expect(adminOneuiUtilitiesSource).not.toContain('[data-simplebar]');
-    expect(adminOneuiUtilitiesSource).not.toContain('#page-container.rtl-support');
   });
 
   it('keeps admin plugin widget styles out of the Bootstrap v4 component layer', () => {
@@ -777,18 +766,6 @@ describe('admin legacy entrypoint', () => {
     expect(adminPluginWidgetsSource).toContain('.select2-container');
     expect(adminPluginWidgetsSource).toContain('.slick-slider');
     expect(adminPluginWidgetsSource).toContain('.flatpickr-weekdays');
-    expect(adminPluginWidgetsSource).not.toContain('#page-container.rtl-support');
-  });
-
-  it('keeps admin RTL support out of the Bootstrap v4 component layer', () => {
-    expect(adminBootstrapV4ComponentSource).not.toContain('#page-container.rtl-support');
-    expect(adminBootstrapV4ComponentSource).not.toContain('#page-container.rtl-support .nav-main-horizontal');
-
-    expect(adminRtlSupportSource).toContain('#page-container.rtl-support');
-    expect(adminRtlSupportSource).toContain('#page-container.rtl-support .nav-main-horizontal');
-    expect(adminRtlSupportSource).toContain('content:"\\F104"');
-    expect(adminRtlSupportSource).not.toContain('[data-simplebar]');
-    expect(adminPluginWidgetsSource).not.toContain('#page-container.rtl-support');
   });
 
   it('installs dev entry recovery before the Vite module graph loads', () => {

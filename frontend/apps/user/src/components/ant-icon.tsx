@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { ComponentPropsWithoutRef } from 'react';
+import { getLocaleAntdMessages } from '@v2board/i18n';
 import { cn } from '@/lib/cn';
 import { ANT_ICONS, type AntIconName } from '@/lib/ant-icons';
 
@@ -10,10 +11,10 @@ import { ANT_ICONS, type AntIconName } from '@/lib/ant-icons';
 // instead of a Font Awesome glyph.
 
 // antd v3 ships an Icon locale word only for zh-CN ("图标"); every other locale
-// (incl. zh-TW/ja-JP) falls back to en_US's "icon".
+// (incl. zh-TW/ja-JP) falls back to en_US's "icon". Sourced from the shared registry.
 function useIconWord() {
   const { i18n } = useTranslation();
-  return i18n.language === 'zh-CN' ? '图标' : 'icon';
+  return getLocaleAntdMessages(i18n.language).iconWord;
 }
 
 // antd v3's Icon spreads every passed prop onto the <i> and forwards events, so a

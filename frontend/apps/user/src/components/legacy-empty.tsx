@@ -1,21 +1,14 @@
 import { useTranslation } from 'react-i18next';
+import { getLocaleAntdMessages } from '@v2board/i18n';
 
-// antd's built-in Empty.description, keyed by locale. The original renders the
-// table empty state with antd's default <Empty>, whose text comes from the antd
-// locale bundle (not v2board's i18n dictionary), so it is reproduced verbatim.
-const ANT_EMPTY_DESCRIPTION: Record<string, string> = {
-  'zh-CN': '暂无数据',
-  'zh-TW': '無此資料',
-  'en-US': 'No Data',
-  'ja-JP': 'データがありません',
-  'vi-VN': 'Trống',
-  'ko-KR': '데이터 없음',
-  'fa-IR': 'داده‌ای موجود نیست',
-};
+// The original renders the table empty state with antd's default <Empty>, whose
+// text comes from the antd locale pack (not v2board's i18n dictionary). The user
+// app has no antd runtime, so it reads the reproduced pack string from the shared
+// locale registry instead of a local per-locale map.
 
 export function LegacyEmpty({ size = 'normal' }: { size?: 'normal' | 'small' }) {
   const { i18n } = useTranslation();
-  const description = ANT_EMPTY_DESCRIPTION[i18n.language] ?? ANT_EMPTY_DESCRIPTION['en-US'];
+  const description = getLocaleAntdMessages(i18n.language).emptyDescription;
   const className =
     size === 'small' ? 'ant-empty ant-empty-normal ant-empty-small' : 'ant-empty ant-empty-normal';
 

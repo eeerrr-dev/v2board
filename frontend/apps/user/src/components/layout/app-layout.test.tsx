@@ -174,16 +174,6 @@ describe('AppLayout bundled-theme markup', () => {
     expect(source).not.toContain("document.removeEventListener('click'");
   });
 
-  it('adds the shared RTL support class for right-to-left locales', () => {
-    mocks.locale = 'fa-IR';
-
-    const html = renderToStaticMarkup(<AppLayout />);
-
-    expect(html).toContain(
-      'id="page-container" class="fa-IR rtl-support sidebar-o',
-    );
-  });
-
   it('renders the bundled loading main container when loading is passed', () => {
     const html = renderToStaticMarkup(<AppLayout loading />);
 

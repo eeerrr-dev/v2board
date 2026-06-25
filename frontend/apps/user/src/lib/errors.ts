@@ -1,24 +1,12 @@
-import {
-  SUPPORTED_LOCALES,
-  enUS,
-  faIR,
-  jaJP,
-  koKR,
-  viVN,
-  zhCN,
-  zhTW,
-  type SupportedLocale,
-} from '@v2board/i18n';
+import { LOCALE_ENTRIES, isSupportedLocale, type SupportedLocale } from '@v2board/i18n';
 
-const ERROR_DICTIONARIES: Partial<Record<SupportedLocale, Record<string, string>>> = {
-  'zh-CN': zhCN.errors,
-  'zh-TW': zhTW.errors,
-  'en-US': enUS.errors,
-  'ja-JP': jaJP.errors,
-  'vi-VN': viVN.errors,
-  'ko-KR': koKR.errors,
-  'fa-IR': faIR.errors,
-};
+// Derived from the single locale registry so a new locale needs no edit here.
+const ERROR_DICTIONARIES: Record<SupportedLocale, Record<string, string>> = Object.fromEntries(
+  LOCALE_ENTRIES.map((entry): [SupportedLocale, Record<string, string>] => [
+    entry.code,
+    entry.translations.errors,
+  ]),
+) as Record<SupportedLocale, Record<string, string>>;
 
 export function i18nGet(message: string): string {
   const locale = getCurrentLocale();
@@ -36,9 +24,7 @@ export function getCurrentLocale(): SupportedLocale {
 }
 
 function toSupportedLocale(locale: string | null | undefined): SupportedLocale | undefined {
-  return SUPPORTED_LOCALES.some((item) => item.code === locale)
-    ? (locale as SupportedLocale)
-    : undefined;
+  return isSupportedLocale(locale) ? locale : undefined;
 }
 
 // localStorage access can throw (private mode / storage disabled); fall back.

@@ -7,7 +7,13 @@ import { useTransitionStatus } from '@/lib/use-transition-status';
 const I18N_TEXT = Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [locale.code, locale.label]));
 
 function getEnabledLocales() {
-  return window.settings!.i18n!.sort().map((code) => ({ code, label: I18N_TEXT[code] }));
+  // The enabled list comes from the operator backend (window.settings.i18n); drop any
+  // locale the frontend no longer bundles a label/translation for instead of rendering
+  // a blank menu item.
+  return window
+    .settings!.i18n!.sort()
+    .filter((code) => code in I18N_TEXT)
+    .map((code) => ({ code, label: I18N_TEXT[code] }));
 }
 
 interface LanguageMenuProps {

@@ -82,9 +82,10 @@ claim that the full old frontend has been audited.
 | --- | --- | --- |
 | Source-built deploy files keep legacy entry names. | `legacy-compat` | Guarded by deploy and replica audits. |
 | Old packaged public bundles are not copied into source or deploy output. | `legacy-compat` | Guarded by `make public-bundle-audit` and `make replica-audit`. |
-| Locale document environment for `lang` and `dir`. | `legacy-defect-corrected` | Implemented in shared i18n and covered by unit tests. |
-| RTL page class support for user/admin layout containers. | `legacy-defect-corrected` | Implemented with focused layout tests. |
-| Old invalid RTL CSS declarations. | `legacy-defect-corrected` | Normalize to valid CSS instead of copying invalid declarations. |
+| Single locale registry (`packages/i18n/src/locale-registry.ts`) is the only source of locale identity: codes, labels, navigator mapping, i18next resources, reproduced antd-pack strings, and direction all derive from it. | `legacy-compat` | Adding or removing a locale is one registry entry; no other file enumerates the locale set. Covered by i18n unit tests. |
+| Locale document environment for `lang` and `dir`. | `legacy-compat` | `lang` and `dir` are derived from the registry entry; every bundled locale is `ltr`. |
+| RTL / fa-IR (Persian) support. | `case-by-case` (out of scope) | Intentionally **not** bundled. fa-IR (the oracle's 7th locale) and RTL direction are dropped — a conscious divergence from the oracle's locale set. Operators may still enable fa-IR in `window.settings.i18n`, but the menu drops any locale the registry does not render. The registry `dir` field is the single seam to add an RTL locale later. |
+| Fixed-column table row-height sync. | `legacy-defect-corrected` | Synced purely by measuring real row heights, as the bundled rc-table did. The per-locale/per-browser `+1px` offset enumeration was removed. |
 | Admin locale hard-coded to Chinese Ant locale. | `case-by-case` | Preserve until admin i18n restoration is scoped, then migrate to shared locale behavior. |
 | Fixed-width table layouts across user/admin pages. | `case-by-case` | Needs page-by-page language and viewport stress audit. |
 | Random keys and accidental remount behavior in restored flows. | `case-by-case` | Preserve only where current tests describe visible legacy behavior. |

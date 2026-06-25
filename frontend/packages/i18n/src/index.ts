@@ -8,43 +8,19 @@ import enUS from './locales/en-US';
 import jaJP from './locales/ja-JP';
 import viVN from './locales/vi-VN';
 import koKR from './locales/ko-KR';
-import faIR from './locales/fa-IR';
 import { legacyDictionaries } from './locales/legacy-dictionaries';
 import {
   createLegacySourceReverseMap,
   translateLegacyDictionary,
   type LegacyDictionary,
 } from './locales/legacy-fallback';
-
-export type SupportedLocale =
-  | 'zh-CN'
-  | 'zh-TW'
-  | 'en-US'
-  | 'ja-JP'
-  | 'vi-VN'
-  | 'ko-KR'
-  | 'fa-IR';
-
-export const SUPPORTED_LOCALES: { code: SupportedLocale; label: string }[] = [
-  { code: 'zh-CN', label: '简体中文' },
-  { code: 'zh-TW', label: '繁體中文' },
-  { code: 'en-US', label: 'English' },
-  { code: 'ja-JP', label: '日本語' },
-  { code: 'vi-VN', label: 'Tiếng Việt' },
-  { code: 'ko-KR', label: '한국어' },
-  { code: 'fa-IR', label: 'فارسی' },
-];
-
-export const RTL_LOCALES: SupportedLocale[] = ['fa-IR'];
-
-const LEGACY_NAVIGATOR_LOCALES: Record<string, SupportedLocale> = {
-  fa: 'fa-IR',
-  ja: 'ja-JP',
-  zh: 'zh-CN',
-  en: 'en-US',
-  vi: 'vi-VN',
-  ko: 'ko-KR',
-};
+import {
+  LOCALE_ENTRIES,
+  LEGACY_NAVIGATOR_LOCALES,
+  getLocaleDirection,
+  isSupportedLocale,
+  type SupportedLocale,
+} from './locale-registry';
 
 export interface CreateI18nOptions {
   fallback?: SupportedLocale;
@@ -64,10 +40,6 @@ function getLegacyDictionary(locale: SupportedLocale): Record<string, string> | 
   if (typeof window === 'undefined') return undefined;
   const i18nSettings = (window as unknown as { settings?: { i18n?: LegacyI18nMap } }).settings?.i18n;
   return i18nSettings?.[locale] ?? legacyDictionaries[locale];
-}
-
-function isSupportedLocale(locale: string | null | undefined): locale is SupportedLocale {
-  return SUPPORTED_LOCALES.some((item) => item.code === locale);
 }
 
 function normalizeSupportedLocale(
@@ -155,14 +127,6 @@ export function legacySetLocale(locale: string | undefined, reload = true): void
   if (window.dispatchEvent) window.dispatchEvent(new Event('languagechange'));
 }
 
-export function getLocaleDirection(
-  locale: string | null | undefined,
-  fallback: SupportedLocale = 'zh-CN',
-): 'ltr' | 'rtl' {
-  const normalized = normalizeSupportedLocale(locale, fallback);
-  return RTL_LOCALES.includes(normalized) ? 'rtl' : 'ltr';
-}
-
 export function getLegacyLocaleClassName(
   locale: string | null | undefined,
   {
@@ -170,10 +134,8 @@ export function getLegacyLocaleClassName(
     includeLocale = true,
   }: { fallback?: SupportedLocale; includeLocale?: boolean } = {},
 ): string {
-  const normalized = normalizeSupportedLocale(locale, fallback);
-  const classes: string[] = includeLocale ? [normalized] : [];
-  if (getLocaleDirection(normalized, fallback) === 'rtl') classes.push('rtl-support');
-  return classes.join(' ');
+  if (!includeLocale) return '';
+  return normalizeSupportedLocale(locale, fallback);
 }
 
 export function applyLocaleDocumentEnvironment(
@@ -181,8 +143,8 @@ export function applyLocaleDocumentEnvironment(
   fallback: SupportedLocale = 'zh-CN',
 ): SupportedLocale {
   const normalized = normalizeSupportedLocale(locale, fallback);
+  const direction = getLocaleDirection(normalized);
   if (typeof document !== 'undefined') {
-    const direction = getLocaleDirection(normalized, fallback);
     document.documentElement.lang = normalized;
     document.documentElement.dir = direction;
     document.documentElement.dataset.locale = normalized;
@@ -230,15 +192,12 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
     .use(initReactI18next)
     .init({
       lng,
-      resources: {
-        'zh-CN': { translation: legacyLocale('zh-CN', zhCN) },
-        'zh-TW': { translation: legacyLocale('zh-TW', zhTW) },
-        'en-US': { translation: legacyLocale('en-US', enUS) },
-        'ja-JP': { translation: legacyLocale('ja-JP', jaJP) },
-        'vi-VN': { translation: legacyLocale('vi-VN', viVN) },
-        'ko-KR': { translation: legacyLocale('ko-KR', koKR) },
-        'fa-IR': { translation: legacyLocale('fa-IR', faIR) },
-      },
+      resources: Object.fromEntries(
+        LOCALE_ENTRIES.map((entry) => [
+          entry.code,
+          { translation: legacyLocale(entry.code, entry.translations) },
+        ]),
+      ),
       fallbackLng: fallback,
       ns: ['translation'],
       defaultNS: options.defaultNS ?? 'translation',
@@ -247,4 +206,5 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
   return instance;
 }
 
-export { zhCN, zhTW, enUS, jaJP, viVN, koKR, faIR };
+export { zhCN, zhTW, enUS, jaJP, viVN, koKR };
+export * from './locale-registry';

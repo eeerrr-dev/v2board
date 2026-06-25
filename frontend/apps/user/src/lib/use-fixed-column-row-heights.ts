@@ -1,10 +1,5 @@
 import { useCallback, useLayoutEffect, useRef } from 'react';
 
-interface FixedColumnRowHeightOptions {
-  bodyRowHeightOffset?: number;
-  bodyRowHeightOffsetMaxSourceHeight?: number;
-}
-
 function measuredHeight(element: Element | null): number | null {
   if (!element) return null;
   const height = element.getBoundingClientRect().height;
@@ -30,14 +25,10 @@ function collectBodyRowsByKey(rows: Element[]): Map<string, number> {
 export function syncFixedColumnRowHeights(
   mainTable: HTMLTableElement,
   fixedTable: HTMLTableElement,
-  options: FixedColumnRowHeightOptions = {},
 ): void {
   const tableNode = mainTable.closest('.ant-table') ?? mainTable;
   const tableHeight = tableNode.getBoundingClientRect().height;
   if (tableHeight <= 0) return;
-  const bodyRowHeightOffset = options.bodyRowHeightOffset ?? 0;
-  const bodyRowHeightOffsetMaxSourceHeight =
-    options.bodyRowHeightOffsetMaxSourceHeight ?? Number.POSITIVE_INFINITY;
 
   const fixedHeaderRows = Array.from(
     fixedTable.querySelectorAll<HTMLElement>('thead > tr'),
@@ -61,11 +52,7 @@ export function syncFixedColumnRowHeights(
     const key = row.getAttribute('data-row-key');
     const mainHeight =
       key !== null ? mainRowsByKey.get(key) ?? null : measuredHeight(mainBodyRows[index] ?? null);
-    const offset =
-      mainHeight !== null && mainHeight <= bodyRowHeightOffsetMaxSourceHeight
-        ? bodyRowHeightOffset
-        : 0;
-    writeHeight(row, mainHeight === null ? null : mainHeight + offset);
+    writeHeight(row, mainHeight);
   });
 }
 
@@ -75,25 +62,16 @@ export function syncFixedColumnRowHeights(
 // rc-table implementation's fixedColumnsBodyRowsHeight store.
 // antd v3 calls this after every update for fixed-column tables, not just when the data
 // length changes, because content can wrap differently while the row count stays the same.
-export function useFixedColumnRowHeights(
-  _rowCount: number,
-  options: FixedColumnRowHeightOptions = {},
-) {
+export function useFixedColumnRowHeights(_rowCount: number) {
   const mainTableRef = useRef<HTMLTableElement | null>(null);
   const fixedTableRef = useRef<HTMLTableElement | null>(null);
-  const bodyRowHeightOffset = options.bodyRowHeightOffset ?? 0;
-  const bodyRowHeightOffsetMaxSourceHeight =
-    options.bodyRowHeightOffsetMaxSourceHeight ?? Number.POSITIVE_INFINITY;
 
   const sync = useCallback(() => {
     const main = mainTableRef.current;
     const fixed = fixedTableRef.current;
     if (!main || !fixed) return;
-    syncFixedColumnRowHeights(main, fixed, {
-      bodyRowHeightOffset,
-      bodyRowHeightOffsetMaxSourceHeight,
-    });
-  }, [bodyRowHeightOffset, bodyRowHeightOffsetMaxSourceHeight]);
+    syncFixedColumnRowHeights(main, fixed);
+  }, []);
 
   useLayoutEffect(() => {
     sync();

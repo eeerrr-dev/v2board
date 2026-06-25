@@ -42,8 +42,7 @@
                 'ja-JP',
                 'vi-VN',
                 'ko-KR',
-                'zh-TW',
-                'fa-IR'
+                'zh-TW'
             ],
             logo: '{{$logo}}'
         }

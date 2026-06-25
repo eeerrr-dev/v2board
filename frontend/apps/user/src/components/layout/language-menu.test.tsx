@@ -73,7 +73,7 @@ describe('LanguageMenu antd dropdown behavior', () => {
     expect(menu.className).not.toContain('slide-down-enter-active');
   });
 
-  it('sorts only the enabled locale array like legacy SelectLang', () => {
+  it('sorts the enabled locale array and drops unsupported locales like legacy SelectLang', () => {
     const legacyI18n = [
       'zh-CN',
       'en-US',
@@ -111,7 +111,7 @@ describe('LanguageMenu antd dropdown behavior', () => {
 
     expect(
       [...document.body.querySelectorAll('.ant-dropdown-menu-item')].map((item) => item.textContent),
-    ).toEqual(['English', 'فارسی', '日本語', '한국어', 'Tiếng Việt', '简体中文', '繁體中文']);
+    ).toEqual(['English', '日本語', '한국어', 'Tiếng Việt', '简体中文', '繁體中文']);
   });
 
   it('persists the i18n cookie before triggering the legacy locale reload', () => {

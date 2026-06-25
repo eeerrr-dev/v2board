@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createI18n,
   getLegacyLocaleClassName,
-  getLocaleDirection,
   installLocaleDocumentEnvironment,
   legacyGetLocale,
 } from '@v2board/i18n';
@@ -65,22 +64,20 @@ describe('legacy i18n dictionaries', () => {
     delete document.documentElement.dataset.textDirection;
   });
 
-  it('centralizes locale direction and document environment for layout adaptation', async () => {
-    setLegacyLocale('fa-IR');
+  it('centralizes locale document environment for layout adaptation', async () => {
+    setLegacyLocale('ja-JP');
     const i18n = createI18n();
     const cleanup = installLocaleDocumentEnvironment(i18n);
 
-    expect(getLocaleDirection('fa-IR')).toBe('rtl');
-    expect(getLegacyLocaleClassName('fa-IR')).toBe('fa-IR rtl-support');
-    expect(getLegacyLocaleClassName('fa-IR', { includeLocale: false })).toBe('rtl-support');
-    expect(document.documentElement.lang).toBe('fa-IR');
-    expect(document.documentElement.dir).toBe('rtl');
-    expect(document.documentElement.dataset.locale).toBe('fa-IR');
-    expect(document.documentElement.dataset.textDirection).toBe('rtl');
+    expect(getLegacyLocaleClassName('ja-JP')).toBe('ja-JP');
+    expect(getLegacyLocaleClassName('ja-JP', { includeLocale: false })).toBe('');
+    expect(document.documentElement.lang).toBe('ja-JP');
+    expect(document.documentElement.dir).toBe('ltr');
+    expect(document.documentElement.dataset.locale).toBe('ja-JP');
+    expect(document.documentElement.dataset.textDirection).toBe('ltr');
 
     await i18n.changeLanguage('en-US');
 
-    expect(getLocaleDirection('en-US')).toBe('ltr');
     expect(getLegacyLocaleClassName('en-US')).toBe('en-US');
     expect(document.documentElement.lang).toBe('en-US');
     expect(document.documentElement.dir).toBe('ltr');
@@ -426,18 +423,6 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('common.confirm')).toBe('確定');
     expect(i18n.t('common.save')).toBe('変更を保存');
     expect(i18n.t('auth.submit_register')).toBe('新規登録');
-
-    setLegacyLocale('fa-IR');
-    i18n = createI18n();
-    expect(i18n.t('nav.dashboard')).toBe('داشبرد');
-    expect(i18n.t('nav.knowledge')).toBe('کار با مستندات');
-    expect(i18n.t('dashboard.plan')).toBe('اشتراک من');
-    expect(i18n.t('dashboard.used_traffic', { used: '1 GB', total: '10 GB' })).toBe(
-      'استفاده شده 1 GB / مجموع 10 GB',
-    );
-    expect(i18n.t('common.cancel')).toBe('انصراف');
-    expect(i18n.t('common.save')).toBe('ذخیره کردن');
-    expect(i18n.t('auth.submit_register')).toBe('ثبت‌نام');
 
     setLegacyLocale('vi-VN');
     i18n = createI18n();

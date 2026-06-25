@@ -1,9 +1,5 @@
 import { useCallback, useLayoutEffect, useRef } from 'react';
 
-interface FixedColumnRowHeightOptions {
-  bodyRowHeightOffset?: number;
-}
-
 function measuredHeight(element: Element | null): number | null {
   if (!element) return null;
   const height = element.getBoundingClientRect().height;
@@ -29,12 +25,10 @@ function collectBodyRowsByKey(rows: Element[]): Map<string, number> {
 export function syncFixedColumnRowHeights(
   mainTable: HTMLTableElement,
   fixedTable: HTMLTableElement,
-  options: FixedColumnRowHeightOptions = {},
 ): void {
   const tableNode = mainTable.closest('.ant-table') ?? mainTable;
   const tableHeight = tableNode.getBoundingClientRect().height;
   if (tableHeight <= 0) return;
-  const bodyRowHeightOffset = options.bodyRowHeightOffset ?? 0;
 
   const fixedHeaderRows = Array.from(
     fixedTable.querySelectorAll<HTMLElement>('thead > tr'),
@@ -58,25 +52,21 @@ export function syncFixedColumnRowHeights(
     const key = row.getAttribute('data-row-key');
     const mainHeight =
       key !== null ? mainRowsByKey.get(key) ?? null : measuredHeight(mainBodyRows[index] ?? null);
-    writeHeight(row, mainHeight === null ? null : mainHeight + bodyRowHeightOffset);
+    writeHeight(row, mainHeight);
   });
 }
 
 // Mirrors antd v3 Table.syncFixedTableRowHeight for restored legacy tables.
-export function useFixedColumnRowHeights(
-  _rowCount: number,
-  options: FixedColumnRowHeightOptions = {},
-) {
+export function useFixedColumnRowHeights(_rowCount: number) {
   const mainTableRef = useRef<HTMLTableElement | null>(null);
   const fixedTableRef = useRef<HTMLTableElement | null>(null);
-  const bodyRowHeightOffset = options.bodyRowHeightOffset ?? 0;
 
   const sync = useCallback(() => {
     const main = mainTableRef.current;
     const fixed = fixedTableRef.current;
     if (!main || !fixed) return;
-    syncFixedColumnRowHeights(main, fixed, { bodyRowHeightOffset });
-  }, [bodyRowHeightOffset]);
+    syncFixedColumnRowHeights(main, fixed);
+  }, []);
 
   useLayoutEffect(() => {
     sync();

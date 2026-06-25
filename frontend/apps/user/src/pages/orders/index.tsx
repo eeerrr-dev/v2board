@@ -10,7 +10,6 @@ import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
 import { legacyHref } from '@/lib/legacy-href';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
-import { legacyOrdersBodyRowHeightOffset } from '@/lib/legacy-runtime';
 
 const STATUS_LABEL: Record<number, { key: string; status: string }> = {
   0: { key: 'order.status_unpaid', status: 'error' },
@@ -47,11 +46,7 @@ export default function OrdersPage() {
   const [activeMobileKey, setActiveMobileKey] = useState<number | null>(null);
   const mobile = isLegacyMobile();
   const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(orders.length);
-  const fixedBodyRowHeightOffset = legacyOrdersBodyRowHeightOffset(orders.length);
-  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(orders.length, {
-    bodyRowHeightOffset: fixedBodyRowHeightOffset,
-    bodyRowHeightOffsetMaxSourceHeight: 54,
-  });
+  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(orders.length);
   const desktopTableClassName = [
     'ant-table',
     'ant-table-default',

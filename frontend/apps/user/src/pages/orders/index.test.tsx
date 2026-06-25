@@ -177,16 +177,14 @@ describe('OrdersPage bundled-theme table', () => {
     expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
   });
 
-  it('keeps localized long-table fixed row height compensation behind the runtime policy', () => {
-    expect(ordersSource).toContain(
-      "import { legacyOrdersBodyRowHeightOffset } from '@/lib/legacy-runtime';",
-    );
-    expect(ordersSource).toContain(
-      'const fixedBodyRowHeightOffset = legacyOrdersBodyRowHeightOffset(orders.length);',
-    );
-    expect(ordersSource).toContain('useFixedColumnRowHeights(orders.length, {');
-    expect(ordersSource).toContain('bodyRowHeightOffset: fixedBodyRowHeightOffset');
-    expect(ordersSource).toContain('bodyRowHeightOffsetMaxSourceHeight: 54');
+  it('syncs long-table fixed column row heights purely from measurement, with no per-locale or per-browser compensation', () => {
+    expect(ordersSource).toContain('useFixedColumnRowHeights(orders.length)');
+    // The fixed column matches the main table by measuring real row heights (as the
+    // bundled rc-table did); there is no enumerated locale/browser pixel offset.
+    expect(ordersSource).not.toContain('legacy-runtime');
+    expect(ordersSource).not.toContain('legacyOrdersBodyRowHeightOffset');
+    expect(ordersSource).not.toContain('bodyRowHeightOffset');
+    expect(ordersSource).not.toContain('bodyRowHeightOffsetMaxSourceHeight');
     expect(ordersSource).not.toContain('navigator.userAgent');
     expect(ordersSource).not.toContain('legacyGetLocale');
     expect(ordersSource).not.toContain('innerWidth');

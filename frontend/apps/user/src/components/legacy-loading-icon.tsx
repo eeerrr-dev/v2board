@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getLocaleAntdMessages } from '@v2board/i18n';
 
 interface LegacyLoadingIconProps {
   className?: string;
@@ -8,8 +9,9 @@ interface LegacyLoadingIconProps {
 
 export function LegacyLoadingIcon({ className, style }: LegacyLoadingIconProps) {
   const { i18n } = useTranslation();
-  // antd v3 ships an Icon locale word only for zh-CN ("图标"); all else → "icon".
-  const word = i18n.language === 'zh-CN' ? '图标' : 'icon';
+  // antd v3 ships an Icon locale word only for zh-CN ("图标"); every other locale
+  // falls back to en_US's "icon". Sourced from the shared registry.
+  const word = getLocaleAntdMessages(i18n.language).iconWord;
   const classes = ['anticon', 'anticon-loading', className].filter(Boolean).join(' ');
 
   return (

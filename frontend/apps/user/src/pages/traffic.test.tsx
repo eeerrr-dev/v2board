@@ -151,9 +151,9 @@ describe('TrafficPage bundled-theme table', () => {
     expect(html.match(/data-row-key="1"/g)).toHaveLength(2);
   });
 
-  it('keeps the bordered-wrapper fixed-row height offset used by the bundled table', () => {
-    expect(trafficSource).toContain('useFixedColumnRowHeights(rows.length, {');
-    expect(trafficSource).toContain('bodyRowHeightOffset: 1');
+  it('syncs the bordered-wrapper fixed column row heights purely from measurement', () => {
+    expect(trafficSource).toContain('useFixedColumnRowHeights(rows.length)');
+    expect(trafficSource).not.toContain('bodyRowHeightOffset');
     expect(trafficSource).not.toContain('fixedBodyRowExtraPixel');
   });
 
