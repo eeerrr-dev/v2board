@@ -43,6 +43,7 @@ export function assertRouteCoverage(
   name: string,
   routes: string[],
   scenarios: VisualScenarioPath[],
+  behaviorCoveredLabels?: Set<string>,
 ): string[];
 export function normalizeScenarioRoute(path: string): string;
 export function routePatternMatches(pattern: string, route: string): boolean;

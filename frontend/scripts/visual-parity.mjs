@@ -5748,7 +5748,7 @@ async function runInviteWithdrawModalInteraction(page) {
   ]);
   await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
   await page.waitForTimeout(100);
-  const opened = await inviteFinanceDialogState(page);
+  const _opened = await inviteFinanceDialogState(page);
   await clickFirstVisible(page, '.ant-modal .ant-select-selection');
   await page.waitForSelector('.ant-select-dropdown-menu-item', {
     state: 'visible',
@@ -13665,7 +13665,7 @@ async function selectLegacyFormOption(
     if (waitForHidden) {
       try {
         await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
-      } catch (error) {
+      } catch {
         await page.mouse.click(1, 1).catch(() => undefined);
         await page.waitForTimeout(150);
         await waitForVisibleElementsHidden(page, '.ant-select-dropdown');

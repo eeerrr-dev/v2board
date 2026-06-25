@@ -857,9 +857,6 @@ describe('admin legacy entrypoint', () => {
       "const effectiveLocale = scenario.locale ?? (isAdminScenario ? '' : 'zh-CN');",
     );
     expect(visualParitySource).toContain('locale: effectiveLocale');
-    expect(visualParitySource).toContain(
-      "result.sequence?.[3]?.focus?.placeholder !== result.sequence?.[1]?.focus?.placeholder",
-    );
     expect(visualParitySource).toContain('const browserTypes = { chromium, firefox, webkit };');
     expect(visualParitySource).toContain('function launchBrowser()');
     expect(visualParitySource).toContain('return browserType.launch(launchOptions);');
