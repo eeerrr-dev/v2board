@@ -1,4 +1,4 @@
-/* Restored email whitelist split input/select utility from the packaged user app. */
+/* Authored V2Board email whitelist split input/select utility (source-owned; not vendored). */
 .v2board-email-whitelist-enable {
   display: flex;
 }

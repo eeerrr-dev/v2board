@@ -1,4 +1,4 @@
-/* Restored user payment element styles separated from the user component recovery layer. */
+/* Authored V2Board user payment element styles (source-owned; not vendored). */
 .v2board-payment-qrcode path[fill='#FFFFFF'] {
   --darkreader-inline-fill: #fff !important;
 }

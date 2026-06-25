@@ -186,6 +186,17 @@ final work.
   temporary recovery layer, not proof of source restoration. Keep it inside
   `frontend/apps/*/src`, make the temporary nature explicit, and replace it with
   organized source styles as the corresponding surface is restored.
+- That "replace with organized source" rule targets V2Board's OWN styles. Genuine
+  third-party framework CSS (Ant Design v3, Bootstrap 4, OneUI, Font Awesome 5) is
+  the exception: it is intentionally vendored verbatim from the oracle bundle for
+  byte-level visual parity and is an ACCEPTED final form, not a temporary recovery
+  layer to rebuild. These versions must not be upgraded — the oracle's appearance
+  is those versions, so upgrading is a redesign, not a cleanup. The vendored
+  libraries, their versions, and the authored-vs-vendored split are documented in
+  `frontend/apps/{admin,user}/src/styles/VENDOR.md`. A style file is authored
+  V2Board source iff its header begins `Authored V2Board` (it carries `___`
+  CSS-module classes or `.v2board-*` selectors); every other restored style file
+  is vendored third-party CSS.
 - Deployed files may keep legacy-compatible names such as `umi.css` and `umi.js`,
   but those files must be freshly built from `frontend/apps/*/src`, not copied
   from the packaged public tree.

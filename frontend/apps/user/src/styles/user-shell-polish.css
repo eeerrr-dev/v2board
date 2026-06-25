@@ -1,4 +1,4 @@
-/* Restored user shell table and header polish separated from the user app recovery layer. */
+/* Authored V2Board user shell table and header polish (source-owned; not vendored). */
 .ant-table-thead > tr > th {
   background: #fff !important;
 }
