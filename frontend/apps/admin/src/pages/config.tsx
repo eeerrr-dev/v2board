@@ -30,7 +30,6 @@ import {
   useThemeTemplates,
   useThemes,
 } from '@/lib/queries';
-import { i18nGet } from '@/lib/errors';
 
 const THEME_BACKGROUND =
   'https://images.unsplash.com/photo-1567095761054-7a02e69e5c43?ixlib=rb-1.2.1&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=1374&q=80';
@@ -45,7 +44,6 @@ export default function ConfigPage() {
 }
 
 function ThemeConfigPage() {
-  const { message } = App.useApp();
   const themes = useThemes();
   const saveConfig = useSaveConfigMutation();
   const themeItems = themes.data?.themes ?? {};
@@ -58,7 +56,7 @@ function ThemeConfigPage() {
       .then(() => {
         void themes.refetch();
       })
-      .catch((error) => showError(message, error));
+      .catch(() => undefined);
   };
 
   if (loading) {
@@ -144,7 +142,7 @@ function ThemeSettingsButton({
     getConfig
       .mutateAsync(themeKey)
       .then((data) => setParams(data))
-      .catch((error) => showError(message, error));
+      .catch(() => undefined);
   };
 
   const hide = () => {
@@ -351,14 +349,14 @@ function SystemConfigPage() {
         notification[failed ? 'error' : 'success'](notice);
         console.log(result);
       })
-      .catch((error) => showError(message, error));
+      .catch(() => undefined);
   };
 
   const setWebhook = () => {
     webhook
       .mutateAsync()
       .then(() => message.success('webhook 设置成功'))
-      .catch((error) => showError(message, error));
+      .catch(() => undefined);
   };
 
   return (
@@ -1381,8 +1379,4 @@ export function parseLegacyInteger(value: string) {
 
 export function isLegacyChecked(value: unknown) {
   return Boolean(parseInt(toText(value)));
-}
-
-function showError(message: ReturnType<typeof App.useApp>['message'], error: unknown) {
-  if (error instanceof Error) message.error(i18nGet(error.message));
 }

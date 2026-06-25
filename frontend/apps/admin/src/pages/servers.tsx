@@ -25,7 +25,6 @@ import {
 } from '@/lib/queries';
 import { admin } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
-import { i18nGet } from '@/lib/errors';
 import { legacyCopyText } from '@/lib/legacy-copy';
 import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
 import { LegacySpin } from '@/components/legacy-spin';
@@ -492,7 +491,7 @@ type LegacyDropdownChildProps = {
 interface LegacyDropdownProps {
   children: ReactElement<LegacyDropdownChildProps>;
   closeOnOverlayClick?: boolean;
-  overlay: ReactNode;
+  overlay: ReactNode | ((context: { open: boolean; close: () => void }) => ReactNode);
   trigger?: LegacyDropdownTrigger | LegacyDropdownTrigger[];
 }
 
@@ -630,7 +629,9 @@ function LegacyDropdown({ children, closeOnOverlayClick = true, overlay, trigger
               onMouseEnter={clearCloseTimer}
               onMouseLeave={scheduleHoverClose}
             >
-              {overlay}
+              {typeof overlay === 'function'
+                ? overlay({ open, close: () => setOpen(false) })
+                : overlay}
             </div>,
             document.body,
           )
@@ -663,6 +664,97 @@ function LegacyDropdownMenuItem({
     >
       {children}
     </li>
+  );
+}
+
+// Node ID column filter values; the legacy onFilter matched `node.type === value.toLowerCase()`.
+const NODE_TYPE_FILTERS = [
+  'V2node',
+  'Shadowsocks',
+  'Vmess',
+  'Trojan',
+  'Hysteria',
+  'Tuic',
+  'Vless',
+  'AnyTLS',
+].map((value) => ({ text: value, value }));
+
+interface NodeFilterItem {
+  text: string;
+  value: string;
+}
+
+// Faithful reconstruction of the antd v3 Table column filter dropdown: a checkable menu with
+// apply-on-confirm (确定) and reset (重置) semantics. Pending selection resets to the applied
+// filter each time the dropdown opens, matching antd.
+function NodeFilterDropdown({
+  open,
+  items,
+  value,
+  onApply,
+  close,
+}: {
+  open: boolean;
+  items: NodeFilterItem[];
+  value: string[];
+  onApply: (next: string[]) => void;
+  close: () => void;
+}) {
+  const [pending, setPending] = useState<string[]>(value);
+  useEffect(() => {
+    if (open) setPending(value);
+  }, [open, value]);
+  const toggle = (target: string) =>
+    setPending((prev) =>
+      prev.includes(target) ? prev.filter((item) => item !== target) : [...prev, target],
+    );
+  return (
+    <div className="ant-table-filter-dropdown">
+      <ul
+        className="ant-dropdown-menu ant-dropdown-menu-without-submenu ant-dropdown-menu-root ant-dropdown-menu-vertical"
+        role="menu"
+        tabIndex={0}
+      >
+        {items.map((item) => {
+          const checked = pending.includes(item.value);
+          return (
+            <li
+              className={mergeClassName(
+                'ant-dropdown-menu-item',
+                checked && 'ant-dropdown-menu-item-selected',
+              )}
+              role="menuitem"
+              key={item.value}
+              onClick={() => toggle(item.value)}
+            >
+              <LegacyCheckbox checked={checked} />
+              <span>{item.text}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="ant-table-filter-dropdown-btns">
+        <a
+          className="ant-table-filter-dropdown-link confirm"
+          onClick={() => {
+            onApply(pending);
+            close();
+          }}
+        >
+          确定
+        </a>
+        <a
+          className="ant-table-filter-dropdown-link clear"
+          onClick={() => {
+            setPending([]);
+            onApply([]);
+            close();
+          }}
+        >
+          重置
+        </a>
+      </div>
+    </div>
   );
 }
 
@@ -1060,6 +1152,31 @@ function getLegacyAvailableStatus(status?: number | null) {
   return status == null ? undefined : AVAILABLE_STATUS[status];
 }
 
+// Applies the legacy antd Table column controls to the node list: the 节点ID type filter
+// (`node.type === label.toLowerCase()`), the 权限组 group filter (string membership, OR across the
+// selected groups), then the 人数 online sorter — matching the order antd uses (filter, then sort).
+export function applyServerNodeColumnControls(
+  nodes: admin.ServerNode[],
+  controls: { typeFilter: string[]; groupFilter: string[]; onlineSort: '' | 'ascend' | 'descend' },
+): admin.ServerNode[] {
+  let result = nodes;
+  if (controls.typeFilter.length) {
+    result = result.filter((node) =>
+      controls.typeFilter.some((value) => node.type === value.toLowerCase()),
+    );
+  }
+  if (controls.groupFilter.length) {
+    result = result.filter((node) =>
+      node.group_id.map(String).some((id) => controls.groupFilter.includes(id)),
+    );
+  }
+  if (controls.onlineSort) {
+    const direction = controls.onlineSort === 'ascend' ? 1 : -1;
+    result = [...result].sort((a, b) => (a.online - b.online) * direction);
+  }
+  return result;
+}
+
 export function createServerSortPayload(nodes: admin.ServerNode[]) {
   return nodes.reduce<Record<string, Record<string | number, number>>>((payload, node, index) => {
     const typePayload = payload[node.type] ?? {};
@@ -1293,6 +1410,9 @@ function ServerManagePage() {
   const sort = useSortServerNodesMutation();
   const [searchKey, setSearchKey] = useState<string | undefined>();
   const [sortMode, setSortMode] = useState(false);
+  const [onlineSort, setOnlineSort] = useState<'' | 'ascend' | 'descend'>('');
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [groupFilter, setGroupFilter] = useState<string[]>([]);
   const [orderedNodes, setOrderedNodes] = useState<admin.ServerNode[]>(() => nodes.data ?? []);
   const [sortingLoading, setSortingLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1312,10 +1432,15 @@ function ServerManagePage() {
 
   orderRef.current = orderedNodes;
 
-  const filteredNodes =
+  const searchedNodes =
     searchKey && orderedNodes
       ? orderedNodes.filter((node) => JSON.stringify(node).includes(searchKey))
       : orderedNodes;
+  // The legacy column sorter/filters live on the antd Table, which does not exist in drag-sort
+  // mode; reorder operates on the raw list there, so the column controls only apply when browsing.
+  const filteredNodes = sortMode
+    ? searchedNodes
+    : applyServerNodeColumnControls(searchedNodes, { typeFilter, groupFilter, onlineSort });
 
   const sortServerNodes = (fromIndex: number, toIndex: number) => {
     setOrderedNodes(moveServerNodeByLegacyDragIndexes(orderRef.current, fromIndex, toIndex));
@@ -1447,17 +1572,59 @@ function ServerManagePage() {
       </div>
     </span>
   );
-  const filterIcon = (
-    <LegacyFilterIcon filled title="筛选" tabIndex={-1} className="ant-dropdown-trigger" />
+  const filterDropdown = (
+    active: boolean,
+    items: NodeFilterItem[],
+    value: string[],
+    onApply: (next: string[]) => void,
+  ) => (
+    <LegacyDropdown
+      closeOnOverlayClick={false}
+      trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
+      overlay={({ open, close }) => (
+        <NodeFilterDropdown
+          open={open}
+          items={items}
+          value={value}
+          onApply={onApply}
+          close={close}
+        />
+      )}
+    >
+      <LegacyFilterIcon
+        filled
+        title="筛选"
+        tabIndex={-1}
+        className={active ? 'ant-table-filter-selected' : undefined}
+      />
+    </LegacyDropdown>
   );
+  const cycleOnlineSort = () => {
+    setCurrentPage(1);
+    setOnlineSort((current) =>
+      current === '' ? 'ascend' : current === 'ascend' ? 'descend' : '',
+    );
+  };
+  const applyTypeFilter = (next: string[]) => {
+    setCurrentPage(1);
+    setTypeFilter(next);
+  };
+  const applyGroupFilter = (next: string[]) => {
+    setCurrentPage(1);
+    setGroupFilter(next);
+  };
   const sorterIcon = (
     <span className="ant-table-column-sorter">
       <div
         title="排序"
         className="ant-table-column-sorter-inner ant-table-column-sorter-inner-full"
       >
-        <LegacyCaretUpIcon className="ant-table-column-sorter-up off" />
-        <LegacyCaretDownIcon className="ant-table-column-sorter-down off" />
+        <LegacyCaretUpIcon
+          className={`ant-table-column-sorter-up ${onlineSort === 'ascend' ? 'on' : 'off'}`}
+        />
+        <LegacyCaretDownIcon
+          className={`ant-table-column-sorter-down ${onlineSort === 'descend' ? 'on' : 'off'}`}
+        />
       </div>
     </span>
   );
@@ -1657,7 +1824,12 @@ function ServerManagePage() {
                                     <tr>
                                       <th className="ant-table-column-has-actions ant-table-column-has-filters ant-table-row-cell-break-word">
                                         {headerColumn('节点ID')}
-                                        {filterIcon}
+                                        {filterDropdown(
+                                          typeFilter.length > 0,
+                                          NODE_TYPE_FILTERS,
+                                          typeFilter,
+                                          applyTypeFilter,
+                                        )}
                                       </th>
                                       <th className="">{headerColumn('显隐')}</th>
                                       <th className="">
@@ -1671,11 +1843,17 @@ function ServerManagePage() {
                                       </th>
                                       <th className="">{headerColumn('地址')}</th>
                                       <th
-                                        className="ant-table-column-has-actions ant-table-column-has-sorters ant-table-align-left ant-table-row-cell-break-word"
+                                        className={mergeClassName(
+                                          'ant-table-column-has-actions ant-table-column-has-sorters ant-table-align-left ant-table-row-cell-break-word',
+                                          onlineSort && 'ant-table-column-sort',
+                                        )}
                                         style={{ textAlign: 'left' }}
                                       >
                                         <span className="ant-table-header-column">
-                                          <div className="ant-table-column-sorters">
+                                          <div
+                                            className="ant-table-column-sorters"
+                                            onClick={cycleOnlineSort}
+                                          >
                                             <span className="ant-table-column-title">
                                               <span>
                                                 <span>
@@ -1699,7 +1877,15 @@ function ServerManagePage() {
                                       </th>
                                       <th className="ant-table-column-has-actions ant-table-column-has-filters">
                                         {headerColumn('权限组')}
-                                        {filterIcon}
+                                        {filterDropdown(
+                                          groupFilter.length > 0,
+                                          (groups.data ?? []).map((group) => ({
+                                            text: group.name,
+                                            value: String(group.id),
+                                          })),
+                                          groupFilter,
+                                          applyGroupFilter,
+                                        )}
                                       </th>
                                       <th
                                         className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-break-word ant-table-row-cell-last"
@@ -1753,7 +1939,10 @@ function ServerManagePage() {
                                             </span>
                                           </td>
                                           <td
-                                            className="ant-table-align-left"
+                                            className={mergeClassName(
+                                              'ant-table-align-left',
+                                              onlineSort && 'ant-table-column-sort',
+                                            )}
                                             style={{ textAlign: 'left' }}
                                           >
                                             <LegacyUserIcon /> {node.online || 0}
@@ -1836,36 +2025,6 @@ function ServerManagePage() {
                           </>
                         )}
                       </div>
-                      {!sortMode && (
-                        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%' }}>
-                          <div>
-                            <div className="ant-dropdown  ant-dropdown-placement-bottomRight ant-dropdown-hidden">
-                              <div className="ant-table-filter-dropdown">
-                                <ul
-                                  className="ant-dropdown-menu ant-dropdown-menu-without-submenu ant-dropdown-menu-root ant-dropdown-menu-vertical"
-                                  role="menu"
-                                  tabIndex={0}
-                                >
-                                  {(groups.data ?? []).map((group) => (
-                                    <li
-                                      className="ant-dropdown-menu-item"
-                                      role="menuitem"
-                                      key={group.id}
-                                    >
-                                      <LegacyCheckbox value="" />
-                                      <span>{group.name}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                                <div className="ant-table-filter-dropdown-btns">
-                                  <a className="ant-table-filter-dropdown-link confirm">确定</a>
-                                  <a className="ant-table-filter-dropdown-link clear">重置</a>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -1912,7 +2071,7 @@ function NodeEditDrawer({
   onSaved?: () => void | Promise<unknown>;
   onClose: () => void;
 }) {
-  const { message } = App.useApp();
+  const { notification } = App.useApp();
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [childDrawer, setChildDrawer] = useState<{
@@ -1964,10 +2123,11 @@ function NodeEditDrawer({
             await onSaved?.();
             onClose();
           } catch (e) {
+            // Client-side payload validation stays inline; backend API errors are
+            // surfaced by the global onError handler (legacy parity).
             if (e instanceof SyntaxError) {
-              message.error('传输协议配置格式有误');
-            } else if (e instanceof Error) {
-              message.error(i18nGet(e.message));
+              // Legacy parity: invalid transport-config JSON raised a notification, not a message.
+              notification.error({ message: '请求失败', description: '传输协议配置格式有误' });
             }
           } finally {
             setSaving(false);

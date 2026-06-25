@@ -464,7 +464,9 @@ describe('OrdersPage legacy order manager', () => {
     const end = ordersSource.indexOf('export default function OrdersPage()', start);
     const block = ordersSource.slice(start, end);
 
-    expect(ordersSource).toContain("import { App } from 'antd';");
+    // Order action errors are surfaced by the global onError handler (legacy parity), so the
+    // page no longer needs App.useApp / message.error.
+    expect(ordersSource).not.toContain("import { App } from 'antd';");
     expect(ordersSource).not.toContain("import { App, Col, Divider, Row } from 'antd';");
     expect(ordersSource).toContain("import { LegacyModal } from '@/components/legacy-modal';");
     expect(ordersSource).toContain('function OrderDetailRow');

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { App } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminFilter } from '@v2board/api-client';
@@ -16,7 +15,6 @@ import {
   useMarkOrderPaidMutation,
   useUpdateOrderMutation,
 } from '@/lib/queries';
-import { i18nGet } from '@/lib/errors';
 import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-filter-drawer';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
@@ -174,10 +172,6 @@ function legacyOrderTableRows<T>(rows: T[], current: number, pageSize: number) {
   return rows.slice((page - 1) * pageSize, page * pageSize);
 }
 
-function showError(message: ReturnType<typeof App.useApp>['message'], error: unknown) {
-  if (error instanceof Error) message.error(i18nGet(error.message));
-}
-
 interface AssignOrderSubmit {
   email?: string;
   plan_id?: number;
@@ -218,7 +212,6 @@ function AssignOrderButton({
   plans: Plan[];
   onAssigned: () => void | Promise<unknown>;
 }) {
-  const { message } = App.useApp();
   const assign = useAssignOrderMutation();
   const [open, setOpen] = useState(false);
   const [submit, setSubmit] = useState<AssignOrderSubmit>(() => assignOrderSubmit());
@@ -233,8 +226,8 @@ function AssignOrderButton({
       await assign.mutateAsync(submit);
       await onAssigned();
       close();
-    } catch (error) {
-      showError(message, error);
+    } catch {
+      // Errors are surfaced by the global onError handler (legacy parity); keep the dialog open.
     }
   };
 
@@ -392,7 +385,6 @@ function OrderDetailModal({
 }
 
 export default function OrdersPage() {
-  const { message } = App.useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<QueryState>(() => {
@@ -427,7 +419,7 @@ export default function OrdersPage() {
       .then(() => {
         void orders.refetch();
       })
-      .catch((error) => showError(message, error));
+      .catch(() => undefined);
   };
 
   const updateCommissionStatus = (tradeNo: string, value: string) => {
@@ -440,7 +432,7 @@ export default function OrdersPage() {
       .then(() => {
         void orders.refetch();
       })
-      .catch((error) => showError(message, error));
+      .catch(() => undefined);
   };
 
   const userFilter = (key: string, condition: string, value: string | number) => {

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ServersPage, {
+  applyServerNodeColumnControls,
   createServerSortPayload,
   getLegacyBinarySelectValue,
   getLegacyNetworkSettingsPlaceholder,
@@ -594,7 +595,7 @@ describe('ServersPage legacy server group route', () => {
     expect(manageSource).not.toContain('<td style={{ textAlign: \'right\' }}>{actionCell(node)}</td>');
   });
 
-  it('keeps the legacy server manage hidden filter dropdown outside table content', () => {
+  it('renders server manage table content without a static hidden filter dropdown placeholder', () => {
     mocks.pathname = '/server/manage';
     document.body.innerHTML = renderToStaticMarkup(<ServersPage />);
 
@@ -604,14 +605,10 @@ describe('ServersPage legacy server group route', () => {
       position: (child as HTMLElement).style.position,
     }));
 
-    expect(directChildren).toEqual([
-      { className: 'ant-table-content', position: '' },
-      { className: '', position: 'absolute' },
-    ]);
+    // The column filter dropdowns now mount lazily through LegacyDropdown (portaled on open),
+    // like real antd v3, so the resting table has no absolutely-positioned hidden placeholder.
+    expect(directChildren).toEqual([{ className: 'ant-table-content', position: '' }]);
     expect(document.querySelector('.ant-table-content > [style*="position:absolute"]')).toBeNull();
-    expect(
-      Array.from(document.querySelector('.bg-white')?.children ?? []).map((child) => child.id),
-    ).toEqual(['', '']);
     expect(document.querySelector('#v2board-table-dropdown')?.parentElement).toBe(
       document.querySelector('.ant-table-wrapper')?.parentElement,
     );
@@ -719,7 +716,9 @@ describe('ServersPage legacy server group route', () => {
     expect(serversSource).toContain("import { LegacyTag } from '@/components/legacy-tag';");
     expect(serversSource).not.toContain('function LegacyTag');
     expect(serversSource).toContain('className="ant-table-filter-dropdown"');
-    expect(serversSource).toContain('<span>{group.name}</span>');
+    // The group names feed the interactive filter dropdown as item text.
+    expect(serversSource).toContain('<span>{item.text}</span>');
+    expect(managePageSource).toContain('text: group.name,');
     expect(managePageSource).toContain(
       '.map((id) => groups.data?.find((group) => group.id === Number(id))?.name)',
     );
@@ -1256,7 +1255,11 @@ describe('ServersPage legacy server group route', () => {
     );
     expect(serversSource).toContain("if (type === 'vmess')");
     expect(serversSource).toContain('payload.dnsSettings = null');
-    expect(serversSource).toContain("message.error('传输协议配置格式有误')");
+    // Legacy parity: invalid transport JSON raised a notification ("请求失败" + description), not a message.
+    expect(serversSource).toContain(
+      "notification.error({ message: '请求失败', description: '传输协议配置格式有误' })",
+    );
+    expect(serversSource).not.toContain("message.error('传输协议配置格式有误')");
     expect(serversSource).toContain(
       'const payload = prepareLegacyServerPayload(type, values, id);',
     );
@@ -1823,5 +1826,83 @@ describe('ServersPage legacy server group route', () => {
       'setOrderedNodes(moveServerNodeByLegacyDragIndexes(orderRef.current, fromIndex, toIndex));',
     );
     expect(serversSource).not.toContain('components={sortMode ? sortComponents : undefined}');
+  });
+});
+
+describe('applyServerNodeColumnControls (legacy node table sort/filter)', () => {
+  const nodes = [
+    { id: 1, type: 'shadowsocks', group_id: ['1'], online: 8 },
+    { id: 2, type: 'vmess', group_id: ['2'], online: 0 },
+    { id: 3, type: 'trojan', group_id: ['1', '2'], online: 4 },
+  ] as Parameters<typeof applyServerNodeColumnControls>[0];
+  const ids = (list: (typeof nodes)[number][]) => list.map((node) => node.id);
+
+  it('filters by type matching node.type to the lowercased column label', () => {
+    expect(
+      ids(applyServerNodeColumnControls(nodes, { typeFilter: ['Shadowsocks'], groupFilter: [], onlineSort: '' })),
+    ).toEqual([1]);
+    expect(
+      ids(
+        applyServerNodeColumnControls(nodes, {
+          typeFilter: ['Vmess', 'Trojan'],
+          groupFilter: [],
+          onlineSort: '',
+        }),
+      ),
+    ).toEqual([2, 3]);
+  });
+
+  it('filters by group membership as strings, OR-combined across selected groups', () => {
+    expect(
+      ids(applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: ['2'], onlineSort: '' })),
+    ).toEqual([2, 3]);
+    expect(
+      ids(applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: ['1'], onlineSort: '' })),
+    ).toEqual([1, 3]);
+  });
+
+  it('sorts by online ascending/descending and preserves source order when unsorted', () => {
+    expect(
+      applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: [], onlineSort: 'ascend' }).map(
+        (node) => node.online,
+      ),
+    ).toEqual([0, 4, 8]);
+    expect(
+      applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: [], onlineSort: 'descend' }).map(
+        (node) => node.online,
+      ),
+    ).toEqual([8, 4, 0]);
+    expect(
+      ids(applyServerNodeColumnControls(nodes, { typeFilter: [], groupFilter: [], onlineSort: '' })),
+    ).toEqual([1, 2, 3]);
+  });
+
+  it('applies filters before the sort like the legacy antd table', () => {
+    expect(
+      ids(
+        applyServerNodeColumnControls(nodes, {
+          typeFilter: ['Shadowsocks', 'Trojan'],
+          groupFilter: ['1'],
+          onlineSort: 'ascend',
+        }),
+      ),
+    ).toEqual([3, 1]);
+  });
+});
+
+describe('ServersPage node table column control wiring', () => {
+  it('wires the online sorter, sort caret state, and the type/group filter dropdowns', () => {
+    expect(serversSource).toContain('onClick={cycleOnlineSort}');
+    expect(serversSource).toContain('<NodeFilterDropdown');
+    expect(serversSource).toContain('applyTypeFilter');
+    expect(serversSource).toContain('applyGroupFilter');
+    expect(serversSource).toContain("onlineSort === 'ascend' ? 'on' : 'off'");
+    expect(serversSource).toContain("onlineSort === 'descend' ? 'on' : 'off'");
+    expect(serversSource).toContain("active ? 'ant-table-filter-selected' : undefined");
+    expect(serversSource).toContain('NODE_TYPE_FILTERS');
+    // The drag-sort mode reorders the raw list; column controls only apply when browsing.
+    expect(serversSource).toContain(
+      'applyServerNodeColumnControls(searchedNodes, { typeFilter, groupFilter, onlineSort })',
+    );
   });
 });

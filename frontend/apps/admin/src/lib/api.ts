@@ -4,9 +4,9 @@ import { getAuthData, setAuthData } from './auth';
 import { i18nGet } from './errors';
 import { getAdminApiBaseUrl, getAdminSecurePath } from './legacy-settings';
 
-let messageApi: ReturnType<typeof App.useApp>['message'] | null = null;
-export function bindMessageApi(api: ReturnType<typeof App.useApp>['message']): void {
-  messageApi = api;
+let notificationApi: ReturnType<typeof App.useApp>['notification'] | null = null;
+export function bindNotificationApi(api: ReturnType<typeof App.useApp>['notification']): void {
+  notificationApi = api;
 }
 
 let redirectingToLogin = false;
@@ -57,8 +57,16 @@ export const apiClient = createApiClient({
     redirectToLegacyLogin();
   },
   onError: (error) => {
-    if (error.status >= 500) {
-      messageApi?.error(i18nGet(error.message));
-    }
+    // Transport-level failures (timeouts/network drops) have no backend response;
+    // the legacy admin never surfaced these as a global toast.
+    if (error.status === 0) return;
+    // Faithful to the packaged admin: every non-200 backend response (except the
+    // 403 redirect handled by onUnauthorized) raised a single global
+    // notification with the first validation error or the response message.
+    notificationApi?.error({
+      message: i18nGet('请求失败'),
+      description: i18nGet(error.message),
+      duration: 1.5,
+    });
   },
 });

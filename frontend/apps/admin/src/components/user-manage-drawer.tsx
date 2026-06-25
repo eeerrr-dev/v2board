@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { App } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { AdminUserRow, AdminUserUpdatePayload } from '@v2board/types';
 import { BYTE_GB } from '@v2board/config/format';
 import { useAdminPlans, useAdminUserInfo, useUpdateUserMutation } from '@/lib/queries';
-import { i18nGet } from '@/lib/errors';
 import { LegacyButton } from './legacy-button';
 import { LegacyDrawer } from './legacy-drawer';
 import { LegacyInput, LegacyInputGroup, LegacyTextArea } from './legacy-input';
@@ -99,7 +97,6 @@ export function UserManageDrawer({
   onClose: () => void;
   onSaved?: () => void | Promise<unknown>;
 }) {
-  const { message } = App.useApp();
   const [values, setValues] = useState<UserManageFormValues | null>(null);
   const user = useAdminUserInfo(open ? userId : undefined);
   const plans = useAdminPlans();
@@ -138,9 +135,8 @@ export function UserManageDrawer({
         await onSaved?.();
         hide();
       })
-      .catch((error: unknown) => {
-        if (error instanceof Error) message.error(i18nGet(error.message));
-      });
+      // Errors are surfaced by the global onError handler (legacy parity); keep the drawer open.
+      .catch(() => undefined);
   };
 
   return (

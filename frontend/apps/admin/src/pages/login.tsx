@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { App } from 'antd';
 import { passport, user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
 import { getAuthData, setAuthData } from '@/lib/auth';
-import { i18nGet } from '@/lib/errors';
 import { getAdminBackgroundUrl, getAdminLogo, getAdminTitle } from '@/lib/legacy-settings';
 import { legacyHref } from '@/lib/legacy-href';
 import { LegacyLoadingIcon } from '@/components/legacy-ant-icon';
@@ -13,7 +11,6 @@ import { legacyInfo } from '@/components/legacy-confirm';
 export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const { message } = App.useApp();
   const [submitting, setSubmitting] = useState(false);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
@@ -38,11 +35,11 @@ export default function LoginPage() {
       }
       navigate('/dashboard');
       void user.info(apiClient).catch(() => undefined);
-    } catch (error) {
-      if (error instanceof Error) message.error(i18nGet(error.message));
+    } catch {
+      // Login failures are surfaced by the global onError handler (legacy parity).
       setSubmitting(false);
     }
-  }, [message, navigate]);
+  }, [navigate]);
 
   useEffect(() => {
     if (getAuthData()) {

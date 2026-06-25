@@ -19,7 +19,6 @@ import {
   useSendMailToUsersMutation,
   useServerGroups,
 } from '@/lib/queries';
-import { i18nGet } from '@/lib/errors';
 import { legacyCopyText } from '@/lib/legacy-copy';
 import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
@@ -201,10 +200,6 @@ function readStoredUserFilter(): AdminFilter[] {
   }
 }
 
-function showError(message: ReturnType<typeof App.useApp>['message'], error: unknown) {
-  if (error instanceof Error) message.error(i18nGet(error.message));
-}
-
 function downloadText(name: string, buffer: unknown) {
   const blob = new Blob([buffer as BlobPart], { type: 'text/plain,charset=UTF-8' });
   const url = window.URL.createObjectURL(blob);
@@ -362,7 +357,7 @@ export default function UsersPage() {
             message.success('重置成功');
             void users.refetch();
           })
-          .catch((error) => showError(message, error));
+          .catch(() => undefined);
       },
     });
 
@@ -574,9 +569,8 @@ export default function UsersPage() {
                                     response.buffer,
                                   );
                                 })
-                                .catch((error) => {
+                                .catch(() => {
                                   message.destroy();
-                                  showError(message, error);
                                 });
                             }}
                           >
@@ -600,8 +594,8 @@ export default function UsersPage() {
                               void legacyConfirm({
                                 title: '提醒',
                                 content: '确定要进行封禁吗？',
-                                okText: 'OK',
-                                cancelText: 'Cancel',
+                                okText: '确定',
+                                cancelText: '取消',
                                 onOk: () => {
                                   void banUsers
                                     .mutateAsync(query.filter)
@@ -623,8 +617,8 @@ export default function UsersPage() {
                               void legacyConfirm({
                                 title: '提醒',
                                 content: '确定要进行删除吗？',
-                                okText: 'OK',
-                                cancelText: 'Cancel',
+                                okText: '确定',
+                                cancelText: '取消',
                                 onOk: () => {
                                   void deleteAll
                                     .mutateAsync(query.filter)
@@ -818,7 +812,7 @@ export default function UsersPage() {
             .then(() => {
               setCreating(false);
             })
-            .catch((error) => showError(message, error))
+            .catch(() => undefined)
         }
       />
 
@@ -833,7 +827,6 @@ export default function UsersPage() {
             .then(() => {
               message.success('已加入队列执行');
               setMailOpen(false);
-              setToolbarDropdownVisible(true);
             })
             .catch(() => undefined)
         }
@@ -1032,7 +1025,6 @@ function AssignOrderModal({
   plans: PlanOption[];
   onClose: () => void;
 }) {
-  const { message } = App.useApp();
   const queryClient = useQueryClient();
   const assign = useAssignOrderMutation();
   const [submit, setSubmit] = useState<AssignOrderSubmit>(() => assignOrderSubmit());
@@ -1063,7 +1055,7 @@ function AssignOrderModal({
           .mutateAsync(submit)
           .then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }))
           .then(close)
-          .catch((error) => showError(message, error));
+          .catch(() => undefined);
       }}
     >
       <div className="form-group">

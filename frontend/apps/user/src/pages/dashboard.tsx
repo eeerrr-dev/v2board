@@ -906,6 +906,9 @@ function legacyDaysUntil(timestamp: number | string | null | undefined) {
 }
 
 function isLegacyRenewable(subscribe: ReturnType<typeof useSubscribe>['data']) {
+  // umi.js `b(e)`: plan.renew && (plan.show || !isExpired(expired_at)). A still-on-sale
+  // plan (show) is renewable even once expired; a discontinued (hidden) plan is only
+  // renewable while the subscription is still active.
   if (!subscribe?.plan?.renew) return false;
-  return Boolean(!subscribe.plan.show || !isLegacyExpired(subscribe.expired_at));
+  return Boolean(subscribe.plan.show || !isLegacyExpired(subscribe.expired_at));
 }

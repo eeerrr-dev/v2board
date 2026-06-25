@@ -7,7 +7,6 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { App } from 'antd';
 import type { Plan, PlanPeriod } from '@v2board/types';
 import {
   useAdminPlans,
@@ -18,7 +17,6 @@ import {
   useSortPlansMutation,
   useUpdatePlanMutation,
 } from '@/lib/queries';
-import { i18nGet } from '@/lib/errors';
 import { LegacySpin } from '@/components/legacy-spin';
 import { legacyHref } from '@/lib/legacy-href';
 import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
@@ -134,7 +132,6 @@ function PlanEditor({
   onSave: (payload: SavePlanPayload) => Promise<unknown>;
   onLegacyMount: () => void;
 }) {
-  const { message } = App.useApp();
   const [visible, setVisible] = useState(false);
   const [submit, setSubmit] = useState<EditablePlan>(() => ({ ...(record ?? emptyPlan()) }));
 
@@ -154,8 +151,8 @@ function PlanEditor({
     try {
       await onSave({ ...submit });
       setVisible(false);
-    } catch (error) {
-      if (error instanceof Error) message.error(i18nGet(error.message));
+    } catch {
+      // Errors are surfaced by the global onError handler (legacy parity); keep the dialog open.
     }
   };
 
@@ -393,7 +390,6 @@ export default function PlansPage() {
   const drop = useDropPlanMutation();
   const update = useUpdatePlanMutation();
   const sort = useSortPlansMutation();
-  const { message } = App.useApp();
   const [order, setOrder] = useState<Plan[]>(() => plans.data ?? []);
   const [legacySortLoading, setLegacySortLoading] = useState(false);
   const [contextRecord, setContextRecord] = useState<Plan | undefined>();

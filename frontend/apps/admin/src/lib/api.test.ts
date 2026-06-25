@@ -105,8 +105,15 @@ describe('admin api legacy path resolution', () => {
     expect(apiSource).not.toContain('window.location.replace');
   });
 
-  it('does not show global toasts for transport timeouts', () => {
-    expect(apiSource).toContain('if (error.status >= 500) {');
-    expect(apiSource).not.toContain('error.status === 0 || error.status >= 500');
+  it('raises a global notification for backend errors but stays silent on transport timeouts', () => {
+    // Faithful to the packaged admin: every non-200 backend response raised a
+    // single global notification ("请求失败" + first validation error / message),
+    // while transport-level failures (status 0) showed nothing.
+    expect(apiSource).toContain('if (error.status === 0) return;');
+    expect(apiSource).toContain('notificationApi?.error({');
+    expect(apiSource).toContain("message: i18nGet('请求失败'),");
+    expect(apiSource).toContain('description: i18nGet(error.message),');
+    expect(apiSource).toContain('duration: 1.5,');
+    expect(apiSource).not.toContain('if (error.status >= 500) {');
   });
 });

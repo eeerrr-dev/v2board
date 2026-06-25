@@ -20,3 +20,16 @@ describe('user api unauthorized handling', () => {
     expect(apiSource).not.toContain("window.location.replace('/#/login');");
   });
 });
+
+describe('user api global error toast', () => {
+  it('stays silent on any transport failure and toasts other non-200 responses', () => {
+    // The packaged user frontend used fetch, which rejected before its toast code ran, so it
+    // surfaced nothing for transport errors (timeout or network) — not just timeouts.
+    expect(apiSource).toContain('if (error.status === 0) return;');
+    expect(apiSource).toContain(
+      "toast.error(i18nGet('请求失败'), { description: error.message });",
+    );
+    expect(apiSource).not.toContain('isLegacyTimeoutError');
+    expect(apiSource).not.toContain('/timeout/i.test');
+  });
+});

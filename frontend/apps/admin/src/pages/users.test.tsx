@@ -807,7 +807,9 @@ describe('UsersPage legacy user manager', () => {
     expect(toolbarSource).toContain('<LegacyFileExcelIcon /> 导出CSV');
     expect(toolbarSource).toContain('setToolbarDropdownVisible(false);');
     expect(toolbarSource).toContain('setMailOpen(true);');
-    expect(usersSource).toContain('setToolbarDropdownVisible(true);');
+    // Faithful to the packaged admin: a successful mass-mail closes its own modal
+    // and does NOT re-open the toolbar operations dropdown.
+    expect(usersSource).not.toContain('setToolbarDropdownVisible(true);');
     expect(usersSource).toContain('.catch(() => undefined)');
     expect(toolbarSource).toContain('<LegacyMailIcon /> 发送邮件');
     expect(toolbarSource).toContain(
@@ -862,8 +864,13 @@ describe('UsersPage legacy user manager', () => {
     expect(usersSource).toContain('void banUsers');
     expect(usersSource).toContain('void deleteAll');
     expect(usersSource).toContain('.mutateAsync(query.filter)');
-    expect(usersSource.match(/okText: 'OK'/g)).toHaveLength(2);
-    expect(usersSource.match(/cancelText: 'Cancel'/g)).toHaveLength(2);
+    // Batch ban/delete confirms use the Chinese 确定/取消 buttons like every other
+    // confirm on this page (and like the antd zh-CN default the packaged admin relied on),
+    // not hardcoded English OK/Cancel.
+    expect(usersSource).not.toContain("okText: 'OK'");
+    expect(usersSource).not.toContain("cancelText: 'Cancel'");
+    expect(usersSource.match(/okText: '确定'/g)).toHaveLength(4);
+    expect(usersSource.match(/cancelText: '取消'/g)).toHaveLength(4);
     expect(usersSource).not.toContain('onOk: () =>\n        resetSecret');
     expect(usersSource).not.toContain('onOk: () =>\n        remove');
     expect(usersSource).not.toContain('onOk: () => banUsers.mutateAsync(query.filter)');

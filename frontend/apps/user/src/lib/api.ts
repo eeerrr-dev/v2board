@@ -32,7 +32,10 @@ export const apiClient = createApiClient({
     redirectToLegacyLogin();
   },
   onError: (error: ApiError) => {
-    if (isLegacyTimeoutError(error)) return;
+    // Transport-level failures (timeouts/network drops) have no backend response. The packaged
+    // user frontend used fetch, which rejected before its toast code ran, so it surfaced nothing
+    // for any transport error — only responses with a status raised the global "请求失败" toast.
+    if (error.status === 0) return;
     toast.error(i18nGet('请求失败'), { description: error.message });
   },
 });
@@ -45,8 +48,4 @@ function getApiBaseUrl(): string {
 
 export function getRequestLocale(): string {
   return legacyGetLocale();
-}
-
-function isLegacyTimeoutError(error: ApiError): boolean {
-  return error.status === 0 && /timeout/i.test(error.message);
 }

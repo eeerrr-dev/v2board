@@ -283,7 +283,9 @@ describe('PlansPage legacy subscription management', () => {
   });
 
   it('keeps the original direct drawer input bindings', () => {
-    expect(plansSource).toContain("import { App } from 'antd';");
+    // Save errors are surfaced by the global onError handler (legacy parity), so the
+    // editor no longer needs App.useApp / message.error.
+    expect(plansSource).not.toContain("import { App } from 'antd';");
     expect(plansSource).not.toContain("import { App, Divider, Row, Col } from 'antd';");
     expect(plansSource).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
     expect(plansSource).toContain('LegacyInputGroup,');
