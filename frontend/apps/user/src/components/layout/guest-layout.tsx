@@ -5,7 +5,7 @@ import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 export function GuestLayout() {
   const { pathname } = useLocation();
   const backgroundUrl = getLegacySettings().background_url;
-  const legacyBackgroundImage = (backgroundUrl && `url(${backgroundUrl})`) as string;
+  const legacyBackgroundImage = backgroundUrl ? `url(${backgroundUrl})` : undefined;
 
   // /login is the redesigned 2026 surface (route-isolated reskin): a modern gradient backdrop
   // with the polished login card centered. Its single `.v2board-auth-box` is kept so the
@@ -21,7 +21,7 @@ export function GuestLayout() {
             <div className="tw:absolute tw:-left-32 tw:-top-32 tw:h-[26rem] tw:w-[26rem] tw:rounded-full tw:bg-primary/15 tw:blur-3xl" />
             <div className="tw:absolute tw:-bottom-40 tw:-right-24 tw:h-[30rem] tw:w-[30rem] tw:rounded-full tw:bg-primary/10 tw:blur-3xl" />
           </div>
-          <div className="no-gutters v2board-auth-box tw:p-4 tw:sm:p-6">
+          <div className="v2board-auth-box tw:p-4 tw:sm:p-6">
             <div className="v2board-login-frame tw:m-auto tw:w-full tw:max-w-md">
               <RouteBoundaryOutlet />
             </div>

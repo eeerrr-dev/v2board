@@ -15,7 +15,7 @@ export interface FormFieldProps {
   description?: ReactNode;
   error?: ReactNode;
   /** The single form control (e.g. <Input/>) — id, invalid, and aria-describedby are injected. */
-  children: ReactElement;
+  children: ReactElement<FieldControlProps>;
   className?: string;
 }
 
@@ -23,7 +23,7 @@ export interface FormFieldProps {
 // description/error text, wiring id + aria-describedby + the invalid state onto the control so
 // callers never hand-thread accessibility ids. Reused across the auth surfaces.
 export function FormField({ id, label, description, error, children, className }: FormFieldProps) {
-  const childProps = children.props as FieldControlProps;
+  const childProps = children.props;
   const descriptionId = description ? `${id}-description` : undefined;
   const errorId = error ? `${id}-error` : undefined;
   const describedBy =
@@ -37,7 +37,7 @@ export function FormField({ id, label, description, error, children, className }
         id,
         invalid: error ? true : childProps.invalid,
         'aria-describedby': describedBy,
-      } as FieldControlProps)}
+      })}
       {description ? (
         <p id={descriptionId} className="tw:text-sm tw:text-foreground-muted">
           {description}

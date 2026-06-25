@@ -12,6 +12,16 @@ const controllerSource = readFileSync(
 );
 
 const mocks = vi.hoisted(() => ({
+  ApiError: class ApiError extends Error {
+    status: number;
+    data?: unknown;
+    constructor(status: number, message: string, data?: unknown) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+      this.data = data;
+    }
+  },
   apiClient: { name: 'apiClient' },
   checkLogin: vi.fn(),
   fetchUserInfo: vi.fn(),
@@ -49,6 +59,7 @@ vi.mock('@tanstack/react-query', () => ({
 }));
 
 vi.mock('@v2board/api-client', () => ({
+  ApiError: mocks.ApiError,
   user: {
     checkLogin: mocks.checkLogin,
   },
@@ -262,6 +273,34 @@ describe('LoginPage bundled-theme behavior', () => {
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order');
     expect(mocks.navigate).not.toHaveBeenCalledWith('order');
+  });
+
+  it('marks both fields invalid and ties them to the single alert when login fails', async () => {
+    mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(422, '邮箱或密码错误'));
+    await renderLogin();
+
+    const [email, password] = Array.from(container.querySelectorAll('input'));
+    email!.value = 'user@example.com';
+    password!.value = 'wrong';
+    await act(async () => {
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.id).toBe('login-error');
+    // The reserved icon slot now renders a decorative glyph hidden from assistive tech.
+    expect(alert.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+    expect(alert.textContent).toContain('邮箱或密码错误');
+    // Both fields are programmatically invalid and described by the one alert box.
+    for (const input of Array.from(container.querySelectorAll('input'))) {
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+      expect(input.getAttribute('aria-describedby')).toBe('login-error');
+    }
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it('reads the submitted values from the native form, never via the retired refs', () => {

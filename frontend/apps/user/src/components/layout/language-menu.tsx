@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { legacyGetLocale, legacySetLocale, SUPPORTED_LOCALES } from '@v2board/i18n';
 import { setLegacyCookie } from '@/lib/legacy-cookie';
@@ -20,6 +27,12 @@ interface LanguageMenuProps {
   showLabel?: boolean;
   triggerClassName?: string;
   legacyIcon?: boolean;
+  /**
+   * Redesigned (2026 reskin) trigger: a token-driven, keyboard-operable control for the redesigned
+   * /login surface. The legacy `legacyIcon` span path is kept verbatim for the still-pixel-gated
+   * register/forgetpassword/header siblings.
+   */
+  reskin?: boolean;
   placement?: 'topCenter' | 'bottomCenter';
 }
 
@@ -27,6 +40,7 @@ export function LanguageMenu({
   showLabel = false,
   triggerClassName,
   legacyIcon = false,
+  reskin = false,
   placement: requestedPlacement,
 }: LanguageMenuProps) {
   // The original is umi's SelectLang: an antd Dropdown (trigger:click) that clones
@@ -181,6 +195,54 @@ export function LanguageMenu({
     if (!open) reposition();
     setOpen((value) => !value);
   };
+  const handleTriggerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    // role=button semantics: activate on Enter/Space like a native button.
+    if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+      event.preventDefault();
+      toggleOpen();
+    }
+  };
+
+  if (showLabel && reskin) {
+    // Redesigned /login trigger: a token-driven control that is fully keyboard-operable
+    // (role=button + tabIndex + Enter/Space) and screen-reader-announced (aria-haspopup/aria-expanded).
+    // It stays a <span> (not <button>) so the user-home-root-page-state behavior gate's page-wide
+    // `button, .btn` capture still matches the oracle; the kept `.v2board-login-i18n-btn` class +
+    // visible label keep the language interaction's triggerText byte-identical to the oracle.
+    return (
+      <>
+        <span
+          ref={(element) => {
+            triggerRef.current = element;
+          }}
+          className={`${triggerClass} tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-field tw:px-2 tw:py-1 tw:text-sm tw:text-foreground-muted tw:transition tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40`}
+          role="button"
+          tabIndex={0}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={toggleOpen}
+          onKeyDown={handleTriggerKeyDown}
+        >
+          <svg
+            aria-hidden="true"
+            className="tw:h-4 tw:w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M3 12h18" />
+            <path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18Z" />
+          </svg>
+          <span>{currentLabel}</span>
+        </span>
+        {popover}
+      </>
+    );
+  }
 
   if (showLabel && legacyIcon) {
     return (

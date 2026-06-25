@@ -28,12 +28,16 @@ export default function LoginPage() {
       <form noValidate onSubmit={(event) => void submit(event)} onInput={clearError}>
         <CardBody>
           <div className="tw:mb-7 tw:text-center">
+            {/* The page always exposes exactly one top-level heading: the operator logo is wrapped
+                in the <h1> (its alt names the heading) when set, otherwise the title text is the h1. */}
             {logo ? (
-              <img
-                className="v2board-logo tw:mx-auto tw:mb-3 tw:h-11 tw:w-auto"
-                src={logo}
-                alt={title || 'V2Board'}
-              />
+              <h1 className="tw:m-0">
+                <img
+                  className="v2board-logo tw:mx-auto tw:h-11 tw:w-auto"
+                  src={logo}
+                  alt={title || 'V2Board'}
+                />
+              </h1>
             ) : (
               <h1 className="tw:text-2xl tw:font-semibold tw:tracking-tight tw:text-foreground">
                 {title || 'V2Board'}
@@ -47,22 +51,50 @@ export default function LoginPage() {
           <div className="tw:space-y-5">
             {error ? (
               <div
+                id="login-error"
                 role="alert"
                 className="tw:flex tw:items-start tw:gap-2 tw:rounded-field tw:border tw:border-destructive/30 tw:bg-destructive-subtle tw:px-3.5 tw:py-2.5 tw:text-sm tw:text-destructive"
               >
-                {error}
+                <svg
+                  aria-hidden="true"
+                  className="tw:mt-0.5 tw:h-4 tw:w-4 tw:shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 8v5" />
+                  <path d="M12 16h.01" />
+                </svg>
+                <span>{error}</span>
               </div>
             ) : null}
 
             {/* A proper email field (type="email"): the redesign-aware behavior gate normalizes the
                 identifier input's type so this modernization is released while password masking stays
                 gated. With noValidate the email type adds no submit-blocking native validation, so the
-                request/redirect contract is unchanged. */}
+                request/redirect contract is unchanged. On failure both fields are marked invalid and
+                described by the single alert box (#login-error) for assistive tech. */}
             <FormField id="login-email" label={t('auth.email')}>
-              <Input type="email" name="email" autoComplete="username" />
+              <Input
+                type="email"
+                name="email"
+                autoComplete="username"
+                invalid={!!error}
+                aria-describedby={error ? 'login-error' : undefined}
+              />
             </FormField>
             <FormField id="login-password" label={t('auth.password')}>
-              <Input type="password" name="password" autoComplete="current-password" />
+              <Input
+                type="password"
+                name="password"
+                autoComplete="current-password"
+                invalid={!!error}
+                aria-describedby={error ? 'login-error' : undefined}
+              />
             </FormField>
 
             <Button type="submit" block loading={isPending}>
@@ -75,7 +107,7 @@ export default function LoginPage() {
       <CardFooter>
         {/* HashRouter — native `#/route` anchors navigate without JS handlers. */}
         <a
-          className="tw:text-foreground-muted tw:transition tw:hover:text-foreground"
+          className="tw:rounded tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2"
           href="#/register"
         >
           {t('auth.sign_up')}
@@ -84,13 +116,13 @@ export default function LoginPage() {
           ·
         </span>
         <a
-          className="tw:text-foreground-muted tw:transition tw:hover:text-foreground"
+          className="tw:rounded tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2"
           href="#/forgetpassword"
         >
           {t('auth.forget_password')}
         </a>
         <div className="tw:ml-auto">
-          <LanguageMenu legacyIcon showLabel triggerClassName="v2board-login-i18n-btn" />
+          <LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />
         </div>
       </CardFooter>
     </Card>

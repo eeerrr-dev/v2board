@@ -557,7 +557,7 @@ describe('legacy guest auth shell CSS', () => {
       '.v2board-auth-lang-btn {\n  position: absolute;\n  top: 0;\n  right: 0;\n}',
     );
     expect(globals).toContain(
-      '.v2board-login-i18n-btn {\n  cursor: pointer;\n  magin-top: 2.5;\n  float: right;\n}',
+      '.v2board-login-i18n-btn {\n  cursor: pointer;\n  float: right;\n}',
     );
     expect(globals).toContain('.v2board-lang-item {\n  padding: 10px 20px;\n}');
     expect(globals).toContain('.v2board-lang-item:hover {\n  background: #eee;\n}');

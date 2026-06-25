@@ -36,13 +36,11 @@ function renderGuest(path: string) {
 }
 
 describe('GuestLayout bundled-theme auth shell', () => {
-  it('uses the bundled background_url short-circuit expression', () => {
+  it('derives the bundled background_url image from a typed ternary (no unsound cast)', () => {
     expect(guestLayoutSource).toContain(
-      'const legacyBackgroundImage = (backgroundUrl && `url(${backgroundUrl})`) as string;',
+      'const legacyBackgroundImage = backgroundUrl ? `url(${backgroundUrl})` : undefined;',
     );
-    expect(guestLayoutSource).not.toContain(
-      'backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined',
-    );
+    expect(guestLayoutSource).not.toContain('`url(${backgroundUrl})`) as string');
   });
 
   it('renders the old auth page container, background, centered box, and child outlet', () => {

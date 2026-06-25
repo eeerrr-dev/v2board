@@ -40,8 +40,9 @@ export const tokens = {
   '--color-input': '#cbd5e1',
   '--color-ring': '#3a63f0',
 
-  // Feedback — validation / error states.
-  '--color-destructive': '#dc2626',
+  // Feedback — validation / error states. `destructive` is red-700 (not red-600) so destructive
+  // body text clears WCAG AA (~5.1:1) on the `destructive-subtle` alert background.
+  '--color-destructive': '#c81e1e',
   '--color-destructive-foreground': '#ffffff',
   '--color-destructive-subtle': '#fef2f2',
 

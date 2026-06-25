@@ -262,6 +262,43 @@ describe('LanguageMenu antd dropdown behavior', () => {
     }
   });
 
+  it('renders the redesigned /login trigger as a keyboard-operable role=button that opens on Enter', () => {
+    act(() => {
+      root.render(<LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />);
+    });
+
+    const trigger = container.querySelector('.v2board-login-i18n-btn') as HTMLElement;
+    // Accessible control, not a bare clickable <span>: focusable + button semantics for assistive tech.
+    expect(trigger.tagName).toBe('SPAN');
+    expect(trigger.getAttribute('role')).toBe('button');
+    expect(trigger.getAttribute('tabindex')).toBe('0');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    // Still NOT a native <button>/.btn, so the user-home-root-page-state page-wide button capture
+    // stays byte-identical to the oracle.
+    expect(container.querySelector('button')).toBeNull();
+
+    trigger.getBoundingClientRect = () =>
+      ({
+        top: 50,
+        right: 90,
+        bottom: 70,
+        left: 30,
+        width: 60,
+        height: 20,
+        x: 30,
+        y: 50,
+        toJSON: () => {},
+      }) as DOMRect;
+
+    act(() => {
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(document.body.querySelector('.ant-dropdown-menu')).not.toBeNull();
+  });
+
   it('keys locale menu items by locale code while keeping SelectLang DOM stable', () => {
     const source = readFileSync('src/components/layout/language-menu.tsx', 'utf8');
     const menuSource = source.slice(

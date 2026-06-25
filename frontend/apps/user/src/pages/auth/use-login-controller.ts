@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { user } from '@v2board/api-client';
+import { ApiError, user } from '@v2board/api-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { getAuthData, setAuthData } from '@/lib/auth';
@@ -59,10 +59,11 @@ export function useLoginController(): LoginController {
           .catch(() => undefined);
         navigate(redirect);
       } catch (err) {
-        // Transport failures (status 0) surfaced nothing in the oracle, matching the api-client
-        // toast model; everything else is shown inline beside the form (the global toast also fires).
-        if ((err as { status?: number } | null)?.status === 0) return;
-        setError((err as { message?: string } | null)?.message || i18nGet('请求失败'));
+        // The login mutation rejects with ApiError. Transport failures (status 0) surfaced nothing in
+        // the oracle (the api-client toast model); everything else is shown inline beside the form
+        // (the global toast also fires).
+        if (err instanceof ApiError && err.status === 0) return;
+        setError((err instanceof Error && err.message) || i18nGet('请求失败'));
       }
     },
     [mutateAsync, navigate, queryClient, redirect],
@@ -99,5 +100,7 @@ export function useLoginController(): LoginController {
     }
   }, [navigate, queryClient, queryRedirect, redirect, tokenLogin, verify]);
 
-  return { submit, clearError: () => setError(null), isPending, error };
+  const clearError = useCallback(() => setError(null), []);
+
+  return { submit, clearError, isPending, error };
 }
