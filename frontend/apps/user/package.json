@@ -28,6 +28,7 @@
     "@v2board/api-client": "workspace:*",
     "@v2board/config": "workspace:*",
     "@v2board/i18n": "workspace:*",
+    "@v2board/tokens": "workspace:*",
     "@v2board/types": "workspace:*",
     "axios": "catalog:",
     "class-variance-authority": "^0.7.1",

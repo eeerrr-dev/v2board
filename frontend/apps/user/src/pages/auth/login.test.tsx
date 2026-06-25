@@ -139,7 +139,15 @@ describe('LoginPage modern markup', () => {
     // Reskinned shell — the legacy OneUI/Bootstrap markup is retired. Tailwind
     // utilities carry the `tw:` prefix so they never collide with the globally
     // bundled vendored `.block`/`.container`/etc. legacy classes.
-    expect(html).toContain('tw:rounded-2xl');
+    expect(html).toContain('tw:rounded-card');
+    // Token-driven primary + input surfaces (from @v2board/tokens) — never hardcoded blue/slate
+    // or a bespoke arbitrary shadow.
+    expect(html).toContain('tw:bg-primary');
+    expect(html).toContain('tw:border-input');
+    expect(html).toContain('tw:text-foreground');
+    expect(html).not.toContain('tw:bg-blue-600');
+    expect(html).not.toContain('tw:border-slate-300');
+    expect(html).not.toContain('tw:shadow-[');
     // The display utility must stay prefixed (`tw:block`); a bare `block` class would
     // collide with vendored OneUI `.block` cards and inherit their shadow/background.
     expect(html).toContain('tw:block');
@@ -157,8 +165,10 @@ describe('LoginPage modern markup', () => {
     expect(html).not.toContain('<h1');
     expect(html).not.toContain('block-title');
 
-    expect(html).toContain('placeholder="邮箱"');
-    expect(html).toContain('placeholder="密码"');
+    // Label-only fields — the placeholder no longer duplicates the visible label.
+    expect(html).toContain('邮箱');
+    expect(html).toContain('密码');
+    expect(html).not.toContain('placeholder=');
     expect(html).toContain('登入');
     expect(html).toContain('注册');
     expect(html).toContain('忘记密码');
@@ -178,9 +188,9 @@ describe('LoginPage modern markup', () => {
     expect(html).toContain('alt="V2Board"');
     expect(html).toContain('Legacy description');
     expect(html).toContain('disabled=""');
-    expect(html).toContain('class="anticon anticon-loading"');
-    // The submit label is hidden behind the spinner while pending.
-    expect(html).not.toContain('登入');
+    // The base Button shows its own spinner alongside the still-visible label while pending.
+    expect(html).toContain('tw:animate-spin');
+    expect(html).toContain('登入');
   });
 });
 
@@ -273,23 +283,19 @@ describe('LoginPage bundled-theme behavior', () => {
     });
   });
 
-  it('keeps the footer links as javascript-style anchors that push register and forgetpassword', async () => {
+  it('navigates register and forgetpassword via real HashRouter anchors (no javascript: hrefs)', async () => {
     await renderLogin();
 
     const links = Array.from(container.querySelectorAll('a'));
     const register = links.find((link) => link.textContent === '注册')!;
     const forget = links.find((link) => link.textContent === '忘记密码')!;
 
-    expect(register.getAttribute('href')).toBe('javascript:void(0);');
-    expect(forget.getAttribute('href')).toBe('javascript:void(0);');
-
-    await act(async () => {
-      register.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      forget.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(mocks.navigate).toHaveBeenNthCalledWith(1, '/register');
-    expect(mocks.navigate).toHaveBeenNthCalledWith(2, '/forgetpassword');
+    // Real hash anchors — HashRouter navigates natively, with no JS click handler or
+    // `javascript:` href. The behavior contract (lands on register/forgetpassword) is preserved.
+    expect(register.getAttribute('href')).toBe('#/register');
+    expect(forget.getAttribute('href')).toBe('#/forgetpassword');
+    expect(register.getAttribute('href')).not.toContain('javascript:');
+    expect(forget.getAttribute('href')).not.toContain('javascript:');
   });
 
   it('runs token2Login with the raw query redirect and pushes after setting auth data', async () => {

@@ -1,0 +1,35 @@
+/*
+ * Authored V2Board — design tokens as a Tailwind v4 @theme.
+ *
+ * Generated to match ./tokens.ts (the single source of truth); the user app's tokens drift test
+ * (apps/user/src/styles/tokens.test.ts) fails if these diverge. Imported by
+ * apps/user/src/styles/globals.css. Additive only — never overrides a Tailwind default — so
+ * un-reskinned replica surfaces are untouched. With the `tw:` prefix in globals.css these emit
+ * utilities like `tw:bg-primary`, `tw:text-muted-foreground`, `tw:rounded-card`, `tw:shadow-card`.
+ */
+@theme {
+  --color-primary-50: #eef3ff;
+  --color-primary-100: #dde7ff;
+  --color-primary-200: #c2d2ff;
+  --color-primary-500: #3a63f0;
+  --color-primary-600: #2457e5;
+  --color-primary-700: #1d45c0;
+
+  --color-primary: #2457e5;
+  --color-primary-hover: #1d45c0;
+  --color-primary-foreground: #ffffff;
+  --color-primary-subtle: #eef3ff;
+  --color-background: #f5f7fb;
+  --color-surface: #ffffff;
+  --color-foreground: #0f172a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+  --color-border: #e6eaf2;
+  --color-input: #cbd5e1;
+  --color-ring: #3a63f0;
+
+  --radius-field: 0.625rem;
+  --radius-card: 1.25rem;
+
+  --shadow-card: 0 12px 40px -12px rgba(15, 23, 42, 0.25);
+}

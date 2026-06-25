@@ -6,3 +6,8 @@
  * V2Board reskin utilities. See styles/VENDOR.md and the login surface for the pattern.
  */
 @import 'tailwindcss' prefix(tw);
+
+/* Clean-modern design tokens (color/radius/elevation) — single source of truth in
+ * @v2board/tokens, shared with the admin app's antd theme. Emits tw:bg-primary,
+ * tw:text-muted-foreground, tw:rounded-card, tw:shadow-card, etc. */
+@import '@v2board/tokens/tokens.css';

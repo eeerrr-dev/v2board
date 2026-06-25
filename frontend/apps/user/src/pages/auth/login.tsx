@@ -4,13 +4,15 @@ import { user } from '@v2board/api-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { LanguageMenu } from '@/components/layout/language-menu';
-import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
+import { Button } from '@/components/ui/button';
+import { Card, CardBody, CardFooter } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { getAuthData, setAuthData } from '@/lib/auth';
 import { useLoginMutation, useTokenLoginMutation } from '@/lib/guest';
 import { getLegacyDescription, getLegacyLogo, getLegacyTitle } from '@/lib/legacy-settings';
 import { apiClient } from '@/lib/api';
 import { fetchUserInfo, userKeys } from '@/lib/queries';
-import { legacyHref } from '@/lib/legacy-href';
 
 function normalizeRedirectTarget(target: string | null): string {
   if (!target) return '/dashboard';
@@ -90,83 +92,65 @@ export default function LoginPage() {
   }, [onLogin]);
 
   return (
-    // Authored V2Board — clean-modern reskin of the login surface (Tailwind utilities).
-    // Behavior is preserved (ref-based submit, Enter-key, token login, redirect); only the
-    // presentation diverges from the packaged oracle, so this surface's pixel parity is
-    // retired (see `user-login` visualRetired in visual-parity.mjs). The heading is an
-    // <h2>, never <h1>/.block-title, so the login-language-persistence interaction's
-    // titleText stays '' and keeps matching the oracle.
-    <div className="tw:overflow-hidden tw:rounded-2xl tw:bg-white tw:shadow-[0_10px_40px_-12px_rgba(15,23,42,0.25)] tw:ring-1 tw:ring-slate-900/5">
-      <div className="tw:px-6 tw:py-9 tw:sm:px-9">
+    // Authored V2Board — reference implementation of the clean-modern reskin. Built on the
+    // shared design tokens (@v2board/tokens) and base components (Card/Input/Label/Button), so
+    // it carries no bespoke utility strings. Behavior is preserved exactly (ref-based submit,
+    // global Enter-key shortcut, token login, redirect order); only the presentation diverges
+    // from the packaged oracle, so this surface's pixel parity is retired (see `user-login`
+    // visualRetired in visual-parity.mjs). The heading stays an <h2> (never <h1>/.block-title)
+    // so the login-language-persistence interaction's titleText stays '' versus the oracle.
+    <Card>
+      <CardBody>
         <div className="tw:mb-7 tw:text-center">
           {logo ? (
-            <img className="v2board-logo tw:mx-auto tw:mb-3 tw:h-11 tw:w-auto" src={logo} alt={title || 'V2Board'} />
+            <img
+              className="v2board-logo tw:mx-auto tw:mb-3 tw:h-11 tw:w-auto"
+              src={logo}
+              alt={title || 'V2Board'}
+            />
           ) : (
-            <h2 className="tw:text-2xl tw:font-semibold tw:tracking-tight tw:text-slate-900">
+            <h2 className="tw:text-2xl tw:font-semibold tw:tracking-tight tw:text-foreground">
               {title || 'V2Board'}
             </h2>
           )}
-          {description ? <p className="tw:mt-2 tw:text-sm tw:text-slate-500">{description}</p> : null}
+          {description ? (
+            <p className="tw:mt-2 tw:text-sm tw:text-muted-foreground">{description}</p>
+          ) : null}
         </div>
 
         <div className="tw:space-y-5">
           <div className="tw:space-y-1.5">
-            <label htmlFor="login-email" className="tw:block tw:text-sm tw:font-medium tw:text-slate-700">
-              {t('auth.email')}
-            </label>
-            <input
-              id="login-email"
-              type="text"
-              className="tw:block tw:w-full tw:rounded-lg tw:border tw:border-slate-300 tw:bg-white tw:px-3.5 tw:py-2.5 tw:text-sm tw:text-slate-900 tw:shadow-sm tw:transition tw:placeholder:text-slate-400 tw:focus:border-blue-500 tw:focus:outline-none tw:focus:ring-2 tw:focus:ring-blue-500/25"
-              placeholder={t('auth.email')}
-              ref={emailRef}
-            />
+            <Label htmlFor="login-email">{t('auth.email')}</Label>
+            <Input id="login-email" type="text" ref={emailRef} />
           </div>
           <div className="tw:space-y-1.5">
-            <label htmlFor="login-password" className="tw:block tw:text-sm tw:font-medium tw:text-slate-700">
-              {t('auth.password')}
-            </label>
-            <input
-              id="login-password"
-              type="password"
-              className="tw:block tw:w-full tw:rounded-lg tw:border tw:border-slate-300 tw:bg-white tw:px-3.5 tw:py-2.5 tw:text-sm tw:text-slate-900 tw:shadow-sm tw:transition tw:placeholder:text-slate-400 tw:focus:border-blue-500 tw:focus:outline-none tw:focus:ring-2 tw:focus:ring-blue-500/25"
-              placeholder={t('auth.password')}
-              ref={passwordRef}
-            />
+            <Label htmlFor="login-password">{t('auth.password')}</Label>
+            <Input id="login-password" type="password" ref={passwordRef} />
           </div>
-          <button
-            disabled={isPending}
-            type="submit"
-            className="tw:flex tw:w-full tw:items-center tw:justify-center tw:gap-2 tw:rounded-lg tw:bg-blue-600 tw:px-4 tw:py-2.5 tw:text-sm tw:font-semibold tw:text-white tw:shadow-sm tw:transition tw:hover:bg-blue-700 tw:focus:outline-none tw:focus:ring-2 tw:focus:ring-blue-500/40 tw:disabled:cursor-not-allowed tw:disabled:opacity-60"
-            onClick={() => void onLogin()}
-          >
-            {isPending ? <LegacyLoadingIcon /> : t('auth.submit_login')}
-          </button>
+          <Button block loading={isPending} onClick={() => void onLogin()}>
+            {t('auth.submit_login')}
+          </Button>
         </div>
-      </div>
+      </CardBody>
 
-      <div className="tw:flex tw:items-center tw:gap-3 tw:border-t tw:border-slate-100 tw:bg-slate-50/80 tw:px-6 tw:py-4 tw:text-sm tw:sm:px-9">
-        <a
-          className="tw:text-slate-500 tw:transition tw:hover:text-slate-900"
-          ref={legacyHref()}
-          onClick={() => navigate('/register')}
-        >
+      <CardFooter>
+        {/* HashRouter — native `#/route` anchors navigate without JS handlers. */}
+        <a className="tw:text-muted-foreground tw:transition tw:hover:text-foreground" href="#/register">
           {t('auth.sign_up')}
         </a>
-        <span aria-hidden="true" className="tw:text-slate-300">
+        <span aria-hidden="true" className="tw:text-border">
           ·
         </span>
         <a
-          className="tw:text-slate-500 tw:transition tw:hover:text-slate-900"
-          ref={legacyHref()}
-          onClick={() => navigate('/forgetpassword')}
+          className="tw:text-muted-foreground tw:transition tw:hover:text-foreground"
+          href="#/forgetpassword"
         >
           {t('auth.forget_password')}
         </a>
         <div className="tw:ml-auto">
           <LanguageMenu legacyIcon showLabel triggerClassName="v2board-login-i18n-btn" />
         </div>
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   );
 }
