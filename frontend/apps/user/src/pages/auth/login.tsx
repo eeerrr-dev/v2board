@@ -24,7 +24,7 @@ export default function LoginPage() {
     // The brand title is a semantic <h1> (the page's main heading); the redesign-aware
     // login-language-persistence gate releases its titleText as redesigned presentation instead of
     // pinning the old empty value.
-    <Card>
+    <Card className="v2board-login-card">
       <form noValidate onSubmit={(event) => void submit(event)} onInput={clearError}>
         <CardBody>
           <div className="tw:mb-7 tw:text-center">
@@ -97,7 +97,10 @@ export default function LoginPage() {
               />
             </FormField>
 
-            <Button type="submit" block loading={isPending}>
+            {/* ring-offset-surface keeps the focus halo blended on the dark login surface
+                (the offset color tracks --color-surface, which the dark theme re-points); in light
+                mode --color-surface is white, so the default offset is unchanged. */}
+            <Button type="submit" block loading={isPending} className="tw:ring-offset-surface">
               {t('auth.submit_login')}
             </Button>
           </div>
@@ -107,7 +110,7 @@ export default function LoginPage() {
       <CardFooter>
         {/* HashRouter — native `#/route` anchors navigate without JS handlers. */}
         <a
-          className="tw:rounded tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2"
+          className="tw:rounded tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2 tw:ring-offset-surface"
           href="#/register"
         >
           {t('auth.sign_up')}
@@ -116,7 +119,7 @@ export default function LoginPage() {
           ·
         </span>
         <a
-          className="tw:rounded tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2"
+          className="tw:rounded tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2 tw:ring-offset-surface"
           href="#/forgetpassword"
         >
           {t('auth.forget_password')}

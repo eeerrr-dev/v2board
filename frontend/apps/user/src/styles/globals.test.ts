@@ -582,6 +582,44 @@ describe('legacy guest auth shell CSS', () => {
   });
 });
 
+describe('2026 login surface presentation CSS', () => {
+  it('keeps the entrance + ambient motion gated behind prefers-reduced-motion', () => {
+    const globals = css();
+
+    expect(globals).toContain('@media (prefers-reduced-motion: no-preference) {');
+    expect(globals).toContain('.v2board-login-surface .v2board-login-frame {');
+    expect(globals).toContain('animation: v2board-login-rise');
+    expect(globals).toContain('.v2board-login-aurora {');
+    expect(globals).toContain('@keyframes v2board-login-rise {');
+    expect(globals).toContain('@keyframes v2board-login-aurora-drift {');
+    // The entrance only animates opacity + transform, so no capture-relevant layout collapse.
+    expect(globals).toContain('opacity: 0;\n    transform: translateY(14px);');
+  });
+
+  it('scopes the native dark theme to the login surface and yields to DarkReader', () => {
+    const globals = css();
+
+    expect(globals).toContain('@media (prefers-color-scheme: dark) {');
+    // Excludes DarkReader's runtime inversion (data-darkreader-scheme on <html>) to avoid
+    // double-darkening, and is scoped to .v2board-login-surface so no other surface is themed.
+    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-login-surface {');
+    expect(globals).toContain('--color-background: #0b1120;');
+    expect(globals).toContain('--color-surface: #131b2e;');
+  });
+
+  it('applies the dark card elevation directly (Tailwind v4 inlines shadow tokens, so a --shadow override is inert)', () => {
+    const globals = css();
+
+    expect(globals).toContain(
+      'html:not([data-darkreader-scheme]) .v2board-login-surface .v2board-login-card {',
+    );
+    // The edge ring is re-declared so hard-overriding box-shadow does not drop the card border.
+    expect(globals).toContain('0 0 0 1px var(--color-border)');
+    // Dead --shadow-* token overrides were removed rather than shipped inert.
+    expect(globals).not.toContain('--shadow-card: 0 18px 48px');
+  });
+});
+
 describe('legacy antd button and radio CSS', () => {
   it('keeps button variant rules that would otherwise be overwritten by the app bundle', () => {
     const globals = css();

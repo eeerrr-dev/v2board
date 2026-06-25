@@ -74,10 +74,21 @@ describe('GuestLayout bundled-theme auth shell', () => {
       expect(html).toContain('tw:bg-gradient-to-br');
       expect(html).toContain('v2board-login-frame');
       expect(html).toContain('class="guest-probe"');
+      // The 2026 presentation hooks: the surface scope (motion + scoped dark theme) and the two
+      // ambient aurora blobs. See styles/user-login-surface.css.
+      expect(html).toContain('v2board-login-surface');
+      expect((html.match(/v2board-login-aurora/g) ?? []).length).toBe(2);
       // Route isolation: the redesigned surface does not use the packaged-oracle flat background
       // layer or the operator background image.
       expect(html).not.toContain('class="v2board-background"');
       expect(html).not.toContain('background-image');
+    });
+
+    it('keeps the 2026 presentation hooks off the still-pixel-gated register/forget chrome', () => {
+      expect(renderGuest('/register')).not.toContain('v2board-login-surface');
+      expect(renderGuest('/register')).not.toContain('v2board-login-aurora');
+      expect(renderGuest('/forgetpassword')).not.toContain('v2board-login-surface');
+      expect(renderGuest('/forgetpassword')).not.toContain('v2board-login-aurora');
     });
 
     it('keeps exactly one auth box and adds no page-level button (behavior-gate contract)', () => {

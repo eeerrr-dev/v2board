@@ -1,0 +1,101 @@
+/*
+ * Authored V2Board — 2026 login surface presentation.
+ *
+ * Scoped to the redesigned /login surface only (`.v2board-login-surface`, set on the login route's
+ * <main> in guest-layout). Pure presentation: a motion-safe entrance + ambient aurora drift, and a
+ * native dark theme that re-points the design tokens for the login subtree.
+ *
+ * Gate-safe by construction: /login's visual parity is retired (`visualRetired` in
+ * visual-parity.mjs), and the behavior/contract gate captures DOM text / form state, never pixels —
+ * so animation and color are invisible to it (the entrance only animates opacity + transform, which
+ * never collapse an element's layout box, so visibility/geometry-based captures are unaffected).
+ *
+ * The dark-theme token overrides live HERE, in a scoped selector — not in @v2board/tokens — so the
+ * tokens drift test (styles/tokens.test.ts, which reverse-scans only tokens.css) is untouched.
+ *
+ * Known, deliberate scope limits of this commit (pure presentation, no behavior change):
+ *  - The native dark theme keys off the OS (prefers-color-scheme) only. The app's operator/user
+ *    `dark_mode` cookie path is handled separately by DarkReader runtime inversion (which we yield
+ *    to via the data-darkreader-scheme guard), so cookie-dark and OS-dark diverge visually here.
+ *  - The language menu's dropdown is portaled to document.body, OUTSIDE .v2board-login-surface, so
+ *    it is not re-themed by these scoped token overrides and stays light in OS-dark.
+ */
+
+/* Entrance + ambient motion — only when the user has not requested reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .v2board-login-surface .v2board-login-frame {
+    animation: v2board-login-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .v2board-login-aurora {
+    /* The infinite transform animation already promotes each blob to a compositor layer, so an
+       explicit will-change (which would never clear for the screen's lifetime) is not needed. */
+    animation: v2board-login-aurora-drift 22s ease-in-out infinite alternate;
+  }
+
+  .v2board-login-aurora:nth-of-type(2) {
+    animation-duration: 28s;
+    animation-direction: alternate-reverse;
+  }
+}
+
+@keyframes v2board-login-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes v2board-login-aurora-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  to {
+    transform: translate3d(6%, 4%, 0) scale(1.12);
+  }
+}
+
+/*
+ * Native dark theme for the login surface. Applies only when the OS prefers dark AND DarkReader's
+ * runtime inversion is NOT active — DarkReader stamps `data-darkreader-scheme` on <html> when the
+ * `dark_mode` cookie is set, so excluding it avoids double-darkening the same surface.
+ */
+@media (prefers-color-scheme: dark) {
+  html:not([data-darkreader-scheme]) .v2board-login-surface {
+    --color-background: #0b1120;
+    --color-surface: #131b2e;
+    --color-foreground: #e6ebf5;
+    --color-muted: #1a2336;
+    --color-foreground-muted: #94a3b8;
+    --color-border: #243049;
+    --color-input: #33415c;
+    --color-ring: #5b7cf5;
+
+    --color-primary: #4f74f0;
+    --color-primary-hover: #6485f3;
+    --color-primary-subtle: #18233f;
+
+    --color-destructive: #f87171;
+    --color-destructive-subtle: #2a1414;
+  }
+
+  /*
+   * Elevation is applied directly (not via the --shadow-* tokens): Tailwind v4 inlines shadow token
+   * values into the utility at build time, so a runtime --shadow-card override on the surface would
+   * be inert. This rule re-declares the card's full box-shadow — the edge ring (replacing
+   * `tw:ring-1 tw:ring-border`), a hairline top highlight so the card reads as raised, and a deep
+   * drop shadow — so the dark card looks designed for dark, not merely recolored.
+   */
+  html:not([data-darkreader-scheme]) .v2board-login-surface .v2board-login-card {
+    box-shadow:
+      0 0 0 1px var(--color-border),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+      0 18px 48px -16px rgba(0, 0, 0, 0.65);
+  }
+}

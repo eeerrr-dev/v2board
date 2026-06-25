@@ -16,10 +16,13 @@ export function GuestLayout() {
   if (pathname === '/login') {
     return (
       <div id="page-container">
-        <main id="main-container">
-          <div className="tw:fixed tw:inset-0 tw:-z-10 tw:overflow-hidden tw:bg-gradient-to-br tw:from-background tw:to-muted">
-            <div className="tw:absolute tw:-left-32 tw:-top-32 tw:h-[26rem] tw:w-[26rem] tw:rounded-full tw:bg-primary/15 tw:blur-3xl" />
-            <div className="tw:absolute tw:-bottom-40 tw:-right-24 tw:h-[30rem] tw:w-[30rem] tw:rounded-full tw:bg-primary/10 tw:blur-3xl" />
+        {/* `v2board-login-surface` scopes the authored 2026 presentation (motion-safe entrance/ambient
+            drift + the native dark theme that re-points the design tokens) to /login only —
+            see styles/user-login-surface.css. */}
+        <main id="main-container" className="v2board-login-surface">
+          <div className="tw:fixed tw:inset-0 tw:-z-10 tw:overflow-hidden tw:bg-gradient-to-br tw:from-background tw:to-primary-subtle">
+            <div className="v2board-login-aurora tw:absolute tw:-left-32 tw:-top-32 tw:h-[26rem] tw:w-[26rem] tw:rounded-full tw:bg-primary/15 tw:blur-3xl" />
+            <div className="v2board-login-aurora tw:absolute tw:-bottom-40 tw:-right-24 tw:h-[30rem] tw:w-[30rem] tw:rounded-full tw:bg-primary/10 tw:blur-3xl" />
           </div>
           <div className="v2board-auth-box tw:p-4 tw:sm:p-6">
             <div className="v2board-login-frame tw:m-auto tw:w-full tw:max-w-md">
