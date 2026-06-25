@@ -1,8 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Mail, UserPlus } from 'lucide-react';
 import { LanguageMenu } from '@/components/layout/language-menu';
-import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
+import { Button } from '@/components/ui/button';
+import { Card, CardBody, CardFooter } from '@/components/ui/card';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { useLegacyRecaptcha } from '@/components/legacy-recaptcha';
 import {
   useGuestConfig,
@@ -12,8 +18,13 @@ import {
 import { i18nGet } from '@/lib/errors';
 import { getLegacyDescription, getLegacyLogo, getLegacyTitle } from '@/lib/legacy-settings';
 import { toast } from '@/lib/legacy-toast';
-import { legacyHref } from '@/lib/legacy-href';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
+import { PasswordField } from './password-field';
+
+function readFormValue(form: HTMLFormElement | null, name: string) {
+  if (!form) return '';
+  return String(new FormData(form).get(name) ?? '');
+}
 
 export default function RegisterPage() {
   const { t } = useTranslation();
@@ -30,11 +41,7 @@ export default function RegisterPage() {
   );
 
   const initialInviteCode = params.get('code');
-  const emailRef = useRef<HTMLInputElement | null>(null);
-  const emailCodeRef = useRef<HTMLInputElement | null>(null);
-  const passwordRef = useRef<HTMLInputElement | null>(null);
-  const confirmPasswordRef = useRef<HTMLInputElement | null>(null);
-  const inviteCodeRef = useRef<HTMLInputElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const cooldownRef = useRef(60);
   const [emailSuffix, setEmailSuffix] = useState<string | undefined>(undefined);
   const [tosChecked, setTosChecked] = useState(false);
@@ -48,10 +55,10 @@ export default function RegisterPage() {
   const selectedEmailSuffix = hasEmailWhitelist
     ? emailSuffixes.includes(emailSuffix ?? '')
       ? emailSuffix
-      : emailSuffixes[0]
+      : (emailSuffixes[0] ?? '')
     : '';
   const getEmail = () => {
-    const email = emailRef.current!.value;
+    const email = readFormValue(formRef.current, 'email');
     return hasEmailWhitelist ? `${email}@${selectedEmailSuffix}` : email;
   };
 
@@ -94,8 +101,8 @@ export default function RegisterPage() {
       toast.error(i18nGet('请求失败'), { description: t('auth.tos_required') });
       return;
     }
-    const password = passwordRef.current!.value;
-    if (password !== confirmPasswordRef.current!.value) {
+    const password = readFormValue(formRef.current, 'password');
+    if (password !== readFormValue(formRef.current, 'confirm_password')) {
       toast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') });
       return;
     }
@@ -103,55 +110,64 @@ export default function RegisterPage() {
       await register({
         email: getEmail(),
         password,
-        invite_code: inviteCodeRef.current!.value,
-        email_code: config?.is_email_verify ? emailCodeRef.current!.value : '',
+        invite_code:
+          readFormValue(formRef.current, 'invite_code') || initialInviteCode || '',
+        email_code: config?.is_email_verify ? readFormValue(formRef.current, 'email_code') : '',
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
       navigate('/login');
     } catch {}
   };
 
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    runRecaptcha(onRegister);
+  };
+
   return (
     <>
-      <div
-        className="block block-rounded block-transparent block-fx-pop w-100 mb-0 overflow-hidden bg-image"
-        style={{ boxShadow: '0 0.5rem 2rem #0000000d' }}
-      >
-        <div className="row no-gutters">
-          <div className="col-md-12 order-md-1 bg-white">
-            <div className="block-content block-content-full px-lg-4 py-md-4 py-lg-4">
-              <div className="mb-3 text-center">
-                <a className="font-size-h1" ref={legacyHref()}>
-                  {logo ? (
-                    <img className="v2board-logo mb-3" src={logo} />
-                  ) : (
-                    <span className="text-dark">{title || 'V2Board'}</span>
-                  )}
-                </a>
-                {description && <p className="font-size-sm text-muted mb-3">{description}</p>}
-              </div>
-              {configLoading ? (
-                <div className="content content-full text-center">
-                  <div className="spinner-grow text-primary" role="status">
-                    <span className="sr-only">Loading...</span>
-                  </div>
-                </div>
+      <Card className="v2board-register-card">
+        <form ref={formRef} noValidate onSubmit={submit}>
+          <CardBody>
+            <div className="tw:mb-7 tw:text-center">
+              {logo ? (
+                <h1 className="tw:m-0">
+                  <img
+                    className="v2board-logo tw:mx-auto tw:h-11 tw:w-auto"
+                    src={logo}
+                    alt={title || 'V2Board'}
+                  />
+                </h1>
               ) : (
-                <div>
-                  <div
-                    className={`form-group ${
-                      hasEmailWhitelist ? 'v2board-email-whitelist-enable' : ''
-                    }`}
-                  >
-                    <input
-                      type="text"
-                      className="form-control form-control-alt"
-                      placeholder={t('auth.email')}
-                      ref={emailRef}
-                    />
-                    {hasEmailWhitelist ? (
+                <h1 className="v2board-login-title tw:text-2xl tw:font-semibold tw:tracking-tight">
+                  {title || 'V2Board'}
+                </h1>
+              )}
+              {description ? (
+                <p className="tw:mt-2 tw:text-sm tw:text-foreground-muted">{description}</p>
+              ) : null}
+            </div>
+
+            {configLoading ? (
+              <div className="tw:flex tw:min-h-64 tw:items-center tw:justify-center" role="status">
+                <Spinner className="tw:size-6 tw:text-primary" />
+              </div>
+            ) : (
+              <div className="tw:space-y-5">
+                {hasEmailWhitelist ? (
+                  <div className="tw:space-y-1.5">
+                    <Label htmlFor="register-email">{t('auth.email')}</Label>
+                    <div className="tw:flex tw:gap-2">
+                      <Input
+                        id="register-email"
+                        type="text"
+                        name="email"
+                        autoComplete="username"
+                        className="tw:flex-1"
+                      />
                       <select
-                        className="form-control form-control-alt"
+                        aria-label={t('auth.email')}
+                        className="tw:h-10 tw:rounded-field tw:border tw:border-input tw:bg-surface tw:px-3 tw:text-sm tw:text-foreground tw:shadow-sm tw:outline-none tw:transition tw:focus-visible:border-primary tw:focus-visible:ring-2 tw:focus-visible:ring-ring/25"
                         value={selectedEmailSuffix}
                         onChange={(event) => setEmailSuffix(event.target.value)}
                       >
@@ -161,128 +177,108 @@ export default function RegisterPage() {
                           </option>
                         ))}
                       </select>
-                    ) : null}
-                  </div>
-
-                  {config?.is_email_verify ? (
-                    <div className="form-group form-row">
-                      <div className="col-9">
-                        <input
-                          type="text"
-                          className="form-control form-control-alt"
-                          placeholder={t('auth.email_code')}
-                          ref={emailCodeRef}
-                        />
-                      </div>
-                      <div className="col-3">
-                        <button
-                          type="submit"
-                          disabled={cooldown !== 60 || isSendingCode}
-                          className="btn btn-block btn-primary font-w400"
-                          onClick={() => runRecaptcha(onSendCode)}
-                        >
-                          {cooldown === 60
-                            ? isSendingCode
-                              ? <LegacyLoadingIcon />
-                              : t('auth.send_code')
-                            : cooldown}
-                        </button>
-                      </div>
                     </div>
-                  ) : null}
-
-                  <div className="form-group">
-                    <input
-                      type="password"
-                      className="form-control form-control-alt"
-                      placeholder={t('auth.password')}
-                      ref={passwordRef}
-                    />
                   </div>
-                  <div className="form-group">
-                    <input
-                      type="password"
-                      className="form-control form-control-alt"
-                      placeholder={t('auth.password')}
-                      ref={confirmPasswordRef}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <input
-                      type="text"
-                      disabled={Boolean(initialInviteCode)}
-                      defaultValue={initialInviteCode ?? undefined}
-                      className="form-control form-control-alt"
-                      placeholder={
-                        config?.is_invite_force
-                          ? t('auth.invite_code')
-                          : t('auth.invite_code_optional')
-                      }
-                      ref={inviteCodeRef}
-                    />
-                  </div>
+                ) : (
+                  <FormField id="register-email" label={t('auth.email')}>
+                    <Input type="email" name="email" autoComplete="username" />
+                  </FormField>
+                )}
 
-                  {config?.tos_url ? (
-                    <div className="form-group">
-                      <div className="custom-control custom-checkbox custom-control-primary">
-                        {/* Original wires only onClick (umi.js @1339000) — a controlled
-                            checkbox with no onChange and no readOnly, so it emits React's
-                            dev-only warning; match its DOM exactly (no extra attributes). */}
-                        <input
-                          type="checkbox"
-                          className="custom-control-input"
-                          checked={tosChecked}
-                          style={{ zIndex: 1000 }}
-                          onClick={() => setTosChecked((value) => !value)}
-                        />
-                        <label className="custom-control-label">
-                          <div
-                            dangerouslySetInnerHTML={{
-                              __html: t('auth.tos_html').replace('{url}', config.tos_url),
-                            }}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="form-group mb-0">
-                    <button
-                      disabled={isPending || Boolean(config?.tos_url && !tosChecked)}
-                      type="submit"
-                      className="btn btn-block btn-primary font-w400"
-                      onClick={() => runRecaptcha(onRegister)}
+                {config?.is_email_verify ? (
+                  <div className="tw:flex tw:items-end tw:gap-2">
+                    <FormField
+                      id="register-email-code"
+                      label={t('auth.email_code')}
+                      className="tw:flex-1"
                     >
-                      {isPending ? (
-                        <LegacyLoadingIcon />
+                      <Input type="text" name="email_code" inputMode="numeric" />
+                    </FormField>
+                    <Button
+                      type="button"
+                      disabled={cooldown !== 60 || isSendingCode}
+                      loading={isSendingCode}
+                      onClick={() => runRecaptcha(onSendCode)}
+                      className="tw:min-w-20"
+                    >
+                      {cooldown === 60 ? (
+                        <>
+                          <Mail aria-hidden="true" className="tw:size-4" />
+                          {t('auth.send_code')}
+                        </>
                       ) : (
-                        <span>
-                          <i className="si si-emoticon-smile mr-1" />
-                          {t('auth.submit_register')}
-                        </span>
+                        cooldown
                       )}
-                    </button>
+                    </Button>
                   </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="text-left bg-gray-lighter p-3 px-4">
+                ) : null}
+
+                <FormField id="register-password" label={t('auth.password')}>
+                  <PasswordField name="password" autoComplete="new-password" />
+                </FormField>
+                <FormField id="register-confirm-password" label={t('auth.password')}>
+                  <PasswordField name="confirm_password" autoComplete="new-password" />
+                </FormField>
+                <FormField
+                  id="register-invite-code"
+                  label={
+                    config?.is_invite_force
+                      ? t('auth.invite_code')
+                      : t('auth.invite_code_optional')
+                  }
+                >
+                  <Input
+                    type="text"
+                    name="invite_code"
+                    disabled={Boolean(initialInviteCode)}
+                    defaultValue={initialInviteCode ?? undefined}
+                    autoComplete="off"
+                  />
+                </FormField>
+
+                {config?.tos_url ? (
+                  <label className="tw:flex tw:items-start tw:gap-2 tw:text-sm tw:text-foreground-muted">
+                    <input
+                      type="checkbox"
+                      checked={tosChecked}
+                      onChange={() => setTosChecked((value) => !value)}
+                      className="tw:mt-1 tw:size-4 tw:rounded tw:border-input tw:accent-primary"
+                    />
+                    <span
+                      dangerouslySetInnerHTML={{
+                        __html: t('auth.tos_html').replace('{url}', config.tos_url),
+                      }}
+                    />
+                  </label>
+                ) : null}
+
+                <Button
+                  type="submit"
+                  block
+                  loading={isPending}
+                  disabled={isPending || Boolean(config?.tos_url && !tosChecked)}
+                  className="tw:ring-offset-surface"
+                >
+                  <UserPlus aria-hidden="true" className="tw:size-4" />
+                  {t('auth.submit_register')}
+                </Button>
+              </div>
+            )}
+          </CardBody>
+        </form>
+
+        <CardFooter>
           <a
-            className="font-size-sm text-muted"
-            ref={legacyHref()}
-            onClick={() => navigate('/login')}
+            className="tw:rounded tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2 tw:ring-offset-surface"
+            href="#/login"
           >
             {t('auth.return_to_login')}
           </a>
-          <LanguageMenu
-            legacyIcon
-            showLabel
-            triggerClassName="v2board-login-i18n-btn"
-          />
-        </div>
-      </div>
+          <div className="tw:ml-auto">
+            <LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />
+          </div>
+        </CardFooter>
+      </Card>
       {recaptchaModal}
     </>
   );

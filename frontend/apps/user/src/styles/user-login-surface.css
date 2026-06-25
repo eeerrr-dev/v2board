@@ -17,8 +17,8 @@
  *  - The native dark theme keys off the OS (prefers-color-scheme) only. The app's operator/user
  *    `dark_mode` cookie path is handled separately by DarkReader runtime inversion (which we yield
  *    to via the data-darkreader-scheme guard), so cookie-dark and OS-dark diverge visually here.
- *  - The language menu's dropdown is portaled to document.body, OUTSIDE .v2board-login-surface, so
- *    it is not re-themed by these scoped token overrides and stays light in OS-dark.
+ *  - Redesigned auth language menus are Radix overlays with their own `.v2board-language-menu-content`
+ *    token scope because they are portaled to document.body, outside `.v2board-login-surface`.
  */
 
 /* Entrance + ambient motion — only when the user has not requested reduced motion. */
@@ -110,6 +110,19 @@
    * card reads as raised, and a deep drop shadow — so the dark card looks designed for dark.
    */
   html:not([data-darkreader-scheme]) .v2board-login-surface .v2board-login-card {
+    box-shadow:
+      0 0 0 1px var(--tw-color-border),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+      0 18px 48px -16px rgba(0, 0, 0, 0.65);
+  }
+
+  html:not([data-darkreader-scheme]) .v2board-language-menu-content {
+    --tw-color-surface: #131b2e;
+    --tw-color-foreground: #e6ebf5;
+    --tw-color-muted: #1a2336;
+    --tw-color-border: #243049;
+    --tw-color-ring: #5b7cf5;
+
     box-shadow:
       0 0 0 1px var(--tw-color-border),
       inset 0 1px 0 0 rgba(255, 255, 255, 0.06),

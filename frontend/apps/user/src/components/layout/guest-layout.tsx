@@ -6,18 +6,17 @@ export function GuestLayout() {
   const { pathname } = useLocation();
   const backgroundUrl = getLegacySettings().background_url;
   const legacyBackgroundImage = backgroundUrl ? `url(${backgroundUrl})` : undefined;
+  const isModernAuthSurface =
+    pathname === '/login' || pathname === '/register' || pathname === '/forgetpassword';
 
-  // /login is the redesigned 2026 surface (route-isolated reskin): a modern gradient backdrop
-  // with the polished login card centered. Its single `.v2board-auth-box` is kept so the
-  // behavior gate's auth-box-scoped selectors (controls/links/title/authBoxCount in
-  // user-home-root-page-state) still resolve; the route chrome adds no extra controls, links, or
-  // headings, so the login component owns all redesigned auth interactions.
-  // Visual parity for this surface is retired (see user-login/user-home-root in visual-parity.mjs).
-  if (pathname === '/login') {
+  // The redesigned auth surfaces use the same route-isolated 2026 chrome. The single
+  // `.v2board-auth-box` is kept so behavior gates can keep auth-box-scoped selectors stable; the
+  // page component owns all controls, links, and headings inside it.
+  if (isModernAuthSurface) {
     return (
       <div id="page-container">
         {/* `v2board-login-surface` scopes the authored 2026 presentation (motion-safe entrance/ambient
-            drift + the native dark theme that re-points the design tokens) to /login only —
+            drift + the native dark theme that re-points the design tokens) to redesigned auth —
             see styles/user-login-surface.css. */}
         <main id="main-container" className="v2board-login-surface">
           <div className="tw:fixed tw:inset-0 tw:-z-10 tw:overflow-hidden tw:bg-gradient-to-br tw:from-background tw:to-primary-subtle">
@@ -34,8 +33,6 @@ export function GuestLayout() {
     );
   }
 
-  // register + forgetpassword keep the packaged-oracle chrome verbatim (still under the pixel gate).
-  const hasEmptyContainerClass = pathname === '/register' || pathname === '/forgetpassword';
   return (
     <div id="page-container">
       <main id="main-container">
@@ -47,7 +44,6 @@ export function GuestLayout() {
         />
         <div className="no-gutters v2board-auth-box">
           <div
-            className={hasEmptyContainerClass ? '' : undefined}
             style={{ maxWidth: 450, width: '100%', margin: 'auto' }}
           >
             <div className="mx-2 mx-sm-0">

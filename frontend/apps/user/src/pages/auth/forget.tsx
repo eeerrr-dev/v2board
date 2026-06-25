@@ -1,13 +1,22 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { KeyRound, Mail } from 'lucide-react';
 import { LanguageMenu } from '@/components/layout/language-menu';
-import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
+import { Button } from '@/components/ui/button';
+import { Card, CardBody, CardFooter } from '@/components/ui/card';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
 import { useLegacyRecaptcha } from '@/components/legacy-recaptcha';
 import { useForgetMutation, useGuestConfig, useSendEmailVerifyMutation } from '@/lib/guest';
 import { getLegacyDescription, getLegacyLogo, getLegacyTitle } from '@/lib/legacy-settings';
 import { toast } from '@/lib/legacy-toast';
-import { legacyHref } from '@/lib/legacy-href';
+import { PasswordField } from './password-field';
+
+function readFormValue(form: HTMLFormElement | null, name: string) {
+  if (!form) return '';
+  return String(new FormData(form).get(name) ?? '');
+}
 
 export default function ForgetPage() {
   const { t } = useTranslation();
@@ -20,10 +29,7 @@ export default function ForgetPage() {
     config?.recaptcha_site_key,
   );
 
-  const emailRef = useRef<HTMLInputElement | null>(null);
-  const emailCodeRef = useRef<HTMLInputElement | null>(null);
-  const passwordRef = useRef<HTMLInputElement | null>(null);
-  const confirmPasswordRef = useRef<HTMLInputElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const cooldownRef = useRef(60);
   const [cooldown, setCooldown] = useState(60);
   const logo = getLegacyLogo();
@@ -46,7 +52,7 @@ export default function ForgetPage() {
   const onSendCode = async (recaptchaData?: string) => {
     try {
       const sent = await sendCode({
-        email: emailRef.current!.value,
+        email: readFormValue(formRef.current, 'email'),
         isforget: 1,
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
@@ -57,123 +63,110 @@ export default function ForgetPage() {
   };
 
   const onForget = async () => {
-    const password = passwordRef.current!.value;
-    if (password !== confirmPasswordRef.current!.value) {
+    const password = readFormValue(formRef.current, 'password');
+    if (password !== readFormValue(formRef.current, 'confirm_password')) {
       toast.error('请求失败', { description: '两次密码输入不同' });
       return;
     }
     try {
       await forget({
-        email: emailRef.current!.value,
+        email: readFormValue(formRef.current, 'email'),
         password,
-        email_code: emailCodeRef.current!.value,
+        email_code: readFormValue(formRef.current, 'email_code'),
       });
       navigate('/login');
     } catch {}
   };
 
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void onForget();
+  };
+
   return (
     <>
-      <div
-        className="block block-rounded block-transparent block-fx-pop w-100 mb-0 overflow-hidden bg-image"
-        style={{ boxShadow: '0 0.5rem 2rem #0000000d' }}
-      >
-        <div className="row no-gutters">
-          <div className="col-md-12 order-md-1 bg-white">
-            <div className="block-content block-content-full px-lg-4 py-md-4 py-lg-4">
-              <div className="mb-3 text-center">
-                <a className="font-size-h1" ref={legacyHref()}>
-                  {logo ? (
-                    <img className="v2board-logo mb-3" src={logo} />
-                  ) : (
-                    <span className="text-dark">{title || 'V2Board'}</span>
-                  )}
-                </a>
-                {description && <p className="font-size-sm text-muted mb-3">{description}</p>}
-              </div>
-              <div className="form-group">
-                <input
-                  type="text"
-                  className="form-control form-control-alt"
-                  placeholder={t('auth.email')}
-                  ref={emailRef}
-                />
-              </div>
-              <div className="form-group form-row">
-                <div className="col-9">
-                  <input
-                    type="text"
-                    className="form-control form-control-alt"
-                    placeholder={t('auth.email_code')}
-                    ref={emailCodeRef}
+      <Card className="v2board-forget-card">
+        <form ref={formRef} noValidate onSubmit={submit}>
+          <CardBody>
+            <div className="tw:mb-7 tw:text-center">
+              {logo ? (
+                <h1 className="tw:m-0">
+                  <img
+                    className="v2board-logo tw:mx-auto tw:h-11 tw:w-auto"
+                    src={logo}
+                    alt={title || 'V2Board'}
                   />
-                </div>
-                <div className="col-3">
-                  <button
-                    type="submit"
-                    disabled={cooldown !== 60 || isSendingCode}
-                    className="btn btn-block btn-primary"
-                    onClick={() => runRecaptcha(onSendCode)}
-                  >
-                    {cooldown === 60
-                      ? isSendingCode
-                        ? <LegacyLoadingIcon />
-                        : t('auth.send_code')
-                      : cooldown}
-                  </button>
-                </div>
-              </div>
-              <div className="form-group">
-                <input
-                  type="password"
-                  className="form-control form-control-alt"
-                  placeholder={t('auth.password')}
-                  ref={passwordRef}
-                />
-              </div>
-              <div className="form-group">
-                <input
-                  type="password"
-                  className="form-control form-control-alt"
-                  placeholder={t('auth.password')}
-                  ref={confirmPasswordRef}
-                />
-              </div>
-              <div className="form-group mb-0">
-                <button
-                  disabled={isPending}
-                  type="submit"
-                  className="btn btn-block btn-primary font-w400"
-                  onClick={() => void onForget()}
-                >
-                  {isPending ? (
-                    <LegacyLoadingIcon />
-                  ) : (
-                    <span>
-                      <i className="si si-support mr-1" />
-                      {t('auth.submit_reset')}
-                    </span>
-                  )}
-                </button>
-              </div>
+                </h1>
+              ) : (
+                <h1 className="v2board-login-title tw:text-2xl tw:font-semibold tw:tracking-tight">
+                  {title || 'V2Board'}
+                </h1>
+              )}
+              {description ? (
+                <p className="tw:mt-2 tw:text-sm tw:text-foreground-muted">{description}</p>
+              ) : null}
             </div>
-          </div>
-        </div>
-        <div className="text-left bg-gray-lighter p-3 px-4">
+
+            <div className="tw:space-y-5">
+              <FormField id="forget-email" label={t('auth.email')}>
+                <Input type="email" name="email" autoComplete="username" />
+              </FormField>
+
+              <div className="tw:flex tw:items-end tw:gap-2">
+                <FormField id="forget-email-code" label={t('auth.email_code')} className="tw:flex-1">
+                  <Input type="text" name="email_code" inputMode="numeric" />
+                </FormField>
+                <Button
+                  type="button"
+                  disabled={cooldown !== 60 || isSendingCode}
+                  loading={isSendingCode}
+                  onClick={() => runRecaptcha(onSendCode)}
+                  className="tw:min-w-20"
+                >
+                  {cooldown === 60 ? (
+                    <>
+                      <Mail aria-hidden="true" className="tw:size-4" />
+                      {t('auth.send_code')}
+                    </>
+                  ) : (
+                    cooldown
+                  )}
+                </Button>
+              </div>
+
+              <FormField id="forget-password" label={t('auth.password')}>
+                <PasswordField name="password" autoComplete="new-password" />
+              </FormField>
+              <FormField id="forget-confirm-password" label={t('auth.password')}>
+                <PasswordField name="confirm_password" autoComplete="new-password" />
+              </FormField>
+
+              <Button
+                type="submit"
+                block
+                loading={isPending}
+                disabled={isPending}
+                className="tw:ring-offset-surface"
+              >
+                <KeyRound aria-hidden="true" className="tw:size-4" />
+                {t('auth.submit_reset')}
+              </Button>
+            </div>
+          </CardBody>
+        </form>
+
+        <CardFooter>
           <a
-            className="font-size-sm text-muted"
-            ref={legacyHref()}
-            onClick={() => navigate('/login')}
+            className="tw:rounded tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2 tw:ring-offset-surface"
+            href="#/login"
           >
             {t('auth.return_to_login')}
           </a>
-          <LanguageMenu
-            legacyIcon
-            showLabel
-            triggerClassName="v2board-login-i18n-btn"
-          />
-        </div>
-      </div>
+          <div className="tw:ml-auto">
+            <LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />
+          </div>
+        </CardFooter>
+      </Card>
       {recaptchaModal}
     </>
   );

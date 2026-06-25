@@ -35,7 +35,7 @@ function renderGuest(path: string) {
   );
 }
 
-describe('GuestLayout bundled-theme auth shell', () => {
+describe('GuestLayout auth shell', () => {
   it('derives the bundled background_url image from a typed ternary (no unsound cast)', () => {
     expect(guestLayoutSource).toContain(
       'const legacyBackgroundImage = backgroundUrl ? `url(${backgroundUrl})` : undefined;',
@@ -43,28 +43,7 @@ describe('GuestLayout bundled-theme auth shell', () => {
     expect(guestLayoutSource).not.toContain('`url(${backgroundUrl})`) as string');
   });
 
-  it('renders the old auth page container, background, centered box, and child outlet', () => {
-    mocks.backgroundUrl = 'https://cdn.example.test/bg.jpg';
-    const html = renderGuest('/register');
-
-    expect(html).toContain('id="page-container"');
-    expect(html).toContain('id="main-container"');
-    expect(html).toContain('class="v2board-background"');
-    expect(html).toContain('style="background-image:url(https://cdn.example.test/bg.jpg)"');
-    expect(html).toContain('class="no-gutters v2board-auth-box"');
-    expect(html).toContain('style="max-width:450px;width:100%;margin:auto"');
-    expect(html).toContain('class="mx-2 mx-sm-0"');
-    expect(html).toContain('class="guest-probe"');
-  });
-
-  it('keeps the old empty class attribute for register and forgetpassword auth boxes only', () => {
-    mocks.backgroundUrl = 'https://cdn.example.test/bg.jpg';
-    expect(renderGuest('/register')).toContain('<div class="" style="max-width:450px;width:100%;margin:auto">');
-    expect(renderGuest('/forgetpassword')).toContain('<div class="" style="max-width:450px;width:100%;margin:auto">');
-    expect(renderGuest('/login')).not.toContain('<div class="" style="max-width:450px;width:100%;margin:auto">');
-  });
-
-  describe('redesigned /login chrome (route-isolated 2026 reskin)', () => {
+  describe('redesigned auth chrome (route-isolated 2026 reskin)', () => {
     it('renders the modern gradient backdrop and drops the legacy background + operator image', () => {
       mocks.backgroundUrl = 'https://cdn.example.test/bg.jpg';
       const html = renderGuest('/login');
@@ -84,11 +63,15 @@ describe('GuestLayout bundled-theme auth shell', () => {
       expect(html).not.toContain('background-image');
     });
 
-    it('keeps the 2026 presentation hooks off the still-pixel-gated register/forget chrome', () => {
-      expect(renderGuest('/register')).not.toContain('v2board-login-surface');
-      expect(renderGuest('/register')).not.toContain('v2board-login-aurora');
-      expect(renderGuest('/forgetpassword')).not.toContain('v2board-login-surface');
-      expect(renderGuest('/forgetpassword')).not.toContain('v2board-login-aurora');
+    it('uses the same 2026 presentation hooks for register and forgetpassword', () => {
+      for (const path of ['/login', '/register', '/forgetpassword']) {
+        const html = renderGuest(path);
+        expect(html).toContain('v2board-login-surface');
+        expect(html).toContain('v2board-login-frame');
+        expect((html.match(/v2board-login-aurora/g) ?? []).length).toBe(2);
+        expect(html).not.toContain('class="v2board-background"');
+        expect(html).not.toContain('background-image');
+      }
     });
 
     it('keeps exactly one auth box and adds no page-level button (behavior-gate contract)', () => {

@@ -262,7 +262,7 @@ describe('LanguageMenu antd dropdown behavior', () => {
     }
   });
 
-  it('renders the redesigned /login trigger as a native button that opens on click and closes on Escape', () => {
+  it('renders the redesigned auth trigger as a native button with a Radix menu', () => {
     act(() => {
       root.render(<LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />);
     });
@@ -291,13 +291,22 @@ describe('LanguageMenu antd dropdown behavior', () => {
       }) as DOMRect;
 
     act(() => {
+      trigger.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    });
+    act(() => {
       trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    expect(document.body.querySelector('.ant-dropdown-menu')).not.toBeNull();
+    expect(document.body.querySelector('.ant-dropdown-menu')).toBeNull();
+    expect(document.body.querySelector('.v2board-language-menu-content')).not.toBeNull();
+    expect(
+      [...document.body.querySelectorAll('.v2board-language-menu-item')].map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(['English', '简体中文']);
 
-    // Escape dismisses the open overlay from the keyboard (the click-outside handler is pointer-only).
+    // Escape dismisses through Radix keyboard handling.
     act(() => {
       trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });

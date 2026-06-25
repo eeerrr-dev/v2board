@@ -48,6 +48,7 @@ const crc32Table = Array.from({ length: 256 }, (_, value) => {
   }
   return current >>> 0;
 });
+const languageMenuItemSelector = '.ant-dropdown-menu-item, .v2board-language-menu-item';
 
 function normalizeParityText(value) {
   return String(value ?? '')
@@ -62,8 +63,8 @@ const scenarios = [
   // user-login*. The behavior gate still holds via the user-home-root-page-state interaction.
   { label: 'user-home-root', path: '/#/', readySelector: '.v2board-auth-box', visualRetired: true },
   { label: 'user-login', path: '/#/login', visualRetired: true },
-  { label: 'user-register-rich', path: '/#/register?code=INVITE2026' },
-  { label: 'user-forget', path: '/#/forgetpassword' },
+  { label: 'user-register-rich', path: '/#/register?code=INVITE2026', visualRetired: true },
+  { label: 'user-forget', path: '/#/forgetpassword', visualRetired: true },
   {
     authenticated: true,
     label: 'user-dashboard',
@@ -622,8 +623,9 @@ const scenarios = [
     label: 'user-register-rich-zh-tw',
     locale: 'zh-TW',
     path: '/#/register?code=INVITE2026',
+    visualRetired: true,
   },
-  { label: 'user-forget-zh-tw', locale: 'zh-TW', path: '/#/forgetpassword' },
+  { label: 'user-forget-zh-tw', locale: 'zh-TW', path: '/#/forgetpassword', visualRetired: true },
   {
     authenticated: true,
     label: 'user-dashboard-zh-tw',
@@ -720,8 +722,9 @@ const scenarios = [
     label: 'user-register-rich-en-us',
     locale: 'en-US',
     path: '/#/register?code=INVITE2026',
+    visualRetired: true,
   },
-  { label: 'user-forget-en-us', locale: 'en-US', path: '/#/forgetpassword' },
+  { label: 'user-forget-en-us', locale: 'en-US', path: '/#/forgetpassword', visualRetired: true },
   {
     authenticated: true,
     label: 'user-dashboard-en-us',
@@ -955,11 +958,13 @@ const scenarios = [
     label: 'user-register-rich-ja-jp',
     locale: 'ja-JP',
     path: '/#/register?code=INVITE2026',
+    visualRetired: true,
   },
   {
     label: 'user-forget-ja-jp',
     locale: 'ja-JP',
-    path: '/#/forgetpassword'
+    path: '/#/forgetpassword',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1194,11 +1199,13 @@ const scenarios = [
     label: 'user-register-rich-vi-vn',
     locale: 'vi-VN',
     path: '/#/register?code=INVITE2026',
+    visualRetired: true,
   },
   {
     label: 'user-forget-vi-vn',
     locale: 'vi-VN',
-    path: '/#/forgetpassword'
+    path: '/#/forgetpassword',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1433,11 +1440,13 @@ const scenarios = [
     label: 'user-register-rich-ko-kr',
     locale: 'ko-KR',
     path: '/#/register?code=INVITE2026',
+    visualRetired: true,
   },
   {
     label: 'user-forget-ko-kr',
     locale: 'ko-KR',
-    path: '/#/forgetpassword'
+    path: '/#/forgetpassword',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -4571,21 +4580,23 @@ function withoutDroppedLocale(menuItems) {
 // the submit button, and the register + forget navigation. Admin and still-replica auth surfaces
 // keep the strict runAuthPageStateInteraction (placeholders/brand link still pinned there).
 async function runRedesignedLoginPageStateInteraction(page) {
+  return normalizeRedesignedAuthPageState(page);
+}
+
+async function normalizeRedesignedAuthPageState(page) {
   const state = await authPageState(page);
   const languageTriggerTexts = await visibleTexts(page, '.v2board-login-i18n-btn', 2);
   return {
     ...state,
-    // Released as redesigned accessibility: /login now exposes the language trigger as a native
-    // auxiliary button. Keep comparing the actual submit button, but ignore the language button text
+    // Released as redesigned accessibility: auth surfaces expose language as a native auxiliary
+    // button. Keep comparing the actual submit/action buttons, but ignore the language button text
     // that had no button counterpart in the packaged oracle.
     buttons: state.buttons.filter((text) => !languageTriggerTexts.includes(text)),
     controls: state.controls.map((control) => {
       const behavioral = { ...control };
-      // Released as redesigned presentation: the placeholder became the field label, and the
-      // identifier input was modernized from type="text" to type="email". Collapse email -> text so
-      // that modernization isn't pinned, while password stays distinct so masking is still gated.
-      // Symmetric: the oracle's identifier input is already type="text", so this normalizes both
-      // sides to the same shape rather than re-pinning the old type.
+      // Released as redesigned presentation: placeholders became field labels, and identifier
+      // inputs may be type="email". Collapse email -> text so the behavior contract stays focused
+      // on field presence/order/value while password masking remains distinct.
       delete behavioral.placeholder;
       if (behavioral.type === 'email') behavioral.type = 'text';
       return behavioral;
@@ -4601,27 +4612,27 @@ async function runLoginFormLanguageInteraction(page) {
     'visual@example.com',
   );
   await fillFirstVisible(page, 'input[type="password"]', 'secret123');
-  await clickFirstVisible(page, '.v2board-login-i18n-btn, .ant-dropdown-trigger');
+  await clickFirstVisibleWithPointer(page, '.v2board-login-i18n-btn, .ant-dropdown-trigger');
   await page.waitForTimeout(150);
   return {
     email: await firstInputValue(
       page,
       'input[type="text"], input:not([type]), input[type="email"]',
     ),
-    languageMenuItems: withoutDroppedLocale(await visibleTexts(page, '.ant-dropdown-menu-item', 8)),
+    languageMenuItems: withoutDroppedLocale(await visibleTexts(page, languageMenuItemSelector, 8)),
     password: await firstInputValue(page, 'input[type="password"]'),
   };
 }
 
 async function runLoginLanguagePersistenceInteraction(page) {
   const before = await loginLanguagePersistenceState(page);
-  await clickFirstVisible(page, '.v2board-login-i18n-btn, .ant-dropdown-trigger');
+  await clickFirstVisibleWithPointer(page, '.v2board-login-i18n-btn, .ant-dropdown-trigger');
   await page.waitForTimeout(150);
-  const menuItems = withoutDroppedLocale(await visibleTexts(page, '.ant-dropdown-menu-item', 8));
+  const menuItems = withoutDroppedLocale(await visibleTexts(page, languageMenuItemSelector, 8));
   const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 3_000 }).catch(
     () => undefined,
   );
-  await clickFirstVisibleText(page, '.ant-dropdown-menu-item', ['English']);
+  await clickFirstVisibleText(page, languageMenuItemSelector, ['English']);
   await navigation;
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
   await page.waitForTimeout(500);
@@ -4647,7 +4658,7 @@ async function runRegisterFormStateInteraction(page) {
   await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 0, 'parity-user');
   await fillVisibleAt(page, 'input[type="password"]', 0, 'secret123');
   await fillVisibleAt(page, 'input[type="password"]', 1, 'secret123');
-  return authPageState(page);
+  return normalizeRedesignedAuthPageState(page);
 }
 
 async function runForgetFormStateInteraction(page) {
@@ -4655,7 +4666,7 @@ async function runForgetFormStateInteraction(page) {
   await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 1, '123456');
   await fillVisibleAt(page, 'input[type="password"]', 0, 'secret123');
   await fillVisibleAt(page, 'input[type="password"]', 1, 'secret123');
-  return authPageState(page);
+  return normalizeRedesignedAuthPageState(page);
 }
 
 async function runAdminLoginFormStateInteraction(page) {
@@ -13417,6 +13428,33 @@ async function visibleInputValues(page, selector) {
 
 async function clickFirstVisible(page, selector) {
   await clickVisibleAt(page, selector, 0);
+}
+
+async function clickFirstVisibleWithPointer(page, selector) {
+  const point = await page.evaluate((targetSelector) => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        !element.closest('.ant-dropdown-hidden')
+      );
+    };
+    const element = Array.from(document.querySelectorAll(targetSelector)).find(isVisible);
+    if (!element) {
+      throw new Error(`No visible element ${targetSelector}`);
+    }
+    element.scrollIntoView({ block: 'center', inline: 'center' });
+    const rect = element.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
+  }, selector);
+  await page.mouse.click(point.x, point.y);
 }
 
 async function focusFirstVisible(page, selector) {

@@ -15,9 +15,11 @@ const mocks = vi.hoisted(() => ({
   labels: {
     'auth.email': '邮箱',
     'auth.email_code': '邮箱验证码',
+    'auth.hide_password': '隐藏密码',
     'auth.password': '密码',
     'auth.return_to_login': '返回登入',
     'auth.send_code': '发送',
+    'auth.show_password': '显示密码',
     'auth.submit_reset': '重置密码',
   } as Record<string, string>,
   navigate: vi.fn(),
@@ -38,19 +40,15 @@ vi.mock('react-router-dom', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    i18n: { language: 'zh-CN' },
     t: (key: string) => mocks.labels[key] ?? key,
   }),
 }));
 
 vi.mock('@/components/layout/language-menu', () => ({
   LanguageMenu: () => (
-    <span className="v2board-login-i18n-btn">
-      <i className="si si-globe pr-1" />
-      <span className="font-size-sm text-muted" style={{ verticalAlign: 'text-bottom' }}>
-        简体中文
-      </span>
-    </span>
+    <button type="button" className="v2board-login-i18n-btn">
+      简体中文
+    </button>
   ),
 }));
 
@@ -118,34 +116,30 @@ async function flushPromises() {
   });
 }
 
-describe('ForgetPage bundled-theme markup', () => {
+describe('ForgetPage modern markup', () => {
   beforeEach(resetMocks);
 
-  it('renders the original reset form, send-code row, footer, and language trigger', () => {
+  it('renders the reskinned reset card, labels, footer, and language trigger', () => {
     const html = renderToStaticMarkup(<ForgetPage />);
 
-    expect(html).toContain(
-      'block block-rounded block-transparent block-fx-pop w-100 mb-0 overflow-hidden bg-image',
-    );
-    expect(html).toContain('class="row no-gutters"');
-    expect(html).toContain('class="col-md-12 order-md-1 bg-white"');
-    expect(html).toContain('placeholder="邮箱"');
-    expect(html).toContain('class="form-group form-row"');
-    expect(html).toContain('class="col-9"');
-    expect(html).toContain('placeholder="邮箱验证码"');
-    expect(html).toContain('class="col-3"');
-    expect(html).toContain('class="btn btn-block btn-primary">发送</button>');
-    expect(html.match(/placeholder="密码"/g)).toHaveLength(2);
-    expect(html).toContain('class="si si-support mr-1"');
+    expect(html).toContain('v2board-forget-card');
+    expect(html).toContain('tw:rounded-card');
+    expect(html).toContain('>V2Board</h1>');
+    expect(html).toContain('邮箱');
+    expect(html).toContain('邮箱验证码');
+    expect(html.match(/>密码</g)).toHaveLength(2);
     expect(html).toContain('重置密码');
-    expect(html).toContain('class="text-left bg-gray-lighter p-3 px-4"');
     expect(html).toContain('返回登入');
+    expect(html).toContain('href="#/login"');
     expect(html).toContain('class="v2board-login-i18n-btn"');
-    expect(html).toContain('简体中文');
+    expect(html).not.toContain('block block-rounded');
+    expect(html).not.toContain('form-control');
+    expect(html).not.toContain('btn btn-block');
+    expect(html).not.toContain('placeholder=');
   });
 });
 
-describe('ForgetPage bundled-theme behavior', () => {
+describe('ForgetPage behavior', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -170,15 +164,14 @@ describe('ForgetPage bundled-theme behavior', () => {
     });
   }
 
-  it('sends the old forgot-password verification payload and starts the countdown', async () => {
+  it('sends the forgot-password verification payload and starts the countdown', async () => {
     vi.useFakeTimers();
     mocks.config = { is_recaptcha: true };
     await renderForget();
 
-    container.querySelector<HTMLInputElement>('input[placeholder="邮箱"]')!.value =
-      'reset@example.com';
-    const sendButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '发送',
+    container.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'reset@example.com';
+    const sendButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('发送'),
     )!;
 
     await act(async () => {
@@ -206,18 +199,16 @@ describe('ForgetPage bundled-theme behavior', () => {
     expect(sendButton.disabled).toBe(true);
   });
 
-  it('shows the original password mismatch toast without resetting', async () => {
+  it('shows the password mismatch toast without resetting', async () => {
     await renderForget();
 
-    const passwordInputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="password"]'));
-    passwordInputs[0]!.value = 'one';
-    passwordInputs[1]!.value = 'two';
+    container.querySelector<HTMLInputElement>('input[name="password"]')!.value = 'one';
+    container.querySelector<HTMLInputElement>('input[name="confirm_password"]')!.value = 'two';
 
-    const submit = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '重置密码',
-    )!;
     await act(async () => {
-      submit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.querySelector('form')!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
       await Promise.resolve();
     });
     await flushPromises();
@@ -228,21 +219,18 @@ describe('ForgetPage bundled-theme behavior', () => {
     expect(mocks.forgetMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('resets with the exact old payload and returns to login after success', async () => {
+  it('resets with the exact payload and returns to login after success', async () => {
     await renderForget();
 
-    container.querySelector<HTMLInputElement>('input[placeholder="邮箱"]')!.value =
-      'reset@example.com';
-    container.querySelector<HTMLInputElement>('input[placeholder="邮箱验证码"]')!.value = '123456';
-    const passwordInputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="password"]'));
-    passwordInputs[0]!.value = 'secret';
-    passwordInputs[1]!.value = 'secret';
+    container.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'reset@example.com';
+    container.querySelector<HTMLInputElement>('input[name="email_code"]')!.value = '123456';
+    container.querySelector<HTMLInputElement>('input[name="password"]')!.value = 'secret';
+    container.querySelector<HTMLInputElement>('input[name="confirm_password"]')!.value = 'secret';
 
-    const submit = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '重置密码',
-    )!;
     await act(async () => {
-      submit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.querySelector('form')!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
       await Promise.resolve();
     });
     await flushPromises();
@@ -256,37 +244,22 @@ describe('ForgetPage bundled-theme behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 
-  it('keeps the original forgot-password values as direct ref reads', () => {
-    expect(source).toContain('email: emailRef.current!.value');
-    expect(source).toContain('const password = passwordRef.current!.value;');
-    expect(source).toContain('password !== confirmPasswordRef.current!.value');
-    expect(source).toContain('email_code: emailCodeRef.current!.value');
-    expect(source).not.toContain("emailRef.current?.value ?? ''");
-    expect(source).not.toContain("passwordRef.current?.value ?? ''");
-    expect(source).not.toContain("confirmPasswordRef.current?.value ?? ''");
-    expect(source).not.toContain("emailCodeRef.current?.value ?? ''");
+  it('reads submitted values from FormData instead of retired field refs', () => {
+    expect(source).toContain('new FormData(form)');
+    expect(source).toContain("readFormValue(formRef.current, 'email')");
+    expect(source).toContain("readFormValue(formRef.current, 'password')");
+    expect(source).toContain("readFormValue(formRef.current, 'confirm_password')");
+    expect(source).toContain("readFormValue(formRef.current, 'email_code')");
+    expect(source).not.toContain('emailRef');
+    expect(source).not.toContain('passwordRef');
+    expect(source).not.toContain('confirmPasswordRef');
+    expect(source).not.toContain('emailCodeRef');
   });
 
-  it('keeps the old recursive countdown timer without unmount cleanup', () => {
+  it('keeps the recursive countdown timer without unmount cleanup', () => {
     expect(source).toContain('const cooldownRef = useRef(60);');
     expect(source).toContain('const startSendEmailVerifyCountdown = () => {');
     expect(source).toContain('startSendEmailVerifyCountdown();');
     expect(source).not.toContain('clearTimeout');
-  });
-
-  it('keeps the footer login link as a javascript-style anchor', async () => {
-    await renderForget();
-
-    const link = Array.from(container.querySelectorAll('a')).find(
-      (anchor) => anchor.textContent === '返回登入',
-    )!;
-
-    expect(link.getAttribute('href')).toBe('javascript:void(0);');
-
-    await act(async () => {
-      link.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 });

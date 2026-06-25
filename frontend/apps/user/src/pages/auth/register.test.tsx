@@ -15,12 +15,14 @@ const mocks = vi.hoisted(() => ({
   labels: {
     'auth.email': '邮箱',
     'auth.email_code': '邮箱验证码',
+    'auth.hide_password': '隐藏密码',
     'auth.invite_code': '邀请码',
     'auth.invite_code_optional': '邀请码(选填)',
     'auth.password': '密码',
     'auth.password_mismatch': '两次密码输入不同',
     'auth.return_to_login': '返回登入',
     'auth.send_code': '发送',
+    'auth.show_password': '显示密码',
     'auth.submit_register': '注册',
     'auth.tos_html': '我已阅读并同意 <a target="_blank" href="{url}">服务条款</a>',
     'auth.tos_required': '请同意服务条款',
@@ -52,12 +54,9 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('@/components/layout/language-menu', () => ({
   LanguageMenu: () => (
-    <span className="v2board-login-i18n-btn">
-      <i className="si si-globe pr-1" />
-      <span className="font-size-sm text-muted" style={{ verticalAlign: 'text-bottom' }}>
-        简体中文
-      </span>
-    </span>
+    <button type="button" className="v2board-login-i18n-btn">
+      简体中文
+    </button>
   ),
 }));
 
@@ -100,15 +99,6 @@ vi.mock('@/lib/errors', () => ({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-const originalConsoleError = console.error.bind(console);
-
-function suppressLegacyCheckboxWarning() {
-  return vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-    if (String(args[0]).includes('checked` prop to a form field')) return;
-    originalConsoleError(...args);
-  });
-}
-
 function resetMocks() {
   mocks.config = {
     email_whitelist_suffix: undefined,
@@ -144,64 +134,47 @@ async function flushPromises() {
   });
 }
 
-describe('RegisterPage bundled-theme config loading', () => {
-  let container: HTMLDivElement;
-  let root: Root;
+describe('RegisterPage modern markup', () => {
+  beforeEach(resetMocks);
 
-  beforeEach(() => {
-    resetMocks();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
-  it('renders the form while the guest config dispatch equivalent is loading', () => {
-    mocks.config = undefined;
-    mocks.isFetching = true;
+  it('renders the reskinned register card, labels, footer link, and language trigger', () => {
+    mocks.config = {
+      email_whitelist_suffix: ['example.com', 'mail.test'],
+      is_email_verify: true,
+      is_invite_force: true,
+      is_recaptcha: true,
+      tos_url: 'https://terms.example',
+    };
+    mocks.params = new URLSearchParams('code=INVITE123');
 
     const html = renderToStaticMarkup(<RegisterPage />);
 
-    expect(html).toContain('placeholder="邮箱"');
-    expect(html).toContain('placeholder="密码"');
-    expect(html).toContain('placeholder="邀请码(选填)"');
-    expect(html).toContain('class="si si-emoticon-smile mr-1"');
-    expect(html).toContain('注册');
-    expect(html).not.toContain('spinner-grow');
-    expect(html).not.toContain('Loading...');
-  });
-
-  it('switches to the original centered spinner after mount while guest config is fetching', async () => {
-    mocks.config = undefined;
-    mocks.isFetching = true;
-
-    await act(async () => {
-      root.render(<RegisterPage />);
-      await Promise.resolve();
-    });
-
-    expect(container.innerHTML).toContain('content content-full text-center');
-    expect(container.innerHTML).toContain('spinner-grow text-primary');
-    expect(container.innerHTML).toContain('Loading...');
-    expect(container.innerHTML).not.toContain('placeholder="邮箱"');
-    expect(container.innerHTML).not.toContain('placeholder="密码"');
-    expect(container.innerHTML).not.toContain('placeholder="邀请码(选填)"');
+    expect(html).toContain('v2board-register-card');
+    expect(html).toContain('tw:rounded-card');
+    expect(html).toContain('>V2Board</h1>');
+    expect(html).toContain('邮箱');
+    expect(html).toContain('<option value="example.com" selected="">@example.com</option>');
+    expect(html).toContain('邮箱验证码');
+    expect(html).toContain('邀请码');
+    expect(html).toContain('disabled=""');
+    expect(html).toContain('value="INVITE123"');
+    expect(html).toContain('href="https://terms.example"');
+    expect(html).toContain('返回登入');
+    expect(html).toContain('href="#/login"');
+    expect(html).toContain('class="v2board-login-i18n-btn"');
+    expect(html).not.toContain('block block-rounded');
+    expect(html).not.toContain('form-control');
+    expect(html).not.toContain('btn btn-block');
+    expect(html).not.toContain('placeholder=');
   });
 });
 
-describe('RegisterPage bundled-theme form and behavior', () => {
+describe('RegisterPage behavior', () => {
   let container: HTMLDivElement;
-  let consoleErrorSpy: ReturnType<typeof suppressLegacyCheckboxWarning>;
   let root: Root;
 
   beforeEach(() => {
     resetMocks();
-    consoleErrorSpy = suppressLegacyCheckboxWarning();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -209,7 +182,6 @@ describe('RegisterPage bundled-theme form and behavior', () => {
 
   afterEach(() => {
     act(() => root.unmount());
-    consoleErrorSpy.mockRestore();
     vi.useRealTimers();
     container.remove();
     document.body.innerHTML = '';
@@ -222,37 +194,17 @@ describe('RegisterPage bundled-theme form and behavior', () => {
     });
   }
 
-  it('renders the old whitelist, email-code, invite-code, TOS, footer, and i18n markup', () => {
-    mocks.config = {
-      email_whitelist_suffix: ['example.com', 'mail.test'],
-      is_email_verify: true,
-      is_invite_force: true,
-      is_recaptcha: true,
-      tos_url: 'https://terms.example',
-    };
-    mocks.params = new URLSearchParams('code=INVITE123');
+  it('switches to the modern centered spinner after mount while guest config is fetching', async () => {
+    mocks.config = undefined;
+    mocks.isFetching = true;
 
-    const html = renderToStaticMarkup(<RegisterPage />);
+    await renderRegister();
 
-    expect(html).toContain(
-      'block block-rounded block-transparent block-fx-pop w-100 mb-0 overflow-hidden bg-image',
-    );
-    expect(html).toContain('form-group v2board-email-whitelist-enable');
-    expect(html).toContain('<option value="example.com" selected="">@example.com</option>');
-    expect(html).toContain('placeholder="邮箱验证码"');
-    expect(html).toContain('class="btn btn-block btn-primary font-w400"');
-    expect(html).toContain('placeholder="邀请码"');
-    expect(html).toContain('disabled=""');
-    expect(html).toContain('value="INVITE123"');
-    expect(html).toContain('custom-control custom-checkbox custom-control-primary');
-    expect(html).toContain('href="https://terms.example"');
-    expect(html).toContain('class="si si-emoticon-smile mr-1"');
-    expect(html).toContain('返回登入');
-    expect(html).toContain('class="v2board-login-i18n-btn"');
-    expect(html).toContain('简体中文');
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+    expect(container.querySelector('input[name="email"]')).toBeNull();
   });
 
-  it('sends the old email-verify payload and starts the 60-second countdown after success', async () => {
+  it('sends the email-verify payload and starts the 60-second countdown after success', async () => {
     vi.useFakeTimers();
     mocks.config = {
       email_whitelist_suffix: ['example.com', 'mail.test'],
@@ -263,16 +215,15 @@ describe('RegisterPage bundled-theme form and behavior', () => {
 
     await renderRegister();
 
-    const email = container.querySelector<HTMLInputElement>('input[placeholder="邮箱"]')!;
-    email.value = 'user';
+    container.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'user';
     const select = container.querySelector<HTMLSelectElement>('select')!;
     select.value = 'mail.test';
     await act(async () => {
       select.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
-    const sendButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '发送',
+    const sendButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('发送'),
     )!;
     await act(async () => {
       sendButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -299,16 +250,15 @@ describe('RegisterPage bundled-theme form and behavior', () => {
     expect(sendButton.disabled).toBe(true);
   });
 
-  it('shows the old password mismatch toast without registering', async () => {
+  it('shows the password mismatch toast without registering', async () => {
     await renderRegister();
 
-    const passwordInputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="password"]'));
-    passwordInputs[0]!.value = 'one';
-    passwordInputs[1]!.value = 'two';
+    container.querySelector<HTMLInputElement>('input[name="password"]')!.value = 'one';
+    container.querySelector<HTMLInputElement>('input[name="confirm_password"]')!.value = 'two';
 
     await act(async () => {
-      container.querySelector('button.btn-primary')!.dispatchEvent(
-        new MouseEvent('click', { bubbles: true }),
+      container.querySelector('form')!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
       );
       await Promise.resolve();
     });
@@ -320,7 +270,7 @@ describe('RegisterPage bundled-theme form and behavior', () => {
     expect(mocks.registerMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('keeps the original TOS-disabled register button until the checkbox is clicked', async () => {
+  it('keeps the TOS-disabled register button until the checkbox is clicked', async () => {
     mocks.config = {
       email_whitelist_suffix: undefined,
       is_email_verify: false,
@@ -346,7 +296,7 @@ describe('RegisterPage bundled-theme form and behavior', () => {
     expect(submit.disabled).toBe(false);
   });
 
-  it('registers with the exact old payload and returns to login after success', async () => {
+  it('registers with the exact payload and returns to login after success', async () => {
     mocks.config = {
       email_whitelist_suffix: ['example.com'],
       is_email_verify: true,
@@ -357,12 +307,11 @@ describe('RegisterPage bundled-theme form and behavior', () => {
 
     await renderRegister();
 
-    container.querySelector<HTMLInputElement>('input[placeholder="邮箱"]')!.value = 'new-user';
-    container.querySelector<HTMLInputElement>('input[placeholder="邮箱验证码"]')!.value = '123456';
-    const passwordInputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="password"]'));
-    passwordInputs[0]!.value = 'secret';
-    passwordInputs[1]!.value = 'secret';
-    container.querySelector<HTMLInputElement>('input[placeholder="邀请码(选填)"]')!.value = 'INVITE';
+    container.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'new-user';
+    container.querySelector<HTMLInputElement>('input[name="email_code"]')!.value = '123456';
+    container.querySelector<HTMLInputElement>('input[name="password"]')!.value = 'secret';
+    container.querySelector<HTMLInputElement>('input[name="confirm_password"]')!.value = 'secret';
+    container.querySelector<HTMLInputElement>('input[name="invite_code"]')!.value = 'INVITE';
 
     await act(async () => {
       container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.dispatchEvent(
@@ -371,11 +320,10 @@ describe('RegisterPage bundled-theme form and behavior', () => {
       await Promise.resolve();
     });
 
-    const submit = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '注册',
-    )!;
     await act(async () => {
-      submit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.querySelector('form')!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
       await Promise.resolve();
     });
     await flushPromises();
@@ -390,39 +338,20 @@ describe('RegisterPage bundled-theme form and behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 
-  it('keeps the original register values as direct ref reads', () => {
-    expect(source).toContain('const email = emailRef.current!.value;');
-    expect(source).toContain('const password = passwordRef.current!.value;');
-    expect(source).toContain('password !== confirmPasswordRef.current!.value');
-    expect(source).toContain('invite_code: inviteCodeRef.current!.value');
-    expect(source).toContain("email_code: config?.is_email_verify ? emailCodeRef.current!.value : ''");
-    expect(source).not.toContain("emailRef.current?.value ?? ''");
-    expect(source).not.toContain("passwordRef.current?.value ?? ''");
-    expect(source).not.toContain("confirmPasswordRef.current?.value ?? ''");
-    expect(source).not.toContain("inviteCodeRef.current?.value ?? ''");
-    expect(source).not.toContain("emailCodeRef.current?.value ?? ''");
+  it('reads submitted values from FormData instead of retired field refs', () => {
+    expect(source).toContain('new FormData(form)');
+    expect(source).toContain("readFormValue(formRef.current, 'email')");
+    expect(source).toContain("readFormValue(formRef.current, 'password')");
+    expect(source).toContain("readFormValue(formRef.current, 'confirm_password')");
+    expect(source).not.toContain('emailRef');
+    expect(source).not.toContain('passwordRef');
+    expect(source).not.toContain('confirmPasswordRef');
   });
 
-  it('keeps the old recursive countdown timer without unmount cleanup', () => {
+  it('keeps the recursive countdown timer without unmount cleanup', () => {
     expect(source).toContain('const cooldownRef = useRef(60);');
     expect(source).toContain('const startSendEmailVerifyCountdown = () => {');
     expect(source).toContain('startSendEmailVerifyCountdown();');
     expect(source).not.toContain('clearTimeout');
-  });
-
-  it('keeps the footer login link as a javascript-style anchor', async () => {
-    await renderRegister();
-
-    const link = Array.from(container.querySelectorAll('a')).find(
-      (anchor) => anchor.textContent === '返回登入',
-    )!;
-
-    expect(link.getAttribute('href')).toBe('javascript:void(0);');
-
-    await act(async () => {
-      link.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 });

@@ -4,10 +4,10 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type KeyboardEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Languages } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { legacyGetLocale, legacySetLocale, SUPPORTED_LOCALES } from '@v2board/i18n';
 import { setLegacyCookie } from '@/lib/legacy-cookie';
 import { useTransitionStatus } from '@/lib/use-transition-status';
@@ -29,9 +29,8 @@ interface LanguageMenuProps {
   triggerClassName?: string;
   legacyIcon?: boolean;
   /**
-   * Redesigned (2026 reskin) trigger: a token-driven, keyboard-operable control for the redesigned
-   * /login surface. The legacy `legacyIcon` span path is kept verbatim for the still-pixel-gated
-   * register/forgetpassword/header siblings.
+   * Redesigned auth trigger: token-driven native button + Radix menu. The legacy `legacyIcon` span
+   * path is kept verbatim for surfaces still pinned to the packaged oracle.
    */
   reskin?: boolean;
   placement?: 'topCenter' | 'bottomCenter';
@@ -105,11 +104,13 @@ export function LanguageMenu({
   }, [placement]);
 
   useLayoutEffect(() => {
+    if (reskin) return;
     if (dropdownStatus === 'exited' || !coords || !popupRef.current) return;
     reposition();
-  }, [coords, dropdownStatus, reposition]);
+  }, [coords, dropdownStatus, reposition, reskin]);
 
   useEffect(() => {
+    if (reskin) return;
     if (!open) return;
     reposition();
     window.addEventListener('scroll', reposition, true);
@@ -118,9 +119,10 @@ export function LanguageMenu({
       window.removeEventListener('scroll', reposition, true);
       window.removeEventListener('resize', reposition);
     };
-  }, [open, reposition]);
+  }, [open, reposition, reskin]);
 
   useEffect(() => {
+    if (reskin) return;
     if (!open) return;
     const close = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -129,7 +131,7 @@ export function LanguageMenu({
     };
     document.addEventListener('click', close);
     return () => document.removeEventListener('click', close);
-  }, [open]);
+  }, [open, reskin]);
 
   const handleLocaleItemNativeSelect = useCallback(
     (event: MouseEvent) => {
@@ -192,42 +194,47 @@ export function LanguageMenu({
   const triggerClass = `${triggerClassName ?? (showLabel ? 'v2board-login-i18n-btn' : 'btn')} ant-dropdown-trigger${
     open ? ' ant-dropdown-open' : ''
   }`;
+  const reskinTriggerClass = triggerClassName ?? 'v2board-login-i18n-btn';
   const toggleOpen = () => {
     if (!open) reposition();
     setOpen((value) => !value);
   };
-  const handleTriggerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === 'Escape' && open) {
-      // Dismiss the open overlay from the keyboard (the click-outside handler is pointer-only).
-      event.preventDefault();
-      setOpen(false);
-    }
-  };
 
   if (showLabel && reskin) {
-    // Redesigned /login trigger: a token-driven native button. Enter/Space come from browser button
-    // semantics; Escape dismisses the open overlay. Arrow-key roving over the portaled items is
-    // intentionally NOT reimplemented here: those `<li role="menuitem">` items are shared verbatim
-    // with the still-pixel-gated legacy triggers and stay pointer-activated. The redesigned login
-    // behavior gate releases this auxiliary button while still pinning form and routing contracts.
+    const side = placement === 'bottomCenter' ? 'bottom' : 'top';
     return (
-      <>
-        <button
-          type="button"
-          ref={(element) => {
-            triggerRef.current = element;
-          }}
-          className={`${triggerClass} tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-field tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-sm tw:text-foreground-muted tw:transition tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40`}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={toggleOpen}
-          onKeyDown={handleTriggerKeyDown}
-        >
-          <Languages aria-hidden="true" className="tw:h-4 tw:w-4" />
-          <span>{currentLabel}</span>
-        </button>
-        {popover}
-      </>
+      <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
+        <DropdownMenu.Trigger asChild>
+          <button
+            type="button"
+            className={`${reskinTriggerClass} tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-field tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-sm tw:text-foreground-muted tw:transition tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40`}
+          >
+            <Languages aria-hidden="true" className="tw:h-4 tw:w-4" />
+            <span>{currentLabel}</span>
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="center"
+            side={side}
+            sideOffset={4}
+            className="v2board-language-menu-content tw:z-[1050] tw:min-w-36 tw:rounded-card tw:border tw:border-border tw:bg-surface tw:p-1 tw:text-sm tw:text-foreground tw:shadow-card tw:outline-none"
+          >
+            {locales.map((locale) => (
+              <DropdownMenu.Item
+                key={locale.code}
+                className="v2board-language-menu-item tw:cursor-pointer tw:rounded-field tw:px-3 tw:py-2 tw:outline-none tw:transition tw:hover:bg-muted tw:focus:bg-muted"
+                onSelect={(event) => {
+                  event.preventDefault();
+                  selectLocale(locale.code);
+                }}
+              >
+                {locale.label}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
     );
   }
 
