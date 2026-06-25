@@ -7,6 +7,7 @@ services:
   app:
     build:
       context: .
+      dockerfile: backend/laravel/Dockerfile
     image: v2board-app
     entrypoint:
       - /bin/bash
@@ -15,18 +16,10 @@ services:
         set -e
         if [ ! -f /app/artisan ]; then
           tar \
-            --exclude=.git \
-            --exclude=.claude \
             --exclude=.env \
-            --exclude=docker-compose.yml \
-            --exclude=docker-compose.local.yml \
             --exclude=node_modules \
             --exclude=vendor \
-            --exclude=frontend/node_modules \
-            --exclude=frontend/.pnpm-store \
-            --exclude=frontend/dist \
-            --exclude=frontend/dist-deploy \
-            -C /src -cf - . | tar -C /app -xf -
+            -C /src/backend/laravel -cf - . | tar -C /app -xf -
         fi
         exec /app/docker/entrypoint.sh php -d variables_order=EGPCS artisan serve --host=0.0.0.0 --port=8000
     depends_on:
@@ -50,6 +43,7 @@ services:
   horizon:
     build:
       context: .
+      dockerfile: backend/laravel/Dockerfile
     image: v2board-app
     entrypoint:
       - /bin/bash
@@ -77,6 +71,7 @@ services:
   scheduler:
     build:
       context: .
+      dockerfile: backend/laravel/Dockerfile
     image: v2board-app
     entrypoint:
       - /bin/bash

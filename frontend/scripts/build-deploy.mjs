@@ -165,11 +165,11 @@ try {
   const adminSize = await du(adminOut);
 
   console.log('\n=== Drop-in deployment build complete ===');
-  console.log(`User theme:   ${(userSize / 1024).toFixed(1)} KB  →  public/theme/default/`);
-  console.log(`Admin bundle: ${(adminSize / 1024).toFixed(1)} KB  →  public/assets/admin/`);
+  console.log(`User theme:   ${(userSize / 1024).toFixed(1)} KB  →  backend/laravel/public/theme/default/`);
+  console.log(`Admin bundle: ${(adminSize / 1024).toFixed(1)} KB  →  backend/laravel/public/assets/admin/`);
   console.log('\nDeploy:');
-  console.log(`  rsync -a --delete ${userThemeOut}/ /path/to/v2board/public/theme/default/`);
-  console.log(`  rsync -a --delete ${adminOut}/ /path/to/v2board/public/assets/admin/`);
+  console.log(`  rsync -a --delete ${userThemeOut}/ /path/to/v2board/backend/laravel/public/theme/default/`);
+  console.log(`  rsync -a --delete ${adminOut}/ /path/to/v2board/backend/laravel/public/assets/admin/`);
 } finally {
   if (stageRoot) {
     await rm(stageRoot, { recursive: true, force: true });

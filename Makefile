@@ -220,7 +220,7 @@ doctor:
 	echo "Run 'make deploy-smoke' to test a Docker-only Laravel public deployment."
 
 public-bundle-audit:
-	@artifacts="$$(find public/theme/default/assets public/assets/admin -mindepth 1 -print 2>/dev/null)"; \
+	@artifacts="$$(find backend/laravel/public/theme/default/assets backend/laravel/public/assets/admin -mindepth 1 -print 2>/dev/null)"; \
 	if [ -n "$$artifacts" ]; then \
 		echo "Generated or packaged frontend files found under Laravel public targets:"; \
 		echo "$$artifacts"; \
@@ -233,7 +233,7 @@ public-bundle-audit:
 
 replica-audit:
 	@echo "Auditing runtime/build references to packaged legacy frontend bundles..."
-	@matches="$$(rg -n '/theme/default/assets/(umi|components\.chunk)\.css|/theme/default/assets/(umi\.js|(vendors|components)\.async\.js|env\.example\.js)|/theme/default/assets/(i18n|images|static|theme)/|/assets/admin/components\.chunk\.css|/assets/admin/((vendors|components)\.async\.js|env\.example\.js)|/assets/admin/theme/|\.\./\.\./\.\./public/theme(?:/default/assets)?|\.\./\.\./\.\./public/assets/admin|legacyThemeRoot|copyLegacy|themeRuntimeAssetsPlugin|legacyThemePlugin|legacyAdminAssetsPlugin|copyLegacyAdminAssets' frontend/apps frontend/packages frontend/scripts resources/views public/theme/default/dashboard.blade.php public/theme/default/config.json docker-compose.local.yml --glob '!**/*.test.*' --glob '!frontend/scripts/visual-parity.mjs' || true)"; \
+	@matches="$$(rg -n '/theme/default/assets/(umi|components\.chunk)\.css|/theme/default/assets/(umi\.js|(vendors|components)\.async\.js|env\.example\.js)|/theme/default/assets/(i18n|images|static|theme)/|/assets/admin/components\.chunk\.css|/assets/admin/((vendors|components)\.async\.js|env\.example\.js)|/assets/admin/theme/|\.\./\.\./\.\./public/theme(?:/default/assets)?|\.\./\.\./\.\./public/assets/admin|legacyThemeRoot|copyLegacy|themeRuntimeAssetsPlugin|legacyThemePlugin|legacyAdminAssetsPlugin|copyLegacyAdminAssets' frontend/apps frontend/packages frontend/scripts backend/laravel/resources/views backend/laravel/public/theme/default/dashboard.blade.php backend/laravel/public/theme/default/config.json docker-compose.local.yml --glob '!**/*.test.*' --glob '!frontend/scripts/visual-parity.mjs' || true)"; \
 	if [ -n "$$matches" ]; then \
 		echo "$$matches"; \
 		echo ""; \

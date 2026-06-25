@@ -1,13 +1,4 @@
 /node_modules
-/config/v2board.php
-/public/hot
-/public/storage
-/public/env.example.js
-/public/favicon.ico
-/public/assets/admin/*
-/public/theme/default/assets/*
-/storage/*.key
-/vendor
 .env
 .env.backup
 .phpunit.result.cache
@@ -22,6 +13,3 @@ composer.lock
 yarn.lock
 docker-compose.yml
 .DS_Store
-public/clients/*
-workerman.webman.php.pid
-workerman.log
