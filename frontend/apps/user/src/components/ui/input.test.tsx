@@ -17,6 +17,17 @@ describe('Input', () => {
     expect(html).toContain('name="pw"');
   });
 
+  it('omits aria-invalid in the resting state', () => {
+    expect(renderToStaticMarkup(<Input />)).not.toContain('aria-invalid');
+  });
+
+  it('applies the destructive treatment and aria-invalid when invalid', () => {
+    const html = renderToStaticMarkup(<Input invalid />);
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain('tw:border-destructive');
+    expect(html).not.toContain('tw:border-input');
+  });
+
   it('merges a caller className', () => {
     expect(renderToStaticMarkup(<Input className="tw:mt-1" />)).toContain('tw:mt-1');
   });

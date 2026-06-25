@@ -57,7 +57,10 @@ function normalizeParityText(value) {
 }
 
 const scenarios = [
-  { label: 'user-home-root', path: '/#/', readySelector: '.v2board-auth-box' },
+  // `/#/` redirects an unauthenticated visit to the redesigned /login surface, so user-home-root*
+  // screenshots the reskinned login: its pixel diff against the old oracle is retired alongside
+  // user-login*. The behavior gate still holds via the user-home-root-page-state interaction.
+  { label: 'user-home-root', path: '/#/', readySelector: '.v2board-auth-box', visualRetired: true },
   { label: 'user-login', path: '/#/login', visualRetired: true },
   { label: 'user-register-rich', path: '/#/register?code=INVITE2026' },
   { label: 'user-forget', path: '/#/forgetpassword' },
@@ -612,6 +615,7 @@ const scenarios = [
     locale: 'zh-TW',
     path: '/#/',
     readySelector: '.v2board-auth-box',
+    visualRetired: true,
   },
   { label: 'user-login-zh-tw', locale: 'zh-TW', path: '/#/login', visualRetired: true },
   {
@@ -709,6 +713,7 @@ const scenarios = [
     locale: 'en-US',
     path: '/#/',
     readySelector: '.v2board-auth-box',
+    visualRetired: true,
   },
   { label: 'user-login-en-us', locale: 'en-US', path: '/#/login', visualRetired: true },
   {
@@ -938,6 +943,7 @@ const scenarios = [
     locale: 'ja-JP',
     path: '/#/',
     readySelector: '.v2board-auth-box',
+    visualRetired: true,
   },
   {
     label: 'user-login-ja-jp',
@@ -1176,6 +1182,7 @@ const scenarios = [
     locale: 'vi-VN',
     path: '/#/',
     readySelector: '.v2board-auth-box',
+    visualRetired: true,
   },
   {
     label: 'user-login-vi-vn',
@@ -1414,6 +1421,7 @@ const scenarios = [
     locale: 'ko-KR',
     path: '/#/',
     readySelector: '.v2board-auth-box',
+    visualRetired: true,
   },
   {
     label: 'user-login-ko-kr',
@@ -1839,7 +1847,7 @@ const interactionScenarios = [
   },
   {
     label: 'user-home-root-page-state',
-    run: runAuthPageStateInteraction,
+    run: runRedesignedLoginPageStateInteraction,
     scenarioLabel: 'user-home-root',
   },
   {
@@ -4544,6 +4552,37 @@ async function preparePageForInteraction(page, url, scenario, target, interactio
   await waitForFixedColumnLayout(page);
 }
 
+// fa-IR (Persian) was consciously dropped from the source locale registry (commit 97b8035b: the
+// product ships 6 LTR locales). The frozen oracle still loads fa-IR.js, so its language menu lists
+// فارسی (the sole fa-IR label). Drop that one retired locale before comparing menu items, so the
+// gate still asserts i18n behavior (the menu renders, switching/persisting a locale works) without
+// re-pinning a locale the product no longer ships. The label is inlined rather than held in a
+// module const: this helper runs during the top-level interaction pass, before a const declared
+// this far down the file would leave its temporal dead zone.
+function withoutDroppedLocale(menuItems) {
+  return menuItems.filter((label) => label !== 'فارسی');
+}
+
+// Behavior gate for the redesigned /login surface (gradual reskin). Behavior stays strictly gated;
+// only the presentation details the redesign legitimately changed are retired before the
+// source-vs-oracle compare: the modern form uses field labels instead of the oracle's input
+// placeholders, and a semantic heading instead of the oracle's brand link. Everything behavioral
+// still gates — auth-box presence/count, the /#/ -> #/login redirect (hash), input count/types,
+// the submit button, and the register + forget navigation. Admin and still-replica auth surfaces
+// keep the strict runAuthPageStateInteraction (placeholders/brand link still pinned there).
+async function runRedesignedLoginPageStateInteraction(page) {
+  const state = await authPageState(page);
+  return {
+    ...state,
+    controls: state.controls.map((control) => {
+      const behavioral = { ...control };
+      delete behavioral.placeholder;
+      return behavioral;
+    }),
+    links: state.links.filter((text) => !state.titleTexts.includes(text)),
+  };
+}
+
 async function runLoginFormLanguageInteraction(page) {
   await fillFirstVisible(
     page,
@@ -4558,7 +4597,7 @@ async function runLoginFormLanguageInteraction(page) {
       page,
       'input[type="text"], input:not([type]), input[type="email"]',
     ),
-    languageMenuItems: await visibleTexts(page, '.ant-dropdown-menu-item', 8),
+    languageMenuItems: withoutDroppedLocale(await visibleTexts(page, '.ant-dropdown-menu-item', 8)),
     password: await firstInputValue(page, 'input[type="password"]'),
   };
 }
@@ -4567,7 +4606,7 @@ async function runLoginLanguagePersistenceInteraction(page) {
   const before = await loginLanguagePersistenceState(page);
   await clickFirstVisible(page, '.v2board-login-i18n-btn, .ant-dropdown-trigger');
   await page.waitForTimeout(150);
-  const menuItems = await visibleTexts(page, '.ant-dropdown-menu-item', 8);
+  const menuItems = withoutDroppedLocale(await visibleTexts(page, '.ant-dropdown-menu-item', 8));
   const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 3_000 }).catch(
     () => undefined,
   );
@@ -4691,7 +4730,12 @@ async function runDashboardHeaderLanguageDropdownInteraction(page) {
   if (!clicked) throw new Error('dashboard language trigger was not visible');
   await waitForVisibleText(page, '.ant-dropdown-menu-item', 'English');
   await page.waitForTimeout(150);
-  return languageDropdownPlacementState(page);
+  // Same conscious fa-IR drop as the login language menu: the product ships 6 LTR locales while the
+  // frozen oracle still lists فارسی. Normalize that one retired locale out of the captured list so
+  // this still-replica dashboard surface keeps gating dropdown placement + i18n behavior without
+  // re-pinning a locale the product no longer ships.
+  const state = await languageDropdownPlacementState(page);
+  return { ...state, items: withoutDroppedLocale(state.items) };
 }
 
 async function runSessionExpiredRedirectInteraction(page) {

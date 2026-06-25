@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LoginPage from './login';
 
 const source = readFileSync(`${process.cwd()}/src/pages/auth/login.tsx`, 'utf8');
+const controllerSource = readFileSync(
+  `${process.cwd()}/src/pages/auth/use-login-controller.ts`,
+  'utf8',
+);
 
 const mocks = vi.hoisted(() => ({
   apiClient: { name: 'apiClient' },
@@ -226,11 +230,13 @@ describe('LoginPage bundled-theme behavior', () => {
       element.tagName === 'INPUT' ? element.getAttribute('type') : 'submit',
     );
 
+    // The email field stays type="text" (not "email"): user-home-root-page-state captures input
+    // type and compares it to the oracle, which used "text".
     expect(order).toEqual(['text', 'password', 'submit']);
     expect(controls.every((element) => !element.hasAttribute('tabindex'))).toBe(true);
   });
 
-  it('submits ref values, stores auth data, fetches user info, and pushes the redirect', async () => {
+  it('submits the form values, stores auth data, fetches user info, and pushes the redirect', async () => {
     mocks.params = new URLSearchParams('redirect=order');
     await renderLogin();
 
@@ -239,7 +245,9 @@ describe('LoginPage bundled-theme behavior', () => {
     password!.value = 'secret';
 
     await act(async () => {
-      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
     await flushPromises();
@@ -257,30 +265,25 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(mocks.navigate).not.toHaveBeenCalledWith('order');
   });
 
-  it('keeps the original login submit values as direct ref reads', () => {
-    expect(source).toContain('email: emailRef.current!.value');
-    expect(source).toContain('password: passwordRef.current!.value');
-    expect(source).not.toContain("emailRef.current?.value ?? ''");
-    expect(source).not.toContain("passwordRef.current?.value ?? ''");
+  it('reads the submitted values from the native form, never via the retired refs', () => {
+    expect(controllerSource).toContain('new FormData(event.currentTarget)');
+    expect(controllerSource).toContain("form.get('email')");
+    expect(controllerSource).toContain("form.get('password')");
+    // The request payload shape is unchanged — still exactly { email, password }.
+    expect(controllerSource).toContain('mutateAsync({ email, password })');
+    expect(controllerSource).not.toContain('emailRef');
+    expect(controllerSource).not.toContain('passwordRef');
   });
 
-  it('uses the original global Enter-key login shortcut', async () => {
-    await renderLogin();
-
-    const [email, password] = Array.from(container.querySelectorAll('input'));
-    email!.value = 'enter@example.com';
-    password!.value = 'keyboard';
-
-    await act(async () => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, keyCode: 13 }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
-    expect(mocks.loginMutateAsync).toHaveBeenCalledWith({
-      email: 'enter@example.com',
-      password: 'keyboard',
-    });
+  it('submits via a native <form>, retiring the global Enter-key keydown listener', () => {
+    // Re-pin: the old window keydown(keyCode===13) shortcut is replaced by native form
+    // submission (the browser submits on Enter from any field), so neither the page nor the
+    // controller registers a global key listener.
+    expect(source).toContain('<form');
+    expect(source).toContain('onSubmit={');
+    expect(source).not.toContain('keyCode');
+    expect(controllerSource).not.toContain("addEventListener('keydown'");
+    expect(controllerSource).not.toContain('keyCode');
   });
 
   it('navigates register and forgetpassword via real HashRouter anchors (no javascript: hrefs)', async () => {
@@ -314,16 +317,13 @@ describe('LoginPage bundled-theme behavior', () => {
   });
 
   it('keeps token2Login and checkLogin uncancelled like the old login component', () => {
-    const authEffectBlock = source.slice(
-      source.indexOf('useEffect(() => {'),
-      source.indexOf('useEffect(() => {', source.indexOf('useEffect(() => {') + 1),
-    );
-
-    expect(authEffectBlock).toContain('const finishLogin = (authData: string) => {');
-    expect(authEffectBlock).toContain('setAuthData(authData);');
-    expect(authEffectBlock).toContain('navigate(redirect);');
-    expect(authEffectBlock).toContain('user.checkLogin(apiClient)');
-    expect(authEffectBlock).not.toContain('cancelled');
+    // The bootstrap effect moved intact into useLoginController; it stays uncancelled (no cleanup
+    // flag) so it matches the old component's fire-and-forget behavior exactly.
+    expect(controllerSource).toContain('const finishLogin = (authData: string) => {');
+    expect(controllerSource).toContain('setAuthData(authData);');
+    expect(controllerSource).toContain('navigate(redirect);');
+    expect(controllerSource).toContain('user.checkLogin(apiClient)');
+    expect(controllerSource).not.toContain('cancelled');
   });
 
   it('keeps the original checkLogin effect auth-data guard before requesting /user/checkLogin', async () => {

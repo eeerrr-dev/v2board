@@ -65,4 +65,30 @@ describe('GuestLayout bundled-theme auth shell', () => {
     expect(renderGuest('/forgetpassword')).toContain('<div class="" style="max-width:450px;width:100%;margin:auto">');
     expect(renderGuest('/login')).not.toContain('<div class="" style="max-width:450px;width:100%;margin:auto">');
   });
+
+  describe('redesigned /login chrome (route-isolated 2026 reskin)', () => {
+    it('renders the modern gradient backdrop and drops the legacy background + operator image', () => {
+      mocks.backgroundUrl = 'https://cdn.example.test/bg.jpg';
+      const html = renderGuest('/login');
+
+      expect(html).toContain('id="page-container"');
+      expect(html).toContain('id="main-container"');
+      expect(html).toContain('tw:bg-gradient-to-br');
+      expect(html).toContain('v2board-login-frame');
+      expect(html).toContain('class="guest-probe"');
+      // Route isolation: the redesigned surface does not use the packaged-oracle flat background
+      // layer or the operator background image.
+      expect(html).not.toContain('class="v2board-background"');
+      expect(html).not.toContain('background-image');
+    });
+
+    it('keeps exactly one auth box and adds no page-level button (behavior-gate contract)', () => {
+      const html = renderGuest('/login');
+      // user-home-root-page-state asserts authBoxCount === 1 and compares the page-wide button set
+      // to the oracle; the redesigned chrome must contribute neither a second auth box nor a button.
+      expect((html.match(/v2board-auth-box/g) ?? []).length).toBe(1);
+      expect(html).not.toContain('<button');
+      expect(html).not.toContain('class="btn');
+    });
+  });
 });

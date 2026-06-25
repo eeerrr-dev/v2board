@@ -31,10 +31,19 @@ export const tokens = {
   '--color-surface': '#ffffff',
   '--color-foreground': '#0f172a',
   '--color-muted': '#f1f5f9',
-  '--color-muted-foreground': '#64748b',
+  // `foreground-muted` (not the shadcn-canonical `muted-foreground`): the legacy theme
+  // (user-theme-colors.css) defines `--color-muted-foreground` and, loading later, would shadow
+  // this reskin value with rgba(0,0,0,.45) (~3.5:1, fails AA). A collision-free name keeps the
+  // reskin's accessible slate-500 muted text authoritative without touching the legacy cascade.
+  '--color-foreground-muted': '#64748b',
   '--color-border': '#e6eaf2',
   '--color-input': '#cbd5e1',
   '--color-ring': '#3a63f0',
+
+  // Feedback — validation / error states.
+  '--color-destructive': '#dc2626',
+  '--color-destructive-foreground': '#ffffff',
+  '--color-destructive-subtle': '#fef2f2',
 
   // Radii.
   '--radius-field': '0.625rem',
@@ -42,6 +51,7 @@ export const tokens = {
 
   // Elevation.
   '--shadow-card': '0 12px 40px -12px rgba(15, 23, 42, 0.25)',
+  '--shadow-pop': '0 8px 24px -8px rgba(15, 23, 42, 0.18)',
 } as const;
 
 export type DesignTokenName = keyof typeof tokens;

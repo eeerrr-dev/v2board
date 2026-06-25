@@ -8,6 +8,7 @@ describe('Card', () => {
     expect(html).toContain('tw:rounded-card');
     expect(html).toContain('tw:bg-surface');
     expect(html).toContain('tw:shadow-card');
+    expect(html).toContain('tw:ring-border');
   });
 
   it('composes a body and a bordered footer', () => {

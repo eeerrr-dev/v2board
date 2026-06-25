@@ -6,7 +6,7 @@ import { Spinner } from './spinner';
 // Authored V2Board — clean-modern reskin primitive. Token-driven (see @v2board/tokens);
 // all Tailwind utilities carry the `tw:` prefix so they never collide with vendored legacy CSS.
 const buttonVariants = cva(
-  'tw:inline-flex tw:items-center tw:justify-center tw:gap-2 tw:rounded-field tw:font-semibold tw:transition tw:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2 tw:disabled:cursor-not-allowed tw:disabled:opacity-60',
+  'tw:inline-flex tw:items-center tw:justify-center tw:gap-2 tw:rounded-field tw:font-semibold tw:transition tw:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2 tw:motion-safe:active:scale-[0.99] tw:disabled:cursor-not-allowed tw:disabled:opacity-60 tw:disabled:active:scale-100',
   {
     variants: {
       variant: {
@@ -39,6 +39,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       type={type ?? 'button'}
       className={cn(buttonVariants({ variant, size, block }), className)}
       disabled={disabled ?? loading}
+      aria-busy={!!loading}
       {...props}
     >
       {loading ? <Spinner /> : null}

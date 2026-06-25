@@ -5,7 +5,7 @@
  * (apps/user/src/styles/tokens.test.ts) fails if these diverge. Imported by
  * apps/user/src/styles/globals.css. Additive only — never overrides a Tailwind default — so
  * un-reskinned replica surfaces are untouched. With the `tw:` prefix in globals.css these emit
- * utilities like `tw:bg-primary`, `tw:text-muted-foreground`, `tw:rounded-card`, `tw:shadow-card`.
+ * utilities like `tw:bg-primary`, `tw:text-foreground-muted`, `tw:rounded-card`, `tw:shadow-card`.
  */
 @theme {
   --color-primary-50: #eef3ff;
@@ -23,13 +23,18 @@
   --color-surface: #ffffff;
   --color-foreground: #0f172a;
   --color-muted: #f1f5f9;
-  --color-muted-foreground: #64748b;
+  --color-foreground-muted: #64748b;
   --color-border: #e6eaf2;
   --color-input: #cbd5e1;
   --color-ring: #3a63f0;
+
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+  --color-destructive-subtle: #fef2f2;
 
   --radius-field: 0.625rem;
   --radius-card: 1.25rem;
 
   --shadow-card: 0 12px 40px -12px rgba(15, 23, 42, 0.25);
+  --shadow-pop: 0 8px 24px -8px rgba(15, 23, 42, 0.18);
 }

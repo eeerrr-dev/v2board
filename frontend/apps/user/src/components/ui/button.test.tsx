@@ -26,10 +26,11 @@ describe('Button', () => {
     expect(renderToStaticMarkup(<Button block>x</Button>)).toContain('tw:w-full');
   });
 
-  it('shows a spinner and disables while loading, keeping the label visible', () => {
+  it('shows a spinner, disables, and marks aria-busy while loading, keeping the label visible', () => {
     const html = renderToStaticMarkup(<Button loading>Sign in</Button>);
     expect(html).toContain('tw:animate-spin');
     expect(html).toContain('disabled=""');
+    expect(html).toContain('aria-busy="true"');
     expect(html).toContain('Sign in');
   });
 
