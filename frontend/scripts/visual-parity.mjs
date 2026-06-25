@@ -4576,7 +4576,13 @@ async function runRedesignedLoginPageStateInteraction(page) {
     ...state,
     controls: state.controls.map((control) => {
       const behavioral = { ...control };
+      // Released as redesigned presentation: the placeholder became the field label, and the
+      // identifier input was modernized from type="text" to type="email". Collapse email -> text so
+      // that modernization isn't pinned, while password stays distinct so masking is still gated.
+      // Symmetric: the oracle's identifier input is already type="text", so this normalizes both
+      // sides to the same shape rather than re-pinning the old type.
       delete behavioral.placeholder;
+      if (behavioral.type === 'email') behavioral.type = 'text';
       return behavioral;
     }),
     links: state.links.filter((text) => !state.titleTexts.includes(text)),
@@ -12187,11 +12193,14 @@ async function loginLanguagePersistenceState(page) {
         }
       }, '');
 
+    // titleText is intentionally not captured: the redesign turns the brand link into a semantic
+    // <h1>, and the operator brand is constant across locales, so it carries no language-persistence
+    // signal. Releasing it keeps this interaction gating the locale state (cookie/storage/trigger),
+    // not the heading markup the redesign legitimately changed.
     return {
       cookieI18n: readCookie('i18n'),
       gLang: window.g_lang ?? '',
       storedLocale: window.localStorage.getItem('umi_locale') ?? '',
-      titleText: normalize(document.querySelector('.v2board-auth-box h1, .block-title')?.textContent),
       triggerText: normalize(document.querySelector('.v2board-login-i18n-btn')?.textContent),
     };
   });

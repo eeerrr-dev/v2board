@@ -21,8 +21,9 @@ export default function LoginPage() {
     // <form> (Enter submits natively; the old global keydown listener and refs are retired) while
     // the request/redirect contract is preserved. Visual parity for this surface is retired (see
     // `user-login` visualRetired in visual-parity.mjs); the behavior/contract gate still holds.
-    // The heading stays an <h2> (never <h1>/.block-title) so the login-language-persistence
-    // interaction's titleText stays '' versus the oracle.
+    // The brand title is a semantic <h1> (the page's main heading); the redesign-aware
+    // login-language-persistence gate releases its titleText as redesigned presentation instead of
+    // pinning the old empty value.
     <Card>
       <form noValidate onSubmit={(event) => void submit(event)} onInput={clearError}>
         <CardBody>
@@ -34,9 +35,9 @@ export default function LoginPage() {
                 alt={title || 'V2Board'}
               />
             ) : (
-              <h2 className="tw:text-2xl tw:font-semibold tw:tracking-tight tw:text-foreground">
+              <h1 className="tw:text-2xl tw:font-semibold tw:tracking-tight tw:text-foreground">
                 {title || 'V2Board'}
-              </h2>
+              </h1>
             )}
             {description ? (
               <p className="tw:mt-2 tw:text-sm tw:text-foreground-muted">{description}</p>
@@ -53,10 +54,12 @@ export default function LoginPage() {
               </div>
             ) : null}
 
-            {/* type stays "text" (not "email"): the user-home-root-page-state behavior gate
-                captures input type and compares it to the oracle, which used "text". */}
+            {/* A proper email field (type="email"): the redesign-aware behavior gate normalizes the
+                identifier input's type so this modernization is released while password masking stays
+                gated. With noValidate the email type adds no submit-blocking native validation, so the
+                request/redirect contract is unchanged. */}
             <FormField id="login-email" label={t('auth.email')}>
-              <Input type="text" name="email" autoComplete="username" />
+              <Input type="email" name="email" autoComplete="username" />
             </FormField>
             <FormField id="login-password" label={t('auth.password')}>
               <Input type="password" name="password" autoComplete="current-password" />

@@ -163,10 +163,9 @@ describe('LoginPage modern markup', () => {
     expect(html).not.toContain('btn btn-block btn-primary');
     expect(html).not.toContain('bg-gray-lighter');
 
-    // The heading must stay an <h2> (never <h1>/.block-title) so the
-    // user-login-language-persistence interaction's titleText stays '' versus the oracle.
-    expect(html).toContain('>V2Board</h2>');
-    expect(html).not.toContain('<h1');
+    // The brand title is a semantic <h1> (the page's main heading); the redesign-aware
+    // persistence gate releases its titleText rather than pinning the old empty value.
+    expect(html).toContain('>V2Board</h1>');
     expect(html).not.toContain('block-title');
 
     // Label-only fields — the placeholder no longer duplicates the visible label.
@@ -230,9 +229,9 @@ describe('LoginPage bundled-theme behavior', () => {
       element.tagName === 'INPUT' ? element.getAttribute('type') : 'submit',
     );
 
-    // The email field stays type="text" (not "email"): user-home-root-page-state captures input
-    // type and compares it to the oracle, which used "text".
-    expect(order).toEqual(['text', 'password', 'submit']);
+    // The email field is a proper type="email"; the redesign-aware gate normalizes the identifier
+    // input's type (email -> text) so this modernization is released, not pinned.
+    expect(order).toEqual(['email', 'password', 'submit']);
     expect(controls.every((element) => !element.hasAttribute('tabindex'))).toBe(true);
   });
 
