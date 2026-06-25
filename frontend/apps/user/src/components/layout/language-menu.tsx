@@ -200,12 +200,19 @@ export function LanguageMenu({
     if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
       event.preventDefault();
       toggleOpen();
+    } else if (event.key === 'Escape' && open) {
+      // Dismiss the open overlay from the keyboard (the click-outside handler is pointer-only).
+      event.preventDefault();
+      setOpen(false);
     }
   };
 
   if (showLabel && reskin) {
-    // Redesigned /login trigger: a token-driven control that is fully keyboard-operable
-    // (role=button + tabIndex + Enter/Space) and screen-reader-announced (aria-haspopup/aria-expanded).
+    // Redesigned /login trigger: a token-driven control that is keyboard-reachable (Tab) and
+    // operable as a button — Enter/Space toggle it, Escape dismisses the open overlay — and is
+    // screen-reader-announced (aria-haspopup/aria-expanded). Arrow-key roving over the portaled
+    // items is intentionally NOT reimplemented here: those `<li role="menuitem">` items are shared
+    // verbatim with the still-pixel-gated legacy triggers and stay pointer-activated.
     // It stays a <span> (not <button>) so the user-home-root-page-state behavior gate's page-wide
     // `button, .btn` capture still matches the oracle; the kept `.v2board-login-i18n-btn` class +
     // visible label keep the language interaction's triggerText byte-identical to the oracle.

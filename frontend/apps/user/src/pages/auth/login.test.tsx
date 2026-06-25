@@ -175,7 +175,11 @@ describe('LoginPage modern markup', () => {
     expect(html).not.toContain('bg-gray-lighter');
 
     // The brand title is a semantic <h1> (the page's main heading); the redesign-aware
-    // persistence gate releases its titleText rather than pinning the old empty value.
+    // persistence gate releases its titleText rather than pinning the old empty value. It carries
+    // the v2board-login-title hook (not a tw:text-foreground utility): vendored unlayered `h1{color}`
+    // rules outrank layered tw: utilities, so the title color is owned by the authored
+    // .v2board-login-title rule — without the class the heading would stay antd-black on the dark card.
+    expect(html).toContain('class="v2board-login-title');
     expect(html).toContain('>V2Board</h1>');
     expect(html).not.toContain('block-title');
 

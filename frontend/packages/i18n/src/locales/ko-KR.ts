@@ -3,6 +3,8 @@ import { translateLegacyDictionary, type LegacyDictionary } from './legacy-fallb
 import type { Translations } from './zh-CN';
 
 const koKRDictionary = {
+  "显示密码": "비밀번호 표시",
+  "隐藏密码": "비밀번호 숨기기",
   "取消": "취소",
   "确定": "확인",
   "保存": "저장하기",

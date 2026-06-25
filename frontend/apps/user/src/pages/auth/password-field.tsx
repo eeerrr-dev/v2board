@@ -38,7 +38,7 @@ export function PasswordField({ className, ...props }: InputProps) {
         aria-label={revealed ? t('auth.hide_password') : t('auth.show_password')}
         onClick={toggle}
         onKeyDown={onToggleKeyDown}
-        className="tw:absolute tw:inset-y-0 tw:right-0 tw:flex tw:w-11 tw:cursor-pointer tw:items-center tw:justify-center tw:rounded-field tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-surface"
+        className="tw:absolute tw:inset-y-0 tw:right-0 tw:flex tw:w-11 tw:cursor-pointer tw:items-center tw:justify-center tw:rounded-field tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2 tw:focus-visible:ring-offset-surface"
       >
         {revealed ? <EyeOffIcon /> : <EyeIcon />}
       </span>

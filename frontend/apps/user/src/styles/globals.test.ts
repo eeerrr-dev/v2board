@@ -596,6 +596,16 @@ describe('2026 login surface presentation CSS', () => {
     expect(globals).toContain('opacity: 0;\n    transform: translateY(14px);');
   });
 
+  it('owns the brand-title color so vendored unlayered h1 rules cannot leave it antd-black on the dark card', () => {
+    const globals = css();
+
+    // Vendored Ant Design / OneUI heading rules are unlayered and thus outrank the layered tw:
+    // color utilities; the title color is owned by this authored, more-specific rule so it tracks
+    // the foreground token (and goes near-white on the dark card) instead of staying antd-black.
+    expect(globals).toContain('.v2board-login-surface .v2board-login-title {');
+    expect(globals).toContain('color: var(--tw-color-foreground);');
+  });
+
   it('scopes the native dark theme to the login surface and yields to DarkReader', () => {
     const globals = css();
 
@@ -603,8 +613,11 @@ describe('2026 login surface presentation CSS', () => {
     // Excludes DarkReader's runtime inversion (data-darkreader-scheme on <html>) to avoid
     // double-darkening, and is scoped to .v2board-login-surface so no other surface is themed.
     expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-login-surface {');
-    expect(globals).toContain('--color-background: #0b1120;');
-    expect(globals).toContain('--color-surface: #131b2e;');
+    // The tw: utilities read the PREFIXED theme vars (Tailwind v4 `prefix(tw)` compiles @theme
+    // tokens to --tw-color-*), so the dark override must re-point --tw-color-*, not the unprefixed
+    // names — otherwise the recolor is inert for every utility-driven surface.
+    expect(globals).toContain('--tw-color-background: #0b1120;');
+    expect(globals).toContain('--tw-color-surface: #131b2e;');
   });
 
   it('applies the dark card elevation directly (Tailwind v4 inlines shadow tokens, so a --shadow override is inert)', () => {
@@ -613,8 +626,9 @@ describe('2026 login surface presentation CSS', () => {
     expect(globals).toContain(
       'html:not([data-darkreader-scheme]) .v2board-login-surface .v2board-login-card {',
     );
-    // The edge ring is re-declared so hard-overriding box-shadow does not drop the card border.
-    expect(globals).toContain('0 0 0 1px var(--color-border)');
+    // The edge ring is re-declared (reading the same prefixed token the tw: ring utility uses) so
+    // hard-overriding box-shadow does not drop the card border.
+    expect(globals).toContain('0 0 0 1px var(--tw-color-border)');
     // Dead --shadow-* token overrides were removed rather than shipped inert.
     expect(globals).not.toContain('--shadow-card: 0 18px 48px');
   });

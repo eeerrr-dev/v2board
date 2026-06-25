@@ -262,7 +262,7 @@ describe('LanguageMenu antd dropdown behavior', () => {
     }
   });
 
-  it('renders the redesigned /login trigger as a keyboard-operable role=button that opens on Enter', () => {
+  it('renders the redesigned /login trigger as a keyboard-operable role=button that opens on Enter and closes on Escape', () => {
     act(() => {
       root.render(<LanguageMenu reskin showLabel triggerClassName="v2board-login-i18n-btn" />);
     });
@@ -297,6 +297,12 @@ describe('LanguageMenu antd dropdown behavior', () => {
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(document.body.querySelector('.ant-dropdown-menu')).not.toBeNull();
+
+    // Escape dismisses the open overlay from the keyboard (the click-outside handler is pointer-only).
+    act(() => {
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('keys locale menu items by locale code while keeping SelectLang DOM stable', () => {

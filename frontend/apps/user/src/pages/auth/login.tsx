@@ -40,7 +40,11 @@ export default function LoginPage() {
                 />
               </h1>
             ) : (
-              <h1 className="tw:text-2xl tw:font-semibold tw:tracking-tight tw:text-foreground">
+              // The title color is owned by an authored rule in user-login-surface.css, not a
+              // tw:text-foreground utility: vendored (unlayered) `h1{color}` heading rules outrank
+              // any layered Tailwind color utility under CSS cascade layers, so the utility would be
+              // inert here and the heading would stay antd-black (unreadable on the dark card).
+              <h1 className="v2board-login-title tw:text-2xl tw:font-semibold tw:tracking-tight">
                 {title || 'V2Board'}
               </h1>
             )}
@@ -100,9 +104,9 @@ export default function LoginPage() {
               />
             </FormField>
 
-            {/* ring-offset-surface keeps the focus halo blended on the dark login surface
-                (the offset color tracks --color-surface, which the dark theme re-points); in light
-                mode --color-surface is white, so the default offset is unchanged. */}
+            {/* ring-offset-surface ties the focus-ring offset to the surface token, so on the dark
+                login theme the halo blends into the dark card instead of leaving a white gap; in
+                light mode the surface token is white, so the offset is unchanged. */}
             <Button type="submit" block loading={isPending} className="tw:ring-offset-surface">
               {t('auth.submit_login')}
             </Button>

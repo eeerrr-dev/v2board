@@ -3,6 +3,8 @@ import { translateLegacyDictionary, type LegacyDictionary } from './legacy-fallb
 import type { Translations } from './zh-CN';
 
 const zhTWDictionary = {
+  "显示密码": "顯示密碼",
+  "隐藏密码": "隱藏密碼",
   "取消": "取消",
   "确定": "確定",
   "保存": "儲存",

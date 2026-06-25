@@ -62,39 +62,56 @@
 }
 
 /*
+ * Brand-title color. The title is a semantic <h1>, and the vendored Ant Design / OneUI bundle ships
+ * UNLAYERED heading rules (`h1,h2,h3,...{color}`). Under CSS cascade layers an unlayered rule always
+ * outranks a layered one, so a `tw:text-foreground` utility on the <h1> is silently overridden and
+ * the heading stays antd-black — fine on the light card, unreadable on the dark one. Own the color
+ * here instead: also unlayered and more specific than the bare `h1` selector, so it wins and tracks
+ * the foreground token (navy on light, near-white on dark) in both themes.
+ */
+.v2board-login-surface .v2board-login-title {
+  color: var(--tw-color-foreground);
+}
+
+/*
  * Native dark theme for the login surface. Applies only when the OS prefers dark AND DarkReader's
  * runtime inversion is NOT active — DarkReader stamps `data-darkreader-scheme` on <html> when the
  * `dark_mode` cookie is set, so excluding it avoids double-darkening the same surface.
  */
 @media (prefers-color-scheme: dark) {
   html:not([data-darkreader-scheme]) .v2board-login-surface {
-    --color-background: #0b1120;
-    --color-surface: #131b2e;
-    --color-foreground: #e6ebf5;
-    --color-muted: #1a2336;
-    --color-foreground-muted: #94a3b8;
-    --color-border: #243049;
-    --color-input: #33415c;
-    --color-ring: #5b7cf5;
+    /* Re-point the PREFIXED theme variables the tw: utilities actually read. Tailwind v4 is
+       imported with `prefix(tw)`, so `@theme` tokens compile to `--tw-color-*` and every utility
+       (tw:bg-surface -> var(--tw-color-surface), tw:text-foreground, tw:from-background, ...) reads
+       the prefixed name. These are plain inherited custom properties (not @property-registered), so
+       redeclaring them on this ancestor cascades to the whole login subtree. */
+    --tw-color-background: #0b1120;
+    --tw-color-surface: #131b2e;
+    --tw-color-foreground: #e6ebf5;
+    --tw-color-muted: #1a2336;
+    --tw-color-foreground-muted: #94a3b8;
+    --tw-color-border: #243049;
+    --tw-color-input: #33415c;
+    --tw-color-ring: #5b7cf5;
 
-    --color-primary: #4f74f0;
-    --color-primary-hover: #6485f3;
-    --color-primary-subtle: #18233f;
+    --tw-color-primary: #4f74f0;
+    --tw-color-primary-hover: #6485f3;
+    --tw-color-primary-subtle: #18233f;
 
-    --color-destructive: #f87171;
-    --color-destructive-subtle: #2a1414;
+    --tw-color-destructive: #f87171;
+    --tw-color-destructive-subtle: #2a1414;
   }
 
   /*
    * Elevation is applied directly (not via the --shadow-* tokens): Tailwind v4 inlines shadow token
    * values into the utility at build time, so a runtime --shadow-card override on the surface would
    * be inert. This rule re-declares the card's full box-shadow — the edge ring (replacing
-   * `tw:ring-1 tw:ring-border`), a hairline top highlight so the card reads as raised, and a deep
-   * drop shadow — so the dark card looks designed for dark, not merely recolored.
+   * `tw:ring-1 tw:ring-border`, reading the same prefixed token), a hairline top highlight so the
+   * card reads as raised, and a deep drop shadow — so the dark card looks designed for dark.
    */
   html:not([data-darkreader-scheme]) .v2board-login-surface .v2board-login-card {
     box-shadow:
-      0 0 0 1px var(--color-border),
+      0 0 0 1px var(--tw-color-border),
       inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
       0 18px 48px -16px rgba(0, 0, 0, 0.65);
   }

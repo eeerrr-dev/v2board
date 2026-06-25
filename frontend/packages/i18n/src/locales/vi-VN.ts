@@ -3,6 +3,8 @@ import { translateLegacyDictionary, type LegacyDictionary } from './legacy-fallb
 import type { Translations } from './zh-CN';
 
 const viVNDictionary = {
+  "显示密码": "Hiện mật khẩu",
+  "隐藏密码": "Ẩn mật khẩu",
   "取消": "Hủy",
   "确定": "OK",
   "保存": "Lưu",
