@@ -587,7 +587,13 @@ describe('2026 auth surface presentation CSS', () => {
     );
     expect(globals).toContain('min-height: 100svh;');
     expect(globals).toContain(
-      '.v2board-auth-surface .v2board-auth-frame {\n  width: 100%;\n  max-width: 28rem;\n  margin: auto;',
+      '.v2board-auth-surface .v2board-auth-frame {\n  width: 100%;\n  margin: auto;',
+    );
+    expect(globals).toContain(
+      '.v2board-auth-surface .v2board-auth-card {\n  width: min(100%, 30rem);\n  margin-inline: auto;',
+    );
+    expect(globals).toContain(
+      '.v2board-auth-surface .v2board-auth-card--wide {\n  width: min(100%, 34rem);',
     );
     expect(globals.indexOf('.v2board-auth-box {')).toBeLessThan(
       globals.indexOf('.v2board-auth-surface .v2board-auth-box {'),
@@ -604,7 +610,7 @@ describe('2026 auth surface presentation CSS', () => {
     expect(globals).not.toContain('aurora');
     expect(globals).not.toContain('blur-3xl');
     // The entrance only animates opacity + transform, so no capture-relevant layout collapse.
-    expect(globals).toContain('opacity: 0;\n    transform: translateY(14px);');
+    expect(globals).toContain('opacity: 0;\n    transform: translateY(10px);');
   });
 
   it('owns the brand-title color so vendored unlayered h1 rules cannot leave it antd-black on the dark card', () => {
@@ -635,7 +641,7 @@ describe('2026 auth surface presentation CSS', () => {
     const globals = css();
 
     expect(globals).toContain(
-      'html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-card {',
+      'html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-card,',
     );
     // The edge ring is re-declared (reading the same prefixed token the tw: ring utility uses) so
     // hard-overriding box-shadow does not drop the card border.

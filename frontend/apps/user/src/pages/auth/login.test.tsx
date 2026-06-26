@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LoginPage from './login';
 
 const source = readFileSync(`${process.cwd()}/src/pages/auth/login.tsx`, 'utf8');
+const panelSource = readFileSync(`${process.cwd()}/src/pages/auth/auth-panel.tsx`, 'utf8');
 const controllerSource = readFileSync(
   `${process.cwd()}/src/pages/auth/use-login-controller.ts`,
   'utf8',
@@ -99,7 +100,7 @@ vi.mock('@/lib/queries', () => ({
   },
 }));
 
-vi.mock('@/components/layout/auth-language-menu', () => ({
+vi.mock('./auth-language-menu', () => ({
   AuthLanguageMenu: () => (
     <button type="button" className="v2board-auth-language-trigger">
       <span>简体中文</span>
@@ -198,7 +199,9 @@ describe('LoginPage modern markup', () => {
     expect(html).toContain('忘记密码');
     expect(html).toContain('class="v2board-auth-language-trigger"');
     expect(html).toContain('简体中文');
-    expect(source).toContain("components/layout/auth-language-menu");
+    expect(source).toContain("from './auth-panel'");
+    expect(panelSource).toContain("from './auth-language-menu'");
+    expect(source).not.toContain("components/layout/auth-language-menu");
     expect(source).not.toContain("components/layout/language-menu");
   });
 
@@ -366,7 +369,7 @@ describe('LoginPage bundled-theme behavior', () => {
     // Re-pin: the old window keydown(keyCode===13) shortcut is replaced by native form
     // submission (the browser submits on Enter from any field), so neither the page nor the
     // controller registers a global key listener.
-    expect(source).toContain('<form');
+    expect(panelSource).toContain('<form');
     expect(source).toContain('onSubmit={');
     expect(source).not.toContain('keyCode');
     expect(controllerSource).not.toContain("addEventListener('keydown'");

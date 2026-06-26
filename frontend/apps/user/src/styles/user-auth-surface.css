@@ -1,25 +1,8 @@
 /*
- * Authored V2Board — 2026 auth surface presentation.
+ * Route-scoped auth presentation.
  *
- * Scoped to the redesigned auth family (`.v2board-auth-surface`, set on /login, /register, and
- * /forgetpassword in guest-layout). Pure presentation: a motion-safe entrance and a native dark theme
- * that re-points the design tokens for the auth subtree.
- *
- * Gate-safe by construction: redesigned auth visual parity is retired (`visualRetired` in
- * visual-parity.mjs), and the behavior/contract gate captures DOM text / form state, never pixels —
- * so animation and color are invisible to it. The entrance only animates opacity + transform, which
- * never collapse an element's layout box, so visibility/geometry-based captures are unaffected.
- *
- * The dark-theme token overrides live HERE, in a scoped selector — not in @v2board/tokens — so the
- * tokens drift test (styles/tokens.test.ts, which reverse-scans only tokens.css) is untouched.
- *
- * Known, deliberate scope limits of this presentation layer:
- *  - The native dark theme keys off the OS (prefers-color-scheme) only. The app's operator/user
- *    `dark_mode` cookie path is handled separately by DarkReader runtime inversion (which we yield
- *    to via the data-darkreader-scheme guard), so cookie-dark and OS-dark diverge visually here.
- *  - Redesigned auth language menus are Radix overlays with their own
- *    `.v2board-auth-language-menu-content`
- *    token scope because they are portaled to document.body, outside `.v2board-auth-surface`.
+ * The React pieces live in pages/auth; this file only owns the page-sized shell, card width, and
+ * auth-local dark theme bridge for OS dark mode when DarkReader is not active.
  */
 
 .v2board-auth-surface {
@@ -32,19 +15,9 @@
   position: fixed;
   inset: 0;
   z-index: -1;
-  background-color: var(--tw-color-background);
-  /* Token-driven wash plus a soft brand light-source at the top: gives the surface directional
-     depth and a quiet brand cue — no hero image, no decorative DOM layers — in both themes. The
-     glow tracks --tw-color-primary, so it stays a faint blue on the light wash and on the midnight
-     gradient in dark. The deepened --color-background / --color-primary-subtle tokens (now
-     #e9edf6 -> #dde7ff) restore legacy-grade figure-ground so the white card actually separates. */
-  background-image:
-    radial-gradient(
-      120% 90% at 50% -10%,
-      color-mix(in srgb, var(--tw-color-primary) 9%, transparent),
-      transparent 55%
-    ),
-    linear-gradient(160deg, var(--tw-color-background), var(--tw-color-primary-subtle));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--tw-color-surface) 65%, transparent), transparent 42%),
+    linear-gradient(180deg, var(--tw-color-muted), var(--tw-color-background));
 }
 
 .v2board-auth-surface .v2board-auth-box {
@@ -60,8 +33,16 @@
 
 .v2board-auth-surface .v2board-auth-frame {
   width: 100%;
-  max-width: 28rem;
   margin: auto;
+}
+
+.v2board-auth-surface .v2board-auth-card {
+  width: min(100%, 30rem);
+  margin-inline: auto;
+}
+
+.v2board-auth-surface .v2board-auth-card--wide {
+  width: min(100%, 34rem);
 }
 
 @media (min-width: 640px) {
@@ -70,17 +51,16 @@
   }
 }
 
-/* Entrance motion — only when the user has not requested reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
   .v2board-auth-surface .v2board-auth-frame {
-    animation: v2board-auth-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: v2board-auth-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 }
 
 @keyframes v2board-auth-rise {
   from {
     opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(10px);
   }
 
   to {
@@ -89,25 +69,10 @@
   }
 }
 
-/*
- * Brand-title color. The title is a semantic <h1>, and the vendored Ant Design / OneUI bundle ships
- * UNLAYERED heading rules (`h1,h2,h3,...{color}`). Under CSS cascade layers an unlayered rule always
- * outranks a layered one, so a `tw:text-foreground` utility on the <h1> is silently overridden and
- * the heading stays antd-black — fine on the light card, unreadable on the dark one. Own the color
- * here instead: also unlayered and more specific than the bare `h1` selector, so it wins and tracks
- * the foreground token (navy on light, near-white on dark) in both themes.
- */
 .v2board-auth-surface .v2board-auth-title {
   color: var(--tw-color-foreground);
 }
 
-/*
- * On logoless installs the brand wordmark is the only brand mark, so it carries the primary hue
- * (echoing the original login's blue wordmark) rather than body-heading slate. Same specificity as
- * the base title rule and declared after it, so it wins; also unlayered, so it still outranks the
- * vendored h1 color. In dark the primary blue is too dark on the navy card, so the dark block below
- * resets it to the near-white foreground.
- */
 .v2board-auth-surface .v2board-auth-title--wordmark {
   color: var(--tw-color-primary);
 }
@@ -118,72 +83,37 @@
   color: #237804;
 }
 
-/*
- * Native dark theme for the auth surface. Applies only when the OS prefers dark AND DarkReader's
- * runtime inversion is NOT active — DarkReader stamps `data-darkreader-scheme` on <html> when the
- * `dark_mode` cookie is set, so excluding it avoids double-darkening the same surface.
- */
 @media (prefers-color-scheme: dark) {
   html:not([data-darkreader-scheme]) .v2board-auth-surface {
-    /* Re-point the PREFIXED theme variables the tw: utilities actually read. Tailwind v4 is
-       imported with `prefix(tw)`, so `@theme` tokens compile to `--tw-color-*` and every utility
-       (tw:bg-surface -> var(--tw-color-surface), tw:text-foreground, tw:from-background, ...) reads
-       the prefixed name. These are plain inherited custom properties (not @property-registered), so
-       redeclaring them on this ancestor cascades to the whole auth subtree. */
     --tw-color-background: #0b1120;
     --tw-color-surface: #131b2e;
     --tw-color-foreground: #e6ebf5;
-    --tw-color-muted: #1a2336;
+    --tw-color-muted: #111827;
     --tw-color-foreground-muted: #94a3b8;
     --tw-color-border: #243049;
     --tw-color-input: #33415c;
     --tw-color-ring: #5b7cf5;
-
-    /* Primary CTA must clear WCAG AA (4.5:1) against its white label on the dark card. The previous
-       #4f74f0/#6485f3 pair only reached 4.13:1 / 3.39:1 (resting/hover both failed). These deeper
-       blues give white text 5.88:1 (resting) and 4.97:1 (hover) while still reading as "primary" on
-       the dark surface; the hover stays lighter than the resting tone for the usual affordance. */
     --tw-color-primary: #2457e5;
     --tw-color-primary-hover: #3a63f0;
     --tw-color-primary-subtle: #18233f;
-
     --tw-color-destructive: #f87171;
     --tw-color-destructive-subtle: #2a1414;
   }
 
-  /* On the dark navy card the primary blue is too low-contrast for a heading, so the wordmark
-     returns to the near-white foreground (the light-mode primary hue is reset here). */
   html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-title--wordmark {
     color: var(--tw-color-foreground);
   }
 
-  /*
-   * Elevation is applied directly (not via the --shadow-* tokens): Tailwind v4 inlines shadow token
-   * values into the utility at build time, so a runtime --shadow-card override on the surface would
-   * be inert. This rule re-declares the card's full box-shadow — the edge ring (replacing
-   * `tw:ring-1 tw:ring-border`, reading the same prefixed token), a hairline top highlight so the
-   * card reads as raised, and a deep drop shadow — so the dark card looks designed for dark.
-   */
-  html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-card {
+  html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-card,
+  html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content,
+  html:not([data-darkreader-scheme]) .v2board-auth-toast-root {
     box-shadow:
       0 0 0 1px var(--tw-color-border),
       inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
       0 18px 48px -16px rgba(0, 0, 0, 0.65);
   }
 
-  html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content {
-    --tw-color-surface: #131b2e;
-    --tw-color-foreground: #e6ebf5;
-    --tw-color-muted: #1a2336;
-    --tw-color-border: #243049;
-    --tw-color-ring: #5b7cf5;
-
-    box-shadow:
-      0 0 0 1px var(--tw-color-border),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
-      0 18px 48px -16px rgba(0, 0, 0, 0.65);
-  }
-
+  html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content,
   html:not([data-darkreader-scheme]) .v2board-auth-toast-root {
     --tw-color-surface: #131b2e;
     --tw-color-foreground: #e6ebf5;
@@ -193,11 +123,6 @@
     --tw-color-ring: #5b7cf5;
     --tw-color-destructive: #f87171;
     --tw-color-destructive-subtle: #2a1414;
-
-    box-shadow:
-      0 0 0 1px var(--tw-color-border),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
-      0 18px 48px -16px rgba(0, 0, 0, 0.65);
   }
 
   html:not([data-darkreader-scheme]) .v2board-auth-toast-icon-success {

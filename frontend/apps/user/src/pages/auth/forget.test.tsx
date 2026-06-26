@@ -51,7 +51,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@/components/layout/auth-language-menu', () => ({
+vi.mock('./auth-language-menu', () => ({
   AuthLanguageMenu: () => (
     <button type="button" className="v2board-auth-language-trigger">
       简体中文
@@ -150,9 +150,10 @@ describe('ForgetPage modern markup', () => {
     expect(html).not.toContain('form-control');
     expect(html).not.toContain('btn btn-block');
     expect(html).not.toContain('placeholder=');
-    expect(source).toContain("components/layout/auth-language-menu");
+    expect(source).toContain("from './auth-panel'");
     // The behavior controller owns the modern auth-toast; the view stays free of legacy toast/menu.
     expect(controllerSource).toContain("lib/auth-toast");
+    expect(source).not.toContain("components/layout/auth-language-menu");
     expect(source).not.toContain("components/layout/language-menu");
     expect(source).not.toContain("lib/legacy-toast");
     expect(controllerSource).not.toContain("lib/legacy-toast");

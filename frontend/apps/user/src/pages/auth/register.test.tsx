@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RegisterPage from './register';
 
 const source = readFileSync(`${process.cwd()}/src/pages/auth/register.tsx`, 'utf8');
+const tosSource = readFileSync(`${process.cwd()}/src/pages/auth/auth-tos-field.tsx`, 'utf8');
 const controllerSource = readFileSync(
   `${process.cwd()}/src/pages/auth/use-register-controller.ts`,
   'utf8',
@@ -57,7 +58,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@/components/layout/auth-language-menu', () => ({
+vi.mock('./auth-language-menu', () => ({
   AuthLanguageMenu: () => (
     <button type="button" className="v2board-auth-language-trigger">
       简体中文
@@ -155,6 +156,7 @@ describe('RegisterPage modern markup', () => {
     const html = renderToStaticMarkup(<RegisterPage />);
 
     expect(html).toContain('v2board-auth-card');
+    expect(html).toContain('v2board-auth-card--wide');
     expect(html).toContain('tw:rounded-card');
     expect(html).toContain('>V2Board</h1>');
     expect(html).toContain('邮箱');
@@ -171,9 +173,11 @@ describe('RegisterPage modern markup', () => {
     expect(html).not.toContain('form-control');
     expect(html).not.toContain('btn btn-block');
     expect(html).not.toContain('placeholder=');
-    expect(source).toContain("components/layout/auth-language-menu");
+    expect(source).toContain("from './auth-panel'");
+    expect(source).toContain("from './auth-tos-field'");
     // The behavior controller owns the modern auth-toast; the view stays free of legacy toast/menu.
     expect(controllerSource).toContain("lib/auth-toast");
+    expect(source).not.toContain("components/layout/auth-language-menu");
     expect(source).not.toContain("components/layout/language-menu");
     expect(source).not.toContain("lib/legacy-toast");
     expect(controllerSource).not.toContain("lib/legacy-toast");
@@ -193,8 +197,8 @@ describe('RegisterPage modern markup', () => {
     expect(html).toContain('服务条款');
     expect(html).not.toContain('href="javascript:alert(1)"');
     expect(html).not.toContain('target="_blank"');
-    expect(source).toContain('function getSafeTosHref');
-    expect(source).toContain("parsed.protocol === 'http:' || parsed.protocol === 'https:'");
+    expect(tosSource).toContain('function getSafeTosHref');
+    expect(tosSource).toContain("parsed.protocol === 'http:' || parsed.protocol === 'https:'");
   });
 });
 
