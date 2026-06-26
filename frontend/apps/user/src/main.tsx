@@ -299,7 +299,6 @@ import './styles/user-antd-pagination-mini-options.css';
 import './styles/user-antd-pagination-disabled-container.css';
 import './styles/user-antd-pagination-disabled-jump.css';
 import './styles/user-antd-pagination-responsive.css';
-import './styles/user-ticket-chat-legacy.css';
 import './styles/user-order-info.css';
 import './styles/user-payment-select.css';
 import './styles/user-border-utilities.css';

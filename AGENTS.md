@@ -221,6 +221,27 @@ The user invite/commission surface (`/invite`) is a redesigned shadcn surface.
 - Retire old OneUI/Bootstrap/Ant visual parity for `/invite`; keep behavior and
   interaction scenarios for the same route.
 
+### User Ticket Direction
+
+The user ticket surfaces (`/ticket`, `/ticket/:ticket_id`) are redesigned shadcn
+surfaces.
+
+- Use shadcn/Radix composition for ticket list cards, status badges, action
+  controls, create-ticket dialogs, selects, textarea inputs, and the standalone
+  chat detail route.
+- Do not keep Ant Design table shells, fixed-column clones, Bootstrap blocks,
+  legacy select/modal presentation, or old chat CSS-module classes as the
+  foundation for these routes.
+- Keep ticket behavior strict: fetch cleanup on unmount, desktop popup versus
+  mobile same-window detail navigation, ticket id passthrough, reply polling,
+  reply payload/toast/input clearing, reply failure persistence, create-ticket
+  payloads, cancel draft persistence, successful-save reset and refetch, save
+  failure modal persistence, close-ticket payloads, close failure state, routing,
+  and i18n behavior must remain covered.
+- Retire old OneUI/Bootstrap/Ant visual parity for `/ticket` and
+  `/ticket/:ticket_id`; keep behavior and interaction scenarios for the same
+  routes.
+
 For new redesigned surfaces, do not use:
 
 - Ant Design v3 components as new UI foundations.

@@ -892,19 +892,15 @@ describe('legacy antd button and radio CSS', () => {
   });
 });
 
-describe('legacy ticket, order, and payment utility CSS', () => {
-  it('keeps ticket chat layout, order rows, and checkout selection cards aligned', () => {
+describe('legacy order and payment utility CSS', () => {
+  it('keeps order rows and checkout selection cards aligned', () => {
     const globals = css();
 
-    expect(globals).toContain(
-      '.content___DW5w1 {\n  position: absolute;\n  top: 0;\n  bottom: 0;',
-    );
-    expect(globals).toContain('.input___1j_ND {\n  position: fixed;\n  bottom: 0;\n}');
-    expect(globals).toContain('.tag___12_9H {\n  color: #000;\n  padding: 5px 10px;');
-    expect(globals).toContain(
-      '.bubble___3NP2- {\n  padding: 10px 10px 30px;\n  font-size: 14px;',
-    );
-    expect(globals).toContain('.time___1yWOE {\n  position: absolute;\n}');
+    expect(globals).not.toContain('.content___DW5w1');
+    expect(globals).not.toContain('.input___1j_ND');
+    expect(globals).not.toContain('.tag___12_9H');
+    expect(globals).not.toContain('.bubble___3NP2-');
+    expect(globals).not.toContain('.time___1yWOE');
     expect(globals).toContain(
       '.v2board-order-info > div {\n  display: flex;\n  margin-bottom: 5px;\n  font-size: 14px;',
     );
@@ -922,9 +918,6 @@ describe('legacy ticket, order, and payment utility CSS', () => {
     );
     expect(globals).toContain(
       '.border-primary {\n  border-color: var(--color-brand-500) !important;\n}',
-    );
-    expect(globals.indexOf('.content___DW5w1 {')).toBeLessThan(
-      globals.indexOf('.v2board-order-info > div {'),
     );
     expect(globals.indexOf('.v2board-order-info > div {')).toBeLessThan(
       globals.indexOf('.v2board-select {'),

@@ -1,5 +1,5 @@
-import { act } from 'react';
 import { readFileSync } from 'node:fs';
+import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -42,8 +42,8 @@ const state = vi.hoisted(() => {
 });
 
 const toastMocks = vi.hoisted(() => ({
-  loading: vi.fn(),
   destroy: vi.fn(),
+  loading: vi.fn(),
   success: vi.fn(),
 }));
 
@@ -90,8 +90,8 @@ afterEach(() => {
   state.ticketError = false;
 });
 
-describe('TicketDetailPage bundled-theme chat view', () => {
-  it('keeps the bundled-theme route ticket id as the fetch and reply input', () => {
+describe('TicketDetailPage shadcn chat surface', () => {
+  it('keeps the route ticket id as the fetch and reply input', () => {
     const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
 
     expect(source).toContain('const ticketId = ticket_id;');
@@ -113,45 +113,36 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     expect(source).not.toContain('data?.message?.length');
   });
 
-  it('renders the legacy subject strip, message bubbles, dates, and reply input shell', () => {
+  it('renders the shadcn subject header, message bubbles, dates, and reply form', () => {
     const html = renderToStaticMarkup(<TicketDetailPage />);
 
-    expect(html).toContain('block-content-full bg-gray-lighter p-3');
-    expect(html).toContain('class="tag___12_9H"');
+    expect(html).toContain('v2board-ticket-detail');
+    expect(html).toContain('v2board-ticket-detail-header');
+    expect(html).toContain('#7');
     expect(html).toContain('Need help');
-    expect(html).toContain(
-      'bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1',
-    );
-    expect(html).toContain('font-size-sm text-muted my-2 text-right');
-    expect(html).toContain('text-right ml-4');
-    expect(html).toContain(
-      'd-inline-block bg-gray-lighter px-3 py-2 mb-2 mw-100 rounded text-left',
-    );
+    expect(html).toContain('js-chat-messages v2board-ticket-chat');
     expect(html).toContain('My message');
-    expect(html).toContain('font-size-sm text-muted my-2');
-    expect(html).toContain('mr-4');
-    expect(html).toContain(
-      'd-inline-block bg-success-lighter px-3 py-2 mb-2 mw-100 rounded text-left',
-    );
     expect(html).toContain('Support reply');
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_060));
-    expect(html).toContain('js-chat-form block-content p-2 bg-body-dark input___1j_ND');
-    expect(html).toContain('js-chat-input bg-body-dark border-0 form-control form-control-alt');
+    expect(html).toContain('js-chat-form v2board-ticket-reply-form');
+    expect(html).toContain('js-chat-input v2board-ticket-reply-input');
+    expect(html).toContain('v2board-ticket-reply-send');
     expect(html).toContain('placeholder="输入内容回复工单..."');
+    expect(html).not.toContain('content___DW5w1');
+    expect(html).not.toContain('input___1j_ND');
+    expect(html).not.toContain('tag___12_9H');
   });
 
-  it('keeps the old chat shell visible when the ticket fetch fails', () => {
+  it('keeps the chat shell visible when the ticket fetch fails', () => {
     state.ticket = undefined;
     state.ticketError = true;
 
     const html = renderToStaticMarkup(<TicketDetailPage />);
 
     expect(html).toContain('工单不存在');
-    expect(html).toContain(
-      'bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1',
-    );
-    expect(html).toContain('js-chat-form block-content p-2 bg-body-dark input___1j_ND');
+    expect(html).toContain('v2board-ticket-chat');
+    expect(html).toContain('v2board-ticket-reply-form');
     expect(html).toContain('placeholder="输入内容回复工单..."');
     expect(html).not.toContain('页面加载失败');
     expect(html).not.toContain('刷新页面');
@@ -165,12 +156,12 @@ describe('TicketDetailPage bundled-theme chat view', () => {
     const html = renderToStaticMarkup(<TicketDetailPage />);
 
     expect(html).toContain('加载中...');
-    expect(html).toContain('class="tag___12_9H"');
-    expect(html).toContain('font-size-sm text-muted my-2 text-center');
+    expect(html).toContain('v2board-ticket-detail-header');
+    expect(html).toContain('text-center text-sm text-muted-foreground');
   });
 });
 
-describe('TicketDetailPage legacy polling and reply', () => {
+describe('TicketDetailPage legacy polling and reply behavior', () => {
   let container: HTMLDivElement;
   let root: Root | null;
   let scrollTo: ReturnType<typeof vi.fn>;
@@ -181,8 +172,8 @@ describe('TicketDetailPage legacy polling and reply', () => {
     state.replyMutateAsync.mockReset();
     state.replyMutateAsync.mockResolvedValue(undefined);
     state.replyPending = false;
-    toastMocks.loading.mockReset();
     toastMocks.destroy.mockReset();
+    toastMocks.loading.mockReset();
     toastMocks.success.mockReset();
     scrollTo = vi.fn();
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
@@ -229,7 +220,7 @@ describe('TicketDetailPage legacy polling and reply', () => {
     expect(state.refetch).toHaveBeenCalledTimes(1);
   });
 
-  it('sends a reply on Enter with the legacy toast sequence and clears only the input', async () => {
+  it('sends a reply on Enter with the legacy toast sequence and clears the input', async () => {
     const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
     const submitSource = source.slice(
       source.indexOf('const submitReply = async () => {'),

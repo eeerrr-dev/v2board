@@ -364,28 +364,32 @@ const scenarios = [
     authenticated: true,
     label: 'user-tickets',
     path: '/#/ticket',
-    readySelector: '.ant-table-fixed-right',
+    readySelector: '.v2board-ticket-table, .ant-table-fixed-right',
+    visualRetired: true,
   },
   {
     authenticated: true,
     emptyTickets: true,
     label: 'user-tickets-empty',
     path: '/#/ticket',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-ticket-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-tickets-timeout',
     path: '/#/ticket',
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '.v2board-ticket-surface, .ant-table',
     userTicketsTimeout: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-ticket-detail',
     path: '/#/ticket/7',
     readySelector: '.js-chat-input',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -394,6 +398,7 @@ const scenarios = [
     path: '/#/ticket/7',
     postReadyDelay: 300,
     readySelector: '.js-chat-input',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -541,7 +546,8 @@ const scenarios = [
     label: 'user-tickets-empty-zh-tw',
     locale: 'zh-TW',
     path: '/#/ticket',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-ticket-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -698,7 +704,8 @@ const scenarios = [
     label: 'user-tickets-empty-en-us',
     locale: 'en-US',
     path: '/#/ticket',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-ticket-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -794,7 +801,8 @@ const scenarios = [
     label: 'user-tickets-zh-tw',
     locale: 'zh-TW',
     path: '/#/ticket',
-    readySelector: '.ant-table-fixed-right',
+    readySelector: '.v2board-ticket-table',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -802,6 +810,7 @@ const scenarios = [
     locale: 'zh-TW',
     path: '/#/ticket/7',
     readySelector: '.js-chat-input',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -902,7 +911,8 @@ const scenarios = [
     label: 'user-tickets-en-us',
     locale: 'en-US',
     path: '/#/ticket',
-    readySelector: '.ant-table-fixed-right',
+    readySelector: '.v2board-ticket-table',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -910,6 +920,7 @@ const scenarios = [
     locale: 'en-US',
     path: '/#/ticket/7',
     readySelector: '.js-chat-input',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1051,7 +1062,8 @@ const scenarios = [
     label: 'user-tickets-empty-ja-jp',
     locale: 'ja-JP',
     path: '/#/ticket',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-ticket-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1167,7 +1179,8 @@ const scenarios = [
     label: 'user-tickets-ja-jp',
     locale: 'ja-JP',
     path: '/#/ticket',
-    readySelector: '.ant-table-fixed-right',
+    readySelector: '.v2board-ticket-table',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1175,6 +1188,7 @@ const scenarios = [
     locale: 'ja-JP',
     path: '/#/ticket/7',
     readySelector: '.js-chat-input',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1316,7 +1330,8 @@ const scenarios = [
     label: 'user-tickets-empty-vi-vn',
     locale: 'vi-VN',
     path: '/#/ticket',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-ticket-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1432,7 +1447,8 @@ const scenarios = [
     label: 'user-tickets-vi-vn',
     locale: 'vi-VN',
     path: '/#/ticket',
-    readySelector: '.ant-table-fixed-right',
+    readySelector: '.v2board-ticket-table',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1440,6 +1456,7 @@ const scenarios = [
     locale: 'vi-VN',
     path: '/#/ticket/7',
     readySelector: '.js-chat-input',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1581,7 +1598,8 @@ const scenarios = [
     label: 'user-tickets-empty-ko-kr',
     locale: 'ko-KR',
     path: '/#/ticket',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-ticket-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1697,7 +1715,8 @@ const scenarios = [
     label: 'user-tickets-ko-kr',
     locale: 'ko-KR',
     path: '/#/ticket',
-    readySelector: '.ant-table-fixed-right',
+    readySelector: '.v2board-ticket-table',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1705,6 +1724,7 @@ const scenarios = [
     locale: 'ko-KR',
     path: '/#/ticket/7',
     readySelector: '.js-chat-input',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -6280,11 +6300,17 @@ async function runUserTicketErrorMatrixInteraction(page) {
     '__visualParityUserTicketFetchCount',
     initialTicketFetchCount + 1,
   );
-  await page.waitForSelector('.ant-table-tbody tr', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector('.v2board-ticket-table tbody tr, .ant-table-tbody tr', {
+    state: 'visible',
+    timeout: 5_000,
+  });
   await page.waitForTimeout(150);
   const listBeforeClose = await userTicketListState(page);
   const listFetchCount = page.__visualParityUserTicketFetchCount ?? 0;
-  await clickFirstVisibleText(page, '.ant-table-tbody a', ['关闭', 'Close']);
+  await clickFirstVisibleText(page, '.v2board-ticket-close, .ant-table-tbody a', [
+    '关闭',
+    'Close',
+  ]);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserTicketCloseCount',
@@ -6342,28 +6368,31 @@ async function runAdminTicketReplySendInteraction(page) {
 async function runUserTicketCreateModalInteraction(page) {
   const initialTicketFetchCount = page.__visualParityUserTicketFetchCount ?? 0;
   const before = await userTicketCreateModalState(page);
-  await clickFirstVisible(page, '.block-header .block-options .btn, .block-header .block-options button');
-  await page.waitForSelector('.ant-modal', {
+  await clickFirstVisible(
+    page,
+    '.v2board-ticket-new-trigger, .block-header .block-options .btn, .block-header .block-options button',
+  );
+  await page.waitForSelector('.v2board-ticket-dialog, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
-  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity subject');
-  await clickFirstVisible(page, '.ant-modal .ant-select-selection');
-  await page.waitForSelector('.ant-select-dropdown-menu-item', {
+  await fillVisibleAt(page, '.v2board-ticket-dialog input, .ant-modal .ant-input', 0, 'Parity subject');
+  await clickFirstVisible(page, '.v2board-ticket-select-trigger, .ant-modal .ant-select-selection');
+  await page.waitForSelector('.v2board-ticket-select-content [role="option"], .ant-select-dropdown-menu-item', {
     state: 'visible',
     timeout: 5_000,
   });
   const levelDropdown = await userTicketCreateModalState(page);
-  await clickVisibleAt(page, '.ant-select-dropdown-menu-item', 2);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
-  await fillVisibleAt(page, '.ant-modal textarea.ant-input', 0, 'Parity ticket body');
+  await clickVisibleAt(page, '.v2board-ticket-select-content [role="option"], .ant-select-dropdown-menu-item', 2);
+  await waitForVisibleElementsHidden(page, '.v2board-ticket-select-content, .ant-select-dropdown');
+  await fillVisibleAt(page, '.v2board-ticket-dialog textarea, .ant-modal textarea.ant-input', 0, 'Parity ticket body');
   await page.waitForTimeout(100);
   const filled = await userTicketCreateModalState(page);
-  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await clickFirstVisible(page, '.v2board-ticket-dialog-footer button:last-child, .ant-modal-footer .ant-btn-primary');
   await page.waitForTimeout(100);
   const saving = await userTicketCreateModalState(page);
   await waitForPagePropertyAtLeast(page, '__visualParityUserTicketSaveCount', 1);
-  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await waitForVisibleElementsHidden(page, '.v2board-ticket-dialog, .ant-modal');
   await page.waitForTimeout(250);
   const saved = await userTicketCreateModalState(page);
   return {
@@ -6383,14 +6412,17 @@ async function runUserTicketCreateValidationFailureInteraction(page) {
   const initialTicketFetchCount = page.__visualParityUserTicketFetchCount ?? 0;
   const initialTicketSaveCount = page.__visualParityUserTicketSaveCount ?? 0;
   const before = await userTicketCreateModalState(page);
-  await clickFirstVisible(page, '.block-header .block-options .btn, .block-header .block-options button');
-  await page.waitForSelector('.ant-modal', {
+  await clickFirstVisible(
+    page,
+    '.v2board-ticket-new-trigger, .block-header .block-options .btn, .block-header .block-options button',
+  );
+  await page.waitForSelector('.v2board-ticket-dialog, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForTimeout(100);
   const opened = await userTicketCreateModalState(page);
-  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await clickFirstVisible(page, '.v2board-ticket-dialog-footer button:last-child, .ant-modal-footer .ant-btn-primary');
   await page.waitForTimeout(100);
   const saving = await userTicketCreateModalState(page);
   await waitForPagePropertyAtLeast(
@@ -9551,14 +9583,29 @@ async function adminUsersExtremeViewportState(page) {
 
 async function userTicketCreateModalState(page) {
   return {
-    buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
-    inputValues: await visibleInputValues(page, '.ant-modal input, .ant-modal textarea'),
-    labels: await visibleTexts(page, '.ant-modal .form-group label', 6),
-    modalCount: await visibleCount(page, '.ant-modal'),
-    selectedValues: await visibleTexts(page, '.ant-modal .ant-select-selection-selected-value', 4),
-    selectDropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 6),
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
-    titles: await visibleTexts(page, '.ant-modal-title', 2),
+    buttons: await visibleTexts(
+      page,
+      '.v2board-ticket-dialog-footer button, .ant-modal-footer .ant-btn',
+      4,
+    ),
+    inputValues: await visibleInputValues(
+      page,
+      '.v2board-ticket-dialog input, .v2board-ticket-dialog textarea, .ant-modal input, .ant-modal textarea',
+    ),
+    labels: await visibleTexts(page, '.v2board-ticket-dialog label, .ant-modal .form-group label', 6),
+    modalCount: await visibleCount(page, '.v2board-ticket-dialog, .ant-modal'),
+    selectedValues: await visibleTexts(
+      page,
+      '.v2board-ticket-select-trigger, .ant-modal .ant-select-selection-selected-value',
+      4,
+    ),
+    selectDropdownItems: await visibleTexts(
+      page,
+      '.v2board-ticket-select-content [role="option"], .ant-select-dropdown-menu-item',
+      6,
+    ),
+    tableRows: await visibleTexts(page, '.v2board-ticket-table tbody tr, .ant-table-tbody tr', 6),
+    titles: await visibleTexts(page, '.v2board-ticket-dialog-title, .ant-modal-title', 2),
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
   };
 }
@@ -9567,17 +9614,20 @@ async function ticketReplyState(page) {
   return {
     inputValue: await firstInputValue(page, '.js-chat-input'),
     messageTexts: await visibleTexts(page, '.js-chat-messages', 6),
-    sendButton: await firstElementState(page, '.js-chat-form button, .js-chat-form .ant-btn'),
+    sendButton: await firstElementState(
+      page,
+      '.v2board-ticket-reply-send, .js-chat-form button, .js-chat-form .ant-btn',
+    ),
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
 async function userTicketListState(page) {
   return {
-    actionLinks: await visibleTexts(page, '.ant-table-tbody a', 8),
+    actionLinks: await visibleTexts(page, '.v2board-ticket-table button, .ant-table-tbody a', 8),
     closeCount: page.__visualParityUserTicketCloseCount ?? 0,
     hash: await page.evaluate(() => window.location.hash),
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
+    tableRows: await visibleTexts(page, '.v2board-ticket-table tbody tr, .ant-table-tbody tr', 6),
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
   };
 }
@@ -9678,6 +9728,16 @@ function normalizeInteractionResult(label, result) {
   ) {
     return normalizeInviteInteractionResult(normalized);
   }
+  if (
+    [
+      'user-ticket-reply-send',
+      'user-ticket-error-matrix',
+      'user-ticket-create-submit',
+      'user-ticket-create-validation-failure',
+    ].includes(label)
+  ) {
+    return normalizeTicketInteractionResult(normalized);
+  }
   if (label === 'user-node-tooltips' || label === 'user-invite-tooltips') {
     return normalizeTooltipSequenceInteractionResult(normalized);
   }
@@ -9691,6 +9751,7 @@ function normalizeInteractionResult(label, result) {
     [
       'user-node-fetch-api-500',
       'user-node-fetch-timeout',
+      'user-tickets-fetch-timeout',
       'user-traffic-fetch-timeout',
     ].includes(label)
   ) {
@@ -9934,10 +9995,101 @@ function normalizeInviteTextArray(values, options = {}) {
   });
 }
 
+function normalizeTicketInteractionResult(result) {
+  return Object.fromEntries(
+    Object.entries(result ?? {}).map(([key, value]) => [
+      key,
+      normalizeTicketInteractionValue(key, value),
+    ]),
+  );
+}
+
+function normalizeTicketInteractionValue(_key, value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeTicketInteractionValue('', item));
+  }
+  if (!value || typeof value !== 'object') return value;
+  if (looksLikeTicketInteractionState(value)) {
+    return normalizeTicketInteractionState(value);
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      key,
+      normalizeTicketInteractionValue(key, nested),
+    ]),
+  );
+}
+
+function looksLikeTicketInteractionState(value) {
+  return [
+    'actionLinks',
+    'buttons',
+    'inputValue',
+    'inputValues',
+    'labels',
+    'messageTexts',
+    'modalCount',
+    'selectedValues',
+    'selectDropdownItems',
+    'sendButton',
+    'tableRows',
+    'titles',
+    'toastTexts',
+  ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function normalizeTicketInteractionState(state) {
+  const { sendButton: _sendButton, ...rest } = state;
+  const normalized = { ...rest };
+  if ('actionLinks' in normalized) {
+    normalized.actionLinks = normalizeTicketTextArray(normalized.actionLinks);
+  }
+  if ('buttons' in normalized) normalized.buttons = normalizeTicketTextArray(normalized.buttons);
+  if ('inputValue' in normalized) normalized.inputValue = normalizeParityText(normalized.inputValue);
+  if ('inputValues' in normalized) {
+    normalized.inputValues = normalizeTicketTextArray(normalized.inputValues).filter(Boolean);
+  }
+  if ('labels' in normalized) normalized.labels = normalizeTicketTextArray(normalized.labels);
+  if ('messageTexts' in normalized) normalized.messageTexts = [];
+  if ('selectedValues' in normalized) {
+    normalized.selectedValues = normalizeTicketTextArray(normalized.selectedValues).filter(
+      (value) => value && !/请选择|please select/i.test(value),
+    );
+  }
+  if ('selectDropdownItems' in normalized) {
+    normalized.selectDropdownItems = normalizeTicketTextArray(normalized.selectDropdownItems);
+  }
+  if ('tableRows' in normalized) {
+    const rows = Array.from(
+      new Set(
+        normalizeTicketTextArray(normalized.tableRows, {
+          compact: true,
+        }),
+      ),
+    );
+    normalized.tableRows = rows.filter(
+      (row) => !rows.some((other) => other !== row && other.includes(row)),
+    );
+  }
+  if ('titles' in normalized) normalized.titles = normalizeTicketTextArray(normalized.titles);
+  if ('toastTexts' in normalized) {
+    normalized.toastTexts = normalizeTicketTextArray(normalized.toastTexts);
+  }
+  return normalized;
+}
+
+function normalizeTicketTextArray(values, options = {}) {
+  return (values ?? []).map((value) => {
+    const text = normalizeParityText(value);
+    return options.compact ? text.replace(/\s+/g, '') : text;
+  });
+}
+
 function normalizeRedesignedFetchFailureInteractionResult(label, result) {
   const expectedCountKey = {
     'user-node-fetch-api-500': 'userServerFetch',
     'user-node-fetch-timeout': 'userServerFetch',
+    'user-tickets-fetch-timeout': 'userTicketFetch',
     'user-traffic-fetch-timeout': 'userTrafficFetch',
   }[label];
   const visibleFallbackCount =
@@ -14357,18 +14509,18 @@ async function fetchFailureState(page) {
   const alertTexts = await visibleTexts(page, '.alert, .ant-alert', 6);
   const emptyTexts = await visibleTexts(
     page,
-    '.v2board-plan-empty, .v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .ant-empty, .ant-table-placeholder',
+    '.v2board-plan-empty, .v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .v2board-ticket-empty, .ant-empty, .ant-table-placeholder',
     6,
   );
   const listItemTexts = await visibleTexts(page, '.am-list-item', 6);
   const tablePlaceholderTexts = await visibleTexts(
     page,
-    '.v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .ant-table-placeholder',
+    '.v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .v2board-ticket-empty, .ant-table-placeholder',
     4,
   );
   const tableRows = await visibleTexts(
     page,
-    '.v2board-orders-table tbody tr, .v2board-node-table tbody tr, .v2board-traffic-table tbody tr, .ant-table-tbody tr',
+    '.v2board-orders-table tbody tr, .v2board-node-table tbody tr, .v2board-traffic-table tbody tr, .v2board-ticket-table tbody tr, .ant-table-tbody tr',
     6,
   );
   const legacyBlockLoadingCount = await visibleCount(page, '.block-mode-loading');
@@ -14412,7 +14564,7 @@ async function fetchFailureState(page) {
       };
       return Array.from(
         document.querySelectorAll(
-          '.v2board-orders-card, .v2board-node-card, .v2board-traffic-card, .ant-table',
+          '.v2board-orders-card, .v2board-node-card, .v2board-traffic-card, .v2board-ticket-surface, .ant-table',
         ),
       )
         .filter(isVisible)

@@ -1,22 +1,45 @@
 import { useEffect, useState } from 'react';
-import type { AnchorHTMLAttributes } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { LegacyEmpty } from '@/components/legacy-empty';
-import { LegacySelect } from '@/components/legacy-select';
-import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
-import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
+import { getLocaleAntdMessages } from '@v2board/i18n';
+import type { TicketLevel } from '@v2board/types';
+import { ExternalLink, Plus, XCircle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/shadcn-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/cn';
+import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import {
   userKeys,
   useCloseTicketMutation,
   useSaveTicketMutation,
   useTickets,
 } from '@/lib/queries';
-import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
-import { legacyHref } from '@/lib/legacy-href';
-import type { TicketLevel } from '@v2board/types';
+import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
 const LEVELS: { value: TicketLevel; labelKey: string }[] = [
   { value: 0, labelKey: 'ticket.level_low' },
@@ -24,12 +47,8 @@ const LEVELS: { value: TicketLevel; labelKey: string }[] = [
   { value: 2, labelKey: 'ticket.level_high' },
 ];
 
-function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTMLAnchorElement> {
-  return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;
-}
-
 export default function TicketsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const ticketsQuery = useTickets();
   const { data, isFetching } = ticketsQuery;
@@ -40,7 +59,8 @@ export default function TicketsPage() {
   const [subject, setSubject] = useState<string | undefined>();
   const [level, setLevel] = useState<TicketLevel | undefined>();
   const [message, setMessage] = useState<string | undefined>();
-  const [hoverKey, setHoverKey] = useState<number | null>(null);
+  const tickets = data ?? [];
+  const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
 
   useEffect(
     () => () => {
@@ -86,317 +106,203 @@ export default function TicketsPage() {
     window.location.href = url;
   };
 
-  const tickets = data ?? [];
-  const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(tickets.length);
-  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(tickets.length);
-  const tableClassName = [
-    'ant-table',
-    'ant-table-default',
-    tickets.length ? '' : 'ant-table-empty',
-    scrollPositionClassName,
-  ].filter(Boolean).join(' ');
-
   return (
     <>
-      <div className={`block block-rounded js-appear-enabled ${loading ? 'block-mode-loading' : ''}`}>
-        <div className="block-header block-header-default">
-          <h3 className="block-title">{t('ticket.history')}</h3>
-          <div className="block-options">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm btn-primary btn-rounded px-3"
-              onClick={() => setOpen(true)}
-            >
-              {t('ticket.new')}
-            </button>
+      <Card className={cn('v2board-ticket-surface overflow-hidden', loading && 'opacity-80')}>
+        <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1.5">
+            <CardTitle>{t('ticket.history')}</CardTitle>
           </div>
-        </div>
-        <div className="block-content p-0">
-          <div className="ant-table-wrapper">
-            {/* antd v3 Table always wraps its content in Spin (loading defaults to
-                false); with no loading prop the ticket table never spins, so the
-                spinner div / ant-spin-blur are absent — only the two static wrappers. */}
-            <div className="ant-spin-nested-loading">
-              <div className="ant-spin-container">
-            <div className={tableClassName}>
-              <div className="ant-table-content">
-                <div className="ant-table-scroll">
-                  <div
-                    ref={bodyRef}
-                    tabIndex={-1}
-                    className="ant-table-body"
-                    style={{ overflowX: 'scroll', WebkitTransform: 'translate3d (0, 0, 0)' }}
-                    onScroll={onScroll}
-                  >
-                    <table ref={mainTableRef} className="ant-table-fixed" style={{ width: 900 }}>
-                      <colgroup>
-                        <col />
-                        <col />
-                        <col />
-                        <col />
-                        <col />
-                        <col />
-                        <col />
-                      </colgroup>
-                      <thead className="ant-table-thead">
-                        <tr>
-                          <th className="">
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('ticket.col_id')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th className="">
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('ticket.subject')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th className="">
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('ticket.level')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th className="">
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('ticket.status')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th className="">
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('ticket.created_at_col')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th className="">
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('ticket.last_reply_col')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th
-                            className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
-                            style={{ textAlign: 'right' }}
-                          >
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('ticket.action')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="ant-table-tbody">
-                        {tickets.map((ticket, index) => {
-                          const levelLabel = LEVELS[ticket.level]?.labelKey;
-                          return (
-                            <tr
-                              className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
-                              data-row-key={index}
-                              key={index}
-                              onMouseEnter={() => setHoverKey(index)}
-                              onMouseLeave={() => setHoverKey(null)}
+          <Button
+            type="button"
+            className="v2board-ticket-new-trigger"
+            onClick={() => setOpen(true)}
+          >
+            <Plus className="size-4" />
+            {t('ticket.new')}
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="v2board-ticket-table-scroll overflow-x-auto">
+            <table className="v2board-ticket-table w-full min-w-[900px] text-sm">
+              <thead className="border-y border-border bg-muted/50 text-muted-foreground">
+                <tr>
+                  <TicketHeader className="w-16">{t('ticket.col_id')}</TicketHeader>
+                  <TicketHeader>{t('ticket.subject')}</TicketHeader>
+                  <TicketHeader>{t('ticket.level')}</TicketHeader>
+                  <TicketHeader>{t('ticket.status')}</TicketHeader>
+                  <TicketHeader>{t('ticket.created_at_col')}</TicketHeader>
+                  <TicketHeader>{t('ticket.last_reply_col')}</TicketHeader>
+                  <TicketHeader className="text-right">{t('ticket.action')}</TicketHeader>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {tickets.length ? (
+                  tickets.map((ticket, index) => {
+                    const levelLabel = LEVELS[ticket.level]?.labelKey;
+                    return (
+                      <tr
+                        className="transition-colors hover:bg-muted/50"
+                        data-row-key={index}
+                        key={index}
+                      >
+                        <TicketCell className="font-medium text-foreground">{ticket.id}</TicketCell>
+                        <TicketCell className="max-w-[260px] truncate font-medium text-foreground">
+                          {ticket.subject}
+                        </TicketCell>
+                        <TicketCell>{levelLabel ? t(levelLabel) : ''}</TicketCell>
+                        <TicketCell>
+                          <TicketStatus
+                            closed={ticket.status === 1}
+                            replied={Boolean(parseInt(String(ticket.reply_status)))}
+                          />
+                        </TicketCell>
+                        <TicketCell>{formatUserLegacyDateMinuteSlash(ticket.created_at)}</TicketCell>
+                        <TicketCell>{formatUserLegacyDateMinuteSlash(ticket.updated_at)}</TicketCell>
+                        <TicketCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="v2board-ticket-view h-8 px-2"
+                              onClick={() => openTicket(ticket.id)}
                             >
-                              <td>{ticket.id}</td>
-                              <td>{ticket.subject}</td>
-                              <td>
-                                {levelLabel ? t(levelLabel) : ''}
-                              </td>
-                              <td>
-                                {ticket.status === 1 ? (
-                                  <span>
-                                    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-                                      <span className="ant-badge-status-dot ant-badge-status-success" />
-                                      <span className="ant-badge-status-text" />
-                                    </span>
-                                    {t('ticket.closed')}
-                                  </span>
-                                ) : (
-                                  <span>
-                                    <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-                                      <span
-                                        className={`ant-badge-status-dot ant-badge-status-${
-                                          parseInt(String(ticket.reply_status))
-                                            ? 'processing'
-                                            : 'error'
-                                        }`}
-                                      />
-                                      <span className="ant-badge-status-text" />
-                                    </span>
-                                    {parseInt(String(ticket.reply_status))
-                                      ? t('ticket.replied')
-                                      : t('ticket.pending')}
-                                  </span>
-                                )}
-                              </td>
-                              <td>
-                                {formatUserLegacyDateMinuteSlash(ticket.created_at)}
-                              </td>
-                              <td>
-                                {formatUserLegacyDateMinuteSlash(ticket.updated_at)}
-                              </td>
-                              <td
-                                className="ant-table-fixed-columns-in-body"
-                                style={{ textAlign: 'right' }}
-                              >
-                                <div>
-                                  <a
-                                    ref={legacyHref()}
-                                    onClick={() => openTicket(ticket.id)}
-                                  >
-                                    {t('ticket.view')}
-                                  </a>
-                                  <div className="ant-divider ant-divider-vertical" />
-                                  <a
-                                    ref={legacyHref()}
-                                    {...legacyDisabledAnchorProps(ticket.status)}
-                                    onClick={() => void closeTicket(ticket.id)}
-                                  >
-                                    {t('ticket.close_ticket')}
-                                  </a>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  {tickets.length === 0 && (
-                    <div className="ant-table-placeholder">
-                      <LegacyEmpty />
-                    </div>
-                  )}
-                </div>
-                <div className="ant-table-fixed-right">
-                  <div
-                    className="ant-table-body-outer"
-                    style={{ WebkitTransform: 'translate3d (0, 0, 0)' }}
-                  >
-                    <div className="ant-table-body-inner">
-                      <table ref={fixedTableRef} className="ant-table-fixed">
-                        <colgroup>
-                          <col />
-                        </colgroup>
-                        <thead className="ant-table-thead">
-                          <tr>
-                            <th
-                              className="ant-table-align-right ant-table-row-cell-last"
-                              style={{ textAlign: 'right' }}
+                              <ExternalLink className="size-3.5" />
+                              {t('ticket.view')}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className={cn(
+                                'v2board-ticket-close h-8 px-2',
+                                ticket.status === 1 && 'text-muted-foreground',
+                              )}
+                              onClick={() => void closeTicket(ticket.id)}
                             >
-                              <span className="ant-table-header-column">
-                                <div>
-                                  <span className="ant-table-column-title">{t('ticket.action')}</span>
-                                  <span className="ant-table-column-sorter" />
-                                </div>
-                              </span>
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="ant-table-tbody">
-                          {tickets.map((ticket, index) => (
-                            <tr
-                              className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
-                              data-row-key={index}
-                              key={index}
-                              onMouseEnter={() => setHoverKey(index)}
-                              onMouseLeave={() => setHoverKey(null)}
-                            >
-                              <td style={{ textAlign: 'right' }}>
-                                <div>
-                                  <a
-                                    ref={legacyHref()}
-                                    onClick={() => openTicket(ticket.id)}
-                                  >
-                                    {t('ticket.view')}
-                                  </a>
-                                  <div className="ant-divider ant-divider-vertical" />
-                                  <a
-                                    ref={legacyHref()}
-                                    {...legacyDisabledAnchorProps(ticket.status)}
-                                    onClick={() => void closeTicket(ticket.id)}
-                                  >
-                                    {t('ticket.close_ticket')}
-                                  </a>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-              </div>
-            </div>
+                              <XCircle className="size-3.5" />
+                              {t('ticket.close_ticket')}
+                            </Button>
+                          </div>
+                        </TicketCell>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr className="v2board-ticket-empty">
+                    <td className="px-4 py-14 text-center text-sm text-muted-foreground" colSpan={7}>
+                      {emptyDescription}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent
-          title={t('ticket.new')}
-          okText={t('ticket.confirm')}
-          cancelText={t('common.cancel')}
-          maskClosable
-          // Original reads `d = e.saveLoading`, but ticket/save never sets that
-          // flag, so the compiled `onOk: ()=>d || this.save()` always calls save().
-          onOk={() => void saveTicket()}
-        >
-          {/* Original wraps the form-groups in a class-less <div> (umi.js @2008600). */}
-          <div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">{t('ticket.subject')}</label>
-              <input
-                className="ant-input"
+        <DialogContent className="v2board-ticket-dialog sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="v2board-ticket-dialog-title">{t('ticket.new')}</DialogTitle>
+            <DialogDescription>{t('ticket.message_placeholder')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="ticket-subject">{t('ticket.subject')}</Label>
+              <Input
+                id="ticket-subject"
                 placeholder={t('ticket.subject_placeholder')}
-                value={subject}
+                value={subject ?? ''}
                 onChange={(event) => setSubject(event.target.value)}
               />
             </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">{t('ticket.level_form')}</label>
-              <LegacySelect
-                style={{ width: '100%' }}
-                value={level}
-                placeholder={t('ticket.level_placeholder')}
-                options={LEVELS.map((item) => ({
-                  value: item.value,
-                  label: t(item.labelKey),
-                }))}
-                onChange={(nextLevel) => setLevel(nextLevel as TicketLevel)}
-              />
+            <div className="space-y-2">
+              <Label htmlFor="ticket-level">{t('ticket.level_form')}</Label>
+              <Select
+                value={level === undefined ? undefined : String(level)}
+                onValueChange={(nextLevel) => setLevel(Number(nextLevel) as TicketLevel)}
+              >
+                <SelectTrigger id="ticket-level" className="v2board-ticket-select-trigger">
+                  <SelectValue placeholder={t('ticket.level_placeholder')} />
+                </SelectTrigger>
+                <SelectContent className="v2board-ticket-select-content">
+                  {LEVELS.map((item) => (
+                    <SelectItem key={item.value} value={String(item.value)}>
+                      {t(item.labelKey)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">{t('ticket.message')}</label>
-              <textarea
+            <div className="space-y-2">
+              <Label htmlFor="ticket-message">{t('ticket.message')}</Label>
+              <Textarea
+                id="ticket-message"
                 rows={5}
-                className="ant-input"
                 placeholder={t('ticket.message_placeholder')}
-                value={message}
+                value={message ?? ''}
                 onChange={(event) => setMessage(event.target.value)}
               />
             </div>
           </div>
+          <DialogFooter className="v2board-ticket-dialog-footer">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="button" loading={save.isPending} onClick={() => void saveTicket()}>
+              {t('ticket.confirm')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
   );
+
+  function TicketStatus({ closed, replied }: { closed: boolean; replied: boolean }) {
+    const label = closed ? t('ticket.closed') : replied ? t('ticket.replied') : t('ticket.pending');
+    const tone = closed ? 'success' : replied ? 'processing' : 'error';
+    return (
+      <Badge
+        variant="outline"
+        className={cn(
+          'v2board-ticket-status',
+          tone === 'success' && 'border-emerald-200 text-emerald-700',
+          tone === 'processing' && 'border-sky-200 text-sky-700',
+          tone === 'error' && 'border-destructive/30 text-destructive',
+        )}
+      >
+        <span
+          className={cn(
+            'size-1.5 rounded-full',
+            tone === 'success' && 'bg-emerald-500',
+            tone === 'processing' && 'bg-sky-500',
+            tone === 'error' && 'bg-destructive',
+          )}
+        />
+        {label}
+      </Badge>
+    );
+  }
+}
+
+function TicketHeader({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <th className={cn('px-4 py-3 text-left font-medium', className)}>{children}</th>;
+}
+
+function TicketCell({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <td className={cn('px-4 py-4 text-muted-foreground', className)}>{children}</td>;
 }

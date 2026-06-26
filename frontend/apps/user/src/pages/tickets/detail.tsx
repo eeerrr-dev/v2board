@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useReplyTicketMutation, useTicket } from '@/lib/queries';
+import { Send } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/cn';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { toast } from '@/lib/legacy-toast';
+import { useReplyTicketMutation, useTicket } from '@/lib/queries';
 
 function legacyTicketMessageLength(data?: { message?: unknown[] }) {
   return data?.message!.length;
@@ -70,55 +75,74 @@ export default function TicketDetailPage() {
       : t('common.loading');
 
   return (
-    <div>
-      <div className="block-content-full bg-gray-lighter p-3">
-        <span className="tag___12_9H">{data?.subject ?? emptyNotice}</span>
-      </div>
+    <div className="v2board-ticket-detail flex min-h-screen flex-col bg-background text-foreground">
+      <header className="v2board-ticket-detail-header border-b border-border px-4 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Badge variant="secondary" className="shrink-0">
+            #{ticketId}
+          </Badge>
+          <h1 className="min-w-0 truncate text-base font-semibold">
+            {data?.subject ?? emptyNotice}
+          </h1>
+        </div>
+      </header>
+
       <div
-        className="bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1"
+        className="js-chat-messages v2board-ticket-chat flex-1 overflow-y-auto px-4 py-4"
         ref={chatRef}
       >
-        {data?.message.map((item, index) =>
-          item.is_me ? (
-            <div key={index}>
-              <div className="font-size-sm text-muted my-2 text-right">
+        <div className="space-y-4">
+          {data?.message.map((item, index) => (
+            <div
+              className={cn('flex flex-col gap-1', item.is_me ? 'items-end' : 'items-start')}
+              key={index}
+            >
+              <div className="text-xs text-muted-foreground">
                 {formatUserLegacyDateMinuteSlash(item.created_at)}
               </div>
-              <div className="text-right ml-4">
-                <div className="d-inline-block bg-gray-lighter px-3 py-2 mb-2 mw-100 rounded text-left">
-                  {item.message}
-                </div>
+              <div
+                className={cn(
+                  'max-w-[82%] rounded-lg px-3 py-2 text-sm leading-6 shadow-xs',
+                  item.is_me
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-foreground',
+                )}
+              >
+                {item.message}
               </div>
             </div>
-          ) : (
-            <div key={index}>
-              <div className="font-size-sm text-muted my-2">
-                {formatUserLegacyDateMinuteSlash(item.created_at)}
-              </div>
-              <div className="mr-4">
-                <div className="d-inline-block bg-success-lighter px-3 py-2 mb-2 mw-100 rounded text-left">
-                  {item.message}
-                </div>
-              </div>
-            </div>
-          ),
-        )}
-        {emptyNotice ? (
-          <div className="font-size-sm text-muted my-2 text-center">{emptyNotice}</div>
-        ) : null}
+          ))}
+          {emptyNotice ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">{emptyNotice}</div>
+          ) : null}
+        </div>
       </div>
-      <div className="js-chat-form block-content p-2 bg-body-dark input___1j_ND">
-        <input
-          ref={inputRef}
-          onChange={(event) => setMessage(event.target.value)}
-          onKeyDown={(event) => {
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-            if (event.keyCode === 13) void submitReply();
-          }}
-          type="text"
-          className="js-chat-input bg-body-dark border-0 form-control form-control-alt"
-          placeholder={t('ticket.reply_placeholder')}
-        />
+
+      <div className="js-chat-form v2board-ticket-reply-form border-t border-border bg-background p-3">
+        <div className="flex items-center gap-2">
+          <Input
+            ref={inputRef}
+            value={message ?? ''}
+            onChange={(event) => setMessage(event.target.value)}
+            onKeyDown={(event) => {
+              // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
+              if (event.keyCode === 13) void submitReply();
+            }}
+            type="text"
+            className="js-chat-input v2board-ticket-reply-input"
+            placeholder={t('ticket.reply_placeholder')}
+          />
+          <Button
+            type="button"
+            size="icon"
+            className="v2board-ticket-reply-send"
+            loading={reply.isPending}
+            aria-label={t('ticket.reply_placeholder')}
+            onClick={() => void submitReply()}
+          >
+            <Send className="size-4" />
+          </Button>
+        </div>
       </div>
     </div>
   );

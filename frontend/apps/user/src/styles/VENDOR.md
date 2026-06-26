@@ -41,7 +41,7 @@ are the organized source layer and may be edited normally. In this app they are:
 - `user-plan-tabs.css`, `user-plan-content-features.css`, `user-plan-stock-tags.css`, `user-plan-coupon-input.css` — plans/checkout
 - `user-payment-elements.css`, `user-payment-select.css` — payment/cashier
 - `user-order-info.css`, `user-trade-number.css` — order detail
-- `user-subscribe-list.css`, `user-ticket-chat-legacy.css` — one-click subscribe list, ticket chat (`___` module classes)
+- `user-subscribe-list.css` — one-click subscribe list (`___` module classes)
 - `user-mobile-search-overrides.css`, `user-mobile-select-overrides.css` — mobile overrides
 - `user-email-whitelist-enable.css`, `user-antd-radio-native-select-bridge.css`, `user-shell-polish.css`, `user-sidebar-nav-footer-mask.css` — misc app overrides
 

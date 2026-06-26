@@ -1,8 +1,9 @@
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { act } from 'react';
+import type { ReactNode } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
@@ -13,14 +14,8 @@ import TicketsPage from './index';
 
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'index.tsx'), 'utf8');
 
-const mocks = vi.hoisted(() => ({
-  invalidateQueries: vi.fn(),
-  removeQueries: vi.fn(),
-  saveMutateAsync: vi.fn(),
-  savePending: false,
-  closeMutateAsync: vi.fn(),
-  openWindow: vi.fn(),
-  tickets: [
+const mocks = vi.hoisted(() => {
+  const makeTickets = () => [
     {
       id: 7,
       subject: 'Need help',
@@ -48,9 +43,20 @@ const mocks = vi.hoisted(() => ({
       created_at: 1_700_001_200,
       updated_at: 1_700_001_260,
     },
-  ],
-  fetching: true,
-}));
+  ];
+
+  return {
+    closeMutateAsync: vi.fn(),
+    fetching: true,
+    invalidateQueries: vi.fn(),
+    makeTickets,
+    openWindow: vi.fn(),
+    removeQueries: vi.fn(),
+    saveMutateAsync: vi.fn(),
+    savePending: false,
+    tickets: makeTickets(),
+  };
+});
 
 const labels: Record<string, string> = {
   'common.cancel': '取消',
@@ -81,8 +87,8 @@ const labels: Record<string, string> = {
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => labels[key] ?? key,
     i18n: { language: 'zh-CN' },
+    t: (key: string) => labels[key] ?? key,
   }),
 }));
 
@@ -99,6 +105,7 @@ vi.mock('@/lib/queries', () => ({
   },
   useTickets: () => ({
     data: mocks.tickets,
+    error: undefined,
     isFetching: mocks.fetching,
   }),
   useSaveTicketMutation: () => ({
@@ -110,101 +117,102 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-vi.mock('@/components/legacy-select', () => ({
-  LegacySelect: ({
+vi.mock('@/components/ui/select', () => ({
+  Select: ({
+    children,
+    onValueChange,
     value,
-    placeholder,
-    options,
-    onChange,
   }: {
-    value?: number;
-    placeholder?: string;
-    options: Array<{ value: number; label: string }>;
-    onChange: (value: number) => void;
+    children: ReactNode;
+    onValueChange: (value: string) => void;
+    value?: string;
   }) => (
     <select
-      className="ant-select legacy-select-probe"
-      data-placeholder={placeholder}
+      className="v2board-ticket-select-trigger v2board-ticket-select-native"
       value={value ?? ''}
-      onChange={(event) => onChange(Number(event.currentTarget.value))}
+      onChange={(event) => onValueChange(event.currentTarget.value)}
     >
-      <option value="" />
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
+      {children}
     </select>
   ),
+  SelectContent: ({ children }: { children: ReactNode }) => children,
+  SelectItem: ({ children, value }: { children: ReactNode; value: string }) => (
+    <option value={value}>{children}</option>
+  ),
+  SelectTrigger: ({ children }: { children: ReactNode }) => children,
+  SelectValue: ({ placeholder }: { placeholder?: string }) => <option value="">{placeholder}</option>,
 }));
 
-describe('TicketsPage bundled-theme table', () => {
-  beforeEach(() => {
-    mocks.fetching = true;
-    mocks.savePending = false;
-  });
+function resetMocks() {
+  mocks.tickets = mocks.makeTickets();
+  mocks.fetching = true;
+  mocks.savePending = false;
+}
+
+function setNativeInputValue(input: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function setNativeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
+    textarea,
+    value,
+  );
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+describe('TicketsPage shadcn surface', () => {
+  beforeEach(resetMocks);
 
   afterEach(() => {
     document.body.innerHTML = '';
   });
 
-  it('renders the legacy table shell, fixed action column, statuses, dates, and dividers', () => {
+  it('renders the shadcn ticket card, table, statuses, actions, and dates', () => {
     const html = renderToStaticMarkup(<TicketsPage />);
 
-    expect(html).toContain('block block-rounded js-appear-enabled ');
-    expect(html).not.toContain('block-mode-loading');
+    expect(html).toContain('v2board-ticket-surface');
+    expect(html).toContain('v2board-ticket-table');
+    expect(html).toContain('v2board-ticket-new-trigger');
     expect(html).toContain('工单历史');
-    expect(html).toContain('btn btn-primary btn-sm btn-primary btn-rounded px-3');
     expect(html).toContain('新的工单');
-    expect(html).toContain('ant-table-wrapper');
-    expect(html).toContain('class="ant-table-fixed" style="width:900px"');
-    expect(html).toContain('<table class="ant-table-fixed"><colgroup>');
-    expect(html).toContain('<th class=""><span class="ant-table-header-column">');
-    expect(html).toContain('ant-table-fixed-right');
-    expect(html).toContain('<span class="ant-table-column-title">#</span>');
-    expect(html).toContain('主题');
-    expect(html).toContain('工单级别');
-    expect(html).toContain('工单状态');
-    expect(html).toContain('创建时间');
-    expect(html).toContain('最后回复');
-    expect(html).toContain('操作');
     expect(html).toContain('Need help');
     expect(html).toContain('Waiting reply');
     expect(html).toContain('Closed ticket');
-    expect(html).toContain('<td>中</td>');
-    expect(html).toContain('<td>低</td>');
-    expect(html).toContain('<td>高</td>');
-    expect(html).toContain('ant-badge-status-processing');
+    expect(html).toContain('>中<');
+    expect(html).toContain('>低<');
+    expect(html).toContain('>高<');
     expect(html).toContain('已答复');
-    expect(html).toContain('ant-badge-status-error');
     expect(html).toContain('待处理');
-    expect(html).toContain('ant-badge-status-success');
     expect(html).toContain('已关闭');
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
     expect(html).toContain(formatLegacyDateMinuteSlash(60));
-    expect(html.match(/ant-divider ant-divider-vertical/g)).toHaveLength(6);
-    expect(html).not.toContain('role="separator"');
-    expect(html.match(/data-row-key="0"/g)).toHaveLength(2);
-    expect(html.match(/data-row-key="1"/g)).toHaveLength(2);
-    expect(html.match(/data-row-key="2"/g)).toHaveLength(2);
+    expect(html).toContain('v2board-ticket-view');
+    expect(html).toContain('v2board-ticket-close');
+    expect(html.match(/data-row-key="0"/g)).toHaveLength(1);
+    expect(html.match(/data-row-key="1"/g)).toHaveLength(1);
+    expect(html.match(/data-row-key="2"/g)).toHaveLength(1);
+    expect(html).not.toContain('block block-rounded');
+    expect(html).not.toContain('ant-table-wrapper');
+    expect(html).not.toContain('ant-table-fixed-right');
   });
 
-  it('keeps bundled antd fallback row keys as index DOM attributes', () => {
+  it('keeps ticket table row keys as index DOM attributes', () => {
     expect(source).toContain('data-row-key={index}');
     expect(source).not.toContain('data-row-key={ticket.id}');
   });
 
-  it('keeps the original new-ticket button text even while ticket save is pending', () => {
+  it('keeps the new-ticket trigger text stable while ticket save is pending', () => {
     mocks.savePending = true;
 
     const html = renderToStaticMarkup(<TicketsPage />);
 
-    expect(html).toContain('btn btn-primary btn-sm btn-primary btn-rounded px-3');
+    expect(html).toContain('v2board-ticket-new-trigger');
     expect(html).toContain('新的工单</button>');
-    expect(html).not.toContain('anticon-loading');
   });
 
-  it('applies the original fetch loading class to the block, not the inner Table spin', async () => {
+  it('marks the ticket card as loading while ticket/fetch is pending', async () => {
     mocks.fetching = true;
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -216,22 +224,33 @@ describe('TicketsPage bundled-theme table', () => {
         await Promise.resolve();
       });
 
-      expect(container.querySelector('.block')?.className).toContain('block-mode-loading');
+      expect(container.querySelector('.v2board-ticket-surface')?.className).toContain('opacity-80');
+      expect(container.innerHTML).not.toContain('block-mode-loading');
       expect(container.innerHTML).not.toContain('ant-spin-spinning');
-      expect(container.innerHTML).not.toContain('ant-spin-blur');
     } finally {
       act(() => root.unmount());
       container.remove();
     }
   });
+
+  it('renders a shadcn empty row without the legacy antd empty shell', () => {
+    mocks.tickets = [];
+
+    const html = renderToStaticMarkup(<TicketsPage />);
+
+    expect(html).toContain('v2board-ticket-empty');
+    expect(html).not.toContain('ant-table-placeholder');
+    expect(html).not.toContain('ant-empty');
+  });
 });
 
-describe('TicketsPage legacy interactions', () => {
+describe('TicketsPage shadcn interactions', () => {
   let container: HTMLDivElement;
   let root: Root | null;
   let originalOpen: typeof window.open;
 
   beforeEach(() => {
+    resetMocks();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -242,7 +261,6 @@ describe('TicketsPage legacy interactions', () => {
     mocks.removeQueries.mockClear();
     mocks.saveMutateAsync.mockReset();
     mocks.saveMutateAsync.mockResolvedValue(undefined);
-    mocks.savePending = false;
     mocks.closeMutateAsync.mockReset();
     mocks.closeMutateAsync.mockResolvedValue(undefined);
     mocks.openWindow.mockClear();
@@ -258,19 +276,31 @@ describe('TicketsPage legacy interactions', () => {
     document.body.innerHTML = '';
   });
 
-  it('opens ticket detail in the legacy popup window on desktop', async () => {
+  async function renderTickets() {
     await act(async () => {
       root!.render(<TicketsPage />);
       await Promise.resolve();
     });
+  }
 
-    const viewLinks = Array.from(container.querySelectorAll('a')).filter(
-      (link) => link.textContent === '查看',
+  async function openCreateDialog() {
+    const trigger = container.querySelector<HTMLButtonElement>('.v2board-ticket-new-trigger')!;
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+  }
+
+  it('opens ticket detail in the legacy popup window on desktop', async () => {
+    await renderTickets();
+
+    const viewButtons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.v2board-ticket-view'),
     );
-    expect(viewLinks).toHaveLength(6);
+    expect(viewButtons).toHaveLength(3);
 
     act(() => {
-      viewLinks[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      viewButtons[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(mocks.openWindow).toHaveBeenCalledWith(
@@ -280,307 +310,172 @@ describe('TicketsPage legacy interactions', () => {
     );
   });
 
-  it('saves a new ticket through the legacy modal form and keeps the loading text behavior', async () => {
-    const originalConsoleError = console.error;
-    const consoleError = vi.spyOn(console, 'error').mockImplementation((...args) => {
-      const messageText = String(args[0] ?? '');
-      if (
-        messageText.includes('changing an uncontrolled input to be controlled') ||
-        messageText.includes('changing a controlled input to be uncontrolled')
-      ) {
-        return;
-      }
-      originalConsoleError(...args);
+  it('saves a new ticket through the shadcn dialog form', async () => {
+    await renderTickets();
+    await openCreateDialog();
+
+    expect(document.body.innerHTML).toContain('v2board-ticket-dialog');
+    expect(document.body.innerHTML).toContain('新的工单');
+    expect(document.body.innerHTML).toContain('请输入工单主题');
+    expect(document.body.innerHTML).toContain('请选择工单等级');
+    expect(document.body.innerHTML).toContain('请描述您遇到的问题');
+
+    const subject = document.body.querySelector<HTMLInputElement>(
+      'input[placeholder="请输入工单主题"]',
+    )!;
+    const level = document.body.querySelector<HTMLSelectElement>('.v2board-ticket-select-native')!;
+    const message = document.body.querySelector<HTMLTextAreaElement>(
+      'textarea[placeholder="请描述您遇到的问题"]',
+    )!;
+
+    await act(async () => {
+      setNativeInputValue(subject, 'Billing question');
+      level.value = '2';
+      level.dispatchEvent(new Event('change', { bubbles: true }));
+      setNativeTextareaValue(message, 'Please check my invoice');
+      await Promise.resolve();
     });
 
-    try {
-      await act(async () => {
-        root!.render(<TicketsPage />);
-        await Promise.resolve();
-      });
+    const confirm = document.body.querySelector<HTMLButtonElement>(
+      '.v2board-ticket-dialog-footer button:last-child',
+    )!;
+    expect(confirm.textContent).toBe('确认');
 
-      const newButton = Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent === '新的工单',
-      );
-      expect(newButton).toBeDefined();
+    await act(async () => {
+      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
 
-      await act(async () => {
-        newButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await Promise.resolve();
-      });
-
-      expect(document.body.innerHTML).toContain('ant-modal-title');
-      expect(document.body.innerHTML).toContain('新的工单');
-      expect(document.body.innerHTML).toContain('请输入工单主题');
-      expect(document.body.innerHTML).toContain('请选择工单等级');
-      expect(document.body.innerHTML).toContain('请描述您遇到的问题');
-
-      const subject = document.body.querySelector(
-        'input[placeholder="请输入工单主题"]',
-      ) as HTMLInputElement;
-      const level = document.body.querySelector('.legacy-select-probe') as HTMLSelectElement;
-      const message = document.body.querySelector(
-        'textarea[placeholder="请描述您遇到的问题"]',
-      ) as HTMLTextAreaElement;
-
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-          subject,
-          'Billing question',
-        );
-        subject.dispatchEvent(new Event('input', { bubbles: true }));
-        level.value = '2';
-        level.dispatchEvent(new Event('change', { bubbles: true }));
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
-          message,
-          'Please check my invoice',
-        );
-        message.dispatchEvent(new Event('input', { bubbles: true }));
-        await Promise.resolve();
-      });
-
-      const okButton = document.body.querySelector(
-        '.ant-modal-footer .ant-btn-primary',
-      ) as HTMLButtonElement;
-      expect(okButton.textContent).toBe('确 认');
-
-      await act(async () => {
-        okButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await Promise.resolve();
-      });
-
-      expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
-        subject: 'Billing question',
-        level: 2,
-        message: 'Please check my invoice',
-      });
-      expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['user', 'tickets'] });
-    } finally {
-      consoleError.mockRestore();
-    }
+    expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
+      level: 2,
+      message: 'Please check my invoice',
+      subject: 'Billing question',
+    });
+    expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['user', 'tickets'] });
   });
 
-  it('keeps new-ticket form data after canceling because only a successful save clears saveData', async () => {
-    await act(async () => {
-      root!.render(<TicketsPage />);
-      await Promise.resolve();
-    });
+  it('keeps new-ticket form data after canceling because only a successful save clears state', async () => {
+    await renderTickets();
+    await openCreateDialog();
 
-    const newButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '新的工单',
-    );
-    expect(newButton).toBeDefined();
-
-    await act(async () => {
-      newButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    const subject = document.body.querySelector(
+    const subject = document.body.querySelector<HTMLInputElement>(
       'input[placeholder="请输入工单主题"]',
-    ) as HTMLInputElement;
-    const level = document.body.querySelector('.legacy-select-probe') as HTMLSelectElement;
-    const message = document.body.querySelector(
+    )!;
+    const level = document.body.querySelector<HTMLSelectElement>('.v2board-ticket-select-native')!;
+    const message = document.body.querySelector<HTMLTextAreaElement>(
       'textarea[placeholder="请描述您遇到的问题"]',
-    ) as HTMLTextAreaElement;
+    )!;
 
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        subject,
-        'Still here',
-      );
-      subject.dispatchEvent(new Event('input', { bubbles: true }));
+      setNativeInputValue(subject, 'Still here');
       level.value = '1';
       level.dispatchEvent(new Event('change', { bubbles: true }));
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
-        message,
-        'Keep this draft',
-      );
-      message.dispatchEvent(new Event('input', { bubbles: true }));
+      setNativeTextareaValue(message, 'Keep this draft');
       await Promise.resolve();
     });
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn')!
+        .querySelector<HTMLButtonElement>('.v2board-ticket-dialog-footer button:first-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    await act(async () => {
-      newButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await openCreateDialog();
 
     expect(
       document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!.value,
     ).toBe('Still here');
-    expect(document.body.querySelector<HTMLSelectElement>('.legacy-select-probe')!.value).toBe('1');
+    expect(document.body.querySelector<HTMLSelectElement>('.v2board-ticket-select-native')!.value).toBe(
+      '1',
+    );
     expect(
       document.body.querySelector<HTMLTextAreaElement>(
         'textarea[placeholder="请描述您遇到的问题"]',
       )!.value,
     ).toBe('Keep this draft');
+  });
+
+  it('clears new-ticket state after a successful save', async () => {
+    await renderTickets();
+    await openCreateDialog();
+
+    await act(async () => {
+      setNativeInputValue(
+        document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!,
+        'Saved subject',
+      );
+      const level = document.body.querySelector<HTMLSelectElement>('.v2board-ticket-select-native')!;
+      level.value = '2';
+      level.dispatchEvent(new Event('change', { bubbles: true }));
+      setNativeTextareaValue(
+        document.body.querySelector<HTMLTextAreaElement>(
+          'textarea[placeholder="请描述您遇到的问题"]',
+        )!,
+        'Saved body',
+      );
+      await Promise.resolve();
+    });
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+        .querySelector<HTMLButtonElement>('.v2board-ticket-dialog-footer button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
-    });
-    await act(async () => {
-      await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
-      subject: 'Still here',
-      level: 1,
-      message: 'Keep this draft',
-    });
-  });
-
-  it('clears saveData after a successful new-ticket save while the old modal DOM stays mounted', async () => {
-    const originalConsoleError = console.error;
-    const consoleError = vi.spyOn(console, 'error').mockImplementation((...args) => {
-      const messageText = String(args[0] ?? '');
-      if (
-        messageText.includes('changing an uncontrolled input to be controlled') ||
-        messageText.includes('changing a controlled input to be uncontrolled')
-      ) {
-        return;
-      }
-      originalConsoleError(...args);
+    expect(mocks.saveMutateAsync).toHaveBeenLastCalledWith({
+      level: 2,
+      message: 'Saved body',
+      subject: 'Saved subject',
     });
 
-    try {
-      await act(async () => {
-        root!.render(<TicketsPage />);
-        await Promise.resolve();
-      });
+    await openCreateDialog();
 
-      const newButton = Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent === '新的工单',
-      );
-      expect(newButton).toBeDefined();
-
-      await act(async () => {
-        newButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await Promise.resolve();
-      });
-
-      const subject = document.body.querySelector(
-        'input[placeholder="请输入工单主题"]',
-      ) as HTMLInputElement;
-      const level = document.body.querySelector('.legacy-select-probe') as HTMLSelectElement;
-      const message = document.body.querySelector(
+    expect(
+      document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!.value,
+    ).toBe('');
+    expect(document.body.querySelector<HTMLSelectElement>('.v2board-ticket-select-native')!.value).toBe(
+      '',
+    );
+    expect(
+      document.body.querySelector<HTMLTextAreaElement>(
         'textarea[placeholder="请描述您遇到的问题"]',
-      ) as HTMLTextAreaElement;
+      )!.value,
+    ).toBe('');
 
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-          subject,
-          'Saved subject',
-        );
-        subject.dispatchEvent(new Event('input', { bubbles: true }));
-        level.value = '2';
-        level.dispatchEvent(new Event('change', { bubbles: true }));
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
-          message,
-          'Saved body',
-        );
-        message.dispatchEvent(new Event('input', { bubbles: true }));
-        await Promise.resolve();
-      });
-
-      await act(async () => {
-        document.body
-          .querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
-          .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await Promise.resolve();
-      });
-      await act(async () => {
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-
-      expect(mocks.saveMutateAsync).toHaveBeenLastCalledWith({
-        subject: 'Saved subject',
-        level: 2,
-        message: 'Saved body',
-      });
-
-      await act(async () => {
-        newButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await Promise.resolve();
-      });
-
-      expect(
-        document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!.value,
-      ).toBe('Saved subject');
-      expect(document.body.querySelector<HTMLSelectElement>('.legacy-select-probe')!.value).toBe(
-        '',
-      );
-      expect(
-        document.body.querySelector<HTMLTextAreaElement>(
-          'textarea[placeholder="请描述您遇到的问题"]',
-        )!.value,
-      ).toBe('Saved body');
-
-      await act(async () => {
-        document.body
-          .querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
-          .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await Promise.resolve();
-      });
-      await act(async () => {
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-
-      expect(mocks.saveMutateAsync).toHaveBeenLastCalledWith({
-        subject: undefined,
-        level: undefined,
-        message: undefined,
-      });
-    } finally {
-      consoleError.mockRestore();
-    }
-  });
-
-  it('keeps the bundled ticket level select value as the direct payload value', () => {
-    expect(source).toContain('const levelLabel = LEVELS[ticket.level]?.labelKey;');
-    expect(source).toContain('onChange={(nextLevel) => setLevel(nextLevel as TicketLevel)}');
-    expect(source).not.toContain('LEVELS[Number(ticket.level)]');
-    expect(source).not.toContain('setLevel(Number(nextLevel) as TicketLevel)');
-  });
-
-  it('keeps the bundled new-ticket modal mask closable and save gate props', () => {
-    const modalSource = source.slice(
-      source.indexOf('<DialogContent'),
-      source.indexOf('</DialogContent>', source.indexOf('<DialogContent')),
-    );
-
-    expect(modalSource).toContain('title={t(\'ticket.new\')}');
-    expect(modalSource).toContain('okText={t(\'ticket.confirm\')}');
-    expect(modalSource).toContain('cancelText={t(\'common.cancel\')}');
-    expect(modalSource).toContain('maskClosable');
-    expect(modalSource).toContain('onOk={() => void saveTicket()}');
-  });
-
-  it('closes an open ticket and empties ticket state on unmount like the old model', async () => {
     await act(async () => {
-      root!.render(<TicketsPage />);
+      document.body
+        .querySelector<HTMLButtonElement>('.v2board-ticket-dialog-footer button:last-child')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
       await Promise.resolve();
     });
 
-    const closeLinks = Array.from(container.querySelectorAll('a')).filter(
-      (link) => link.textContent === '关闭',
+    expect(mocks.saveMutateAsync).toHaveBeenLastCalledWith({
+      level: undefined,
+      message: undefined,
+      subject: undefined,
+    });
+  });
+
+  it('keeps the ticket level select value as the direct numeric payload value', () => {
+    expect(source).toContain('const levelLabel = LEVELS[ticket.level]?.labelKey;');
+    expect(source).toContain('setLevel(Number(nextLevel) as TicketLevel)');
+    expect(source).not.toContain('LEVELS[Number(ticket.level)]');
+  });
+
+  it('closes an open ticket and empties ticket state on unmount', async () => {
+    await renderTickets();
+
+    const closeButtons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.v2board-ticket-close'),
     );
-    expect(closeLinks).toHaveLength(6);
+    expect(closeButtons).toHaveLength(3);
 
     await act(async () => {
-      closeLinks[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      closeButtons[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
@@ -594,29 +489,18 @@ describe('TicketsPage legacy interactions', () => {
     expect(mocks.removeQueries).toHaveBeenCalledWith({ queryKey: ['user', 'ticket'] });
   });
 
-  it('keeps the closed-ticket close anchor disabled attribute without suppressing the legacy click', async () => {
-    expect(source).toContain("import type { AnchorHTMLAttributes } from 'react';");
-    expect(source).toContain('function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTMLAnchorElement>');
-    expect(source).toContain('return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;');
-    expect(source).toContain('{...legacyDisabledAnchorProps(ticket.status)}');
-    expect(source).not.toContain("...(ticket.status ? { disabled: true } : {})");
+  it('keeps closed-ticket close action clickable for legacy API parity', async () => {
+    await renderTickets();
 
-    await act(async () => {
-      root!.render(<TicketsPage />);
-      await Promise.resolve();
-    });
-
-    const closeLinks = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).filter(
-      (link) => link.textContent === '关闭',
+    const closeButtons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.v2board-ticket-close'),
     );
-    const closedMain = closeLinks[2]!;
-    const closedFixed = closeLinks[5]!;
+    const closed = closeButtons[2]!;
 
-    expect(closedMain.getAttribute('disabled')).toBe('');
-    expect(closedFixed.getAttribute('disabled')).toBe('');
+    expect(closed.disabled).toBe(false);
 
     await act(async () => {
-      closedMain.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      closed.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 

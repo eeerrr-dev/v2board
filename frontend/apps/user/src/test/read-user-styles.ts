@@ -282,7 +282,6 @@ export const userStyleFiles = [
   'user-antd-pagination-disabled-container.css',
   'user-antd-pagination-disabled-jump.css',
   'user-antd-pagination-responsive.css',
-  'user-ticket-chat-legacy.css',
   'user-order-info.css',
   'user-payment-select.css',
   'user-border-utilities.css',
