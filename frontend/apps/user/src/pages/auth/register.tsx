@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Mail, UserPlus } from 'lucide-react';
 import { AuthBrandHeader } from '@/components/layout/auth-brand-header';
 import { AuthLanguageMenu } from '@/components/layout/auth-language-menu';
 import { Button } from '@/components/ui/button';
@@ -117,14 +116,7 @@ export default function RegisterPage() {
                       onClick={sendCode}
                       className="tw:min-w-20"
                     >
-                      {cooldown === 60 ? (
-                        <>
-                          <Mail aria-hidden="true" className="tw:size-4" />
-                          {t('auth.send_code')}
-                        </>
-                      ) : (
-                        cooldown
-                      )}
+                      {cooldown === 60 ? t('auth.send_code') : cooldown}
                     </Button>
                   </div>
                 ) : null}
@@ -174,7 +166,6 @@ export default function RegisterPage() {
                   disabled={isPending || Boolean(config?.tos_url && !tosChecked)}
                   className="tw:ring-offset-surface"
                 >
-                  <UserPlus aria-hidden="true" className="tw:size-4" />
                   {t('auth.submit_register')}
                 </Button>
               </div>

@@ -1,5 +1,4 @@
 import { useTranslation } from 'react-i18next';
-import { KeyRound, Mail } from 'lucide-react';
 import { AuthBrandHeader } from '@/components/layout/auth-brand-header';
 import { AuthLanguageMenu } from '@/components/layout/auth-language-menu';
 import { Button } from '@/components/ui/button';
@@ -51,14 +50,7 @@ export default function ForgetPage() {
                     onClick={sendCode}
                     className="tw:min-w-20"
                   >
-                    {cooldown === 60 ? (
-                      <>
-                        <Mail aria-hidden="true" className="tw:size-4" />
-                        {t('auth.send_code')}
-                      </>
-                    ) : (
-                      cooldown
-                    )}
+                    {cooldown === 60 ? t('auth.send_code') : cooldown}
                   </Button>
                 </div>
 
@@ -76,7 +68,6 @@ export default function ForgetPage() {
                   disabled={isPending}
                   className="tw:ring-offset-surface"
                 >
-                  <KeyRound aria-hidden="true" className="tw:size-4" />
                   {t('auth.submit_reset')}
                 </Button>
               </div>
