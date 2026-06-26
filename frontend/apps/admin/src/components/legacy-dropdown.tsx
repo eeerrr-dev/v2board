@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type MutableRefObject,
+  type RefObject,
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
   type ReactNode,
@@ -380,7 +380,7 @@ export function LegacyDropdown(props: LegacyDropdownProps) {
         if (typeof childRef === 'function') {
           childRef(node);
         } else if (childRef && typeof childRef === 'object') {
-          (childRef as MutableRefObject<HTMLElement | null>).current = node;
+          (childRef as RefObject<HTMLElement | null>).current = node;
         }
       },
       className: mergeClassName(

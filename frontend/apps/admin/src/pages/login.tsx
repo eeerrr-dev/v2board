@@ -57,6 +57,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     const keyDown = (event: KeyboardEvent) => {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
       if (event.keyCode === 13) void onLogin();
     };
     window.addEventListener('keydown', keyDown, false);

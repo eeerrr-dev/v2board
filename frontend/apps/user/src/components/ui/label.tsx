@@ -1,10 +1,10 @@
 import * as LabelPrimitive from '@radix-ui/react-label';
-import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from 'react';
+import { forwardRef, type ComponentPropsWithoutRef, type ComponentRef } from 'react';
 import { cn } from '@/lib/cn';
 
 // Authored V2Board — clean-modern reskin primitive on Radix Label.
 export const Label = forwardRef<
-  ElementRef<typeof LabelPrimitive.Root>,
+  ComponentRef<typeof LabelPrimitive.Root>,
   ComponentPropsWithoutRef<typeof LabelPrimitive.Root>
 >(({ className, ...props }, ref) => (
   <LabelPrimitive.Root

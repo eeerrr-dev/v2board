@@ -457,6 +457,7 @@ function InvitePagination({
         aria-disabled={current <= 1}
         tabIndex={current <= 1 ? undefined : 0}
         onClick={goPrev}
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
         onKeyPress={(event) => runIfEnter(event, goPrev)}
       >
         <a className="ant-pagination-item-link">
@@ -483,6 +484,7 @@ function InvitePagination({
               .filter(Boolean)
               .join(' ')}
             onClick={() => changePage(item)}
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
             onKeyPress={(event) => runIfEnter(event, () => changePage(item))}
           >
             <a>{item}</a>
@@ -494,6 +496,7 @@ function InvitePagination({
             tabIndex={0}
             className={`ant-pagination-jump-${item === 'jump-prev' ? 'prev' : 'next'}`}
             onClick={() => onChange(jumpPage(item), pageSize)}
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
             onKeyPress={(event) => runIfEnter(event, () => onChange(jumpPage(item), pageSize))}
           >
             <a className="ant-pagination-item-link">
@@ -515,6 +518,7 @@ function InvitePagination({
         aria-disabled={current >= totalPages}
         tabIndex={current >= totalPages ? undefined : 0}
         onClick={goNext}
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
         onKeyPress={(event) => runIfEnter(event, goNext)}
       >
         <a className="ant-pagination-item-link">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as echarts from 'echarts';
 import 'echarts/theme/vintage';
@@ -28,7 +28,7 @@ function formatCent(value?: number) {
 function useChart<T>(
   data: T[] | undefined,
   render: (element: HTMLDivElement, data: T[]) => ECharts,
-  chartObjectRef: MutableRefObject<ECharts | undefined>,
+  chartObjectRef: RefObject<ECharts | undefined>,
   onRendered?: () => void | (() => void),
 ) {
   const ref = useRef<HTMLDivElement>(null);

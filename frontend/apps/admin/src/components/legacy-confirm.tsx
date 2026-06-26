@@ -380,12 +380,14 @@ function LegacyConfirmDialog({ request }: LegacyConfirmDialogProps) {
   };
 
   const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     if (keyboard && (event.key === 'Escape' || event.keyCode === 27)) {
       event.stopPropagation();
       close(false, true, { triggerCancel: true });
       return;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     if (event.key !== 'Tab' && event.keyCode !== 9) return;
     const activeElement = document.activeElement;
     if (event.shiftKey && activeElement === sentinelStartRef.current) {

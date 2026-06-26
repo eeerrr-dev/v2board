@@ -9,7 +9,7 @@ import {
   type CSSProperties,
   type FocusEvent,
   type HTMLAttributes,
-  type MutableRefObject,
+  type RefObject,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
@@ -163,7 +163,7 @@ function assignRef<T>(ref: Ref<T> | undefined, node: T | null) {
     ref(node);
     return;
   }
-  (ref as MutableRefObject<T | null>).current = node;
+  (ref as RefObject<T | null>).current = node;
 }
 
 function getElementRef(element: ReactElement): Ref<HTMLElement> | undefined {

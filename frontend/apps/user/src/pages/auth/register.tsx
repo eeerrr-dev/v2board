@@ -1,152 +1,69 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Mail, UserPlus } from 'lucide-react';
+import { AuthBrandHeader } from '@/components/layout/auth-brand-header';
 import { AuthLanguageMenu } from '@/components/layout/auth-language-menu';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardFooter } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { useLegacyRecaptcha } from '@/components/legacy-recaptcha';
-import {
-  useGuestConfig,
-  useRegisterMutation,
-  useSendEmailVerifyMutation,
-} from '@/lib/guest';
-import { authToast } from '@/lib/auth-toast';
-import { i18nGet } from '@/lib/errors';
-import { getLegacyDescription, getLegacyLogo, getLegacyTitle } from '@/lib/legacy-settings';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { PasswordField } from './password-field';
+import { useRegisterController } from './use-register-controller';
 
-function readFormValue(form: HTMLFormElement | null, name: string) {
-  if (!form) return '';
-  return String(new FormData(form).get(name) ?? '');
+// Render the operator's ToS sentence as real JSX rather than dangerouslySetInnerHTML: the template
+// (`...<a target="_blank" href="{url}">label</a>...`) is split into its text + link parts, and the
+// operator-controlled url is handed to React as a real href prop (so React attribute-escapes it).
+// The link also gains rel="noopener noreferrer", and lives outside the checkbox label.
+function renderTosSentence(template: string, url: string): ReactNode {
+  const match = template.match(/^([\s\S]*?)<a\b[^>]*>([\s\S]*?)<\/a>([\s\S]*)$/);
+  if (!match) return template;
+  const [, before, linkText, after] = match;
+  return (
+    <>
+      {before}
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="tw:text-primary tw:underline tw:transition tw:hover:text-primary-hover"
+      >
+        {linkText}
+      </a>
+      {after}
+    </>
+  );
 }
 
 export default function RegisterPage() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const guestConfig = useGuestConfig();
-  const { data: config } = guestConfig;
-  const configLoading = useLegacyFetchLoading(guestConfig.isFetching);
-  const { mutateAsync: register, isPending } = useRegisterMutation();
-  const { mutateAsync: sendCode, isPending: isSendingCode } = useSendEmailVerifyMutation();
-  const { run: runRecaptcha, recaptchaModal } = useLegacyRecaptcha(
-    Boolean(config?.is_recaptcha),
-    config?.recaptcha_site_key,
-  );
-
-  const initialInviteCode = params.get('code');
-  const formRef = useRef<HTMLFormElement | null>(null);
-  const cooldownRef = useRef(60);
-  const [emailSuffix, setEmailSuffix] = useState<string | undefined>(undefined);
-  const [tosChecked, setTosChecked] = useState(false);
-  const [cooldown, setCooldown] = useState(60);
-  const logo = getLegacyLogo();
-  const title = getLegacyTitle();
-  const description = getLegacyDescription();
-  const emailWhitelistSuffix = config?.email_whitelist_suffix;
-  const emailSuffixes = Array.isArray(emailWhitelistSuffix) ? emailWhitelistSuffix : [];
-  const hasEmailWhitelist = Boolean(emailWhitelistSuffix);
-  const selectedEmailSuffix = hasEmailWhitelist
-    ? emailSuffixes.includes(emailSuffix ?? '')
-      ? emailSuffix
-      : (emailSuffixes[0] ?? '')
-    : '';
-  const getEmail = () => {
-    const email = readFormValue(formRef.current, 'email');
-    return hasEmailWhitelist ? `${email}@${selectedEmailSuffix}` : email;
-  };
-
-  const startSendEmailVerifyCountdown = () => {
-    window.setTimeout(() => {
-      if (cooldownRef.current !== 0) {
-        cooldownRef.current -= 1;
-        setCooldown(cooldownRef.current);
-        startSendEmailVerifyCountdown();
-      } else {
-        cooldownRef.current = 60;
-        setCooldown(60);
-      }
-    }, 1000);
-  };
-
-  useEffect(() => {
-    if (!hasEmailWhitelist) {
-      if (emailSuffix !== '') setEmailSuffix('');
-      return;
-    }
-    if (emailSuffix !== selectedEmailSuffix) setEmailSuffix(selectedEmailSuffix);
-  }, [emailSuffix, hasEmailWhitelist, selectedEmailSuffix]);
-
-  const onSendCode = async (recaptchaData?: string) => {
-    try {
-      const sent = await sendCode({
-        email: getEmail(),
-        isforget: 0,
-        ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
-      });
-      if (!sent) return;
-      authToast.success('发送成功', { description: '如果没有收到验证码请检查垃圾箱。' });
-      startSendEmailVerifyCountdown();
-    } catch {}
-  };
-
-  const onRegister = async (recaptchaData?: string) => {
-    if (config?.tos_url && !tosChecked) {
-      authToast.error(i18nGet('请求失败'), { description: t('auth.tos_required') });
-      return;
-    }
-    const password = readFormValue(formRef.current, 'password');
-    if (password !== readFormValue(formRef.current, 'confirm_password')) {
-      authToast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') });
-      return;
-    }
-    try {
-      await register({
-        email: getEmail(),
-        password,
-        invite_code:
-          readFormValue(formRef.current, 'invite_code') || initialInviteCode || '',
-        email_code: config?.is_email_verify ? readFormValue(formRef.current, 'email_code') : '',
-        ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
-      });
-      navigate('/login');
-    } catch {}
-  };
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    runRecaptcha(onRegister);
-  };
+  const {
+    config,
+    configLoading,
+    formRef,
+    submit,
+    sendCode,
+    isPending,
+    isSendingCode,
+    cooldown,
+    hasEmailWhitelist,
+    emailSuffixes,
+    selectedEmailSuffix,
+    setEmailSuffix,
+    tosChecked,
+    setTosChecked,
+    initialInviteCode,
+    recaptchaModal,
+  } = useRegisterController();
 
   return (
     <>
       <Card className="v2board-auth-card">
         <form ref={formRef} noValidate onSubmit={submit}>
           <CardBody>
-            <div className="tw:mb-7 tw:text-center">
-              {logo ? (
-                <h1 className="tw:m-0">
-                  <img
-                    className="v2board-logo tw:mx-auto tw:h-11 tw:w-auto"
-                    src={logo}
-                    alt={title || 'V2Board'}
-                  />
-                </h1>
-              ) : (
-                <h1 className="v2board-auth-title tw:text-2xl tw:font-semibold tw:tracking-tight">
-                  {title || 'V2Board'}
-                </h1>
-              )}
-              {description ? (
-                <p className="tw:mt-2 tw:text-sm tw:text-foreground-muted">{description}</p>
-              ) : null}
-            </div>
+            <AuthBrandHeader />
 
             {configLoading ? (
               <div className="tw:flex tw:min-h-64 tw:items-center tw:justify-center" role="status">
@@ -165,9 +82,8 @@ export default function RegisterPage() {
                         autoComplete="username"
                         className="tw:flex-1"
                       />
-                      <select
+                      <Select
                         aria-label={t('auth.email')}
-                        className="tw:h-10 tw:rounded-field tw:border tw:border-input tw:bg-surface tw:px-3 tw:text-sm tw:text-foreground tw:shadow-sm tw:outline-none tw:transition tw:focus-visible:border-primary tw:focus-visible:ring-2 tw:focus-visible:ring-ring/25"
                         value={selectedEmailSuffix}
                         onChange={(event) => setEmailSuffix(event.target.value)}
                       >
@@ -176,7 +92,7 @@ export default function RegisterPage() {
                             @{suffix}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     </div>
                   </div>
                 ) : (
@@ -198,7 +114,7 @@ export default function RegisterPage() {
                       type="button"
                       disabled={cooldown !== 60 || isSendingCode}
                       loading={isSendingCode}
-                      onClick={() => runRecaptcha(onSendCode)}
+                      onClick={sendCode}
                       className="tw:min-w-20"
                     >
                       {cooldown === 60 ? (
@@ -216,7 +132,7 @@ export default function RegisterPage() {
                 <FormField id="register-password" label={t('auth.password')}>
                   <PasswordField name="password" autoComplete="new-password" />
                 </FormField>
-                <FormField id="register-confirm-password" label={t('auth.password')}>
+                <FormField id="register-confirm-password" label={t('auth.confirm_password')}>
                   <PasswordField name="confirm_password" autoComplete="new-password" />
                 </FormField>
                 <FormField
@@ -237,19 +153,18 @@ export default function RegisterPage() {
                 </FormField>
 
                 {config?.tos_url ? (
-                  <label className="tw:flex tw:items-start tw:gap-2 tw:text-sm tw:text-foreground-muted">
+                  <div className="tw:flex tw:items-start tw:gap-2 tw:text-sm tw:text-foreground-muted">
                     <input
                       type="checkbox"
                       checked={tosChecked}
                       onChange={() => setTosChecked((value) => !value)}
+                      aria-labelledby="register-tos-text"
                       className="tw:mt-1 tw:size-4 tw:rounded tw:border-input tw:accent-primary"
                     />
-                    <span
-                      dangerouslySetInnerHTML={{
-                        __html: t('auth.tos_html').replace('{url}', config.tos_url),
-                      }}
-                    />
-                  </label>
+                    <span id="register-tos-text">
+                      {renderTosSentence(t('auth.tos_html'), config.tos_url)}
+                    </span>
+                  </div>
                 ) : null}
 
                 <Button

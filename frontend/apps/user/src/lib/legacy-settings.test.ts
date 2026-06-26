@@ -10,6 +10,7 @@ describe('legacy settings bootstrap', () => {
     document.title = '';
     window.settings = undefined;
 
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     const getElementsByTagName = document.getElementsByTagName.bind(document);
     vi.spyOn(document, 'getElementsByTagName').mockImplementation((name: string) => {
       if (name.toLowerCase() !== 'head') return getElementsByTagName(name);
@@ -75,6 +76,7 @@ describe('legacy settings bootstrap', () => {
   it('uses the legacy copy marker selection styles', () => {
     const execCommand = vi.fn(() => {
       const mark = document.body.querySelector('span') as HTMLSpanElement | null;
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
       expect(mark?.style.webkitUserSelect).toBe('text');
       expect((mark?.style as CSSStyleDeclaration & { MozUserSelect?: string }).MozUserSelect).toBe(
         'text',

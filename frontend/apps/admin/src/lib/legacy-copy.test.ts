@@ -25,8 +25,10 @@ describe('legacyCopyText', () => {
       expect(mark?.textContent).toBe('legacy text');
       expect(mark?.ariaHidden).toBe('true');
       expect(mark?.style.position).toBe('fixed');
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
       expect(mark?.style.clip).toBe('rect(0, 0, 0, 0)');
       expect(mark?.style.whiteSpace).toBe('pre');
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
       expect(mark?.style.webkitUserSelect).toBe('text');
       expect((mark?.style as CSSStyleDeclaration & { MozUserSelect?: string }).MozUserSelect).toBe(
         'text',

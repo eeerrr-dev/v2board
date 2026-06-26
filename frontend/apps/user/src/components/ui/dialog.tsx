@@ -108,6 +108,9 @@ interface DialogContentProps {
   maskClosable?: boolean;
   width?: number | string;
   centered?: boolean;
+  // Accessible name for the role="dialog" wrapper when the modal has no visible `title` (e.g. the
+  // recaptcha modal). Ignored when `title` is set — aria-labelledby points at the header instead.
+  ariaLabel?: string;
   className?: string;
   style?: CSSProperties;
   bodyStyle?: CSSProperties;
@@ -130,6 +133,7 @@ export function DialogContent({
   maskClosable = true,
   width = 520,
   centered = false,
+  ariaLabel,
   className,
   style,
   bodyStyle,
@@ -233,12 +237,12 @@ export function DialogContent({
   };
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.keyCode === 27) {
+    if (event.key === 'Escape') {
       event.stopPropagation();
       requestClose();
       return;
     }
-    if (event.keyCode === 9) {
+    if (event.key === 'Tab') {
       const activeElement = document.activeElement;
       if (event.shiftKey) {
         if (activeElement === sentinelStartRef.current) sentinelEndRef.current?.focus();
@@ -315,6 +319,7 @@ export function DialogContent({
         className={cn('ant-modal-wrap', centered && 'ant-modal-centered')}
         role="dialog"
         aria-labelledby={title ? titleIdRef.current : undefined}
+        aria-label={title ? undefined : ariaLabel}
         style={{ ...(zIndex ? { zIndex } : {}), display: visuallyClosed ? 'none' : undefined }}
         onKeyDown={onKeyDown}
         onClick={onMaskClick}

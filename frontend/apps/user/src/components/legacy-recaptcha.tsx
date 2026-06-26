@@ -111,7 +111,7 @@ export function useLegacyRecaptcha(enabled: boolean, siteKey?: string | null) {
         if (!nextOpen) cancel();
       }}
     >
-      <DialogContent key={widgetKey} closable={false} footer={false} centered>
+      <DialogContent key={widgetKey} closable={false} footer={false} centered ariaLabel="reCAPTCHA">
         {enabled ? <LegacyRecaptchaWidget siteKey={siteKey} onToken={handleToken} /> : null}
       </DialogContent>
     </Dialog>

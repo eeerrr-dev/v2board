@@ -276,12 +276,16 @@ function LegacyTabsComponent(props: LegacyTabsProps) {
     const forward =
       event.key === 'ArrowRight' ||
       event.key === 'ArrowDown' ||
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
       event.keyCode === 39 ||
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
       event.keyCode === 40;
     const backward =
       event.key === 'ArrowLeft' ||
       event.key === 'ArrowUp' ||
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
       event.keyCode === 37 ||
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
       event.keyCode === 38;
 
     if (!forward && !backward) return;

@@ -53,6 +53,11 @@ function dismissToast(id?: number) {
 function ensureToastRoot() {
   if (root && container?.isConnected) return;
   if (root && !container?.isConnected) {
+    // The previous host was detached (e.g. teardown / HMR). Unmount its React root before discarding
+    // it — otherwise the stale tree leaks and React 19 warns when a new root mounts. Safe to call
+    // synchronously here: ensureToastRoot only runs from imperative authToast.* calls, never inside a
+    // React render.
+    root.unmount();
     root = null;
     container = null;
   }

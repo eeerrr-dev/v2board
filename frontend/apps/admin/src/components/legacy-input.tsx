@@ -210,6 +210,7 @@ const LegacyInputBase = forwardRef<HTMLInputElement, LegacyInputProps>(function 
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     if (event.keyCode === 13) onPressEnter?.(event);
     onKeyDown?.(event);
   };
@@ -371,6 +372,7 @@ export const LegacyTextArea = forwardRef<
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     if (event.keyCode === 13) onPressEnter?.(event);
     onKeyDown?.(event);
   };

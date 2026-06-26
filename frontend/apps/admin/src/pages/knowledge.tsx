@@ -172,6 +172,7 @@ function legacyTableMarkdown(row: number, col: number) {
 
 function legacyListMarkdown(type: 'ordered' | 'unordered', selected: string) {
   let text = selected;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
   if (text.substr(0, 1) !== '\n') {
     text = `\n${text}`;
   }
@@ -367,6 +368,7 @@ function LegacyMarkdownEditor({
       return false;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     return event.key ? event.key === key : event.keyCode === keyCode;
   };
 
@@ -392,6 +394,7 @@ function LegacyMarkdownEditor({
     nextSelection?: LegacySelectionRange,
   ) => {
     const lines = text.split('\n');
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     const beforeLines = text.substr(0, selection.start).split('\n');
     const col = beforeLines[beforeLines.length - 1]?.length ?? 0;
     const curLine = lines[beforeLines.length - 1] ?? '';
@@ -408,8 +411,11 @@ function LegacyMarkdownEditor({
       }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     const afterText = text.substr(selection.end);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     if (afterText.trim() !== '' && afterText.substr(0, 2) !== '\n\n') {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
       if (afterText.substr(0, 1) !== '\n') {
         replacement += '\n';
       }
@@ -449,15 +455,18 @@ function LegacyMarkdownEditor({
   };
 
   const handleEditorKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     if ((event.keyCode === 13 || event.key === 'Enter') && !composingRef.current) {
       const textarea = event.currentTarget;
       const cursor = textarea.selectionStart;
       const value = textarea.value;
       const lines = value.split('\n');
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
       const beforeLines = value.substr(0, cursor).split('\n');
       const curLine = lines[beforeLines.length - 1] ?? '';
       const removeCurrentListPrefix = () => {
         const lineStart = cursor - curLine.length;
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
         applyTextChange(`${value.substr(0, lineStart)}${value.substr(cursor)}`);
         restoreSelection(lineStart);
         event.preventDefault();

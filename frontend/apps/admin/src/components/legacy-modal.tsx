@@ -231,12 +231,14 @@ export function LegacyModal({
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     if (keyboard && (event.key === 'Escape' || event.keyCode === 27)) {
       event.stopPropagation();
       handleCancel(event);
       return;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     if (event.key !== 'Tab' && event.keyCode !== 9) return;
     if (event.shiftKey && document.activeElement === sentinelStartRef.current) {
       event.preventDefault();

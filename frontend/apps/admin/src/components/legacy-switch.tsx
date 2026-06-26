@@ -100,8 +100,10 @@ export const LegacySwitch = forwardRef<LegacySwitchRef, LegacySwitchProps>(funct
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     if (event.keyCode === 37) {
       setChecked(false, event);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     } else if (event.keyCode === 39) {
       setChecked(true, event);
     }

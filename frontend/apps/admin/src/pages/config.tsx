@@ -245,6 +245,7 @@ function ThemeField({
 function encodeLegacyThemeConfig(params: Record<string, unknown>) {
   const json = JSON.stringify(params);
   if (typeof window === 'undefined') return Buffer.from(json).toString('base64');
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
   return window.btoa(unescape(encodeURIComponent(json)));
 }
 

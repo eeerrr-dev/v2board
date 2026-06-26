@@ -112,6 +112,7 @@ export default function TicketDetailPage() {
           ref={inputRef}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
             if (event.keyCode === 13) void submitReply();
           }}
           type="text"

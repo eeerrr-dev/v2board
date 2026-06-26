@@ -80,5 +80,29 @@ export default [
       '@typescript-eslint/no-unused-vars': 'off',
     },
   },
+  // Type-aware deprecation guard. Flags any NEW usage of an @deprecated API in
+  // authored app + package source. It needs type information, so this block (and only
+  // this block) turns on `projectService`; it is scoped to `*/src` so it never touches
+  // files outside a tsconfig. Pure-type deprecations have been cleared (FormEvent ->
+  // SyntheticEvent, ElementRef -> ComponentRef, MutableRefObject -> RefObject). The
+  // behavioral deprecations deliberately retained for legacy parity (keyCode,
+  // onKeyPress, execCommand, clip, webkitUserSelect, getElementsByTagName, substr,
+  // unescape, returnValue, charCode) each carry an inline `eslint-disable-next-line
+  // @typescript-eslint/no-deprecated -- behavior-parity` directive at their call site
+  // (AGENTS.md behavior-parity gate). Drop those directives as each surface is
+  // redesigned and parity-retired.
+  {
+    files: ['apps/*/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        projectService: true,
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    rules: { '@typescript-eslint/no-deprecated': 'error' },
+  },
   prettier,
 ];

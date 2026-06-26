@@ -6,17 +6,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ForgetPage from './forget';
 
 const source = readFileSync(`${process.cwd()}/src/pages/auth/forget.tsx`, 'utf8');
+const controllerSource = readFileSync(
+  `${process.cwd()}/src/pages/auth/use-forget-controller.ts`,
+  'utf8',
+);
 
 const mocks = vi.hoisted(() => ({
   config: undefined as Record<string, unknown> | undefined,
   forgetMutateAsync: vi.fn(),
+  isFetching: false,
   isPending: false,
   isSendingCode: false,
   labels: {
+    'auth.confirm_password': '确认密码',
     'auth.email': '邮箱',
     'auth.email_code': '邮箱验证码',
     'auth.hide_password': '隐藏密码',
     'auth.password': '密码',
+    'auth.password_mismatch': '两次密码输入不同',
     'auth.return_to_login': '返回登入',
     'auth.send_code': '发送',
     'auth.show_password': '显示密码',
@@ -64,11 +71,15 @@ vi.mock('@/lib/guest', () => ({
     isPending: mocks.isPending,
     mutateAsync: mocks.forgetMutateAsync,
   }),
-  useGuestConfig: () => ({ data: mocks.config }),
+  useGuestConfig: () => ({ data: mocks.config, isFetching: mocks.isFetching }),
   useSendEmailVerifyMutation: () => ({
     isPending: mocks.isSendingCode,
     mutateAsync: mocks.sendCodeMutateAsync,
   }),
+}));
+
+vi.mock('@/lib/errors', () => ({
+  i18nGet: (message: string) => message,
 }));
 
 vi.mock('@/lib/legacy-settings', () => ({
@@ -93,6 +104,7 @@ function resetMocks() {
   };
   mocks.forgetMutateAsync.mockReset();
   mocks.forgetMutateAsync.mockResolvedValue(true);
+  mocks.isFetching = false;
   mocks.isPending = false;
   mocks.isSendingCode = false;
   mocks.navigate.mockReset();
@@ -127,7 +139,9 @@ describe('ForgetPage modern markup', () => {
     expect(html).toContain('>V2Board</h1>');
     expect(html).toContain('邮箱');
     expect(html).toContain('邮箱验证码');
-    expect(html.match(/>密码</g)).toHaveLength(2);
+    // The two password fields now carry distinct labels (password + confirm password).
+    expect(html).toContain('>密码<');
+    expect(html).toContain('>确认密码<');
     expect(html).toContain('重置密码');
     expect(html).toContain('返回登入');
     expect(html).toContain('href="#/login"');
@@ -137,9 +151,11 @@ describe('ForgetPage modern markup', () => {
     expect(html).not.toContain('btn btn-block');
     expect(html).not.toContain('placeholder=');
     expect(source).toContain("components/layout/auth-language-menu");
-    expect(source).toContain("lib/auth-toast");
+    // The behavior controller owns the modern auth-toast; the view stays free of legacy toast/menu.
+    expect(controllerSource).toContain("lib/auth-toast");
     expect(source).not.toContain("components/layout/language-menu");
     expect(source).not.toContain("lib/legacy-toast");
+    expect(controllerSource).not.toContain("lib/legacy-toast");
   });
 });
 
@@ -167,6 +183,16 @@ describe('ForgetPage behavior', () => {
       await Promise.resolve();
     });
   }
+
+  it('shows the modern centered spinner after mount while guest config is fetching', async () => {
+    mocks.config = undefined;
+    mocks.isFetching = true;
+
+    await renderForget();
+
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+    expect(container.querySelector('input[name="email"]')).toBeNull();
+  });
 
   it('sends the forgot-password verification payload and starts the countdown', async () => {
     vi.useFakeTimers();
@@ -249,21 +275,22 @@ describe('ForgetPage behavior', () => {
   });
 
   it('reads submitted values from FormData instead of retired field refs', () => {
-    expect(source).toContain('new FormData(form)');
-    expect(source).toContain("readFormValue(formRef.current, 'email')");
-    expect(source).toContain("readFormValue(formRef.current, 'password')");
-    expect(source).toContain("readFormValue(formRef.current, 'confirm_password')");
-    expect(source).toContain("readFormValue(formRef.current, 'email_code')");
-    expect(source).not.toContain('emailRef');
-    expect(source).not.toContain('passwordRef');
-    expect(source).not.toContain('confirmPasswordRef');
-    expect(source).not.toContain('emailCodeRef');
+    // Behavior moved into the controller (mirroring login); the FormData-not-refs contract holds there.
+    expect(controllerSource).toContain('new FormData(form)');
+    expect(controllerSource).toContain("readFormValue(formRef.current, 'email')");
+    expect(controllerSource).toContain("readFormValue(formRef.current, 'password')");
+    expect(controllerSource).toContain("readFormValue(formRef.current, 'confirm_password')");
+    expect(controllerSource).toContain("readFormValue(formRef.current, 'email_code')");
+    expect(controllerSource).not.toContain('emailRef');
+    expect(controllerSource).not.toContain('passwordRef');
+    expect(controllerSource).not.toContain('confirmPasswordRef');
+    expect(controllerSource).not.toContain('emailCodeRef');
   });
 
   it('keeps the recursive countdown timer without unmount cleanup', () => {
-    expect(source).toContain('const cooldownRef = useRef(60);');
-    expect(source).toContain('const startSendEmailVerifyCountdown = () => {');
-    expect(source).toContain('startSendEmailVerifyCountdown();');
-    expect(source).not.toContain('clearTimeout');
+    expect(controllerSource).toContain('const cooldownRef = useRef(60);');
+    expect(controllerSource).toContain('const startSendEmailVerifyCountdown = () => {');
+    expect(controllerSource).toContain('startSendEmailVerifyCountdown();');
+    expect(controllerSource).not.toContain('clearTimeout');
   });
 });

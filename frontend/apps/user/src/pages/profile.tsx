@@ -553,7 +553,9 @@ function LegacySwitch({
       disabled={loading}
       onKeyDown={(event) => {
         // rc-switch handleKeyDown: ArrowLeft (37) → off, ArrowRight (39) → on.
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
         if (event.keyCode === 37) onChange(false);
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
         else if (event.keyCode === 39) onChange(true);
       }}
       onMouseUp={(event) => event.currentTarget.blur()}

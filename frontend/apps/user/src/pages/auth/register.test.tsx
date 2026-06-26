@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RegisterPage from './register';
 
 const source = readFileSync(`${process.cwd()}/src/pages/auth/register.tsx`, 'utf8');
+const controllerSource = readFileSync(
+  `${process.cwd()}/src/pages/auth/use-register-controller.ts`,
+  'utf8',
+);
 
 const mocks = vi.hoisted(() => ({
   config: undefined as Record<string, unknown> | undefined,
@@ -13,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   isPending: false,
   isSendingCode: false,
   labels: {
+    'auth.confirm_password': '确认密码',
     'auth.email': '邮箱',
     'auth.email_code': '邮箱验证码',
     'auth.hide_password': '隐藏密码',
@@ -167,9 +172,11 @@ describe('RegisterPage modern markup', () => {
     expect(html).not.toContain('btn btn-block');
     expect(html).not.toContain('placeholder=');
     expect(source).toContain("components/layout/auth-language-menu");
-    expect(source).toContain("lib/auth-toast");
+    // The behavior controller owns the modern auth-toast; the view stays free of legacy toast/menu.
+    expect(controllerSource).toContain("lib/auth-toast");
     expect(source).not.toContain("components/layout/language-menu");
     expect(source).not.toContain("lib/legacy-toast");
+    expect(controllerSource).not.toContain("lib/legacy-toast");
   });
 });
 
@@ -343,19 +350,20 @@ describe('RegisterPage behavior', () => {
   });
 
   it('reads submitted values from FormData instead of retired field refs', () => {
-    expect(source).toContain('new FormData(form)');
-    expect(source).toContain("readFormValue(formRef.current, 'email')");
-    expect(source).toContain("readFormValue(formRef.current, 'password')");
-    expect(source).toContain("readFormValue(formRef.current, 'confirm_password')");
-    expect(source).not.toContain('emailRef');
-    expect(source).not.toContain('passwordRef');
-    expect(source).not.toContain('confirmPasswordRef');
+    // Behavior moved into the controller (mirroring login); the FormData-not-refs contract holds there.
+    expect(controllerSource).toContain('new FormData(form)');
+    expect(controllerSource).toContain("readFormValue(formRef.current, 'email')");
+    expect(controllerSource).toContain("readFormValue(formRef.current, 'password')");
+    expect(controllerSource).toContain("readFormValue(formRef.current, 'confirm_password')");
+    expect(controllerSource).not.toContain('emailRef');
+    expect(controllerSource).not.toContain('passwordRef');
+    expect(controllerSource).not.toContain('confirmPasswordRef');
   });
 
   it('keeps the recursive countdown timer without unmount cleanup', () => {
-    expect(source).toContain('const cooldownRef = useRef(60);');
-    expect(source).toContain('const startSendEmailVerifyCountdown = () => {');
-    expect(source).toContain('startSendEmailVerifyCountdown();');
-    expect(source).not.toContain('clearTimeout');
+    expect(controllerSource).toContain('const cooldownRef = useRef(60);');
+    expect(controllerSource).toContain('const startSendEmailVerifyCountdown = () => {');
+    expect(controllerSource).toContain('startSendEmailVerifyCountdown();');
+    expect(controllerSource).not.toContain('clearTimeout');
   });
 });

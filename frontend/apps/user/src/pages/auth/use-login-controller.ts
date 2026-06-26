@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type SyntheticEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError, user } from '@v2board/api-client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,7 +15,7 @@ function normalizeRedirectTarget(target: string | null): string {
 
 export interface LoginController {
   /** Form submit handler — reads the live submitted values and runs the login mutation. */
-  submit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  submit: (event: SyntheticEvent<HTMLFormElement>) => Promise<void>;
   /** Dismisses the inline error (e.g. once the user edits the form). */
   clearError: () => void;
   isPending: boolean;
@@ -41,7 +41,7 @@ export function useLoginController(): LoginController {
   const verify = params.get('verify');
 
   const submit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
+    async (event: SyntheticEvent<HTMLFormElement>) => {
       event.preventDefault();
       // Uncontrolled form — read the live submitted values, matching the old component which read
       // straight off the DOM at submit time rather than from controlled state.

@@ -317,8 +317,10 @@ export function legacyCopyText(text: string | number | null | undefined): boolea
     mark.style.all = 'unset';
     mark.style.position = 'fixed';
     mark.style.top = '0';
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     mark.style.clip = 'rect(0, 0, 0, 0)';
     mark.style.whiteSpace = 'pre';
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     mark.style.webkitUserSelect = 'text';
     (mark.style as CSSStyleDeclaration & { MozUserSelect?: string }).MozUserSelect = 'text';
     (mark.style as CSSStyleDeclaration & { msUserSelect?: string }).msUserSelect = 'text';
@@ -330,6 +332,7 @@ export function legacyCopyText(text: string | number | null | undefined): boolea
     document.body.appendChild(mark);
     range.selectNodeContents(mark);
     selection?.addRange(range);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     if (!document.execCommand('copy')) throw new Error('copy command was unsuccessful');
     copied = true;
   } catch {

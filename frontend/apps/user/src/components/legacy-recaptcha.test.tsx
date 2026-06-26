@@ -81,7 +81,7 @@ describe('useLegacyRecaptcha legacy DOM', () => {
 
   it('keeps the bundled modal props for the captcha challenge', () => {
     expect(source).toContain(
-      '<DialogContent key={widgetKey} closable={false} footer={false} centered>',
+      '<DialogContent key={widgetKey} closable={false} footer={false} centered ariaLabel="reCAPTCHA">',
     );
     expect(source).not.toContain('footer={null}');
   });

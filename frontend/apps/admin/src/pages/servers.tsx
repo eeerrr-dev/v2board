@@ -1230,6 +1230,7 @@ export function installLegacyServerSortPrompt(message = LEGACY_SERVER_SORT_PROMP
 
   const warnBeforeUnload = (event: BeforeUnloadEvent) => {
     event.preventDefault();
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
     event.returnValue = message;
     return message;
   };

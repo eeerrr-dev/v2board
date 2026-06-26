@@ -203,6 +203,7 @@ function getLegacyPageSizeOptions(
 }
 
 function runLegacyPaginationEnter(event: KeyboardEvent<HTMLElement>, action: () => void) {
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
   if (event.key !== 'Enter' && event.charCode !== 13) return;
   action();
 }
@@ -291,6 +292,7 @@ export function LegacyTablePagination({
         aria-disabled={previousDisabled}
         tabIndex={previousDisabled ? undefined : 0}
         onClick={() => changePage(currentPage - 1)}
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
         onKeyPress={(event) => runLegacyPaginationEnter(event, () => changePage(currentPage - 1))}
       >
         <a className="ant-pagination-item-link">
@@ -307,6 +309,7 @@ export function LegacyTablePagination({
             }${item.className ? ` ${item.className}` : ''}`}
             tabIndex={0}
             onClick={() => changePage(item.page)}
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
             onKeyPress={(event) => runLegacyPaginationEnter(event, () => changePage(item.page))}
           >
             <a>{item.page}</a>
@@ -318,6 +321,7 @@ export function LegacyTablePagination({
             className={`ant-pagination-${item.type}`}
             tabIndex={0}
             onClick={() => changePage(item.page)}
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
             onKeyPress={(event) => runLegacyPaginationEnter(event, () => changePage(item.page))}
           >
             <LegacyPaginationJumpIcon direction={item.type === 'jump-prev' ? 'prev' : 'next'} />
@@ -330,6 +334,7 @@ export function LegacyTablePagination({
         aria-disabled={nextDisabled}
         tabIndex={nextDisabled ? undefined : 0}
         onClick={() => changePage(currentPage + 1)}
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
         onKeyPress={(event) => runLegacyPaginationEnter(event, () => changePage(currentPage + 1))}
       >
         <a className="ant-pagination-item-link">

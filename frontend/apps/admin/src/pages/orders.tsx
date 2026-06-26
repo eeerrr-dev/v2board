@@ -159,6 +159,7 @@ function cents(value?: number | null) {
 }
 
 function shortTradeNo(value: string) {
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
   return `${value.substr(0, 3)}...${value.substr(-3)}`;
 }
 

@@ -455,6 +455,7 @@ function TicketChatPage({ ticketId }: { ticketId: string }) {
           placeholder="输入内容回复工单..."
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
             if (event.keyCode === 13) void sendReply();
           }}
         />
