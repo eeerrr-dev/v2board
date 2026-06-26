@@ -74,6 +74,12 @@ const userAuthTitleTextSelector = [
   '.v2board-auth-card h3',
   '.v2board-auth-card .v2board-auth-title',
 ].join(', ');
+const dashboardShortcutSelector = '.v2board-shortcuts-item';
+const dashboardEmptyPlanReadySelector = '.v2board-dashboard-empty-plan, .fa-plus';
+const dashboardExpiredReadySelector = '.v2board-dashboard-status-expired, .text-danger';
+const dashboardProgressReadySelector = '.v2board-dashboard-progress-bar, .progress-bar';
+const dashboardTrafficUsedUpReadySelector =
+  '.v2board-dashboard-progress-bar[data-status="danger"], .progress-bar.bg-danger';
 
 function normalizeParityText(value) {
   return String(value ?? '')
@@ -94,7 +100,7 @@ const scenarios = [
     authenticated: true,
     label: 'user-dashboard',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -111,7 +117,7 @@ const scenarios = [
     label: 'user-dashboard-no-subscription',
     noSubscription: true,
     path: '/#/dashboard',
-    readySelector: '.fa-plus',
+    readySelector: dashboardEmptyPlanReadySelector,
     visualRetired: true,
   },
   {
@@ -119,14 +125,14 @@ const scenarios = [
     expiredSubscription: true,
     label: 'user-dashboard-expired-subscription',
     path: '/#/dashboard',
-    readySelector: '.text-danger',
+    readySelector: dashboardExpiredReadySelector,
     visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-dashboard-traffic-used-up',
     path: '/#/dashboard',
-    readySelector: '.progress-bar.bg-danger',
+    readySelector: dashboardTrafficUsedUpReadySelector,
     trafficUsedUp: true,
     visualRetired: true,
   },
@@ -135,7 +141,7 @@ const scenarios = [
     deviceLimitReached: true,
     label: 'user-dashboard-device-limit-reached',
     path: '/#/dashboard',
-    readySelector: '.progress-bar',
+    readySelector: dashboardProgressReadySelector,
     visualRetired: true,
   },
   {
@@ -143,7 +149,7 @@ const scenarios = [
     bannedUser: true,
     label: 'user-dashboard-banned',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -152,7 +158,7 @@ const scenarios = [
     label: 'user-dashboard-banned-no-subscription',
     noSubscription: true,
     path: '/#/dashboard',
-    readySelector: '.fa-plus',
+    readySelector: dashboardEmptyPlanReadySelector,
     visualRetired: true,
   },
   {
@@ -160,7 +166,7 @@ const scenarios = [
     expiredTrafficUsedUp: true,
     label: 'user-dashboard-expired-traffic-used-up',
     path: '/#/dashboard',
-    readySelector: '.text-danger',
+    readySelector: dashboardExpiredReadySelector,
     visualRetired: true,
   },
   {
@@ -168,7 +174,7 @@ const scenarios = [
     deviceLimitExpired: true,
     label: 'user-dashboard-device-limit-expired',
     path: '/#/dashboard',
-    readySelector: '.progress-bar',
+    readySelector: dashboardProgressReadySelector,
     visualRetired: true,
   },
   {
@@ -176,7 +182,7 @@ const scenarios = [
     darkMode: true,
     label: 'user-dashboard-dark',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -402,7 +408,7 @@ const scenarios = [
     locale: 'zh-TW',
     noSubscription: true,
     path: '/#/dashboard',
-    readySelector: '.fa-plus',
+    readySelector: dashboardEmptyPlanReadySelector,
     visualRetired: true,
   },
   {
@@ -411,7 +417,7 @@ const scenarios = [
     label: 'user-dashboard-expired-subscription-zh-tw',
     locale: 'zh-TW',
     path: '/#/dashboard',
-    readySelector: '.text-danger',
+    readySelector: dashboardExpiredReadySelector,
     visualRetired: true,
   },
   {
@@ -419,7 +425,7 @@ const scenarios = [
     label: 'user-dashboard-traffic-used-up-zh-tw',
     locale: 'zh-TW',
     path: '/#/dashboard',
-    readySelector: '.progress-bar.bg-danger',
+    readySelector: dashboardTrafficUsedUpReadySelector,
     trafficUsedUp: true,
     visualRetired: true,
   },
@@ -429,7 +435,7 @@ const scenarios = [
     label: 'user-dashboard-device-limit-reached-zh-tw',
     locale: 'zh-TW',
     path: '/#/dashboard',
-    readySelector: '.progress-bar',
+    readySelector: dashboardProgressReadySelector,
     visualRetired: true,
   },
   {
@@ -438,7 +444,7 @@ const scenarios = [
     label: 'user-dashboard-banned-zh-tw',
     locale: 'zh-TW',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -447,7 +453,7 @@ const scenarios = [
     label: 'user-dashboard-dark-zh-tw',
     locale: 'zh-TW',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -547,7 +553,7 @@ const scenarios = [
     locale: 'en-US',
     noSubscription: true,
     path: '/#/dashboard',
-    readySelector: '.fa-plus',
+    readySelector: dashboardEmptyPlanReadySelector,
     visualRetired: true,
   },
   {
@@ -556,7 +562,7 @@ const scenarios = [
     label: 'user-dashboard-expired-subscription-en-us',
     locale: 'en-US',
     path: '/#/dashboard',
-    readySelector: '.text-danger',
+    readySelector: dashboardExpiredReadySelector,
     visualRetired: true,
   },
   {
@@ -564,7 +570,7 @@ const scenarios = [
     label: 'user-dashboard-traffic-used-up-en-us',
     locale: 'en-US',
     path: '/#/dashboard',
-    readySelector: '.progress-bar.bg-danger',
+    readySelector: dashboardTrafficUsedUpReadySelector,
     trafficUsedUp: true,
     visualRetired: true,
   },
@@ -574,7 +580,7 @@ const scenarios = [
     label: 'user-dashboard-device-limit-reached-en-us',
     locale: 'en-US',
     path: '/#/dashboard',
-    readySelector: '.progress-bar',
+    readySelector: dashboardProgressReadySelector,
     visualRetired: true,
   },
   {
@@ -583,7 +589,7 @@ const scenarios = [
     label: 'user-dashboard-banned-en-us',
     locale: 'en-US',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -592,7 +598,7 @@ const scenarios = [
     label: 'user-dashboard-dark-en-us',
     locale: 'en-US',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -706,7 +712,7 @@ const scenarios = [
     label: 'user-dashboard-zh-tw',
     locale: 'zh-TW',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -810,7 +816,7 @@ const scenarios = [
     label: 'user-dashboard-en-us',
     locale: 'en-US',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -900,7 +906,7 @@ const scenarios = [
     locale: 'ja-JP',
     noSubscription: true,
     path: '/#/dashboard',
-    readySelector: '.fa-plus',
+    readySelector: dashboardEmptyPlanReadySelector,
     visualRetired: true,
   },
   {
@@ -909,7 +915,7 @@ const scenarios = [
     label: 'user-dashboard-expired-subscription-ja-jp',
     locale: 'ja-JP',
     path: '/#/dashboard',
-    readySelector: '.text-danger',
+    readySelector: dashboardExpiredReadySelector,
     visualRetired: true,
   },
   {
@@ -917,7 +923,7 @@ const scenarios = [
     label: 'user-dashboard-traffic-used-up-ja-jp',
     locale: 'ja-JP',
     path: '/#/dashboard',
-    readySelector: '.progress-bar.bg-danger',
+    readySelector: dashboardTrafficUsedUpReadySelector,
     trafficUsedUp: true,
     visualRetired: true,
   },
@@ -927,7 +933,7 @@ const scenarios = [
     label: 'user-dashboard-device-limit-reached-ja-jp',
     locale: 'ja-JP',
     path: '/#/dashboard',
-    readySelector: '.progress-bar',
+    readySelector: dashboardProgressReadySelector,
     visualRetired: true,
   },
   {
@@ -936,7 +942,7 @@ const scenarios = [
     label: 'user-dashboard-banned-ja-jp',
     locale: 'ja-JP',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -945,7 +951,7 @@ const scenarios = [
     label: 'user-dashboard-dark-ja-jp',
     locale: 'ja-JP',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -1069,7 +1075,7 @@ const scenarios = [
     label: 'user-dashboard-ja-jp',
     locale: 'ja-JP',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -1159,7 +1165,7 @@ const scenarios = [
     locale: 'vi-VN',
     noSubscription: true,
     path: '/#/dashboard',
-    readySelector: '.fa-plus',
+    readySelector: dashboardEmptyPlanReadySelector,
     visualRetired: true,
   },
   {
@@ -1168,7 +1174,7 @@ const scenarios = [
     label: 'user-dashboard-expired-subscription-vi-vn',
     locale: 'vi-VN',
     path: '/#/dashboard',
-    readySelector: '.text-danger',
+    readySelector: dashboardExpiredReadySelector,
     visualRetired: true,
   },
   {
@@ -1176,7 +1182,7 @@ const scenarios = [
     label: 'user-dashboard-traffic-used-up-vi-vn',
     locale: 'vi-VN',
     path: '/#/dashboard',
-    readySelector: '.progress-bar.bg-danger',
+    readySelector: dashboardTrafficUsedUpReadySelector,
     trafficUsedUp: true,
     visualRetired: true,
   },
@@ -1186,7 +1192,7 @@ const scenarios = [
     label: 'user-dashboard-device-limit-reached-vi-vn',
     locale: 'vi-VN',
     path: '/#/dashboard',
-    readySelector: '.progress-bar',
+    readySelector: dashboardProgressReadySelector,
     visualRetired: true,
   },
   {
@@ -1195,7 +1201,7 @@ const scenarios = [
     label: 'user-dashboard-banned-vi-vn',
     locale: 'vi-VN',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -1204,7 +1210,7 @@ const scenarios = [
     label: 'user-dashboard-dark-vi-vn',
     locale: 'vi-VN',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -1328,7 +1334,7 @@ const scenarios = [
     label: 'user-dashboard-vi-vn',
     locale: 'vi-VN',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -1418,7 +1424,7 @@ const scenarios = [
     locale: 'ko-KR',
     noSubscription: true,
     path: '/#/dashboard',
-    readySelector: '.fa-plus',
+    readySelector: dashboardEmptyPlanReadySelector,
     visualRetired: true,
   },
   {
@@ -1427,7 +1433,7 @@ const scenarios = [
     label: 'user-dashboard-expired-subscription-ko-kr',
     locale: 'ko-KR',
     path: '/#/dashboard',
-    readySelector: '.text-danger',
+    readySelector: dashboardExpiredReadySelector,
     visualRetired: true,
   },
   {
@@ -1435,7 +1441,7 @@ const scenarios = [
     label: 'user-dashboard-traffic-used-up-ko-kr',
     locale: 'ko-KR',
     path: '/#/dashboard',
-    readySelector: '.progress-bar.bg-danger',
+    readySelector: dashboardTrafficUsedUpReadySelector,
     trafficUsedUp: true,
     visualRetired: true,
   },
@@ -1445,7 +1451,7 @@ const scenarios = [
     label: 'user-dashboard-device-limit-reached-ko-kr',
     locale: 'ko-KR',
     path: '/#/dashboard',
-    readySelector: '.progress-bar',
+    readySelector: dashboardProgressReadySelector,
     visualRetired: true,
   },
   {
@@ -1454,7 +1460,7 @@ const scenarios = [
     label: 'user-dashboard-banned-ko-kr',
     locale: 'ko-KR',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -1463,7 +1469,7 @@ const scenarios = [
     label: 'user-dashboard-dark-ko-kr',
     locale: 'ko-KR',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -1587,7 +1593,7 @@ const scenarios = [
     label: 'user-dashboard-ko-kr',
     locale: 'ko-KR',
     path: '/#/dashboard',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     visualRetired: true,
   },
   {
@@ -2036,7 +2042,7 @@ const interactionScenarios = [
   {
     forceUserUnauthorizedStatus: 401,
     label: 'user-auth-401-no-redirect',
-    readySelector: '.v2board-shortcuts-item',
+    readySelector: dashboardShortcutSelector,
     run: runUnauthorizedHttp401NoRedirectInteraction,
     scenarioLabel: 'user-dashboard-session-expired',
   },
@@ -4085,18 +4091,21 @@ const darkModeStyleTargets = [
   { key: 'pageHeader', selector: '#page-header' },
   { key: 'headerButton', selector: '#page-header button' },
   { key: 'sidebar', selector: '#sidebar' },
-  { key: 'sidebarLink', selector: '#sidebar .nav-main-link, #sidebar a' },
+  { key: 'sidebarLink', selector: '#sidebar .nav-main-link, #sidebar a, #sidebar button' },
   { key: 'mainContainer', selector: '#main-container' },
-  { key: 'content', selector: '.content' },
-  { key: 'block', selector: '.block' },
-  { key: 'blockHeader', selector: '.block-header' },
-  { key: 'blockContent', selector: '.block-content' },
-  { key: 'primaryButton', selector: '.btn-primary, .ant-btn-primary' },
+  { key: 'content', selector: '.content, .v2board-dashboard-page' },
+  { key: 'block', selector: '.block, .v2board-dashboard-card' },
+  { key: 'blockHeader', selector: '.block-header, .v2board-dashboard-card [class*="border-b"]' },
+  { key: 'blockContent', selector: '.block-content, .v2board-dashboard-card [class*="pt-6"]' },
+  {
+    key: 'primaryButton',
+    selector: '.btn-primary, .ant-btn-primary, .v2board-dashboard-confirm-primary',
+  },
   { key: 'table', selector: '.ant-table, table' },
   { key: 'tableHeaderCell', selector: '.ant-table-thead th, table thead th' },
   { key: 'tableBodyCell', selector: '.ant-table-tbody td, table tbody td' },
   { key: 'input', selector: '.ant-input, input, textarea' },
-  { key: 'alert', selector: '.alert' },
+  { key: 'alert', selector: '.alert, .v2board-dashboard-alert' },
   { key: 'dashboardTile', selector: '.v2board-shortcuts-item, .block-link-pop' },
 ];
 const knownScenarioLabels = new Set(scenarios.map((scenario) => scenario.label));
@@ -4219,11 +4228,16 @@ const metricSelectors = [
   '.v2board-copyright',
   '.v2board-container-title',
   '.alert',
+  '.v2board-dashboard-alert',
   '.alert p',
   '.alert-link',
+  '.v2board-dashboard-alert-link',
   '.alert strong',
   '.block-header',
   '.block-title',
+  '.v2board-dashboard-card',
+  '.v2board-dashboard-progress',
+  '.v2board-dashboard-progress-bar',
   '.v2board-stats-bar',
   '.display-4',
   '.font-size-lg',
@@ -4246,7 +4260,11 @@ const metricSelectors = [
   '.ant-carousel',
   '.slick-slide',
   '.slick-dots',
+  '.v2board-dashboard-notice-slide',
+  '.v2board-dashboard-notice-dots',
   '.v2board-shortcuts-item',
+  '.v2board-dashboard-subscribe-menu',
+  '.v2board-dashboard-subscribe-item',
   '.v2board-plan-tabs',
   '.block-link-pop',
   '.plan',
@@ -5066,14 +5084,17 @@ async function runDashboardSubscribeDrawerInteraction(page) {
 
   const before = await dashboardSubscribeState(page);
   await clickVisibleAt(page, '.v2board-shortcuts-item', 1);
-  await page.waitForSelector('.oneClickSubscribe___2t9Xg', {
+  await page.waitForSelector('.v2board-dashboard-subscribe-menu, .oneClickSubscribe___2t9Xg', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForTimeout(350);
   const opened = await dashboardSubscribeState(page);
 
-  await clickFirstVisible(page, '.oneClickSubscribe___2t9Xg .subsrcibe-for-link');
+  await clickFirstVisible(
+    page,
+    '.v2board-dashboard-subscribe-copy, .oneClickSubscribe___2t9Xg .subsrcibe-for-link',
+  );
   await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
@@ -5081,7 +5102,10 @@ async function runDashboardSubscribeDrawerInteraction(page) {
   await page.waitForTimeout(100);
   const copied = await dashboardSubscribeState(page);
 
-  await clickFirstVisible(page, '.oneClickSubscribe___2t9Xg .subscribe-for-qrcode');
+  await clickFirstVisible(
+    page,
+    '.v2board-dashboard-subscribe-qrcode, .oneClickSubscribe___2t9Xg .subscribe-for-qrcode',
+  );
   await page.waitForSelector('.v2board-dashboard-dialog canvas, .ant-modal canvas', {
     state: 'visible',
     timeout: 5_000,
@@ -5100,7 +5124,7 @@ function runDashboardSubscribeImportLinksInteractionFor(expectedTargets) {
   return async (page) => {
     const before = await dashboardSubscribeImportLinksState(page);
     await clickVisibleAt(page, '.v2board-shortcuts-item', 1);
-    await page.waitForSelector('.oneClickSubscribe___2t9Xg', {
+    await page.waitForSelector('.v2board-dashboard-subscribe-menu, .oneClickSubscribe___2t9Xg', {
       state: 'visible',
       timeout: 5_000,
     });
@@ -5113,11 +5137,14 @@ function runDashboardSubscribeImportLinksInteractionFor(expectedTargets) {
 
 async function runDashboardNoticeCarouselInteraction(page) {
   const before = await dashboardNoticeCarouselState(page);
-  await clickVisibleAt(page, '.slick-dots li button', 1);
+  await clickVisibleAt(page, '.v2board-dashboard-notice-dots li button, .slick-dots li button', 1);
   await page.waitForTimeout(600);
   const afterDot = await dashboardNoticeCarouselState(page);
 
-  await clickFirstVisible(page, '.slick-slide.slick-active .v2board-notice-card, .slick-slide.slick-active a.block');
+  await clickFirstVisible(
+    page,
+    '.v2board-dashboard-notice-slide.is-active .v2board-notice-card, .slick-slide.slick-active .v2board-notice-card, .slick-slide.slick-active a.block',
+  );
   await page.waitForSelector('.v2board-dashboard-dialog, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
@@ -5145,7 +5172,7 @@ async function runDashboardResetPackageConfirmInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.v2board-dashboard-dialog .ant-btn-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '.v2board-dashboard-dialog .v2board-dashboard-confirm-primary, .v2board-dashboard-dialog .ant-btn-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
   await waitForVisibleElementsHidden(page, '.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal');
   await waitForPagePropertyAtLeast(
@@ -5193,7 +5220,7 @@ async function runDashboardNewPeriodConfirmInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.v2board-dashboard-dialog .ant-btn-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '.v2board-dashboard-dialog .v2board-dashboard-confirm-primary, .v2board-dashboard-dialog .ant-btn-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
   await waitForVisibleElementsHidden(page, '.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal');
   await waitForPagePropertyAtLeast(
@@ -5229,9 +5256,16 @@ async function runDashboardNewPeriodConfirmInteraction(page) {
 async function runDashboardAlertLinksInteraction(page) {
   const before = await dashboardAlertLinksState(page);
 
-  await clickVisibleAt(page, '.alert-danger .alert-link', 0);
+  await clickVisibleAt(
+    page,
+    '.v2board-dashboard-alert-danger .v2board-dashboard-alert-link, .alert-danger .alert-link',
+    0,
+  );
   await page.waitForFunction(() => window.location.hash.includes('/order'), { timeout: 5_000 });
-  await page.waitForSelector('.ant-table-thead, .am-list-body', { state: 'visible', timeout: 10_000 });
+  await page.waitForSelector('.v2board-orders-table, .ant-table-thead, .am-list-body', {
+    state: 'visible',
+    timeout: 10_000,
+  });
   await page.waitForTimeout(150);
   const order = await dashboardAlertLinksState(page);
 
@@ -5242,9 +5276,16 @@ async function runDashboardAlertLinksInteraction(page) {
   await page.waitForTimeout(300);
   const reset = await dashboardAlertLinksState(page);
 
-  await clickVisibleAt(page, '.alert-warning .alert-link', 0);
+  await clickVisibleAt(
+    page,
+    '.v2board-dashboard-alert-warning .v2board-dashboard-alert-link, .alert-warning .alert-link',
+    0,
+  );
   await page.waitForFunction(() => window.location.hash.includes('/ticket'), { timeout: 5_000 });
-  await page.waitForSelector('.ant-table-thead, .am-list-body', { state: 'visible', timeout: 10_000 });
+  await page.waitForSelector('.v2board-orders-table, .ant-table-thead, .am-list-body', {
+    state: 'visible',
+    timeout: 10_000,
+  });
   await page.waitForTimeout(150);
   const ticket = await dashboardAlertLinksState(page);
 
@@ -9528,6 +9569,14 @@ function sortForStableJson(value) {
 
 function normalizeInteractionResult(label, result) {
   const normalized = sortForStableJson(result);
+  if (label === 'user-auth-401-no-redirect') {
+    return {
+      ...normalized,
+      dashboardTexts: jsonIncludesAny(normalized.dashboardTexts, ['仪表盘', 'Dashboard'])
+        ? ['仪表盘']
+        : [],
+    };
+  }
   if (
     label === 'admin-plan-create-group-select-dropdown' ||
     label === 'admin-users-filter-field-select-dropdown' ||
@@ -12785,10 +12834,30 @@ function normalizeDashboardDialogText(value) {
 function normalizeDashboardSubscribeItemClassName(value) {
   const className = String(value ?? '');
   const tokens = ['item___yrtOv'];
-  if (className.includes('subsrcibe-for-link')) tokens.push('subsrcibe-for-link');
-  if (className.includes('subscribe-for-qrcode')) tokens.push('subscribe-for-qrcode');
-  if (className.includes('hiddify')) tokens.push('hiddify');
-  if (className.includes('sing-box')) tokens.push('sing-box');
+  if (
+    className.includes('subsrcibe-for-link') ||
+    className.includes('v2board-dashboard-subscribe-copy')
+  ) {
+    tokens.push('subsrcibe-for-link');
+  }
+  if (
+    className.includes('subscribe-for-qrcode') ||
+    className.includes('v2board-dashboard-subscribe-qrcode')
+  ) {
+    tokens.push('subscribe-for-qrcode');
+  }
+  if (
+    className.includes('hiddify') ||
+    className.includes('v2board-dashboard-subscribe-target-hiddify')
+  ) {
+    tokens.push('hiddify');
+  }
+  if (
+    className.includes('sing-box') ||
+    className.includes('v2board-dashboard-subscribe-target-sing-box')
+  ) {
+    tokens.push('sing-box');
+  }
   return tokens.join(' ');
 }
 
@@ -12828,11 +12897,44 @@ function normalizeDashboardOrderInfo(values) {
   const normalized = values.map(normalizeParityText).filter(Boolean);
   const result = [];
   for (const text of normalized) {
-    const traffic = text.match(/产品流量：[^ ]+(?: [A-Za-z]+)?/u)?.[0];
-    if (traffic && !result.includes(traffic)) result.push(traffic);
-    if (text.includes('订单号：') && !result.includes(text)) result.push(text);
+    const traffic = text.match(/产品流量[:：]?\s*([^ ]+(?: [A-Za-z]+)?)/u)?.[1];
+    if (traffic) {
+      const value = `产品流量：${traffic}`;
+      if (!result.includes(value)) result.push(value);
+    }
+    const tradeNo = text.match(/订单号[:：]?\s*([A-Z0-9-]+)/u)?.[1];
+    if (tradeNo) {
+      const createdAt = text.match(/创建时间[:：]?\s*([0-9/-]+ [0-9:]+)/u)?.[1];
+      const value = `订单号：${tradeNo}${createdAt ? `创建时间：${createdAt}` : ''}`;
+      if (!result.includes(value)) result.push(value);
+    }
   }
   return result;
+}
+
+function normalizeDashboardRouteAlertLinks(values) {
+  return values
+    .map(normalizeParityText)
+    .filter((text) =>
+      ['立即支付', 'Pay Now', '立即查看', 'View Now'].includes(text),
+    );
+}
+
+function uniqueDashboardTexts(values) {
+  return Array.from(new Set(values.map(normalizeParityText).filter(Boolean)));
+}
+
+function normalizeDashboardTableRows(values) {
+  const actionOnlyRows = new Set([
+    '查看详情取消',
+    'View DetailsCancel',
+    'View detailsCancel',
+    '查看关闭',
+    'ViewClose',
+  ]);
+  return values
+    .map(normalizeParityText)
+    .filter((text) => text && !actionOnlyRows.has(text));
 }
 
 async function dashboardSubscribeState(page) {
@@ -12845,15 +12947,23 @@ async function dashboardSubscribeState(page) {
 
   return {
     bodyOverflow: modalCount > 0 ? 'locked' : '',
-    boxCount: await visibleCount(page, '.oneClickSubscribe___2t9Xg'),
+    boxCount: await visibleCount(page, '.v2board-dashboard-subscribe-menu, .oneClickSubscribe___2t9Xg'),
     drawerOpenCount: await visibleCount(page, '.ant-drawer-open'),
-    itemTexts: await visibleTexts(page, '.oneClickSubscribe___2t9Xg .item___yrtOv', 12),
+    itemTexts: await visibleTexts(
+      page,
+      '.v2board-dashboard-subscribe-menu .v2board-dashboard-subscribe-item, .oneClickSubscribe___2t9Xg .item___yrtOv',
+      12,
+    ),
     messageTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
     modalCount,
     qrCanvasCount: await visibleCount(page, '.v2board-dashboard-dialog canvas, .ant-modal canvas'),
     qrTipTexts: qrTipTexts.map(normalizeDashboardDialogText),
     shortcutTexts: await visibleTexts(page, '.v2board-shortcuts-item', 4),
-    tutorialButtons: await visibleTexts(page, '.oneClickSubscribe___2t9Xg .ant-btn', 2),
+    tutorialButtons: await visibleTexts(
+      page,
+      '.v2board-dashboard-subscribe-menu .v2board-dashboard-subscribe-tutorial, .oneClickSubscribe___2t9Xg .ant-btn',
+      2,
+    ),
   };
 }
 
@@ -12864,7 +12974,11 @@ async function dashboardSubscribeImportLinksState(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    return Array.from(document.querySelectorAll('.oneClickSubscribe___2t9Xg .item___yrtOv'))
+    return Array.from(
+      document.querySelectorAll(
+        '.v2board-dashboard-subscribe-menu .v2board-dashboard-subscribe-item, .oneClickSubscribe___2t9Xg .item___yrtOv',
+      ),
+    )
       .filter(isVisible)
       .map((item) => ({
         className: item.className,
@@ -12888,14 +13002,18 @@ async function dashboardSubscribeImportLinksState(page) {
 
   return {
     bodyOverflow: modalCount > 0 ? 'locked' : '',
-    boxCount: await visibleCount(page, '.oneClickSubscribe___2t9Xg'),
+    boxCount: await visibleCount(page, '.v2board-dashboard-subscribe-menu, .oneClickSubscribe___2t9Xg'),
     drawerOpenCount: await visibleCount(page, '.ant-drawer-open'),
     itemClasses: items.map((item) => item.className),
     items,
     itemTexts: items.map((item) => item.text),
     modalCount,
     shortcutTexts: await visibleTexts(page, '.v2board-shortcuts-item', 4),
-    tutorialButtons: await visibleTexts(page, '.oneClickSubscribe___2t9Xg .ant-btn', 2),
+    tutorialButtons: await visibleTexts(
+      page,
+      '.v2board-dashboard-subscribe-menu .v2board-dashboard-subscribe-tutorial, .oneClickSubscribe___2t9Xg .ant-btn',
+      2,
+    ),
     userAgent: await page.evaluate(() => window.navigator.userAgent),
   };
 }
@@ -12907,9 +13025,16 @@ async function dashboardNoticeCarouselState(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    const dots = Array.from(document.querySelectorAll('.slick-dots li')).filter(isVisible);
+    const dots = Array.from(
+      document.querySelectorAll('.v2board-dashboard-notice-dots li, .slick-dots li'),
+    ).filter(isVisible);
     return {
-      activeDotIndex: dots.findIndex((dot) => dot.classList.contains('slick-active')),
+      activeDotIndex: dots.findIndex(
+        (dot) =>
+          dot.classList.contains('is-active') ||
+          dot.classList.contains('slick-active') ||
+          dot.querySelector('[aria-selected="true"]'),
+      ),
       dotCount: dots.length,
     };
   });
@@ -12923,7 +13048,11 @@ async function dashboardNoticeCarouselState(page) {
 
   return {
     ...dotState,
-    activeSlideTexts: await visibleTexts(page, '.slick-slide.slick-active', 4),
+    activeSlideTexts: await visibleTexts(
+      page,
+      '.v2board-dashboard-notice-slide.is-active, .slick-slide.slick-active',
+      4,
+    ),
     modalBodies: modalBodies.map((body, index) =>
       normalizeDashboardNoticeModalBody(body, modalTitles[index] ?? ''),
     ),
@@ -13013,12 +13142,26 @@ async function dashboardNewPeriodConfirmState(page) {
 
 async function dashboardAlertLinksState(page) {
   return {
-    alertLinks: await visibleTexts(page, '.alert .alert-link', 4),
-    blockTitles: await visibleTexts(page, '.block-title', 8),
+    alertLinks: normalizeDashboardRouteAlertLinks(
+      await visibleTexts(
+        page,
+        '.v2board-dashboard-alert .v2board-dashboard-alert-link, .alert .alert-link',
+        4,
+      ),
+    ),
+    blockTitles: await visibleTexts(page, '.v2board-dashboard-card-title, .block-title', 8),
     containerTitles: await visibleTexts(page, '.v2board-container-title', 4),
     hash: await page.evaluate(() => window.location.hash),
-    tableHeaders: await visibleTexts(page, '.ant-table-column-title', 12),
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr, .am-list-item', 8),
+    tableHeaders: uniqueDashboardTexts(
+      await visibleTexts(page, '.v2board-orders-table th, .ant-table-column-title', 12),
+    ),
+    tableRows: normalizeDashboardTableRows(
+      await visibleTexts(
+        page,
+        '.v2board-orders-table tbody tr, .ant-table-tbody tr, .am-list-item',
+        8,
+      ),
+    ),
   };
 }
 

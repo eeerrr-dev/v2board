@@ -347,8 +347,6 @@ export const userStyleFiles = [
   'user-antd-dropdown-motion.css',
   'user-antd-dropdown-items.css',
   'user-email-whitelist-enable.css',
-  'user-dashboard-background-pixels.css',
-  'user-dashboard-shortcut-items.css',
   'user-trade-number.css',
   'user-antd-carousel-root.css',
   'user-antd-carousel-slider-list.css',

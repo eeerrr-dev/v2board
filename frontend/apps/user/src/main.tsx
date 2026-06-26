@@ -364,8 +364,6 @@ import './styles/user-antd-dropdown-menu.css';
 import './styles/user-antd-dropdown-motion.css';
 import './styles/user-antd-dropdown-items.css';
 import './styles/user-email-whitelist-enable.css';
-import './styles/user-dashboard-background-pixels.css';
-import './styles/user-dashboard-shortcut-items.css';
 import './styles/user-trade-number.css';
 import './styles/user-antd-carousel-root.css';
 import './styles/user-antd-carousel-slider-list.css';

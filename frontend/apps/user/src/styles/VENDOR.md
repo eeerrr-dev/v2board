@@ -38,7 +38,6 @@ Every file whose header begins `/* Authored V2Board …` is V2Board's own stylin
 are the organized source layer and may be edited normally. In this app they are:
 
 - `user-auth-shell.css`, `user-auth-alerts.css`, `user-auth-language.css` — guest auth surface
-- `user-dashboard-shortcut-items.css`, `user-dashboard-background-pixels.css` — dashboard
 - `user-plan-tabs.css`, `user-plan-content-features.css`, `user-plan-stock-tags.css`, `user-plan-coupon-input.css` — plans/checkout
 - `user-payment-elements.css`, `user-payment-select.css` — payment/cashier
 - `user-order-info.css`, `user-trade-number.css` — order detail

@@ -492,8 +492,8 @@ describe('legacy themed antd CSS overrides', () => {
   });
 });
 
-describe('legacy account and dashboard utility CSS', () => {
-  it('keeps packaged email whitelist, dashboard shortcut, and trade-number utilities', () => {
+describe('legacy account utility CSS', () => {
+  it('keeps packaged email whitelist and trade-number utilities', () => {
     const globals = css();
 
     expect(globals).toContain('.v2board-email-whitelist-enable {\n  display: flex;\n}');
@@ -506,34 +506,13 @@ describe('legacy account and dashboard utility CSS', () => {
     expect(globals).toContain(
       'background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns',
     );
-    expect(globals).toContain(
-      ".v2board-bg-pixels {\n  background-image: url('data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjIwMCI",
-    );
-    expect(globals).toContain('.v2board-bg-pixels {\n  background-image:');
-    expect(globals).toContain('  background-size: auto;\n}');
-    expect(globals).toContain(
-      '.v2board-shortcuts-button {\n  display: block;\n  width: 100%;\n  padding: 0;',
-    );
-    expect(globals).toContain(
-      '.v2board-shortcuts-item {\n  position: relative;\n  padding: 20px;\n  cursor: pointer;',
-    );
-    expect(globals).toContain(
-      '.v2board-shortcuts-item > .description {\n  font-size: 12px;\n  opacity: 0.5;\n}',
-    );
-    expect(globals).toContain(
-      '.v2board-shortcuts-item i {\n  position: absolute;\n  top: 25px;\n  right: 20px;',
-    );
-    expect(globals).toContain('.v2board-shortcuts-item:hover {\n  background: #f6f6f6;\n}');
+    expect(globals).not.toContain('.v2board-bg-pixels {');
+    expect(globals).not.toContain('.v2board-shortcuts-button {');
+    expect(globals).not.toContain('.v2board-shortcuts-item {\n  position: relative;');
     expect(globals).toContain(
       '.v2board-trade-no {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;',
     );
     expect(globals.indexOf('.v2board-email-whitelist-enable {')).toBeLessThan(
-      globals.indexOf('.v2board-bg-pixels {'),
-    );
-    expect(globals.indexOf('.v2board-bg-pixels {')).toBeLessThan(
-      globals.indexOf('.v2board-shortcuts-button {'),
-    );
-    expect(globals.indexOf('.v2board-shortcuts-button {')).toBeLessThan(
       globals.indexOf('.v2board-trade-no {'),
     );
   });

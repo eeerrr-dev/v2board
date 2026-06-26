@@ -8,10 +8,8 @@ import {
   AlertCircle,
   Bell,
   BookOpen,
-  CalendarClock,
   CheckCircle2,
   Copy,
-  CreditCard,
   Headphones,
   LinkIcon,
   Package,
@@ -114,6 +112,7 @@ export default function DashboardPage() {
   const usedPct = sub?.transfer_enable ? (used / sub.transfer_enable) * 100 : 0;
   const usedPctRounded = Math.round(usedPct * 100) / 100;
   const usedPctClamped = Math.max(0, Math.min(100, usedPct));
+  const trafficTone = getTrafficTone(usedPctRounded);
   const daysLeft = legacyDaysUntil(sub?.expired_at);
   const expired = isLegacyExpired(sub?.expired_at ?? null);
   const canRenew = isLegacyRenewable(sub);
@@ -231,10 +230,10 @@ export default function DashboardPage() {
   ];
 
   const renderSubscribeBox = () => (
-    <div className="oneClickSubscribe___2t9Xg grid gap-1 p-2">
+    <div className="v2board-dashboard-subscribe-menu grid gap-1 p-2">
       <button
         type="button"
-        className="item___yrtOv subsrcibe-for-link flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+        className="v2board-dashboard-subscribe-item v2board-dashboard-subscribe-copy flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         onClick={copyUrl}
       >
         <Copy className="size-4 text-muted-foreground" />
@@ -242,7 +241,7 @@ export default function DashboardPage() {
       </button>
       <button
         type="button"
-        className="item___yrtOv subscribe-for-qrcode flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+        className="v2board-dashboard-subscribe-item v2board-dashboard-subscribe-qrcode flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         onClick={() => setQrOpen(true)}
       >
         <QrCode className="size-4 text-muted-foreground" />
@@ -253,8 +252,8 @@ export default function DashboardPage() {
           type="button"
           key={target.title}
           className={cn(
-            'item___yrtOv flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground',
-            target.title.replace(' ', '-').toLowerCase(),
+            'v2board-dashboard-subscribe-item flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            `v2board-dashboard-subscribe-target-${subscribeTargetSlug(target.title)}`,
           )}
           onClick={() => {
             window.location.href = target.href;
@@ -269,7 +268,7 @@ export default function DashboardPage() {
       <div className="px-1 pb-1 pt-2">
         <Button
           type="button"
-          className="ant-btn w-full"
+          className="v2board-dashboard-subscribe-tutorial w-full"
           onClick={() => navigate('/knowledge')}
         >
           {t('dashboard.use_tutorial')}
@@ -290,7 +289,10 @@ export default function DashboardPage() {
       onClick={() => openNotice(notice)}
     >
       <div
-        className="min-h-36 p-5 sm:min-h-40"
+        className={cn(
+          'min-h-36 p-5 sm:min-h-40',
+          !notice.img_url && 'bg-muted/30',
+        )}
         style={
           notice.img_url
             ? {
@@ -316,18 +318,18 @@ export default function DashboardPage() {
 
   return (
     <div className="v2board-dashboard-page space-y-6">
-      <div className="grid gap-3">
+      <div className="v2board-dashboard-alerts grid gap-3">
         {pendingOrderCount > 0 && (
           <Alert
-            className="alert alert-danger border-destructive/25 bg-destructive/5 text-foreground"
+            className="v2board-dashboard-alert v2board-dashboard-alert-danger border-destructive/25 bg-destructive/5 text-foreground"
             role="alert"
           >
             <AlertCircle className="size-4 text-destructive" />
-            <AlertDescription>
+            <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
               <span>{t('dashboard.alert_pending_order')}</span>
               <button
                 type="button"
-                className="alert-link font-medium text-foreground underline-offset-4 hover:underline"
+                className="v2board-dashboard-alert-link font-medium text-foreground underline-offset-4 hover:underline"
                 onClick={() => navigate('/order')}
               >
                 {t('order.pay_now')}
@@ -336,15 +338,18 @@ export default function DashboardPage() {
           </Alert>
         )}
         {openTicketCount > 0 && (
-          <Alert className="alert alert-warning border-amber-200 bg-amber-50 text-foreground" role="alert">
+          <Alert
+            className="v2board-dashboard-alert v2board-dashboard-alert-warning border-amber-200 bg-amber-50 text-foreground"
+            role="alert"
+          >
             <Bell className="size-4 text-amber-600" />
-            <AlertDescription>
+            <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
               <span>
                 <strong>{openTicketCount}</strong> {t('dashboard.alert_open_ticket_suffix')}
               </span>
               <button
                 type="button"
-                className="alert-link font-medium text-foreground underline-offset-4 hover:underline"
+                className="v2board-dashboard-alert-link font-medium text-foreground underline-offset-4 hover:underline"
                 onClick={() => navigate('/ticket')}
               >
                 {t('dashboard.alert_view')}
@@ -353,14 +358,17 @@ export default function DashboardPage() {
           </Alert>
         )}
         {shouldShowTrafficAlert && (
-          <Alert className="alert alert-info border-sky-200 bg-sky-50 text-foreground" role="alert">
+          <Alert
+            className="v2board-dashboard-alert v2board-dashboard-alert-info border-sky-200 bg-sky-50 text-foreground"
+            role="alert"
+          >
             <AlertCircle className="size-4 text-sky-600" />
-            <AlertDescription>
+            <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
               <span>{t('dashboard.alert_traffic_rate', { rate: usedPctRounded })}</span>
               {trafficAlertResetAvailable ? (
                 <button
                   type="button"
-                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                  className="v2board-dashboard-alert-link font-medium text-foreground underline-offset-4 hover:underline"
                   onClick={requestResetPackage}
                 >
                   {t('dashboard.buy_reset_package')}
@@ -372,22 +380,26 @@ export default function DashboardPage() {
       </div>
 
       {noticeList.length > 0 && activeNoticeCard ? (
-        <section className="space-y-3">
-          <div className="slick-slider">
-            <div className="slick-slide slick-active">{renderNoticeCard(activeNoticeCard)}</div>
+        <section className="v2board-dashboard-notices space-y-3">
+          <div className="v2board-dashboard-notice-carousel">
+            <div className="v2board-dashboard-notice-slide is-active">
+              {renderNoticeCard(activeNoticeCard)}
+            </div>
             {noticeList.length > 1 ? (
-              <ul className="slick-dots slick-dots-bottom mt-3 flex justify-center gap-1">
+              <ul className="v2board-dashboard-notice-dots mt-3 flex justify-center gap-1">
                 {noticeList.map((notice, index) => (
                   <li
                     key={notice.id}
-                    className={cn(index === activeNoticeIndex && 'slick-active')}
+                    className={cn(index === activeNoticeIndex && 'is-active')}
                   >
                     <button
                       type="button"
                       className={cn(
-                        'h-1.5 w-6 rounded-full bg-border text-[0px] transition-colors',
+                        'v2board-dashboard-notice-dot h-1.5 w-6 rounded-full bg-border text-[0px] transition-colors hover:bg-muted-foreground/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                         index === activeNoticeIndex && 'bg-primary',
                       )}
+                      aria-label={`${t('notice.title')} ${index + 1}`}
+                      aria-selected={index === activeNoticeIndex}
                       onClick={() => setActiveNoticeIndex(index)}
                     >
                       {index + 1}
@@ -400,35 +412,39 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
-        <Card className="v2board-dashboard-card">
-          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
+        <Card className="v2board-dashboard-card overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 border-b border-border pb-5">
             <div className="space-y-1">
-              <CardTitle className="block-title text-xl">{t('dashboard.plan')}</CardTitle>
+              <CardTitle className="v2board-dashboard-card-title text-xl">
+                {t('dashboard.plan')}
+              </CardTitle>
               {hasPlan && hasSubscribeData ? (
                 <p className="text-sm text-muted-foreground">{legacySub.plan?.name}</p>
               ) : null}
             </div>
-            <Package className="size-5 text-muted-foreground" />
+            <span className="flex size-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
+              <Package className="size-4" />
+            </span>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             {subscribe.isLoading || !hasSubscribeData ? (
               <div className="flex min-h-36 items-center justify-center">
                 <Spinner className="size-6" />
               </div>
             ) : hasPlan ? (
-              <div className="space-y-5">
-                <div className="space-y-2">
+              <div className="space-y-6">
+                <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-2xl font-semibold tracking-normal">
                       {legacySub.plan!.name}
                     </h2>
                     {expired ? (
-                      <span className="text-danger rounded-md border border-destructive/25 bg-destructive/5 px-2 py-1 text-xs font-medium text-destructive">
+                      <span className="v2board-dashboard-status-expired inline-flex rounded-md border border-destructive/25 bg-destructive/5 px-2 py-1 text-xs font-medium text-destructive">
                         {t('dashboard.expired_label')}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                      <span className="v2board-dashboard-status-active inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
                         <CheckCircle2 className="size-3" />
                         {legacySub.expired_at === null ? t('dashboard.long_term') : t('dashboard.plan')}
                       </span>
@@ -453,29 +469,49 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <div className="progress h-2 overflow-hidden rounded-full bg-muted">
+                <div className="space-y-3">
+                  <div className="v2board-dashboard-progress h-2 overflow-hidden rounded-full bg-muted">
                     <div
                       className={cn(
-                        'progress-bar h-full rounded-full transition-all',
-                        usedPctRounded >= 100
-                          ? 'bg-danger bg-destructive'
-                          : usedPctRounded >= 80
-                            ? 'bg-warning bg-amber-500'
-                            : 'bg-success bg-emerald-500',
+                        'v2board-dashboard-progress-bar h-full rounded-full transition-all',
+                        trafficTone === 'danger' && 'bg-destructive',
+                        trafficTone === 'warning' && 'bg-amber-500',
+                        trafficTone === 'success' && 'bg-emerald-500',
                       )}
+                      data-status={trafficTone}
                       role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(usedPctClamped)}
                       style={{ width: `${usedPctClamped}%` }}
                     />
                   </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-border bg-muted/30 p-3">
+                      <p className="text-sm font-medium">
+                        {t('dashboard.used_traffic', {
+                          used: formatBytes(used),
+                          total: formatBytes(legacySub.transfer_enable),
+                        })}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-muted/30 p-3">
+                      <p className="text-sm font-medium text-muted-foreground">
+                        {t('dashboard.devices_online', {
+                          alive_ip: legacySub.alive_ip,
+                          device_limit: legacySub.device_limit ?? '∞',
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="sr-only">
                     <span>
                       {t('dashboard.used_traffic', {
                         used: formatBytes(used),
                         total: formatBytes(legacySub.transfer_enable),
                       })}
                     </span>
-                    <span className="text-muted-foreground">
+                    <span>
                       {t('dashboard.devices_online', {
                         alive_ip: legacySub.alive_ip,
                         device_limit: legacySub.device_limit ?? '∞',
@@ -508,38 +544,41 @@ export default function DashboardPage() {
             ) : (
               <button
                 type="button"
-                className="flex min-h-40 w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 text-center transition-colors hover:bg-accent"
+                className="v2board-dashboard-empty-plan flex min-h-40 w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 text-center transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 onClick={() => navigate('/plan')}
               >
                 <Plus className="size-8 text-muted-foreground" />
-                <i className="fa fa-plus sr-only" aria-hidden="true" />
                 <span className="text-sm font-medium">{t('dashboard.shortcut_buy')}</span>
               </button>
             )}
           </CardContent>
         </Card>
 
-        <Card className="v2board-dashboard-card">
-          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
-            <CardTitle className="block-title text-xl">{t('dashboard.shortcuts')}</CardTitle>
-            <Smartphone className="size-5 text-muted-foreground" />
+        <Card className="v2board-dashboard-card overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 border-b border-border pb-5">
+            <CardTitle className="v2board-dashboard-card-title text-xl">
+              {t('dashboard.shortcuts')}
+            </CardTitle>
+            <span className="flex size-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
+              <Smartphone className="size-4" />
+            </span>
           </CardHeader>
-          <CardContent className="grid gap-2">
+          <CardContent className="grid gap-3 pt-6">
             {shortcuts.map((shortcut) => {
               const Icon = shortcut.icon;
               return (
                 <button
                   type="button"
                   key={shortcut.titleKey}
-                  className="v2board-shortcuts-item flex min-h-16 items-center gap-3 rounded-lg border border-border bg-background px-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="v2board-shortcuts-item group flex min-h-[4.5rem] items-center gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   onClick={shortcut.onClick ?? (() => navigate(shortcut.to))}
                 >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:bg-background group-hover:text-foreground">
                     <Icon className="size-4" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium">{t(shortcut.titleKey)}</span>
-                    <span className="description block truncate text-sm text-muted-foreground">
+                    <span className="block truncate text-sm leading-6 text-muted-foreground">
                       {t(shortcut.descKey)}
                       {shortcut.descKey === 'dashboard.shortcut_tutorial_desc' ? (
                         <> {window.settings?.title}</>
@@ -616,7 +655,7 @@ export default function DashboardPage() {
             </Button>
             <Button
               type="button"
-              className="ant-btn ant-btn-primary"
+              className="v2board-dashboard-confirm-primary"
               loading={confirmLoading}
               onClick={() => {
                 void (confirmAction === 'reset-package'
@@ -711,6 +750,19 @@ function getSubscribeTargets(url: string) {
 
 function isLegacyExpired(expiredAt: number | null | undefined) {
   return expiredAt !== null && expiredAt !== undefined && expiredAt < Date.now() / 1000;
+}
+
+function getTrafficTone(usedPctRounded: number) {
+  if (usedPctRounded >= 100) return 'danger';
+  if (usedPctRounded >= 80) return 'warning';
+  return 'success';
+}
+
+function subscribeTargetSlug(title: string) {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 function legacyDaysUntil(timestamp: number | string | null | undefined) {

@@ -221,10 +221,10 @@ describe('DashboardPage shadcn shell markup', () => {
     const html = renderToStaticMarkup(<DashboardPage />);
 
     expect(html).toContain('v2board-dashboard-page');
-    expect(html).toContain('alert alert-danger');
+    expect(html).toContain('v2board-dashboard-alert-danger');
     expect(html).toContain('还有没支付的订单');
     expect(html).toContain('立即支付');
-    expect(html).toContain('alert alert-warning');
+    expect(html).toContain('v2board-dashboard-alert-warning');
     expect(html).toContain('<strong>3</strong>');
     expect(html).toContain('条工单正在处理中');
     expect(html).toContain('当前已使用流量达 85%');
@@ -232,7 +232,7 @@ describe('DashboardPage shadcn shell markup', () => {
     expect(html).toContain('Notice A');
     expect(html).toContain('我的订阅');
     expect(html).toContain('Pro');
-    expect(html).toContain('progress-bar');
+    expect(html).toContain('v2board-dashboard-progress-bar');
     expect(html).toContain('在线设备 2/∞');
     expect(html).toContain('捷径');
     expect(html).toContain('查看教程');
@@ -241,6 +241,9 @@ describe('DashboardPage shadcn shell markup', () => {
     expect(html).toContain('续费订阅');
     expect(html).toContain('遇到问题');
     expect(html).not.toContain('block block-rounded');
+    expect(html).not.toContain('oneClickSubscribe___2t9Xg');
+    expect(html).not.toContain('slick-slider');
+    expect(html).not.toContain('ant-btn-primary');
   });
 
   it('renders the buy-subscribe empty state when there is no active plan', () => {
@@ -248,8 +251,9 @@ describe('DashboardPage shadcn shell markup', () => {
 
     const html = renderToStaticMarkup(<DashboardPage />);
 
-    expect(html).toContain('fa fa-plus');
+    expect(html).toContain('v2board-dashboard-empty-plan');
     expect(html).toContain('购买订阅');
+    expect(html).not.toContain('fa fa-plus');
     expect(html).not.toContain('font-size-sm text-uppercase text-muted');
   });
 
@@ -306,8 +310,8 @@ describe('DashboardPage shadcn shell actions', () => {
       await Promise.resolve();
     });
 
-    expect(container.innerHTML).toContain('oneClickSubscribe___2t9Xg');
-    expect(container.innerHTML).toContain('item___yrtOv subsrcibe-for-link');
+    expect(container.innerHTML).toContain('v2board-dashboard-subscribe-menu');
+    expect(container.innerHTML).toContain('v2board-dashboard-subscribe-copy');
     expect(container.innerHTML).toContain('复制订阅地址');
     expect(container.innerHTML).toContain('导入到 Hiddify');
     expect(container.querySelector('img[src*="Hiddify"]')?.getAttribute('src')).toContain(
@@ -315,7 +319,7 @@ describe('DashboardPage shadcn shell actions', () => {
     );
     expect(container.innerHTML).not.toContain('/theme/default/assets/');
 
-    const copy = Array.from(container.querySelectorAll('.item___yrtOv')).find(
+    const copy = Array.from(container.querySelectorAll('.v2board-dashboard-subscribe-item')).find(
       (item) => item.textContent === '复制订阅地址',
     )!;
     await act(async () => {
@@ -326,7 +330,7 @@ describe('DashboardPage shadcn shell actions', () => {
     expect(mocks.copyText).toHaveBeenCalledWith('https://example.test/sub');
     expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功');
 
-    const qr = Array.from(container.querySelectorAll('.item___yrtOv')).find(
+    const qr = Array.from(container.querySelectorAll('.v2board-dashboard-subscribe-item')).find(
       (item) => item.textContent === '扫描二维码订阅',
     )!;
     await act(async () => {
@@ -357,13 +361,15 @@ describe('DashboardPage shadcn shell actions', () => {
     ];
     await renderDashboard();
 
-    const secondDot = container.querySelectorAll<HTMLButtonElement>('.slick-dots button')[1]!;
+    const secondDot = container.querySelectorAll<HTMLButtonElement>(
+      '.v2board-dashboard-notice-dots button',
+    )[1]!;
     await act(async () => {
       secondDot.click();
       await Promise.resolve();
     });
 
-    expect(container.querySelector('.slick-slide.slick-active')?.textContent).toContain('Notice B');
+    expect(container.querySelector('.v2board-dashboard-notice-slide.is-active')?.textContent).toContain('Notice B');
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('.v2board-notice-card')!.click();
