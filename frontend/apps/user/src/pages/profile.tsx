@@ -1,10 +1,42 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useRef, useState, type Ref } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { user } from '@v2board/api-client';
+import {
+  AlertCircle,
+  Bell,
+  Copy,
+  Gift,
+  KeyRound,
+  Link2,
+  MessageCircle,
+  RefreshCcw,
+  Send,
+  WalletCards,
+} from 'lucide-react';
 import { apiClient } from '@/lib/api';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/shadcn-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/cn';
 import {
   useChangePasswordMutation,
   useCommConfig,
@@ -16,12 +48,11 @@ import {
   useUpdateProfileMutation,
   useUserInfo,
 } from '@/lib/queries';
-import { AntBtn } from '@/components/ant-btn';
-import { QuestionCircleIcon } from '@/components/ant-icon';
-import { legacyConfirm } from '@/components/legacy-confirm';
-import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
 import { legacyCopyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/legacy-toast';
+
+type ProfilePreferenceKey = 'auto_renewal' | 'remind_expire' | 'remind_traffic';
+type ConfirmAction = 'reset-subscribe' | 'unbind-telegram' | null;
 
 export default function ProfilePage() {
   const { t } = useTranslation();
@@ -29,9 +60,8 @@ export default function ProfilePage() {
   const info = useUserInfo({ refetchOnMount: 'always' });
   const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
   // The original /profile never dispatches user/getSubscribe on mount; it only reads
-  // whatever subscribe data already sits in the dva store (populated by dashboard/node)
-  // and re-fetches solely after unbinding Telegram. Mirror that: read the cached query
-  // without an eager mount fetch, while subscribeQuery.refetch() in onUnbindTelegram works.
+  // whatever subscribe data already sits in the dva store and re-fetches solely after
+  // unbinding Telegram. Keep that contract while replacing the presentation layer.
   const subscribeQuery = useSubscribe({ enabled: false });
   const subscribe = subscribeQuery.data;
   const updateProfile = useUpdateProfileMutation();
@@ -44,35 +74,26 @@ export default function ProfilePage() {
   const oldPasswordRef = useRef<HTMLInputElement>(null);
   const newPasswordRef = useRef<HTMLInputElement>(null);
   const confirmPasswordRef = useRef<HTMLInputElement>(null);
+  const depositInputRef = useRef<HTMLInputElement>(null);
+  const depositAmountRef = useRef<number | undefined>(undefined);
+
   const [redeemTimeoutStuck, setRedeemTimeoutStuck] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [telegramOpen, setTelegramOpen] = useState(false);
-  const [updatingPref, setUpdatingPref] = useState({
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  const [updatingPref, setUpdatingPref] = useState<Record<ProfilePreferenceKey, boolean>>({
     auto_renewal: false,
     remind_expire: false,
     remind_traffic: false,
   });
+
   const botInfo = useTelegramBotInfo(telegramOpen);
-  const depositBodyRef = useRef<HTMLDivElement>(null);
-  const depositInputRef = useRef<HTMLInputElement>(null);
-  const depositAmountRef = useRef<number | undefined>(undefined);
-
-  // antd Modal.confirm defaults autoFocusButton:"ok" — focus the OK button when the deposit
-  // modal opens (this parent effect runs after DialogContent focuses the dialog wrap).
-  useEffect(() => {
-    if (depositOpen) {
-      depositBodyRef.current?.querySelector<HTMLButtonElement>('.ant-btn-primary')?.focus();
-    }
-  }, [depositOpen]);
-
   const data = info.data;
   const currency = comm?.currency;
   const depositPlaceholder = t(`请输入充值金额${currency}`);
+  const redeemLoading = redeem.isPending || redeemTimeoutStuck;
 
-  const togglePref = async (
-    key: 'auto_renewal' | 'remind_expire' | 'remind_traffic',
-    value: 0 | 1,
-  ) => {
+  const togglePref = async (key: ProfilePreferenceKey, value: 0 | 1) => {
     let succeeded = false;
     setUpdatingPref((current) => ({ ...current, [key]: true }));
     try {
@@ -119,45 +140,50 @@ export default function ProfilePage() {
   };
 
   const onReset = () => {
-    void legacyConfirm({
-      title: t('profile.reset_subscribe_confirm'),
-      content: t('profile.reset_subscribe_tip'),
-      okText: t('profile.confirm'),
-      cancelText: t('common.cancel'),
-      onOk: () => {
-        void resetSub
-          .mutateAsync()
-          .then(() => {
-            toast.success(t('profile.reset_success'));
-          })
-          .catch(() => {});
-      },
-    });
+    setConfirmAction('reset-subscribe');
   };
 
   const onUnbindTelegram = () => {
-    void legacyConfirm({
-      title: t('profile.telegram_unbind_confirm'),
-      content: t('profile.telegram_unbind_tip'),
-      okText: t('profile.confirm'),
-      cancelText: t('common.cancel'),
-      onOk: () => {
-        void unbindTelegram
-          .mutateAsync()
-          .then(() => {
-            toast.success(t('profile.reset_success'));
-            void info.refetch();
-            void subscribeQuery.refetch();
-          })
-          .catch(() => {});
-      },
-    });
+    setConfirmAction('unbind-telegram');
+  };
+
+  const onConfirmAction = () => {
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (action === 'reset-subscribe') {
+      void resetSub
+        .mutateAsync()
+        .then(() => {
+          toast.success(t('profile.reset_success'));
+        })
+        .catch(() => {});
+      return;
+    }
+    if (action === 'unbind-telegram') {
+      void unbindTelegram
+        .mutateAsync()
+        .then(() => {
+          toast.success(t('profile.reset_success'));
+          void info.refetch();
+          void subscribeQuery.refetch();
+        })
+        .catch(() => {});
+    }
+  };
+
+  const openDeposit = () => {
+    if (depositInputRef.current) depositInputRef.current.value = '';
+    setDepositOpen(true);
+  };
+
+  const closeDeposit = () => {
+    setDepositOpen(false);
+    if (depositInputRef.current) depositInputRef.current.value = '';
   };
 
   const onDeposit = () => {
-    // The original stores the last typed amount on the page instance and never
-    // resets that field; Modal.confirm destroys only the input DOM. Keep that
-    // small quirk: a reopened empty modal still submits the previous typed value.
+    // The legacy page keeps the last typed amount on the page instance and only
+    // destroys the input DOM. Preserve that small behavior quirk.
     const depositAmountValue = depositAmountRef.current;
     void user
       .saveOrder(apiClient, {
@@ -167,365 +193,417 @@ export default function ProfilePage() {
       })
       .then((tradeNo) => navigate(`/order/${tradeNo}`))
       .catch(() => {});
-    setDepositOpen(false);
-    if (depositInputRef.current) depositInputRef.current.value = '';
+    closeDeposit();
   };
 
   const copyBindCommand = () => {
     legacyCopyText(`/bind ${subscribe?.subscribe_url}`);
   };
-  const redeemLoading = redeem.isPending || redeemTimeoutStuck;
+
+  const confirmTitle =
+    confirmAction === 'unbind-telegram'
+      ? t('profile.telegram_unbind_confirm')
+      : t('profile.reset_subscribe_confirm');
+  const confirmDescription =
+    confirmAction === 'unbind-telegram'
+      ? t('profile.telegram_unbind_tip')
+      : t('profile.reset_subscribe_tip');
 
   return (
     <>
-      <div className="row mb-3 mb-md-0">
-        <div className="col-lg-12">
-          <div className="block ">
-            <div className="block-content pb-3">
-              <i className="fa fa-wallet fa-2x text-gray-light float-right" />
-              <div className="pb-sm-3">
-                <p className="text-muted w-75">{t('profile.wallet')}</p>
-                <p className="display-4 text-black font-w300 mb-2">
-                  {data?.balance !== undefined ? formatCentsPlain(data.balance) : '--.--'}
-                  <span className="font-size-h5 text-muted ml-4">{currency}</span>
-                </p>
-                <span className="text-muted" style={{ cursor: 'pointer' }}>
-                  {t('profile.auto_renewal')}{' '}
-                  <LegacySwitch
-                    loading={updatingPref.auto_renewal}
-                    checked={data?.auto_renewal}
-                    onChange={(checked) => void togglePref('auto_renewal', checked ? 1 : 0)}
-                  />
-                </span>
-                <div className="pt-3">
-                  <AntBtn
-                    type="button"
-                    className="ant-btn ant-btn-primary"
-                    onClick={() => {
-                      if (depositInputRef.current) depositInputRef.current.value = '';
-                      setDepositOpen(true);
-                    }}
-                  >
-                    {t('profile.recharge')}
-                  </AntBtn>
+      <div className="v2board-profile-page mx-auto flex w-full max-w-6xl flex-col gap-6">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+          <Card className="v2board-profile-wallet-card overflow-hidden">
+            <CardHeader className="gap-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-2">
+                  <CardDescription>{t('profile.wallet')}</CardDescription>
+                  <CardTitle className="v2board-profile-card-title text-4xl font-semibold tracking-normal text-foreground sm:text-5xl">
+                    {data?.balance !== undefined ? formatCentsPlain(data.balance) : '--.--'}
+                    <span className="ml-3 align-baseline text-base font-medium text-muted-foreground">
+                      {currency}
+                    </span>
+                  </CardTitle>
+                </div>
+                <div className="rounded-md border border-border bg-muted p-2.5 text-muted-foreground">
+                  <WalletCards className="size-5" />
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <LegacyBlock title={t('profile.redeem_giftcard')} withOptions={false}>
-        <div className="row push">
-          <div className="col-lg-8 col-xl-5">
-            <div className="form-group">
-              <input
-                className="form-control"
-                placeholder={t('profile.redeem_placeholder')}
-                autoComplete="one-time-code"
-                ref={giftCardRef}
-              />
-            </div>
-            <AntBtn
-              type="button"
-              className={`ant-btn ant-btn-primary${redeemLoading ? ' ant-btn-loading' : ''}`}
-              onClick={() => {
-                if (!redeemLoading) void onRedeem();
-              }}
-            >
-              {redeemLoading && <LegacyLoadingIcon />}
-              {t('profile.redeem_submit')}
-            </AntBtn>
-          </div>
-        </div>
-      </LegacyBlock>
-
-      <LegacyBlock title={t('profile.change_password')}>
-        <div className="row push">
-          <div className="col-lg-8 col-xl-5">
-            <div className="form-group">
-              <label>{t('profile.old_password')}</label>
-              <input
-                ref={oldPasswordRef}
-                type="password"
-                className="form-control"
-                placeholder={t('profile.old_password_placeholder')}
-              />
-            </div>
-            <div className="form-group">
-              <label>{t('profile.new_password')}</label>
-              <input
-                ref={newPasswordRef}
-                type="password"
-                className="form-control"
-                placeholder={t('profile.new_password_placeholder')}
-              />
-            </div>
-            <div className="form-group">
-              <label>{t('profile.new_password')}</label>
-              <input
-                ref={confirmPasswordRef}
-                type="password"
-                className="form-control"
-                placeholder={t('profile.new_password_placeholder')}
-              />
-            </div>
-            <AntBtn
-              type="button"
-              className={`ant-btn ant-btn-primary${changePassword.isPending ? ' ant-btn-loading' : ''}`}
-              onClick={() => {
-                if (!changePassword.isPending) void onChangePwd();
-              }}
-            >
-              {changePassword.isPending && <LegacyLoadingIcon />}
-              {t('profile.save')}
-            </AntBtn>
-          </div>
-        </div>
-      </LegacyBlock>
-
-      <LegacyBlock title={t('profile.notifications')} withOptions={false}>
-        <div className="row">
-          <div className="col-lg-8 col-xl-5">
-            <div className="form-group">
-              <label>{t('profile.remind_expire')}</label>
-              <div>
-                <LegacySwitch
-                  loading={updatingPref.remind_expire}
-                  checked={data?.remind_expire}
-                  onChange={(checked) => void togglePref('remind_expire', checked ? 1 : 0)}
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5">
+              <div className="flex flex-col gap-4 rounded-lg border border-border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <div className="v2board-profile-auto-renewal-label text-sm font-medium leading-5">
+                    {t('profile.auto_renewal')}
+                  </div>
+                </div>
+                <ProfileSwitch
+                  checked={data?.auto_renewal}
+                  loading={updatingPref.auto_renewal}
+                  onChange={(checked) => void togglePref('auto_renewal', checked ? 1 : 0)}
                 />
               </div>
-            </div>
-            <div className="form-group">
-              <label>{t('profile.remind_traffic')}</label>
-              <div>
-                <LegacySwitch
-                  loading={updatingPref.remind_traffic}
-                  checked={data?.remind_traffic}
-                  onChange={(checked) => void togglePref('remind_traffic', checked ? 1 : 0)}
+              <Button
+                className="v2board-profile-recharge w-full sm:w-fit"
+                size="lg"
+                onClick={openDeposit}
+              >
+                {t('profile.recharge')}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="v2board-profile-gift-card">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
+                  <Gift className="size-4" />
+                </div>
+                <CardTitle className="v2board-profile-card-title text-lg">
+                  {t('profile.redeem_giftcard')}
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2.5">
+                <Label htmlFor="profile-gift-card">{t('profile.redeem_giftcard')}</Label>
+                <Input
+                  id="profile-gift-card"
+                  className="v2board-profile-giftcard-input"
+                  placeholder={t('profile.redeem_placeholder')}
+                  autoComplete="one-time-code"
+                  ref={giftCardRef}
                 />
               </div>
-            </div>
-          </div>
+              <Button
+                className="v2board-profile-redeem-button w-full sm:w-fit"
+                loading={redeemLoading}
+                onClick={() => {
+                  if (!redeemLoading) void onRedeem();
+                }}
+              >
+                {t('profile.redeem_submit')}
+              </Button>
+            </CardContent>
+          </Card>
         </div>
-      </LegacyBlock>
 
-      <div className="row mb-3 mb-md-0">
-        <div className="col-md-12">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="v2board-profile-password-card">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
+                  <KeyRound className="size-4" />
+                </div>
+                <CardTitle className="v2board-profile-card-title text-lg">
+                  {t('profile.change_password')}
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-4">
+                <ProfileField
+                  id="profile-old-password"
+                  label={t('profile.old_password')}
+                  placeholder={t('profile.old_password_placeholder')}
+                  inputRef={oldPasswordRef}
+                />
+                <ProfileField
+                  id="profile-new-password"
+                  label={t('profile.new_password')}
+                  placeholder={t('profile.new_password_placeholder')}
+                  inputRef={newPasswordRef}
+                />
+                <ProfileField
+                  id="profile-confirm-password"
+                  label={t('profile.new_password')}
+                  placeholder={t('profile.new_password_placeholder')}
+                  inputRef={confirmPasswordRef}
+                />
+              </div>
+              <Button
+                className="v2board-profile-password-save w-full sm:w-fit"
+                loading={changePassword.isPending}
+                onClick={() => {
+                  if (!changePassword.isPending) void onChangePwd();
+                }}
+              >
+                {t('profile.save')}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="v2board-profile-notifications-card">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
+                  <Bell className="size-4" />
+                </div>
+                <CardTitle className="v2board-profile-card-title text-lg">
+                  {t('profile.notifications')}
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <PreferenceRow
+                label={t('profile.remind_expire')}
+                checked={data?.remind_expire}
+                loading={updatingPref.remind_expire}
+                onChange={(checked) => void togglePref('remind_expire', checked ? 1 : 0)}
+              />
+              <PreferenceRow
+                label={t('profile.remind_traffic')}
+                checked={data?.remind_traffic}
+                loading={updatingPref.remind_traffic}
+                onChange={(checked) => void togglePref('remind_traffic', checked ? 1 : 0)}
+              />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
           {comm?.is_telegram ? (
             !data?.telegram_id ? (
-              <div className="block block-rounded bind_telegram">
-                <div className="block-header block-header-default">
-                  <h3 className="block-title">{t('profile.telegram_bind')}</h3>
-                  <div className="block-options">
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm btn-primary btn-rounded px-3"
+              <Card className="v2board-profile-telegram-bind">
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
+                        <Send className="size-4" />
+                      </div>
+                      <CardTitle className="v2board-profile-card-title text-lg">
+                        {t('profile.telegram_bind')}
+                      </CardTitle>
+                    </div>
+                    <Button
+                      className="v2board-profile-telegram-start"
+                      size="sm"
                       onClick={() => setTelegramOpen(true)}
                     >
                       {t('profile.start_now')}
-                    </button>
+                    </Button>
                   </div>
-                </div>
-              </div>
+                </CardHeader>
+              </Card>
             ) : (
-              <div className="block block-rounded unbind_telegram">
-                <div className="block-header block-header-default">
-                  <h3 className="block-title">{t('profile.telegram_bind')}</h3>
-                  <div className="block-options">
-                    <AntBtn
-                      type="button"
-                      className="ant-btn ant-btn-danger"
+              <Card className="v2board-profile-telegram-unbind">
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1.5">
+                      <CardTitle className="v2board-profile-card-title text-lg">
+                        {t('profile.telegram_bind')}
+                      </CardTitle>
+                      <CardDescription className="v2board-profile-telegram-id">
+                        Telegram ID: {String(data.telegram_id)}
+                      </CardDescription>
+                    </div>
+                    <Button
+                      className="v2board-profile-telegram-unbind-button"
+                      variant="destructive"
+                      size="sm"
                       onClick={onUnbindTelegram}
                     >
                       {t('profile.telegram_unbind')}
-                    </AntBtn>
+                    </Button>
                   </div>
-                </div>
-                <div className="block-options">{t(`Telegram ID: ${String(data.telegram_id)}`)}</div>
-              </div>
+                </CardHeader>
+              </Card>
             )
           ) : null}
 
           {comm?.telegram_discuss_link ? (
-            <div className="block block-rounded join_telegram_disscuss">
-              <div className="block-header block-header-default">
-                <h3 className="block-title">{t('profile.telegram_discuss')}</h3>
-                <div className="block-options">
-                  <a
-                    href={comm.telegram_discuss_link}
-                    target="_blank"
-                    className="btn btn-primary btn-sm btn-primary btn-rounded px-3"
-                  >
-                    {t('profile.join_now')}
-                  </a>
+            <Card className="v2board-profile-telegram-discuss">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
+                      <MessageCircle className="size-4" />
+                    </div>
+                    <CardTitle className="v2board-profile-card-title text-lg">
+                      {t('profile.telegram_discuss')}
+                    </CardTitle>
+                  </div>
+                  <Button asChild size="sm">
+                    <a href={comm.telegram_discuss_link} target="_blank" rel="noreferrer">
+                      {t('profile.join_now')}
+                    </a>
+                  </Button>
                 </div>
-              </div>
-            </div>
+              </CardHeader>
+            </Card>
           ) : null}
 
-          {/* Original class string has a trailing space: "block block-rounded " (umi.js). */}
-          <div className="block block-rounded ">
-            <div className="block-header block-header-default">
-              <h3 className="block-title">{t('profile.reset_subscribe')}</h3>
-              <div className="block-options" />
-            </div>
-            <div className="block-content">
-              <div className="row push">
-                <div className="col-md-12">
-                  <div className="alert alert-warning mb-3" role="alert">
-                    {t('profile.reset_subscribe_warning')}
-                  </div>
-                  <AntBtn
-                    type="button"
-                    className="ant-btn ant-btn-danger"
-                    onClick={onReset}
-                  >
-                    {t('profile.reset')}
-                  </AntBtn>
+          <Card className="v2board-profile-reset-card lg:col-span-2">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
+                  <RefreshCcw className="size-4" />
                 </div>
+                <CardTitle className="v2board-profile-card-title text-lg">
+                  {t('profile.reset_subscribe')}
+                </CardTitle>
               </div>
-            </div>
-          </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert className="v2board-profile-reset-warning">
+                <AlertCircle className="size-4" />
+                <AlertDescription>{t('profile.reset_subscribe_warning')}</AlertDescription>
+              </Alert>
+              <Button
+                className="v2board-profile-reset-button w-full sm:w-fit"
+                variant="destructive"
+                onClick={onReset}
+              >
+                {t('profile.reset')}
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
-      <Dialog
-        open={depositOpen}
-        onOpenChange={(open) => {
-          setDepositOpen(open);
-          if (!open && depositInputRef.current) depositInputRef.current.value = '';
-        }}
-      >
+      <Dialog open={depositOpen} onOpenChange={(open) => (open ? setDepositOpen(true) : closeDeposit())}>
         <DialogContent
-          closable={false}
-          footer={null}
-          width={416}
-          maskClosable={false}
-          className="ant-modal-confirm ant-modal-confirm-confirm"
+          className="v2board-profile-dialog v2board-profile-deposit-dialog sm:max-w-md"
+          showCloseButton={false}
         >
-          <div className="ant-modal-confirm-body-wrapper" ref={depositBodyRef}>
-            <div className="ant-modal-confirm-body">
-              <QuestionCircleIcon />
-              <span className="ant-modal-confirm-title">
-                <input
-                  className="form-control"
-                  autoComplete="one-time-code"
-                  placeholder={depositPlaceholder}
-                  ref={depositInputRef}
-                  onChange={(event) => {
-                    depositAmountRef.current = Number(event.target.value) * 100;
-                  }}
-                />
-              </span>
-              {/* antd Modal.confirm always renders an (empty) content div after the
-                  title; the deposit modal passes no content, so it stays empty. */}
-              <div className="ant-modal-confirm-content" />
-            </div>
-            <div className="ant-modal-confirm-btns">
-              <AntBtn
-                type="button"
-                className="ant-btn"
-                onClick={() => {
-                  setDepositOpen(false);
-                  if (depositInputRef.current) depositInputRef.current.value = '';
-                }}
-              >
-                {t('common.cancel')}
-              </AntBtn>
-              <AntBtn type="button" className="ant-btn ant-btn-primary" onClick={() => onDeposit()}>
-                {t('profile.confirm')}
-              </AntBtn>
-            </div>
-          </div>
+          <DialogHeader>
+            <DialogTitle>{t('profile.recharge')}</DialogTitle>
+            <DialogDescription>{depositPlaceholder}</DialogDescription>
+          </DialogHeader>
+          <Input
+            className="v2board-profile-deposit-input"
+            autoComplete="one-time-code"
+            placeholder={depositPlaceholder}
+            ref={depositInputRef}
+            onChange={(event) => {
+              depositAmountRef.current = Number(event.target.value) * 100;
+            }}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDeposit}>
+              {t('common.cancel')}
+            </Button>
+            <Button className="v2board-profile-deposit-confirm" onClick={() => onDeposit()}>
+              {t('profile.confirm')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={telegramOpen} onOpenChange={setTelegramOpen}>
-        <DialogContent
-          title={t('profile.telegram_bind')}
-          okText={t('profile.i_know')}
-          cancelText={t('common.cancel')}
-          cancelButtonProps={{ hidden: true }}
-          onOk={() => setTelegramOpen(false)}
-        >
+        <DialogContent className="v2board-profile-dialog v2board-profile-telegram-bind-dialog">
+          <DialogHeader>
+            <DialogTitle>{t('profile.telegram_bind')}</DialogTitle>
+          </DialogHeader>
           {botInfo.data?.username ? (
-            <>
-              <h2 className="content-heading pt-1">
-                <i className="fa fa-arrow-right text-info mr-1" /> {t('profile.telegram_step1')}
-              </h2>
-              <div>
-                {t('profile.telegram_search')}
-                <a href={`https://t.me/${botInfo.data.username}`}>@{botInfo.data.username}</a>
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Link2 className="size-4 text-muted-foreground" />
+                  {t('profile.telegram_step1')}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {t('profile.telegram_search')}
+                  <a
+                    href={`https://t.me/${botInfo.data.username}`}
+                    className="ml-1 font-medium text-foreground underline underline-offset-4"
+                  >
+                    @{botInfo.data.username}
+                  </a>
+                </div>
               </div>
-              <h2 className="content-heading">
-                <i className="fa fa-arrow-right text-info mr-1" /> {t('profile.telegram_step2')}
-              </h2>
-              <div>
-                {t('profile.telegram_send')}
-                <br />
-                <code onClick={() => copyBindCommand()}>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Copy className="size-4 text-muted-foreground" />
+                  {t('profile.telegram_step2')}
+                </div>
+                <div className="text-sm text-muted-foreground">{t('profile.telegram_send')}</div>
+                <code
+                  className="v2board-profile-copy-code block cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+                  onClick={() => copyBindCommand()}
+                >
                   /bind {subscribe?.subscribe_url}
                 </code>
               </div>
-            </>
+            </div>
           ) : (
-            <LegacyLoadingIcon style={{ fontSize: 16 }} />
+            <div className="flex min-h-24 items-center justify-center">
+              <Spinner />
+            </div>
           )}
+          <DialogFooter>
+            <Button
+              className="v2board-profile-telegram-bind-confirm"
+              onClick={() => setTelegramOpen(false)}
+            >
+              {t('profile.i_know')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmAction !== null} onOpenChange={(open) => !open && setConfirmAction(null)}>
+        <DialogContent
+          className="v2board-profile-dialog v2board-profile-confirm-dialog sm:max-w-md"
+          showCloseButton={false}
+        >
+          <DialogHeader>
+            <DialogTitle>{confirmTitle}</DialogTitle>
+            <DialogDescription>{confirmDescription}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button className="v2board-profile-confirm-primary" onClick={onConfirmAction}>
+              {t('profile.confirm')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
   );
 }
 
-function LegacyBlock({
-  title,
-  withOptions = true,
-  children,
+const ProfileField = ({
+  id,
+  inputRef,
+  label,
+  placeholder,
 }: {
-  title: ReactNode;
-  withOptions?: boolean;
-  children: ReactNode;
+  id: string;
+  inputRef: Ref<HTMLInputElement>;
+  label: string;
+  placeholder: string;
+}) => (
+  <div className="space-y-2.5">
+    <Label htmlFor={id}>{label}</Label>
+    <Input id={id} ref={inputRef} type="password" placeholder={placeholder} />
+  </div>
+);
+
+function PreferenceRow({
+  label,
+  checked,
+  loading,
+  onChange,
+}: {
+  label: string;
+  checked?: unknown;
+  loading?: boolean;
+  onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="row mb-3 mb-md-0">
-      <div className="col-md-12">
-        {/* Original class string has a trailing space: "block block-rounded " (umi.js). */}
-        <div className="block block-rounded ">
-          <div className="block-header block-header-default">
-            <h3 className="block-title">{title}</h3>
-            {withOptions ? <div className="block-options" /> : null}
-          </div>
-          <div className="block-content">{children}</div>
-        </div>
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+      <div className="v2board-profile-preference-label text-sm font-medium leading-5">
+        {label}
       </div>
+      <ProfileSwitch checked={checked} loading={loading} onChange={onChange} />
     </div>
   );
 }
 
-// Mirrors antd's Wave with insertExtraNode:true (used by Switch): on click it
-// appends an .ant-click-animating-node child and flags ant-click-animating, so
-// the CSS ripple plays via the extra node rather than the ::after pseudo. The
-// shadow colour stays on --antd-wave-shadow-color, which the loaded legacy theme
-// sets exactly like the original theme CSS.
-function triggerSwitchWave(node: HTMLElement) {
-  const existing = node.querySelector('.ant-click-animating-node');
-  if (existing) existing.remove();
-  const wave = document.createElement('div');
-  wave.className = 'ant-click-animating-node';
-  node.setAttribute('ant-click-animating', 'true');
-  node.appendChild(wave);
-  const onEnd = (event: AnimationEvent) => {
-    if (event.animationName !== 'fadeEffect') return;
-    node.setAttribute('ant-click-animating', 'false');
-    if (node.contains(wave)) node.removeChild(wave);
-    node.removeEventListener('animationend', onEnd);
-  };
-  node.addEventListener('animationend', onEnd);
-}
-
-function LegacySwitch({
+function ProfileSwitch({
   checked,
   loading,
   onChange,
@@ -535,38 +613,18 @@ function LegacySwitch({
   onChange: (checked: boolean) => void;
 }) {
   const normalizedChecked = !!checked;
-  const className = [
-    loading && 'ant-switch-loading',
-    'ant-switch',
-    normalizedChecked && 'ant-switch-checked',
-    loading && 'ant-switch-disabled',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={normalizedChecked}
-      className={className}
+    <Switch
+      className={cn('v2board-profile-switch', loading && 'v2board-profile-switch-loading')}
+      checked={normalizedChecked}
       disabled={loading}
+      aria-busy={!!loading}
+      onCheckedChange={(nextChecked) => onChange(nextChecked)}
       onKeyDown={(event) => {
-        // rc-switch handleKeyDown: ArrowLeft (37) → off, ArrowRight (39) → on.
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-        if (event.keyCode === 37) onChange(false);
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-        else if (event.keyCode === 39) onChange(true);
+        if (event.key === 'ArrowLeft') onChange(false);
+        else if (event.key === 'ArrowRight') onChange(true);
       }}
-      onMouseUp={(event) => event.currentTarget.blur()}
-      onClick={(event) => {
-        triggerSwitchWave(event.currentTarget);
-        onChange(!normalizedChecked);
-      }}
-    >
-      {loading ? <LegacyLoadingIcon className="ant-switch-loading-icon" /> : null}
-      <span className="ant-switch-inner" />
-    </button>
+    />
   );
 }
 

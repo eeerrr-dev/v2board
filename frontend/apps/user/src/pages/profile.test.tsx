@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { act } from 'react';
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ProfilePage from './profile';
@@ -21,7 +21,6 @@ const mocks = vi.hoisted(() => ({
   changePassword: vi.fn(),
   resetSub: vi.fn(),
   unbindTelegram: vi.fn(),
-  legacyConfirm: vi.fn(),
   saveOrder: vi.fn(),
   copyText: vi.fn(),
   userInfo: {
@@ -91,6 +90,22 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => labels[key] ?? key }),
 }));
 
+vi.mock('@/components/ui/shadcn-dialog', () => ({
+  Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) =>
+    open ? <>{children}</> : null,
+  DialogContent: ({
+    children,
+    className,
+  }: {
+    children: ReactNode;
+    className?: string;
+  }) => <div className={className}>{children}</div>,
+  DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+  DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+}));
+
 vi.mock('@/lib/queries', () => ({
   useUserInfo: () => ({
     data: mocks.userInfo,
@@ -125,42 +140,6 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) =>
-    open ? <>{children}</> : null,
-  DialogContent: ({ children, title }: { children: ReactNode; title?: ReactNode }) => (
-    <div>
-      {title}
-      {children}
-    </div>
-  ),
-}));
-
-vi.mock('@/components/ant-btn', () => ({
-  AntBtn: ({
-    children,
-    onClick,
-    disabled,
-    ...props
-  }: ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button onClick={onClick} disabled={disabled} {...props}>
-      {children}
-    </button>
-  ),
-}));
-
-vi.mock('@/components/ant-icon', () => ({
-  QuestionCircleIcon: () => <span />,
-}));
-
-vi.mock('@/components/legacy-confirm', () => ({
-  legacyConfirm: mocks.legacyConfirm,
-}));
-
-vi.mock('@/components/legacy-loading-icon', () => ({
-  LegacyLoadingIcon: () => <span>loading</span>,
-}));
-
 vi.mock('@/lib/legacy-settings', () => ({
   legacyCopyText: mocks.copyText,
 }));
@@ -182,7 +161,7 @@ vi.mock('@v2board/api-client', () => ({
   },
 }));
 
-describe('ProfilePage legacy gift card flow', () => {
+describe('ProfilePage shadcn account surface', () => {
   let container: HTMLDivElement;
   let root: Root | null;
 
@@ -200,7 +179,6 @@ describe('ProfilePage legacy gift card flow', () => {
     mocks.changePassword.mockReset();
     mocks.resetSub.mockReset();
     mocks.unbindTelegram.mockReset();
-    mocks.legacyConfirm.mockReset();
     mocks.saveOrder.mockReset();
     mocks.copyText.mockClear();
     mocks.userInfo = {
@@ -249,10 +227,7 @@ describe('ProfilePage legacy gift card flow', () => {
     await act(async () => {
       giftCardInput!.value = 'CARD-123';
       giftCardInput!.dispatchEvent(new Event('input', { bubbles: true }));
-      const redeemButton = Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent === '兑换',
-      );
-      redeemButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.querySelector<HTMLButtonElement>('.v2board-profile-redeem-button')!.click();
       await Promise.resolve();
     });
 
@@ -268,7 +243,7 @@ describe('ProfilePage legacy gift card flow', () => {
     expect(mocks.toastSuccess).toHaveBeenCalledWith('兑换成功: 账户余额 12.34');
   });
 
-  it('keeps the legacy stuck loading state when gift card redeem times out', async () => {
+  it('keeps the stuck loading state when gift card redeem times out', async () => {
     mocks.redeem.mockRejectedValue(new Error('timeout exceeded'));
 
     await act(async () => {
@@ -284,23 +259,21 @@ describe('ProfilePage legacy gift card flow', () => {
     await act(async () => {
       giftCardInput!.value = 'CARD-FAIL';
       giftCardInput!.dispatchEvent(new Event('input', { bubbles: true }));
-      const redeemButton = Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent === '兑换',
-      );
-      redeemButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.querySelector<HTMLButtonElement>('.v2board-profile-redeem-button')!.click();
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    const redeemButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('兑换'),
+    const redeemButton = container.querySelector<HTMLButtonElement>(
+      '.v2board-profile-redeem-button',
     );
     expect(mocks.redeem).toHaveBeenCalledWith('CARD-FAIL');
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
-    expect(redeemButton?.className).toContain('ant-btn-loading');
+    expect(redeemButton?.getAttribute('aria-busy')).toBe('true');
+    expect(redeemButton?.disabled).toBe(true);
   });
 
-  it('keeps the legacy profile block copy and telegram binding modal content', async () => {
+  it('renders the shadcn profile cards and telegram binding dialog content', async () => {
     mocks.comm = {
       currency: 'USD',
       is_telegram: true,
@@ -313,19 +286,21 @@ describe('ProfilePage legacy gift card flow', () => {
       await Promise.resolve();
     });
 
+    expect(container.querySelector('.v2board-profile-page')).toBeTruthy();
+    expect(container.querySelectorAll('.v2board-profile-card-title').length).toBeGreaterThan(3);
     expect(container.textContent).toContain(
       '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
     );
     expect(container.textContent).toContain('绑定Telegram');
     expect(container.textContent).toContain('Telegram 讨论组');
 
-    const startButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '立即开始',
+    const startButton = container.querySelector<HTMLButtonElement>(
+      '.v2board-profile-telegram-start',
     );
     expect(startButton).toBeTruthy();
 
     await act(async () => {
-      startButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      startButton!.click();
       await Promise.resolve();
     });
 
@@ -335,9 +310,7 @@ describe('ProfilePage legacy gift card flow', () => {
       '@legacy_bot',
     );
     expect(container.textContent).toContain('向机器人发送您的');
-    expect(container.querySelector('code')?.textContent).toBe(
-      '/bind https://example.test/sub',
-    );
+    expect(container.querySelector('code')?.textContent).toBe('/bind https://example.test/sub');
 
     await act(async () => {
       container.querySelector('code')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -347,7 +320,7 @@ describe('ProfilePage legacy gift card flow', () => {
     expect(mocks.copyText).toHaveBeenCalledWith('/bind https://example.test/sub');
   });
 
-  it('keeps the original direct checked values for profile preference switches', () => {
+  it('keeps direct source values for profile switches and Telegram bind command', () => {
     expect(source).toContain('checked={data?.auto_renewal}');
     expect(source).toContain('checked={data?.remind_expire}');
     expect(source).toContain('checked={data?.remind_traffic}');
@@ -366,12 +339,12 @@ describe('ProfilePage legacy gift card flow', () => {
       await Promise.resolve();
     });
 
-    const switches = container.querySelectorAll<HTMLButtonElement>('.ant-switch');
+    const switches = container.querySelectorAll<HTMLButtonElement>('.v2board-profile-switch');
     expect(switches).toHaveLength(3);
     expect(switches[0]!.getAttribute('aria-checked')).toBe('false');
 
     await act(async () => {
-      switches[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      switches[0]!.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -383,7 +356,7 @@ describe('ProfilePage legacy gift card flow', () => {
     mocks.refetchInfo.mockClear();
 
     await act(async () => {
-      switches[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      switches[1]!.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -392,7 +365,7 @@ describe('ProfilePage legacy gift card flow', () => {
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
   });
 
-  it('renders the profile switches with rc-switch boolean checked state', async () => {
+  it('renders profile switches with Radix boolean checked state', async () => {
     mocks.updateProfile.mockResolvedValue(true);
     mocks.userInfo = {
       balance: 0,
@@ -407,17 +380,17 @@ describe('ProfilePage legacy gift card flow', () => {
       await Promise.resolve();
     });
 
-    const switches = container.querySelectorAll<HTMLButtonElement>('.ant-switch');
+    const switches = container.querySelectorAll<HTMLButtonElement>('.v2board-profile-switch');
     expect(switches).toHaveLength(3);
     expect(switches[0]!.getAttribute('aria-checked')).toBe('true');
-    expect(switches[0]!.className).toContain('ant-switch-checked');
+    expect(switches[0]!.dataset.state).toBe('checked');
     expect(switches[1]!.getAttribute('aria-checked')).toBe('false');
-    expect(switches[1]!.className).not.toContain('ant-switch-checked');
+    expect(switches[1]!.dataset.state).toBe('unchecked');
     expect(switches[2]!.getAttribute('aria-checked')).toBe('true');
-    expect(switches[2]!.className).toContain('ant-switch-checked');
+    expect(switches[2]!.dataset.state).toBe('checked');
 
     await act(async () => {
-      switches[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      switches[0]!.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -446,11 +419,6 @@ describe('ProfilePage legacy gift card flow', () => {
 
     const passwordInputs = container.querySelectorAll<HTMLInputElement>('input[type="password"]');
     expect(passwordInputs).toHaveLength(3);
-    expect(Array.from(passwordInputs).map((input) => input.getAttribute('type'))).toEqual([
-      'password',
-      'password',
-      'password',
-    ]);
 
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
@@ -468,15 +436,7 @@ describe('ProfilePage legacy gift card flow', () => {
         'new-password',
       );
       passwordInputs[2]!.dispatchEvent(new Event('input', { bubbles: true }));
-      expect(Array.from(passwordInputs).map((input) => input.getAttribute('type'))).toEqual([
-        'password',
-        'password',
-        'password',
-      ]);
-      const saveButton = Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent === '保存',
-      );
-      saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.querySelector<HTMLButtonElement>('.v2board-profile-password-save')!.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -494,7 +454,7 @@ describe('ProfilePage legacy gift card flow', () => {
     expect(source).not.toContain('logout();');
   });
 
-  it('submits the legacy deposit order payload from the confirm-style modal', async () => {
+  it('submits the legacy deposit order payload from the shadcn recharge dialog', async () => {
     mocks.comm = {
       currency: 'CNY',
       is_telegram: false,
@@ -507,13 +467,11 @@ describe('ProfilePage legacy gift card flow', () => {
       await Promise.resolve();
     });
 
-    const rechargeButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '充值',
-    );
+    const rechargeButton = container.querySelector<HTMLButtonElement>('.v2board-profile-recharge');
     expect(rechargeButton).toBeTruthy();
 
     await act(async () => {
-      rechargeButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      rechargeButton!.click();
       await Promise.resolve();
     });
 
@@ -531,13 +489,13 @@ describe('ProfilePage legacy gift card flow', () => {
       await Promise.resolve();
     });
 
-    const confirmButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '确认',
+    const confirmButton = container.querySelector<HTMLButtonElement>(
+      '.v2board-profile-deposit-confirm',
     );
     expect(confirmButton).toBeTruthy();
 
     await act(async () => {
-      confirmButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      confirmButton!.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -550,7 +508,7 @@ describe('ProfilePage legacy gift card flow', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/order/DEPOSIT123');
   });
 
-  it('uses the original reset and telegram-unbind confirmations', async () => {
+  it('uses shadcn confirmation dialogs for reset and telegram unbind behavior', async () => {
     mocks.comm = {
       currency: 'USD',
       is_telegram: true,
@@ -571,70 +529,46 @@ describe('ProfilePage legacy gift card flow', () => {
       await Promise.resolve();
     });
 
-    const resetButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '重置',
-    );
+    const resetButton = container.querySelector<HTMLButtonElement>('.v2board-profile-reset-button');
     expect(resetButton).toBeTruthy();
 
     await act(async () => {
-      resetButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      resetButton!.click();
       await Promise.resolve();
     });
 
-    expect(mocks.legacyConfirm).toHaveBeenCalledTimes(1);
-    const resetOptions = mocks.legacyConfirm.mock.calls[0]![0] as {
-      title: string;
-      content: string;
-      okText: string;
-      cancelText: string;
-      onOk: () => void;
-    };
-    expect(resetOptions.title).toBe('确定要重置订阅信息？');
-    expect(resetOptions.content).toBe(
+    expect(container.textContent).toContain('确定要重置订阅信息？');
+    expect(container.textContent).toContain(
       '如果您的订阅地址或信息发生泄露可以执行此操作。重置后您的 UUID 及订阅将会变更，需要重新导入订阅。',
     );
-    expect(resetOptions.okText).toBe('确认');
-    expect(resetOptions.cancelText).toBe('取消');
 
     await act(async () => {
-      resetOptions.onOk();
+      container.querySelector<HTMLButtonElement>('.v2board-profile-confirm-primary')!.click();
       await Promise.resolve();
       await Promise.resolve();
     });
 
     expect(mocks.resetSub).toHaveBeenCalledTimes(1);
     expect(mocks.toastSuccess).toHaveBeenCalledWith('重置成功');
-    // The bundled profile reset path calls a missing `fetchData()` after the success toast
-    // instead of dispatching user/getUserInfo; keep the visible success but do not refetch.
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
 
-    const unbindButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '解除绑定',
+    const unbindButton = container.querySelector<HTMLButtonElement>(
+      '.v2board-profile-telegram-unbind-button',
     );
     expect(unbindButton).toBeTruthy();
 
     await act(async () => {
-      unbindButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      unbindButton!.click();
       await Promise.resolve();
     });
 
-    expect(mocks.legacyConfirm).toHaveBeenCalledTimes(2);
-    const unbindOptions = mocks.legacyConfirm.mock.calls[1]![0] as {
-      title: string;
-      content: string;
-      okText: string;
-      cancelText: string;
-      onOk: () => void;
-    };
-    expect(unbindOptions.title).toBe('确定要解除绑定Telegram？');
-    expect(unbindOptions.content).toBe(
+    expect(container.textContent).toContain('确定要解除绑定Telegram？');
+    expect(container.textContent).toContain(
       '如果你的Telegram ID已失效可以进行此操作。重置后你需要重新进行绑定。',
     );
-    expect(unbindOptions.okText).toBe('确认');
-    expect(unbindOptions.cancelText).toBe('取消');
 
     await act(async () => {
-      unbindOptions.onOk();
+      container.querySelector<HTMLButtonElement>('.v2board-profile-confirm-primary')!.click();
       await Promise.resolve();
       await Promise.resolve();
     });

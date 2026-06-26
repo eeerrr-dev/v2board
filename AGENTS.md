@@ -169,6 +169,24 @@ The user commerce flow (`/plan`, `/plan/:plan_id`, `/order`, and
   `.v2board-select`, `.v2board-input-coupon`, `.v2board-order-info`, and
   `.v2board-payment-qrcode`.
 
+### User Profile Direction
+
+The user profile/account surface (`/profile`) is a redesigned shadcn surface.
+
+- Use shadcn/Radix composition for wallet cards, gift-card redemption, password
+  forms, notification switches, Telegram binding, recharge dialogs, and reset
+  confirmations.
+- Use Radix-backed primitives for accessible dialogs and switches. Do not keep
+  Ant Design confirm modals, Bootstrap blocks, OneUI forms, or rc-switch clones
+  as the profile foundation.
+- Keep profile behavior strict: balance display, auto-renewal and email
+  reminder payloads, password-change redirect behavior, gift-card redeem loading
+  and timeout behavior, deposit order payloads, Telegram bind/unbind behavior,
+  reset-subscribe behavior, subscribe refetch timing, routing, and i18n behavior
+  must remain covered.
+- Retire old OneUI/Bootstrap/Ant visual parity for `/profile`; keep behavior and
+  interaction scenarios for the same route.
+
 For new redesigned surfaces, do not use:
 
 - Ant Design v3 components as new UI foundations.

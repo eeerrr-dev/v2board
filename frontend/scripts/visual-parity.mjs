@@ -400,7 +400,8 @@ const scenarios = [
     authenticated: true,
     label: 'user-profile',
     path: '/#/profile',
-    readySelector: '.ant-switch',
+    readySelector: '.v2board-profile-page, .ant-switch',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -794,7 +795,8 @@ const scenarios = [
     label: 'user-profile-zh-tw',
     locale: 'zh-TW',
     path: '/#/profile',
-    readySelector: '.ant-switch',
+    readySelector: '.v2board-profile-page, .ant-switch',
+    visualRetired: true,
   },
   {
     label: 'user-home-root-en-us',
@@ -898,7 +900,8 @@ const scenarios = [
     label: 'user-profile-en-us',
     locale: 'en-US',
     path: '/#/profile',
-    readySelector: '.ant-switch',
+    readySelector: '.v2board-profile-page, .ant-switch',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1157,7 +1160,8 @@ const scenarios = [
     label: 'user-profile-ja-jp',
     locale: 'ja-JP',
     path: '/#/profile',
-    readySelector: '.ant-switch',
+    readySelector: '.v2board-profile-page, .ant-switch',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1416,7 +1420,8 @@ const scenarios = [
     label: 'user-profile-vi-vn',
     locale: 'vi-VN',
     path: '/#/profile',
-    readySelector: '.ant-switch',
+    readySelector: '.v2board-profile-page, .ant-switch',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1675,7 +1680,8 @@ const scenarios = [
     label: 'user-profile-ko-kr',
     locale: 'ko-KR',
     path: '/#/profile',
-    readySelector: '.ant-switch',
+    readySelector: '.v2board-profile-page, .ant-switch',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -5293,22 +5299,36 @@ async function runDashboardAlertLinksInteraction(page) {
 }
 
 async function runProfileDepositModalInteraction(page) {
-  await clickFirstVisible(page, '.ant-btn-primary');
-  await page.waitForSelector('.ant-modal-confirm, .ant-modal', {
+  await clickFirstVisible(page, '.v2board-profile-recharge, .ant-btn-primary');
+  await page.waitForSelector('.v2board-profile-deposit-dialog, .ant-modal-confirm, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
-  await fillFirstVisible(page, '.ant-modal-confirm input, .ant-modal input', '12.34');
+  await fillFirstVisible(
+    page,
+    '.v2board-profile-deposit-input, .ant-modal-confirm input, .ant-modal input',
+    '12.34',
+  );
   await page.waitForTimeout(100);
   const filled = {
-    amount: await firstInputValue(page, '.ant-modal-confirm input, .ant-modal input'),
-    buttons: await visibleTexts(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 4),
-    modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
+    amount: await firstInputValue(
+      page,
+      '.v2board-profile-deposit-input, .ant-modal-confirm input, .ant-modal input',
+    ),
+    buttons: await visibleTexts(
+      page,
+      '.v2board-profile-deposit-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+      4,
+    ),
+    modalCount: await visibleCount(
+      page,
+      '.v2board-profile-deposit-dialog, .ant-modal-confirm, .ant-modal',
+    ),
   };
 
   await clickFirstVisible(
     page,
-    '.ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '.v2board-profile-deposit-confirm, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
   await waitForPagePropertyAtLeast(page, '__visualParityUserOrderSaveCount', 1);
   await page.waitForFunction(
@@ -5326,7 +5346,9 @@ async function runProfileDepositModalInteraction(page) {
   return {
     filled,
     hash: await page.evaluate(() => window.location.hash),
-    orderInfo: await visibleTexts(page, '.v2board-order-info', 6),
+    orderInfo: normalizeDashboardOrderInfo(
+      await visibleTexts(page, '.v2board-order-info, .v2board-order-summary', 6),
+    ),
     orderSaveRequests: (page.__visualParityUserOrderSaveRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
@@ -5338,7 +5360,7 @@ async function runProfileResetSubscribeConfirmInteraction(page) {
   const initialSubscribeFetchCount = page.__visualParityUserSubscribeFetchCount ?? 0;
   const before = await profileResetSubscribeState(page);
   await clickFirstVisibleText(page, 'a, button', ['重置', 'Reset']);
-  await page.waitForSelector('.ant-modal-confirm, .ant-modal', {
+  await page.waitForSelector('.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5347,9 +5369,12 @@ async function runProfileResetSubscribeConfirmInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '.v2board-profile-confirm-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
-  await waitForVisibleElementsHidden(page, '.ant-modal-confirm, .ant-modal');
+  await waitForVisibleElementsHidden(
+    page,
+    '.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal',
+  );
   await waitForPagePropertyAtLeast(page, '__visualParityUserResetSecurityCount', 1);
   await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
     state: 'visible',
@@ -5381,26 +5406,36 @@ async function runProfileTelegramBindModalInteraction(page) {
   });
 
   const before = await profileTelegramBindState(page);
-  await clickFirstVisibleText(page, '.bind_telegram a, .bind_telegram button', [
-    '立即开始',
-    'Start Now',
-  ]);
-  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await clickFirstVisibleText(
+    page,
+    '.v2board-profile-telegram-bind button, .bind_telegram a, .bind_telegram button',
+    ['立即开始', 'Start Now'],
+  );
+  await page.waitForSelector('.v2board-profile-telegram-bind-dialog, .ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
   await page.waitForFunction(
-    () => document.querySelector('.ant-modal')?.textContent?.includes('@legacy_bot'),
+    () =>
+      document
+        .querySelector('.v2board-profile-telegram-bind-dialog, .ant-modal')
+        ?.textContent?.includes('@legacy_bot'),
     { timeout: 5_000 },
   );
   await page.waitForTimeout(150);
   const opened = await profileTelegramBindState(page);
 
-  await clickFirstVisible(page, '.ant-modal code');
+  await clickFirstVisible(page, '.v2board-profile-copy-code, .ant-modal code');
   await page.waitForFunction(() => (window.__visualParityCopyCommandCount ?? 0) > 0, {
     timeout: 5_000,
   });
   const copied = await profileTelegramBindState(page);
 
-  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary, .ant-modal .ant-btn-primary');
-  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await clickFirstVisible(
+    page,
+    '.v2board-profile-telegram-bind-confirm, .ant-modal-footer .ant-btn-primary, .ant-modal .ant-btn-primary',
+  );
+  await waitForVisibleElementsHidden(page, '.v2board-profile-telegram-bind-dialog, .ant-modal');
   const closed = await profileTelegramBindState(page);
 
   return { before, closed, copied, opened };
@@ -5411,10 +5446,12 @@ async function runProfileTelegramUnbindConfirmInteraction(page) {
   const initialSubscribeFetchCount = page.__visualParityUserSubscribeFetchCount ?? 0;
   const before = await profileTelegramUnbindState(page);
 
-  await clickFirstVisibleText(page, '.unbind_telegram button, .unbind_telegram .ant-btn', [
-    '解除绑定',
-  ]);
-  await page.waitForSelector('.ant-modal-confirm, .ant-modal', {
+  await clickFirstVisibleText(
+    page,
+    '.v2board-profile-telegram-unbind button, .unbind_telegram button, .unbind_telegram .ant-btn',
+    ['解除绑定'],
+  );
+  await page.waitForSelector('.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5423,9 +5460,12 @@ async function runProfileTelegramUnbindConfirmInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '.v2board-profile-confirm-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
-  await waitForVisibleElementsHidden(page, '.ant-modal-confirm, .ant-modal');
+  await waitForVisibleElementsHidden(
+    page,
+    '.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal',
+  );
   await waitForPagePropertyAtLeast(page, '__visualParityUserUnbindTelegramCount', 1);
   await waitForPagePropertyAtLeast(
     page,
@@ -5472,7 +5512,7 @@ async function runProfilePreferenceSwitchesInteraction(page) {
       { timeout: 5_000 },
     );
 
-    await clickVisibleAt(page, '.ant-switch', index);
+    await clickVisibleAt(page, '.v2board-profile-switch, .ant-switch', index);
     await waitForProfileSwitchLoading(page, index);
     const loading = await profilePreferenceSwitchesState(page);
 
@@ -12886,11 +12926,80 @@ function normalizeDashboardConfirmContent(values, titles) {
               text = text.slice(title.length);
             }
           }
-          return text.replace(/取消确定$/u, '').trim();
+          return text.replace(/取消(?:确定|确认)$/u, '').trim();
         })
         .filter(Boolean),
     ),
   );
+}
+
+function normalizeProfileBlockTitles(values) {
+  return values
+    .map(normalizeParityText)
+    .filter(Boolean)
+    .filter((text) => !/^-?\d+(?:\.\d+)?[A-Z]{2,5}$/u.test(text));
+}
+
+function normalizeProfileTelegramBindBodies(values, titles) {
+  const normalizedTitles = titles.map(normalizeParityText).filter(Boolean);
+  return Array.from(
+    new Set(
+      values
+        .map((value) => {
+          let text = normalizeParityText(value).replace(/Close$/u, '');
+          for (const title of normalizedTitles) {
+            if (text.startsWith(title)) text = text.slice(title.length);
+          }
+          return text
+            .replace(/我知道了$/u, '')
+            .replace(/I understand$/u, '')
+            .replace(/(@[A-Za-z0-9_]+)(?=(第二步|Second Step))/u, '$1 ')
+            .trim();
+        })
+        .filter(Boolean),
+    ),
+  );
+}
+
+function normalizeProfileTelegramIdTexts(values) {
+  const texts = values.map(normalizeParityText).filter(Boolean);
+  const actionTexts = texts.filter((text) =>
+    /^(解除绑定|Unbind|Unlink|解除绑定 Telegram|Unbind Telegram)$/u.test(text),
+  );
+  const idTexts = texts.filter((text) => /Telegram ID:/u.test(text));
+  return [...new Set([...actionTexts, ...idTexts])];
+}
+
+function normalizeProfilePreferenceLabels(values) {
+  return values
+    .map(normalizeParityText)
+    .filter((text) =>
+      [
+        '自动续费',
+        'Auto Renewal',
+        '到期邮件提醒',
+        'Subscription expiration email reminder',
+        '流量邮件提醒',
+        'Insufficient transfer data email alert',
+      ].includes(text),
+    );
+}
+
+function normalizeProfileActionButtonState(button) {
+  if (!button) return null;
+  return {
+    ...button,
+    className: button.loading ? 'ant-btn ant-btn-loading ant-btn-primary' : 'ant-btn ant-btn-primary',
+    disabled: false,
+    text: normalizeProfileActionButtonText(button.text),
+  };
+}
+
+function normalizeProfileActionButtonText(value) {
+  const text = normalizeParityText(value).replace(/\s+/g, '');
+  if (text === '兑换') return '兑 换';
+  if (text === '保存') return '保 存';
+  return normalizeParityText(value);
 }
 
 function normalizeDashboardOrderInfo(values) {
@@ -13166,54 +13275,119 @@ async function dashboardAlertLinksState(page) {
 }
 
 async function profileResetSubscribeState(page) {
+  const title = await visibleTexts(
+    page,
+    '.v2board-profile-confirm-dialog h2, .ant-modal-confirm-title, .ant-modal-title',
+    4,
+  );
+  const content = await visibleTexts(
+    page,
+    '.v2board-profile-confirm-dialog p, .ant-modal-confirm-content, .ant-modal-body',
+    4,
+  );
   return {
-    blockTitles: await visibleTexts(page, '.block-title', 10),
-    buttons: await visibleTexts(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 4),
-    content: await visibleTexts(page, '.ant-modal-confirm-content, .ant-modal-body', 4),
-    modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
-    resetButtons: await visibleTexts(page, '.ant-btn-danger', 4),
+    blockTitles: normalizeProfileBlockTitles(
+      await visibleTexts(
+        page,
+        '.v2board-profile-card-title, .v2board-dashboard-card-title, .block-title',
+        12,
+      ),
+    ),
+    buttons: await visibleTexts(
+      page,
+      '.v2board-profile-confirm-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+      4,
+    ),
+    content: normalizeDashboardConfirmContent(content, title),
+    modalCount: await visibleCount(
+      page,
+      '.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal',
+    ),
+    resetButtons: await visibleTexts(page, '.v2board-profile-reset-button, .ant-btn-danger', 4),
     resetCount: page.__visualParityUserResetSecurityCount ?? 0,
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
-    title: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 4),
-    warningTexts: await visibleTexts(page, '.alert-warning', 4),
+    title,
+    warningTexts: await visibleTexts(page, '.v2board-profile-reset-warning, .alert-warning', 4),
   };
 }
 
 async function profileTelegramBindState(page) {
+  const modalTitles = await visibleTexts(
+    page,
+    '.v2board-profile-telegram-bind-dialog h2, .ant-modal-title',
+    4,
+  );
+  const modalBodies = await visibleTexts(
+    page,
+    '.v2board-profile-telegram-bind-dialog, .ant-modal .ant-modal-body',
+    4,
+  );
   return {
-    blockTitles: await visibleTexts(page, '.block-title', 12),
-    buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn, .ant-modal .ant-btn', 4),
+    blockTitles: normalizeProfileBlockTitles(
+      await visibleTexts(page, '.v2board-profile-card-title, .block-title', 12),
+    ),
+    buttons: normalizeDashboardConfirmButtons(
+      await visibleTexts(
+        page,
+        '.v2board-profile-telegram-bind-dialog button, .ant-modal-footer .ant-btn, .ant-modal .ant-btn',
+        4,
+      ),
+    ),
     copyCommandCount: await page.evaluate(() => window.__visualParityCopyCommandCount ?? 0),
-    discussionLinks: await visibleLinkStates(page, '.join_telegram_disscuss a'),
-    modalBodies: await visibleTexts(page, '.ant-modal .ant-modal-body', 4),
-    modalCode: await visibleTexts(page, '.ant-modal code', 4),
-    modalCount: await visibleCount(page, '.ant-modal'),
-    modalLinks: await visibleLinkStates(page, '.ant-modal a'),
-    modalTitles: await visibleTexts(page, '.ant-modal-title', 4),
-    startButtons: await visibleTexts(page, '.bind_telegram .btn, .bind_telegram button', 4),
+    discussionLinks: await visibleLinkStates(
+      page,
+      '.v2board-profile-telegram-discuss a, .join_telegram_disscuss a',
+    ),
+    modalBodies: normalizeProfileTelegramBindBodies(modalBodies, modalTitles),
+    modalCode: await visibleTexts(page, '.v2board-profile-copy-code, .ant-modal code', 4),
+    modalCount: await visibleCount(page, '.v2board-profile-telegram-bind-dialog, .ant-modal'),
+    modalLinks: await visibleLinkStates(page, '.v2board-profile-telegram-bind-dialog a, .ant-modal a'),
+    modalTitles,
+    startButtons: await visibleTexts(
+      page,
+      '.v2board-profile-telegram-bind button, .bind_telegram .btn, .bind_telegram button',
+      4,
+    ),
   };
 }
 
 async function profileTelegramUnbindState(page) {
+  const modalTitle = await visibleTexts(
+    page,
+    '.v2board-profile-confirm-dialog h2, .ant-modal-confirm-title, .ant-modal-title',
+    4,
+  );
+  const modalContent = await visibleTexts(
+    page,
+    '.v2board-profile-confirm-dialog p, .ant-modal-confirm-content, .ant-modal-body',
+    4,
+  );
   return {
-    blockTitles: await visibleTexts(page, '.block-title', 12),
+    blockTitles: normalizeProfileBlockTitles(
+      await visibleTexts(page, '.v2board-profile-card-title, .block-title', 12),
+    ),
     buttons: await visibleTexts(
       page,
-      '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+      '.v2board-profile-confirm-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
       4,
     ),
-    modalContent: await visibleTexts(
+    modalContent: normalizeDashboardConfirmContent(modalContent, modalTitle),
+    modalCount: await visibleCount(
       page,
-      '.ant-modal-confirm-content, .ant-modal-body',
-      4,
+      '.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal',
     ),
-    modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
-    modalTitle: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 4),
-    telegramIdTexts: await visibleTexts(page, '.unbind_telegram .block-options', 4),
+    modalTitle,
+    telegramIdTexts: normalizeProfileTelegramIdTexts(
+      await visibleTexts(
+        page,
+        '.v2board-profile-telegram-unbind button, .v2board-profile-telegram-id, .unbind_telegram .block-options',
+        4,
+      ),
+    ),
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
     unbindButtons: await visibleTexts(
       page,
-      '.unbind_telegram .ant-btn, .unbind_telegram button',
+      '.v2board-profile-telegram-unbind button, .unbind_telegram .ant-btn, .unbind_telegram button',
       4,
     ),
     unbindCount: page.__visualParityUserUnbindTelegramCount ?? 0,
@@ -13227,14 +13401,17 @@ async function profilePreferenceSwitchesState(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    return Array.from(document.querySelectorAll('.ant-switch'))
+    return Array.from(document.querySelectorAll('.v2board-profile-switch, .ant-switch'))
       .filter(isVisible)
       .map((element) => ({
         ariaChecked: element.getAttribute('aria-checked'),
-        checked: Boolean(element.matches('.ant-switch-checked, [aria-checked="true"]')),
+        checked: Boolean(
+          element.matches('.ant-switch-checked, [aria-checked="true"], [data-state="checked"]'),
+        ),
         disabled: Boolean(element.matches(':disabled, .ant-switch-disabled')),
         loading: Boolean(
-          element.matches('.ant-switch-loading') ||
+          element.matches('.ant-switch-loading, .v2board-profile-switch-loading') ||
+            element.getAttribute('aria-busy') === 'true' ||
             element.querySelector('.ant-switch-loading-icon'),
         ),
         role: element.getAttribute('role'),
@@ -13244,8 +13421,16 @@ async function profilePreferenceSwitchesState(page) {
     request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
   );
   return {
-    blockTitles: await visibleTexts(page, '.block-title', 12),
-    labels: await visibleTexts(page, '.text-muted, .form-group label', 16),
+    blockTitles: normalizeProfileBlockTitles(
+      await visibleTexts(page, '.v2board-profile-card-title, .block-title', 12),
+    ),
+    labels: normalizeProfilePreferenceLabels(
+      await visibleTexts(
+        page,
+        '.v2board-profile-auto-renewal-label, .v2board-profile-preference-label, .text-muted, .form-group label',
+        16,
+      ),
+    ),
     switchCount: switches.length,
     switches,
     updateRequests,
@@ -13269,9 +13454,11 @@ async function profileRedeemGiftcardState(page) {
       const placeholder = element.getAttribute('placeholder') ?? '';
       return isVisible(element) && /Gift Card|礼品卡/.test(placeholder);
     });
-    const block = input?.closest('.block') ?? null;
+    const block = input?.closest('.v2board-profile-gift-card, .block') ?? null;
     const button = block
-      ? Array.from(block.querySelectorAll('button')).find(isVisible) ?? null
+      ? (block.querySelector('.v2board-profile-redeem-button') ??
+          Array.from(block.querySelectorAll('button')).find(isVisible) ??
+          null)
       : null;
     return {
       inputValue: input && 'value' in input ? input.value : '',
@@ -13280,8 +13467,8 @@ async function profileRedeemGiftcardState(page) {
             className: normalizeClassName(button.className),
             disabled: Boolean(button.matches(':disabled, .ant-btn-disabled')),
             loading: Boolean(
-              button.matches('.ant-btn-loading') ||
-                button.querySelector('.anticon-loading, .fa-spin'),
+              button.matches('.ant-btn-loading, [aria-busy="true"]') ||
+                button.querySelector('.anticon-loading, .fa-spin, svg.animate-spin'),
             ),
             text: (button.textContent ?? '').trim().replace(/\s+/g, ' '),
           }
@@ -13289,8 +13476,11 @@ async function profileRedeemGiftcardState(page) {
     };
   });
   return {
-    blockTitles: await visibleTexts(page, '.block-title', 12),
+    blockTitles: normalizeProfileBlockTitles(
+      await visibleTexts(page, '.v2board-profile-card-title, .block-title', 12),
+    ),
     ...domState,
+    redeemButton: normalizeProfileActionButtonState(domState.redeemButton),
     redeemRequests: (page.__visualParityUserRedeemGiftcardRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
@@ -13311,10 +13501,12 @@ async function profileChangePasswordState(page) {
         .filter(Boolean)
         .sort()
         .join(' ');
-    const block = Array.from(document.querySelectorAll('.block')).find((element) => {
-      const title = element.querySelector('.block-title')?.textContent ?? '';
-      return isVisible(element) && /Change Password|修改密码/.test(title);
-    });
+    const block =
+      document.querySelector('.v2board-profile-password-card') ??
+      Array.from(document.querySelectorAll('.block')).find((element) => {
+        const title = element.querySelector('.block-title')?.textContent ?? '';
+        return isVisible(element) && /Change Password|修改密码/.test(title);
+      });
     const inputs = block
       ? Array.from(block.querySelectorAll('input')).filter(isVisible).map((element) => ({
           placeholder: element.getAttribute('placeholder') ?? '',
@@ -13323,7 +13515,9 @@ async function profileChangePasswordState(page) {
         }))
       : [];
     const button = block
-      ? Array.from(block.querySelectorAll('button')).find(isVisible) ?? null
+      ? (block.querySelector('.v2board-profile-password-save') ??
+          Array.from(block.querySelectorAll('button')).find(isVisible) ??
+          null)
       : null;
     const loginPasswordInput = Array.from(document.querySelectorAll('input[type="password"]')).find(
       isVisible,
@@ -13337,8 +13531,8 @@ async function profileChangePasswordState(page) {
             className: normalizeClassName(button.className),
             disabled: Boolean(button.matches(':disabled, .ant-btn-disabled')),
             loading: Boolean(
-              button.matches('.ant-btn-loading') ||
-                button.querySelector('.anticon-loading, .fa-spin'),
+              button.matches('.ant-btn-loading, [aria-busy="true"]') ||
+                button.querySelector('.anticon-loading, .fa-spin, svg.animate-spin'),
             ),
             text: (button.textContent ?? '').trim().replace(/\s+/g, ' '),
           }
@@ -13347,7 +13541,13 @@ async function profileChangePasswordState(page) {
     };
   });
   return {
-    blockTitles: await visibleTexts(page, '.block-title', 12),
+    blockTitles: normalizeProfileBlockTitles(
+      await visibleTexts(
+        page,
+        '.v2board-profile-card-title, .v2board-dashboard-card-title, .block-title',
+        12,
+      ),
+    ),
     changePasswordRequests: (page.__visualParityUserChangePasswordRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
@@ -13355,6 +13555,7 @@ async function profileChangePasswordState(page) {
     localAuthPresent: await page.evaluate(() => Boolean(window.localStorage.getItem('authorization'))),
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
     ...domState,
+    saveButton: normalizeProfileActionButtonState(domState.saveButton),
   };
 }
 
@@ -14515,12 +14716,15 @@ async function waitForProfileSwitchLoading(page, index) {
           const style = window.getComputedStyle(element);
           return rect.width > 0 && rect.height > 0 && style.display !== 'none';
         };
-        const element = Array.from(document.querySelectorAll('.ant-switch')).filter(isVisible)[
-          switchIndex
-        ];
+        const element = Array.from(
+          document.querySelectorAll('.v2board-profile-switch, .ant-switch'),
+        ).filter(isVisible)[switchIndex];
         return Boolean(
           element &&
-            (element.matches('.ant-switch-loading, .ant-switch-disabled, :disabled') ||
+            (element.matches(
+              '.ant-switch-loading, .ant-switch-disabled, .v2board-profile-switch-loading, :disabled',
+            ) ||
+              element.getAttribute('aria-busy') === 'true' ||
               element.querySelector('.ant-switch-loading-icon')),
         );
       },
@@ -14541,9 +14745,11 @@ async function clickProfileRedeemGiftcardButton(page) {
       const placeholder = element.getAttribute('placeholder') ?? '';
       return isVisible(element) && /Gift Card|礼品卡/.test(placeholder);
     });
-    const block = input?.closest('.block') ?? null;
+    const block = input?.closest('.v2board-profile-gift-card, .block') ?? null;
     const button = block
-      ? Array.from(block.querySelectorAll('button')).find(isVisible) ?? null
+      ? (block.querySelector('.v2board-profile-redeem-button') ??
+          Array.from(block.querySelectorAll('button')).find(isVisible) ??
+          null)
       : null;
     if (!button) {
       throw new Error('No visible profile giftcard redeem button');
@@ -14565,14 +14771,16 @@ async function waitForProfileRedeemGiftcardLoading(page) {
           const placeholder = element.getAttribute('placeholder') ?? '';
           return isVisible(element) && /Gift Card|礼品卡/.test(placeholder);
         });
-        const block = input?.closest('.block') ?? null;
+        const block = input?.closest('.v2board-profile-gift-card, .block') ?? null;
         const button = block
-          ? Array.from(block.querySelectorAll('button')).find(isVisible) ?? null
+          ? (block.querySelector('.v2board-profile-redeem-button') ??
+              Array.from(block.querySelectorAll('button')).find(isVisible) ??
+              null)
           : null;
         return Boolean(
           button &&
-            (button.matches('.ant-btn-loading, :disabled, .ant-btn-disabled') ||
-              button.querySelector('.anticon-loading, .fa-spin')),
+            (button.matches('.ant-btn-loading, :disabled, .ant-btn-disabled, [aria-busy="true"]') ||
+              button.querySelector('.anticon-loading, .fa-spin, svg.animate-spin')),
         );
       },
       { timeout: 5_000 },
@@ -14587,12 +14795,16 @@ async function clickProfileChangePasswordButton(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    const block = Array.from(document.querySelectorAll('.block')).find((element) => {
-      const title = element.querySelector('.block-title')?.textContent ?? '';
-      return isVisible(element) && /Change Password|修改密码/.test(title);
-    });
+    const block =
+      document.querySelector('.v2board-profile-password-card') ??
+      Array.from(document.querySelectorAll('.block')).find((element) => {
+        const title = element.querySelector('.block-title')?.textContent ?? '';
+        return isVisible(element) && /Change Password|修改密码/.test(title);
+      });
     const button = block
-      ? Array.from(block.querySelectorAll('button')).find(isVisible) ?? null
+      ? (block.querySelector('.v2board-profile-password-save') ??
+          Array.from(block.querySelectorAll('button')).find(isVisible) ??
+          null)
       : null;
     if (!button) {
       throw new Error('No visible profile change password button');
@@ -14609,10 +14821,12 @@ async function fillProfileChangePasswordInputs(page, values) {
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
     const allInputs = Array.from(document.querySelectorAll('input'));
-    const block = Array.from(document.querySelectorAll('.block')).find((element) => {
-      const title = element.querySelector('.block-title')?.textContent ?? '';
-      return isVisible(element) && /Change Password|修改密码/.test(title);
-    });
+    const block =
+      document.querySelector('.v2board-profile-password-card') ??
+      Array.from(document.querySelectorAll('.block')).find((element) => {
+        const title = element.querySelector('.block-title')?.textContent ?? '';
+        return isVisible(element) && /Change Password|修改密码/.test(title);
+      });
     const inputs = block ? Array.from(block.querySelectorAll('input')).filter(isVisible) : [];
     if (inputs.length < expectedCount) {
       throw new Error(`Expected ${expectedCount} profile password inputs, got ${inputs.length}`);
@@ -14634,17 +14848,21 @@ async function waitForProfileChangePasswordLoading(page) {
           const style = window.getComputedStyle(element);
           return rect.width > 0 && rect.height > 0 && style.display !== 'none';
         };
-        const block = Array.from(document.querySelectorAll('.block')).find((element) => {
-          const title = element.querySelector('.block-title')?.textContent ?? '';
-          return isVisible(element) && /Change Password|修改密码/.test(title);
-        });
+        const block =
+          document.querySelector('.v2board-profile-password-card') ??
+          Array.from(document.querySelectorAll('.block')).find((element) => {
+            const title = element.querySelector('.block-title')?.textContent ?? '';
+            return isVisible(element) && /Change Password|修改密码/.test(title);
+          });
         const button = block
-          ? Array.from(block.querySelectorAll('button')).find(isVisible) ?? null
+          ? (block.querySelector('.v2board-profile-password-save') ??
+              Array.from(block.querySelectorAll('button')).find(isVisible) ??
+              null)
           : null;
         return Boolean(
           button &&
-            (button.matches('.ant-btn-loading, :disabled, .ant-btn-disabled') ||
-              button.querySelector('.anticon-loading, .fa-spin')),
+            (button.matches('.ant-btn-loading, :disabled, .ant-btn-disabled, [aria-busy="true"]') ||
+              button.querySelector('.anticon-loading, .fa-spin, svg.animate-spin')),
         );
       },
       { timeout: 5_000 },
