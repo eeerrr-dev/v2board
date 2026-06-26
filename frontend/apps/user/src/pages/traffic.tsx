@@ -1,236 +1,137 @@
-import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useTrafficLog } from '@/lib/queries';
-import { QuestionCircleIcon } from '@/components/ant-icon';
-import { LegacyEmpty } from '@/components/legacy-empty';
-import { LegacyTooltip } from '@/components/legacy-tooltip';
-import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
-import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
+import { getLocaleAntdMessages } from '@v2board/i18n';
+import { CircleHelp } from 'lucide-react';
 import { formatBytes } from '@v2board/config/format';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Card, CardContent } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/cn';
+import { useTrafficLog } from '@/lib/queries';
+import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
+import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
 
 export default function TrafficPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const trafficQuery = useTrafficLog();
   const { data, isFetching } = trafficQuery;
   const loading = useLegacyFetchLoading(isFetching, trafficQuery.error);
   const rows = data ?? [];
-  const [hoverKey, setHoverKey] = useState<number | null>(null);
   const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(rows.length);
-  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(rows.length);
-  const tableClassName = [
-    'ant-table',
-    'ant-table-default',
-    rows.length ? '' : 'ant-table-empty',
-    scrollPositionClassName,
-  ].filter(Boolean).join(' ');
+  const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
 
   return (
-    // The original builds this as `"block block-rounded  ".concat(...)` — note the
-    // DOUBLE space before the loading class (umi.js @1145481), so the rendered class
-    // attribute has two spaces; reproduced verbatim.
-    <div className={`block block-rounded  ${loading ? 'block-mode-loading' : ''}`}>
-      <div className="bg-white">
-        <div className="row p-3">
-          <div className="col-lg-12">
-            <div className="alert alert-info mb-0" role="alert">
-              <p className="mb-0">{t('traffic.notice')}</p>
-            </div>
+    <TooltipProvider delayDuration={100}>
+      <Card className="v2board-traffic-card overflow-hidden">
+        <CardContent className="p-0">
+          <div className="border-b border-border bg-card p-4">
+            <Alert className="v2board-traffic-notice bg-muted/40">
+              <AlertDescription>{t('traffic.notice')}</AlertDescription>
+            </Alert>
           </div>
-        </div>
-        <div className="ant-table-wrapper" style={{ borderTop: '1px solid #e8e8e8' }}>
-          <div className="ant-spin-nested-loading">
-            <div className="ant-spin-container">
-              <div className={tableClassName}>
-                <div className="ant-table-content">
-                  <div className="ant-table-scroll">
-                    <div
-                      ref={bodyRef}
-                      tabIndex={-1}
-                      className="ant-table-body"
-                      style={{ overflowX: 'scroll', WebkitTransform: 'translate3d (0, 0, 0)' }}
-                      onScroll={onScroll}
-                    >
-                      <table ref={mainTableRef} className="ant-table-fixed" style={{ width: 800 }}>
-                        <colgroup>
-                          <col />
-                          <col />
-                          <col />
-                          <col />
-                          <col />
-                        </colgroup>
-                        {/* antd v3 Table wraps EVERY header cell in
-                            span.ant-table-header-column > div > (span.ant-table-column-title,
-                            span.ant-table-column-sorter) regardless of sorting; the inner div
-                            has no class and the sorter span is empty when no sorter is defined
-                            in the legacy oracle output. */}
-                        <thead className="ant-table-thead">
-                          <tr>
-                            <th className="">
-                              <span className="ant-table-header-column">
-                                <div>
-                                  <span className="ant-table-column-title">
-                                    {t('traffic.record_at')}
-                                  </span>
-                                  <span className="ant-table-column-sorter" />
-                                </div>
-                              </span>
-                            </th>
-                            <th className="ant-table-align-right" style={{ textAlign: 'right' }}>
-                              <span className="ant-table-header-column">
-                                <div>
-                                  <span className="ant-table-column-title">
-                                    {t('traffic.actual_upload')}
-                                  </span>
-                                  <span className="ant-table-column-sorter" />
-                                </div>
-                              </span>
-                            </th>
-                            <th className="ant-table-align-right" style={{ textAlign: 'right' }}>
-                              <span className="ant-table-header-column">
-                                <div>
-                                  <span className="ant-table-column-title">
-                                    {t('traffic.actual_download')}
-                                  </span>
-                                  <span className="ant-table-column-sorter" />
-                                </div>
-                              </span>
-                            </th>
-                            <th className="ant-table-align-center" style={{ textAlign: 'center' }}>
-                              <span className="ant-table-header-column">
-                                <div>
-                                  <span className="ant-table-column-title">
-                                    {t('traffic.deduct_rate')}
-                                  </span>
-                                  <span className="ant-table-column-sorter" />
-                                </div>
-                              </span>
-                            </th>
-                            <th
-                              className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
-                              style={{ textAlign: 'right' }}
-                            >
-                              <span className="ant-table-header-column">
-                                <div>
-                                  <span className="ant-table-column-title">
-                                    <LegacyTooltip title={t('traffic.total_formula')} placement="topRight">
-                                      {t('traffic.total_charged')} <QuestionCircleIcon />
-                                    </LegacyTooltip>
-                                  </span>
-                                  <span className="ant-table-column-sorter" />
-                                </div>
-                              </span>
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="ant-table-tbody">
-                          {rows.map((row, index) => {
-                            const rate = Number.parseFloat(row.server_rate);
-                            const upload = parseInt(String(row.u));
-                            const download = parseInt(String(row.d));
-                            const charged =
-                              (upload + download) * (row.server_rate as unknown as number);
-                            return (
-                              <tr
-                                className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
-                                data-row-key={index}
-                                key={index}
-                                onMouseEnter={() => setHoverKey(index)}
-                                onMouseLeave={() => setHoverKey(null)}
-                              >
-                                <td>
-                                  {row.record_at ? formatUserLegacyDateSlash(row.record_at) : '-'}
-                                </td>
-                                <td style={{ textAlign: 'right' }}>
-                                  {row.server_rate ? formatBytes(upload) : 0}
-                                </td>
-                                <td style={{ textAlign: 'right' }}>
-                                  {row.server_rate ? formatBytes(download) : 0}
-                                </td>
-                                <td style={{ textAlign: 'center' }}>
-                                  <span className="ant-tag" style={{ minWidth: 60 }}>
-                                    {rate ? `${rate.toFixed(2)} x` : '-'}
-                                  </span>
-                                </td>
-                                <td
-                                  className="ant-table-fixed-columns-in-body"
-                                  style={{ textAlign: 'right' }}
-                                >
-                                  {formatBytes(charged)}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                    {rows.length === 0 && (
-                      <div className="ant-table-placeholder">
-                        <LegacyEmpty />
-                      </div>
-                    )}
-                  </div>
-                  <div className="ant-table-fixed-right">
-                    <div
-                      className="ant-table-body-outer"
-                      style={{ WebkitTransform: 'translate3d (0, 0, 0)' }}
-                    >
-                      <div className="ant-table-body-inner">
-                        <table ref={fixedTableRef} className="ant-table-fixed">
-                          <colgroup>
-                            <col />
-                          </colgroup>
-                          <thead className="ant-table-thead">
-                            <tr>
-                              <th
-                                className="ant-table-align-right ant-table-row-cell-last"
-                                style={{ textAlign: 'right' }}
-                              >
-                                <span className="ant-table-header-column">
-                                  <div>
-                                    <span className="ant-table-column-title">
-                                      <LegacyTooltip title={t('traffic.total_formula')} placement="topRight">
-                                        {t('traffic.total_charged')} <QuestionCircleIcon />
-                                      </LegacyTooltip>
-                                    </span>
-                                    <span className="ant-table-column-sorter" />
-                                  </div>
-                                </span>
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="ant-table-tbody">
-                            {rows.map((row, index) => {
-                              const charged =
-                                (parseInt(String(row.u)) +
-                                  parseInt(String(row.d))) *
-                                (row.server_rate as unknown as number);
-                              return (
-                                <tr
-                                  className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
-                                  data-row-key={index}
-                                  key={index}
-                                  onMouseEnter={() => setHoverKey(index)}
-                                  onMouseLeave={() => setHoverKey(null)}
-                                >
-                                  <td style={{ textAlign: 'right' }}>
-                                    {formatBytes(charged)}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+
+          {loading ? (
+            <div
+              className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground"
+              role="status"
+            >
+              <Spinner className="size-4" />
+              <span>Loading...</span>
             </div>
+          ) : null}
+
+          <div
+            ref={bodyRef}
+            tabIndex={-1}
+            className={cn('v2board-service-table-scroll overflow-x-auto', scrollPositionClassName)}
+            onScroll={onScroll}
+          >
+            <table className="v2board-service-table v2board-traffic-table w-full min-w-[800px] text-sm">
+              <thead className="border-b border-border bg-muted/50 text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">{t('traffic.record_at')}</th>
+                  <th className="px-4 py-3 text-right font-medium">{t('traffic.actual_upload')}</th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    {t('traffic.actual_download')}
+                  </th>
+                  <th className="px-4 py-3 text-center font-medium">{t('traffic.deduct_rate')}</th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    <HeaderTooltip title={t('traffic.total_formula')} placement="topRight">
+                      {t('traffic.total_charged')}
+                    </HeaderTooltip>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {rows.length ? (
+                  rows.map((row, index) => {
+                    const rate = Number.parseFloat(row.server_rate);
+                    const upload = parseInt(String(row.u));
+                    const download = parseInt(String(row.d));
+                    const charged = (upload + download) * (row.server_rate as unknown as number);
+                    return (
+                      <tr
+                        className="transition-colors hover:bg-muted/50"
+                        data-row-key={index}
+                        key={index}
+                      >
+                        <td className="px-4 py-4">
+                          {row.record_at ? formatUserLegacyDateSlash(row.record_at) : '-'}
+                        </td>
+                        <td className="px-4 py-4 text-right">
+                          {row.server_rate ? formatBytes(upload) : 0}
+                        </td>
+                        <td className="px-4 py-4 text-right">
+                          {row.server_rate ? formatBytes(download) : 0}
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <span className="inline-flex min-w-16 items-center justify-center rounded-md border border-border bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
+                            {rate ? `${rate.toFixed(2)} x` : '-'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-right font-medium">{formatBytes(charged)}</td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr className="v2board-traffic-empty">
+                    <td
+                      className="px-4 py-16 text-center text-sm text-muted-foreground"
+                      colSpan={5}
+                    >
+                      {emptyDescription}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
-      </div>
-    </div>
+        </CardContent>
+      </Card>
+    </TooltipProvider>
+  );
+}
+
+function HeaderTooltip({
+  children,
+  placement = 'top',
+  title,
+}: {
+  children: ReactNode;
+  placement?: 'top' | 'topRight';
+  title: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="v2board-service-tooltip-trigger inline-flex cursor-help items-center justify-end gap-1">
+          {children}
+          <CircleHelp className="size-3.5" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent placement={placement}>{title}</TooltipContent>
+    </Tooltip>
   );
 }

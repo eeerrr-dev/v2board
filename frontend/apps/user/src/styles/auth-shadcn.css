@@ -40,6 +40,8 @@
 @source '../pages/auth/**/*.tsx';
 @source '../pages/dashboard.tsx';
 @source '../pages/profile.tsx';
+@source '../pages/node.tsx';
+@source '../pages/traffic.tsx';
 @source '../pages/plans/**/*.tsx';
 @source '../pages/orders/**/*.tsx';
 @source '../components/plan-content.tsx';

@@ -1,7 +1,13 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { QuestionCircleIcon } from '@/components/ant-icon';
-import { LegacyTooltip } from '@/components/legacy-tooltip';
+import { CircleHelp, Server } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/cn';
 import { useServers, useSubscribe } from '@/lib/queries';
 import { legacyHref } from '@/lib/legacy-href';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
@@ -23,156 +29,129 @@ export default function NodePage() {
 
   const to = subscribe.data?.plan_id ? `/plan/${subscribe.data.plan_id}` : '/plan';
 
-  return (
-    <div className="row mb-3 mb-md-0">
-      <div className="col-md-12">
-        {loading ? (
-          <div className="spinner-grow text-primary" role="status">
-            <span className="sr-only">Loading...</span>
-          </div>
-        ) : servers.length > 0 ? (
-          <div className="block block-rounded js-appear-enabled">
-            <div className="block-content p-0">
-              <div className="ant-table-wrapper">
-                {/* antd v3 Table always wraps its content in Spin (loading defaults to
-                    false); with no loading prop the node table never spins, so the
-                    spinner div / ant-spin-blur are absent — only the two static wrappers. */}
-                <div className="ant-spin-nested-loading">
-                  <div className="ant-spin-container">
-                    <div className={`ant-table ant-table-default ${scrollPositionClassName}`}>
-                      <div className="ant-table-content">
-                        <div className="ant-table-scroll">
-                          <div
-                            ref={bodyRef}
-                            className="ant-table-body"
-                            tabIndex={-1}
-                            style={{
-                              overflowX: 'scroll',
-                              WebkitTransform: 'translate3d (0, 0, 0)',
-                            }}
-                            onScroll={onScroll}
-                          >
-                            <table className="ant-table-fixed" style={{ width: 900, tableLayout: 'auto' }}>
-                              <colgroup>
-                                <col />
-                                <col />
-                                <col />
-                                <col />
-                              </colgroup>
-                              <thead className="ant-table-thead">
-                                <tr>
-                                  <th>
-                                    <span className="ant-table-header-column">
-                                      <div>
-                                        <span className="ant-table-column-title">
-                                          {t('node.simple_name')}
-                                        </span>
-                                        <span className="ant-table-column-sorter" />
-                                      </div>
-                                    </span>
-                                  </th>
-                                  <th className="ant-table-align-center" style={{ textAlign: 'center' }}>
-                                    <span className="ant-table-header-column">
-                                      <div>
-                                        <span className="ant-table-column-title">
-                                          {/* antd nests the column title's
-                                              createElement("span",null,<Tooltip>) inside
-                                              ant-table-column-title (umi.js @1217100). */}
-                                          <span>
-                                            <LegacyTooltip title={t('node.status_tip')}>
-                                              {t('node.status')} <QuestionCircleIcon />
-                                            </LegacyTooltip>
-                                          </span>
-                                        </span>
-                                        <span className="ant-table-column-sorter" />
-                                      </div>
-                                    </span>
-                                  </th>
-                                  <th className="ant-table-align-center" style={{ textAlign: 'center' }}>
-                                    <span className="ant-table-header-column">
-                                      <div>
-                                        <span className="ant-table-column-title">
-                                          <span>
-                                            <LegacyTooltip title={t('node.rate_tip')}>
-                                              {t('node.rate')} <QuestionCircleIcon />
-                                            </LegacyTooltip>
-                                          </span>
-                                        </span>
-                                        <span className="ant-table-column-sorter" />
-                                      </div>
-                                    </span>
-                                  </th>
-                                  <th className="ant-table-row-cell-last">
-                                    <span className="ant-table-header-column">
-                                      <div>
-                                        <span className="ant-table-column-title">{t('node.tags')}</span>
-                                        <span className="ant-table-column-sorter" />
-                                      </div>
-                                    </span>
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody className="ant-table-tbody">
-                                {servers.map((s, index) => (
-                                  <tr
-                                    className="ant-table-row ant-table-row-level-0"
-                                    data-row-key={index}
-                                    key={index}
-                                  >
-                                    <td>{s.name}</td>
-                                    <td style={{ textAlign: 'center' }}>
-                                      <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-                                        <span
-                                          className={`ant-badge-status-dot ant-badge-status-${
-                                            parseInt(String(s.is_online)) ? 'processing' : 'error'
-                                          }`}
-                                        />
-                                        <span className="ant-badge-status-text" />
-                                      </span>
-                                    </td>
-                                    <td style={{ textAlign: 'center' }}>
-                                      <span className="ant-tag" style={{ minWidth: 60 }}>
-                                        {String(s.rate)} x
-                                      </span>
-                                    </td>
-                                    <td>
-                                      {s.tags
-                                        ? s.tags.map((tag) => (
-                                            <span className="ant-tag" key={Math.random()}>
-                                              {tag}
-                                            </span>
-                                          ))
-                                        : '-'}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="alert alert-dark" role="alert">
-            <p className="mb-0">
-              {t('node.no_available')}{' '}
+  if (loading) {
+    return (
+      <div
+        className="v2board-node-loading flex min-h-44 items-center justify-center rounded-xl border border-border bg-card text-card-foreground shadow-sm"
+        role="status"
+      >
+        <Spinner className="size-5 text-muted-foreground" />
+        <span className="sr-only">Loading...</span>
+      </div>
+    );
+  }
+
+  if (servers.length === 0) {
+    return (
+      <Alert className="v2board-node-empty bg-card">
+        <Server className="size-4" />
+        <AlertDescription>
+          <span className="flex flex-wrap items-center gap-1">
+            <span>{t('node.no_available')}</span>
+            <Button asChild variant="link" className="h-auto p-0 text-sm">
               <a
-                className="alert-link"
+                className="v2board-node-empty-action"
                 ref={legacyHref()}
                 onClick={() => navigate(to)}
               >
                 {subscribe.data?.plan_id ? t('node.renew') : t('node.subscribe')}
               </a>
-              。
-            </p>
+            </Button>
+          </span>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <TooltipProvider delayDuration={100}>
+      <Card className="v2board-node-card overflow-hidden">
+        <CardContent className="p-0">
+          <div
+            ref={bodyRef}
+            className={cn('v2board-service-table-scroll overflow-x-auto', scrollPositionClassName)}
+            tabIndex={-1}
+            onScroll={onScroll}
+          >
+            <table className="v2board-service-table v2board-node-table w-full min-w-[900px] text-sm">
+              <thead className="border-b border-border bg-muted/50 text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">
+                    <span className="v2board-table-column-title">{t('node.simple_name')}</span>
+                  </th>
+                  <th className="px-4 py-3 text-center font-medium">
+                    <HeaderTooltip title={t('node.status_tip')}>{t('node.status')}</HeaderTooltip>
+                  </th>
+                  <th className="px-4 py-3 text-center font-medium">
+                    <HeaderTooltip title={t('node.rate_tip')}>{t('node.rate')}</HeaderTooltip>
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium">
+                    <span className="v2board-table-column-title">{t('node.tags')}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {servers.map((server, index) => {
+                  const online = Boolean(parseInt(String(server.is_online)));
+                  return (
+                    <tr
+                      className="transition-colors hover:bg-muted/50"
+                      data-row-key={index}
+                      key={index}
+                    >
+                      <td className="px-4 py-4 font-medium text-foreground">{server.name}</td>
+                      <td className="px-4 py-4 text-center">
+                        <span
+                          className={cn(
+                            'inline-flex size-2.5 rounded-full',
+                            online ? 'bg-emerald-500' : 'bg-destructive',
+                          )}
+                          aria-label={online ? 'online' : 'offline'}
+                        />
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <span className="inline-flex min-w-16 items-center justify-center rounded-md border border-border bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
+                          {String(server.rate)} x
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        {server.tags?.length ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {server.tags.map((tag) => (
+                              <span
+                                className="inline-flex rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground"
+                                key={tag}
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
-    </div>
+        </CardContent>
+      </Card>
+    </TooltipProvider>
+  );
+}
+
+function HeaderTooltip({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="v2board-service-tooltip-trigger inline-flex cursor-help items-center justify-center gap-1">
+          {children}
+          <CircleHelp className="size-3.5" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{title}</TooltipContent>
+    </Tooltip>
   );
 }

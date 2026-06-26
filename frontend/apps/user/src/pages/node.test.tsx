@@ -5,8 +5,9 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import NodePage from './node';
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const nodeSource = readFileSync(`${process.cwd()}/src/pages/node.tsx`, 'utf8');
 
@@ -58,7 +59,7 @@ vi.mock('@/lib/queries', () => ({
   useServers: () => ({ data: queryState.servers, isFetching: queryState.serversFetching }),
 }));
 
-describe('NodePage legacy loading timing', () => {
+describe('NodePage shadcn loading timing', () => {
   let container: HTMLDivElement;
   let root: Root | null;
 
@@ -79,28 +80,29 @@ describe('NodePage legacy loading timing', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders the original empty-node notice before the mount fetch flips loading on', () => {
+  it('renders the empty-node notice before the mount fetch flips loading on', () => {
     const html = renderToStaticMarkup(<NodePage />);
 
     expect(html).toContain('没有可用节点，如果您未订阅或已过期请');
     expect(html).toContain('订阅');
-    expect(html).not.toContain('spinner-grow');
+    expect(html).toContain('v2board-node-empty');
+    expect(html).not.toContain('v2board-node-loading');
   });
 
-  it('shows only the original centered spinner after the mount fetch dispatch equivalent', async () => {
+  it('shows only the centered shadcn loading state after the mount fetch dispatch equivalent', async () => {
     await act(async () => {
       root!.render(<NodePage />);
       await Promise.resolve();
     });
 
-    expect(container.innerHTML).toContain('spinner-grow text-primary');
+    expect(container.innerHTML).toContain('v2board-node-loading');
     expect(container.innerHTML).toContain('Loading...');
-    expect(container.innerHTML).not.toContain('ant-table-wrapper');
-    expect(container.innerHTML).not.toContain('alert alert-dark');
+    expect(container.innerHTML).not.toContain('v2board-node-table');
+    expect(container.innerHTML).not.toContain('v2board-node-empty');
   });
 });
 
-describe('NodePage bundled-theme table and empty state', () => {
+describe('NodePage shadcn table and empty state', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -119,7 +121,7 @@ describe('NodePage bundled-theme table and empty state', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders the legacy antd v3 table shell, columns, badges, rate tags, and tag fallback', () => {
+  it('renders the shadcn service table, columns, status dots, rate tags, and tag fallback', () => {
     queryState.servers = [
       {
         id: 1,
@@ -155,25 +157,25 @@ describe('NodePage bundled-theme table and empty state', () => {
 
     const html = renderToStaticMarkup(<NodePage />);
 
-    expect(html).toContain('block block-rounded js-appear-enabled');
-    expect(html).toContain('ant-table-wrapper');
-    expect(html).toContain('style="width:900px;table-layout:auto"');
+    expect(html).toContain('v2board-node-card');
+    expect(html).toContain('v2board-service-table-scroll');
+    expect(html).toContain('v2board-service-table v2board-node-table');
     expect(html).toContain('名称');
     expect(html).toContain('状态');
     expect(html).toContain('倍率');
     expect(html).toContain('标签');
     expect(html).toContain('HK 01');
-    expect(html).toContain('ant-badge-status-processing');
-    expect(html).toContain('ant-badge-status-error');
+    expect(html).toContain('aria-label="online"');
+    expect(html).toContain('aria-label="offline"');
     expect(html).toContain('1.5 x');
     expect(html).toContain('IEPL');
     expect(html).toContain('Netflix');
-    expect(html).toContain('<td>-</td>');
+    expect(html).toContain('>-</span>');
     expect(html).toContain('data-row-key="0"');
     expect(html).toContain('data-row-key="1"');
   });
 
-  it('keeps the bundled antd fallback row key as an index DOM attribute', () => {
+  it('keeps the durable row key as an index DOM attribute', () => {
     expect(nodeSource).toContain('data-row-key={index}');
     expect(nodeSource).not.toContain('data-row-key={s.id}');
   });
@@ -187,7 +189,7 @@ describe('NodePage bundled-theme table and empty state', () => {
       await Promise.resolve();
     });
 
-    const link = container.querySelector<HTMLAnchorElement>('a.alert-link');
+    const link = container.querySelector<HTMLAnchorElement>('a.v2board-node-empty-action');
     expect(link).toBeTruthy();
     expect(link!.getAttribute('href')).toBe('javascript:void(0);');
     expect(link!.textContent).toBe('续费');
@@ -206,7 +208,7 @@ describe('NodePage bundled-theme table and empty state', () => {
       await Promise.resolve();
     });
 
-    const subscribeLink = container.querySelector<HTMLAnchorElement>('a.alert-link');
+    const subscribeLink = container.querySelector<HTMLAnchorElement>('a.v2board-node-empty-action');
     expect(subscribeLink!.getAttribute('href')).toBe('javascript:void(0);');
     expect(subscribeLink!.textContent).toBe('订阅');
 

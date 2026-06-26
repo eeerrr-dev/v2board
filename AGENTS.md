@@ -187,6 +187,23 @@ The user profile/account surface (`/profile`) is a redesigned shadcn surface.
 - Retire old OneUI/Bootstrap/Ant visual parity for `/profile`; keep behavior and
   interaction scenarios for the same route.
 
+### User Service Usage Direction
+
+The user service usage surfaces (`/node` and `/traffic`) are redesigned shadcn
+surfaces.
+
+- Use shadcn/Radix composition for service cards, horizontally scrollable data
+  tables, status indicators, tags, empty states, loading states, and tooltips.
+- Do not keep Ant Design table shells, fixed-column clones, Bootstrap blocks, or
+  legacy tooltip presentation as the foundation for these routes.
+- Keep service behavior strict: subscribe-first fetch ordering, loading timing,
+  empty-state subscribe/renew routing, node online/rate/tag rendering, traffic
+  date formatting, byte formatting, legacy traffic charge coercion, horizontal
+  scroll observability, tooltip text, timeout behavior, routing, and i18n
+  behavior must remain covered.
+- Retire old OneUI/Bootstrap/Ant visual parity for `/node` and `/traffic`; keep
+  behavior and interaction scenarios for the same routes.
+
 For new redesigned surfaces, do not use:
 
 - Ant Design v3 components as new UI foundations.

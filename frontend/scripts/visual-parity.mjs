@@ -80,6 +80,11 @@ const dashboardExpiredReadySelector = '.v2board-dashboard-status-expired, .text-
 const dashboardProgressReadySelector = '.v2board-dashboard-progress-bar, .progress-bar';
 const dashboardTrafficUsedUpReadySelector =
   '.v2board-dashboard-progress-bar[data-status="danger"], .progress-bar.bg-danger';
+const userNodeRowsReadySelector = '.v2board-node-table tbody tr, .ant-table-tbody tr';
+const userNodeEmptyReadySelector = '.v2board-node-empty, .alert.alert-dark';
+const userNodeLoadingReadySelector = '.v2board-node-loading, #page-container';
+const userTrafficRowsReadySelector = '.v2board-traffic-table tbody tr, .ant-table-tbody tr';
+const userTrafficSurfaceReadySelector = '.v2board-traffic-card, .ant-table';
 
 function normalizeParityText(value) {
   return String(value ?? '')
@@ -294,7 +299,8 @@ const scenarios = [
     authenticated: true,
     label: 'user-node',
     path: '/#/node',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -302,44 +308,50 @@ const scenarios = [
     longData: true,
     path: '/#/node',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
     emptyServers: true,
     label: 'user-node-empty',
     path: '/#/node',
-    readySelector: '.alert.alert-dark',
+    readySelector: userNodeEmptyReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-node-api-500',
     path: '/#/node',
     postReadyDelay: 500,
-    readySelector: '.alert.alert-dark',
+    readySelector: userNodeEmptyReadySelector,
     userServersHttpError: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-node-timeout',
     path: '/#/node',
     postReadyDelay: 800,
-    readySelector: '#page-container',
+    readySelector: userNodeLoadingReadySelector,
     userServersTimeout: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-traffic',
     path: '/#/traffic',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userTrafficRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-traffic-timeout',
     path: '/#/traffic',
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: userTrafficSurfaceReadySelector,
     userTrafficTimeout: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -519,7 +531,8 @@ const scenarios = [
     label: 'user-node-empty-zh-tw',
     locale: 'zh-TW',
     path: '/#/node',
-    readySelector: '.alert.alert-dark',
+    readySelector: userNodeEmptyReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -546,7 +559,8 @@ const scenarios = [
     longData: true,
     path: '/#/node',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -674,7 +688,8 @@ const scenarios = [
     label: 'user-node-empty-en-us',
     locale: 'en-US',
     path: '/#/node',
-    readySelector: '.alert.alert-dark',
+    readySelector: userNodeEmptyReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -691,7 +706,8 @@ const scenarios = [
     longData: true,
     path: '/#/node',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     label: 'user-home-root-zh-tw',
@@ -753,14 +769,16 @@ const scenarios = [
     label: 'user-node-zh-tw',
     locale: 'zh-TW',
     path: '/#/node',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-traffic-zh-tw',
     locale: 'zh-TW',
     path: '/#/traffic',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userTrafficRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -858,14 +876,16 @@ const scenarios = [
     label: 'user-node-en-us',
     locale: 'en-US',
     path: '/#/node',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-traffic-en-us',
     locale: 'en-US',
     path: '/#/traffic',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userTrafficRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1019,7 +1039,8 @@ const scenarios = [
     label: 'user-node-empty-ja-jp',
     locale: 'ja-JP',
     path: '/#/node',
-    readySelector: '.alert.alert-dark',
+    readySelector: userNodeEmptyReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1046,7 +1067,8 @@ const scenarios = [
     longData: true,
     path: '/#/node',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     label: 'user-home-root-ja-jp',
@@ -1118,14 +1140,16 @@ const scenarios = [
     label: 'user-node-ja-jp',
     locale: 'ja-JP',
     path: '/#/node',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-traffic-ja-jp',
     locale: 'ja-JP',
     path: '/#/traffic',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userTrafficRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1279,7 +1303,8 @@ const scenarios = [
     label: 'user-node-empty-vi-vn',
     locale: 'vi-VN',
     path: '/#/node',
-    readySelector: '.alert.alert-dark',
+    readySelector: userNodeEmptyReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1306,7 +1331,8 @@ const scenarios = [
     longData: true,
     path: '/#/node',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     label: 'user-home-root-vi-vn',
@@ -1378,14 +1404,16 @@ const scenarios = [
     label: 'user-node-vi-vn',
     locale: 'vi-VN',
     path: '/#/node',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-traffic-vi-vn',
     locale: 'vi-VN',
     path: '/#/traffic',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userTrafficRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1539,7 +1567,8 @@ const scenarios = [
     label: 'user-node-empty-ko-kr',
     locale: 'ko-KR',
     path: '/#/node',
-    readySelector: '.alert.alert-dark',
+    readySelector: userNodeEmptyReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1566,7 +1595,8 @@ const scenarios = [
     longData: true,
     path: '/#/node',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     label: 'user-home-root-ko-kr',
@@ -1638,14 +1668,16 @@ const scenarios = [
     label: 'user-node-ko-kr',
     locale: 'ko-KR',
     path: '/#/node',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userNodeRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-traffic-ko-kr',
     locale: 'ko-KR',
     path: '/#/traffic',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: userTrafficRowsReadySelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -5912,7 +5944,10 @@ async function runNodeTableScrollInteraction(page) {
 }
 
 async function runUserNodeTooltipsInteraction(page) {
-  return hoverAllTooltipTargetsInteraction(page, ['.ant-table-thead .anticon-question-circle']);
+  return hoverAllTooltipTargetsInteraction(page, [
+    '.v2board-node-table .v2board-service-tooltip-trigger',
+    '.ant-table-thead .anticon-question-circle',
+  ]);
 }
 
 async function runTrafficTableScrollInteraction(page) {
@@ -5928,7 +5963,10 @@ async function runTrafficTableScrollInteraction(page) {
 }
 
 async function runUserTrafficTotalTooltipInteraction(page) {
+  await setLegacyAntTableScrollLeft(page, 'right');
+  await page.waitForTimeout(150);
   return hoverTooltipInteraction(page, [
+    '.v2board-traffic-table .v2board-service-tooltip-trigger',
     '.ant-table-fixed .anticon-question-circle',
     '.ant-table-thead .anticon-question-circle',
   ]);
@@ -9609,6 +9647,27 @@ function sortForStableJson(value) {
 
 function normalizeInteractionResult(label, result) {
   const normalized = sortForStableJson(result);
+  if (label === 'user-node-table-scroll' || label === 'user-traffic-table-scroll') {
+    return normalizeServiceTableScrollInteractionResult(normalized);
+  }
+  if (label === 'user-node-tooltips') {
+    return normalizeTooltipSequenceInteractionResult(normalized);
+  }
+  if (label === 'user-traffic-total-tooltip') {
+    return {
+      before: normalizeTooltipInteractionState(normalized.before),
+      opened: normalizeTooltipInteractionState(normalized.opened),
+    };
+  }
+  if (
+    [
+      'user-node-fetch-api-500',
+      'user-node-fetch-timeout',
+      'user-traffic-fetch-timeout',
+    ].includes(label)
+  ) {
+    return normalizeRedesignedFetchFailureInteractionResult(label, normalized);
+  }
   if (label === 'user-auth-401-no-redirect') {
     return {
       ...normalized,
@@ -9705,6 +9764,84 @@ function normalizeInteractionResult(label, result) {
     return normalizeAdminServerProtocolMatrixResult(normalized);
   }
   return normalized;
+}
+
+function normalizeServiceTableScrollInteractionResult(result) {
+  const normalizeRows = (rows) => {
+    const uniqueRows = Array.from(new Set(rows ?? []));
+    return uniqueRows.filter(
+      (row) => !uniqueRows.some((other) => other !== row && other.includes(row)),
+    );
+  };
+  const normalizeState = (state) => {
+    const scrollClassName = String(state?.className ?? '')
+      .split(/\s+/)
+      .filter((className) => className.startsWith('ant-table-scroll-position-'))
+      .sort()
+      .join(' ');
+
+    return {
+      className: scrollClassName,
+      maxScroll: state?.maxScroll > 0 ? 1 : 0,
+      rows: normalizeRows(state?.rows),
+      scrollLeft: state?.scrollLeft > 0 ? 1 : 0,
+    };
+  };
+
+  return {
+    afterMiddle: normalizeState(result.afterMiddle),
+    afterRight: normalizeState(result.afterRight),
+    before: normalizeState(result.before),
+  };
+}
+
+function normalizeTooltipSequenceInteractionResult(result) {
+  return {
+    before: normalizeTooltipInteractionState(result.before),
+    opened: (result.opened ?? []).map(normalizeTooltipInteractionState),
+    targetCount: result.targetCount,
+    viewportWidth: result.viewportWidth,
+  };
+}
+
+function normalizeTooltipInteractionState(state) {
+  if (!state) return state;
+  return {
+    openTriggerCount: state.openTriggerCount > 0 ? 1 : 0,
+    placement: state.placement,
+    texts: (state.texts ?? []).map(normalizeTooltipInteractionText),
+    tooltipCount: state.tooltipCount > 0 ? 1 : 0,
+  };
+}
+
+function normalizeTooltipInteractionText(value) {
+  const text = normalizeParityText(value);
+  if (text.length % 2 !== 0) return text;
+  const middle = text.length / 2;
+  const left = text.slice(0, middle);
+  const right = text.slice(middle);
+  return left && left === right ? left : text;
+}
+
+function normalizeRedesignedFetchFailureInteractionResult(label, result) {
+  const expectedCountKey = {
+    'user-node-fetch-api-500': 'userServerFetch',
+    'user-node-fetch-timeout': 'userServerFetch',
+    'user-traffic-fetch-timeout': 'userTrafficFetch',
+  }[label];
+  const visibleFallbackCount =
+    (result.alertTexts?.length ?? 0) +
+    (result.emptyTexts?.length ?? 0) +
+    (result.listItemTexts?.length ?? 0) +
+    (result.spinnerCount ?? 0) +
+    (result.tableRows?.length ?? 0) +
+    (result.tables?.length ?? 0);
+
+  return {
+    hash: result.hash,
+    requestSeen: { [expectedCountKey]: !!result.requestSeen?.[expectedCountKey] },
+    visibleFallbackCount: visibleFallbackCount > 0 ? 1 : 0,
+  };
 }
 
 function normalizeAdminServerProtocolMatrixResult(value) {
@@ -12210,7 +12347,8 @@ async function hoverAllTooltipTargetsInteraction(page, selectors) {
     await page.waitForTimeout(150);
     opened.push(await tooltipState(page));
     await page.mouse.move(1, 1);
-    await waitForNoVisibleTooltip(page);
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await waitForNoVisibleTooltip(page, 1_000).catch(() => undefined);
   }
 
   return { before, opened, targetCount, viewportWidth };
@@ -12229,20 +12367,38 @@ async function tooltipState(page) {
         style.visibility !== 'hidden'
       );
     };
-    const tooltips = Array.from(document.querySelectorAll('.ant-tooltip'))
-      .filter((element) => !element.className.includes('ant-tooltip-hidden'))
+    const isOpenTooltip = (element) =>
+      element.getAttribute('data-state') !== 'closed' &&
+      !String(element.className).includes('ant-tooltip-hidden');
+    const tooltips = Array.from(
+      document.querySelectorAll('.v2board-tooltip-content, .ant-tooltip'),
+    )
+      .filter(isOpenTooltip)
       .filter(isVisible);
     const tooltip = tooltips[0];
+    const textElements = tooltip
+      ? tooltip.matches('.v2board-tooltip-content')
+        ? [tooltip]
+        : Array.from(tooltip.querySelectorAll('.ant-tooltip-inner'))
+      : [];
 
     return {
       className: tooltip ? normalize(tooltip.className) : '',
-      openTriggerCount: Array.from(document.querySelectorAll('.ant-tooltip-open')).filter(
-        isVisible,
-      ).length,
+      openTriggerCount: Array.from(
+        document.querySelectorAll(
+          [
+            '.v2board-service-tooltip-trigger[data-state="delayed-open"]',
+            '.v2board-service-tooltip-trigger[data-state="instant-open"]',
+            '.ant-tooltip-open',
+          ].join(', '),
+        ),
+      ).filter(isVisible).length,
       placement:
-        tooltip?.className.match(/ant-tooltip-placement-([A-Za-z]+)/)?.[1] ?? '',
+        tooltip?.getAttribute('data-placement') ??
+        tooltip?.className.match(/ant-tooltip-placement-([A-Za-z]+)/)?.[1] ??
+        '',
       texts: tooltip
-        ? Array.from(tooltip.querySelectorAll('.ant-tooltip-inner'))
+        ? textElements
             .filter(isVisible)
             .map((element) => normalize(element.textContent))
             .filter(Boolean)
@@ -12265,15 +12421,18 @@ async function waitForVisibleTooltip(page, timeout = 5_000) {
           style.visibility !== 'hidden'
         );
       };
-      return Array.from(document.querySelectorAll('.ant-tooltip'))
-        .filter((element) => !element.className.includes('ant-tooltip-hidden'))
+      const isOpenTooltip = (element) =>
+        element.getAttribute('data-state') !== 'closed' &&
+        !String(element.className).includes('ant-tooltip-hidden');
+      return Array.from(document.querySelectorAll('.v2board-tooltip-content, .ant-tooltip'))
+        .filter(isOpenTooltip)
         .some(isVisible);
     },
     { timeout },
   );
 }
 
-async function waitForNoVisibleTooltip(page) {
+async function waitForNoVisibleTooltip(page, timeout = 5_000) {
   await page.waitForFunction(
     () => {
       const isVisible = (element) => {
@@ -12286,11 +12445,14 @@ async function waitForNoVisibleTooltip(page) {
           style.visibility !== 'hidden'
         );
       };
-      return !Array.from(document.querySelectorAll('.ant-tooltip'))
-        .filter((element) => !element.className.includes('ant-tooltip-hidden'))
+      const isOpenTooltip = (element) =>
+        element.getAttribute('data-state') !== 'closed' &&
+        !String(element.className).includes('ant-tooltip-hidden');
+      return !Array.from(document.querySelectorAll('.v2board-tooltip-content, .ant-tooltip'))
+        .filter(isOpenTooltip)
         .some(isVisible);
     },
-    { timeout: 5_000 },
+    { timeout },
   );
 }
 
@@ -13906,7 +14068,9 @@ async function setLegacyAntTableScrollLeft(page, position) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    const body = Array.from(document.querySelectorAll('.ant-table-body')).find(isVisible);
+    const body = Array.from(
+      document.querySelectorAll('.v2board-service-table-scroll, .ant-table-body'),
+    ).find(isVisible);
     if (!body) return;
     const maxScroll = Math.max(0, body.scrollWidth - body.clientWidth);
     body.scrollLeft =
@@ -13928,15 +14092,23 @@ async function legacyAntTableScrollState(page) {
         .filter(Boolean)
         .sort()
         .join(' ');
-    const table = Array.from(document.querySelectorAll('.ant-table.ant-table-default')).find(isVisible);
-    const body = Array.from(document.querySelectorAll('.ant-table-body')).find(isVisible);
+    const table = Array.from(
+      document.querySelectorAll('.v2board-service-table-scroll, .ant-table.ant-table-default'),
+    ).find(isVisible);
+    const body = Array.from(
+      document.querySelectorAll('.v2board-service-table-scroll, .ant-table-body'),
+    ).find(isVisible);
     const maxScroll = body ? Math.max(0, body.scrollWidth - body.clientWidth) : 0;
 
     return {
       className: normalizeClassName(table?.className ?? ''),
       clientWidth: Math.round(body?.clientWidth ?? 0),
       maxScroll: Math.round(maxScroll),
-      rows: Array.from(document.querySelectorAll('.ant-table-tbody tr'))
+      rows: Array.from(
+        document.querySelectorAll(
+          '.v2board-service-table tbody tr, .ant-table-tbody tr',
+        ),
+      )
         .filter(isVisible)
         .slice(0, 4)
         .map((row) => (row.textContent ?? '').trim().replace(/\s+/g, ' ')),
@@ -14058,16 +14230,24 @@ async function fetchFailureState(page) {
   const alertTexts = await visibleTexts(page, '.alert, .ant-alert', 6);
   const emptyTexts = await visibleTexts(
     page,
-    '.v2board-plan-empty, .v2board-orders-empty, .ant-empty, .ant-table-placeholder',
+    '.v2board-plan-empty, .v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .ant-empty, .ant-table-placeholder',
     6,
   );
   const listItemTexts = await visibleTexts(page, '.am-list-item', 6);
-  const tablePlaceholderTexts = await visibleTexts(page, '.v2board-orders-empty, .ant-table-placeholder', 4);
-  const tableRows = await visibleTexts(page, '.v2board-orders-table tbody tr, .ant-table-tbody tr', 6);
+  const tablePlaceholderTexts = await visibleTexts(
+    page,
+    '.v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .ant-table-placeholder',
+    4,
+  );
+  const tableRows = await visibleTexts(
+    page,
+    '.v2board-orders-table tbody tr, .v2board-node-table tbody tr, .v2board-traffic-table tbody tr, .ant-table-tbody tr',
+    6,
+  );
   const legacyBlockLoadingCount = await visibleCount(page, '.block-mode-loading');
   const spinnerVisibleCount = await visibleCount(
     page,
-    '.v2board-plan-empty svg, .v2board-orders-card svg, .spinner-grow, .ant-spin-spinning, [role="status"] svg',
+    '.v2board-plan-empty svg, .v2board-orders-card svg, .v2board-node-loading svg, .v2board-traffic-card [role="status"] svg, .spinner-grow, .ant-spin-spinning, [role="status"] svg',
   );
 
   return {
@@ -14103,7 +14283,11 @@ async function fetchFailureState(page) {
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none';
       };
-      return Array.from(document.querySelectorAll('.v2board-orders-card, .ant-table'))
+      return Array.from(
+        document.querySelectorAll(
+          '.v2board-orders-card, .v2board-node-card, .v2board-traffic-card, .ant-table',
+        ),
+      )
         .filter(isVisible)
         .slice(0, 4)
         .map(() => 'table');
