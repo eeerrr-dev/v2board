@@ -204,6 +204,23 @@ surfaces.
 - Retire old OneUI/Bootstrap/Ant visual parity for `/node` and `/traffic`; keep
   behavior and interaction scenarios for the same routes.
 
+### User Invite Direction
+
+The user invite/commission surface (`/invite`) is a redesigned shadcn surface.
+
+- Use shadcn/Radix composition for commission cards, invite-code and commission
+  history tables, pagination controls, tooltips, and transfer/withdraw dialogs.
+- Do not keep Ant Design table shells, fixed-column clones, Bootstrap blocks,
+  legacy select, or legacy modal presentation as the foundation for this route.
+- Keep invite behavior strict: fetch order, generated invite toast and refetch,
+  copy-link URL, commission math, distribution-rate formatting, history
+  pagination clamping, transfer payload conversion through the API layer,
+  failure modal persistence, withdraw method/account payload, successful
+  withdraw redirect, tooltip text, routing, and i18n behavior must remain
+  covered.
+- Retire old OneUI/Bootstrap/Ant visual parity for `/invite`; keep behavior and
+  interaction scenarios for the same route.
+
 For new redesigned surfaces, do not use:
 
 - Ant Design v3 components as new UI foundations.

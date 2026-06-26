@@ -1,39 +1,60 @@
-import { useState } from 'react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  CircleHelp,
+  Copy,
+  Plus,
+  Send,
+  TrendingUp,
+  Users,
+  WalletCards,
+} from 'lucide-react';
+import { getLocaleAntdMessages } from '@v2board/i18n';
 import { TransferDialog } from '@/components/dialogs/transfer-dialog';
 import { WithdrawDialog } from '@/components/dialogs/withdraw-dialog';
-import { LegacyEmpty } from '@/components/legacy-empty';
-import { LegacySelect } from '@/components/legacy-select';
-import { LegacyTooltip } from '@/components/legacy-tooltip';
-import { AntBtn } from '@/components/ant-btn';
-import { legacyHref } from '@/lib/legacy-href';
+import { Button } from '@/components/ui/button';
 import {
-  TransactionIcon,
-  PayCircleIcon,
-  QuestionCircleIcon,
-  LeftIcon,
-  RightIcon,
-  DoubleLeftIcon,
-  DoubleRightIcon,
-} from '@/components/ant-icon';
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { cn } from '@/lib/cn';
+import {
+  useCommConfig,
   useGenerateInviteMutation,
   useInvite,
   useInviteDetails,
-  useCommConfig,
   useUserInfo,
   userKeys,
 } from '@/lib/queries';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
-import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
 import { legacyCopyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/legacy-toast';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
 export default function InvitePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   // Old componentDidMount dispatch order: user/getUserInfo, invite/details,
   // invite/fetch, then comm/config.
@@ -83,319 +104,298 @@ export default function InvitePage() {
     pageSize ?? 10,
   );
   const detailsLoading = useLegacyFetchLoading(details.isFetching);
+  const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
 
   const copyInviteLink = (code: string) => {
     legacyCopyText(`${window.location.origin}${window.location.pathname}#/register?code=${code}`);
     toast.success(t('dashboard.copy_success'));
   };
 
+  const generateInvite = async () => {
+    if (generate.isPending) return;
+    try {
+      await generate.mutateAsync();
+      toast.success('已生成');
+      void queryClient.invalidateQueries({ queryKey: userKeys.invite, exact: true });
+    } catch {}
+  };
+
   return (
-    <>
-      <div className="row mb-3 mb-md-0">
-        <div className="col-md-12">
-          <div className={`block block-rounded js-appear-enabled ${loading ? 'block-mode-loading' : ''}`}>
-            <div className="block-content pb-3">
-              <i className="fa fa-user-plus fa-2x text-gray-light float-right" />
-              <div className="pb-sm-3">
-                <p className="text-muted w-75">{t('invite.title')}</p>
-                <p className="display-4 text-black font-w300 mb-2">
+    <TooltipProvider delayDuration={100}>
+      <div className="v2board-invite-surface space-y-4">
+        <Card className="v2board-invite-summary-card overflow-hidden">
+          <CardContent className="grid gap-5 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div className="min-w-0 space-y-3">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <WalletCards className="size-4" />
+                <span>{t('invite.title')}</span>
+              </div>
+              <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
+                <span className="text-4xl font-semibold tracking-tight text-foreground">
                   {availableText}
-                  <span className="font-size-h5 text-muted ml-4">{comm?.currency}</span>
-                </p>
-                <span className="text-muted" style={{ cursor: 'pointer' }}>
-                  {t('invite.available')}
                 </span>
-                <div className="pt-3">
-                  <TransferDialog max={available}>
-                    <AntBtn type="button" className="ant-btn ant-btn-primary mr-2">
-                      <TransactionIcon />
-                      <span> {t('invite.transfer')}</span>
-                    </AntBtn>
-                  </TransferDialog>
-                  {!comm?.withdraw_close && (
-                    <WithdrawDialog methods={comm?.withdraw_methods ?? []}>
-                      <AntBtn type="button" className="ant-btn">
-                        <PayCircleIcon />
-                        <span> {t('invite.withdraw_button')}</span>
-                      </AntBtn>
-                    </WithdrawDialog>
-                  )}
-                </div>
+                <span className="pb-1 text-sm font-medium text-muted-foreground">
+                  {comm?.currency}
+                </span>
               </div>
+              <p className="text-sm text-muted-foreground">{t('invite.available')}</p>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="row mb-3 mb-md-0">
-        <div className="col-md-12">
-          <div className={`block block-rounded js-appear-enabled ${loading ? 'block-mode-loading' : ''}`}>
-            <div className="block-content pb-3">
-              <StatRow
-                label={t('invite.registered')}
-                value={(
-                  <>
-                    {registered !== undefined ? registered : <LegacyLoadingIcon />}
-                    人
-                  </>
-                )}
-              />
-              <StatRow
-                label={
-                  isDistribution ? (
-                    <>
-                      {t('invite.triple_rate')}{' '}
-                      <LegacyTooltip title={t('invite.triple_hint')}>
-                        <QuestionCircleIcon />
-                      </LegacyTooltip>
-                    </>
-                  ) : (
-                    t('invite.commission_rate')
-                  )
-                }
-                value={commissionRate}
-              />
-              <StatRow
-                label={
-                  <>
-                    {t('invite.pending_commission')}{' '}
-                    <LegacyTooltip title={t('invite.pending_hint')}>
-                      <QuestionCircleIcon />
-                    </LegacyTooltip>
-                  </>
-                }
-                value={pendingCommission !== undefined ? `${symbol} ${pendingCommission / 100}` : undefined}
-              />
-              <StatRow
-                label={t('invite.valid_commission')}
-                value={validCommission !== undefined ? `${symbol} ${validCommission / 100}` : undefined}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="row mb-3 mb-md-0">
-        <div className="col-md-12">
-          <div className={`block block-rounded js-appear-enabled ${loading ? 'block-mode-loading' : ''}`}>
-            <div className="block-header block-header-default">
-              <h3 className="block-title">{t('invite.manage')}</h3>
-              <div className="block-options">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm btn-primary btn-rounded px-3"
-                  onClick={async () => {
-                    if (generate.isPending) return;
-                    try {
-                      await generate.mutateAsync();
-                      toast.success('已生成');
-                      void queryClient.invalidateQueries({ queryKey: userKeys.invite, exact: true });
-                    } catch {}
-                  }}
-                >
-                  {generate.isPending ? <LegacyLoadingIcon /> : t('invite.generate')}
-                </button>
-              </div>
-            </div>
-            <div className="block-content p-0">
-              <div className="ant-table-wrapper">
-                {/* antd v3 Table always wraps its content in Spin (loading defaults to
-                    false); with no loading prop the codes table never spins, so the
-                    spinner div / ant-spin-blur are absent — only the two static wrappers. */}
-                <div className="ant-spin-nested-loading">
-                  <div className="ant-spin-container">
-                    <div
-                      className={[
-                        'ant-table',
-                        'ant-table-default',
-                        codes.length ? '' : 'ant-table-empty',
-                        'ant-table-scroll-position-left',
-                      ].filter(Boolean).join(' ')}
-                    >
-                      <div className="ant-table-content">
-                        <div className="ant-table-body">
-                          <table className="">
-                            <colgroup>
-                              <col />
-                              <col />
-                            </colgroup>
-                            <thead className="ant-table-thead">
-                              <tr>
-                                <th className="">
-                                  <span className="ant-table-header-column">
-                                    <div>
-                                      <span className="ant-table-column-title">{t('invite.code_col')}</span>
-                                      <span className="ant-table-column-sorter" />
-                                    </div>
-                                  </span>
-                                </th>
-                                <th
-                                  className="ant-table-align-right ant-table-row-cell-last"
-                                  style={{ textAlign: 'right' }}
-                                >
-                                  <span className="ant-table-header-column">
-                                    <div>
-                                      <span className="ant-table-column-title">{t('invite.created_at_col')}</span>
-                                      <span className="ant-table-column-sorter" />
-                                    </div>
-                                  </span>
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="ant-table-tbody">
-                              {codes.map((code, index) => (
-                                <tr
-                                  className="ant-table-row ant-table-row-level-0"
-                                  data-row-key={index}
-                                  key={index}
-                                >
-                                  <td className="">
-                                    <span>{code.code}</span>
-                                    <a
-                                      style={{ marginLeft: 5 }}
-                                      ref={legacyHref()}
-                                      onClick={() => void copyInviteLink(code.code)}
-                                    >
-                                      {t('invite.invite_link')}
-                                    </a>
-                                  </td>
-                                  <td className="" style={{ textAlign: 'right' }}>
-                                    {formatUserLegacyDateMinuteSlash(code.created_at)}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        {codes.length === 0 && (
-                          <div className="ant-table-placeholder">
-                            <LegacyEmpty />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="row mb-3 mb-md-0">
-        <div className="col-md-12">
-          <div className={`block block-rounded js-appear-enabled ${loading ? 'block-mode-loading' : ''}`}>
-            <div className="block-header block-header-default">
-              <h3 className="block-title">{t('invite.history')}</h3>
-            </div>
-            <div className="block-content p-0">
-              <div className="ant-table-wrapper">
-                <div className="ant-spin-nested-loading">
-                  {detailsLoading && (
-                    <div>
-                      <div className="ant-spin ant-spin-spinning">
-                        <span className="ant-spin-dot ant-spin-dot-spin">
-                          <i className="ant-spin-dot-item" />
-                          <i className="ant-spin-dot-item" />
-                          <i className="ant-spin-dot-item" />
-                          <i className="ant-spin-dot-item" />
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  <div
-                    className={`ant-spin-container${detailsLoading ? ' ant-spin-blur' : ''}`}
+            <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
+              <TransferDialog max={available}>
+                <Button type="button" className="v2board-invite-transfer-trigger">
+                  <Send className="size-4" />
+                  {t('invite.transfer')}
+                </Button>
+              </TransferDialog>
+              {!comm?.withdraw_close && (
+                <WithdrawDialog methods={comm?.withdraw_methods ?? []}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="v2board-invite-withdraw-trigger"
                   >
-                    <div
-                      className={[
-                        'ant-table',
-                        'ant-table-default',
-                        detailRows.length ? '' : 'ant-table-empty',
-                        'ant-table-scroll-position-left',
-                      ].filter(Boolean).join(' ')}
-                    >
-                      <div className="ant-table-content">
-                        <div className="ant-table-body">
-                          <table className="">
-                            <colgroup>
-                              <col />
-                              <col />
-                            </colgroup>
-                            <thead className="ant-table-thead">
-                              <tr>
-                                <th className="">
-                                  <span className="ant-table-header-column">
-                                    <div>
-                                      <span className="ant-table-column-title">{t('invite.issued_at')}</span>
-                                      <span className="ant-table-column-sorter" />
-                                    </div>
-                                  </span>
-                                </th>
-                                <th
-                                  className="ant-table-align-right ant-table-row-cell-last"
-                                  style={{ textAlign: 'right' }}
-                                >
-                                  <span className="ant-table-header-column">
-                                    <div>
-                                      <span className="ant-table-column-title">{t('invite.commission_col')}</span>
-                                      <span className="ant-table-column-sorter" />
-                                    </div>
-                                  </span>
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="ant-table-tbody">
-                              {detailRows.map((row, index) => (
-                                <tr
-                                  className="ant-table-row ant-table-row-level-0"
-                                  data-row-key={index}
-                                  key={index}
-                                >
-                                  <td className="">
-                                    {formatUserLegacyDateMinuteSlash(row.created_at)}
-                                  </td>
-                                  <td className="" style={{ textAlign: 'right' }}>
-                                    {(row.get_amount / 100).toFixed(2)}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        {!detailRows.length && (
-                          <div className="ant-table-placeholder">
-                            <LegacyEmpty />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {detailPaginationItemTotal > 0 && (
-                      <InvitePagination
-                        current={detailPaginationCurrent}
-                        pageSize={pageSize ?? 10}
-                        total={detailPaginationItemTotal}
-                        onChange={(nextPage, nextPageSize) => {
-                          setPage(nextPage);
-                          setPageSize(nextPageSize);
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
-              </div>
+                    <WalletCards className="size-4" />
+                    {t('invite.withdraw_button')}
+                  </Button>
+                </WithdrawDialog>
+              )}
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
+
+        <Card className={cn('v2board-invite-stats-card', loading && 'opacity-80')}>
+          <CardContent className="grid gap-0 p-0 sm:grid-cols-2 xl:grid-cols-4">
+            <StatTile
+              icon={<Users className="size-4" />}
+              label={t('invite.registered')}
+              value={
+                registered !== undefined ? (
+                  <>
+                    {registered}人
+                  </>
+                ) : undefined
+              }
+            />
+            <StatTile
+              icon={<TrendingUp className="size-4" />}
+              label={
+                isDistribution ? (
+                  <HeaderTooltip title={t('invite.triple_hint')}>
+                    {t('invite.triple_rate')}
+                  </HeaderTooltip>
+                ) : (
+                  t('invite.commission_rate')
+                )
+              }
+              value={commissionRate}
+            />
+            <StatTile
+              icon={<WalletCards className="size-4" />}
+              label={
+                <HeaderTooltip title={t('invite.pending_hint')}>
+                  {t('invite.pending_commission')}
+                </HeaderTooltip>
+              }
+              value={
+                pendingCommission !== undefined
+                  ? `${symbol} ${pendingCommission / 100}`
+                  : undefined
+              }
+            />
+            <StatTile
+              icon={<WalletCards className="size-4" />}
+              label={t('invite.valid_commission')}
+              value={
+                validCommission !== undefined ? `${symbol} ${validCommission / 100}` : undefined
+              }
+            />
+          </CardContent>
+        </Card>
+
+        <Card className="v2board-invite-code-card overflow-hidden">
+          <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1.5">
+              <CardTitle>{t('invite.manage')}</CardTitle>
+              <CardDescription>{t('invite.invite_link')}</CardDescription>
+            </div>
+            <Button
+              type="button"
+              className="v2board-invite-generate"
+              loading={generate.isPending}
+              onClick={() => void generateInvite()}
+            >
+              <Plus className="size-4" />
+              {t('invite.generate')}
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ServiceTable
+              className="v2board-invite-code-table"
+              empty={codes.length === 0 ? emptyDescription : undefined}
+              headers={[
+                <span key="code">{t('invite.code_col')}</span>,
+                <span key="created" className="block text-right">
+                  {t('invite.created_at_col')}
+                </span>,
+              ]}
+            >
+              {codes.map((code, index) => (
+                <tr className="transition-colors hover:bg-muted/50" data-row-key={index} key={index}>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-foreground">{code.code}</span>
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="v2board-invite-copy-link h-auto p-0 text-sm"
+                        onClick={() => void copyInviteLink(code.code)}
+                      >
+                        <Copy className="size-3.5" />
+                        {t('invite.invite_link')}
+                      </Button>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 text-right text-muted-foreground">
+                    {formatUserLegacyDateMinuteSlash(code.created_at)}
+                  </td>
+                </tr>
+              ))}
+            </ServiceTable>
+          </CardContent>
+        </Card>
+
+        <Card className="v2board-invite-history-card overflow-hidden">
+          <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1.5">
+              <CardTitle>{t('invite.history')}</CardTitle>
+              <CardDescription>{t('invite.commission_col')}</CardDescription>
+            </div>
+            {detailsLoading ? (
+              <div
+                className="flex items-center gap-2 text-sm text-muted-foreground"
+                role="status"
+              >
+                <Spinner className="size-4" />
+                <span>Loading...</span>
+              </div>
+            ) : null}
+          </CardHeader>
+          <CardContent className="p-0">
+            <ServiceTable
+              className="v2board-invite-history-table"
+              empty={!detailRows.length ? emptyDescription : undefined}
+              headers={[
+                <span key="issued">{t('invite.issued_at')}</span>,
+                <span key="commission" className="block text-right">
+                  {t('invite.commission_col')}
+                </span>,
+              ]}
+            >
+              {detailRows.map((row, index) => (
+                <tr className="transition-colors hover:bg-muted/50" data-row-key={index} key={index}>
+                  <td className="px-4 py-4 text-muted-foreground">
+                    {formatUserLegacyDateMinuteSlash(row.created_at)}
+                  </td>
+                  <td className="px-4 py-4 text-right font-medium text-foreground">
+                    {(row.get_amount / 100).toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+            </ServiceTable>
+            {detailPaginationItemTotal > 0 && (
+              <InvitePagination
+                current={detailPaginationCurrent}
+                pageSize={pageSize ?? 10}
+                total={detailPaginationItemTotal}
+                onChange={(nextPage, nextPageSize) => {
+                  setPage(nextPage);
+                  setPageSize(nextPageSize);
+                }}
+              />
+            )}
+          </CardContent>
+        </Card>
       </div>
-    </>
+    </TooltipProvider>
   );
 }
 
-function StatRow({ label, value }: { label: ReactNode; value?: ReactNode }) {
+function StatTile({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: ReactNode;
+  value?: ReactNode;
+}) {
   return (
-    <div style={{ display: 'flex', padding: '5px 0' }}>
-      <div style={{ flex: 1 }}>{label}</div>
-      <div style={{ flex: 1, textAlign: 'right' }}>{value ?? <LegacyLoadingIcon />}</div>
+    <div className="flex min-h-28 flex-col justify-between gap-4 border-b border-border p-5 last:border-b-0 sm:[&:nth-child(odd)]:border-r xl:border-b-0 xl:border-r xl:last:border-r-0">
+      <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+        <span className="inline-flex min-w-0 items-center gap-2">
+          <span className="text-muted-foreground">{icon}</span>
+          <span className="min-w-0 truncate">{label}</span>
+        </span>
+      </div>
+      <div className="min-h-7 text-right text-2xl font-semibold tracking-tight text-foreground">
+        {value ?? <Spinner className="ml-auto size-5 text-muted-foreground" />}
+      </div>
+    </div>
+  );
+}
+
+function HeaderTooltip({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="v2board-service-tooltip-trigger inline-flex cursor-help items-center gap-1">
+          {children}
+          <CircleHelp className="size-3.5" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{title}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ServiceTable({
+  children,
+  className,
+  empty,
+  headers,
+}: {
+  children: ReactNode;
+  className: string;
+  empty?: string;
+  headers: ReactNode[];
+}) {
+  return (
+    <div className="v2board-invite-table-scroll overflow-x-auto">
+      <table className={cn('v2board-invite-table w-full min-w-[620px] text-sm', className)}>
+        <thead className="border-y border-border bg-muted/50 text-muted-foreground">
+          <tr>
+            {headers.map((header, index) => (
+              <th
+                className={cn('px-4 py-3 font-medium', index === 0 ? 'text-left' : 'text-right')}
+                key={index}
+              >
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {empty ? (
+            <tr className="v2board-invite-empty">
+              <td className="px-4 py-14 text-center text-sm text-muted-foreground" colSpan={2}>
+                {empty}
+              </td>
+            </tr>
+          ) : (
+            children
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -424,9 +424,6 @@ function InvitePagination({
   // so total=0 renders its disabled "0" pager instead of an active page 1.
   const totalPages = Math.floor((total - 1) / pageSize) + 1;
   const items = getPaginationItems(current, totalPages);
-  const runIfEnter = (event: { key?: string; charCode?: number }, action: () => void) => {
-    if (event.key === 'Enter' || event.charCode === 13) action();
-  };
   const jumpPage = (item: 'jump-prev' | 'jump-next') =>
     item === 'jump-prev' ? Math.max(1, current - 5) : Math.min(totalPages, current + 5);
   const changePage = (targetPage: number) => {
@@ -443,115 +440,87 @@ function InvitePagination({
   };
 
   return (
-    <ul
-      // rc-pagination stamps the legacy IE `unselectable="unselectable"` on its <ul>;
-      // React's DOM types only allow "on"/"off", so set the exact attribute via a ref.
-      ref={(node) => {
-        if (node) node.setAttribute('unselectable', 'unselectable');
-      }}
-      className="ant-table-pagination ant-pagination mini"
-    >
-      <li
-        title={t('common.prev_page')}
-        className={`ant-pagination-prev ${current <= 1 ? 'ant-pagination-disabled' : ''}`}
-        aria-disabled={current <= 1}
-        tabIndex={current <= 1 ? undefined : 0}
-        onClick={goPrev}
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-        onKeyPress={(event) => runIfEnter(event, goPrev)}
+    <div className="v2board-invite-pagination flex flex-col gap-3 border-t border-border p-4 sm:flex-row sm:items-center sm:justify-end">
+      <div className="flex flex-wrap items-center gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={t('common.prev_page')}
+          disabled={current <= 1}
+          onClick={goPrev}
+        >
+          <ChevronLeft className="size-4" />
+        </Button>
+        {items.map((item) =>
+          typeof item === 'number' ? (
+            <Button
+              type="button"
+              variant={item === current ? 'default' : 'ghost'}
+              size="sm"
+              className={cn('v2board-invite-page', `v2board-invite-page-${item}`)}
+              aria-current={item === current ? 'page' : undefined}
+              disabled={item === 0}
+              key={item}
+              onClick={() => changePage(item)}
+            >
+              {item}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={item === 'jump-prev' ? t('common.prev_5') : t('common.next_5')}
+              key={item}
+              onClick={() => onChange(jumpPage(item), pageSize)}
+            >
+              {item === 'jump-prev' ? (
+                <ChevronsLeft className="size-4" />
+              ) : (
+                <ChevronsRight className="size-4" />
+              )}
+            </Button>
+          ),
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={t('common.next_page')}
+          disabled={current >= totalPages}
+          onClick={goNext}
+        >
+          <ChevronRight className="size-4" />
+        </Button>
+      </div>
+      <Select
+        value={String(pageSize)}
+        onValueChange={(value) => {
+          const ps = Number.parseInt(value, 10);
+          const nextTotalPages = Math.floor((total - 1) / ps) + 1;
+          onChange(nextTotalPages === 0 ? current : Math.min(current, nextTotalPages), ps);
+        }}
       >
-        <a className="ant-pagination-item-link">
-          <LeftIcon />
-        </a>
-      </li>
-      {items.map((item, index) =>
-        typeof item === 'number' ? (
-          <li
-            key={item}
-            title={String(item)}
-            tabIndex={0}
-            // antd marks the windowed item adjacent to each ellipsis so the media
-            // query at ≤992px (`.ant-pagination-item-{after-jump-prev,before-jump-next}`)
-            // can hide it on narrow screens.
-            className={[
-              'ant-pagination-item',
-              `ant-pagination-item-${item}`,
-              item === current && 'ant-pagination-item-active',
-              item === 0 && 'ant-pagination-disabled ant-pagination-item-disabled',
-              items[index - 1] === 'jump-prev' && 'ant-pagination-item-after-jump-prev',
-              items[index + 1] === 'jump-next' && 'ant-pagination-item-before-jump-next',
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            onClick={() => changePage(item)}
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-            onKeyPress={(event) => runIfEnter(event, () => changePage(item))}
-          >
-            <a>{item}</a>
-          </li>
-        ) : (
-          <li
-            key={item}
-            title={item === 'jump-prev' ? t('common.prev_5') : t('common.next_5')}
-            tabIndex={0}
-            className={`ant-pagination-jump-${item === 'jump-prev' ? 'prev' : 'next'}`}
-            onClick={() => onChange(jumpPage(item), pageSize)}
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-            onKeyPress={(event) => runIfEnter(event, () => onChange(jumpPage(item), pageSize))}
-          >
-            <a className="ant-pagination-item-link">
-              <div className="ant-pagination-item-container">
-                {item === 'jump-prev' ? (
-                  <DoubleLeftIcon className="ant-pagination-item-link-icon" />
-                ) : (
-                  <DoubleRightIcon className="ant-pagination-item-link-icon" />
-                )}
-                <span className="ant-pagination-item-ellipsis">•••</span>
-              </div>
-            </a>
-          </li>
-        ),
-      )}
-      <li
-        title={t('common.next_page')}
-        className={`ant-pagination-next ${current >= totalPages ? 'ant-pagination-disabled' : ''}`}
-        aria-disabled={current >= totalPages}
-        tabIndex={current >= totalPages ? undefined : 0}
-        onClick={goNext}
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-        onKeyPress={(event) => runIfEnter(event, goNext)}
-      >
-        <a className="ant-pagination-item-link">
-          <RightIcon />
-        </a>
-      </li>
-      <li className="ant-pagination-options">
-        <LegacySelect
-          // size="small" Pagination → ant-select-sm. rc-pagination feeds the Select a
-          // string value (`String(pageSize)`) but keys its options by the numeric
-          // pageSizeOptions, so antd never matches the two: the trigger shows the bare
-          // size while the menu shows "N 条/页".
-          className="ant-pagination-options-size-changer"
-          size="small"
-          value={String(pageSize)}
-          dropdownMatchSelectWidth={false}
-          getPopupContainer={(trigger) => trigger.parentElement}
-          options={[10, 50, 100, 150].map((size) => ({
-            value: size,
-            label: `${size} ${t('common.items_per_page')}`,
-          }))}
-          onChange={(value) => {
-            const ps = Number.parseInt(String(value), 10);
-            const nextTotalPages = Math.floor((total - 1) / ps) + 1;
-            onChange(nextTotalPages === 0 ? current : Math.min(current, nextTotalPages), ps);
-          }}
-        />
-      </li>
-    </ul>
+        <SelectTrigger className="v2board-invite-page-size h-9 w-full sm:w-36">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent align="end">
+          {[10, 50, 100, 150].map((size) => (
+            <SelectItem key={size} value={String(size)}>
+              {size} {t('common.items_per_page')}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
-function getPaginationItems(current: number, totalPages: number): Array<number | 'jump-prev' | 'jump-next'> {
+function getPaginationItems(
+  current: number,
+  totalPages: number,
+): Array<number | 'jump-prev' | 'jump-next'> {
   if (totalPages === 0) return [0];
   if (totalPages <= 9) return Array.from({ length: totalPages }, (_, index) => index + 1);
 

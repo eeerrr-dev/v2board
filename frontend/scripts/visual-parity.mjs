@@ -357,7 +357,8 @@ const scenarios = [
     authenticated: true,
     label: 'user-invite',
     path: '/#/invite',
-    readySelector: '.ant-pagination',
+    readySelector: '.v2board-invite-surface, .ant-pagination',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -785,7 +786,8 @@ const scenarios = [
     label: 'user-invite-zh-tw',
     locale: 'zh-TW',
     path: '/#/invite',
-    readySelector: '.ant-pagination',
+    readySelector: '.v2board-invite-surface, .ant-pagination',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -892,7 +894,8 @@ const scenarios = [
     label: 'user-invite-en-us',
     locale: 'en-US',
     path: '/#/invite',
-    readySelector: '.ant-pagination',
+    readySelector: '.v2board-invite-surface, .ant-pagination',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1156,7 +1159,8 @@ const scenarios = [
     label: 'user-invite-ja-jp',
     locale: 'ja-JP',
     path: '/#/invite',
-    readySelector: '.ant-pagination',
+    readySelector: '.v2board-invite-surface, .ant-pagination',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1420,7 +1424,8 @@ const scenarios = [
     label: 'user-invite-vi-vn',
     locale: 'vi-VN',
     path: '/#/invite',
-    readySelector: '.ant-pagination',
+    readySelector: '.v2board-invite-surface, .ant-pagination',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1684,7 +1689,8 @@ const scenarios = [
     label: 'user-invite-ko-kr',
     locale: 'ko-KR',
     path: '/#/invite',
-    readySelector: '.ant-pagination',
+    readySelector: '.v2board-invite-surface, .ant-pagination',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -6014,7 +6020,7 @@ async function runUserKnowledgeExtremeContentMatrixInteraction(page) {
 
 async function runInviteGenerateInteraction(page) {
   const before = await inviteState(page);
-  await clickFirstVisible(page, '.block-header .block-options .btn');
+  await clickFirstVisible(page, '.v2board-invite-generate, .block-header .block-options .btn');
   await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
@@ -6028,17 +6034,17 @@ async function runInviteTransferModalInteraction(page) {
   const initialInfoFetchCount = page.__visualParityUserInfoFetchCount ?? 0;
   const before = await inviteFinanceDialogState(page);
   await clickFirstVisibleText(page, 'button, .ant-btn', ['划转', 'Transfer']);
-  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector('.v2board-invite-dialog, .ant-modal', { state: 'visible', timeout: 5_000 });
   await page.waitForTimeout(100);
   const opened = await inviteFinanceDialogState(page);
-  await fillVisibleAt(page, '.ant-modal input:not([disabled])', 0, '12.34');
+  await fillVisibleAt(page, '.v2board-invite-dialog input:not([disabled]), .ant-modal input:not([disabled])', 0, '12.34');
   await page.waitForTimeout(100);
   const filled = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
   await page.waitForTimeout(100);
   const saving = await inviteFinanceDialogState(page);
   await waitForPagePropertyAtLeast(page, '__visualParityUserTransferCount', 1);
-  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await waitForVisibleElementsHidden(page, '.v2board-invite-dialog, .ant-modal');
   await page.waitForTimeout(250);
   const closed = await inviteFinanceDialogState(page);
   return {
@@ -6057,13 +6063,13 @@ async function runInviteTransferFailureInteraction(page) {
   const initialTransferCount = page.__visualParityUserTransferCount ?? 0;
   const before = await inviteFinanceDialogState(page);
   await clickFirstVisibleText(page, 'button, .ant-btn', ['划转', 'Transfer']);
-  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector('.v2board-invite-dialog, .ant-modal', { state: 'visible', timeout: 5_000 });
   await page.waitForTimeout(100);
   const opened = await inviteFinanceDialogState(page);
-  await fillVisibleAt(page, '.ant-modal input:not([disabled])', 0, '99999.99');
+  await fillVisibleAt(page, '.v2board-invite-dialog input:not([disabled]), .ant-modal input:not([disabled])', 0, '99999.99');
   await page.waitForTimeout(100);
   const filled = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
   await page.waitForTimeout(100);
   const saving = await inviteFinanceDialogState(page);
   await waitForPagePropertyAtLeast(
@@ -6090,22 +6096,22 @@ async function runInviteWithdrawModalInteraction(page) {
     '推广佣金提现',
     'Invitation Commission Withdrawal',
   ]);
-  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector('.v2board-invite-dialog, .ant-modal', { state: 'visible', timeout: 5_000 });
   await page.waitForTimeout(100);
   const _opened = await inviteFinanceDialogState(page);
-  await clickFirstVisible(page, '.ant-modal .ant-select-selection');
-  await page.waitForSelector('.ant-select-dropdown-menu-item', {
+  await clickFirstVisible(page, '.v2board-invite-select-trigger, .ant-modal .ant-select-selection');
+  await page.waitForSelector('.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForTimeout(100);
   const dropdown = await inviteFinanceDialogState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Alipay']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
-  await fillVisibleAt(page, '.ant-modal input.ant-input', 0, 'parity-account@example.com');
+  await clickFirstVisibleText(page, '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item', ['Alipay']);
+  await waitForVisibleElementsHidden(page, '.v2board-invite-select-content, .ant-select-dropdown');
+  await fillVisibleAt(page, '.v2board-invite-dialog input:not([disabled]), .ant-modal input.ant-input', 0, 'parity-account@example.com');
   await page.waitForTimeout(100);
   const filled = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
   await page.waitForTimeout(100);
   const saving = await inviteFinanceDialogState(page);
   await waitForPagePropertyAtLeast(page, '__visualParityUserWithdrawCount', 1);
@@ -6129,15 +6135,15 @@ async function runInviteFinanceSubmitMatrixInteraction(page) {
   const before = await inviteFinanceDialogState(page);
 
   await clickFirstVisibleText(page, 'button, .ant-btn', ['划转', 'Transfer']);
-  await waitForVisibleElementCountAtLeast(page, '.ant-modal', 1);
+  await waitForVisibleElementCountAtLeast(page, '.v2board-invite-dialog, .ant-modal', 1);
   const transferEmptyOpened = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserTransferCount',
     initialTransferCount + 1,
   );
-  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await waitForVisibleElementsHidden(page, '.v2board-invite-dialog, .ant-modal');
   await page.waitForTimeout(250);
   const transferEmptyClosed = await inviteFinanceDialogState(page);
 
@@ -6145,16 +6151,20 @@ async function runInviteFinanceSubmitMatrixInteraction(page) {
     '推广佣金提现',
     'Invitation Commission Withdrawal',
   ]);
-  await waitForVisibleElementCountAtLeast(page, '.ant-modal', 1);
+  await waitForVisibleElementCountAtLeast(page, '.v2board-invite-dialog, .ant-modal', 1);
   const withdrawOpened = await inviteFinanceDialogState(page);
-  await clickFirstVisible(page, '.ant-modal .ant-select-selection');
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Alipay');
+  await clickFirstVisible(page, '.v2board-invite-select-trigger, .ant-modal .ant-select-selection');
+  await waitForVisibleText(
+    page,
+    '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item',
+    'Alipay',
+  );
   const withdrawDropdown = await inviteFinanceDialogState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Alipay']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
-  await fillVisibleAt(page, '.ant-modal input.ant-input', 0, 'fail-account');
+  await clickFirstVisibleText(page, '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item', ['Alipay']);
+  await waitForVisibleElementsHidden(page, '.v2board-invite-select-content, .ant-select-dropdown');
+  await fillVisibleAt(page, '.v2board-invite-dialog input:not([disabled]), .ant-modal input.ant-input', 0, 'fail-account');
   const withdrawFailureFilled = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserWithdrawCount',
@@ -6162,21 +6172,25 @@ async function runInviteFinanceSubmitMatrixInteraction(page) {
   );
   await page.waitForTimeout(350);
   const withdrawFailed = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 0);
-  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 0);
+  await waitForVisibleElementsHidden(page, '.v2board-invite-dialog, .ant-modal');
 
   await clickFirstVisibleText(page, 'button, .ant-btn', [
     '推广佣金提现',
     'Invitation Commission Withdrawal',
   ]);
-  await waitForVisibleElementCountAtLeast(page, '.ant-modal', 1);
-  await clickFirstVisible(page, '.ant-modal .ant-select-selection');
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'USDT');
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['USDT']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
-  await fillVisibleAt(page, '.ant-modal input.ant-input', 0, 'success-account');
+  await waitForVisibleElementCountAtLeast(page, '.v2board-invite-dialog, .ant-modal', 1);
+  await clickFirstVisible(page, '.v2board-invite-select-trigger, .ant-modal .ant-select-selection');
+  await waitForVisibleText(
+    page,
+    '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item',
+    'USDT',
+  );
+  await clickFirstVisibleText(page, '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item', ['USDT']);
+  await waitForVisibleElementsHidden(page, '.v2board-invite-select-content, .ant-select-dropdown');
+  await fillVisibleAt(page, '.v2board-invite-dialog input:not([disabled]), .ant-modal input.ant-input', 0, 'success-account');
   const withdrawSuccessFilled = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserWithdrawCount',
@@ -6203,7 +6217,10 @@ async function runInviteFinanceSubmitMatrixInteraction(page) {
 }
 
 async function runUserInviteTooltipsInteraction(page) {
-  return hoverAllTooltipTargetsInteraction(page, ['.anticon-question-circle']);
+  return hoverAllTooltipTargetsInteraction(page, [
+    '.v2board-invite-surface .v2board-service-tooltip-trigger',
+    '.anticon-question-circle',
+  ]);
 }
 
 async function runUserTicketReplySendInteraction(page) {
@@ -9650,7 +9667,18 @@ function normalizeInteractionResult(label, result) {
   if (label === 'user-node-table-scroll' || label === 'user-traffic-table-scroll') {
     return normalizeServiceTableScrollInteractionResult(normalized);
   }
-  if (label === 'user-node-tooltips') {
+  if (
+    [
+      'user-invite-generate',
+      'user-invite-transfer-modal',
+      'user-invite-transfer-insufficient-balance',
+      'user-invite-withdraw-modal',
+      'user-invite-finance-submit-matrix',
+    ].includes(label)
+  ) {
+    return normalizeInviteInteractionResult(normalized);
+  }
+  if (label === 'user-node-tooltips' || label === 'user-invite-tooltips') {
     return normalizeTooltipSequenceInteractionResult(normalized);
   }
   if (label === 'user-traffic-total-tooltip') {
@@ -9821,6 +9849,89 @@ function normalizeTooltipInteractionText(value) {
   const left = text.slice(0, middle);
   const right = text.slice(middle);
   return left && left === right ? left : text;
+}
+
+function normalizeInviteInteractionResult(result) {
+  return Object.fromEntries(
+    Object.entries(result ?? {}).map(([key, value]) => [
+      key,
+      normalizeInviteInteractionValue(key, value),
+    ]),
+  );
+}
+
+function normalizeInviteInteractionValue(_key, value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeInviteInteractionValue('', item));
+  }
+  if (!value || typeof value !== 'object') return value;
+  if (looksLikeInviteInteractionState(value)) {
+    return normalizeInviteInteractionState(value);
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      key,
+      normalizeInviteInteractionValue(key, nested),
+    ]),
+  );
+}
+
+function looksLikeInviteInteractionState(value) {
+  return [
+    'buttons',
+    'dropdownItems',
+    'generateButton',
+    'inputValues',
+    'labels',
+    'modalCount',
+    'statBlocks',
+    'tableRows',
+    'titles',
+    'toastTexts',
+  ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function normalizeInviteInteractionState(state) {
+  const { selectedValues: _selectedValues, ...rest } = state;
+  const normalized = { ...rest };
+  if ('buttons' in normalized) normalized.buttons = normalizeInviteTextArray(normalized.buttons);
+  if ('dropdownItems' in normalized) {
+    normalized.dropdownItems = normalizeInviteTextArray(normalized.dropdownItems);
+  }
+  if ('generateButton' in normalized) {
+    normalized.generateButton = normalizeInviteButtonState(normalized.generateButton);
+  }
+  if ('inputValues' in normalized) {
+    normalized.inputValues = normalizeInviteTextArray(normalized.inputValues);
+  }
+  if ('labels' in normalized) normalized.labels = normalizeInviteTextArray(normalized.labels);
+  if ('statBlocks' in normalized) {
+    normalized.statBlocks = normalizeInviteTextArray(normalized.statBlocks, { compact: true });
+  }
+  if ('tableRows' in normalized) normalized.tableRows = normalizeInviteTextArray(normalized.tableRows);
+  if ('titles' in normalized) normalized.titles = normalizeInviteTextArray(normalized.titles);
+  if ('toastTexts' in normalized) {
+    normalized.toastTexts = normalizeInviteTextArray(normalized.toastTexts);
+  }
+  return normalized;
+}
+
+function normalizeInviteButtonState(button) {
+  if (!button || typeof button !== 'object') return button;
+  return {
+    ariaChecked: button.ariaChecked,
+    checked: button.checked,
+    disabled: button.disabled,
+    text: normalizeParityText(button.text),
+    value: button.value,
+  };
+}
+
+function normalizeInviteTextArray(values, options = {}) {
+  return (values ?? []).map((value) => {
+    const text = normalizeParityText(value);
+    return options.compact ? text.replace(/\s+/g, '') : text;
+  });
 }
 
 function normalizeRedesignedFetchFailureInteractionResult(label, result) {
@@ -13723,24 +13834,40 @@ async function profileChangePasswordState(page) {
 
 async function inviteState(page) {
   return {
-    generateButton: await firstElementState(page, '.block-header .block-options .btn'),
-    statBlocks: await visibleTexts(page, '.block-content.pb-3', 4),
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 10),
+    generateButton: await firstElementState(page, '.v2board-invite-generate, .block-header .block-options .btn'),
+    statBlocks: await visibleTexts(
+      page,
+      '.v2board-invite-summary-card, .v2board-invite-stats-card, .block-content.pb-3',
+      4,
+    ),
+    tableRows: await visibleTexts(page, '.v2board-invite-table tbody tr, .ant-table-tbody tr', 10),
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
 async function inviteFinanceDialogState(page) {
   return {
-    buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
-    dropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 8),
+    buttons: await visibleTexts(
+      page,
+      '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn',
+      4,
+    ),
+    dropdownItems: await visibleTexts(
+      page,
+      '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item',
+      8,
+    ),
     hash: await page.evaluate(() => window.location.hash),
-    inputValues: await visibleInputValues(page, '.ant-modal input'),
-    labels: await visibleTexts(page, '.ant-modal .form-group label', 8),
-    modalCount: await visibleCount(page, '.ant-modal'),
-    selectedValues: await visibleTexts(page, '.ant-modal .ant-select-selection-selected-value', 4),
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 4),
-    titles: await visibleTexts(page, '.ant-modal-title', 2),
+    inputValues: await visibleInputValues(page, '.v2board-invite-dialog input, .ant-modal input'),
+    labels: await visibleTexts(page, '.v2board-invite-dialog label, .ant-modal .form-group label', 8),
+    modalCount: await visibleCount(page, '.v2board-invite-dialog, .ant-modal'),
+    selectedValues: await visibleTexts(
+      page,
+      '.v2board-invite-select-trigger, .ant-modal .ant-select-selection-selected-value',
+      4,
+    ),
+    tableRows: await visibleTexts(page, '.v2board-invite-table tbody tr, .ant-table-tbody tr', 4),
+    titles: await visibleTexts(page, '.v2board-invite-dialog-title, .ant-modal-title', 2),
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
   };
 }

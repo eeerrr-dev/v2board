@@ -151,24 +151,25 @@ function resetMocks() {
   mocks.userInfo = { commission_balance: 12345 };
 }
 
-describe('InvitePage bundled-theme markup', () => {
+describe('InvitePage shadcn surface', () => {
   beforeEach(resetMocks);
 
-  it('renders the old commission summary, stats, code table, and history table shell', () => {
+  it('renders the shadcn commission summary, stats, code table, and history table shell', () => {
     mocks.inviteCodes = [{ code: 'ABC123', created_at: 1_700_000_000 }];
     mocks.detailRows = [{ created_at: 1_700_000_600, get_amount: 1234 }];
     mocks.detailsTotal = 1;
 
     const html = renderToStaticMarkup(<InvitePage />);
 
-    expect(html).toContain('class="row mb-3 mb-md-0"');
-    expect(html).toContain('class="block block-rounded js-appear-enabled "');
-    expect(html).toContain('fa fa-user-plus fa-2x text-gray-light float-right');
+    expect(html).toContain('v2board-invite-summary-card');
+    expect(html).toContain('v2board-invite-stats-card');
+    expect(html).toContain('v2board-invite-code-card');
+    expect(html).toContain('v2board-invite-history-card');
     expect(html).toContain('我的邀请');
     expect(html).toContain('123.45');
     expect(html).toContain('CNY');
     expect(html).toContain('当前剩余佣金');
-    expect(html).toContain('ant-btn ant-btn-primary mr-2');
+    expect(html).toContain('v2board-invite-transfer-trigger');
     expect(html).toContain('划转');
     expect(html).not.toContain('推广佣金提现');
     expect(html).toContain('已注册用户数');
@@ -181,9 +182,8 @@ describe('InvitePage bundled-theme markup', () => {
     expect(html).toContain('¥ 23.45');
     expect(html).toContain('邀请码管理');
     expect(html).toContain('生成邀请码');
-    expect(html).toContain('ant-table-scroll-position-left');
-    expect(html.match(/<table class="">/g)).toHaveLength(2);
-    expect(html).toContain('<th class=""><span class="ant-table-header-column">');
+    expect(html).toContain('v2board-invite-code-table');
+    expect(html).toContain('v2board-invite-history-table');
     expect(html).toContain('ABC123');
     expect(html).toContain('复制链接');
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
@@ -193,15 +193,17 @@ describe('InvitePage bundled-theme markup', () => {
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_600));
     expect(html).toContain('12.34');
     expect(html.match(/data-row-key="0"/g)).toHaveLength(2);
+    expect(html).not.toContain('block block-rounded');
+    expect(html).not.toContain('ant-table-wrapper');
   });
 
-  it('keeps bundled antd fallback row keys as index DOM attributes', () => {
+  it('keeps invite table row keys as index DOM attributes', () => {
     expect(inviteSource).toContain('data-row-key={index}');
     expect(inviteSource).not.toContain('data-row-key={code.code}');
     expect(inviteSource).not.toContain('data-row-key={row.created_at}');
   });
 
-  it('renders the old distribution-rate branch and withdraw button when enabled', () => {
+  it('renders the distribution-rate branch and withdraw button when enabled', () => {
     mocks.comm = {
       ...mocks.comm,
       commission_distribution_enable: 1,
@@ -213,26 +215,29 @@ describe('InvitePage bundled-theme markup', () => {
     expect(html).toContain('三级分销比例');
     expect(html).toContain('6%,3.5999999999999996%,2.4%');
     expect(html).toContain('推广佣金提现');
+    expect(html).toContain('v2board-invite-withdraw-trigger');
   });
 
-  it('marks every invite block as loading while invite/fetch is pending', () => {
+  it('keeps loading state in the shadcn cards while invite/fetch is pending', () => {
     mocks.inviteFetching = true;
 
     const html = renderToStaticMarkup(<InvitePage />);
 
-    expect(html.match(/block-mode-loading/g)).toHaveLength(4);
+    expect(html).toContain('v2board-invite-stats-card');
+    expect(html).toContain('opacity-80');
+    expect(html).not.toContain('block-mode-loading');
   });
 });
 
-describe('InvitePage bundled-theme pagination', () => {
+describe('InvitePage shadcn pagination', () => {
   beforeEach(resetMocks);
 
   it('omits table pagination for an empty commission history', () => {
     const html = renderToStaticMarkup(<InvitePage />);
 
-    expect(html).not.toContain('class="ant-table-pagination ant-pagination mini"');
-    expect(html).not.toContain('ant-pagination-item-0');
-    expect(html).not.toContain('ant-pagination-options-size-changer');
+    expect(html).not.toContain('v2board-invite-pagination');
+    expect(html).not.toContain('v2board-invite-page-0');
+    expect(html).not.toContain('v2board-invite-page-size');
   });
 
   it('shows table pagination when commission history has rows', () => {
@@ -241,9 +246,9 @@ describe('InvitePage bundled-theme pagination', () => {
 
     const html = renderToStaticMarkup(<InvitePage />);
 
-    expect(html).toContain('class="ant-table-pagination ant-pagination mini"');
-    expect(html).toContain('ant-pagination-item-1');
-    expect(html).toContain('ant-pagination-options-size-changer');
+    expect(html).toContain('v2board-invite-pagination');
+    expect(html).toContain('v2board-invite-page-1');
+    expect(html).toContain('v2board-invite-page-size');
   });
 
   it('does not blur the commission history table before the mount details dispatch equivalent', () => {
@@ -251,12 +256,13 @@ describe('InvitePage bundled-theme pagination', () => {
 
     const html = renderToStaticMarkup(<InvitePage />);
 
+    expect(html).not.toContain('Loading...');
     expect(html).not.toContain('ant-spin-spinning');
     expect(html).not.toContain('ant-spin-blur');
   });
 });
 
-describe('InvitePage bundled-theme actions', () => {
+describe('InvitePage shadcn actions', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -284,11 +290,9 @@ describe('InvitePage bundled-theme actions', () => {
     mocks.inviteCodes = [{ code: 'ABC123', created_at: 1_700_000_000 }];
     await renderInvite();
 
-    const copy = Array.from(container.querySelectorAll('a')).find(
-      (anchor) => anchor.textContent === '复制链接',
+    const copy = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '复制链接',
     )!;
-
-    expect(copy.getAttribute('href')).toBe('javascript:void(0);');
 
     await act(async () => {
       copy.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -304,9 +308,7 @@ describe('InvitePage bundled-theme actions', () => {
   it('generates a code once, shows the old hard-coded success toast, and refetches invite data', async () => {
     await renderInvite();
 
-    const generate = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '生成邀请码',
-    )!;
+    const generate = container.querySelector<HTMLButtonElement>('.v2board-invite-generate')!;
 
     await act(async () => {
       generate.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -329,11 +331,10 @@ describe('InvitePage bundled-theme actions', () => {
     mocks.generateIsPending = true;
     await renderInvite();
 
-    const generate = container.querySelector<HTMLButtonElement>(
-      '.btn.btn-primary.btn-sm.btn-primary.btn-rounded.px-3',
-    )!;
+    const generate = container.querySelector<HTMLButtonElement>('.v2board-invite-generate')!;
 
-    expect(generate.innerHTML).toContain('anticon-loading');
+    expect(generate.disabled).toBe(true);
+    expect(generate.getAttribute('aria-busy')).toBe('true');
 
     await act(async () => {
       generate.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -349,7 +350,7 @@ describe('InvitePage bundled-theme actions', () => {
 
     await renderInvite();
 
-    const pageTwo = container.querySelector<HTMLLIElement>('.ant-pagination-item-2')!;
+    const pageTwo = container.querySelector<HTMLButtonElement>('.v2board-invite-page-2')!;
 
     await act(async () => {
       pageTwo.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -357,31 +358,47 @@ describe('InvitePage bundled-theme actions', () => {
     });
 
     expect(pageTwo.textContent).toBe('2');
-    expect(container.innerHTML).toContain('ant-pagination-item-2 ant-pagination-item-active');
+    expect(
+      container.querySelector<HTMLButtonElement>('.v2board-invite-page-2')?.getAttribute(
+        'aria-current',
+      ),
+    ).toBe('page');
     expect(mocks.detailQueryCalls.at(-1)).toEqual({ current: 2, pageSize: 10 });
   });
 
-  it('clamps the visible commission-history page like the old Table getMaxCurrent helper', async () => {
+  it('clamps the visible commission-history page like the legacy pagination helper', async () => {
     mocks.detailRows = [{ created_at: 1_700_000_600, get_amount: 1234 }];
     mocks.detailsTotal = 45;
 
     await renderInvite();
 
-    const pageFour = container.querySelector<HTMLLIElement>('.ant-pagination-item-4')!;
+    const pageFour = container.querySelector<HTMLButtonElement>('.v2board-invite-page-4')!;
 
     await act(async () => {
       pageFour.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(container.innerHTML).toContain('ant-pagination-item-4 ant-pagination-item-active');
+    expect(
+      container.querySelector<HTMLButtonElement>('.v2board-invite-page-4')?.getAttribute(
+        'aria-current',
+      ),
+    ).toBe('page');
     expect(mocks.detailQueryCalls.at(-1)).toEqual({ current: 4, pageSize: 10 });
 
     mocks.detailsTotal = 25;
 
     await renderInvite();
 
-    expect(container.innerHTML).toContain('ant-pagination-item-3 ant-pagination-item-active');
-    expect(container.innerHTML).not.toContain('ant-pagination-item-4 ant-pagination-item-active');
+    expect(
+      container.querySelector<HTMLButtonElement>('.v2board-invite-page-3')?.getAttribute(
+        'aria-current',
+      ),
+    ).toBe('page');
+    expect(
+      container.querySelector<HTMLButtonElement>('.v2board-invite-page-4')?.getAttribute(
+        'aria-current',
+      ),
+    ).toBeUndefined();
   });
 });

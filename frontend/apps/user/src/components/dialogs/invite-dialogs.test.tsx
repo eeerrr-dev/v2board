@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act } from 'react';
-import type { CSSProperties } from 'react';
+import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TransferDialog } from './transfer-dialog';
@@ -66,42 +66,39 @@ vi.mock('@/lib/queries', () => ({
     info: ['user', 'info'],
   },
   useTransferMutation: () => ({
+    isPending: false,
     mutateAsync: mocks.transferMutateAsync,
   }),
   useWithdrawCommissionMutation: () => ({
+    isPending: false,
     mutateAsync: mocks.withdrawMutateAsync,
   }),
 }));
 
-vi.mock('@/components/legacy-select', () => ({
-  LegacySelect: ({
-    onChange,
-    options,
-    placeholder,
-    style,
+vi.mock('@/components/ui/select', () => ({
+  Select: ({
+    children,
+    onValueChange,
     value,
   }: {
-    onChange: (value: string) => void;
-    options: Array<{ label: string; value: string }>;
-    placeholder?: string;
-    style?: CSSProperties;
+    children: ReactNode;
+    onValueChange: (value: string) => void;
     value?: string;
   }) => (
     <select
-      aria-label={placeholder}
-      className="ant-select"
-      style={style}
+      className="v2board-invite-select-trigger"
       value={value ?? ''}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => onValueChange(event.target.value)}
     >
-      <option value="">{placeholder}</option>
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
+      {children}
     </select>
   ),
+  SelectContent: ({ children }: { children: ReactNode }) => children,
+  SelectItem: ({ children, value }: { children: ReactNode; value: string }) => (
+    <option value={value}>{children}</option>
+  ),
+  SelectTrigger: ({ children }: { children: ReactNode }) => children,
+  SelectValue: ({ placeholder }: { placeholder?: string }) => <option value="">{placeholder}</option>,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -129,7 +126,7 @@ function setNativeInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-describe('invite commission dialogs bundled-theme behavior', () => {
+describe('invite commission dialogs shadcn behavior', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -148,7 +145,7 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     document.body.removeAttribute('style');
   });
 
-  it('renders the old transfer modal and submits the raw amount to the mutation', async () => {
+  it('renders the shadcn transfer dialog and submits the raw amount to the mutation', async () => {
     await act(async () => {
       root.render(
         <TransferDialog max={12345}>
@@ -162,11 +159,13 @@ describe('invite commission dialogs bundled-theme behavior', () => {
       await Promise.resolve();
     });
 
-    expect(document.body.innerHTML).toContain('推广佣金划转至余额');
+    expect(document.body.innerHTML).toContain('v2board-invite-dialog');
     expect(document.body.innerHTML).toContain('划转后的余额仅用于V2Board消费使用');
     expect(document.body.innerHTML).toContain('当前推广佣金余额');
     expect(
-      document.body.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')
+      document.body.querySelector<HTMLButtonElement>(
+        '.v2board-invite-dialog-footer button:last-child',
+      )
         ?.textContent?.replace(/\s/g, ''),
     ).toBe('确认');
     expect(document.body.innerHTML).not.toContain('提交提现');
@@ -182,7 +181,7 @@ describe('invite commission dialogs bundled-theme behavior', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -195,11 +194,11 @@ describe('invite commission dialogs bundled-theme behavior', () => {
   it('keeps transfer amount conversion out of the dialog like the old component', () => {
     const source = readFileSync(join(testDir, 'transfer-dialog.tsx'), 'utf8');
 
-    expect(source).toContain('await mutateAsync(yuan);');
+    expect(source).toContain('await transfer.mutateAsync(yuan);');
     expect(source).not.toContain('Number(yuan) * 100');
   });
 
-  it('preserves the old transfer close/reopen quirk: input DOM remains, state is cleared', async () => {
+  it('resets the shadcn transfer amount when the dialog is closed and reopened', async () => {
     await act(async () => {
       root.render(
         <TransferDialog max={12345}>
@@ -222,7 +221,8 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     });
 
     await act(async () => {
-      Array.from(document.body.querySelectorAll<HTMLButtonElement>('.ant-modal-footer .ant-btn'))[0]!
+      document.body
+        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:first-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -235,11 +235,11 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     const reopenedAmount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
       (input) => input.placeholder === '请输入需要划转到余额的金额',
     )!;
-    expect(reopenedAmount.value).toBe('45.67');
+    expect(reopenedAmount.value).toBe('');
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -248,7 +248,7 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     expect(mocks.transferMutateAsync).toHaveBeenCalledWith(undefined);
   });
 
-  it('renders the old withdraw modal and submits the ticket-withdraw payload', async () => {
+  it('renders the shadcn withdraw dialog and submits the ticket-withdraw payload', async () => {
     await act(async () => {
       root.render(
         <WithdrawDialog methods={['Alipay', 'Bank']}>
@@ -266,7 +266,9 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     expect(document.body.innerHTML).toContain('提现方式');
     expect(document.body.innerHTML).toContain('提现账号');
     expect(
-      document.body.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')
+      document.body.querySelector<HTMLButtonElement>(
+        '.v2board-invite-dialog-footer button:last-child',
+      )
         ?.textContent?.replace(/\s/g, ''),
     ).toBe('确认');
     expect(document.body.innerHTML).not.toContain('提交提现');
@@ -288,7 +290,7 @@ describe('invite commission dialogs bundled-theme behavior', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -301,7 +303,7 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/ticket');
   });
 
-  it('preserves the old withdraw close/reopen quirk: uncontrolled account DOM remains, state is cleared', async () => {
+  it('resets the shadcn withdraw dialog fields when closed and reopened', async () => {
     await act(async () => {
       root.render(
         <WithdrawDialog methods={['Alipay', 'Bank']}>
@@ -331,7 +333,8 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     });
 
     await act(async () => {
-      Array.from(document.body.querySelectorAll<HTMLButtonElement>('.ant-modal-footer .ant-btn'))[0]!
+      document.body
+        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:first-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -344,18 +347,18 @@ describe('invite commission dialogs bundled-theme behavior', () => {
     expect(document.body.querySelector<HTMLSelectElement>('select')!.value).toBe('');
     expect(
       document.body.querySelector<HTMLInputElement>('input[placeholder="请输入提现账号"]')!.value,
-    ).toBe('bank-account-123');
+    ).toBe('');
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
     await flushPromises();
 
     expect(mocks.withdrawMutateAsync).toHaveBeenCalledWith({
-      withdraw_account: undefined,
+      withdraw_account: '',
       withdraw_method: undefined,
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/ticket');
