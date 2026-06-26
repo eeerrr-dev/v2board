@@ -1,0 +1,36 @@
+{
+  // Editor-only dev environment. Runtime execution (install / build / test /
+  // dev-server / deploy) still belongs to the `make` Docker workflow — this
+  // container exists only so VS Code's TypeScript server can resolve the frontend
+  // workspace's node_modules WITHOUT putting any node_modules on the host.
+  // See .devcontainer/README.md.
+  "name": "v2board-frontend",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspaces/v2board",
+  // Run as root so the named node_modules volumes (root-owned by default) are
+  // writable by pnpm. On macOS/Windows, bind-mount edits are mapped back to the
+  // host user regardless of the in-container user, so the host tree stays yours.
+  "remoteUser": "root",
+  // Stop the dev-container compose project when the VS Code window closes; it is a
+  // separate project from the `make` stack, so this never touches your running app.
+  "shutdownAction": "stopCompose",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
+      ],
+      "settings": {
+        // Use the workspace TypeScript (installed into the container volume), not
+        // VS Code's bundled one, so versions match the repo.
+        "js/ts.tsdk.path": "frontend/node_modules/typescript/lib",
+        "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+        "js/ts.tsserver.maxMemory": 4096,
+        "eslint.workingDirectories": [{ "mode": "auto" }]
+      }
+    }
+  }
+}

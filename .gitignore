@@ -1,4 +1,5 @@
 /node_modules
+/.pnpm-store
 .env
 .env.backup
 .phpunit.result.cache
@@ -12,4 +13,5 @@ composer.phar
 composer.lock
 yarn.lock
 docker-compose.yml
+!.devcontainer/docker-compose.yml
 .DS_Store
