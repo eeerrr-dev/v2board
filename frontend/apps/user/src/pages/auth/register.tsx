@@ -14,17 +14,45 @@ import { useRegisterController } from './use-register-controller';
 
 // Render the operator's ToS sentence as real JSX rather than dangerouslySetInnerHTML: the template
 // (`...<a target="_blank" href="{url}">label</a>...`) is split into its text + link parts, and the
-// operator-controlled url is handed to React as a real href prop (so React attribute-escapes it).
-// The link also gains rel="noopener noreferrer", and lives outside the checkbox label.
+// operator-controlled url is protocol-filtered before it becomes a real href prop. The link also
+// gains rel="noopener noreferrer", and lives outside the checkbox label.
+function getSafeTosHref(rawUrl: string): string | null {
+  const url = rawUrl.trim();
+  if (!url || url.startsWith('//')) return null;
+
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(url)) {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return url;
+}
+
 function renderTosSentence(template: string, url: string): ReactNode {
   const match = template.match(/^([\s\S]*?)<a\b[^>]*>([\s\S]*?)<\/a>([\s\S]*)$/);
   if (!match) return template;
   const [, before, linkText, after] = match;
+  const safeHref = getSafeTosHref(url);
+
+  if (!safeHref) {
+    return (
+      <>
+        {before}
+        {linkText}
+        {after}
+      </>
+    );
+  }
+
   return (
     <>
       {before}
       <a
-        href={url}
+        href={safeHref}
         target="_blank"
         rel="noopener noreferrer"
         className="tw:text-primary tw:underline tw:transition tw:hover:text-primary-hover"

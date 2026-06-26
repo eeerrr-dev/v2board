@@ -50,7 +50,7 @@ describe('GuestLayout auth shell', () => {
 
       expect(html).toContain('id="page-container"');
       expect(html).toContain('id="main-container"');
-      expect(html).toContain('tw:bg-gradient-to-br');
+      expect(html).toContain('v2board-auth-backdrop');
       expect(html).toContain('v2board-auth-frame');
       expect(html).toContain('class="guest-probe"');
       // The 2026 presentation hooks: the surface scope (motion + scoped dark theme) and no
@@ -61,6 +61,8 @@ describe('GuestLayout auth shell', () => {
       // layer or the operator background image.
       expect(html).not.toContain('class="v2board-background"');
       expect(html).not.toContain('background-image');
+      expect(guestLayoutSource).not.toContain('tw:fixed tw:inset-0');
+      expect(guestLayoutSource).not.toContain('tw:p-4');
     });
 
     it('uses the same 2026 presentation hooks for register and forgetpassword', () => {

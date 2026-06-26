@@ -403,14 +403,46 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(mocks.navigate).not.toHaveBeenCalledWith('order');
   });
 
-  it('keeps token2Login and checkLogin uncancelled like the old login component', () => {
-    // The bootstrap effect moved intact into useLoginController; it stays uncancelled (no cleanup
-    // flag) so it matches the old component's fire-and-forget behavior exactly.
+  it('ignores stale token2Login completions after the bootstrap effect is cleaned up', async () => {
+    let resolveTokenLogin: ((value: { auth_data: string }) => void) | undefined;
+    mocks.params = new URLSearchParams('verify=verify-token&redirect=order');
+    mocks.tokenLoginMutateAsync.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveTokenLogin = resolve;
+        }),
+    );
+
+    await renderLogin();
+    expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledWith({
+      redirect: 'order',
+      verify: 'verify-token',
+    });
+
+    mocks.params = new URLSearchParams();
+    await act(async () => {
+      root.render(<LoginPage />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      resolveTokenLogin?.({ auth_data: 'STALE_AUTH' });
+      await Promise.resolve();
+    });
+
+    expect(mocks.setAuthData).not.toHaveBeenCalledWith('STALE_AUTH');
+    expect(mocks.navigate).not.toHaveBeenCalledWith('/order');
+  });
+
+  it('guards token2Login and checkLogin completions after bootstrap cleanup', () => {
     expect(controllerSource).toContain('const finishLogin = (authData: string) => {');
+    expect(controllerSource).toContain('let active = true;');
+    expect(controllerSource).toContain('if (!active) return;');
     expect(controllerSource).toContain('setAuthData(authData);');
     expect(controllerSource).toContain('navigate(redirect);');
     expect(controllerSource).toContain('user.checkLogin(apiClient)');
-    expect(controllerSource).not.toContain('cancelled');
+    expect(controllerSource).toContain('if (active && result.is_login)');
+    expect(controllerSource).toContain('active = false;');
   });
 
   it('keeps the original checkLogin effect auth-data guard before requesting /user/checkLogin', async () => {

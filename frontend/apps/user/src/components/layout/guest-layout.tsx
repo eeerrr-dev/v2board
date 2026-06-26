@@ -9,18 +9,18 @@ export function GuestLayout() {
   const isModernAuthSurface =
     pathname === '/login' || pathname === '/register' || pathname === '/forgetpassword';
 
-  // The redesigned auth surfaces use the same route-isolated 2026 chrome. The single
-  // `.v2board-auth-box` is kept so behavior gates can keep auth-box-scoped selectors stable; the
-  // page component owns all controls, links, and headings inside it.
+  // The redesigned auth surfaces use route-isolated 2026 chrome. The single `.v2board-auth-box`
+  // remains as the behavior-gate hook, while user-auth-surface.css owns its modern layout so the
+  // old fixed-position guest shell is no longer load-bearing here.
   if (isModernAuthSurface) {
     return (
       <div id="page-container">
         {/* `v2board-auth-surface` scopes the authored 2026 presentation and native dark theme to
             redesigned auth — see styles/user-auth-surface.css. */}
         <main id="main-container" className="v2board-auth-surface">
-          <div className="tw:fixed tw:inset-0 tw:-z-10 tw:bg-gradient-to-br tw:from-background tw:to-primary-subtle" />
-          <div className="v2board-auth-box tw:p-4 tw:sm:p-6">
-            <div className="v2board-auth-frame tw:m-auto tw:w-full tw:max-w-md">
+          <div className="v2board-auth-backdrop" />
+          <div className="v2board-auth-box">
+            <div className="v2board-auth-frame">
               <RouteBoundaryOutlet />
             </div>
           </div>

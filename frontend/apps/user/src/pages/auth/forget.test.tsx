@@ -220,13 +220,15 @@ describe('ForgetPage behavior', () => {
       description: '如果没有收到验证码请检查垃圾箱。',
     });
 
+    expect(sendButton.textContent).toBe('59');
+    expect(sendButton.disabled).toBe(true);
+
     await act(async () => {
       vi.advanceTimersByTime(1000);
       await Promise.resolve();
     });
 
-    expect(sendButton.textContent).toBe('59');
-    expect(sendButton.disabled).toBe(true);
+    expect(sendButton.textContent).toBe('58');
   });
 
   it('shows the password mismatch toast without resetting', async () => {
@@ -287,10 +289,13 @@ describe('ForgetPage behavior', () => {
     expect(controllerSource).not.toContain('emailCodeRef');
   });
 
-  it('keeps the recursive countdown timer without unmount cleanup', () => {
-    expect(controllerSource).toContain('const cooldownRef = useRef(60);');
-    expect(controllerSource).toContain('const startSendEmailVerifyCountdown = () => {');
-    expect(controllerSource).toContain('startSendEmailVerifyCountdown();');
-    expect(controllerSource).not.toContain('clearTimeout');
+  it('runs the countdown as a cleanup-aware React effect', () => {
+    expect(controllerSource).toContain('const mountedRef = useRef(true);');
+    expect(controllerSource).toContain('if (!mountedRef.current) return;');
+    expect(controllerSource).toContain("if (mountedRef.current) navigate('/login');");
+    expect(controllerSource).toContain('useEffect(() => {');
+    expect(controllerSource).toContain('return () => window.clearTimeout(timer);');
+    expect(controllerSource).toContain('const startSendEmailVerifyCountdown = useCallback(() => {');
+    expect(controllerSource).not.toContain('cooldownRef');
   });
 });

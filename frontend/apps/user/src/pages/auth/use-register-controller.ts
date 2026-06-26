@@ -1,4 +1,12 @@
-import { useRef, useState, type SyntheticEvent, type ReactNode, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type SyntheticEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useLegacyRecaptcha } from '@/components/legacy-recaptcha';
@@ -39,10 +47,8 @@ export interface RegisterController {
 
 // Authored V2Board — register behavior controller. Mirrors the login surface's controller/view split:
 // the page is a thin presentation layer, all mutations / recaptcha orchestration / countdown /
-// validation / navigation live here. The request payloads, the fire-and-forget recursive countdown
-// (no timer cleanup — pinned to the oracle), and the toast contract are unchanged; the only behavior
-// tidy-up is dropping the redundant emailSuffix "derive-state-into-state" effect (selectedEmailSuffix
-// is a pure derivation and the only value the render/payload paths consume).
+// validation / navigation live here. The request payloads and toast contract remain legacy-compatible,
+// while the countdown is now a normal React side effect with unmount cleanup.
 export function useRegisterController(): RegisterController {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -59,13 +65,13 @@ export function useRegisterController(): RegisterController {
 
   const initialInviteCode = params.get('code');
   const formRef = useRef<HTMLFormElement | null>(null);
-  const cooldownRef = useRef(60);
+  const mountedRef = useRef(true);
   const [emailSuffix, setEmailSuffix] = useState<string | undefined>(undefined);
   const [tosChecked, setTosChecked] = useState(false);
   const [cooldown, setCooldown] = useState(60);
   const emailWhitelistSuffix = config?.email_whitelist_suffix;
   const emailSuffixes = Array.isArray(emailWhitelistSuffix) ? emailWhitelistSuffix : [];
-  const hasEmailWhitelist = Boolean(emailWhitelistSuffix);
+  const hasEmailWhitelist = emailSuffixes.length > 0;
   const selectedEmailSuffix = hasEmailWhitelist
     ? emailSuffixes.includes(emailSuffix ?? '')
       ? emailSuffix
@@ -76,18 +82,26 @@ export function useRegisterController(): RegisterController {
     return hasEmailWhitelist ? `${email}@${selectedEmailSuffix}` : email;
   };
 
-  const startSendEmailVerifyCountdown = () => {
-    window.setTimeout(() => {
-      if (cooldownRef.current !== 0) {
-        cooldownRef.current -= 1;
-        setCooldown(cooldownRef.current);
-        startSendEmailVerifyCountdown();
-      } else {
-        cooldownRef.current = 60;
-        setCooldown(60);
-      }
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (cooldown === 60) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setCooldown((value) => (value <= 1 ? 60 : value - 1));
     }, 1000);
-  };
+
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
+
+  const startSendEmailVerifyCountdown = useCallback(() => {
+    if (!mountedRef.current) return;
+    setCooldown(59);
+  }, []);
 
   const onSendCode = async (recaptchaData?: string) => {
     try {
@@ -121,7 +135,7 @@ export function useRegisterController(): RegisterController {
         email_code: config?.is_email_verify ? readFormValue(formRef.current, 'email_code') : '',
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
-      navigate('/login');
+      if (mountedRef.current) navigate('/login');
     } catch {}
   };
 

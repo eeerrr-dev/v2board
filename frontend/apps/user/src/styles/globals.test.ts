@@ -578,6 +578,22 @@ describe('legacy guest auth shell CSS', () => {
 });
 
 describe('2026 auth surface presentation CSS', () => {
+  it('owns the modern auth shell layout instead of relying on the legacy fixed auth box', () => {
+    const globals = css();
+
+    expect(globals).toContain('.v2board-auth-backdrop {\n  position: fixed;');
+    expect(globals).toContain(
+      '.v2board-auth-surface .v2board-auth-box {\n  position: relative;\n  inset: auto;',
+    );
+    expect(globals).toContain('min-height: 100svh;');
+    expect(globals).toContain(
+      '.v2board-auth-surface .v2board-auth-frame {\n  width: 100%;\n  max-width: 28rem;\n  margin: auto;',
+    );
+    expect(globals.indexOf('.v2board-auth-box {')).toBeLessThan(
+      globals.indexOf('.v2board-auth-surface .v2board-auth-box {'),
+    );
+  });
+
   it('keeps the entrance motion gated behind prefers-reduced-motion and avoids decorative blobs', () => {
     const globals = css();
 

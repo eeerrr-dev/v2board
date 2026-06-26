@@ -178,6 +178,24 @@ describe('RegisterPage modern markup', () => {
     expect(source).not.toContain("lib/legacy-toast");
     expect(controllerSource).not.toContain("lib/legacy-toast");
   });
+
+  it('renders unsafe ToS URLs as plain text instead of unsafe links', () => {
+    mocks.config = {
+      email_whitelist_suffix: undefined,
+      is_email_verify: false,
+      is_invite_force: false,
+      is_recaptcha: false,
+      tos_url: 'javascript:alert(1)',
+    };
+
+    const html = renderToStaticMarkup(<RegisterPage />);
+
+    expect(html).toContain('服务条款');
+    expect(html).not.toContain('href="javascript:alert(1)"');
+    expect(html).not.toContain('target="_blank"');
+    expect(source).toContain('function getSafeTosHref');
+    expect(source).toContain("parsed.protocol === 'http:' || parsed.protocol === 'https:'");
+  });
 });
 
 describe('RegisterPage behavior', () => {
@@ -252,13 +270,15 @@ describe('RegisterPage behavior', () => {
       description: '如果没有收到验证码请检查垃圾箱。',
     });
 
+    expect(sendButton.textContent).toBe('59');
+    expect(sendButton.disabled).toBe(true);
+
     await act(async () => {
       vi.advanceTimersByTime(1000);
       await Promise.resolve();
     });
 
-    expect(sendButton.textContent).toBe('59');
-    expect(sendButton.disabled).toBe(true);
+    expect(sendButton.textContent).toBe('58');
   });
 
   it('shows the password mismatch toast without registering', async () => {
@@ -349,6 +369,39 @@ describe('RegisterPage behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 
+  it('treats an empty email whitelist as disabled and submits the raw email', async () => {
+    mocks.config = {
+      email_whitelist_suffix: [],
+      is_email_verify: false,
+      is_invite_force: false,
+      is_recaptcha: true,
+      tos_url: undefined,
+    };
+
+    await renderRegister();
+
+    expect(container.querySelector('select')).toBeNull();
+    container.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'raw@example.com';
+    container.querySelector<HTMLInputElement>('input[name="password"]')!.value = 'secret';
+    container.querySelector<HTMLInputElement>('input[name="confirm_password"]')!.value = 'secret';
+
+    await act(async () => {
+      container.querySelector('form')!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(mocks.registerMutateAsync).toHaveBeenCalledWith({
+      email: 'raw@example.com',
+      email_code: '',
+      invite_code: '',
+      password: 'secret',
+      recaptcha_data: 'recaptcha-token',
+    });
+  });
+
   it('reads submitted values from FormData instead of retired field refs', () => {
     // Behavior moved into the controller (mirroring login); the FormData-not-refs contract holds there.
     expect(controllerSource).toContain('new FormData(form)');
@@ -360,10 +413,13 @@ describe('RegisterPage behavior', () => {
     expect(controllerSource).not.toContain('confirmPasswordRef');
   });
 
-  it('keeps the recursive countdown timer without unmount cleanup', () => {
-    expect(controllerSource).toContain('const cooldownRef = useRef(60);');
-    expect(controllerSource).toContain('const startSendEmailVerifyCountdown = () => {');
-    expect(controllerSource).toContain('startSendEmailVerifyCountdown();');
-    expect(controllerSource).not.toContain('clearTimeout');
+  it('runs the countdown as a cleanup-aware React effect', () => {
+    expect(controllerSource).toContain('const mountedRef = useRef(true);');
+    expect(controllerSource).toContain('if (!mountedRef.current) return;');
+    expect(controllerSource).toContain("if (mountedRef.current) navigate('/login');");
+    expect(controllerSource).toContain('useEffect(() => {');
+    expect(controllerSource).toContain('return () => window.clearTimeout(timer);');
+    expect(controllerSource).toContain('const startSendEmailVerifyCountdown = useCallback(() => {');
+    expect(controllerSource).not.toContain('cooldownRef');
   });
 });

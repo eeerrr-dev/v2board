@@ -23,11 +23,9 @@ export interface LoginController {
 }
 
 // Authored V2Board — login behavior controller. Owns the auth mutations, the token2Login +
-// existing-session bootstrap effect, and the submit flow. The request/redirect contract matches
-// the packaged oracle exactly (payload {email,password}, setAuthData, eager user-info fetch,
-// normalized redirect, fire-and-forget bootstrap effect with no cleanup flag); only the submit
-// *mechanism* is modernized
-// to a native <form> submit (see use-login-controller / login behavior tests for the re-pin).
+// existing-session bootstrap effect, and the submit flow. The request/redirect contract keeps the
+// legacy payloads and eager user-info fetch, while the mount bootstrap now ignores stale async
+// completions after route/effect cleanup.
 export function useLoginController(): LoginController {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -70,7 +68,10 @@ export function useLoginController(): LoginController {
   );
 
   useEffect(() => {
+    let active = true;
+
     const finishLogin = (authData: string) => {
+      if (!active) return;
       setAuthData(authData);
       navigate(redirect);
     };
@@ -89,7 +90,7 @@ export function useLoginController(): LoginController {
     if (getAuthData()) {
       user.checkLogin(apiClient)
         .then((result) => {
-          if (result.is_login) {
+          if (active && result.is_login) {
             void queryClient
               .fetchQuery({ queryKey: userKeys.info, queryFn: fetchUserInfo })
               .catch(() => undefined);
@@ -98,6 +99,10 @@ export function useLoginController(): LoginController {
         })
         .catch(() => undefined);
     }
+
+    return () => {
+      active = false;
+    };
   }, [navigate, queryClient, queryRedirect, redirect, tokenLogin, verify]);
 
   const clearError = useCallback(() => setError(null), []);

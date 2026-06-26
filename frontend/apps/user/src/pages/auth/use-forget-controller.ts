@@ -1,4 +1,12 @@
-import { useRef, useState, type SyntheticEvent, type ReactNode, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type SyntheticEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useLegacyRecaptcha } from '@/components/legacy-recaptcha';
@@ -30,7 +38,7 @@ export interface ForgetController {
 // countdown / validation / navigation live here. Aligned with register on two points the forget page
 // previously diverged on: validation errors route through i18nGet/t (no raw Chinese literals), and a
 // guest-config loading guard gates the form so recaptcha is never treated as disabled mid-fetch. The
-// payload contract and the fire-and-forget recursive countdown (no timer cleanup — pinned) are unchanged.
+// payload contract is unchanged; the countdown is now a normal React side effect with unmount cleanup.
 export function useForgetController(): ForgetController {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -45,21 +53,29 @@ export function useForgetController(): ForgetController {
   );
 
   const formRef = useRef<HTMLFormElement | null>(null);
-  const cooldownRef = useRef(60);
+  const mountedRef = useRef(true);
   const [cooldown, setCooldown] = useState(60);
 
-  const startSendEmailVerifyCountdown = () => {
-    window.setTimeout(() => {
-      if (cooldownRef.current !== 0) {
-        cooldownRef.current -= 1;
-        setCooldown(cooldownRef.current);
-        startSendEmailVerifyCountdown();
-      } else {
-        cooldownRef.current = 60;
-        setCooldown(60);
-      }
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (cooldown === 60) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setCooldown((value) => (value <= 1 ? 60 : value - 1));
     }, 1000);
-  };
+
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
+
+  const startSendEmailVerifyCountdown = useCallback(() => {
+    if (!mountedRef.current) return;
+    setCooldown(59);
+  }, []);
 
   const onSendCode = async (recaptchaData?: string) => {
     try {
@@ -86,7 +102,7 @@ export function useForgetController(): ForgetController {
         password,
         email_code: readFormValue(formRef.current, 'email_code'),
       });
-      navigate('/login');
+      if (mountedRef.current) navigate('/login');
     } catch {}
   };
 
