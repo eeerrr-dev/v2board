@@ -577,8 +577,8 @@ describe('legacy guest auth shell CSS', () => {
   });
 });
 
-describe('2026 auth surface presentation CSS', () => {
-  it('declares the pure shadcn auth island theme variables', () => {
+describe('2026 shadcn island presentation CSS', () => {
+  it('declares the pure shadcn island theme variables', () => {
     const globals = css();
 
     expect(globals).toContain("@import 'tailwindcss' prefix(tw);");
@@ -589,16 +589,30 @@ describe('2026 auth surface presentation CSS', () => {
     expect(globals).toContain('--color-card: var(--card);');
     expect(globals).toContain('--color-muted-foreground: var(--muted-foreground);');
     expect(globals).toContain("@source '../pages/auth/**/*.tsx';");
-    expect(globals).toContain('.v2board-auth-surface,\n.v2board-auth-toast-root,\n.v2board-auth-language-menu-content {\n  --radius: 0.625rem;');
+    expect(globals).toContain("@source '../pages/dashboard.tsx';");
+    expect(globals).toContain("@source '../components/layout/app-layout.tsx';");
+    expect(globals).toContain('.v2board-auth-surface,');
+    expect(globals).toContain('.v2board-app-shell,');
+    expect(globals).toContain('.v2board-auth-toast-root,');
+    expect(globals).toContain('.v2board-auth-language-menu-content,');
+    expect(globals).toContain('.v2board-app-shell-menu-content,');
+    expect(globals).toContain('.v2board-dashboard-dialog {\n  --radius: 0.625rem;');
     expect(globals).toContain('--card: oklch(1 0 0);');
     expect(globals).toContain('--background: oklch(1 0 0);');
     expect(globals).toContain('--primary: oklch(0.205 0 0);');
     expect(globals).toContain(
-      '.v2board-auth-surface::selection,\n.v2board-auth-surface ::selection,\n.v2board-auth-toast-root::selection,',
+      '.v2board-auth-surface::selection,\n.v2board-auth-surface ::selection,',
     );
     expect(globals).toContain(
-      '.v2board-auth-language-menu-content::selection,\n.v2board-auth-language-menu-content ::selection {',
+      '.v2board-app-shell::selection,\n.v2board-app-shell ::selection,',
     );
+    expect(globals).toContain(
+      '.v2board-auth-toast-root::selection,\n.v2board-auth-toast-root ::selection,',
+    );
+    expect(globals).toContain(
+      '.v2board-app-shell-menu-content::selection,\n.v2board-app-shell-menu-content ::selection,',
+    );
+    expect(globals).toContain('.v2board-dashboard-dialog::selection,');
     expect(globals).toContain('color: var(--primary-foreground);\n  background: var(--primary);');
   });
 
@@ -628,17 +642,20 @@ describe('2026 auth surface presentation CSS', () => {
 
     expect(globals).toContain('@media (prefers-color-scheme: dark) {');
     expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-auth-surface,');
+    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-app-shell,');
     expect(globals).toContain('--background: oklch(0.145 0 0);');
     expect(globals).toContain('--card: oklch(0.205 0 0);');
     expect(globals).toContain('--muted-foreground: oklch(0.708 0 0);');
   });
 
-  it('themes auth-only portaled feedback without using legacy ant notification classes', () => {
+  it('themes shadcn portaled feedback without using legacy login classes', () => {
     const globals = css();
 
     expect(globals).toContain('.v2board-auth-toast-icon-success {');
     expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-auth-toast-root,');
-    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content {');
+    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content,');
+    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-app-shell-menu-content,');
+    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-dashboard-dialog {');
     expect(globals).not.toContain('.v2board-login-i18n-btn {');
   });
 });

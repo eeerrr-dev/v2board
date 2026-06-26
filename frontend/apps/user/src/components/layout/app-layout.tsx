@@ -1,21 +1,49 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, type ComponentType, type SVGProps, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getLegacyLocaleClassName } from '@v2board/i18n';
-import { LanguageMenu } from './language-menu';
+import {
+  Activity,
+  BookOpen,
+  CircleUserRound,
+  Gauge,
+  Headphones,
+  LogOut,
+  Menu,
+  Moon,
+  ReceiptText,
+  Server,
+  ShoppingBag,
+  Sun,
+  UserRound,
+  UsersRound,
+  X,
+} from 'lucide-react';
+import { ShadcnLanguageMenu } from './shadcn-language-menu';
 import { useUserInfo } from '@/lib/queries';
 import { logout } from '@/lib/auth';
 import { cn } from '@/lib/cn';
 import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
-import { getLegacyTheme, getLegacyTitle } from '@/lib/legacy-settings';
-import { legacyHref } from '@/lib/legacy-href';
+import { getLegacyTitle } from '@/lib/legacy-settings';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
-import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
+
+type ShellIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
 interface NavItem {
   to: string;
   labelKey: string;
-  iconClass: string;
+  icon: ShellIcon;
 }
 
 interface NavGroup {
@@ -38,30 +66,30 @@ interface AppLayoutProps {
 const NAV: NavGroup[] = [
   {
     items: [
-      { to: '/dashboard', labelKey: 'nav.dashboard', iconClass: 'si si-speedometer' },
-      { to: '/knowledge', labelKey: 'nav.knowledge', iconClass: 'si si-book-open' },
+      { to: '/dashboard', labelKey: 'nav.dashboard', icon: Gauge },
+      { to: '/knowledge', labelKey: 'nav.knowledge', icon: BookOpen },
     ],
   },
   {
     labelKey: 'nav.group_subscribe',
     items: [
-      { to: '/plan', labelKey: 'nav.buy_subscribe', iconClass: 'si si-bag' },
-      { to: '/node', labelKey: 'nav.node', iconClass: 'si si-check' },
+      { to: '/plan', labelKey: 'nav.buy_subscribe', icon: ShoppingBag },
+      { to: '/node', labelKey: 'nav.node', icon: Server },
     ],
   },
   {
     labelKey: 'nav.group_finance',
     items: [
-      { to: '/order', labelKey: 'nav.orders', iconClass: 'si si-list' },
-      { to: '/invite', labelKey: 'nav.invite', iconClass: 'si si-users' },
+      { to: '/order', labelKey: 'nav.orders', icon: ReceiptText },
+      { to: '/invite', labelKey: 'nav.invite', icon: UsersRound },
     ],
   },
   {
     labelKey: 'nav.group_user',
     items: [
-      { to: '/profile', labelKey: 'nav.profile', iconClass: 'si si-user' },
-      { to: '/ticket', labelKey: 'nav.tickets', iconClass: 'si si-support' },
-      { to: '/traffic', labelKey: 'nav.traffic', iconClass: 'si si-bar-chart' },
+      { to: '/profile', labelKey: 'nav.profile', icon: UserRound },
+      { to: '/ticket', labelKey: 'nav.tickets', icon: Headphones },
+      { to: '/traffic', labelKey: 'nav.traffic', icon: Activity },
     ],
   },
 ];
@@ -70,10 +98,6 @@ const DETAIL_LABELS: { match: RegExp; labelKey: string }[] = [
   { match: /^\/order\/[^/]+$/, labelKey: 'order.detail' },
   { match: /^\/plan\/[^/]+$/, labelKey: 'plan.checkout_title' },
 ];
-
-function clearLegacyDocumentClick() {
-  document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];
-}
 
 function findActiveLabel(pathname: string): string | undefined {
   for (const d of DETAIL_LABELS) {
@@ -94,244 +118,230 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
   const navigate = useNavigate();
   const location = useLocation();
   const { data: user } = useUserInfo({ refetchOnMount: false });
-  const [open, setOpen] = useState(false);
-  const [showAvatarMenu, setShowAvatarMenu] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
-  const avatarDocumentClickTimer = useRef<number | undefined>(undefined);
   const activeLabel = findActiveLabel(location.pathname);
-  const legacyTheme = getLegacyTheme();
   const siteTitle = getLegacyTitle();
   const title = titleProp ?? (activeLabel ? t(activeLabel) : '');
-  const darkSidebar = legacyTheme.sidebar === 'dark';
-  const darkHeader = legacyTheme.header === 'dark';
-  const headerButtonClass = darkHeader ? 'btn btn-primary mr-1' : 'btn mr-1';
   const localeClass = getLegacyLocaleClassName(i18n.language);
 
   const go = (to: string) => {
     navigate(to);
-    setOpen(false);
+    setSidebarOpen(false);
   };
-
-  const toggleNav = () => setOpen((value) => !value);
 
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, []);
+  }, [location.pathname]);
 
-  useEffect(() => {
-    return () => {
-      if (avatarDocumentClickTimer.current !== undefined) {
-        window.clearTimeout(avatarDocumentClickTimer.current);
-      }
-      clearLegacyDocumentClick();
-    };
-  }, []);
-
-  const toggleAvatarMenu = () => {
-    setShowAvatarMenu((value) => !value);
-    if (avatarDocumentClickTimer.current !== undefined) {
-      window.clearTimeout(avatarDocumentClickTimer.current);
-    }
-    avatarDocumentClickTimer.current = window.setTimeout(() => {
-      document.onclick = function legacyAvatarMenuDocumentClick() {
-        setShowAvatarMenu((value) => (value ? false : value));
-        clearLegacyDocumentClick();
-      };
-      avatarDocumentClickTimer.current = undefined;
-    }, 0);
-  };
-
-  return (
-    <div
-      id="page-container"
-      // The original builds this class via raw String.concat (umi.js @909900):
-      // `LOCALE+" sidebar-o "+(sidebarDark?"sidebar-dark":"")+" "+(headerDark?"page-header-dark":"")
-      //  +" side-scroll page-header-fixed main-content-boxed side-trans-enabled "+(showNav&&"sidebar-o-xs")`.
-      // In light/nav-closed that leaves three spaces before `side-scroll` and a trailing
-      // literal `false`. A template literal reproduces the concat byte-for-byte; cn() does not.
-      className={`${localeClass} sidebar-o ${darkSidebar ? 'sidebar-dark' : ''} ${darkHeader ? 'page-header-dark' : ''} side-scroll page-header-fixed main-content-boxed side-trans-enabled ${open && 'sidebar-o-xs'}`}
+  const sidebar = (
+    <aside
+      id="sidebar"
+      className={cn(
+        'fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-border bg-background transition-transform duration-200 ease-out lg:translate-x-0',
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+      )}
     >
-      <div
-        className="v2board-nav-mask"
-        style={{ display: open ? 'block' : 'none' }}
-        onClick={toggleNav}
-      />
+      <div className="flex h-16 items-center justify-between border-b border-border px-5">
+        <button
+          type="button"
+          className="text-lg font-semibold tracking-normal text-foreground"
+          onClick={() => go('/dashboard')}
+        >
+          {siteTitle}
+        </button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close navigation"
+        >
+          <X className="size-4" />
+        </Button>
+      </div>
 
-      <nav id="sidebar">
-        <div className="smini-hidden bg-header-dark">
-          <div className="content-header justify-content-lg-center bg-white-10">
-            <a className="font-size-lg text-white" href="/">
-              <span className="text-white-75">{siteTitle}</span>
-            </a>
-            <div className="d-lg-none">
-              <a
-                className="text-white ml-2"
-                data-toggle="layout"
-                data-action="sidebar_close"
-                ref={legacyHref()}
-                onClick={toggleNav}
-              >
-                <i className="fa fa-times-circle" />
-              </a>
+      <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Primary navigation">
+        {NAV.map((group, groupIndex) => (
+          <Fragment key={group.labelKey ?? `group-${groupIndex}`}>
+            {group.labelKey ? (
+              <div className="px-3 pb-2 pt-4 text-xs font-medium uppercase text-muted-foreground first:pt-0">
+                {t(group.labelKey)}
+              </div>
+            ) : null}
+            <div className="space-y-1">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const active =
+                  location.pathname === item.to || location.pathname.startsWith(item.to + '/');
+
+                return (
+                  <button
+                    type="button"
+                    key={item.to}
+                    className={cn(
+                      'flex h-9 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                      active && 'bg-accent text-accent-foreground',
+                    )}
+                    onClick={() => go(item.to)}
+                  >
+                    <Icon className="size-4" />
+                    <span>{t(item.labelKey)}</span>
+                  </button>
+                );
+              })}
             </div>
-          </div>
-        </div>
-
-        <div className="content-side content-side-full">
-          <ul className="nav-main">
-            {NAV.map((group, gi) => (
-              <Fragment key={group.labelKey ?? `group-${gi}`}>
-                {group.labelKey && (
-                  <li key={`heading-${group.labelKey}`} className="nav-main-heading">
-                    {t(group.labelKey)}
-                  </li>
-                )}
-                {group.items.map((item) => (
-                  <li className="nav-main-item" key={item.to}>
-                    <a
-                      // Original inactive link renders the literal `false`:
-                      // `"nav-main-link ".concat(pathname===to && "active")` (umi.js @895700).
-                      className={`nav-main-link ${location.pathname === item.to && 'active'}`}
-                      onClick={() => go(item.to)}
-                    >
-                      <i className={cn('nav-main-link-icon', item.iconClass)} />
-                      <span className="nav-main-link-name">{t(item.labelKey)}</span>
-                    </a>
-                  </li>
-                ))}
-              </Fragment>
-            ))}
-          </ul>
-        </div>
-
-        <div className="v2board-copyright">{siteTitle} v1.7.4</div>
+          </Fragment>
+        ))}
       </nav>
 
-      <header id="page-header">
-        <div className="content-header">
-          <div className="sidebar-toggle" style={{ display: search ? 'block' : 'none' }}>
-            <button
+      <div className="border-t border-border px-5 py-4 text-xs text-muted-foreground">
+        {siteTitle} v1.7.4
+      </div>
+    </aside>
+  );
+
+  return (
+    <div id="page-container" className={cn('v2board-app-shell min-h-screen', localeClass)}>
+      <div
+        className={cn(
+          'fixed inset-0 z-30 bg-black/40 transition-opacity lg:hidden',
+          sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      {sidebar}
+
+      <div className="min-h-screen bg-muted lg:pl-72">
+        <header
+          id="page-header"
+          className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+        >
+          <div className="flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
+            <Button
               type="button"
-              className={darkHeader ? 'btn btn-primary mr-1 d-lg-none' : 'btn mr-1 d-lg-none'}
-              onClick={toggleNav}
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open navigation"
             >
-              <i className="fa fa-fw fa-bars" />
-            </button>
-            {search && (
-              <button
+              <Menu className="size-4" />
+            </Button>
+
+            <div className="min-w-0 flex-1">
+              <div className="v2board-container-title truncate text-base font-semibold text-foreground">
+                {title}
+              </div>
+            </div>
+
+            {search ? (
+              <Button
                 type="button"
-                className={darkHeader ? 'btn btn-primary' : 'btn'}
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowSearchBar(true)}
               >
-                <i className="fa fa-fw fa-search" />{' '}
-                <span className="ml-1 d-none d-sm-inline-block">{t('common.search')}</span>
-              </button>
-            )}
+                {t('common.search')}
+              </Button>
+            ) : null}
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              data-dark-mode-trigger
+              aria-label={darkMode ? 'Disable dark mode' : 'Enable dark mode'}
+              onClick={() => {
+                const next = !darkMode;
+                setDarkMode(next);
+                setDarkModeState(next);
+              }}
+            >
+              <i className={darkMode ? 'far fa fa-moon' : 'far fa fa-sun'} aria-hidden="true" />
+              {darkMode ? <Moon className="sr-only size-4" /> : <Sun className="sr-only size-4" />}
+            </Button>
+
+            <ShadcnLanguageMenu />
+
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="v2board-app-avatar-trigger h-9 max-w-[220px] gap-2 px-2.5"
+                >
+                  <CircleUserRound className="size-4" />
+                  <i className="far fa fa-user-circle sr-only" aria-hidden="true" />
+                  <span className="hidden truncate text-sm font-medium lg:inline">
+                    {user?.email || 'Loading...'}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                sideOffset={8}
+                className="v2board-app-shell-menu-content v2board-app-avatar-menu w-56"
+              >
+                <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
+                  {user?.email || 'Loading...'}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => navigate('/profile')}>
+                  <UserRound className="size-4" />
+                  {t('nav.profile')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    logout();
+                    navigate('/login');
+                  }}
+                >
+                  <LogOut className="size-4" />
+                  {t('common.logout')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          <div
-            className={
-              darkHeader
-                ? 'v2board-container-title text-white'
-                : 'v2board-container-title text-black'
-            }
-          >
-            {title}
-          </div>
-
-          <div>
-            <div className="dropdown d-inline-block">
-              <button
-                type="button"
-                className={headerButtonClass}
-                onClick={() => {
-                  const next = !darkMode;
-                  setDarkMode(next);
-                  setDarkModeState(next);
-                }}
-              >
-                <i className={darkMode ? 'far fa fa-moon' : 'far fa fa-sun'} />
-              </button>
-            </div>
-
-            <div className="dropdown d-inline-block">
-              <LanguageMenu triggerClassName={headerButtonClass} legacyIcon />
-            </div>
-
-            <div className="dropdown d-inline-block">
-              <button
-                type="button"
-                className={darkHeader ? 'btn btn-primary' : 'btn'}
-                onClick={toggleAvatarMenu}
-              >
-                <i className="far fa fa-user-circle" />
-                <span className="d-none d-lg-inline ml-1">{user?.email || 'Loading...'}</span>
-                <i className="fa fa-fw fa-angle-down ml-1" />
-              </button>
-              <div className={`dropdown-menu dropdown-menu-right p-0 ${showAvatarMenu && 'show'}`}>
-                <div className="p-2">
-                  <a className="dropdown-item" href="/#/profile">
-                    <i className="far fa-fw fa-user mr-1" /> {t('nav.profile')}
-                  </a>
-                  <a
-                    className="dropdown-item"
-                    ref={legacyHref()}
-                    onClick={() => {
-                      logout();
-                      navigate('/login');
-                    }}
-                  >
-                    <i className="far fa-fw fa-arrow-alt-circle-left mr-1" /> {t('common.logout')}
-                  </a>
-                </div>
+          {search ? (
+            <div
+              className={cn(
+                'border-t border-border bg-background px-4 py-3 sm:px-6 lg:px-8',
+                showSearchBar ? 'block' : 'hidden',
+              )}
+            >
+              <div className="flex gap-2">
+                <Input
+                  placeholder={search.placeholder}
+                  onChange={(event) => search.onChange(event.target.value)}
+                  defaultValue={search.defaultValue}
+                />
+                <Button type="button" variant="outline" onClick={() => setShowSearchBar(false)}>
+                  {t('common.cancel')}
+                </Button>
               </div>
             </div>
-          </div>
-          {search && (
-            <div className={`overlay-header bg-dark ${showSearchBar ? 'show' : ''}`}>
-              <div className="content-header bg-dark">
-                <div className="w-100">
-                  <div className="input-group">
-                    <div className="input-group-prepend">
-                      <button
-                        type="button"
-                        className="btn btn-dark"
-                        onClick={() => setShowSearchBar(false)}
-                      >
-                        <i className="fa fa-fw fa-times-circle" />
-                      </button>
-                    </div>
-                    <input
-                      type="text"
-                      className="form-control border-0"
-                      placeholder={search.placeholder}
-                      onChange={(event) => search.onChange(event.target.value)}
-                      defaultValue={search.defaultValue}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </header>
+          ) : null}
+        </header>
 
-      {loading ? (
-        <main id="main-container">
-          <div className="content content-full font-size-h1">
-            <div className="p-md-0 p-3">
-              <LegacyLoadingIcon />
+        {loading ? (
+          <main id="main-container" className="v2board-app-main">
+            <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-7xl items-center justify-center px-4 py-10 sm:px-6 lg:px-8">
+              <Spinner className="size-6" />
             </div>
-          </div>
-        </main>
-      ) : (
-        <main id="main-container">
-          <div className="content content-full">
-            <RouteBoundaryOutlet />
-          </div>
-        </main>
-      )}
+          </main>
+        ) : (
+          <main id="main-container" className="v2board-app-main">
+            <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+              <RouteBoundaryOutlet />
+            </div>
+          </main>
+        )}
+      </div>
     </div>
   );
 }

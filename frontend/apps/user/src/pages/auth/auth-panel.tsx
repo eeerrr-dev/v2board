@@ -34,8 +34,8 @@ export function AuthPanel({
   return (
     <div className="v2board-auth-panel mx-auto w-full max-w-md">
       <Card className="v2board-auth-card">
-        <CardHeader className="gap-1.5 px-7 text-center sm:px-8">
-          <h1 className="v2board-auth-title m-0 text-2xl font-bold leading-tight">
+        <CardHeader className="gap-2 px-7 text-center sm:px-8">
+          <h1 className="v2board-auth-title m-0 text-2xl font-bold leading-8">
             {title}
           </h1>
           {description ? (

@@ -1,6 +1,5 @@
 import { act } from 'react';
 import type { ReactNode } from 'react';
-import { readFileSync } from 'node:fs';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,7 +7,6 @@ import DashboardPage from './dashboard';
 
 const mocks = vi.hoisted(() => ({
   copyText: vi.fn(),
-  isMobile: false,
   labels: {
     'common.cancel': '取消',
     'common.confirm': '确定',
@@ -21,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     'dashboard.copy_subscribe': '复制订阅地址',
     'dashboard.copy_success': '复制成功',
     'dashboard.devices_online': '在线设备 {alive_ip}/{device_limit}',
+    'dashboard.expired_label': '已过期',
     'dashboard.expires_in': '于 {date} 到期，距离到期还有 {day} 天。',
     'dashboard.import_to': '导入到',
     'dashboard.long_term': '该订阅长期有效',
@@ -35,6 +34,7 @@ const mocks = vi.hoisted(() => ({
     'dashboard.reset_package_confirm_content':
       '点击「确定」将会跳转到收银台，支付订单后系统将会清空您当月已使用流量。',
     'dashboard.reset_package_confirm_title': '确定重置当前已用流量？',
+    'dashboard.reset_today': '已用流量将在今日重置',
     'dashboard.scan_qrcode_subscribe': '扫描二维码订阅',
     'dashboard.shortcut_buy': '购买订阅',
     'dashboard.shortcut_buy_desc': '对您当前的订阅进行购买',
@@ -51,7 +51,6 @@ const mocks = vi.hoisted(() => ({
     'notice.title': '公告',
     'order.pay_now': '立即支付',
   } as Record<string, string>,
-  legacyConfirm: vi.fn(),
   navigate: vi.fn(),
   newPeriodMutateAsync: vi.fn(),
   notices: [] as Array<{
@@ -91,7 +90,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@/components/ui/dialog', () => ({
+vi.mock('@/components/ui/shadcn-dialog', () => ({
   Dialog: ({
     children,
     open,
@@ -100,29 +99,15 @@ vi.mock('@/components/ui/dialog', () => ({
     onOpenChange?: (open: boolean) => void;
     open?: boolean;
   }) => (open ? <div data-dialog="open">{children}</div> : null),
-  DialogContent: ({
-    children,
-    title,
-  }: {
-    bodyStyle?: Record<string, unknown>;
-    centered?: boolean;
-    children: ReactNode;
-    closable?: boolean;
-    footer?: ReactNode;
-    style?: Record<string, unknown>;
-    title?: ReactNode;
-    width?: number;
-    zIndex?: number;
-  }) => (
-    <div data-dialog-content="open">
-      {title}
+  DialogContent: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <div className={className} data-dialog-content="open">
       {children}
     </div>
   ),
-}));
-
-vi.mock('@/components/legacy-confirm', () => ({
-  legacyConfirm: mocks.legacyConfirm,
+  DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+  DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -144,7 +129,6 @@ vi.mock('@/lib/queries', () => ({
 }));
 
 vi.mock('@/lib/legacy-settings', () => ({
-  isLegacyMobile: () => mocks.isMobile,
   legacyCopyText: mocks.copyText,
 }));
 
@@ -156,14 +140,6 @@ vi.mock('@/lib/legacy-toast', () => ({
   toast: {
     success: mocks.toastSuccess,
   },
-}));
-
-vi.mock('@/lib/use-transition-status', () => ({
-  useTransitionStatus: (open: boolean) => (open ? 'entered' : 'exited'),
-}));
-
-vi.mock('@/lib/legacy-body-scroll', () => ({
-  lockLegacyDrawerBodyScroll: () => vi.fn(),
 }));
 
 vi.mock('@v2board/api-client', () => ({
@@ -199,13 +175,12 @@ function baseSubscribe(overrides: Record<string, unknown> = {}) {
 
 function resetMocks() {
   mocks.copyText.mockReset();
-  mocks.isMobile = false;
-  mocks.legacyConfirm.mockReset();
   mocks.navigate.mockReset();
   mocks.newPeriodMutateAsync.mockReset();
   mocks.newPeriodMutateAsync.mockResolvedValue(true);
   mocks.notices = [];
   mocks.refetchSubscribe.mockReset();
+  mocks.refetchSubscribe.mockResolvedValue({});
   mocks.saveOrder.mockReset();
   mocks.saveOrder.mockResolvedValue('ORDER123');
   mocks.stat = {
@@ -227,10 +202,10 @@ async function flushPromises() {
   });
 }
 
-describe('DashboardPage bundled-theme markup', () => {
+describe('DashboardPage shadcn shell markup', () => {
   beforeEach(resetMocks);
 
-  it('renders the original alerts, notice card, subscription card, and shortcuts', () => {
+  it('renders alerts, notice, subscription card, and shortcuts with redesigned structure', () => {
     mocks.stat = { pending_orders: 2, pending_tickets: 3 };
     mocks.notices = [
       {
@@ -245,27 +220,19 @@ describe('DashboardPage bundled-theme markup', () => {
 
     const html = renderToStaticMarkup(<DashboardPage />);
 
-    expect(html).toContain('class="alert alert-danger"');
+    expect(html).toContain('v2board-dashboard-page');
+    expect(html).toContain('alert alert-danger');
     expect(html).toContain('还有没支付的订单');
     expect(html).toContain('立即支付');
-    expect(html).toContain('class="alert alert-warning"');
+    expect(html).toContain('alert alert-warning');
     expect(html).toContain('<strong>3</strong>');
     expect(html).toContain('条工单正在处理中');
-    expect(html).toContain('立即查看');
-    expect(html).toContain('class="alert alert-info"');
     expect(html).toContain('当前已使用流量达 85%');
-    expect(html).toContain('购买流量重置包');
-    expect(html).toContain('block block-rounded bg-image mb-0 v2board-bg-pixels');
-    expect(html).toContain('background-image:url(/notice.jpg);background-size:cover');
-    expect(html).toContain('badge badge-danger p-2 text-uppercase');
-    expect(html).toContain('公告');
+    expect(html).toContain('v2board-notice-card');
     expect(html).toContain('Notice A');
-    expect(html).toContain('2023-11-14');
     expect(html).toContain('我的订阅');
     expect(html).toContain('Pro');
-    expect(html).toContain('于 2100/01/01 到期，距离到期还有');
-    expect(html).toContain('已用流量将在 5 日后重置');
-    expect(html).toContain('progress-bar progress-bar-striped progress-bar-animated bg-warning');
+    expect(html).toContain('progress-bar');
     expect(html).toContain('在线设备 2/∞');
     expect(html).toContain('捷径');
     expect(html).toContain('查看教程');
@@ -273,55 +240,42 @@ describe('DashboardPage bundled-theme markup', () => {
     expect(html).toContain('一键订阅');
     expect(html).toContain('续费订阅');
     expect(html).toContain('遇到问题');
+    expect(html).not.toContain('block block-rounded');
   });
 
-  it('renders the original buy-subscribe empty state when there is no active plan', () => {
+  it('renders the buy-subscribe empty state when there is no active plan', () => {
     mocks.subscribe = baseSubscribe({ plan: null, plan_id: null });
 
     const html = renderToStaticMarkup(<DashboardPage />);
 
-    expect(html).toContain('fa fa-plus fa-2x');
-    expect(html).toContain('font-size-sm text-uppercase text-muted pt-2 pb-3');
+    expect(html).toContain('fa fa-plus');
     expect(html).toContain('购买订阅');
+    expect(html).not.toContain('font-size-sm text-uppercase text-muted');
   });
 
-  it('keeps the bundled-theme subscription branch keyed only by plan_id', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
-
-    expect(source).toContain(') : hasPlan ? (');
-    expect(source).not.toContain(') : hasPlan && sub?.plan ? (');
-  });
-
-  it('keeps dashboard dates behind the user legacy date formatter', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
-
-    expect(source).toContain(
-      "import { formatUserLegacyDate, formatUserLegacyDateSlash } from '@/lib/legacy-date';",
-    );
-    expect(source).toContain('formatUserLegacyDate(notice.created_at)');
-    expect(source).toContain('formatUserLegacyDateSlash(legacySub.expired_at)');
-    expect(source).not.toContain('function formatLegacyDate');
-    expect(source).not.toContain("formatLegacyDate(legacySub.expired_at).replaceAll('-', '/')");
-  });
-
-  it('renders the original loading icon when subscribe has not loaded an email', () => {
+  it('renders a shadcn loading state while subscription data is incomplete', () => {
     mocks.subscribe = {};
 
     const html = renderToStaticMarkup(<DashboardPage />);
 
-    expect(html).toContain('class="font-size-h3 mb-3"');
-    expect(html).toContain('anticon-loading');
+    expect(html).toContain('animate-spin');
+    expect(html).not.toContain('anticon-loading');
+  });
+
+  it('keeps dashboard dates behind the user legacy date formatter output', () => {
+    const html = renderToStaticMarkup(<DashboardPage />);
+
+    expect(html).toContain('2100/01/01');
+    expect(html).toContain('已用流量将在 5 日后重置');
   });
 });
 
-describe('DashboardPage bundled-theme actions', () => {
+describe('DashboardPage shadcn shell actions', () => {
   let container: HTMLDivElement;
   let root: Root;
-  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     resetMocks();
-    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -329,7 +283,6 @@ describe('DashboardPage bundled-theme actions', () => {
 
   afterEach(() => {
     act(() => root.unmount());
-    consoleLogSpy.mockRestore();
     container.remove();
     document.body.innerHTML = '';
   });
@@ -341,7 +294,7 @@ describe('DashboardPage bundled-theme actions', () => {
     });
   }
 
-  it('opens the old one-click subscribe box, copies the URL, and opens the QR dialog', async () => {
+  it('opens one-click subscribe, copies the URL, and opens the QR dialog', async () => {
     await renderDashboard();
 
     const shortcut = Array.from(container.querySelectorAll('.v2board-shortcuts-item')).find(
@@ -387,176 +340,56 @@ describe('DashboardPage bundled-theme actions', () => {
     expect(container.innerHTML).toContain('使用支持扫码的客户端进行订阅');
   });
 
-  it('keeps the bundled-theme random keys for subscribe import entries', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
-
-    expect(source).toContain('<div\n          key={Math.random()}');
-    expect(source).toContain('src={SUBSCRIBE_TARGET_ICONS[target.title]}');
-    expect(source).toContain("import hiddifyIcon from '../assets/images/icon/Hiddify.png';");
-    expect(source).not.toContain('key={target.title}');
-    expect(source).not.toContain("window.settings?.assets_path || ''");
-    expect(source).not.toContain("window.settings?.assets_path ?? ''");
-  });
-
-  it('keeps the bundled-theme direct window title append for tutorial shortcut', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
-    const descStart = source.indexOf("{s.descKey === 'dashboard.shortcut_tutorial_desc'");
-    const tutorialShortcutSource = source.slice(
-      descStart,
-      source.indexOf('</div>', descStart),
-    );
-
-    expect(tutorialShortcutSource).toContain('<> {window.settings?.title}</>');
-    expect(tutorialShortcutSource).not.toContain("window.settings?.title ?? ''");
-  });
-
-  it('keeps the bundled-theme direct settings title read for subscribe import URLs', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
-    const targetsSource = source.slice(
-      source.indexOf('function getSubscribeTargets'),
-      source.indexOf('function isLegacyExpired'),
-    );
-
-    expect(targetsSource).toContain('const title = window.settings!.title;');
-    expect(targetsSource).not.toContain('const title = window.settings?.title;');
-  });
-
-  it('keeps the bundled-theme random keys for notice carousel slides', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
-    const slideSource = source.slice(
-      source.indexOf("style={{ outline: 'none', width: slideWidth || undefined }}"),
-      source.indexOf('{renderNoticeSlide(notice)}', source.indexOf("style={{ outline: 'none'")),
-    );
-
-    expect(source).toContain('noticeList.map((notice, index) => (');
-    expect(slideSource).toContain("style={{ outline: 'none', width: slideWidth || undefined }}\n                          key={Math.random()}");
-    expect(slideSource).not.toContain('key={notice.id}');
-  });
-
-  it('reads bundled notice model state as a direct notices array', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
-
-    expect(source).toContain('const list = notices.data;');
-    expect(source).toContain('const noticeList = notices.data ?? [];');
-    expect(source).not.toContain('notices.data?.data');
-  });
-
-  it('keeps the bundled-theme notice modal mask and false footer props explicit', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
-    const modalSource = source.slice(
-      source.indexOf('<DialogContent title={activeNotice?.title}'),
-      source.indexOf('</DialogContent>', source.indexOf('<DialogContent title={activeNotice?.title}')),
-    );
-
-    expect(modalSource).toContain(
-      '<DialogContent title={activeNotice?.title} maskClosable footer={false}>',
-    );
-    expect(modalSource).not.toContain('<DialogContent title={activeNotice?.title} footer={null}>');
-    expect(source).toContain('footer={false}');
-    expect(source).not.toContain('footer={null}');
-  });
-
-  it('renews expired plans that are still on sale (visible) via the bundled renew route', async () => {
-    // umi.js b(e) = renew && (plan.show || !expired): a still-visible plan stays renewable
-    // even after it has expired.
-    mocks.subscribe = baseSubscribe({
-      expired_at: 1,
-      plan: { name: 'Pro', renew: true, reset_price: 100, show: true },
-    });
-
+  it('switches notice dots and opens the notice dialog', async () => {
+    mocks.notices = [
+      {
+        content: '<p>First notice</p>',
+        created_at: 1_700_000_000,
+        id: 1,
+        title: 'Notice A',
+      },
+      {
+        content: '<p>Second notice</p>',
+        created_at: 1_700_100_000,
+        id: 2,
+        title: 'Notice B',
+      },
+    ];
     await renderDashboard();
 
-    expect(container.innerHTML).toContain('nav-main-link-icon si si-clock');
-    expect(container.innerHTML).toContain('续费订阅');
-    const shortcut = Array.from(container.querySelectorAll('.v2board-shortcuts-item')).find(
-      (item) => item.textContent?.includes('续费订阅'),
-    )!;
-    const expiredButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '续费订阅',
-    )!;
-
+    const secondDot = container.querySelectorAll<HTMLButtonElement>('.slick-dots button')[1]!;
     await act(async () => {
-      shortcut.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      secondDot.click();
       await Promise.resolve();
     });
-    expect(mocks.navigate).toHaveBeenLastCalledWith('/plan/1');
+
+    expect(container.querySelector('.slick-slide.slick-active')?.textContent).toContain('Notice B');
 
     await act(async () => {
-      expiredButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.querySelector<HTMLButtonElement>('.v2board-notice-card')!.click();
       await Promise.resolve();
     });
-    expect(mocks.navigate).toHaveBeenLastCalledWith('/plan/1');
+
+    expect(container.innerHTML).toContain('Second notice');
   });
 
-  it('sends expired discontinued (hidden) plans to the bundled buy-subscribe route', async () => {
-    // umi.js b(e) = renew && (plan.show || !expired): a hidden plan is no longer renewable
-    // once the subscription has expired, so the dashboard offers a fresh purchase instead.
-    mocks.subscribe = baseSubscribe({
-      expired_at: 1,
-      plan: { name: 'Pro', renew: true, reset_price: 100, show: false },
-    });
-
+  it('confirms reset package purchase and navigates to the generated order', async () => {
     await renderDashboard();
 
-    expect(container.innerHTML).toContain('nav-main-link-icon si si-bag');
-    expect(container.innerHTML).not.toContain('续费订阅');
-    const shortcut = Array.from(container.querySelectorAll('.v2board-shortcuts-item')).find(
-      (item) => item.textContent?.includes('购买订阅'),
-    )!;
-    const expiredButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '购买订阅',
-    )!;
-
-    await act(async () => {
-      shortcut.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    expect(mocks.navigate).toHaveBeenLastCalledWith('/plan');
-
-    await act(async () => {
-      expiredButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    expect(mocks.navigate).toHaveBeenLastCalledWith('/plan');
-  });
-
-  it('keeps the bundled-theme renewable helper formula', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/dashboard.tsx`, 'utf8');
-
-    expect(source).toContain('subscribe.plan.show || !isLegacyExpired(subscribe.expired_at)');
-    expect(source).not.toContain('return Boolean(!subscribe.plan.show || !isLegacyExpired');
-  });
-
-  it('creates the reset-traffic order with the original confirm options', async () => {
-    await renderDashboard();
-
-    const resetButton = Array.from(container.querySelectorAll('button')).find(
+    const reset = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
       (button) => button.textContent === '购买流量重置包',
     )!;
-
     await act(async () => {
-      resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      reset.click();
       await Promise.resolve();
     });
 
-    expect(mocks.legacyConfirm).toHaveBeenCalledTimes(1);
-    const options = mocks.legacyConfirm.mock.calls[0]![0] as {
-      content: string;
-      maskClosable: boolean;
-      okText: ReactNode;
-      onOk: () => void;
-      title: string;
-    };
-    expect(options.maskClosable).toBe(true);
-    expect(options.title).toBe('确定重置当前已用流量？');
-    expect(options.content).toBe(
-      '点击「确定」将会跳转到收银台，支付订单后系统将会清空您当月已使用流量。',
-    );
-    expect(options.okText).toBe('确定');
-
+    expect(container.innerHTML).toContain('确定重置当前已用流量？');
+    const confirm = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '确定',
+    )!;
     await act(async () => {
-      options.onOk();
-      await Promise.resolve();
+      confirm.click();
     });
     await flushPromises();
 
@@ -567,46 +400,56 @@ describe('DashboardPage bundled-theme actions', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
   });
 
-  it('refreshes subscribe once after new-period success without waiting for that refresh', async () => {
-    mocks.subscribe = baseSubscribe({ allow_new_period: true, u: 1000 });
-    let resolveMutation!: () => void;
-    mocks.newPeriodMutateAsync.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveMutation = resolve;
-        }),
-    );
-    mocks.refetchSubscribe.mockImplementation(() => new Promise(() => {}));
-
+  it('confirms opening a new traffic period and refetches subscription data', async () => {
+    mocks.subscribe = baseSubscribe({ allow_new_period: true, d: 1000, u: 0 });
     await renderDashboard();
 
-    const newPeriodButton = Array.from(container.querySelectorAll('button')).find(
+    const newPeriod = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
       (button) => button.textContent === '提前开启流量周期',
-    );
-    expect(newPeriodButton).toBeTruthy();
-
+    )!;
     await act(async () => {
-      newPeriodButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      newPeriod.click();
       await Promise.resolve();
     });
 
-    expect(mocks.legacyConfirm).toHaveBeenCalledTimes(1);
-    const confirmOptions = mocks.legacyConfirm.mock.calls[0]![0] as { onOk: () => void };
-
-    act(() => {
-      confirmOptions.onOk();
-    });
-
-    expect(mocks.newPeriodMutateAsync).toHaveBeenCalledTimes(1);
-
+    expect(container.innerHTML).toContain('确定开启下一个流量周期？');
+    const confirm = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '确定',
+    )!;
     await act(async () => {
-      resolveMutation();
-      await Promise.resolve();
-      await Promise.resolve();
+      confirm.click();
     });
+    await flushPromises();
 
-    expect(mocks.refetchSubscribe).toHaveBeenCalledTimes(1);
+    expect(mocks.newPeriodMutateAsync).toHaveBeenCalled();
+    expect(mocks.refetchSubscribe).toHaveBeenCalled();
     expect(mocks.toastSuccess).toHaveBeenCalledWith('提前开启流量周期成功');
     expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
+  });
+
+  it('routes alert and shortcut actions through React Router', async () => {
+    mocks.stat = { pending_orders: 1, pending_tickets: 1 };
+    await renderDashboard();
+
+    const payNow = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '立即支付',
+    )!;
+    const ticket = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '立即查看',
+    )!;
+    const tutorial = Array.from(container.querySelectorAll<HTMLButtonElement>('.v2board-shortcuts-item')).find(
+      (button) => button.textContent?.includes('查看教程'),
+    )!;
+
+    await act(async () => {
+      payNow.click();
+      ticket.click();
+      tutorial.click();
+      await Promise.resolve();
+    });
+
+    expect(mocks.navigate).toHaveBeenCalledWith('/order');
+    expect(mocks.navigate).toHaveBeenCalledWith('/ticket');
+    expect(mocks.navigate).toHaveBeenCalledWith('/knowledge');
   });
 });

@@ -135,6 +135,22 @@ shadcn island.
 - Keep auth tests focused on behavior, accessibility, and shadcn structure
   rather than old pixel-era class names.
 
+### User App Shell Direction
+
+The logged-in user shell and dashboard (`/dashboard`) are redesigned shadcn
+surfaces.
+
+- Use shadcn/Radix composition for shell navigation, top chrome, menus, alerts,
+  cards, dialogs, and primary dashboard controls.
+- Keep logged-in behavior strict: auth redirects, language persistence, dark
+  mode persistence, subscription import links, QR subscribe, notice dialogs,
+  reset-package orders, new-period mutations, alert routing, and existing route
+  contracts must remain covered.
+- Retire old OneUI/Bootstrap visual parity for `/dashboard`; keep behavior and
+  interaction scenarios for the same route.
+- Preserve legacy page behavior for non-redesigned logged-in routes, but do not
+  keep old shell DOM/classes solely to resemble the packaged frontend.
+
 For new redesigned surfaces, do not use:
 
 - Ant Design v3 components as new UI foundations.

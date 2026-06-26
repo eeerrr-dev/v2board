@@ -1,5 +1,4 @@
 import { act } from 'react';
-import { readFileSync } from 'node:fs';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +7,7 @@ import { AppLayout } from './app-layout';
 const mocks = vi.hoisted(() => ({
   darkMode: false,
   labels: {
+    'common.cancel': '取消',
     'common.logout': '登出',
     'common.search': '搜索',
     'nav.buy_subscribe': '购买订阅',
@@ -26,11 +26,10 @@ const mocks = vi.hoisted(() => ({
     'plan.checkout_title': '确认订单',
   } as Record<string, string>,
   locale: 'zh-CN',
-  location: { pathname: '/dashboard' },
+  location: { pathname: '/dashboard', search: '' },
   logout: vi.fn(),
   navigate: vi.fn(),
   setDarkMode: vi.fn(),
-  theme: { header: 'light', sidebar: 'light' },
   title: 'V2Board',
   user: { email: 'user@example.com' },
 }));
@@ -48,10 +47,11 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('./language-menu', () => ({
-  LanguageMenu: ({ triggerClassName }: { legacyIcon?: boolean; triggerClassName?: string }) => (
-    <button type="button" className={triggerClassName}>
+vi.mock('./shadcn-language-menu', () => ({
+  ShadcnLanguageMenu: () => (
+    <button type="button" className="v2board-app-language-trigger">
       <i className="far fa fa-language" />
+      简体中文
     </button>
   ),
 }));
@@ -72,139 +72,71 @@ vi.mock('@/lib/dark-mode', () => ({
 }));
 
 vi.mock('@/lib/legacy-settings', () => ({
-  getLegacyTheme: () => mocks.theme,
   getLegacyTitle: () => mocks.title,
 }));
 
-(
-  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
-
-function installLocalStorageStub() {
-  const store = new Map<string, string>();
-  const storage = {
-    clear: () => store.clear(),
-    getItem: (key: string) => store.get(key) ?? null,
-    removeItem: (key: string) => {
-      store.delete(key);
-    },
-    setItem: (key: string, value: string) => {
-      store.set(key, value);
-    },
-  };
-  Object.defineProperty(window, 'localStorage', {
-    configurable: true,
-    value: storage,
-  });
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: storage,
-  });
-}
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+  true;
 
 function resetMocks() {
-  installLocalStorageStub();
   mocks.darkMode = false;
   mocks.locale = 'zh-CN';
-  mocks.location = { pathname: '/dashboard' };
+  mocks.location = { pathname: '/dashboard', search: '' };
   mocks.logout.mockReset();
   mocks.navigate.mockReset();
   mocks.setDarkMode.mockReset();
-  mocks.theme = { header: 'light', sidebar: 'light' };
   mocks.title = 'V2Board';
   mocks.user = { email: 'user@example.com' };
-  window.localStorage.setItem('umi_locale', 'zh-CN');
 }
 
-describe('AppLayout bundled-theme markup', () => {
+describe('AppLayout shadcn app shell markup', () => {
   beforeEach(resetMocks);
 
-  it('renders the old page-container classes, sidebar menu, header title, and copyright', () => {
-    mocks.theme = { header: 'dark', sidebar: 'dark' };
-    mocks.darkMode = true;
-
+  it('renders the redesigned shell, navigation, header controls, and outlet', () => {
     const html = renderToStaticMarkup(<AppLayout />);
 
-    expect(html).toContain(
-      'id="page-container" class="zh-CN sidebar-o sidebar-dark page-header-dark side-scroll page-header-fixed main-content-boxed side-trans-enabled false"',
-    );
-    expect(html).toContain('class="v2board-nav-mask" style="display:none"');
+    expect(html).toContain('id="page-container"');
+    expect(html).toContain('v2board-app-shell');
     expect(html).toContain('id="sidebar"');
-    expect(html).toContain('content-header justify-content-lg-center bg-white-10');
-    expect(html).toContain('class="font-size-lg text-white" href="/"');
-    expect(html).toContain('<span class="text-white-75">V2Board</span>');
-    expect(html).toContain('class="nav-main"');
-    expect(html).not.toContain('href="/#/dashboard"');
-    expect(html).not.toContain('href="/#/knowledge"');
-    expect(html).toContain('class="nav-main-link active"');
-    expect(html).toContain('class="nav-main-link false"');
-    expect(html).toContain('class="nav-main-heading">订阅</li>');
-    expect(html).toContain('nav-main-link-icon si si-speedometer');
-    expect(html).toContain('nav-main-link-icon si si-book-open');
-    expect(html).toContain('nav-main-link-icon si si-bag');
-    expect(html).toContain('nav-main-link-icon si si-check');
-    expect(html).toContain('nav-main-link-icon si si-list');
-    expect(html).toContain('nav-main-link-icon si si-users');
-    expect(html).toContain('nav-main-link-icon si si-user');
-    expect(html).toContain('nav-main-link-icon si si-support');
-    expect(html).toContain('nav-main-link-icon si si-bar-chart');
-    expect(html).toContain('class="v2board-copyright">V2Board');
-    expect(html).toContain(' v1.7.4</div>');
-    expect(html).toContain('id="page-header"');
-    expect(html).toContain('v2board-container-title text-white');
+    expect(html).toContain('V2Board');
     expect(html).toContain('仪表盘');
-    expect(html).toContain('class="btn btn-primary mr-1"');
-    expect(html).toContain('class="far fa fa-moon"');
+    expect(html).toContain('使用文档');
+    expect(html).toContain('购买订阅');
+    expect(html).toContain('节点状态');
+    expect(html).toContain('我的订单');
+    expect(html).toContain('个人中心');
+    expect(html).toContain('id="page-header"');
+    expect(html).toContain('v2board-container-title');
+    expect(html).toContain('v2board-app-language-trigger');
+    expect(html).toContain('v2board-app-avatar-trigger');
     expect(html).toContain('user@example.com');
     expect(html).toContain('id="main-container"');
-    expect(html).toContain('class="content content-full"');
+    expect(html).toContain('v2board-app-main');
     expect(html).toContain('Outlet content');
-    const source = readFileSync(`${process.cwd()}/src/components/layout/app-layout.tsx`, 'utf8');
-    expect(source).toContain('document.onclick = function legacyAvatarMenuDocumentClick()');
-    expect(source).toContain(
-      "document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];",
-    );
-    expect(source).toContain('<a className="font-size-lg text-white" href="/">');
-    expect(source).toContain('<a className="dropdown-item" href="/#/profile">');
-    expect(source).not.toContain('handleHomeClick');
-    expect(source).not.toContain('handleProfileClick');
-    expect(source).not.toContain('onClick={handleProfileClick}');
-    expect(source).not.toContain('onClick={handleHomeClick}');
-    expect(source).not.toContain("document.addEventListener('click'");
-    expect(source).not.toContain("document.removeEventListener('click'");
+    expect(html).not.toContain('nav-main-link');
+    expect(html).not.toContain('content content-full');
   });
 
-  it('renders the bundled loading main container when loading is passed', () => {
-    const html = renderToStaticMarkup(<AppLayout loading />);
-
-    expect(html).toContain('id="main-container"');
-    expect(html).toContain('class="content content-full font-size-h1"');
-    expect(html).toContain('class="p-md-0 p-3"');
-    expect(html).toContain('class="anticon anticon-loading"');
-    expect(html).toContain('data-icon="loading"');
-    expect(html).not.toContain('data-outlet="true"');
-  });
-
-  it('uses detail route titles without marking sidebar items active', () => {
-    mocks.location = { pathname: '/order/TRADE123' };
+  it('uses detail route titles without marking sidebar structure as legacy nav', () => {
+    mocks.location = { pathname: '/order/TRADE123', search: '' };
 
     const html = renderToStaticMarkup(<AppLayout />);
 
     expect(html).toContain('订单详情');
-    expect(html).not.toContain('class="nav-main-link active"');
+    expect(html).not.toContain('nav-main-link active');
   });
 
-  it('uses stable sidebar keys without changing the legacy navigation markup', () => {
-    const source = readFileSync(`${process.cwd()}/src/components/layout/app-layout.tsx`, 'utf8');
+  it('renders a centered shadcn loading state', () => {
+    const html = renderToStaticMarkup(<AppLayout loading />);
 
-    expect(source).toContain('<li key={`heading-${group.labelKey}`} className="nav-main-heading">');
-    expect(source).toContain('<li className="nav-main-item" key={item.to}>');
-    expect(source).not.toContain('key={Math.random()} className="nav-main-heading"');
-    expect(source).not.toContain('className="nav-main-item" key={Math.random()}');
+    expect(html).toContain('id="main-container"');
+    expect(html).toContain('v2board-app-main');
+    expect(html).toContain('animate-spin');
+    expect(html).not.toContain('data-outlet="true"');
   });
 });
 
-describe('AppLayout bundled-theme behavior', () => {
+describe('AppLayout shadcn app shell behavior', () => {
   let container: HTMLDivElement;
   let root: Root;
   let scrollTo: ReturnType<typeof vi.fn>;
@@ -234,220 +166,94 @@ describe('AppLayout bundled-theme behavior', () => {
     });
   }
 
-  it('scrolls to top on mount and toggles the mobile sidebar mask like the old layout', async () => {
+  it('scrolls on route changes, opens mobile nav, and closes it after navigation', async () => {
     await renderLayout();
 
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
-    const page = container.querySelector('#page-container')!;
-    const toggle = container.querySelector<HTMLButtonElement>('.sidebar-toggle button')!;
+    const openButton = container.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]')!;
 
     await act(async () => {
-      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      openButton.click();
       await Promise.resolve();
     });
 
-    expect(page.className).toContain('sidebar-o-xs');
-    expect((container.querySelector('.v2board-nav-mask') as HTMLElement).style.display).toBe(
-      'block',
-    );
+    expect(container.querySelector('#sidebar')?.className).toContain('translate-x-0');
 
-    await act(async () => {
-      container
-        .querySelector('.v2board-nav-mask')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(page.className).not.toContain('sidebar-o-xs');
-    expect((container.querySelector('.v2board-nav-mask') as HTMLElement).style.display).toBe(
-      'none',
-    );
-  });
-
-  it('does not scroll again when the route changes without remounting', async () => {
-    await renderLayout();
-    scrollTo.mockClear();
-
-    mocks.location = { pathname: '/order' };
-    await act(async () => {
-      root.render(<AppLayout />);
-      await Promise.resolve();
-    });
-
-    expect(scrollTo).not.toHaveBeenCalled();
-  });
-
-  it('navigates with sidebar links and closes the sidebar after navigation', async () => {
-    await renderLayout();
-
-    const toggle = container.querySelector<HTMLButtonElement>('.sidebar-toggle button')!;
-    await act(async () => {
-      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    const knowledge = Array.from(container.querySelectorAll('.nav-main-link')).find(
-      (link) => link.textContent === '使用文档',
+    const knowledge = Array.from(container.querySelectorAll<HTMLButtonElement>('nav button')).find(
+      (button) => button.textContent?.includes('使用文档'),
     )!;
-    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
     await act(async () => {
-      knowledge.dispatchEvent(click);
+      knowledge.click();
       await Promise.resolve();
     });
 
-    expect((knowledge as HTMLAnchorElement).getAttribute('href')).toBeNull();
-    expect(click.defaultPrevented).toBe(false);
     expect(mocks.navigate).toHaveBeenCalledWith('/knowledge');
-    expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
+    expect(container.querySelector('#sidebar')?.className).toContain('-translate-x-full');
   });
 
-  it('keeps the legacy brand as a plain href without client-side interception', async () => {
+  it('toggles dark mode through the header button', async () => {
     await renderLayout();
 
-    const brand = container.querySelector<HTMLAnchorElement>('#sidebar .content-header > a')!;
-    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
-
+    const toggle = container.querySelector<HTMLButtonElement>('button[data-dark-mode-trigger]')!;
     await act(async () => {
-      brand.dispatchEvent(click);
-      await Promise.resolve();
-    });
-
-    expect(brand.getAttribute('href')).toBe('/');
-    expect(click.defaultPrevented).toBe(false);
-    expect(mocks.navigate).not.toHaveBeenCalled();
-  });
-
-  it('toggles dark mode through the old header button', async () => {
-    await renderLayout();
-
-    const darkButton = container.querySelector<HTMLButtonElement>('#page-header .dropdown button')!;
-    expect(darkButton.innerHTML).toContain('fa-sun');
-
-    await act(async () => {
-      darkButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      toggle.click();
       await Promise.resolve();
     });
 
     expect(mocks.setDarkMode).toHaveBeenCalledWith(true);
-    expect(darkButton.innerHTML).toContain('fa-moon');
+    expect(container.querySelector('button[data-dark-mode-trigger] i')?.className).toContain(
+      'fa-moon',
+    );
   });
 
-  it('renders and controls the bundled header search overlay when search props are passed', async () => {
-    const onChange = vi.fn();
-    await renderLayout({
-      search: {
-        placeholder: '搜索文档',
-        defaultValue: 'node',
-        onChange,
-      },
-    });
+  it('opens the user menu and logs out through the shadcn dropdown', async () => {
+    await renderLayout();
 
-    const sidebarToggle = container.querySelector<HTMLElement>('.sidebar-toggle')!;
-    expect(sidebarToggle.style.display).toBe('block');
-    expect(container.innerHTML).toContain('overlay-header bg-dark ');
-
-    const searchButton = Array.from(
-      sidebarToggle.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((button) => button.textContent?.includes('搜索'))!;
-
+    const trigger = container.querySelector<HTMLButtonElement>('.v2board-app-avatar-trigger')!;
     await act(async () => {
-      searchButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
+      );
       await Promise.resolve();
     });
 
-    expect(container.querySelector('.overlay-header')!.className).toContain('show');
-    const input = container.querySelector<HTMLInputElement>('.overlay-header input')!;
-    expect(input.defaultValue).toBe('node');
-    expect(input.placeholder).toBe('搜索文档');
+    expect(document.body.textContent).toContain('个人中心');
+    expect(document.body.textContent).toContain('登出');
 
+    const logoutItem = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+      (item) => item.textContent?.includes('登出'),
+    )!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        input,
-        'trojan',
-      );
+      logoutItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      logoutItem.click();
+      await Promise.resolve();
+    });
+
+    expect(mocks.logout).toHaveBeenCalled();
+    expect(mocks.navigate).toHaveBeenCalledWith('/login');
+  });
+
+  it('renders the optional search row without legacy overlay markup', async () => {
+    const onChange = vi.fn();
+    await renderLayout({ search: { placeholder: 'Search...', onChange } });
+
+    const search = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '搜索',
+    )!;
+    await act(async () => {
+      search.click();
+      await Promise.resolve();
+    });
+
+    const input = container.querySelector<HTMLInputElement>('input[placeholder="Search..."]')!;
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    valueSetter?.call(input, 'node');
+    await act(async () => {
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(onChange).toHaveBeenCalledWith('trojan');
-
-    const closeButton = container.querySelector<HTMLButtonElement>('.overlay-header .btn-dark')!;
-    await act(async () => {
-      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('.overlay-header')!.className).not.toContain('show');
-  });
-
-  it('prefers the bundled layout title prop over the route title', async () => {
-    await renderLayout({ title: '自定义标题' });
-
-    expect(container.querySelector('.v2board-container-title')!.textContent).toBe('自定义标题');
-    expect(container.querySelector('.v2board-copyright')!.textContent).toBe('V2Board v1.7.4');
-  });
-
-  it('opens the avatar menu, keeps javascript logout href, and logs out to login', async () => {
-    await renderLayout();
-
-    const userButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('#page-header .dropdown button'),
-    ).find((button) => button.textContent?.includes('user@example.com'))!;
-
-    await act(async () => {
-      userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('.dropdown-menu')!.className).toContain('show');
-    expect(document.onclick).toBeTypeOf('function');
-    const profile = Array.from(container.querySelectorAll('.dropdown-item')).find((item) =>
-      item.textContent?.includes('个人中心'),
-    ) as HTMLAnchorElement;
-    const logoutLink = Array.from(container.querySelectorAll('.dropdown-item')).find((item) =>
-      item.textContent?.includes('登出'),
-    ) as HTMLAnchorElement;
-
-    expect(profile.getAttribute('href')).toBe('/#/profile');
-    expect(logoutLink.getAttribute('href')).toBe('javascript:void(0);');
-
-    const profileClick = new MouseEvent('click', { bubbles: true, cancelable: true });
-    await act(async () => {
-      profile.dispatchEvent(profileClick);
-      await Promise.resolve();
-    });
-
-    expect(profileClick.defaultPrevented).toBe(false);
-    expect(mocks.navigate).not.toHaveBeenCalledWith('/profile');
-    expect(container.querySelector('.dropdown-menu')!.className).not.toContain('show');
-
-    await act(async () => {
-      userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('.dropdown-menu')!.className).not.toContain('show');
-    expect(document.onclick).toBeNull();
-
-    await act(async () => {
-      userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      logoutLink.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(mocks.logout).toHaveBeenCalledTimes(1);
-    expect(mocks.navigate).toHaveBeenCalledWith('/login');
+    expect(onChange).toHaveBeenCalledWith('node');
+    expect(container.innerHTML).not.toContain('overlay-header');
   });
 });

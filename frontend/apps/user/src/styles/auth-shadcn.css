@@ -1,11 +1,12 @@
 /*
- * Pure shadcn auth island Tailwind entry.
+ * Pure shadcn islands Tailwind entry.
  *
- * Keep this separate from globals.css so auth can use unprefixed registry-style
- * classes without injecting a second Tailwind preflight over the legacy app.
- * `source(none)` keeps the naked utility surface limited to auth/UI files, and
- * `important` lets these utilities beat old Bootstrap/OneUI naked class
- * collisions such as px-4, p-4, border-0, and text-center inside auth.
+ * Keep this separate from globals.css so redesigned islands can use unprefixed
+ * registry-style classes without injecting a second Tailwind preflight over the
+ * legacy app. `source(none)` keeps the naked utility surface limited to the
+ * files listed here, and `important` lets these utilities beat old
+ * Bootstrap/OneUI naked class collisions such as px-4, p-4, border-0, and
+ * text-center inside those islands.
  */
 @import 'tailwindcss/theme.css';
 
@@ -37,6 +38,9 @@
 }
 
 @source '../pages/auth/**/*.tsx';
+@source '../pages/dashboard.tsx';
+@source '../components/layout/app-layout.tsx';
+@source '../components/layout/shadcn-language-menu.tsx';
 @source '../components/ui/**/*.tsx';
 @source '../lib/auth-toast.tsx';
 

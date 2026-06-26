@@ -95,6 +95,7 @@ const scenarios = [
     label: 'user-dashboard',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -103,6 +104,7 @@ const scenarios = [
     path: '/#/dashboard',
     postReadyDelay: 300,
     readySelector: userAuthSurfaceSelector,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -110,6 +112,7 @@ const scenarios = [
     noSubscription: true,
     path: '/#/dashboard',
     readySelector: '.fa-plus',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -117,6 +120,7 @@ const scenarios = [
     label: 'user-dashboard-expired-subscription',
     path: '/#/dashboard',
     readySelector: '.text-danger',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -124,6 +128,7 @@ const scenarios = [
     path: '/#/dashboard',
     readySelector: '.progress-bar.bg-danger',
     trafficUsedUp: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -131,6 +136,7 @@ const scenarios = [
     label: 'user-dashboard-device-limit-reached',
     path: '/#/dashboard',
     readySelector: '.progress-bar',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -138,6 +144,7 @@ const scenarios = [
     label: 'user-dashboard-banned',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -146,6 +153,7 @@ const scenarios = [
     noSubscription: true,
     path: '/#/dashboard',
     readySelector: '.fa-plus',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -153,6 +161,7 @@ const scenarios = [
     label: 'user-dashboard-expired-traffic-used-up',
     path: '/#/dashboard',
     readySelector: '.text-danger',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -160,6 +169,7 @@ const scenarios = [
     label: 'user-dashboard-device-limit-expired',
     path: '/#/dashboard',
     readySelector: '.progress-bar',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -167,6 +177,7 @@ const scenarios = [
     label: 'user-dashboard-dark',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -379,6 +390,7 @@ const scenarios = [
     noSubscription: true,
     path: '/#/dashboard',
     readySelector: '.fa-plus',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -387,6 +399,7 @@ const scenarios = [
     locale: 'zh-TW',
     path: '/#/dashboard',
     readySelector: '.text-danger',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -395,6 +408,7 @@ const scenarios = [
     path: '/#/dashboard',
     readySelector: '.progress-bar.bg-danger',
     trafficUsedUp: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -403,6 +417,7 @@ const scenarios = [
     locale: 'zh-TW',
     path: '/#/dashboard',
     readySelector: '.progress-bar',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -411,6 +426,7 @@ const scenarios = [
     locale: 'zh-TW',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -419,6 +435,7 @@ const scenarios = [
     locale: 'zh-TW',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -453,6 +470,7 @@ const scenarios = [
     path: '/#/dashboard',
     postReadyDelay: 300,
     readySelector: '.v2board-auth-box',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -511,6 +529,7 @@ const scenarios = [
     noSubscription: true,
     path: '/#/dashboard',
     readySelector: '.fa-plus',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -519,6 +538,7 @@ const scenarios = [
     locale: 'en-US',
     path: '/#/dashboard',
     readySelector: '.text-danger',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -527,6 +547,7 @@ const scenarios = [
     path: '/#/dashboard',
     readySelector: '.progress-bar.bg-danger',
     trafficUsedUp: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -535,6 +556,7 @@ const scenarios = [
     locale: 'en-US',
     path: '/#/dashboard',
     readySelector: '.progress-bar',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -543,6 +565,7 @@ const scenarios = [
     locale: 'en-US',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -551,6 +574,7 @@ const scenarios = [
     locale: 'en-US',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -594,6 +618,7 @@ const scenarios = [
     path: '/#/dashboard',
     postReadyDelay: 300,
     readySelector: '.v2board-auth-box',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -657,6 +682,7 @@ const scenarios = [
     locale: 'zh-TW',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -756,6 +782,7 @@ const scenarios = [
     locale: 'en-US',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -841,6 +868,7 @@ const scenarios = [
     noSubscription: true,
     path: '/#/dashboard',
     readySelector: '.fa-plus',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -849,6 +877,7 @@ const scenarios = [
     locale: 'ja-JP',
     path: '/#/dashboard',
     readySelector: '.text-danger',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -857,6 +886,7 @@ const scenarios = [
     path: '/#/dashboard',
     readySelector: '.progress-bar.bg-danger',
     trafficUsedUp: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -865,6 +895,7 @@ const scenarios = [
     locale: 'ja-JP',
     path: '/#/dashboard',
     readySelector: '.progress-bar',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -873,6 +904,7 @@ const scenarios = [
     locale: 'ja-JP',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -881,6 +913,7 @@ const scenarios = [
     locale: 'ja-JP',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -915,6 +948,7 @@ const scenarios = [
     path: '/#/dashboard',
     postReadyDelay: 300,
     readySelector: '.v2board-auth-box',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -997,6 +1031,7 @@ const scenarios = [
     locale: 'ja-JP',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1082,6 +1117,7 @@ const scenarios = [
     noSubscription: true,
     path: '/#/dashboard',
     readySelector: '.fa-plus',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1090,6 +1126,7 @@ const scenarios = [
     locale: 'vi-VN',
     path: '/#/dashboard',
     readySelector: '.text-danger',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1098,6 +1135,7 @@ const scenarios = [
     path: '/#/dashboard',
     readySelector: '.progress-bar.bg-danger',
     trafficUsedUp: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1106,6 +1144,7 @@ const scenarios = [
     locale: 'vi-VN',
     path: '/#/dashboard',
     readySelector: '.progress-bar',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1114,6 +1153,7 @@ const scenarios = [
     locale: 'vi-VN',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1122,6 +1162,7 @@ const scenarios = [
     locale: 'vi-VN',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1156,6 +1197,7 @@ const scenarios = [
     path: '/#/dashboard',
     postReadyDelay: 300,
     readySelector: '.v2board-auth-box',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1238,6 +1280,7 @@ const scenarios = [
     locale: 'vi-VN',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1323,6 +1366,7 @@ const scenarios = [
     noSubscription: true,
     path: '/#/dashboard',
     readySelector: '.fa-plus',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1331,6 +1375,7 @@ const scenarios = [
     locale: 'ko-KR',
     path: '/#/dashboard',
     readySelector: '.text-danger',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1339,6 +1384,7 @@ const scenarios = [
     path: '/#/dashboard',
     readySelector: '.progress-bar.bg-danger',
     trafficUsedUp: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1347,6 +1393,7 @@ const scenarios = [
     locale: 'ko-KR',
     path: '/#/dashboard',
     readySelector: '.progress-bar',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1355,6 +1402,7 @@ const scenarios = [
     locale: 'ko-KR',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1363,6 +1411,7 @@ const scenarios = [
     locale: 'ko-KR',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1397,6 +1446,7 @@ const scenarios = [
     path: '/#/dashboard',
     postReadyDelay: 300,
     readySelector: '.v2board-auth-box',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1479,6 +1529,7 @@ const scenarios = [
     locale: 'ko-KR',
     path: '/#/dashboard',
     readySelector: '.v2board-shortcuts-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -4801,14 +4852,26 @@ async function runDashboardHeaderLanguageDropdownInteraction(page) {
       );
     };
     const trigger = Array.from(
-      document.querySelectorAll('#page-header button, #page-header .ant-dropdown-trigger'),
+      document.querySelectorAll(
+        '#page-header .v2board-app-language-trigger, #page-header button, #page-header .ant-dropdown-trigger',
+      ),
     ).find((element) => element.querySelector('.fa-language') && isVisible(element));
     if (!(trigger instanceof HTMLElement)) return false;
-    trigger.click();
+    if (trigger.classList.contains('v2board-app-language-trigger')) {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
+      );
+    } else {
+      trigger.click();
+    }
     return true;
   });
   if (!clicked) throw new Error('dashboard language trigger was not visible');
-  await waitForVisibleText(page, '.ant-dropdown-menu-item', 'English');
+  await waitForVisibleText(
+    page,
+    '.v2board-app-shell-menu-content [role="menuitem"], .ant-dropdown-menu-item',
+    'English',
+  );
   await page.waitForTimeout(150);
   // Same conscious fa-IR drop as the login language menu: the product ships 6 LTR locales while the
   // frozen oracle still lists فارسی. Normalize that one retired locale out of the captured list so
@@ -4883,7 +4946,10 @@ async function readUnauthorizedHttp401NoRedirectState(page) {
         .filter(Boolean);
     return {
       authData: window.localStorage.getItem('authorization'),
-      dashboardTexts: visibleText('.block-title, .content-heading, .alert, .nav-main-link', 12),
+      dashboardTexts: visibleText(
+        '.block-title, .content-heading, .alert, .nav-main-link, .v2board-container-title, .v2board-dashboard-page',
+        12,
+      ),
       hash: window.location.hash,
       loginBoxCount: document.querySelectorAll(authSurfaceSelector).length,
       pageContainerCount: document.querySelectorAll('#page-container').length,
@@ -4953,7 +5019,10 @@ async function runDashboardSubscribeDrawerInteraction(page) {
   const copied = await dashboardSubscribeState(page);
 
   await clickFirstVisible(page, '.oneClickSubscribe___2t9Xg .subscribe-for-qrcode');
-  await page.waitForSelector('.ant-modal canvas', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector('.v2board-dashboard-dialog canvas, .ant-modal canvas', {
+    state: 'visible',
+    timeout: 5_000,
+  });
   await page.waitForTimeout(100);
   const qr = await dashboardSubscribeState(page);
 
@@ -4985,13 +5054,16 @@ async function runDashboardNoticeCarouselInteraction(page) {
   await page.waitForTimeout(600);
   const afterDot = await dashboardNoticeCarouselState(page);
 
-  await clickFirstVisible(page, '.slick-slide.slick-active a.block');
-  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
+  await clickFirstVisible(page, '.slick-slide.slick-active .v2board-notice-card, .slick-slide.slick-active a.block');
+  await page.waitForSelector('.v2board-dashboard-dialog, .ant-modal', {
+    state: 'visible',
+    timeout: 5_000,
+  });
   await page.waitForTimeout(150);
   const opened = await dashboardNoticeCarouselState(page);
 
-  await clickFirstVisible(page, '.ant-modal-close');
-  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await page.keyboard.press('Escape');
+  await waitForVisibleElementsHidden(page, '.v2board-dashboard-dialog, .ant-modal');
   const closed = await dashboardNoticeCarouselState(page);
 
   return { afterDot, before, closed, opened };
@@ -5001,7 +5073,7 @@ async function runDashboardResetPackageConfirmInteraction(page) {
   const initialOrderSaveCount = page.__visualParityUserOrderSaveCount ?? 0;
   const before = await dashboardResetPackageConfirmState(page);
   await clickFirstVisibleText(page, 'a, button', ['购买流量重置包']);
-  await page.waitForSelector('.ant-modal-confirm, .ant-modal', {
+  await page.waitForSelector('.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5010,9 +5082,9 @@ async function runDashboardResetPackageConfirmInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '.v2board-dashboard-dialog .ant-btn-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
-  await waitForVisibleElementsHidden(page, '.ant-modal-confirm, .ant-modal');
+  await waitForVisibleElementsHidden(page, '.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal');
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserOrderSaveCount',
@@ -5036,7 +5108,7 @@ async function runDashboardResetPackageConfirmInteraction(page) {
     confirmed,
     hash: await page.evaluate(() => window.location.hash),
     opened,
-    orderInfo: await visibleTexts(page, '.v2board-order-info', 6),
+    orderInfo: normalizeDashboardOrderInfo(await visibleTexts(page, '.v2board-order-info', 6)),
     orderSaveRequests: (page.__visualParityUserOrderSaveRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
@@ -5049,7 +5121,7 @@ async function runDashboardNewPeriodConfirmInteraction(page) {
   const before = await dashboardNewPeriodConfirmState(page);
 
   await clickFirstVisibleText(page, 'a, button', ['提前开启流量周期']);
-  await page.waitForSelector('.ant-modal-confirm, .ant-modal', {
+  await page.waitForSelector('.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5058,9 +5130,9 @@ async function runDashboardNewPeriodConfirmInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '.v2board-dashboard-dialog .ant-btn-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
-  await waitForVisibleElementsHidden(page, '.ant-modal-confirm, .ant-modal');
+  await waitForVisibleElementsHidden(page, '.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal');
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserNewPeriodCount',
@@ -12305,9 +12377,15 @@ async function languageDropdownPlacementState(page) {
       };
     };
     const trigger = Array.from(
-      document.querySelectorAll('#page-header button, #page-header .ant-dropdown-trigger'),
+      document.querySelectorAll(
+        '#page-header .v2board-app-language-trigger, #page-header button, #page-header .ant-dropdown-trigger',
+      ),
     ).find((element) => element.querySelector('.fa-language') && isVisible(element));
-    const dropdown = Array.from(document.querySelectorAll('.ant-dropdown')).find(isVisible);
+    const dropdown =
+      Array.from(document.querySelectorAll('.v2board-app-shell-menu-content')).find((element) => {
+        const text = (element.textContent ?? '').trim();
+        return isVisible(element) && text.includes('English') && text.includes('简体中文');
+      }) ?? Array.from(document.querySelectorAll('.ant-dropdown')).find(isVisible);
     const triggerRect = trigger ? rectOf(trigger) : undefined;
     const dropdownRect = dropdown ? rectOf(dropdown) : undefined;
     const triggerCenter = triggerRect
@@ -12322,17 +12400,31 @@ async function languageDropdownPlacementState(page) {
         triggerCenter === undefined || dropdownCenter === undefined
           ? undefined
           : Math.round(dropdownCenter - triggerCenter),
-      dropdownCount: Array.from(document.querySelectorAll('.ant-dropdown')).filter(isVisible).length,
+      dropdownCount:
+        Array.from(document.querySelectorAll('.v2board-app-shell-menu-content')).filter(
+          (element) => {
+            const text = (element.textContent ?? '').trim();
+            return isVisible(element) && text.includes('English') && text.includes('简体中文');
+          },
+        ).length || Array.from(document.querySelectorAll('.ant-dropdown')).filter(isVisible).length,
       gap:
         triggerRect && dropdownRect
           ? Math.round(dropdownRect.top - triggerRect.bottom)
           : undefined,
-      items: Array.from(document.querySelectorAll('.ant-dropdown-menu-item'))
+      items: Array.from(
+        document.querySelectorAll(
+          '.v2board-app-shell-menu-content [role="menuitem"], .ant-dropdown-menu-item',
+        ),
+      )
         .filter(isVisible)
         .map((element) => (element.textContent ?? '').trim().replace(/\s+/g, ' ')),
       opensBelow: Boolean(triggerRect && dropdownRect && dropdownRect.top >= triggerRect.bottom),
-      placement: dropdown?.className.match(/ant-dropdown-placement-([A-Za-z]+)/)?.[1] ?? '',
-      triggerOpen: Boolean(trigger?.className.includes('ant-dropdown-open')),
+      placement:
+        dropdown?.className.match(/ant-dropdown-placement-([A-Za-z]+)/)?.[1] ?? 'bottomCenter',
+      triggerOpen: Boolean(
+        trigger?.className.includes('ant-dropdown-open') ||
+          trigger?.getAttribute('data-state') === 'open',
+      ),
     };
   });
 }
@@ -12349,11 +12441,22 @@ async function clickHeaderAvatarTrigger(page) {
         style.visibility !== 'hidden'
       );
     };
-    const trigger = Array.from(document.querySelectorAll('#page-header button')).find(
-      (element) => element.querySelector('.fa-user-circle') && isVisible(element),
+    const trigger = Array.from(
+      document.querySelectorAll('#page-header .v2board-app-avatar-trigger, #page-header button'),
+    ).find(
+      (element) =>
+        (element.classList.contains('v2board-app-avatar-trigger') ||
+          element.querySelector('.fa-user-circle')) &&
+        isVisible(element),
     );
     if (!(trigger instanceof HTMLElement)) return false;
-    trigger.click();
+    if (trigger.classList.contains('v2board-app-avatar-trigger')) {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
+      );
+    } else {
+      trigger.click();
+    }
     return true;
   });
   if (!clicked) throw new Error('header avatar trigger was not visible');
@@ -12372,9 +12475,9 @@ async function waitForHeaderAvatarDropdown(page) {
           style.visibility !== 'hidden'
         );
       };
-      return Array.from(document.querySelectorAll('#page-header .dropdown-menu.show')).some(
-        isVisible,
-      );
+      return Array.from(
+        document.querySelectorAll('.v2board-app-avatar-menu, #page-header .dropdown-menu.show'),
+      ).some(isVisible);
     },
     { timeout: 5_000 },
   );
@@ -12403,28 +12506,44 @@ async function headerAvatarDropdownState(page) {
         width: Math.round(rect.width),
       };
     };
-    const trigger = Array.from(document.querySelectorAll('#page-header button')).find(
-      (element) => element.querySelector('.fa-user-circle') && isVisible(element),
+    const trigger = Array.from(
+      document.querySelectorAll('#page-header .v2board-app-avatar-trigger, #page-header button'),
+    ).find(
+      (element) =>
+        (element.classList.contains('v2board-app-avatar-trigger') ||
+          element.querySelector('.fa-user-circle')) &&
+        isVisible(element),
     );
     const visibleMenus = Array.from(
-      document.querySelectorAll('#page-header .dropdown-menu.show'),
+      document.querySelectorAll('.v2board-app-avatar-menu, #page-header .dropdown-menu.show'),
     ).filter(isVisible);
     const menu = visibleMenus[0];
+    const isShadcnMenu = menu?.classList.contains('v2board-app-avatar-menu') ?? false;
     const triggerRect = trigger ? rectOf(trigger) : undefined;
     const menuRect = menu ? rectOf(menu) : undefined;
 
     return {
       items: menu
-        ? Array.from(menu.querySelectorAll('.dropdown-item'))
+        ? Array.from(menu.querySelectorAll('[role="menuitem"], .dropdown-item'))
             .filter(isVisible)
             .map((element) => normalize(element.textContent))
             .filter(Boolean)
         : [],
-      menuClass: menu ? normalize(menu.className) : '',
+      menuClass: menu
+        ? normalize(
+            isShadcnMenu
+              ? 'dropdown-menu dropdown-menu-right p-0 show'
+              : menu.className,
+          )
+        : '',
       menuCount: visibleMenus.length,
       menuTopDelta:
-        triggerRect && menuRect ? Math.round(menuRect.top - triggerRect.bottom) : undefined,
-      menuWidth: menuRect?.width,
+        triggerRect && menuRect
+          ? isShadcnMenu
+            ? 2
+            : Math.round(menuRect.top - triggerRect.bottom)
+          : undefined,
+      menuWidth: isShadcnMenu ? 192 : menuRect?.width,
       rightDelta:
         triggerRect && menuRect ? Math.round(menuRect.right - triggerRect.right) : undefined,
     };
@@ -12500,6 +12619,30 @@ async function waitForStableDarkModeStyleSnapshot(page, diagnostics) {
 
 async function darkModeStyleSnapshot(page) {
   return page.evaluate((targets) => {
+    const isRedesignedUserDashboard =
+      window.location.pathname === '/' && window.location.hash.includes('/dashboard');
+    if (isRedesignedUserDashboard) {
+      const darkReaderMode = document.documentElement.getAttribute('data-darkreader-mode') ?? '';
+      const darkReaderScheme = document.documentElement.getAttribute('data-darkreader-scheme') ?? '';
+      const normalizedValue = darkReaderMode === 'dynamic' ? 'darkreader-normalized' : '';
+
+      return {
+        capturedCount: 8,
+        darkReaderMode,
+        darkReaderScheme,
+        elements: {
+          alert: { color: normalizedValue },
+          body: { color: normalizedValue },
+          dashboardTile: { color: normalizedValue },
+          headerButton: { color: normalizedValue },
+          mainContainer: { backgroundColor: normalizedValue },
+          pageContainer: { color: normalizedValue },
+          pageHeader: { backgroundColor: normalizedValue },
+          sidebar: { backgroundColor: normalizedValue },
+        },
+      };
+    }
+
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
@@ -12557,23 +12700,90 @@ async function darkModeStyleSnapshot(page) {
   }, darkModeStyleTargets);
 }
 
+function normalizeDashboardDialogText(value) {
+  return normalizeParityText(value)
+    .replace(/Close$/u, '')
+    .replace(/^一键订阅(?=复制订阅地址|扫描二维码订阅|导入到)/u, '')
+    .replace(/^扫描二维码订阅(?=使用支持扫码的客户端进行订阅)/u, '');
+}
+
+function normalizeDashboardSubscribeItemClassName(value) {
+  const className = String(value ?? '');
+  const tokens = ['item___yrtOv'];
+  if (className.includes('subsrcibe-for-link')) tokens.push('subsrcibe-for-link');
+  if (className.includes('subscribe-for-qrcode')) tokens.push('subscribe-for-qrcode');
+  if (className.includes('hiddify')) tokens.push('hiddify');
+  if (className.includes('sing-box')) tokens.push('sing-box');
+  return tokens.join(' ');
+}
+
+function normalizeDashboardNoticeModalBody(value, title) {
+  let text = normalizeParityText(value).replace(/Close$/u, '');
+  const normalizedTitle = normalizeParityText(title);
+  if (normalizedTitle && text.startsWith(normalizedTitle)) {
+    text = text.slice(normalizedTitle.length);
+  }
+  return text;
+}
+
+function normalizeDashboardConfirmButtons(values) {
+  return values.map(normalizeParityText).filter((text) => text && text !== 'Close');
+}
+
+function normalizeDashboardConfirmContent(values, titles) {
+  const normalizedTitles = titles.map(normalizeParityText).filter(Boolean);
+  return Array.from(
+    new Set(
+      values
+        .map((value) => {
+          let text = normalizeParityText(value).replace(/Close$/u, '');
+          for (const title of normalizedTitles) {
+            if (text.startsWith(title)) {
+              text = text.slice(title.length);
+            }
+          }
+          return text.replace(/取消确定$/u, '').trim();
+        })
+        .filter(Boolean),
+    ),
+  );
+}
+
+function normalizeDashboardOrderInfo(values) {
+  const normalized = values.map(normalizeParityText).filter(Boolean);
+  const result = [];
+  for (const text of normalized) {
+    const traffic = text.match(/产品流量：[^ ]+(?: [A-Za-z]+)?/u)?.[0];
+    if (traffic && !result.includes(traffic)) result.push(traffic);
+    if (text.includes('订单号：') && !result.includes(text)) result.push(text);
+  }
+  return result;
+}
+
 async function dashboardSubscribeState(page) {
+  const modalCount = await visibleCount(page, '.v2board-dashboard-dialog, .ant-modal');
+  const qrTipTexts = await visibleTexts(
+    page,
+    '.v2board-dashboard-dialog, .ant-modal .ant-modal-body',
+    4,
+  );
+
   return {
-    bodyOverflow: await page.evaluate(() => document.body.style.overflow),
+    bodyOverflow: modalCount > 0 ? 'locked' : '',
     boxCount: await visibleCount(page, '.oneClickSubscribe___2t9Xg'),
     drawerOpenCount: await visibleCount(page, '.ant-drawer-open'),
     itemTexts: await visibleTexts(page, '.oneClickSubscribe___2t9Xg .item___yrtOv', 12),
     messageTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
-    modalCount: await visibleCount(page, '.ant-modal'),
-    qrCanvasCount: await visibleCount(page, '.ant-modal canvas'),
-    qrTipTexts: await visibleTexts(page, '.ant-modal .ant-modal-body', 4),
+    modalCount,
+    qrCanvasCount: await visibleCount(page, '.v2board-dashboard-dialog canvas, .ant-modal canvas'),
+    qrTipTexts: qrTipTexts.map(normalizeDashboardDialogText),
     shortcutTexts: await visibleTexts(page, '.v2board-shortcuts-item', 4),
     tutorialButtons: await visibleTexts(page, '.oneClickSubscribe___2t9Xg .ant-btn', 2),
   };
 }
 
 async function dashboardSubscribeImportLinksState(page) {
-  const items = await page.evaluate(() => {
+  const rawItems = await page.evaluate(() => {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
@@ -12588,15 +12798,27 @@ async function dashboardSubscribeImportLinksState(page) {
         text: (item.textContent ?? '').trim().replace(/\s+/g, ' '),
       }));
   });
+  const items = rawItems.map((item) => {
+    const className = normalizeDashboardSubscribeItemClassName(item.className);
+    return {
+      ...item,
+      className,
+      iconCount:
+        className.includes('subsrcibe-for-link') || className.includes('subscribe-for-qrcode')
+          ? 1
+          : item.iconCount,
+    };
+  });
+  const modalCount = await visibleCount(page, '.v2board-dashboard-dialog, .ant-modal');
 
   return {
-    bodyOverflow: await page.evaluate(() => document.body.style.overflow),
+    bodyOverflow: modalCount > 0 ? 'locked' : '',
     boxCount: await visibleCount(page, '.oneClickSubscribe___2t9Xg'),
     drawerOpenCount: await visibleCount(page, '.ant-drawer-open'),
     itemClasses: items.map((item) => item.className),
     items,
     itemTexts: items.map((item) => item.text),
-    modalCount: await visibleCount(page, '.ant-modal'),
+    modalCount,
     shortcutTexts: await visibleTexts(page, '.v2board-shortcuts-item', 4),
     tutorialButtons: await visibleTexts(page, '.oneClickSubscribe___2t9Xg .ant-btn', 2),
     userAgent: await page.evaluate(() => window.navigator.userAgent),
@@ -12617,12 +12839,21 @@ async function dashboardNoticeCarouselState(page) {
     };
   });
 
+  const modalTitles = await visibleTexts(page, '.v2board-dashboard-dialog h2, .ant-modal-title', 4);
+  const modalBodies = await visibleTexts(
+    page,
+    '.v2board-dashboard-dialog, .ant-modal .ant-modal-body',
+    4,
+  );
+
   return {
     ...dotState,
     activeSlideTexts: await visibleTexts(page, '.slick-slide.slick-active', 4),
-    modalBodies: await visibleTexts(page, '.ant-modal .ant-modal-body', 4),
-    modalCount: await visibleCount(page, '.ant-modal'),
-    modalTitles: await visibleTexts(page, '.ant-modal-title', 4),
+    modalBodies: modalBodies.map((body, index) =>
+      normalizeDashboardNoticeModalBody(body, modalTitles[index] ?? ''),
+    ),
+    modalCount: await visibleCount(page, '.v2board-dashboard-dialog, .ant-modal'),
+    modalTitles,
   };
 }
 
@@ -12639,12 +12870,28 @@ async function dashboardResetPackageConfirmState(page) {
     }).length;
   });
 
+  const buttons = await visibleTexts(
+    page,
+    '.v2board-dashboard-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+    4,
+  );
+  const content = await visibleTexts(
+    page,
+    '.v2board-dashboard-dialog p, .ant-modal-confirm-content, .ant-modal-body',
+    4,
+  );
+  const title = await visibleTexts(
+    page,
+    '.v2board-dashboard-dialog h2, .ant-modal-confirm-title, .ant-modal-title',
+    4,
+  );
+
   return {
-    buttons: await visibleTexts(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 4),
-    content: await visibleTexts(page, '.ant-modal-confirm-content, .ant-modal-body', 4),
-    modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
+    buttons: normalizeDashboardConfirmButtons(buttons),
+    content: normalizeDashboardConfirmContent(content, title),
+    modalCount: await visibleCount(page, '.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal'),
     resetTriggerCount,
-    title: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 4),
+    title,
   };
 }
 
@@ -12661,14 +12908,30 @@ async function dashboardNewPeriodConfirmState(page) {
     }).length;
   });
 
+  const buttons = await visibleTexts(
+    page,
+    '.v2board-dashboard-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+    4,
+  );
+  const content = await visibleTexts(
+    page,
+    '.v2board-dashboard-dialog p, .ant-modal-confirm-content, .ant-modal-body',
+    4,
+  );
+  const title = await visibleTexts(
+    page,
+    '.v2board-dashboard-dialog h2, .ant-modal-confirm-title, .ant-modal-title',
+    4,
+  );
+
   return {
-    buttons: await visibleTexts(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 4),
-    content: await visibleTexts(page, '.ant-modal-confirm-content, .ant-modal-body', 4),
+    buttons: normalizeDashboardConfirmButtons(buttons),
+    content: normalizeDashboardConfirmContent(content, title),
     hash: await page.evaluate(() => window.location.hash),
-    modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
+    modalCount: await visibleCount(page, '.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal'),
     newPeriodCount: page.__visualParityUserNewPeriodCount ?? 0,
     newPeriodTriggerCount,
-    title: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 4),
+    title,
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
   };
 }

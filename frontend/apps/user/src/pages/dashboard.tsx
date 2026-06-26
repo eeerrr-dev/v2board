@@ -1,14 +1,39 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { TouchEvent as ReactTouchEvent } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import QRCode from 'qrcode.react';
 import { user } from '@v2board/api-client';
 import type { Notice } from '@v2board/types';
+import {
+  AlertCircle,
+  Bell,
+  BookOpen,
+  CalendarClock,
+  CheckCircle2,
+  Copy,
+  CreditCard,
+  Headphones,
+  LinkIcon,
+  Package,
+  Plus,
+  QrCode,
+  RefreshCcw,
+  ShoppingBag,
+  Smartphone,
+} from 'lucide-react';
 import { apiClient } from '@/lib/api';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { AntBtn } from '@/components/ant-btn';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/shadcn-dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
 import {
   useCommConfig,
   useNewPeriodMutation,
@@ -17,14 +42,10 @@ import {
   useUserStat,
 } from '@/lib/queries';
 import { formatBytes } from '@v2board/config/format';
-import { legacyConfirm } from '@/components/legacy-confirm';
-import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
-import { isLegacyMobile, legacyCopyText } from '@/lib/legacy-settings';
-import { legacyHref } from '@/lib/legacy-href';
+import { legacyCopyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/legacy-toast';
-import { useTransitionStatus } from '@/lib/use-transition-status';
-import { lockLegacyDrawerBodyScroll } from '@/lib/legacy-body-scroll';
 import { formatUserLegacyDate, formatUserLegacyDateSlash } from '@/lib/legacy-date';
+import { cn } from '@/lib/cn';
 import clashForAndroidIcon from '../assets/images/icon/Clash For Android.png';
 import clashForWindowsIcon from '../assets/images/icon/Clash For Windows.png';
 import clashMetaForAndroidIcon from '../assets/images/icon/ClashMeta For Android.png';
@@ -42,11 +63,13 @@ import surgeIcon from '../assets/images/icon/Surge.png';
 
 interface Shortcut {
   to: string;
-  iconClass: string;
+  icon: typeof BookOpen;
   titleKey: string;
   descKey: string;
   onClick?: () => void;
 }
+
+type ConfirmAction = 'reset-package' | 'new-period' | null;
 
 const SUBSCRIBE_TARGET_ICONS: Record<string, string> = {
   'Clash For Android': clashForAndroidIcon,
@@ -75,84 +98,22 @@ export default function DashboardPage() {
   const newPeriod = useNewPeriodMutation();
   const [activeNotice, setActiveNotice] = useState<Notice | null>(null);
   const [noticeOpen, setNoticeOpen] = useState(false);
-  // antd's Carousel is react-slick with infinite loop: one clone of the last slide is
-  // prepended and a post-clone set is appended, so the real slides occupy track
-  // positions 1..n. `slidePos` is that track position (0 = prepended clone, n+1 =
-  // appended clone); the snap-on-transition-end below resets onto the matching real slide.
-  const [slidePos, setSlidePos] = useState(1);
-  const [noticeTransition, setNoticeTransition] = useState(true);
-  // Non-null while a horizontal touch-drag is in progress: the px the track follows the
-  // finger (react-slick's swipe; mouse-drag stays disabled via draggable:false).
-  const [dragOffset, setDragOffset] = useState<number | null>(null);
+  const [activeNoticeIndex, setActiveNoticeIndex] = useState(0);
   const [subscribeOpen, setSubscribeOpen] = useState(false);
-  const subscribeDrawerStatus = useTransitionStatus(subscribeOpen, 300);
   const [qrOpen, setQrOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [savingResetPackage, setSavingResetPackage] = useState(false);
-  const [subscribeHeight, setSubscribeHeight] = useState<number>();
-  const subscribeBoxRef = useRef<HTMLDivElement>(null);
-  const subscribeDrawerRef = useRef<HTMLDivElement>(null);
-  const noticePausedRef = useRef(false);
-  const touchRef = useRef<{ x: number; y: number; width: number; dir: 'h' | 'v' | null } | null>(
-    null,
-  );
+  const [savingNewPeriod, setSavingNewPeriod] = useState(false);
 
   const pendingOrderCount = stat.data?.pending_orders ?? 0;
   const openTicketCount = stat.data?.pending_tickets ?? 0;
   const sub = subscribe.data;
-
-  useEffect(() => {
-    // Faithful to the packaged theme's notice handler:
-    //   if (t.length) { var n = t.find(e => -1 !== e.tags.indexOf('弹窗')); console.log(n), n && modalVisible(n) }
-    // It accesses e.tags.indexOf with no null guard and ships a leftover console.log.
-    // The try/catch mirrors the dva saga that swallowed the TypeError thrown when a
-    // notice has null tags (v2_notice.tags is `varchar(255) DEFAULT NULL`), so the
-    // dashboard stays up — exactly as the original behaved (no popup, no crash).
-    const list = notices.data;
-    if (!list?.length) return;
-    try {
-      const popup = list.find((notice) => notice.tags!.indexOf('弹窗') !== -1);
-      console.log(popup);
-      if (popup) {
-        setActiveNotice(popup);
-        setNoticeOpen(true);
-      }
-    } catch {}
-  }, [notices.data]);
-
-  useEffect(() => {
-    const count = notices.data?.length ?? 0;
-    // Reset to the first real slide whenever the notice set changes (re-init parity).
-    setSlidePos(1);
-    if (count <= 1) return;
-    const id = window.setInterval(() => {
-      if (noticePausedRef.current) return;
-      // Advance forward only; the appended clone + snap below gives a seamless wrap.
-      setSlidePos((pos) => pos + 1);
-    }, 3000);
-    return () => window.clearInterval(id);
-  }, [notices.data?.length]);
-
-  // After advancing onto the clone, the transition is disabled for the reset to the
-  // real first slide; re-enable it on the next frame so the snap stays invisible.
-  useEffect(() => {
-    if (noticeTransition) return;
-    const id = requestAnimationFrame(() => setNoticeTransition(true));
-    return () => cancelAnimationFrame(id);
-  }, [noticeTransition]);
-
-  useEffect(() => {
-    if (!subscribeOpen) return;
-    const id = window.setTimeout(() => {
-      setSubscribeHeight(subscribeBoxRef.current?.offsetHeight);
-    }, 100);
-    return () => window.clearTimeout(id);
-  }, [subscribeOpen, sub?.subscribe_url]);
-
   const hasSubscribeData = Boolean(sub?.email);
   const hasPlan = Boolean(sub?.plan_id);
   const used = sub ? sub.u + sub.d : 0;
-  const usedPct = sub ? (used / sub.transfer_enable) * 100 : 0;
+  const usedPct = sub?.transfer_enable ? (used / sub.transfer_enable) * 100 : 0;
   const usedPctRounded = Math.round(usedPct * 100) / 100;
+  const usedPctClamped = Math.max(0, Math.min(100, usedPct));
   const daysLeft = legacyDaysUntil(sub?.expired_at);
   const expired = isLegacyExpired(sub?.expired_at ?? null);
   const canRenew = isLegacyRenewable(sub);
@@ -165,584 +126,433 @@ export default function DashboardPage() {
     hasPlan && sub?.allow_new_period && usedPctRounded >= 100 && !expired,
   );
   const noticeList = notices.data ?? [];
-  // Map the track position back to the real slide the dots highlight (positions 0 and
-  // n+1 are the clones of the last and first slides respectively).
-  const activeDotIndex =
-    noticeList.length > 0 ? (slidePos - 1 + noticeList.length) % noticeList.length : 0;
-  // react-slick measures the list and sizes every slide to listWidth / slidesToShow
-  // (slidesToShow = 1), then widens the track to totalSlides * slideWidth. We reproduce
-  // those inline pixel widths; slideWidth = 0 until the list is measured (before paint).
-  const noticeListRef = useRef<HTMLDivElement>(null);
-  const [slideWidth, setSlideWidth] = useState(0);
-  useLayoutEffect(() => {
-    if (noticeList.length <= 1) return;
-    const measure = () => {
-      const list = noticeListRef.current;
-      if (list) setSlideWidth(Math.ceil(list.getBoundingClientRect().width));
-    };
-    measure();
-    let timer: number | undefined;
-    const onResize = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(measure, 150);
-    };
-    window.addEventListener('resize', onResize);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('resize', onResize);
-    };
-  }, [noticeList.length]);
-  // Infinite mode clones the last slide before the reel and every slide after it
-  // (getPreClones = 1, getPostClones = slideCount), so the reel holds 2n + 1 slides.
-  const trackWidth = slideWidth ? (noticeList.length * 2 + 1) * slideWidth : undefined;
-  const subscribeUrl = sub?.subscribe_url as string;
+  const activeNoticeCard = noticeList[activeNoticeIndex] ?? noticeList[0];
+  const subscribeUrl = typeof sub?.subscribe_url === 'string' ? sub.subscribe_url : '';
+  const subscribeTargets = useMemo(
+    () => (subscribeUrl ? getSubscribeTargets(subscribeUrl) : []),
+    [subscribeUrl],
+  );
   const legacySub = sub!;
 
-  // react-slick swipe (draggable:false ⇒ touch only). touch-action:pan-y lets the page
-  // scroll vertically; we own horizontal gestures, follow the finger, then advance one
-  // slide when the drag passes listWidth / touchThreshold (5), else snap back.
-  const onNoticeTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
-    const point = event.touches[0]!;
-    touchRef.current = {
-      x: point.clientX,
-      y: point.clientY,
-      width: event.currentTarget.offsetWidth,
-      dir: null,
-    };
-    noticePausedRef.current = true;
-  };
+  useEffect(() => {
+    setActiveNoticeIndex(0);
+  }, [noticeList.length]);
 
-  const onNoticeTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
-    const start = touchRef.current;
-    if (!start) return;
-    const point = event.touches[0]!;
-    const dx = point.clientX - start.x;
-    const dy = point.clientY - start.y;
-    if (start.dir === null) {
-      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
-      start.dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+  useEffect(() => {
+    const list = notices.data;
+    if (!list?.length) return;
+    const popup = list.find((notice) => notice.tags?.includes('弹窗'));
+    if (popup) {
+      setActiveNotice(popup);
+      setNoticeOpen(true);
     }
-    if (start.dir !== 'h') return;
-    setDragOffset(dx);
-  };
-
-  const onNoticeTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
-    const start = touchRef.current;
-    touchRef.current = null;
-    noticePausedRef.current = false;
-    setDragOffset(null);
-    if (!start || start.dir !== 'h') return;
-    const dx = (event.changedTouches[0]?.clientX ?? start.x) - start.x;
-    if (Math.abs(dx) > start.width / 5) {
-      setSlidePos((pos) => (dx < 0 ? pos + 1 : pos - 1));
-    }
-  };
-
-  const noticeTrackLeft = -slidePos * slideWidth + (dragOffset ?? 0);
-  const noticeTrackTransform = `translate3d(${noticeTrackLeft}px, 0px, 0px)`;
-  const noticeTrackTransition =
-    noticeTransition && dragOffset == null ? 'transform 500ms ease' : '';
-  const noticeTrackWebkitTransition =
-    noticeTransition && dragOffset == null ? '-webkit-transform 500ms ease' : '';
+  }, [notices.data]);
 
   const copyUrl = () => {
     legacyCopyText(subscribeUrl);
     toast.success(t('dashboard.copy_success'));
   };
 
+  const requestResetPackage = () => {
+    if (!sub) return;
+    setConfirmAction('reset-package');
+  };
+
+  const requestNewPeriod = () => {
+    setConfirmAction('new-period');
+  };
+
+  const confirmResetPackage = async () => {
+    if (!sub) return;
+    setSavingResetPackage(true);
+    try {
+      const tradeNo = await user.saveOrder(apiClient, {
+        period: 'reset_price',
+        plan_id: sub.plan_id as number,
+      });
+      setConfirmAction(null);
+      navigate(`/order/${tradeNo}`);
+    } catch {
+    } finally {
+      setSavingResetPackage(false);
+    }
+  };
+
+  const confirmNewPeriod = async () => {
+    setSavingNewPeriod(true);
+    try {
+      await newPeriod.mutateAsync();
+      await subscribe.refetch();
+      toast.success('提前开启流量周期成功');
+      setConfirmAction(null);
+      navigate('/dashboard');
+    } catch {
+    } finally {
+      setSavingNewPeriod(false);
+    }
+  };
+
+  const confirmLoading = savingResetPackage || savingNewPeriod;
+  const confirmTitle =
+    confirmAction === 'reset-package'
+      ? t('dashboard.reset_package_confirm_title')
+      : t('dashboard.new_period_confirm_title');
+  const confirmContent =
+    confirmAction === 'reset-package'
+      ? t('dashboard.reset_package_confirm_content')
+      : t('dashboard.new_period_confirm_content');
+
   const shortcuts: Shortcut[] = [
     {
       to: '/knowledge',
-      iconClass: 'si si-book-open',
+      icon: BookOpen,
       titleKey: 'dashboard.shortcut_tutorial',
       descKey: 'dashboard.shortcut_tutorial_desc',
     },
     {
       to: '#',
-      iconClass: 'si si-feed',
+      icon: LinkIcon,
       titleKey: 'dashboard.shortcut_one_click',
       descKey: 'dashboard.shortcut_one_click_desc',
       onClick: () => setSubscribeOpen(true),
     },
     {
-      // Original: push(renewable(d) ? "/plan/"+d.plan_id : "/plan") — no plan_id guard
-      // (umi.js @1165700); a renewable sub always carries a plan_id.
       to: canRenew ? `/plan/${sub?.plan_id}` : '/plan',
-      iconClass: canRenew ? 'si si-clock' : 'si si-bag',
+      icon: canRenew ? RefreshCcw : ShoppingBag,
       titleKey: canRenew ? 'dashboard.renew_subscribe' : 'dashboard.shortcut_buy',
       descKey: canRenew ? 'dashboard.shortcut_renew_desc' : 'dashboard.shortcut_buy_desc',
     },
     {
       to: '/ticket',
-      iconClass: 'si si-support',
+      icon: Headphones,
       titleKey: 'dashboard.shortcut_problem',
       descKey: 'dashboard.shortcut_problem_desc',
     },
   ];
 
-  const saveResetPackage = () => {
-    if (!sub) return;
-    void legacyConfirm({
-      title: t('dashboard.reset_package_confirm_title'),
-      content: t('dashboard.reset_package_confirm_content'),
-      okText: savingResetPackage ? <LegacyLoadingIcon /> : t('common.confirm'),
-      cancelText: t('common.cancel'),
-      maskClosable: true,
-      okButtonProps: { disabled: savingResetPackage },
-      onOk: () => {
-        setSavingResetPackage(true);
-        void user
-          .saveOrder(apiClient, {
-            period: 'reset_price',
-            plan_id: sub.plan_id as number,
-          })
-          .then((tradeNo) => navigate(`/order/${tradeNo}`))
-          .catch(() => {})
-          .finally(() => setSavingResetPackage(false));
-      },
-    });
-  };
-
-  const openNewPeriod = () => {
-    void legacyConfirm({
-      title: t('dashboard.new_period_confirm_title'),
-      content: t('dashboard.new_period_confirm_content'),
-      okText: t('common.confirm'),
-      cancelText: t('common.cancel'),
-      maskClosable: true,
-      onOk: () => {
-        void newPeriod
-          .mutateAsync()
-          .then(() => {
-            void subscribe.refetch();
-            toast.success('提前开启流量周期成功');
-            navigate('/dashboard');
-          })
-          .catch(() => {});
-      },
-    });
-  };
-
   const renderSubscribeBox = () => (
-    // Original uses only the CSS-module hashes (umi.js @36900): box
-    // `oneClickSubscribe___2t9Xg`, items `item___yrtOv …`. user-subscribe-list.css
-    // styles those hashes directly; no extra v2board-* class is present in the original DOM.
-    <div className="oneClickSubscribe___2t9Xg" ref={subscribeBoxRef}>
-      <div className="item___yrtOv subsrcibe-for-link" onClick={copyUrl}>
-        <div>
-          <i className="fa fa-copy mr-2" />
-        </div>
-        <div>{t('dashboard.copy_subscribe')}</div>
-      </div>
-      <div className="item___yrtOv subscribe-for-qrcode" onClick={() => setQrOpen(true)}>
-        <div>
-          <i className="fa fa-qrcode mr-2" />
-        </div>
-        <div>{t('dashboard.scan_qrcode_subscribe')}</div>
-      </div>
-      {getSubscribeTargets(subscribeUrl).map((target) => (
-        <div
-          key={Math.random()}
-          className={`item___yrtOv ${target.title.replace(' ', '-').toLowerCase()}`}
+    <div className="oneClickSubscribe___2t9Xg grid gap-1 p-2">
+      <button
+        type="button"
+        className="item___yrtOv subsrcibe-for-link flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+        onClick={copyUrl}
+      >
+        <Copy className="size-4 text-muted-foreground" />
+        <span>{t('dashboard.copy_subscribe')}</span>
+      </button>
+      <button
+        type="button"
+        className="item___yrtOv subscribe-for-qrcode flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+        onClick={() => setQrOpen(true)}
+      >
+        <QrCode className="size-4 text-muted-foreground" />
+        <span>{t('dashboard.scan_qrcode_subscribe')}</span>
+      </button>
+      {subscribeTargets.map((target) => (
+        <button
+          type="button"
+          key={target.title}
+          className={cn(
+            'item___yrtOv flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground',
+            target.title.replace(' ', '-').toLowerCase(),
+          )}
           onClick={() => {
             window.location.href = target.href;
           }}
         >
-          <div>
-            <img src={SUBSCRIBE_TARGET_ICONS[target.title]} />
-          </div>
-          <div>
+          <img className="size-5 rounded-sm" src={SUBSCRIBE_TARGET_ICONS[target.title]} />
+          <span>
             {t('dashboard.import_to')} {target.title}
-          </div>
-        </div>
+          </span>
+        </button>
       ))}
-      <div style={{ padding: 10 }}>
-        <AntBtn
+      <div className="px-1 pb-1 pt-2">
+        <Button
           type="button"
-          className="ant-btn ant-btn-primary ant-btn-lg ant-btn-block"
+          className="ant-btn w-full"
           onClick={() => navigate('/knowledge')}
         >
-          <span>{t('dashboard.use_tutorial')}</span>
-        </AntBtn>
+          {t('dashboard.use_tutorial')}
+        </Button>
       </div>
     </div>
   );
+
+  const openNotice = (notice: Notice) => {
+    setActiveNotice(notice);
+    setNoticeOpen(true);
+  };
 
   const renderNoticeCard = (notice: Notice) => (
-    <a
-      className="block block-rounded bg-image mb-0 v2board-bg-pixels"
-      ref={legacyHref('javascript:void(0)')}
-      style={
-        notice.img_url
-          ? { backgroundImage: `url(${notice.img_url})`, backgroundSize: 'cover' }
-          : undefined
-      }
-      onClick={() => {
-        setActiveNotice(notice);
-        setNoticeOpen(true);
-      }}
+    <button
+      type="button"
+      className="v2board-notice-card block w-full overflow-hidden rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      onClick={() => openNotice(notice)}
     >
-      <div className="block-content bg-black-50">
-        <div className="mb-5 mb-sm-7 d-sm-flex justify-content-sm-between align-items-sm-center">
-          <p>
-            <span className="badge badge-danger p-2 text-uppercase">{t('notice.title')}</span>
-          </p>
+      <div
+        className="min-h-36 p-5 sm:min-h-40"
+        style={
+          notice.img_url
+            ? {
+                backgroundImage: `linear-gradient(rgba(0,0,0,.52), rgba(0,0,0,.52)), url(${notice.img_url})`,
+                backgroundPosition: 'center',
+                backgroundSize: 'cover',
+              }
+            : undefined
+        }
+      >
+        <span className="inline-flex rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground">
+          {t('notice.title')}
+        </span>
+        <div className={cn('mt-10 space-y-1', notice.img_url && 'text-white')}>
+          <div className="line-clamp-2 text-lg font-semibold">{notice.title}</div>
+          <div className={cn('text-sm text-muted-foreground', notice.img_url && 'text-white/75')}>
+            {formatUserLegacyDate(notice.created_at)}
+          </div>
         </div>
-        <p className="font-size-lg text-white mb-1">{notice.title}</p>
-        <p className="font-w600 text-white-75">{formatUserLegacyDate(notice.created_at)}</p>
       </div>
-    </a>
+    </button>
   );
-
-  // react-slick (via antd Carousel) nests every slide's child under a slide wrapper and an
-  // inline-block content div, so each slide is slick-slide > div > div[width:100%] > card.
-  const renderNoticeSlide = (notice: Notice) => (
-    <div>
-      <div tabIndex={-1} style={{ width: '100%', display: 'inline-block' }}>
-        {renderNoticeCard(notice)}
-      </div>
-    </div>
-  );
-
-  const mobileSubscribe = isLegacyMobile();
-
-  useEffect(() => {
-    if (!mobileSubscribe || !subscribeOpen) return;
-    return lockLegacyDrawerBodyScroll();
-  }, [mobileSubscribe, subscribeOpen]);
-
-  useEffect(() => {
-    if (!mobileSubscribe || !subscribeOpen || subscribeDrawerStatus === 'exited') return;
-    subscribeDrawerRef.current?.focus();
-  }, [mobileSubscribe, subscribeOpen, subscribeDrawerStatus]);
 
   return (
-    <>
-      {pendingOrderCount > 0 && (
-        <div className="alert alert-danger" role="alert">
-          <p className="mb-0">
-            {t('dashboard.alert_pending_order')}{' '}
-            <a
-              className="alert-link"
-              ref={legacyHref('javascript:void(0)')}
-              onClick={() => navigate('/order')}
-            >
-              {t('order.pay_now')}
-            </a>
-          </p>
-        </div>
-      )}
-      {openTicketCount > 0 && (
-        <div className="alert alert-warning" role="alert">
-          <p className="mb-0">
-            <strong>{openTicketCount}</strong> {t('dashboard.alert_open_ticket_suffix')}{' '}
-            <a
-              className="alert-link"
-              ref={legacyHref('javascript:void(0)')}
-              onClick={() => navigate('/ticket')}
-            >
-              {t('dashboard.alert_view')}
-            </a>
-          </p>
-        </div>
-      )}
-      {shouldShowTrafficAlert && (
-        <div className="alert alert-info" role="alert">
-          <p className="mb-0">
-            {t('dashboard.alert_traffic_rate', { rate: Math.round(usedPct * 100) / 100 })}{' '}
-            {trafficAlertResetAvailable && (
-              <a onClick={saveResetPackage}>
-                <strong>购买流量重置包</strong>
-              </a>
-            )}
-          </p>
-        </div>
-      )}
-      {noticeList.length > 0 && (
-        <div className="row mb-3 mb-md-0">
-          <div className="col-12 mb-sm-4">
+    <div className="v2board-dashboard-page space-y-6">
+      <div className="grid gap-3">
+        {pendingOrderCount > 0 && (
+          <Alert
+            className="alert alert-danger border-destructive/25 bg-destructive/5 text-foreground"
+            role="alert"
+          >
+            <AlertCircle className="size-4 text-destructive" />
+            <AlertDescription>
+              <span>{t('dashboard.alert_pending_order')}</span>
+              <button
+                type="button"
+                className="alert-link font-medium text-foreground underline-offset-4 hover:underline"
+                onClick={() => navigate('/order')}
+              >
+                {t('order.pay_now')}
+              </button>
+            </AlertDescription>
+          </Alert>
+        )}
+        {openTicketCount > 0 && (
+          <Alert className="alert alert-warning border-amber-200 bg-amber-50 text-foreground" role="alert">
+            <Bell className="size-4 text-amber-600" />
+            <AlertDescription>
+              <span>
+                <strong>{openTicketCount}</strong> {t('dashboard.alert_open_ticket_suffix')}
+              </span>
+              <button
+                type="button"
+                className="alert-link font-medium text-foreground underline-offset-4 hover:underline"
+                onClick={() => navigate('/ticket')}
+              >
+                {t('dashboard.alert_view')}
+              </button>
+            </AlertDescription>
+          </Alert>
+        )}
+        {shouldShowTrafficAlert && (
+          <Alert className="alert alert-info border-sky-200 bg-sky-50 text-foreground" role="alert">
+            <AlertCircle className="size-4 text-sky-600" />
+            <AlertDescription>
+              <span>{t('dashboard.alert_traffic_rate', { rate: usedPctRounded })}</span>
+              {trafficAlertResetAvailable ? (
+                <button
+                  type="button"
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                  onClick={requestResetPackage}
+                >
+                  {t('dashboard.buy_reset_package')}
+                </button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
+
+      {noticeList.length > 0 && activeNoticeCard ? (
+        <section className="space-y-3">
+          <div className="slick-slider">
+            <div className="slick-slide slick-active">{renderNoticeCard(activeNoticeCard)}</div>
             {noticeList.length > 1 ? (
-              <div className="ant-carousel">
-                <div className="slick-slider slick-initialized" dir="ltr">
-                  <div
-                    ref={noticeListRef}
-                    className="slick-list"
-                    onTouchStart={onNoticeTouchStart}
-                    onTouchMove={onNoticeTouchMove}
-                    onTouchEnd={onNoticeTouchEnd}
+              <ul className="slick-dots slick-dots-bottom mt-3 flex justify-center gap-1">
+                {noticeList.map((notice, index) => (
+                  <li
+                    key={notice.id}
+                    className={cn(index === activeNoticeIndex && 'slick-active')}
                   >
-                    <div
-                      className="slick-track"
-                      style={{
-                        opacity: 1,
-                        transition: noticeTrackTransition,
-                        WebkitTransition: noticeTrackWebkitTransition,
-                        WebkitTransform: noticeTrackTransform,
-                        transform: noticeTrackTransform,
-                        msTransform: `translateX(${noticeTrackLeft}px)`,
-                        width: trackWidth,
-                      }}
-                      onMouseEnter={() => {
-                        noticePausedRef.current = true;
-                      }}
-                      onMouseOver={() => {
-                        noticePausedRef.current = true;
-                      }}
-                      onMouseLeave={() => {
-                        noticePausedRef.current = false;
-                      }}
-                      onTransitionEnd={(event) => {
-                        if (event.target !== event.currentTarget) return;
-                        if (slidePos === noticeList.length + 1) {
-                          setNoticeTransition(false);
-                          setSlidePos(1);
-                        } else if (slidePos === 0) {
-                          setNoticeTransition(false);
-                          setSlidePos(noticeList.length);
-                        }
-                      }}
+                    <button
+                      type="button"
+                      className={cn(
+                        'h-1.5 w-6 rounded-full bg-border text-[0px] transition-colors',
+                        index === activeNoticeIndex && 'bg-primary',
+                      )}
+                      onClick={() => setActiveNoticeIndex(index)}
                     >
-                      {/* react-slick stamps every slide (real + clones) with data-index,
-                          tabIndex="-1" and aria-hidden=!slick-active. Infinite mode prepends
-                          one clone of the last slide (data-index -1) and appends a clone of
-                          every slide (data-index n..2n-1); only the first appended clone is
-                          ever reached before the loop snaps back. Real slides also carry
-                          inline outline:none; clones do not. */}
-                      <div
-                        className={`slick-slide slick-cloned${
-                          slidePos === 0 ? ' slick-active slick-current' : ''
-                        }`}
-                        data-index={-1}
-                        tabIndex={-1}
-                        aria-hidden={slidePos !== 0}
-                        style={{ width: slideWidth || undefined }}
-                        key="slick-clone-last"
-                      >
-                        {renderNoticeSlide(noticeList[noticeList.length - 1]!)}
-                      </div>
-                      {noticeList.map((notice, index) => (
-                        <div
-                          className={`slick-slide${
-                            index + 1 === slidePos ? ' slick-active slick-current' : ''
-                          }`}
-                          data-index={index}
-                          tabIndex={-1}
-                          aria-hidden={index + 1 !== slidePos}
-                          style={{ outline: 'none', width: slideWidth || undefined }}
-                          key={Math.random()}
-                        >
-                          {renderNoticeSlide(notice)}
-                        </div>
-                      ))}
-                      {noticeList.map((notice, index) => (
-                        <div
-                          className={`slick-slide slick-cloned${
-                            index === 0 && slidePos === noticeList.length + 1
-                              ? ' slick-active slick-current'
-                              : ''
-                          }`}
-                          data-index={noticeList.length + index}
-                          tabIndex={-1}
-                          aria-hidden={!(index === 0 && slidePos === noticeList.length + 1)}
-                          style={{ width: slideWidth || undefined }}
-                          key={`slick-clone-${notice.id}`}
-                        >
-                          {renderNoticeSlide(notice)}
-                        </div>
-                      ))}
-                    </div>
+                      {index + 1}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+        <Card className="v2board-dashboard-card">
+          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+            <div className="space-y-1">
+              <CardTitle className="block-title text-xl">{t('dashboard.plan')}</CardTitle>
+              {hasPlan && hasSubscribeData ? (
+                <p className="text-sm text-muted-foreground">{legacySub.plan?.name}</p>
+              ) : null}
+            </div>
+            <Package className="size-5 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {subscribe.isLoading || !hasSubscribeData ? (
+              <div className="flex min-h-36 items-center justify-center">
+                <Spinner className="size-6" />
+              </div>
+            ) : hasPlan ? (
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-2xl font-semibold tracking-normal">
+                      {legacySub.plan!.name}
+                    </h2>
+                    {expired ? (
+                      <span className="text-danger rounded-md border border-destructive/25 bg-destructive/5 px-2 py-1 text-xs font-medium text-destructive">
+                        {t('dashboard.expired_label')}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                        <CheckCircle2 className="size-3" />
+                        {legacySub.expired_at === null ? t('dashboard.long_term') : t('dashboard.plan')}
+                      </span>
+                    )}
                   </div>
-                  {/* react-slick's appendDots renders `<ul style="display:block">` (matching
-                      the .slick-dots block layout), and its customPaging button has no type
-                      attribute. */}
-                  <ul className="slick-dots slick-dots-bottom" style={{ display: 'block' }}>
-                    {noticeList.map((notice, index) => (
-                      <li
-                        className={index === activeDotIndex ? 'slick-active' : ''}
-                        key={notice.id}
-                      >
-                        <button onClick={() => setSlidePos(index + 1)}>{index + 1}</button>
-                      </li>
-                    ))}
-                  </ul>
+                  {legacySub.expired_at === null ? (
+                    <p className="text-sm text-muted-foreground">{t('dashboard.long_term')}</p>
+                  ) : expired ? (
+                    <p className="text-sm text-muted-foreground">{t('dashboard.expired_label')}</p>
+                  ) : (
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      {t('dashboard.expires_in', {
+                        date: formatUserLegacyDateSlash(legacySub.expired_at),
+                        day: daysLeft,
+                      })}
+                      {legacySub.reset_day !== null
+                        ? legacySub.reset_day === 0
+                          ? t('dashboard.reset_today')
+                          : t('dashboard.reset_in_days', { reset_day: legacySub.reset_day })
+                        : ''}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="progress h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={cn(
+                        'progress-bar h-full rounded-full transition-all',
+                        usedPctRounded >= 100
+                          ? 'bg-danger bg-destructive'
+                          : usedPctRounded >= 80
+                            ? 'bg-warning bg-amber-500'
+                            : 'bg-success bg-emerald-500',
+                      )}
+                      role="progressbar"
+                      style={{ width: `${usedPctClamped}%` }}
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium">
+                    <span>
+                      {t('dashboard.used_traffic', {
+                        used: formatBytes(used),
+                        total: formatBytes(legacySub.transfer_enable),
+                      })}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {t('dashboard.devices_online', {
+                        alive_ip: legacySub.alive_ip,
+                        device_limit: legacySub.device_limit ?? '∞',
+                      })}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {resetAvailable ? (
+                    <Button type="button" onClick={requestResetPackage}>
+                      {t('dashboard.buy_reset_package')}
+                    </Button>
+                  ) : null}
+                  {canNewPeriod ? (
+                    <Button type="button" onClick={requestNewPeriod}>
+                      {t('dashboard.new_period')}
+                    </Button>
+                  ) : null}
+                  {expired ? (
+                    <Button
+                      type="button"
+                      onClick={() => navigate(canRenew ? `/plan/${legacySub.plan_id}` : '/plan')}
+                    >
+                      {canRenew ? t('dashboard.renew_subscribe') : t('dashboard.buy_subscribe')}
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             ) : (
-              renderNoticeCard(noticeList[0]!)
+              <button
+                type="button"
+                className="flex min-h-40 w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 text-center transition-colors hover:bg-accent"
+                onClick={() => navigate('/plan')}
+              >
+                <Plus className="size-8 text-muted-foreground" />
+                <i className="fa fa-plus sr-only" aria-hidden="true" />
+                <span className="text-sm font-medium">{t('dashboard.shortcut_buy')}</span>
+              </button>
             )}
-          </div>
-        </div>
-      )}
+          </CardContent>
+        </Card>
 
-      <div className="row mb-3 mb-md-0">
-        <div className="col-xl-12">
-          <div className="block block-rounded js-appear-enabled">
-            <div className="block-header block-header-default">
-              <h3 className="block-title">{t('dashboard.plan')}</h3>
-            </div>
-            <div className="block-content">
-              {subscribe.isLoading || !hasSubscribeData ? (
-                // Original's LoadingIcon (umi.js v32e) wraps the antd loading Icon in a
-                // `<div className>`: createElement("div",{className},createElement(Icon,{type:"loading"})).
-                <div className="font-size-h3 mb-3">
-                  <LegacyLoadingIcon />
-                </div>
-              ) : hasPlan ? (
-                <div>
-                  <div>
-                    <div className="justify-content-md-between align-items-md-center">
-                      <div>
-                        <h3 className="h4 mb-3">{legacySub.plan!.name}</h3>
-                        {legacySub.expired_at === null ? (
-                          <p className="font-size-sm text-muted">{t('dashboard.long_term')}</p>
-                        ) : expired ? (
-                          <p className="font-size-sm text-muted">
-                            <a className="font-w600 text-danger" ref={legacyHref()}>
-                              {t('dashboard.expired_label')}
-                            </a>
-                          </p>
-                        ) : (
-                          <p className="font-size-sm text-muted">
-                            <span>
-                              {t('dashboard.expires_in', {
-                                date: formatUserLegacyDateSlash(legacySub.expired_at),
-                                day: daysLeft,
-                              })}
-                              {legacySub.reset_day !== null
-                                ? legacySub.reset_day === 0
-                                  ? t('dashboard.reset_today')
-                                  : t('dashboard.reset_in_days', { reset_day: legacySub.reset_day })
-                                : ''}
-                            </span>
-                          </p>
-                        )}
-                        <div className="mb-0">
-                          <div className="progress mb-1" style={{ height: 6 }}>
-                            <div
-                              className={`progress-bar progress-bar-striped progress-bar-animated ${
-                                usedPctRounded >= 100
-                                  ? 'bg-danger'
-                                  : usedPctRounded >= 80
-                                    ? 'bg-warning'
-                                    : 'bg-success'
-                              }`}
-                              role="progressbar"
-                              style={{ width: `${usedPct}%` }}
-                            />
-                          </div>
-                          <p className="font-size-sm font-w600 mb-3">
-                            <span className="font-w700">
-                              {t('dashboard.used_traffic', {
-                                used: formatBytes(used),
-                                total: formatBytes(legacySub.transfer_enable),
-                              })}
-                            </span>
-                            <span className="font-w700">{'  '}</span>
-                            <span className="font-w700">
-                              {t('dashboard.devices_online', {
-                                alive_ip: legacySub.alive_ip,
-                                device_limit: legacySub.device_limit ?? '∞',
-                              })}
-                            </span>
-                          </p>
-                          {resetAvailable && (
-                            <div className="mb-4">
-                              <AntBtn
-                                type="button"
-                                className="ant-btn ant-btn-primary"
-                                onClick={saveResetPackage}
-                              >
-                                {t('dashboard.buy_reset_package')}
-                              </AntBtn>
-                            </div>
-                          )}
-                          {canNewPeriod && (
-                            <div className="mb-4">
-                              <AntBtn
-                                type="button"
-                                className="ant-btn ant-btn-primary"
-                                onClick={openNewPeriod}
-                              >
-                                {t('dashboard.new_period')}
-                              </AntBtn>
-                            </div>
-                          )}
-                          {expired && (
-                            <div className="mb-4">
-                              <AntBtn
-                                type="button"
-                                className="ant-btn ant-btn-primary"
-                                onClick={() =>
-                                  navigate(canRenew ? `/plan/${legacySub.plan_id}` : '/plan')
-                                }
-                              >
-                                {canRenew
-                                  ? t('dashboard.renew_subscribe')
-                                  : t('dashboard.buy_subscribe')}
-                              </AntBtn>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <a onClick={() => navigate('/plan')}>
-                  <div>
-                    <div className="text-center">
-                      <div>
-                        <i className="fa fa-plus fa-2x" />
-                      </div>
-                      <div className="font-size-sm text-uppercase text-muted pt-2 pb-3">
-                        {t('dashboard.shortcut_buy')}
-                      </div>
-                    </div>
-                  </div>
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
+        <Card className="v2board-dashboard-card">
+          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+            <CardTitle className="block-title text-xl">{t('dashboard.shortcuts')}</CardTitle>
+            <Smartphone className="size-5 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            {shortcuts.map((shortcut) => {
+              const Icon = shortcut.icon;
+              return (
+                <button
+                  type="button"
+                  key={shortcut.titleKey}
+                  className="v2board-shortcuts-item flex min-h-16 items-center gap-3 rounded-lg border border-border bg-background px-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  onClick={shortcut.onClick ?? (() => navigate(shortcut.to))}
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <Icon className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium">{t(shortcut.titleKey)}</span>
+                    <span className="description block truncate text-sm text-muted-foreground">
+                      {t(shortcut.descKey)}
+                      {shortcut.descKey === 'dashboard.shortcut_tutorial_desc' ? (
+                        <> {window.settings?.title}</>
+                      ) : null}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="row mb-3 mb-md-0">
-        <div className="col-xl-12">
-          <div className="block block-rounded js-appear-enabled">
-            <div className="block-header block-header-default">
-              <h3 className="block-title">{t('dashboard.shortcuts')}</h3>
-            </div>
-            <div className="block-content p-0">
-              <div className="justify-content-md-between align-items-md-center">
-                <div className="mb-3">
-                  {shortcuts.map((s) => {
-                    return (
-                      <div
-                        key={s.titleKey}
-                        className="v2board-shortcuts-item"
-                        onClick={s.onClick ?? (() => navigate(s.to))}
-                      >
-                        <div>{t(s.titleKey)}</div>
-                        <div className="description">
-                          {t(s.descKey)}
-                          {s.descKey === 'dashboard.shortcut_tutorial_desc' ? (
-                            <> {window.settings?.title}</>
-                          ) : null}
-                        </div>
-                        <i
-                          style={{ float: 'right' }}
-                          className={`nav-main-link-icon ${s.iconClass}`}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
       <Dialog
         open={noticeOpen}
         onOpenChange={(open) => {
@@ -750,74 +560,76 @@ export default function DashboardPage() {
           if (!open) setActiveNotice(null);
         }}
       >
-        <DialogContent title={activeNotice?.title} maskClosable footer={false}>
-          {activeNotice?.content && (
+        <DialogContent className="v2board-dashboard-dialog">
+          <DialogHeader>
+            <DialogTitle>{activeNotice?.title}</DialogTitle>
+          </DialogHeader>
+          {activeNotice?.content ? (
             <div
-              className="notice-content"
+              className="notice-content max-h-[60vh] overflow-auto text-sm leading-6"
               dangerouslySetInnerHTML={{ __html: activeNotice.content }}
             />
-          )}
+          ) : null}
         </DialogContent>
       </Dialog>
-      {mobileSubscribe ? (
-        subscribeDrawerStatus !== 'exited' &&
-        createPortal(
-          <div
-            ref={subscribeDrawerRef}
-            tabIndex={-1}
-            className={`ant-drawer ant-drawer-bottom${
-              subscribeDrawerStatus === 'entered' ? ' ant-drawer-open' : ''
-            }`}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.stopPropagation();
-                setSubscribeOpen(false);
-              }
-            }}
-          >
-            <div className="ant-drawer-mask" onClick={() => setSubscribeOpen(false)} />
-            <div
-              className="ant-drawer-content-wrapper"
-              style={subscribeHeight ? { height: subscribeHeight } : undefined}
-            >
-              <div className="ant-drawer-content">
-                <div className="ant-drawer-wrapper-body">
-                  <div className="ant-drawer-body" style={{ padding: 0 }}>
-                    {renderSubscribeBox()}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )
-      ) : (
-        <Dialog open={subscribeOpen} onOpenChange={setSubscribeOpen}>
-          <DialogContent
-            closable={false}
-            footer={false}
-            width={300}
-            centered
-            bodyStyle={{ padding: 0 }}
-          >
-            {renderSubscribeBox()}
-          </DialogContent>
-        </Dialog>
-      )}
+
+      <Dialog open={subscribeOpen} onOpenChange={setSubscribeOpen}>
+        <DialogContent className="v2board-dashboard-dialog p-0 sm:max-w-sm">
+          <DialogHeader className="px-5 pt-5">
+            <DialogTitle>{t('dashboard.shortcut_one_click')}</DialogTitle>
+          </DialogHeader>
+          {renderSubscribeBox()}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={qrOpen} onOpenChange={setQrOpen}>
-        <DialogContent
-          closable={false}
-          footer={false}
-          width={300}
-          centered
-          style={{ textAlign: 'center' }}
-          zIndex={2000}
-        >
-          <QRCode value={subscribeUrl} renderAs="canvas" />
-          <div style={{ marginTop: 10 }}>{t('dashboard.qrcode_client_tip')}</div>
+        <DialogContent className="v2board-dashboard-dialog sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>{t('dashboard.scan_qrcode_subscribe')}</DialogTitle>
+            <DialogDescription>{t('dashboard.qrcode_client_tip')}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center">
+            <QRCode value={subscribeUrl} renderAs="canvas" />
+          </div>
         </DialogContent>
       </Dialog>
-    </>
+
+      <Dialog
+        open={confirmAction !== null}
+        onOpenChange={(open) => {
+          if (!open && !confirmLoading) setConfirmAction(null);
+        }}
+      >
+        <DialogContent className="v2board-dashboard-dialog sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{confirmTitle}</DialogTitle>
+            <DialogDescription>{confirmContent}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={confirmLoading}
+              onClick={() => setConfirmAction(null)}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              className="ant-btn ant-btn-primary"
+              loading={confirmLoading}
+              onClick={() => {
+                void (confirmAction === 'reset-package'
+                  ? confirmResetPackage()
+                  : confirmNewPeriod());
+              }}
+            >
+              {t('common.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
@@ -906,9 +718,6 @@ function legacyDaysUntil(timestamp: number | string | null | undefined) {
 }
 
 function isLegacyRenewable(subscribe: ReturnType<typeof useSubscribe>['data']) {
-  // umi.js `b(e)`: plan.renew && (plan.show || !isExpired(expired_at)). A still-on-sale
-  // plan (show) is renewable even once expired; a discontinued (hidden) plan is only
-  // renewable while the subscription is still active.
   if (!subscribe?.plan?.renew) return false;
   return Boolean(subscribe.plan.show || !isLegacyExpired(subscribe.expired_at));
 }
