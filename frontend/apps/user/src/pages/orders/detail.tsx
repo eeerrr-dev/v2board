@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import QRCode from 'qrcode.react';
 import { user } from '@v2board/api-client';
 import type { Order, PaymentMethod } from '@v2board/types';
+import { BookOpen, CheckCircle2, Info, TriangleAlert } from 'lucide-react';
 import { apiClient } from '@/lib/api';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
@@ -18,11 +19,13 @@ import {
 } from '@/lib/queries';
 import { legacyConfirm } from '@/components/legacy-confirm';
 import { StripeCardForm } from '@/components/stripe-card-form';
-import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
-import { CheckCircleIcon, InfoCircleIcon, WarningIcon } from '@/components/ant-icon';
 import { toast } from '@/lib/legacy-toast';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { formatUserLegacyDateTime } from '@/lib/legacy-date';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/cn';
 
 const PERIOD_LABEL_KEY: Record<string, string> = {
   month_price: 'plan.monthly',
@@ -160,8 +163,8 @@ export default function OrderDetailPage() {
 
   if (loading) {
     return (
-      <div className="spinner-grow text-primary" role="status">
-        <span className="sr-only">Loading...</span>
+      <div className="flex min-h-44 items-center justify-center" role="status">
+        <Spinner className="size-5" />
       </div>
     );
   }
@@ -234,11 +237,11 @@ export default function OrderDetailPage() {
 
   return (
     <>
-      <div className="row" id="cashier">
-        <div className={isPending ? 'col-md-8 col-sm-12' : 'col-12'}>
+      <div id="cashier" className={cn('grid gap-6', isPending && 'lg:grid-cols-[minmax(0,1fr)_24rem]')}>
+        <div className="space-y-6">
           {!isPending && <OrderResult status={order.status} />}
 
-          <LegacyBlock title={t('order.product_info')} tradeTitle>
+          <OrderInfoCard title={t('order.product_info')} tradeTitle>
             <div className="v2board-order-info">
               {isDeposit ? (
                 <InfoRow label={t('order.product_name')}>充值</InfoRow>
@@ -253,26 +256,21 @@ export default function OrderDetailPage() {
                 </>
               )}
             </div>
-          </LegacyBlock>
-          <LegacyBlock
+          </OrderInfoCard>
+          <OrderInfoCard
             title={t('order.info')}
             tradeTitle
             options={
               isPending ? (
-                <button
-                  disabled={cancel.isPending}
+                <Button
                   type="button"
-                  className="btn btn-primary btn-sm btn-danger btn-rounded px-3"
+                  variant="outline"
+                  size="sm"
+                  loading={cancel.isPending}
                   onClick={handleCancel}
                 >
-                  {cancel.isPending && (
-                    <div>
-                      <LegacyLoadingIcon />
-                    </div>
-                  )}
-                  {' '}
                   {t('order.cancel')}
-                </button>
+                </Button>
               ) : null
             }
           >
@@ -303,62 +301,57 @@ export default function OrderDetailPage() {
                 {formatUserLegacyDateTime(order.created_at)}
               </InfoRow>
             </div>
-          </LegacyBlock>
+          </OrderInfoCard>
 
           {isPending && (
             <>
-              <div className="block block-rounded js-appear-enabled">
-                <div className="block-header block-header-default">
-                  <h3 className="block-title">{t('order.payment_method')}</h3>
-                  <div className="block-options" />
-                </div>
-                <div className="block-content p-0">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base leading-6">{t('order.payment_method')}</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-3 p-6 pt-0">
                   {paymentMethods?.map((method) => (
-                    <div
+                    <button
+                      type="button"
                       key={method.id}
-                      className={`v2board-select ${effectiveMethodId === method.id ? 'active border-primary' : 'false'}`}
+                      className={cn(
+                        'v2board-select flex min-h-12 items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                        effectiveMethodId === method.id && 'active border-primary bg-accent text-accent-foreground',
+                      )}
                       onClick={() => {
                         setMethodId(method.id);
                         setPreHandlingAmount(calculatePreHandlingAmount(order, method));
                       }}
                     >
-                      <div style={{ flex: 1, paddingTop: 4 }}>
-                        {/* antd v3 Radio: classNames(className, {'ant-radio-wrapper':true,
-                            'ant-radio-wrapper-checked':checked}) — the passed className leads. */}
-                        <label
-                          className={`v2board-select-radio ant-radio-wrapper${effectiveMethodId === method.id ? ' ant-radio-wrapper-checked' : ''}`}
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={cn(
+                            'v2board-select-radio flex size-4 items-center justify-center rounded-full border border-input',
+                            effectiveMethodId === method.id && 'border-primary',
+                          )}
                         >
-                          <span className={`ant-radio${effectiveMethodId === method.id ? ' ant-radio-checked' : ''}`}>
-                            <input
-                              type="radio"
-                              className="ant-radio-input"
-                              checked={effectiveMethodId === method.id}
-                              onChange={() => {}}
-                            />
-                            <span className="ant-radio-inner" />
-                          </span>
-                        </label>
+                          <span
+                            className={cn(
+                              'size-2 rounded-full bg-primary opacity-0',
+                              effectiveMethodId === method.id && 'opacity-100',
+                            )}
+                          />
+                        </span>
                         {method.name}
                       </div>
                       {method.icon && (
-                        <div style={{ flex: 1, textAlign: 'right' }}>
-                          <img height={30} src={method.icon} />
-                        </div>
+                        <img className="h-7 w-auto" src={method.icon} alt="" />
                       )}
-                    </div>
+                    </button>
                   ))}
-                </div>
-              </div>
+                </CardContent>
+              </Card>
 
               {isStripePayment && stripePk && (
                 <>
-                  <h3 className="font-w300 mt-5 mb-3">{t('order.credit_card_title')}</h3>
+                  <h3 className="text-base font-semibold leading-6">{t('order.credit_card_title')}</h3>
                   <StripeCardForm key={stripePk} publicKey={stripePk} onToken={handleStripeToken} />
-                  <div style={{ fontSize: 12 }} className="mt-3 mb-5">
-                    <i
-                      className="fa fa-user-shield"
-                      style={{ marginRight: 5, color: '#7cb305' }}
-                    />
+                  <div className="mt-3 mb-5 text-sm text-muted-foreground">
                     {t('order.credit_card_security')}
                   </div>
                 </>
@@ -368,100 +361,86 @@ export default function OrderDetailPage() {
         </div>
 
         {isPending && (
-          <div className="col-md-4 col-sm-12">
-            <div
-              // Original class string has a DOUBLE space after `block-rounded` (umi.js).
-              className="block block-link-pop block-rounded  px-3 py-3 text-light"
-              style={{ background: '#35383D' }}
-            >
-              <h5 className="text-light mb-3">{t('order.total')}</h5>
-
-              {isDeposit ? (
-                <div>
-                  <div className="pt-3">
-                    {t('order.deposit_bonus')}
-                    <div className="text-right">{moneyText(order.bounus, symbol)}</div>
+          <aside className="v2board-order-side">
+            <Card className="v2board-order-summary">
+              <CardHeader>
+                <CardTitle className="text-base leading-6">{t('order.total')}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isDeposit ? (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between gap-4">
+                      {t('order.deposit_bonus')}
+                      <div className="text-right font-medium">{moneyText(order.bounus, symbol)}</div>
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
 
-              {isDeposit ? (
-                <div>
-                  <div className="pt-3">
-                    {t('order.deposit_received')}
-                    <div className="text-right">{moneyText(order.get_amount, symbol)}</div>
+                {isDeposit ? (
+                  <div className="border-b border-border pb-4 text-sm">
+                    <div className="flex items-center justify-between gap-4">
+                      {t('order.deposit_received')}
+                      <div className="text-right font-medium">{moneyText(order.get_amount, symbol)}</div>
+                    </div>
                   </div>
-                  <div
-                    className="row no-gutters py-3"
-                    style={{ borderBottom: '1px solid #646669' }}
-                  />
-                </div>
-              ) : null}
+                ) : null}
 
-              {!isDeposit && (
-                <div
-                  className="row no-gutters pb-3"
-                  style={{ borderBottom: '1px solid #646669' }}
-                >
-                  <div className="col-8">
-                    {/* Original renders `name, " x ", periodText` — the " x " is always
-                        present even when the period label resolves to empty. */}
-                    {order.plan?.name} x {periodLabel}
+                {!isDeposit && (
+                  <div className="flex items-start justify-between gap-4 border-b border-border pb-4 text-sm">
+                    <div>
+                      {order.plan?.name} x {periodLabel}
+                    </div>
+                    <div className="text-right font-medium">
+                      {moneyText(
+                        (order.plan as Record<string, number | null> | undefined)?.[
+                          order.period as string
+                        ],
+                        symbol,
+                      )}
+                    </div>
                   </div>
-                  <div className="col-4 text-right">
-                    {moneyText(
-                      (order.plan as Record<string, number | null> | undefined)?.[
-                        order.period as string
-                      ],
-                      symbol,
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {order.discount_amount ? (
-                <AmountBlock label={t('order.discount')}>
-                  {moneyText(order.discount_amount, symbol)}
-                </AmountBlock>
-              ) : null}
-              {order.surplus_amount ? (
-                <AmountBlock label={t('order.surplus')}>
-                  {moneyText(order.surplus_amount, symbol)}
-                </AmountBlock>
-              ) : null}
-              {order.refund_amount ? (
-                <AmountBlock label={t('order.refund')}>
-                  - {moneyText(order.refund_amount, symbol)}
-                </AmountBlock>
-              ) : null}
-              {legacyPreHandlingAmount ? (
-                <AmountBlock label={t('order.handling_fee')}>
-                  + {(legacyPreHandlingAmount / 100).toFixed(2)}
-                </AmountBlock>
-              ) : null}
-
-              <div className="pt-3" style={{ color: '#646669' }}>
-                {t('order.grand_total')}
-              </div>
-              <h1 className="text-light mt-3 mb-3">
-                {symbol} {(grandTotal / 100).toFixed(2)} {currency}
-              </h1>
-              <button
-                type="button"
-                className="btn btn-block btn-primary"
-                disabled={paying || (isStripePayment && !stripeToken)}
-                onClick={onPay}
-              >
-                {paying ? (
-                  <LegacyLoadingIcon />
-                ) : (
-                  <span>
-                    <i className="far fa-check-circle" /> {t('order.checkout')}
-                  </span>
                 )}
-              </button>
-            </div>
-          </div>
+
+                {order.discount_amount ? (
+                  <AmountBlock label={t('order.discount')}>
+                    {moneyText(order.discount_amount, symbol)}
+                  </AmountBlock>
+                ) : null}
+                {order.surplus_amount ? (
+                  <AmountBlock label={t('order.surplus')}>
+                    {moneyText(order.surplus_amount, symbol)}
+                  </AmountBlock>
+                ) : null}
+                {order.refund_amount ? (
+                  <AmountBlock label={t('order.refund')}>
+                    - {moneyText(order.refund_amount, symbol)}
+                  </AmountBlock>
+                ) : null}
+                {legacyPreHandlingAmount ? (
+                  <AmountBlock label={t('order.handling_fee')}>
+                    + {(legacyPreHandlingAmount / 100).toFixed(2)}
+                  </AmountBlock>
+                ) : null}
+
+                <div className="pt-2 text-sm text-muted-foreground">
+                  {t('order.grand_total')}
+                </div>
+                <h1 className="text-3xl font-semibold tracking-normal">
+                  {symbol} {(grandTotal / 100).toFixed(2)} {currency}
+                </h1>
+                <Button
+                  type="button"
+                  block
+                  className="btn-block btn-primary"
+                  loading={paying}
+                  disabled={isStripePayment && !stripeToken}
+                  onClick={onPay}
+                >
+                  {t('order.checkout')}
+                </Button>
+              </CardContent>
+            </Card>
+          </aside>
         )}
       </div>
 
@@ -495,7 +474,7 @@ export default function OrderDetailPage() {
   );
 }
 
-function LegacyBlock({
+function OrderInfoCard({
   title,
   tradeTitle = false,
   options,
@@ -507,35 +486,32 @@ function LegacyBlock({
   children: ReactNode;
 }) {
   return (
-    <div className="block block-rounded">
-      <div className="block-header block-header-default">
-        <h3 className={`block-title${tradeTitle ? ' v2board-trade-no' : ''}`}>{title}</h3>
-        {options ? <div className="block-options">{options}</div> : null}
-      </div>
-      <div className="block-content pb-4">{children}</div>
-    </div>
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <CardTitle className={cn('block-title text-base leading-6', tradeTitle && 'v2board-trade-no')}>
+          {title}
+        </CardTitle>
+        {options ? <div>{options}</div> : null}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
 
 function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div>
-      <span>{label}：</span>
-      <span>{children}</span>
+    <div className="flex flex-col gap-1 border-b border-border py-3 text-sm last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-foreground">{children}</span>
     </div>
   );
 }
 
 function AmountBlock({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div>
-      <div className="pt-3" style={{ color: '#646669' }}>
-        {label}
-      </div>
-      <div className="row no-gutters py-3" style={{ borderBottom: '1px solid #646669' }}>
-        <div className="col-8" />
-        <div className="col-4 text-right">{children}</div>
-      </div>
+    <div className="space-y-2 border-b border-border pb-4 text-sm">
+      <div className="text-muted-foreground">{label}</div>
+      <div className="text-right font-medium">{children}</div>
     </div>
   );
 }
@@ -575,57 +551,58 @@ function OrderResult({ status }: { status?: number }) {
   const result =
     status === 1
       ? {
-          icon: <InfoCircleIcon />,
+          icon: <Info className="size-8" />,
           status: 'info',
           title: t('order.processing_title'),
           subtitle: t('order.processing'),
         }
       : status === 2
         ? {
-            icon: <WarningIcon />,
+            icon: <TriangleAlert className="size-8" />,
             status: 'warning',
             title: t('common.cancelled'),
             subtitle: t('order.cancel_timeout'),
           }
         : status === 3 || status === 4
           ? {
-              icon: <CheckCircleIcon />,
+              icon: <CheckCircle2 className="size-8" />,
               status: 'success',
               title: t('common.completed'),
               subtitle: t('order.success'),
             }
           : {
-              icon: <InfoCircleIcon />,
+              icon: <Info className="size-8" />,
               status: 'info',
               title: '',
               subtitle: '',
             };
 
   return (
-    <div className="block block-rounded">
-      <div className="block-content pt-0">
-        <div className={`ant-result ant-result-${result.status} py-4`}>
-          <div className="ant-result-icon">
-            {result.icon}
-          </div>
-          <div className="ant-result-title">{result.title}</div>
-          {result.subtitle ? (
-            <div className="ant-result-subtitle">{result.subtitle}</div>
-          ) : null}
-          {(status === 3 || status === 4) && (
-            <div className="ant-result-extra">
-              <button
-                type="button"
-                onClick={() => navigate('/knowledge')}
-                className="btn btn-primary btn-sm btn-danger btn-rounded px-3"
-              >
-                <i className="nav-main-link-icon si si-book-open mr-1" />
-                {t('order.view_tutorial')}
-              </button>
-            </div>
+    <Card className={cn('v2board-order-result', `v2board-order-result-${result.status}`)}>
+      <CardContent className="flex flex-col items-center gap-4 py-8 text-center">
+        <div
+          className={cn(
+            'rounded-full border p-3',
+            result.status === 'success' && 'border-green-200 bg-green-50 text-green-700',
+            result.status === 'warning' && 'border-yellow-200 bg-yellow-50 text-yellow-700',
+            result.status === 'info' && 'border-blue-200 bg-blue-50 text-blue-700',
           )}
+        >
+          {result.icon}
         </div>
-      </div>
-    </div>
+        <div className="space-y-1">
+          <div className="text-lg font-semibold leading-7">{result.title}</div>
+          {result.subtitle ? (
+            <div className="text-sm text-muted-foreground">{result.subtitle}</div>
+          ) : null}
+        </div>
+        {(status === 3 || status === 4) && (
+          <Button type="button" onClick={() => navigate('/knowledge')}>
+            <BookOpen className="size-4" />
+            {t('order.view_tutorial')}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }

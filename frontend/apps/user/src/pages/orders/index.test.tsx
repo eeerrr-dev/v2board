@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { formatLegacyDateTime, formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import OrdersPage from './index';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
   cancelMutateAsync: vi.fn(),
   legacyConfirm: vi.fn(),
   refetchOrders: vi.fn(),
-  mobile: false,
   orderError: undefined as unknown,
   fetching: false,
   orders: [
@@ -42,6 +41,7 @@ const mocks = vi.hoisted(() => ({
 const labels: Record<string, string> = {
   'common.attention': '注意',
   'common.cancel': '取消',
+  'common.loading': '正在加载',
   'order.cancel': '关闭订单',
   'order.cancel_confirm': '如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？',
   'order.trade_no_col': '# 订单号',
@@ -51,6 +51,7 @@ const labels: Record<string, string> = {
   'order.created_at': '创建时间',
   'order.action_col': '操作',
   'order.return': '查看详情',
+  'order.no_orders': '暂无订单',
   'order.status_unpaid': '待支付',
   'order.status_completed': '已完成',
   'plan.monthly': '月付',
@@ -103,28 +104,21 @@ vi.mock('@/components/legacy-confirm', () => ({
   legacyConfirm: mocks.legacyConfirm,
 }));
 
-vi.mock('@/lib/legacy-settings', () => ({
-  isLegacyMobile: () => mocks.mobile,
-}));
-
-describe('OrdersPage bundled-theme table', () => {
+describe('OrdersPage shadcn commerce table', () => {
   afterEach(() => {
     document.body.innerHTML = '';
-    mocks.mobile = false;
     mocks.orderError = undefined;
     mocks.fetching = false;
     mocks.orders = defaultOrders();
   });
 
-  it('renders the legacy desktop table shell, columns, fixed action column, and row formatting', () => {
+  it('renders the shadcn table shell, columns, status pills, actions, and row formatting', () => {
     const html = renderToStaticMarkup(<OrdersPage />);
 
-    expect(html).toContain('block block-rounded  ');
-    expect(html).toContain('ant-table-wrapper');
-    expect(html).toContain('class="ant-table-fixed" style="width:900px"');
-    expect(html).toContain('<table class="ant-table-fixed"><colgroup>');
-    expect(html).toContain('<th class=""><span class="ant-table-header-column">');
-    expect(html).toContain('ant-table-fixed-right');
+    expect(html).toContain('v2board-orders-card');
+    expect(html).toContain('v2board-orders-table');
+    expect(html).toContain('ant-table-column-title');
+    expect(html).toContain('ant-table-tbody');
     expect(html).toContain('# 订单号');
     expect(html).toContain('周期');
     expect(html).toContain('订单金额');
@@ -134,87 +128,55 @@ describe('OrdersPage bundled-theme table', () => {
     expect(html).toContain('ORDER123');
     expect(html).toContain('月付');
     expect(html).toContain('10.00');
-    expect(html).toContain('ant-badge-status-error');
     expect(html).toContain('待支付');
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
     expect(html).toContain('流量重置包');
     expect(html).toContain('2.50');
-    expect(html).toContain('ant-badge-status-success');
     expect(html).toContain('已完成');
     expect(html).toContain(formatLegacyDateMinuteSlash(0));
-    expect(html.match(/ant-divider ant-divider-vertical/g)).toHaveLength(4);
-    expect(html.match(/role="separator"/g)).toHaveLength(4);
-    expect(html.match(/data-row-key="0"/g)).toHaveLength(2);
-    expect(html.match(/data-row-key="1"/g)).toHaveLength(2);
+    expect(html).toContain('查看详情');
+    expect(html).toContain('取消');
+    expect(html).not.toContain('ant-table-wrapper');
+    expect(html).not.toContain('ant-badge-status');
+    expect(html).not.toContain('am-list');
   });
 
-  it('renders the legacy mobile list item structure', () => {
-    mocks.mobile = true;
+  it('renders a shadcn empty state when there are no orders', () => {
+    mocks.orders = [];
 
     const html = renderToStaticMarkup(<OrdersPage />);
 
-    expect(html).toContain('class="am-list"');
-    expect(html).toContain('class="am-list-body"');
-    expect(html).toContain('class="am-list-line am-list-line-multiple"');
-    expect(html).toContain('Legacy Plan');
-    expect(html).toContain(formatLegacyDateTime(1_700_000_000));
-    expect(html).toContain('10.00');
-    expect(html).toContain('ant-badge-status-error');
-    expect(html).toContain('待支付');
-    expect(html).toContain('class="am-list-arrow am-list-arrow-horizontal" aria-hidden="true"');
-    expect(html).toContain('class="am-list-ripple" style="display:none"');
+    expect(html).toContain('v2board-orders-empty');
+    expect(html).toContain('暂无订单');
+    expect(html).not.toContain('v2board-orders-table');
   });
 
-  it('keeps the bundled-theme order-period short-circuit without an empty-key fallback', () => {
+  it('keeps the order-period short-circuit without an empty-key fallback', () => {
     expect(ordersSource).toContain('PERIOD_LABEL[order.period]');
-    expect(ordersSource).toContain('<span className="ant-tag">{periodLabel}</span>');
+    expect(ordersSource).toContain('periodLabelKey ? t(periodLabelKey) : undefined');
     expect(ordersSource).not.toContain("periodKey ? t(periodKey) : ''");
     expect(ordersSource).not.toContain("PERIOD_LABEL[order.period] ?? ''");
+    expect(ordersSource).not.toContain('<span className="ant-tag">{periodLabel}</span>');
   });
 
-  it('keeps bundled antd table fallback row keys as index DOM attributes', () => {
-    expect(ordersSource).toContain('data-row-key={index}');
+  it('keys table rows by trade number now that the shadcn table owns the DOM', () => {
+    expect(ordersSource).toContain('<tr key={order.trade_no}');
+    expect(ordersSource).not.toContain('data-row-key={index}');
     expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
   });
 
-  it('syncs long-table fixed column row heights purely from measurement, with no per-locale or per-browser compensation', () => {
-    expect(ordersSource).toContain('useFixedColumnRowHeights(orders.length)');
-    // The fixed column matches the main table by measuring real row heights (as the
-    // bundled rc-table did); there is no enumerated locale/browser pixel offset.
-    expect(ordersSource).not.toContain('legacy-runtime');
-    expect(ordersSource).not.toContain('legacyOrdersBodyRowHeightOffset');
-    expect(ordersSource).not.toContain('bodyRowHeightOffset');
-    expect(ordersSource).not.toContain('bodyRowHeightOffsetMaxSourceHeight');
-    expect(ordersSource).not.toContain('navigator.userAgent');
-    expect(ordersSource).not.toContain('legacyGetLocale');
-    expect(ordersSource).not.toContain('innerWidth');
-    expect(ordersSource).not.toContain('isFirefoxLegacyEngine');
-    expect(ordersSource).not.toContain('isWebKitLegacyEngine');
-    expect(ordersSource).not.toContain('fixedBodyRowExtraPixel');
-  });
-
-  it('keeps bundled mobile order rows keyed by the table fallback index', () => {
-    const mobileSource = ordersSource.slice(
-      ordersSource.indexOf('{mobile ? ('),
-      ordersSource.indexOf(') : (', ordersSource.indexOf('{mobile ? (')),
-    );
-
-    expect(mobileSource).toContain('{orders.map((order, index) => {');
-    expect(mobileSource).toContain('key={index}');
-    expect(mobileSource).not.toContain('key={order.trade_no}');
-  });
-
-  it('does not apply the list loading class before the mount fetch dispatch equivalent', () => {
+  it('does not show the fetch loading strip before the mount fetch dispatch equivalent', () => {
     mocks.fetching = true;
 
     const html = renderToStaticMarkup(<OrdersPage />);
 
-    expect(html).toContain('block block-rounded  ');
+    expect(html).toContain('v2board-orders-card');
+    expect(html).not.toContain('正在加载');
     expect(html).not.toContain('block-mode-loading');
   });
 });
 
-describe('OrdersPage legacy cancel action', () => {
+describe('OrdersPage commerce behavior', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -227,7 +189,6 @@ describe('OrdersPage legacy cancel action', () => {
     mocks.cancelMutateAsync.mockResolvedValue(true);
     mocks.legacyConfirm.mockClear();
     mocks.refetchOrders.mockClear();
-    mocks.mobile = false;
     mocks.orderError = undefined;
     mocks.fetching = false;
     mocks.orders = defaultOrders();
@@ -239,36 +200,42 @@ describe('OrdersPage legacy cancel action', () => {
     document.body.innerHTML = '';
   });
 
-  it('navigates from the legacy mobile list items instead of rendering the desktop table', async () => {
-    mocks.mobile = true;
-
+  it('navigates from both the trade number and detail action', async () => {
     await act(async () => {
       root.render(<OrdersPage />);
       await Promise.resolve();
     });
 
-    expect(container.querySelector('.am-list')).not.toBeNull();
-    expect(container.querySelector('.ant-table-wrapper')).toBeNull();
-
-    const firstItem = container.querySelector('.am-list-item')!;
+    const tradeLink = [...container.querySelectorAll<HTMLAnchorElement>('a')].find(
+      (link) => link.textContent === 'ORDER123',
+    )!;
     await act(async () => {
-      firstItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      tradeLink.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
+    expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
 
+    const detailLink = [...container.querySelectorAll<HTMLAnchorElement>('a')].find(
+      (link) => link.textContent === '查看详情',
+    )!;
+    await act(async () => {
+      detailLink.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
   });
 
-  it('fires cancel through a non-thenable Modal.confirm onOk like the bundled theme', async () => {
+  it('fires cancel through a non-thenable confirm onOk for unpaid orders', async () => {
     await act(async () => {
       root.render(<OrdersPage />);
       await Promise.resolve();
     });
 
-    const cancelLinks = Array.from(container.querySelectorAll('a')).filter(
+    const cancelLinks = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).filter(
       (link) => link.textContent === '取消',
     );
-    expect(cancelLinks).toHaveLength(4);
+    expect(cancelLinks).toHaveLength(2);
+    expect(cancelLinks[0]!.getAttribute('aria-disabled')).toBe('false');
 
     await act(async () => {
       cancelLinks[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -297,24 +264,7 @@ describe('OrdersPage legacy cancel action', () => {
     expect(ordersSource).not.toContain('ordersQuery.refetch()');
   });
 
-  it('keeps legacy disabled action links clickable because the bundle only stamps the attribute', async () => {
-    expect(ordersSource).toContain(
-      'function legacyDisabledAnchorProps(disabled: boolean): AnchorHTMLAttributes<HTMLAnchorElement>',
-    );
-    expect(ordersSource).toContain('return { disabled } as AnchorHTMLAttributes<HTMLAnchorElement>;');
-    expect(ordersSource).toContain('{...legacyDisabledAnchorProps(order.status === 2)}');
-    expect(ordersSource).toContain('{...legacyDisabledAnchorProps(order.status !== 0)}');
-    expect(ordersSource).not.toContain("...(order.status === 2 ? { disabled: true } : {})");
-    expect(ordersSource).not.toContain("...(order.status !== 0 ? { disabled: true } : {})");
-
-    mocks.orders = [
-      mocks.orders[0]!,
-      {
-        ...mocks.orders[1]!,
-        status: 2,
-      },
-    ];
-
+  it('disables cancel for non-unpaid orders while keeping detail navigation available', async () => {
     await act(async () => {
       root.render(<OrdersPage />);
       await Promise.resolve();
@@ -323,40 +273,27 @@ describe('OrdersPage legacy cancel action', () => {
     const detailLinks = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).filter(
       (link) => link.textContent === '查看详情',
     );
-    expect(detailLinks[1]!.getAttribute('disabled')).toBe('');
-
     await act(async () => {
       detailLinks[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
-
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER456');
 
     const cancelLinks = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).filter(
       (link) => link.textContent === '取消',
     );
-    expect(cancelLinks[1]!.getAttribute('disabled')).toBe('');
+    expect(cancelLinks[1]!.getAttribute('aria-disabled')).toBe('true');
 
     await act(async () => {
       cancelLinks[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(mocks.legacyConfirm).toHaveBeenCalledTimes(1);
-    const options = mocks.legacyConfirm.mock.calls[0]![0] as {
-      onOk: () => unknown;
-    };
-    expect(options.onOk()).toBeUndefined();
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mocks.cancelMutateAsync).toHaveBeenCalledWith('ORDER456');
+    expect(mocks.legacyConfirm).not.toHaveBeenCalled();
+    expect(mocks.cancelMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('keeps the original block loading class after the mount fetch dispatch equivalent', async () => {
+  it('shows the loading strip after a mounted fetch or transport timeout but not an API 500', async () => {
     mocks.fetching = true;
 
     await act(async () => {
@@ -364,12 +301,8 @@ describe('OrdersPage legacy cancel action', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('.block.block-rounded')?.className).toContain(
-      'block-mode-loading',
-    );
-  });
+    expect(container.textContent).toContain('正在加载');
 
-  it('keeps the original block loading class after a transport timeout but not an API 500', async () => {
     mocks.fetching = false;
     mocks.orderError = { status: 0, message: 'timeout of 30000ms exceeded' };
 
@@ -378,9 +311,7 @@ describe('OrdersPage legacy cancel action', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('.block.block-rounded')?.className).toContain(
-      'block-mode-loading',
-    );
+    expect(container.textContent).toContain('正在加载');
 
     mocks.orderError = { status: 500, message: 'Server Error' };
 
@@ -389,8 +320,6 @@ describe('OrdersPage legacy cancel action', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('.block.block-rounded')?.className).not.toContain(
-      'block-mode-loading',
-    );
+    expect(container.textContent).not.toContain('正在加载');
   });
 });

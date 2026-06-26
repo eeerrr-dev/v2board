@@ -171,7 +171,7 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-describe('PlanCheckoutPage bundled-theme markup', () => {
+describe('PlanCheckoutPage shadcn commerce markup', () => {
   beforeEach(() => {
     resetPlan();
     mocks.plan.renew = 1;
@@ -179,30 +179,31 @@ describe('PlanCheckoutPage bundled-theme markup', () => {
     mocks.orders = [];
   });
 
-  it('renders the cashier shell, default period, coupon block, and original class strings', () => {
+  it('renders the cashier shell, default period, coupon input, and summary card', () => {
     const html = renderToStaticMarkup(<PlanCheckoutPage />);
 
     expect(html).toContain('id="cashier"');
-    expect(html).toContain('block block-link-pop block-rounded py-3');
-    expect(html).toContain('v2board-plan-content px-3');
-    expect(html).toContain('si si-check text-primary');
+    expect(html).toContain('v2board-plan-content');
+    expect(html).toContain('lucide-check');
     expect(html).toContain('付款周期');
-    expect(html).toContain('class="v2board-select active border-primary"');
-    expect(html).toContain('class="v2board-select false"');
+    expect(html).toContain('v2board-select flex');
+    expect(html).toContain('active border-primary bg-accent text-accent-foreground');
     expect(html).toContain('Legacy Plan x 月付');
     expect(html).toContain('¥10.00');
     expect(html).toContain('¥ 10.00 CNY');
-    expect(html).toContain('block block-link-pop block-rounded  px-3 py-3 mb-2 text-light');
+    expect(html).toContain('v2board-checkout-summary');
+    expect(html).toContain('v2board-input-coupon');
     expect(html).toContain('placeholder="有优惠券？"');
+    expect(html).not.toContain('block block-link-pop');
   });
 
-  it('renders the legacy non-renewable result branch', () => {
+  it('renders the shadcn non-renewable branch', () => {
     mocks.plan.renew = 0;
     mocks.info = { plan_id: 1 };
 
     const html = renderToStaticMarkup(<PlanCheckoutPage />);
 
-    expect(html).toContain('ant-result ant-result-info');
+    expect(html).toContain('v2board-plan-non-renewable');
     expect(html).toContain('该订阅无法续费，仅允许新用户购买');
     expect(html).toContain('选择其它订阅');
   });
@@ -219,10 +220,10 @@ describe('PlanCheckoutPage bundled-theme markup', () => {
     expect(html).toContain('Legacy Plan x 流量重置包');
     expect(html).toContain('¥3.00');
     expect(html).toContain('¥ 3.00 CNY');
-    expect(html).not.toContain('class="v2board-select');
+    expect(html).not.toContain('v2board-select flex');
   });
 
-  it('uses stable period select keys without changing the bundled-theme markup', () => {
+  it('uses stable period select keys without random remounts', () => {
     const periodSource = checkoutSource.slice(
       checkoutSource.indexOf('periods.map((item) => {'),
       checkoutSource.indexOf('</div>', checkoutSource.indexOf('periods.map((item) => {')),
@@ -233,12 +234,12 @@ describe('PlanCheckoutPage bundled-theme markup', () => {
     expect(periodSource).not.toContain('key={Math.random()}');
   });
 
-  it('keeps the bundled-theme direct plan content handoff on checkout', () => {
+  it('keeps the direct plan content handoff on checkout', () => {
     expect(checkoutSource).toContain('content={plan.content}');
     expect(checkoutSource).not.toContain("content={plan.content ?? ''}");
   });
 
-  it('keeps the bundled-theme route plan id as the checkout API input', () => {
+  it('keeps the route plan id as the checkout API input', () => {
     expect(checkoutSource).toContain('const planId = plan_id;');
     expect(checkoutSource).toContain('userKeys.plan(planId as string)');
     expect(checkoutSource).toContain('planId as string');
@@ -246,7 +247,7 @@ describe('PlanCheckoutPage bundled-theme markup', () => {
     expect(checkoutSource).not.toContain("userKeys.plan(planId ?? '')");
   });
 
-  it('keeps the bundled-theme direct selected period in the order payload', () => {
+  it('keeps the direct selected period in the order payload', () => {
     expect(checkoutSource).toContain('period: currentPeriod,');
     expect(checkoutSource).toContain("if (appliedCoupon?.name) payload.coupon_code = appliedCoupon.code;");
     expect(checkoutSource).toContain('useState<PlanPeriod | undefined>()');
@@ -259,7 +260,7 @@ describe('PlanCheckoutPage bundled-theme markup', () => {
     );
   });
 
-  it('keeps the bundled-theme direct coupon input value for coupon checks', () => {
+  it('keeps the direct coupon input value for coupon checks', () => {
     expect(checkoutSource).toContain('couponRef.current!.value');
     expect(checkoutSource).not.toContain("couponRef.current?.value ?? ''");
   });
@@ -288,7 +289,7 @@ describe('PlanCheckoutPage bundled-theme markup', () => {
   });
 });
 
-describe('PlanCheckoutPage bundled-theme behavior', () => {
+describe('PlanCheckoutPage commerce behavior', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -378,7 +379,7 @@ describe('PlanCheckoutPage bundled-theme behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE123');
   });
 
-  it('keeps the original undefined period payload when no price period exists', async () => {
+  it('keeps the undefined period payload when no price period exists', async () => {
     const plan = mocks.plan as Plan;
     plan.month_price = null;
     plan.year_price = null;
@@ -465,7 +466,7 @@ describe('PlanCheckoutPage bundled-theme behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE456');
   });
 
-  it('shows the original change-subscription warning before saving', async () => {
+  it('shows the change-subscription warning before saving', async () => {
     mocks.info = { plan_id: 2 };
     mocks.subscribe = { expired_at: 4_102_444_800 };
     mocks.saveOrder.mockResolvedValue('TRADE789');

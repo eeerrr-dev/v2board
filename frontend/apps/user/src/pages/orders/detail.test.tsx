@@ -123,7 +123,7 @@ vi.mock('@/lib/queries', () => ({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-describe('OrderDetailPage bundled-theme quirks', () => {
+describe('OrderDetailPage shadcn commerce behavior', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -170,9 +170,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     vi.useRealTimers();
   });
 
-  it('renders the bundled-theme three-row product-info block for non-deposit orders', () => {
-    // umi.js order-detail (offset ~702243): the non-deposit branch renders three
-    // rows — 产品名称/plan.name, 类型/周期/periodText, 产品流量/transfer_enable GB.
+  it('renders the three-row product-info card for non-deposit orders', () => {
     const html = renderToStaticMarkup(<OrderDetailPage />);
 
     expect(html).toContain('order.product_info');
@@ -184,7 +182,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     expect(html).toContain('123 GB');
   });
 
-  it('keeps the bundled-theme deposit product-name row', () => {
+  it('keeps the deposit product-name row', () => {
     orderState.data = {
       ...orderState.data!,
       period: 'deposit',
@@ -206,7 +204,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     expect(html).not.toContain(' GB');
   });
 
-  it('keeps the bundled-theme period label short-circuit without an empty-key fallback', () => {
+  it('keeps the period label short-circuit without an empty-key fallback', () => {
     expect(orderDetailSource).toContain('PERIOD_LABEL_KEY[order.period]');
     expect(orderDetailSource).not.toContain("PERIOD_LABEL_KEY[order.period] ?? ''");
     expect(orderDetailSource).not.toContain("t(PERIOD_LABEL_KEY[order.period] ?? '')");
@@ -219,7 +217,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     const html = renderToStaticMarkup(<OrderDetailPage />);
 
     expect(html).toContain('id="cashier"');
-    expect(html).not.toContain('spinner-grow');
+    expect(html).not.toContain('role="status"');
   });
 
   it('selects the first payment method and precomputes its pre-handling amount in the first rendered pass', () => {
@@ -236,14 +234,15 @@ describe('OrderDetailPage bundled-theme quirks', () => {
 
     const html = renderToStaticMarkup(<OrderDetailPage />);
 
-    expect(html).toContain('class="v2board-select active border-primary"');
+    expect(html).toContain('v2board-select flex');
+    expect(html).toContain('active border-primary bg-accent text-accent-foreground');
     expect(html).toContain('Fee Pay');
     expect(html).toContain('order.handling_fee');
     expect(html).toContain('2.50');
     expect(html).toContain('¥ 12.50 CNY');
   });
 
-  it('updates the bundled-theme pre-handling amount when the payment method changes', async () => {
+  it('updates the pre-handling amount when the payment method changes', async () => {
     paymentState.data = [
       {
         id: 9,
@@ -281,7 +280,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     expect(document.body.textContent).toContain('¥ 10.00 CNY');
   });
 
-  it('renders payment fees through the bundled-theme pre_handling_amount path', () => {
+  it('renders payment fees through the pre_handling_amount path', () => {
     expect(orderDetailSource).toContain('preHandlingAmount');
     expect(orderDetailSource).toContain('order.pre_handling_amount');
     expect(orderDetailSource).toContain('calculatePreHandlingAmount(orderQuery.data, first)');
@@ -296,19 +295,21 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     expect(orderDetailSource).not.toContain('method?.handling_fee_fixed ?? 0');
   });
 
-  it('keeps payment method items keyed by their legacy method id without index fallback', () => {
+  it('keeps payment method items keyed by their method id without index fallback', () => {
     const paymentMethodSource = orderDetailSource.slice(
       orderDetailSource.indexOf('paymentMethods?.map((method) => ('),
       orderDetailSource.indexOf('{isStripePayment && stripePk', orderDetailSource.indexOf('paymentMethods?.map')),
     );
 
     expect(paymentMethodSource).toContain('paymentMethods?.map((method) => (');
-    expect(paymentMethodSource).toContain('className={`v2board-select ${effectiveMethodId === method.id ? \'active border-primary\' : \'false\'}`}');
+    expect(paymentMethodSource).toContain("'v2board-select flex");
+    expect(paymentMethodSource).toContain("effectiveMethodId === method.id && 'active border-primary");
+    expect(paymentMethodSource).not.toContain("'false'");
     expect(paymentMethodSource).not.toContain('key={index}');
     expect(paymentMethodSource).toContain('key={method.id}');
   });
 
-  it('keeps the bundled-theme Stripe form keyed by public key', () => {
+  it('keeps the Stripe form keyed by public key', () => {
     expect(orderDetailSource).toContain(
       '<StripeCardForm key={stripePk} publicKey={stripePk} onToken={handleStripeToken} />',
     );
@@ -317,12 +318,12 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     );
   });
 
-  it('keeps the bundled-theme hard-coded Stripe verification loading message', () => {
+  it('keeps the hard-coded Stripe verification loading message', () => {
     expect(orderDetailSource).toContain("toast.loading('请稍等，我们正在验证该笔支付', { duration: 5000 })");
     expect(orderDetailSource).not.toContain("toast.loading(t('order.stripe_verifying')");
   });
 
-  it('keeps the bundled-theme QR code props for payment polling', () => {
+  it('keeps the QR code props for payment polling', () => {
     const modalSource = orderDetailSource.slice(
       orderDetailSource.indexOf('<DialogContent'),
       orderDetailSource.indexOf('</DialogContent>', orderDetailSource.indexOf('<DialogContent')),
@@ -398,7 +399,7 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     });
 
     expect(checkoutButton?.disabled).toBe(true);
-    expect(checkoutButton?.textContent).not.toContain('order.checkout');
+    expect(checkoutButton?.textContent).toContain('order.checkout');
     expect(orderDetailSource).toContain('isLegacyCheckoutNetworkError(error)');
     expect(orderDetailSource).toContain('(error as { status?: unknown }).status === 0');
   });
@@ -553,14 +554,14 @@ describe('OrderDetailPage bundled-theme quirks', () => {
     }
   });
 
-  it('renders the legacy cancel loading icon inside the original wrapper element', () => {
+  it('renders cancel loading through the shadcn Button busy state', () => {
     cancelState.isPending = true;
 
     const html = renderToStaticMarkup(<OrderDetailPage />);
 
-    expect(html).toContain('btn btn-primary btn-sm btn-danger btn-rounded px-3');
-    expect(html).toContain('<div><i aria-label="图标: loading"');
-    expect(orderDetailSource).toContain('cancel.isPending && (');
-    expect(orderDetailSource).toContain('<div>\n                      <LegacyLoadingIcon />');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('order.cancel');
+    expect(orderDetailSource).toContain('loading={cancel.isPending}');
+    expect(orderDetailSource).not.toContain('<LegacyLoadingIcon />');
   });
 });

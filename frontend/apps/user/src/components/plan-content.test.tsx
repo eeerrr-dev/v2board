@@ -5,8 +5,8 @@ import { PlanContent } from './plan-content';
 
 const planContentSource = readFileSync(`${process.cwd()}/src/components/plan-content.tsx`, 'utf8');
 
-describe('PlanContent bundled-theme quirks', () => {
-  it('renders parsed feature rows with the bundled-theme icon markup', () => {
+describe('PlanContent shadcn feature rendering', () => {
+  it('renders parsed feature rows with lucide icons and shadcn text treatment', () => {
     const html = renderToStaticMarkup(
       <PlanContent
         content={JSON.stringify([
@@ -17,15 +17,17 @@ describe('PlanContent bundled-theme quirks', () => {
       />,
     );
 
-    expect(html).toContain('class="mb-3"');
-    expect(html).toContain('si si-check text-primary');
-    expect(html).toContain('si si-close text-primary');
+    expect(html).toContain('grid gap-2.5 text-sm mb-3');
+    expect(html).toContain('lucide-check');
+    expect(html).toContain('lucide-x');
+    expect(html).toContain('text-primary');
     expect(html).toContain('Supported');
     expect(html).toContain('Unsupported');
-    expect(html).toContain('opacity:0.3');
+    expect(html).toContain('opacity-70');
+    expect(html).not.toContain('si si-check');
   });
 
-  it('uses stable feature row keys without changing the bundled-theme markup', () => {
+  it('uses stable feature row keys without random remounts', () => {
     const featureSource = planContentSource.slice(
       planContentSource.indexOf('features.map((item, index) => {'),
       planContentSource.indexOf('</div>', planContentSource.indexOf('features.map((item, index) => {')),
@@ -45,10 +47,11 @@ describe('PlanContent bundled-theme quirks', () => {
     expect(html).toContain('<p>Raw HTML</p>');
   });
 
-  it('keeps the plan-list JSON null crash from the original typeof-object guard', () => {
-    expect(() =>
-      renderToStaticMarkup(<PlanContent content="null" className="mb-3" />),
-    ).toThrow();
+  it('falls back to raw HTML for JSON null in plan lists instead of crashing', () => {
+    const html = renderToStaticMarkup(<PlanContent content="null" className="mb-3" />);
+
+    expect(html).toContain('class="mb-3"');
+    expect(html).toContain('>null</div>');
   });
 
   it('keeps the checkout JSON null fallback as raw HTML', () => {
@@ -66,7 +69,7 @@ describe('PlanContent bundled-theme quirks', () => {
     expect(html).toContain('>null</div>');
   });
 
-  it('keeps the bundled-theme raw HTML handoff without an empty-string fallback', () => {
+  it('keeps the direct raw HTML handoff without an empty-string fallback', () => {
     expect(planContentSource).toContain('dangerouslySetInnerHTML={{ __html: content as string }}');
     expect(planContentSource).not.toContain("dangerouslySetInnerHTML={{ __html: content ?? '' }}");
   });

@@ -38,15 +38,22 @@ export interface ButtonProps
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ asChild, className, variant, size, block, loading, disabled, type, children, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
+    const sharedProps = {
+      ref,
+      className: cn(buttonVariants({ variant, size, block }), className),
+      disabled: disabled || loading,
+      'aria-busy': !!loading,
+      ...props,
+    };
+
+    if (asChild) {
+      return <Comp {...sharedProps}>{children}</Comp>;
+    }
 
     return (
       <Comp
-        ref={ref}
+        {...sharedProps}
         type={type ?? 'button'}
-        className={cn(buttonVariants({ variant, size, block }), className)}
-        disabled={disabled || loading}
-        aria-busy={!!loading}
-        {...props}
       >
         {loading ? <Spinner /> : null}
         {children}

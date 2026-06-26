@@ -64,6 +64,7 @@ const mocks = vi.hoisted(() => ({
 
 const labels: Record<string, string> = {
   'plan.pick_title': '选择最适合你的计划',
+  'plan.pick_best_for_you': '选择合适的订阅周期和流量包。',
   'plan.filter_all': '全部',
   'plan.filter_period': '按周期',
   'plan.filter_traffic': '按流量',
@@ -72,6 +73,7 @@ const labels: Record<string, string> = {
   'plan.almost_sold_out': '即将售罄',
   'plan.sold_out': '已售罄',
   'plan.buy_now': '立即订阅',
+  'plan.no_plan': '暂无可用订阅',
 };
 
 function resetPlans() {
@@ -140,25 +142,27 @@ vi.mock('@/lib/queries', () => ({
   useCommConfig: () => ({ data: { currency_symbol: '¥' } }),
 }));
 
-describe('PlansPage legacy list markup', () => {
+describe('PlansPage shadcn commerce list markup', () => {
   beforeEach(() => {
     resetPlans();
   });
 
-  it('renders the bundled-theme tabs, card shell, labels, and price priority', () => {
+  it('renders shadcn tabs, plan cards, labels, and price priority', () => {
     const html = renderToStaticMarkup(<PlansPage />);
 
-    expect(html).toContain('font-weight-normal mb-4 m-3 mx-xl-0 mt-xl-0 mt-4');
     expect(html).toContain('选择最适合你的计划');
-    expect(html).toContain('v2board-plan-tabs border-primary text-primary');
-    expect(html).toContain('block block-link-pop block-rounded m-3 mx-xl-0');
+    expect(html).toContain('选择合适的订阅周期和流量包。');
+    expect(html).toContain('v2board-plan-tabs inline-flex');
+    expect(html).toContain('v2board-plan-card group flex h-full w-full');
+    expect(html).toContain('v2board-plan-card-title');
     expect(html).toContain('v2board-sold-out-tag');
     expect(html).toContain('¥ 10.00');
     expect(html).toContain('月付');
     expect(html).toContain('¥ 55.00');
     expect(html).toContain('一次性');
     expect(html).toContain('已售罄');
-    expect(html).toContain('si si-check text-primary');
+    expect(html).toContain('lucide-check');
+    expect(html).not.toContain('block block-link-pop');
   });
 
   it('keeps the original all-null-price card instead of hiding it', () => {
@@ -196,18 +200,18 @@ describe('PlansPage legacy list markup', () => {
     expect(html).toContain('立即订阅');
   });
 
-  it('shows the original loading spinner for an empty plan list', () => {
+  it('shows a shadcn empty card for an empty plan list', () => {
     mocks.plans = [];
 
     const html = renderToStaticMarkup(<PlansPage />);
 
-    expect(html).toContain('class="spinner-grow text-primary"');
-    expect(html).toContain('<span class="sr-only">Loading...</span>');
-    expect(html).not.toContain('block block-link-pop block-rounded m-3 mx-xl-0');
+    expect(html).toContain('v2board-plan-empty');
+    expect(html).toContain('暂无可用订阅');
+    expect(html).not.toContain('v2board-plan-card');
   });
 });
 
-describe('PlansPage legacy list behavior', () => {
+describe('PlansPage shadcn commerce list behavior', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -225,20 +229,20 @@ describe('PlansPage legacy list behavior', () => {
     document.body.innerHTML = '';
   });
 
-  it('uses javascript href anchors and blocks sold-out card navigation', async () => {
+  it('navigates from purchasable cards and blocks sold-out card navigation', async () => {
     await act(async () => {
       root.render(<PlansPage />);
       await Promise.resolve();
     });
 
-    const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('a.block-link-pop'));
-    expect(links).toHaveLength(2);
-    expect(links[0]!.getAttribute('href')).toBe('javascript:void(0);');
-    expect(links[1]!.getAttribute('href')).toBe('javascript:void(0);');
+    const cards = Array.from(container.querySelectorAll<HTMLButtonElement>('button.v2board-plan-card'));
+    expect(cards).toHaveLength(2);
+    expect(cards[0]!.disabled).toBe(false);
+    expect(cards[1]!.disabled).toBe(true);
 
     await act(async () => {
-      links[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      links[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      cards[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      cards[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
@@ -246,21 +250,21 @@ describe('PlansPage legacy list behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/plan/1');
   });
 
-  it('filters period and traffic tabs exactly like the original boolean checks', async () => {
+  it('filters period and traffic tabs with the commerce contract boolean checks', async () => {
     await act(async () => {
       root.render(<PlansPage />);
       await Promise.resolve();
     });
 
     const tabs = Array.from(container.querySelectorAll('.v2board-plan-tabs span'));
-    expect(container.querySelectorAll('.col-md-12.col-xl-4')).toHaveLength(2);
+    expect(container.querySelectorAll('.v2board-plan-card')).toHaveLength(2);
 
     await act(async () => {
       tabs[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(container.querySelectorAll('.col-md-12.col-xl-4')).toHaveLength(1);
+    expect(container.querySelectorAll('.v2board-plan-card')).toHaveLength(1);
     expect(container.textContent).toContain('Legacy Monthly');
     expect(container.textContent).not.toContain('Legacy Traffic');
 
@@ -269,6 +273,6 @@ describe('PlansPage legacy list behavior', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelectorAll('.col-md-12.col-xl-4')).toHaveLength(2);
+    expect(container.querySelectorAll('.v2board-plan-card')).toHaveLength(2);
   });
 });

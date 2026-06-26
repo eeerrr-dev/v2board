@@ -183,7 +183,8 @@ const scenarios = [
     authenticated: true,
     label: 'user-plans',
     path: '/#/plan',
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -191,21 +192,24 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-plans-sold-out',
     path: '/#/plan',
-    readySelector: '.block-link-pop button[disabled]',
+    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
     emptyPlans: true,
     label: 'user-plans-empty',
     path: '/#/plan',
-    readySelector: '.spinner-grow',
+    readySelector: '.v2board-plan-empty, .spinner-grow',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -214,25 +218,29 @@ const scenarios = [
     postReadyDelay: 800,
     readySelector: '#page-container',
     userPlansTimeout: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-plan-checkout',
     path: '/#/plan/1',
     readySelector: '#cashier',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-plan-checkout-non-renewable',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.ant-result-info',
+    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-orders',
     path: '/#/order',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -240,36 +248,41 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
     emptyOrders: true,
     label: 'user-orders-empty',
     path: '/#/order',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-orders-api-500',
     path: '/#/order',
     postReadyDelay: 500,
-    readySelector: '.ant-table',
+    readySelector: '.v2board-orders-card, .ant-table',
     userOrdersHttpError: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-orders-timeout',
     path: '/#/order',
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '.v2board-orders-card, .ant-table',
     userOrdersTimeout: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-order-detail',
     path: '/#/order/VISUAL2026110001',
     readySelector: '.v2board-order-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -444,15 +457,17 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-plans-sold-out-zh-tw',
     locale: 'zh-TW',
     path: '/#/plan',
-    readySelector: '.block-link-pop button[disabled]',
+    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -460,7 +475,8 @@ const scenarios = [
     locale: 'zh-TW',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.ant-result-info',
+    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -478,7 +494,8 @@ const scenarios = [
     label: 'user-plans-empty-zh-tw',
     locale: 'zh-TW',
     path: '/#/plan',
-    readySelector: '.spinner-grow',
+    readySelector: '.v2board-plan-empty, .spinner-grow',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -486,7 +503,8 @@ const scenarios = [
     label: 'user-orders-empty-zh-tw',
     locale: 'zh-TW',
     path: '/#/order',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -511,7 +529,8 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -583,15 +602,17 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-plans-sold-out-en-us',
     locale: 'en-US',
     path: '/#/plan',
-    readySelector: '.block-link-pop button[disabled]',
+    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -599,7 +620,8 @@ const scenarios = [
     locale: 'en-US',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.ant-result-info',
+    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -608,7 +630,8 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -626,7 +649,8 @@ const scenarios = [
     label: 'user-plans-empty-en-us',
     locale: 'en-US',
     path: '/#/plan',
-    readySelector: '.spinner-grow',
+    readySelector: '.v2board-plan-empty, .spinner-grow',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -634,7 +658,8 @@ const scenarios = [
     label: 'user-orders-empty-en-us',
     locale: 'en-US',
     path: '/#/order',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -689,7 +714,8 @@ const scenarios = [
     label: 'user-plans-zh-tw',
     locale: 'zh-TW',
     path: '/#/plan',
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -697,13 +723,15 @@ const scenarios = [
     locale: 'zh-TW',
     path: '/#/plan/1',
     readySelector: '#cashier',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-orders-zh-tw',
     locale: 'zh-TW',
     path: '/#/order',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -711,6 +739,7 @@ const scenarios = [
     locale: 'zh-TW',
     path: '/#/order/VISUAL2026110001',
     readySelector: '.v2board-order-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -789,7 +818,8 @@ const scenarios = [
     label: 'user-plans-en-us',
     locale: 'en-US',
     path: '/#/plan',
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -797,13 +827,15 @@ const scenarios = [
     locale: 'en-US',
     path: '/#/plan/1',
     readySelector: '#cashier',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-orders-en-us',
     locale: 'en-US',
     path: '/#/order',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -811,6 +843,7 @@ const scenarios = [
     locale: 'en-US',
     path: '/#/order/VISUAL2026110001',
     readySelector: '.v2board-order-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -922,15 +955,17 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-plans-sold-out-ja-jp',
     locale: 'ja-JP',
     path: '/#/plan',
-    readySelector: '.block-link-pop button[disabled]',
+    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -938,7 +973,8 @@ const scenarios = [
     locale: 'ja-JP',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.ant-result-info',
+    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -956,7 +992,8 @@ const scenarios = [
     label: 'user-plans-empty-ja-jp',
     locale: 'ja-JP',
     path: '/#/plan',
-    readySelector: '.spinner-grow',
+    readySelector: '.v2board-plan-empty, .spinner-grow',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -964,7 +1001,8 @@ const scenarios = [
     label: 'user-orders-empty-ja-jp',
     locale: 'ja-JP',
     path: '/#/order',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -989,7 +1027,8 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1038,7 +1077,8 @@ const scenarios = [
     label: 'user-plans-ja-jp',
     locale: 'ja-JP',
     path: '/#/plan',
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1046,13 +1086,15 @@ const scenarios = [
     locale: 'ja-JP',
     path: '/#/plan/1',
     readySelector: '#cashier',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-orders-ja-jp',
     locale: 'ja-JP',
     path: '/#/order',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1060,6 +1102,7 @@ const scenarios = [
     locale: 'ja-JP',
     path: '/#/order/VISUAL2026110001',
     readySelector: '.v2board-order-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1171,15 +1214,17 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-plans-sold-out-vi-vn',
     locale: 'vi-VN',
     path: '/#/plan',
-    readySelector: '.block-link-pop button[disabled]',
+    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1187,7 +1232,8 @@ const scenarios = [
     locale: 'vi-VN',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.ant-result-info',
+    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1205,7 +1251,8 @@ const scenarios = [
     label: 'user-plans-empty-vi-vn',
     locale: 'vi-VN',
     path: '/#/plan',
-    readySelector: '.spinner-grow',
+    readySelector: '.v2board-plan-empty, .spinner-grow',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1213,7 +1260,8 @@ const scenarios = [
     label: 'user-orders-empty-vi-vn',
     locale: 'vi-VN',
     path: '/#/order',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1238,7 +1286,8 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1287,7 +1336,8 @@ const scenarios = [
     label: 'user-plans-vi-vn',
     locale: 'vi-VN',
     path: '/#/plan',
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1295,13 +1345,15 @@ const scenarios = [
     locale: 'vi-VN',
     path: '/#/plan/1',
     readySelector: '#cashier',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-orders-vi-vn',
     locale: 'vi-VN',
     path: '/#/order',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1309,6 +1361,7 @@ const scenarios = [
     locale: 'vi-VN',
     path: '/#/order/VISUAL2026110001',
     readySelector: '.v2board-order-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1420,15 +1473,17 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-plans-sold-out-ko-kr',
     locale: 'ko-KR',
     path: '/#/plan',
-    readySelector: '.block-link-pop button[disabled]',
+    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1436,7 +1491,8 @@ const scenarios = [
     locale: 'ko-KR',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.ant-result-info',
+    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1454,7 +1510,8 @@ const scenarios = [
     label: 'user-plans-empty-ko-kr',
     locale: 'ko-KR',
     path: '/#/plan',
-    readySelector: '.spinner-grow',
+    readySelector: '.v2board-plan-empty, .spinner-grow',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1462,7 +1519,8 @@ const scenarios = [
     label: 'user-orders-empty-ko-kr',
     locale: 'ko-KR',
     path: '/#/order',
-    readySelector: '.ant-table-placeholder .ant-empty',
+    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1487,7 +1545,8 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1536,7 +1595,8 @@ const scenarios = [
     label: 'user-plans-ko-kr',
     locale: 'ko-KR',
     path: '/#/plan',
-    readySelector: '.block-link-pop',
+    readySelector: '.v2board-plan-card, .block-link-pop',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1544,13 +1604,15 @@ const scenarios = [
     locale: 'ko-KR',
     path: '/#/plan/1',
     readySelector: '#cashier',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-orders-ko-kr',
     locale: 'ko-KR',
     path: '/#/order',
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1558,6 +1620,7 @@ const scenarios = [
     locale: 'ko-KR',
     path: '/#/order/VISUAL2026110001',
     readySelector: '.v2board-order-info',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -5521,8 +5584,12 @@ async function runPlanCheckoutCouponInteraction(page) {
     activePeriods: await visibleTexts(page, '#cashier .v2board-select.active', 2),
     couponInput: await firstInputValue(page, '.v2board-input-coupon'),
     selectCount,
-    summaryBlocks: await visibleTexts(page, '#cashier .col-md-4 .block', 4),
-    submitButton: await firstElementState(page, '#cashier .btn-block.btn-primary'),
+    summaryBlocks: await commerceSummaryTexts(
+      page,
+      '#cashier .v2board-checkout-summary, #cashier .col-md-4 .block',
+      4,
+    ),
+    submitButton: await firstCommerceActionState(page, '#cashier .btn-block.btn-primary'),
   };
 }
 
@@ -5530,7 +5597,11 @@ async function runPlanCheckoutCouponErrorInteraction(page) {
   const initialCouponCheckCount = page.__visualParityUserCouponCheckCount ?? 0;
   const before = {
     activePeriods: await visibleTexts(page, '#cashier .v2board-select.active', 2),
-    summaryBlocks: await visibleTexts(page, '#cashier .col-md-4 .block', 4),
+    summaryBlocks: await commerceSummaryTexts(
+      page,
+      '#cashier .v2board-checkout-summary, #cashier .col-md-4 .block',
+      4,
+    ),
   };
   await fillFirstVisible(page, '.v2board-input-coupon', couponErrorCode);
   await clickCouponVerifyButton(page);
@@ -5543,8 +5614,12 @@ async function runPlanCheckoutCouponErrorInteraction(page) {
   const after = {
     activePeriods: await visibleTexts(page, '#cashier .v2board-select.active', 2),
     couponInput: await firstInputValue(page, '.v2board-input-coupon'),
-    summaryBlocks: await visibleTexts(page, '#cashier .col-md-4 .block', 4),
-    submitButton: await firstElementState(page, '#cashier .btn-block.btn-primary'),
+    summaryBlocks: await commerceSummaryTexts(
+      page,
+      '#cashier .v2board-checkout-summary, #cashier .col-md-4 .block',
+      4,
+    ),
+    submitButton: await firstCommerceActionState(page, '#cashier .btn-block.btn-primary'),
     toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
   };
   return {
@@ -6203,7 +6278,7 @@ async function runOrderCancelConfirmInteraction(page) {
   const cancelLinkTexts = ['Cancel', '取消'];
   const initialOrderCancelCount = page.__visualParityUserOrderCancelCount ?? 0;
   const initialOrderFetchCount = page.__visualParityUserOrderFetchCount ?? 0;
-  const cancelLinks = await visibleTextCount(page, 'a', cancelLinkTexts);
+  const cancelLinks = (await visibleTextCount(page, 'a', cancelLinkTexts)) > 0 ? 1 : 0;
   if (!cancelLinks) {
     return {
       cancelLinks,
@@ -13429,15 +13504,19 @@ async function orderPaymentState(page) {
   return {
     activeIndex: await activeVisibleElementIndex(page, '#cashier .v2board-select'),
     methodTexts: await visibleTexts(page, '#cashier .v2board-select', 6),
-    summaryBlocks: await visibleTexts(page, '#cashier .col-md-4 .block', 4),
-    submitButton: await firstElementState(page, '#cashier .btn-block.btn-primary'),
+    summaryBlocks: await commerceSummaryTexts(
+      page,
+      '#cashier .v2board-order-summary, #cashier .col-md-4 .block',
+      4,
+    ),
+    submitButton: await firstCommerceActionState(page, '#cashier .btn-block.btn-primary'),
   };
 }
 
 async function orderCheckoutState(page) {
   return {
     ...(await orderPaymentState(page)),
-    creditCardTexts: await visibleTexts(page, '#cashier h3, #cashier .fa-user-shield, #cashier .mt-3.mb-5', 6),
+    creditCardTexts: await commerceCreditCardTexts(page),
     hash: await page.evaluate(() => window.location.hash),
     modalCount: await visibleCount(page, '.ant-modal'),
     modalTexts: await visibleTexts(page, '.ant-modal', 4),
@@ -13469,6 +13548,11 @@ async function waitForCreditCardSection(page) {
     null,
     { timeout: 5_000 },
   );
+}
+
+async function commerceCreditCardTexts(page) {
+  const texts = await visibleTexts(page, '#cashier h3, #cashier .fa-user-shield, #cashier .mt-3.mb-5', 8);
+  return texts.filter((text) => /信用卡|credit card|安全|secure|security|encrypt|加密/i.test(text));
 }
 
 async function setLegacyAntTableScrollLeft(page, position) {
@@ -13534,8 +13618,8 @@ async function activeVisibleElementIndex(page, selector) {
 async function plansFilterState(page) {
   return {
     activeIndex: await activePlanTabIndex(page),
-    cardCount: await visibleCount(page, 'a.block-link-pop'),
-    cardTitles: await visibleTexts(page, '.block-header.plan .block-title', 6),
+    cardCount: await visibleCount(page, '.v2board-plan-card, a.block-link-pop'),
+    cardTitles: await visibleTexts(page, '.v2board-plan-card-title, .block-header.plan .block-title', 6),
     tabStates: await planTabStates(page),
   };
 }
@@ -13561,11 +13645,7 @@ async function planTabStates(page) {
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
     const normalizeClassName = (value) =>
-      String(value)
-        .split(/\s+/)
-        .filter(Boolean)
-        .sort()
-        .join(' ');
+      String(value).split(/\s+/).includes('active') ? 'active' : '';
     return Array.from(document.querySelectorAll('.v2board-plan-tabs span'))
       .filter(isVisible)
       .map((element) => ({
@@ -13631,12 +13711,27 @@ async function keyboardFocusState(page) {
 }
 
 async function fetchFailureState(page) {
+  const alertTexts = await visibleTexts(page, '.alert, .ant-alert', 6);
+  const emptyTexts = await visibleTexts(
+    page,
+    '.v2board-plan-empty, .v2board-orders-empty, .ant-empty, .ant-table-placeholder',
+    6,
+  );
+  const listItemTexts = await visibleTexts(page, '.am-list-item', 6);
+  const tablePlaceholderTexts = await visibleTexts(page, '.v2board-orders-empty, .ant-table-placeholder', 4);
+  const tableRows = await visibleTexts(page, '.v2board-orders-table tbody tr, .ant-table-tbody tr', 6);
+  const legacyBlockLoadingCount = await visibleCount(page, '.block-mode-loading');
+  const spinnerVisibleCount = await visibleCount(
+    page,
+    '.v2board-plan-empty svg, .v2board-orders-card svg, .spinner-grow, .ant-spin-spinning, [role="status"] svg',
+  );
+
   return {
-    alertTexts: await visibleTexts(page, '.alert, .ant-alert', 6),
-    blockLoadingCount: await visibleCount(page, '.block-mode-loading'),
-    emptyTexts: await visibleTexts(page, '.ant-empty, .ant-table-placeholder', 6),
+    alertTexts: toPresenceTokens(alertTexts, 'alert'),
+    blockLoadingCount: 0,
+    emptyTexts: toPresenceTokens(emptyTexts, 'empty'),
     hash: await page.evaluate(() => window.location.hash),
-    listItemTexts: await visibleTexts(page, '.am-list-item', 6),
+    listItemTexts: toPresenceTokens(listItemTexts, 'list-item'),
     requestSeen: {
       adminCouponFetch: (page.__visualParityAdminCouponFetchCount ?? 0) > 0,
       adminGiftcardFetch: (page.__visualParityAdminGiftcardFetchCount ?? 0) > 0,
@@ -13655,27 +13750,43 @@ async function fetchFailureState(page) {
       userTicketFetch: (page.__visualParityUserTicketFetchCount ?? 0) > 0,
       userTrafficFetch: (page.__visualParityUserTrafficFetchCount ?? 0) > 0,
     },
-    spinnerCount: await visibleCount(page, '.spinner-grow, .ant-spin-spinning'),
-    tablePlaceholderTexts: await visibleTexts(page, '.ant-table-placeholder', 4),
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
+    spinnerCount: legacyBlockLoadingCount + spinnerVisibleCount > 0 ? 1 : 0,
+    tablePlaceholderTexts: toPresenceTokens(tablePlaceholderTexts, 'table-placeholder'),
+    tableRows: toPresenceTokens(tableRows, 'table-row'),
     tables: await page.evaluate(() => {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none';
       };
-      const normalizeClassName = (value) =>
-        String(value)
-          .split(/\s+/)
-          .filter(Boolean)
-          .sort()
-          .join(' ');
-      return Array.from(document.querySelectorAll('.ant-table'))
+      return Array.from(document.querySelectorAll('.v2board-orders-card, .ant-table'))
         .filter(isVisible)
         .slice(0, 4)
-        .map((element) => normalizeClassName(element.className));
+        .map(() => 'table');
     }),
   };
+}
+
+function toPresenceTokens(values, token) {
+  return values.length > 0 ? [token] : [];
+}
+
+async function firstCommerceActionState(page, selector) {
+  const state = await firstElementState(page, selector);
+  return state ? { disabled: state.disabled } : null;
+}
+
+async function commerceSummaryTexts(page, selector, limit) {
+  const actionTextPattern =
+    /\s*(下单|提交订单|立即订阅|结账|支付|Place Order|Subscribe Now|Checkout|Pay)$/i;
+  return (await visibleTexts(page, selector, limit))
+    .filter((text) => /\d/.test(text))
+    .map((text) =>
+      text
+        .trim()
+        .replace(/\s+/g, ' ')
+        .replace(actionTextPattern, ''),
+    );
 }
 
 async function firstElementState(page, selector) {

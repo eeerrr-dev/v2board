@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Check, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 interface PlanContentProps {
@@ -8,13 +9,7 @@ interface PlanContentProps {
   guardNull?: boolean;
 }
 
-export function PlanContent({ content, className, htmlClassName, guardNull = false }: PlanContentProps) {
-  // The original parses the plan content as JSON, then maps it as a feature list.
-  // The plan-list page gates ONLY on `typeof parsed === 'object'`, so a JSON
-  // `null` (typeof 'object') enters the map branch and `null.map` throws. The
-  // checkout page instead gates on `g && typeof g === 'object'`, so a JSON `null`
-  // falls back to raw HTML — `guardNull` selects that variant. In both cases a
-  // parse failure or a plain `{}` behaves exactly as the original does.
+export function PlanContent({ content, className, htmlClassName }: PlanContentProps) {
   let parsed: unknown;
   let parseFailed = false;
   try {
@@ -23,9 +18,7 @@ export function PlanContent({ content, className, htmlClassName, guardNull = fal
     parseFailed = true;
   }
 
-  const isFeatureList = guardNull
-    ? parsed != null && typeof parsed === 'object'
-    : typeof parsed === 'object';
+  const isFeatureList = Array.isArray(parsed);
   if (parseFailed || !isFeatureList) {
     return (
       <div
@@ -37,23 +30,25 @@ export function PlanContent({ content, className, htmlClassName, guardNull = fal
 
   const features = parsed as Array<{ feature?: unknown; support?: unknown }>;
   return (
-    <div className={cn(className)}>
+    <div className={cn('grid gap-2.5 text-sm', className)}>
       {features.map((item, index) => {
         const supported = Boolean(item.support);
+        const Icon = supported ? Check : X;
         return (
           <div
             key={index}
-            style={{
-              textAlign: 'left',
-              marginBottom: 8,
-              opacity: supported ? 1 : 0.3,
-            }}
+            className={cn(
+              'flex items-start gap-2 text-left leading-5',
+              supported ? 'text-foreground' : 'text-muted-foreground opacity-70',
+            )}
           >
-            <i
-              className={`si ${supported ? 'si-check' : 'si-close'} text-primary`}
-              style={{ fontSize: 21, verticalAlign: 'sub' }}
+            <Icon
+              className={cn(
+                'mt-0.5 size-4 shrink-0',
+                supported ? 'text-primary' : 'text-muted-foreground',
+              )}
             />
-            <span style={{ paddingLeft: 8 }}>{item.feature as ReactNode}</span>
+            <span>{item.feature as ReactNode}</span>
           </div>
         );
       })}

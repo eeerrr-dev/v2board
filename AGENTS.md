@@ -151,6 +151,24 @@ surfaces.
 - Preserve legacy page behavior for non-redesigned logged-in routes, but do not
   keep old shell DOM/classes solely to resemble the packaged frontend.
 
+### User Commerce Direction
+
+The user commerce flow (`/plan`, `/plan/:plan_id`, `/order`, and
+`/order/:trade_no`) is a redesigned shadcn surface.
+
+- Use shadcn/Radix composition for plan cards, filters, checkout summaries,
+  coupon inputs, order tables/lists, payment method selection, QR checkout, and
+  confirmation dialogs.
+- Keep commerce behavior strict: plan filtering, sold-out handling, coupon
+  checks, save-order payloads, unfinished-order cancellation, change-subscription
+  confirmation, order cancellation, payment method selection, handling-fee math,
+  Stripe token checkout, QR checkout, redirect checkout, polling, query cleanup,
+  routing, i18n, and failure states must remain covered.
+- Retire old OneUI/Bootstrap/Ant visual parity for these routes. Preserve stable
+  behavior hooks only where tests or interaction parity need them, such as
+  `.v2board-select`, `.v2board-input-coupon`, `.v2board-order-info`, and
+  `.v2board-payment-qrcode`.
+
 For new redesigned surfaces, do not use:
 
 - Ant Design v3 components as new UI foundations.

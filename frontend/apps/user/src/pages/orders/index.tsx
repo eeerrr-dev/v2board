@@ -1,15 +1,14 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { useState, type AnchorHTMLAttributes } from 'react';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
-import { formatUserLegacyDateTime, formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
+import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { legacyConfirm } from '@/components/legacy-confirm';
-import { LegacyEmpty } from '@/components/legacy-empty';
-import { isLegacyMobile } from '@/lib/legacy-settings';
-import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
-import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
 import { legacyHref } from '@/lib/legacy-href';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/cn';
 
 const STATUS_LABEL: Record<number, { key: string; status: string }> = {
   0: { key: 'order.status_unpaid', status: 'error' },
@@ -30,10 +29,6 @@ const PERIOD_LABEL: Record<string, string> = {
   reset_price: 'plan.reset',
 };
 
-function legacyDisabledAnchorProps(disabled: boolean): AnchorHTMLAttributes<HTMLAnchorElement> {
-  return { disabled } as AnchorHTMLAttributes<HTMLAnchorElement>;
-}
-
 export default function OrdersPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -42,17 +37,6 @@ export default function OrdersPage() {
   const loading = useLegacyFetchLoading(isFetching, ordersQuery.error);
   const cancel = useCancelOrderMutation();
   const orders = data ?? [];
-  const [hoverKey, setHoverKey] = useState<number | null>(null);
-  const [activeMobileKey, setActiveMobileKey] = useState<number | null>(null);
-  const mobile = isLegacyMobile();
-  const { bodyRef, onScroll, scrollPositionClassName } = useTableScrollPosition(orders.length);
-  const { mainTableRef, fixedTableRef } = useFixedColumnRowHeights(orders.length);
-  const desktopTableClassName = [
-    'ant-table',
-    'ant-table-default',
-    orders.length ? '' : 'ant-table-empty',
-    scrollPositionClassName,
-  ].filter(Boolean).join(' ');
 
   const onCancelOrder = (tradeNo: string) => {
     void legacyConfirm({
@@ -67,279 +51,125 @@ export default function OrdersPage() {
   };
 
   return (
-    // The original builds this as `"block block-rounded  ".concat(...)` — note the
-    // DOUBLE space before the loading class (umi.js @2306135), so the rendered class
-    // attribute has two spaces; reproduced verbatim.
-    <div className={`block block-rounded  ${loading ? 'block-mode-loading' : ''}`}>
-      <div className="bg-white">
-        {mobile ? (
-          <div className="am-list">
-            <div className="am-list-body">
-              {orders.map((order, index) => {
-                const status = STATUS_LABEL[order.status];
-                return (
-                  <div
-                    key={index}
-                    className={`am-list-item am-list-item-middle${activeMobileKey === index ? ' am-list-item-active' : ''}`}
-                    onTouchStart={() => setActiveMobileKey(index)}
-                    onTouchMove={() => setActiveMobileKey(null)}
-                    onTouchEnd={() => setActiveMobileKey(null)}
-                    onTouchCancel={() => setActiveMobileKey(null)}
-                    onMouseDown={() => setActiveMobileKey(index)}
-                    onMouseUp={() => setActiveMobileKey(null)}
-                    onMouseLeave={() => setActiveMobileKey(null)}
-                    onClick={() => navigate(`/order/${order.trade_no}`)}
-                  >
-                    <div className="am-list-line am-list-line-multiple">
-                      <div className="am-list-content">
-                        {order.plan?.name}{' '}
-                        <div className="am-list-brief">{formatUserLegacyDateTime(order.created_at)}</div>
-                      </div>
-                      <div className="am-list-extra">
-                        <div>
-                          <div>{(order.total_amount / 100).toFixed(2)}</div>
-                          <div>
-                            <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-                              <span className={`ant-badge-status-dot${status ? ` ant-badge-status-${status.status}` : ''}`} />
-                              <span className="ant-badge-status-text" />
-                            </span>
-                            {status ? t(status.key) : ''}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="am-list-arrow am-list-arrow-horizontal" aria-hidden />
-                    </div>
-                    {/* antd-mobile ListItem always renders a trailing ripple div
-                        (hidden until a touch triggers the cover animation). */}
-                    <div className="am-list-ripple" style={{ display: 'none' }} />
-                  </div>
-                );
-              })}
-            </div>
+    <Card className="v2board-orders-card">
+      <CardContent className="p-0">
+        {loading ? (
+          <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground">
+            <Spinner className="size-4" />
+            <span>{t('common.loading')}</span>
+          </div>
+        ) : null}
+
+        {orders.length === 0 ? (
+          <div className="v2board-orders-empty flex min-h-44 items-center justify-center px-6 text-sm text-muted-foreground">
+            {t('order.no_orders')}
           </div>
         ) : (
-          <div className="ant-table-wrapper">
-            {/* antd v3 Table always wraps its content in Spin (loading defaults to
-                false); with no loading prop the orders table never spins, so the
-                spinner div / ant-spin-blur are absent — only the two static wrappers. */}
-            <div className="ant-spin-nested-loading">
-              <div className="ant-spin-container">
-            <div className={desktopTableClassName}>
-              <div className="ant-table-content">
-                <div className="ant-table-scroll">
-                  <div
-                    ref={bodyRef}
-                    tabIndex={-1}
-                    className="ant-table-body"
-                    style={{ overflowX: 'scroll', WebkitTransform: 'translate3d (0, 0, 0)' }}
-                    onScroll={onScroll}
-                  >
-                    <table
-                      ref={mainTableRef}
-                      className="ant-table-fixed"
-                      style={{ width: 900 }}
-                    >
-                      <colgroup>
-                        <col />
-                        <col />
-                        <col />
-                        <col />
-                        <col />
-                        <col />
-                      </colgroup>
-                      <thead className="ant-table-thead">
-                        <tr>
-                          <th className="">
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('order.trade_no_col')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th className="ant-table-align-center" style={{ textAlign: 'center' }}>
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('order.period')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th className="ant-table-align-right" style={{ textAlign: 'right' }}>
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('order.amount')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th className="">
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('order.status')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th className="">
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('order.created_at')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                          <th
-                            className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
-                            style={{ textAlign: 'right' }}
-                          >
-                            <span className="ant-table-header-column">
-                              <div>
-                                <span className="ant-table-column-title">{t('order.action_col')}</span>
-                                <span className="ant-table-column-sorter" />
-                              </div>
-                            </span>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="ant-table-tbody">
-                        {orders.map((order, index) => {
-                          const status = STATUS_LABEL[order.status];
-                          const periodLabelKey = order.period ? PERIOD_LABEL[order.period] : undefined;
-                          const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
-                          return (
-                            <tr
-                              className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
-                              data-row-key={index}
-                              key={index}
-                              onMouseEnter={() => setHoverKey(index)}
-                              onMouseLeave={() => setHoverKey(null)}
+          <div className="overflow-x-auto">
+            <table className="v2board-orders-table w-full min-w-[760px] text-sm">
+              <thead className="border-b border-border bg-muted/50 text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">
+                    <span className="ant-table-column-title">{t('order.trade_no_col')}</span>
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium">
+                    <span className="ant-table-column-title">{t('order.period')}</span>
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    <span className="ant-table-column-title">{t('order.amount')}</span>
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium">
+                    <span className="ant-table-column-title">{t('order.status')}</span>
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium">
+                    <span className="ant-table-column-title">{t('order.created_at')}</span>
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    <span className="ant-table-column-title">{t('order.action_col')}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="ant-table-tbody divide-y divide-border">
+                {orders.map((order) => {
+                  const status = STATUS_LABEL[order.status];
+                  const periodLabelKey = order.period ? PERIOD_LABEL[order.period] : undefined;
+                  const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
+                  return (
+                    <tr key={order.trade_no} className="transition-colors hover:bg-muted/50">
+                      <td className="px-4 py-4">
+                        <a
+                          ref={legacyHref()}
+                          className="font-medium text-foreground underline-offset-4 hover:underline"
+                          onClick={() => navigate(`/order/${order.trade_no}`)}
+                        >
+                          {order.trade_no}
+                        </a>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="rounded-md border border-border bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
+                          {periodLabel}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-right font-medium">
+                        {(order.total_amount / 100).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-4">
+                        <StatusPill status={status?.status}>{status ? t(status.key) : ''}</StatusPill>
+                      </td>
+                      <td className="px-4 py-4 text-muted-foreground">
+                        {formatUserLegacyDateMinuteSlash(order.created_at)}
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button asChild variant="ghost" size="sm">
+                            <a
+                              ref={legacyHref()}
+                              onClick={() => navigate(`/order/${order.trade_no}`)}
                             >
-                              <td className="">
-                                <a
-                                  ref={legacyHref()}
-                                  onClick={() => navigate(`/order/${order.trade_no}`)}
-                                >
-                                  {order.trade_no}
-                                </a>
-                              </td>
-                              <td className="" style={{ textAlign: 'center' }}>
-                                <span className="ant-tag">{periodLabel}</span>
-                              </td>
-                              <td className="" style={{ textAlign: 'right' }}>
-                                {(order.total_amount / 100).toFixed(2)}
-                              </td>
-                              <td className="">
-                                <div>
-                                  <span className="ant-badge ant-badge-status ant-badge-not-a-wrapper">
-                                    <span className={`ant-badge-status-dot${status ? ` ant-badge-status-${status.status}` : ''}`} />
-                                    <span className="ant-badge-status-text" />
-                                  </span>
-                                  {status ? t(status.key) : ''}
-                                </div>
-                              </td>
-                              <td className="">{formatUserLegacyDateMinuteSlash(order.created_at)}</td>
-                              <td
-                                className="ant-table-fixed-columns-in-body"
-                                style={{ textAlign: 'right' }}
-                              >
-                                <div>
-                                  <a
-                                    ref={legacyHref()}
-                                    {...legacyDisabledAnchorProps(order.status === 2)}
-                                    onClick={() => navigate(`/order/${order.trade_no}`)}
-                                  >
-                                    {t('order.return')}
-                                  </a>
-                                  <div className="ant-divider ant-divider-vertical" role="separator" />
-                                  <a
-                                    ref={legacyHref()}
-                                    {...legacyDisabledAnchorProps(order.status !== 0)}
-                                    onClick={() => void onCancelOrder(order.trade_no)}
-                                  >
-                                    {t('common.cancel')}
-                                  </a>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  {orders.length === 0 && (
-                    <div className="ant-table-placeholder">
-                      <LegacyEmpty />
-                    </div>
-                  )}
-                </div>
-                <div className="ant-table-fixed-right">
-                  <div
-                    className="ant-table-body-outer"
-                    style={{ WebkitTransform: 'translate3d (0, 0, 0)' }}
-                  >
-                    <div className="ant-table-body-inner">
-                      <table ref={fixedTableRef} className="ant-table-fixed">
-                        <colgroup>
-                          <col />
-                        </colgroup>
-                        <thead className="ant-table-thead">
-                          <tr>
-                            <th
-                              className="ant-table-align-right ant-table-row-cell-last"
-                              style={{ textAlign: 'right' }}
+                              {t('order.return')}
+                            </a>
+                          </Button>
+                          <Button asChild variant="ghost" size="sm" disabled={order.status !== 0}>
+                            <a
+                              ref={legacyHref()}
+                              aria-disabled={order.status !== 0}
+                              onClick={(event) => {
+                                if (order.status !== 0) {
+                                  event.preventDefault();
+                                  return;
+                                }
+                                void onCancelOrder(order.trade_no);
+                              }}
                             >
-                              <span className="ant-table-header-column">
-                                <div>
-                                  <span className="ant-table-column-title">{t('order.action_col')}</span>
-                                  <span className="ant-table-column-sorter" />
-                                </div>
-                              </span>
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="ant-table-tbody">
-                          {orders.map((order, index) => (
-                            <tr
-                              className={`ant-table-row ant-table-row-level-0${hoverKey === index ? ' ant-table-row-hover' : ''}`}
-                              data-row-key={index}
-                              key={index}
-                              onMouseEnter={() => setHoverKey(index)}
-                              onMouseLeave={() => setHoverKey(null)}
-                            >
-                              <td className="" style={{ textAlign: 'right' }}>
-                                <div>
-                                  <a
-                                    ref={legacyHref()}
-                                    {...legacyDisabledAnchorProps(order.status === 2)}
-                                    onClick={() => navigate(`/order/${order.trade_no}`)}
-                                  >
-                                    {t('order.return')}
-                                  </a>
-                                  <div className="ant-divider ant-divider-vertical" role="separator" />
-                                  <a
-                                    ref={legacyHref()}
-                                    {...legacyDisabledAnchorProps(order.status !== 0)}
-                                    onClick={() => void onCancelOrder(order.trade_no)}
-                                  >
-                                    {t('common.cancel')}
-                                  </a>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-              </div>
-            </div>
+                              {t('common.cancel')}
+                            </a>
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatusPill({ status, children }: { status?: string; children: string }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium',
+        status === 'success' && 'border-green-200 bg-green-50 text-green-700',
+        status === 'processing' && 'border-blue-200 bg-blue-50 text-blue-700',
+        status === 'error' && 'border-destructive/20 bg-destructive/10 text-destructive',
+        (!status || status === 'default') && 'border-border bg-secondary text-secondary-foreground',
+      )}
+    >
+      {children}
+    </span>
   );
 }

@@ -39,6 +39,9 @@
 
 @source '../pages/auth/**/*.tsx';
 @source '../pages/dashboard.tsx';
+@source '../pages/plans/**/*.tsx';
+@source '../pages/orders/**/*.tsx';
+@source '../components/plan-content.tsx';
 @source '../components/layout/app-layout.tsx';
 @source '../components/layout/shadcn-language-menu.tsx';
 @source '../components/ui/**/*.tsx';

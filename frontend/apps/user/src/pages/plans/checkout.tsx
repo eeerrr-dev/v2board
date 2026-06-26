@@ -16,9 +16,12 @@ import {
 import type { Coupon, Plan, PlanPeriod } from '@v2board/types';
 import { PlanContent } from '@/components/plan-content';
 import { legacyConfirm } from '@/components/legacy-confirm';
-import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
-import { ExclamationCircleIcon } from '@/components/ant-icon';
-import { AntBtn } from '@/components/ant-btn';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/cn';
 
 const PERIOD_LABELS: Record<PlanPeriod, string> = {
   month_price: 'plan.monthly',
@@ -165,15 +168,15 @@ export default function PlanCheckoutPage() {
 
   if (planQuery.isFetching) {
     return (
-      <div className="spinner-grow text-primary" role="status">
-        <span className="sr-only">Loading...</span>
+      <div className="flex min-h-44 items-center justify-center" role="status">
+        <Spinner className="size-5" />
       </div>
     );
   }
   if (planQuery.error || !planQuery.data) {
     return (
-      <div className="spinner-grow text-primary" role="status">
-        <span className="sr-only">Loading...</span>
+      <div className="flex min-h-44 items-center justify-center" role="status">
+        <Spinner className="size-5" />
       </div>
     );
   }
@@ -203,174 +206,144 @@ export default function PlanCheckoutPage() {
 
   if (!canRenew) {
     return (
-      <div className="row">
-        <div className="col-12">
-          <div className="block block-rounded">
-            <div className="block-content">
-              <div className="ant-result ant-result-info">
-                <div className="ant-result-icon">
-                  <ExclamationCircleIcon />
-                </div>
-                <div className="ant-result-title">{t('plan.cannot_renew_current')}</div>
-                <div className="ant-result-subtitle">
-                  {/* antd v3 Button: classNames('ant-btn', className, {'ant-btn-primary':type}) —
-                      the passed className precedes the type modifier. */}
-                  <AntBtn
-                    type="button"
-                    className="ant-btn mt-3 ant-btn-primary"
-                    onClick={() => navigate('/plan')}
-                  >
-                    {t('plan.select_other')}
-                  </AntBtn>
-                </div>
-              </div>
-            </div>
+      <Card className="v2board-plan-non-renewable">
+        <CardContent className="flex min-h-64 flex-col items-center justify-center gap-4 text-center">
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold leading-7">{t('plan.cannot_renew_current')}</h3>
+            <p className="text-sm text-muted-foreground">{t('plan.select_other')}</p>
           </div>
-        </div>
-      </div>
+          <Button type="button" onClick={() => navigate('/plan')}>
+            {t('plan.select_other')}
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="row" id="cashier">
-      <div className="col-md-8 col-sm-12">
-        <div className="block block-link-pop block-rounded py-3" style={{ backgroundColor: '#fff' }}>
-          <h4 className="mb-0 px-3">{plan.name}</h4>
-          <PlanContent
-            content={plan.content}
-            className="v2board-plan-content px-3"
-            htmlClassName="v2board-plan-content"
-            guardNull
-          />
-        </div>
+    <div id="cashier" className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl leading-7">{plan.name}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PlanContent
+              content={plan.content}
+              className="v2board-plan-content"
+              htmlClassName="v2board-plan-content"
+              guardNull
+            />
+          </CardContent>
+        </Card>
 
-        <div className="block block-rounded js-appear-enabled">
-          <div className="block-header block-header-default">
-            <h3 className="block-title">{t('plan.select_period')}</h3>
-            <div className="block-options" />
-          </div>
-          <div className="block-content p-0">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base leading-6">{t('plan.select_period')}</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 p-6 pt-0">
             {periods.map((item) => {
               const price = plan[item.period];
               if (price === null) return null;
               return (
-                <div
+                <button
+                  type="button"
                   key={item.period}
                   onClick={() => setPeriod(item.period)}
-                  className={`v2board-select ${selectedPeriod === item.period ? 'active border-primary' : 'false'}`}
+                  className={cn(
+                    'v2board-select flex min-h-12 items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                    selectedPeriod === item.period && 'active border-primary bg-accent text-accent-foreground',
+                  )}
                 >
-                  <div style={{ flex: 1 }}>
-                    {/* antd v3 Radio: classNames(className, {'ant-radio-wrapper':true,
-                        'ant-radio-wrapper-checked':checked}) — the passed className leads. */}
-                    <label
-                      className={`v2board-select-radio ant-radio-wrapper${selectedPeriod === item.period ? ' ant-radio-wrapper-checked' : ''}`}
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={cn(
+                        'v2board-select-radio flex size-4 items-center justify-center rounded-full border border-input',
+                        selectedPeriod === item.period && 'border-primary',
+                      )}
                     >
-                      <span className={`ant-radio${selectedPeriod === item.period ? ' ant-radio-checked' : ''}`}>
-                        {/* The visible checked dot is driven by the ant-radio-checked class
-                            above; the (opacity:0) input binds to the post-mount `period`
-                            state — never the render-time default — so it adopts checked via
-                            an update rather than at mount. The original (React 16 antd Radio)
-                            sets selectPeriod atomically with the plan yet never reflects
-                            `checked` to the attribute; React 19 reflects a mount-time checked,
-                            so deferring keeps the DOM attribute-free, matching the original. */}
-                        <input
-                          type="radio"
-                          className="ant-radio-input"
-                          checked={period === item.period}
-                          onChange={() => {}}
-                        />
-                        <span className="ant-radio-inner" />
-                      </span>
-                    </label>
+                      <span
+                        className={cn(
+                          'size-2 rounded-full bg-primary opacity-0',
+                          selectedPeriod === item.period && 'opacity-100',
+                        )}
+                      />
+                    </span>
                     {t(item.labelKey)}
                   </div>
-                  <div style={{ flex: 1, textAlign: 'right' }}>
-                    <span className="price">
-                      {symbol}
-                      {(price / 100).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
+                  <span className="price font-medium">
+                    {symbol}
+                    {(price / 100).toFixed(2)}
+                  </span>
+                </button>
               );
             })}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="col-md-4 col-sm-12">
-        <div
-          // Original class string has a DOUBLE space after `block-rounded` (umi.js).
-          className="block block-link-pop block-rounded  px-3 py-3 mb-2 text-light"
-          style={{ background: '#35383D' }}
-        >
-          <input
-            type="text"
-            className="form-control v2board-input-coupon p-0"
-            ref={couponRef}
-            placeholder={t('plan.coupon_question')}
-          />
-          <button
-            onClick={onApplyCoupon}
-            type="button"
-            className="btn btn-primary"
-            style={{ position: 'absolute', right: 30, top: 17 }}
-          >
-            <i className="fa fa-fw fa-ticket-alt mr-2" />
-            {t('plan.verify')}
-          </button>
-        </div>
+      <aside className="v2board-checkout-side space-y-4">
+        <Card>
+          <CardContent className="flex flex-col gap-2 p-4 sm:flex-row">
+            <Input
+              type="text"
+              className="v2board-input-coupon"
+              ref={couponRef}
+              placeholder={t('plan.coupon_question')}
+            />
+            <Button onClick={onApplyCoupon} type="button">
+              {t('plan.verify')}
+            </Button>
+          </CardContent>
+        </Card>
 
-        <div
-          // Original class string has a DOUBLE space after `block-rounded` (umi.js).
-          className="block block-link-pop block-rounded  px-3 py-3 text-light"
-          style={{ background: '#35383D' }}
-        >
-          <h5 className="text-light mb-3">{t('plan.order_total')}</h5>
-          <div className="row no-gutters pb-3" style={{ borderBottom: '1px solid #646669' }}>
-            <div className="col-8">
-              {plan.name} x {periodLabel}
-            </div>
-            <div className="col-4 text-right">
-              {symbol}
-              {(basePrice / 100).toFixed(2)}
-            </div>
-          </div>
-          {appliedCoupon?.name ? (
-            <div>
-              <div className="pt-3" style={{ color: '#646669' }}>
-                {t('plan.discount')}
+        <Card className="v2board-checkout-summary">
+          <CardHeader>
+            <CardTitle className="text-base leading-6">{t('plan.order_total')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-start justify-between gap-4 border-b border-border pb-4 text-sm">
+              <div>
+                {plan.name} x {periodLabel}
               </div>
-              <div className="row no-gutters py-3" style={{ borderBottom: '1px solid #646669' }}>
-                <div className="col-8">{appliedCoupon.name}</div>
-                <div className="col-4 text-right">
-                  -{symbol}
-                  {(discount / 100).toFixed(2)}
+              <div className="text-right font-medium">
+                {symbol}
+                {(basePrice / 100).toFixed(2)}
+              </div>
+            </div>
+            {appliedCoupon?.name ? (
+              <div className="space-y-2 border-b border-border pb-4 text-sm">
+                <div className="text-muted-foreground">{t('plan.discount')}</div>
+                <div className="flex items-center justify-between gap-4">
+                  <div>{appliedCoupon.name}</div>
+                  <div className="text-right font-medium">
+                    -{symbol}
+                    {(discount / 100).toFixed(2)}
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : null}
-          <div className="pt-3" style={{ color: '#646669' }}>
-            {t('plan.grand_total')}
-          </div>
-          <h1 className="text-light mt-3 mb-3">
-            {symbol} {(totalAmount / 100).toFixed(2)} {currency}
-          </h1>
-          <button
-            type="button"
-            className="btn btn-block btn-primary"
-            disabled={submitting}
-            onClick={onSubmit}
-          >
-            {submitting ? (
-              <LegacyLoadingIcon />
-            ) : (
-              <span>
-                <i className="far fa-check-circle" /> {t('plan.place_order')}
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
+            ) : null}
+            <div className="text-sm text-muted-foreground">{t('plan.grand_total')}</div>
+            <h1 className="text-3xl font-semibold tracking-normal">
+              {symbol} {(totalAmount / 100).toFixed(2)} {currency}
+            </h1>
+            {info?.plan_id && info.plan_id !== plan.id && !isLegacyExpired(subscribe?.expired_at) ? (
+              <Alert>
+                <AlertDescription>{t('plan.change_warning')}</AlertDescription>
+              </Alert>
+            ) : null}
+            <Button
+              type="button"
+              block
+              className="btn-block btn-primary"
+              loading={submitting}
+              onClick={onSubmit}
+            >
+              {t('plan.place_order')}
+            </Button>
+          </CardContent>
+        </Card>
+      </aside>
     </div>
   );
 }
