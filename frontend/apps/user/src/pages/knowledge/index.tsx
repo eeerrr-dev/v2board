@@ -1,20 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LegacyLoadingIcon } from '@/components/legacy-loading-icon';
-import { CloseIcon, SearchIcon } from '@/components/ant-icon';
-import { AntBtn } from '@/components/ant-btn';
-import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
-import { renderLegacyMarkdown } from '@/lib/markdown';
-import { legacyCopyText } from '@/lib/legacy-settings';
-import { toast } from '@/lib/legacy-toast';
-import { useTransitionStatus } from '@/lib/use-transition-status';
-import { lockLegacyDrawerBodyScroll } from '@/lib/legacy-body-scroll';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
+import { getLocaleAntdMessages } from '@v2board/i18n';
+import type { Knowledge, KnowledgeSummary } from '@v2board/types';
+import { ChevronRight, Search } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Spinner } from '@/components/ui/spinner';
 import { getRequestLocale } from '@/lib/api';
 import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
-import type { Knowledge } from '@v2board/types';
+import { legacyCopyText } from '@/lib/legacy-settings';
+import { toast } from '@/lib/legacy-toast';
+import { renderLegacyMarkdown } from '@/lib/markdown';
+import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
+import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
 declare global {
   interface Window {
@@ -24,7 +31,7 @@ declare global {
 }
 
 export default function KnowledgePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [searchValue, setSearchValue] = useState('');
   const [keyword, setKeyword] = useState('');
   const [searchParams] = useSearchParams();
@@ -35,11 +42,16 @@ export default function KnowledgePage() {
   const { data, isFetching } = knowledgeQuery;
   const loading = useLegacyFetchLoading(isFetching, knowledgeQuery.error);
   const knowledgeGroups = data ?? {};
+  const categories = Object.entries(knowledgeGroups).filter(
+    ([, items]) => (items?.length ?? 0) > 0,
+  );
+  const articleCount = categories.reduce((total, [, items]) => total + (items?.length ?? 0), 0);
   const detail = useKnowledgeDetail(selectedId, language);
   const refetchDetail = detail.refetch;
   const detailVisible = selectedId !== undefined;
-  const detailDrawerStatus = useTransitionStatus(detailVisible, 300);
   const urlIdAppliedRef = useRef(false);
+  const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
+
   useEffect(() => {
     if (urlIdAppliedRef.current) return;
     if (!data) return;
@@ -61,19 +73,20 @@ export default function KnowledgePage() {
       setSelectedId(matchedItem.id);
     }
   }, [data, searchParams]);
+
   const renderedBody = useMemo(
     () => renderLegacyMarkdown(visibleDetail?.body || ''),
     [visibleDetail?.body],
   );
 
-  const drawerRef = useRef<HTMLDivElement | null>(null);
-
   const closeDetail = () => {
-    // The original hide() dispatches knowledge/setState {knowledge:{}}, clearing
-    // the panel content during the slide-out: the title falls back to "Loading..."
-    // and the body renders empty markdown while the drawer animates closed.
     setSelectedId(undefined);
     setVisibleDetail(undefined);
+  };
+
+  const openDetail = (item: KnowledgeSummary) => {
+    setVisibleDetail(undefined);
+    setSelectedId(item.id);
   };
 
   useEffect(() => {
@@ -84,7 +97,6 @@ export default function KnowledgePage() {
   useEffect(() => {
     if (selectedId === undefined) return;
     window.copy = (text: string) => {
-      // Legacy `window.copy` calls the copy helper, then shows one success message.
       legacyCopyText(text);
       toast.success(t('dashboard.copy_success'));
     };
@@ -102,124 +114,125 @@ export default function KnowledgePage() {
     if (detail.data && !detail.isFetching) setVisibleDetail(detail.data);
   }, [detail.data, detail.isFetching]);
 
-  useEffect(() => {
-    // rc-drawer autofocuses its tabIndex=-1 wrapper on open (domFocus in
-    // componentDidMount/Update) so the node-scoped onKeyDown can catch Escape.
-    if (detailDrawerStatus === 'entered') drawerRef.current?.focus();
-  }, [detailDrawerStatus]);
-
-  useEffect(() => {
-    if (selectedId === undefined) return;
-    return lockLegacyDrawerBodyScroll();
-  }, [selectedId]);
-
   return (
-    <>
-      <div key="knowledge-search" className="v2board-knowledge-search-bar">
-        <span className="ant-input-search mb-3 ant-input-search-enter-button ant-input-search-large ant-input-group-wrapper ant-input-group-wrapper-lg">
-          <span className="ant-input-wrapper ant-input-group">
-            <input
+    <div className="v2board-knowledge-surface space-y-4">
+      <Card className="v2board-knowledge-card overflow-hidden">
+        <CardHeader className="gap-4 sm:flex sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2">
+            <CardTitle className="truncate text-xl">{t('nav.knowledge')}</CardTitle>
+            {articleCount > 0 ? (
+              <Badge variant="secondary">{articleCount}</Badge>
+            ) : null}
+          </div>
+          <div className="v2board-knowledge-search-bar relative w-full sm:max-w-sm">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label={t('knowledge.search_placeholder')}
+              className="pl-9"
               placeholder={t('knowledge.search_placeholder')}
-              className="ant-input ant-input-lg"
-              type="text"
-              defaultValue=""
+              value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
             />
-            <span className="ant-input-group-addon">
-              <AntBtn
-                type="button"
-                className="ant-btn ant-input-search-button ant-btn-primary ant-btn-lg"
-              >
-                <SearchIcon />
-              </AntBtn>
-            </span>
-          </span>
-        </span>
-      </div>
+          </div>
+        </CardHeader>
+      </Card>
 
       {loading ? (
-        <div className="spinner-grow text-primary" role="status">
-          <span className="sr-only">Loading...</span>
-        </div>
-      ) : (
-        Object.keys(knowledgeGroups).map((category) => (
-          <div key={category} className="row mb-3 mb-md-0">
-            <div className="col-md-12">
-              {/* Original class string has a trailing space: "block block-rounded " (umi.js). */}
-              <div className="block block-rounded ">
-                <div className="block-header block-header-default">
-                  <h3 className="block-title">{category}</h3>
+        <Card className="v2board-knowledge-loading">
+          <CardContent className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
+            <span role="status" className="inline-flex items-center gap-2">
+              <Spinner />
+              <span>Loading...</span>
+            </span>
+          </CardContent>
+        </Card>
+      ) : categories.length ? (
+        <div className="grid gap-4">
+          {categories.map(([category, items]) => (
+            <Card key={category} className="v2board-knowledge-category overflow-hidden py-0">
+              <CardHeader className="border-b border-border py-4">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                  <CardTitle className="v2board-knowledge-category-title truncate text-base">
+                    {category}
+                  </CardTitle>
+                  <Badge variant="secondary">{items?.length ?? 0}</Badge>
                 </div>
-                <div className="list-group">
-                  {knowledgeGroups[category]?.map((item) => (
-                    <a
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="v2board-knowledge-list divide-y divide-border">
+                  {items?.map((item) => (
+                    <button
                       key={item.id}
-                      className="list-group-item list-group-item-action"
-                      style={{
-                        borderRadius: 'unset',
-                        border: 'unset',
-                        borderBottom: '1px solid #e2e8f2',
-                      }}
-                      onClick={() => {
-                        setVisibleDetail(undefined);
-                        setSelectedId(item.id);
-                      }}
+                      type="button"
+                      className="v2board-knowledge-item flex w-full items-center gap-4 px-6 py-4 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      onClick={() => openDetail(item)}
                     >
-                      <h5 className="font-size-base mb-1">{item.title}</h5>
-                      <small>
-                        {t('knowledge.last_update', {
-                          date: formatUserLegacyDateSlash(item.updated_at),
-                        })}
-                      </small>
-                    </a>
+                      <span className="min-w-0 flex-1 space-y-1">
+                        <span className="v2board-knowledge-item-title block truncate text-sm font-medium text-foreground">
+                          {item.title}
+                        </span>
+                        <span className="v2board-knowledge-item-date block text-xs text-muted-foreground">
+                          {t('knowledge.last_update', {
+                            date: formatUserLegacyDateSlash(item.updated_at),
+                          })}
+                        </span>
+                      </span>
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                    </button>
                   ))}
                 </div>
-              </div>
-            </div>
-          </div>
-        ))
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="v2board-knowledge-empty py-14 text-center text-sm text-muted-foreground">
+            {emptyDescription}
+          </CardContent>
+        </Card>
       )}
 
-      {detailDrawerStatus !== 'exited' && createPortal(
-        <div
-          ref={drawerRef}
-          tabIndex={-1}
-          className={`ant-drawer ant-drawer-right${
-            detailDrawerStatus === 'entered' ? ' ant-drawer-open' : ''
-          }`}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.stopPropagation();
-              closeDetail();
-            }
-          }}
+      <Sheet
+        open={detailVisible}
+        onOpenChange={(open) => {
+          if (!open) closeDetail();
+        }}
+      >
+        <SheetContent
+          side="right"
+          className="v2board-knowledge-sheet w-full p-0 sm:max-w-2xl"
         >
-          <div className="ant-drawer-mask" onClick={closeDetail} />
-          <div className="ant-drawer-content-wrapper" style={{ width: '80%' }}>
-            <div className="ant-drawer-content">
-              <div className="ant-drawer-wrapper-body">
-                <div className="ant-drawer-header">
-                  <div className="ant-drawer-title">{visibleDetail?.title || 'Loading...'}</div>
-                  <button aria-label="Close" className="ant-drawer-close" onClick={closeDetail}>
-                    <CloseIcon />
-                  </button>
-                </div>
-                <div className="ant-drawer-body">
-                  {detail.isFetching ? (
-                    <LegacyLoadingIcon />
-                  ) : (
-                    <div
-                      className="custom-html-style"
-                      dangerouslySetInnerHTML={{ __html: renderedBody }}
-                    />
-                  )}
-                </div>
+          <SheetHeader className="border-b border-border px-6 py-5 pr-12">
+            <SheetTitle className="v2board-knowledge-sheet-title leading-6">
+              {visibleDetail?.title || 'Loading...'}
+            </SheetTitle>
+            <SheetDescription className={visibleDetail?.updated_at ? undefined : 'sr-only'}>
+              {visibleDetail?.updated_at
+                ? t('knowledge.last_update', {
+                    date: formatUserLegacyDateSlash(visibleDetail.updated_at),
+                  })
+                : 'Loading...'}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="v2board-knowledge-sheet-body min-h-0 flex-1 overflow-y-auto px-6 py-6">
+            {detail.isFetching ? (
+              <div
+                role="status"
+                className="flex items-center gap-2 text-sm text-muted-foreground"
+              >
+                <Spinner />
+                <span>Loading...</span>
               </div>
-            </div>
+            ) : (
+              <div
+                className="v2board-knowledge-article custom-html-style min-w-0"
+                dangerouslySetInnerHTML={{ __html: renderedBody }}
+              />
+            )}
           </div>
-        </div>,
-        document.body,
-      )}
-    </>
+        </SheetContent>
+      </Sheet>
+    </div>
   );
 }

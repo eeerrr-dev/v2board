@@ -404,15 +404,17 @@ const scenarios = [
     authenticated: true,
     label: 'user-knowledge',
     path: '/#/knowledge',
-    readySelector: '.list-group-item',
+    readySelector: '.v2board-knowledge-item, .list-group-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-knowledge-timeout',
     path: '/#/knowledge',
     postReadyDelay: 800,
-    readySelector: '#page-container',
+    readySelector: '.v2board-knowledge-surface, #page-container',
     userKnowledgeTimeout: true,
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -817,7 +819,8 @@ const scenarios = [
     label: 'user-knowledge-zh-tw',
     locale: 'zh-TW',
     path: '/#/knowledge',
-    readySelector: '.list-group-item',
+    readySelector: '.v2board-knowledge-item, .list-group-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -927,7 +930,8 @@ const scenarios = [
     label: 'user-knowledge-en-us',
     locale: 'en-US',
     path: '/#/knowledge',
-    readySelector: '.list-group-item',
+    readySelector: '.v2board-knowledge-item, .list-group-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1195,7 +1199,8 @@ const scenarios = [
     label: 'user-knowledge-ja-jp',
     locale: 'ja-JP',
     path: '/#/knowledge',
-    readySelector: '.list-group-item',
+    readySelector: '.v2board-knowledge-item, .list-group-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1463,7 +1468,8 @@ const scenarios = [
     label: 'user-knowledge-vi-vn',
     locale: 'vi-VN',
     path: '/#/knowledge',
-    readySelector: '.list-group-item',
+    readySelector: '.v2board-knowledge-item, .list-group-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -1731,7 +1737,8 @@ const scenarios = [
     label: 'user-knowledge-ko-kr',
     locale: 'ko-KR',
     path: '/#/knowledge',
-    readySelector: '.list-group-item',
+    readySelector: '.v2board-knowledge-item, .list-group-item',
+    visualRetired: true,
   },
   {
     authenticated: true,
@@ -6002,19 +6009,24 @@ async function runKnowledgeDrawerInteraction(page) {
   await fillFirstVisible(page, '.v2board-knowledge-search-bar input', 'router');
   await page.waitForTimeout(350);
   const before = await knowledgeState(page);
-  await clickFirstVisible(page, '.list-group-item');
-  await page.waitForSelector('.ant-drawer-open .ant-drawer-title', {
+  await clickFirstVisible(page, '.v2board-knowledge-item, .list-group-item');
+  await page.waitForSelector('.v2board-knowledge-sheet-title, .ant-drawer-open .ant-drawer-title', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForFunction(
-    () => document.querySelector('.ant-drawer-title')?.textContent?.includes('Copy Article'),
+    () =>
+      Array.from(
+        document.querySelectorAll('.v2board-knowledge-sheet-title, .ant-drawer-title'),
+      ).some((element) => element.textContent?.includes('Copy Article')),
     { timeout: 5_000 },
   );
   const opened = await knowledgeState(page);
-  await clickFirstVisible(page, '.ant-drawer-close');
+  await clickFirstVisible(page, '.v2board-knowledge-sheet button, .ant-drawer-close');
   await page.waitForFunction(
-    () => !document.querySelector('.ant-drawer-open'),
+    () =>
+      !document.querySelector('.v2board-knowledge-sheet') &&
+      !document.querySelector('.ant-drawer-open'),
     { timeout: 5_000 },
   );
   const closed = await knowledgeState(page);
@@ -6025,13 +6037,16 @@ async function runUserKnowledgeExtremeContentMatrixInteraction(page) {
   await fillFirstVisible(page, '.v2board-knowledge-search-bar input', 'extreme legacy');
   await page.waitForTimeout(350);
   const filtered = await knowledgeState(page);
-  await clickFirstVisible(page, '.list-group-item');
-  await page.waitForSelector('.ant-drawer-open .ant-drawer-title', {
+  await clickFirstVisible(page, '.v2board-knowledge-item, .list-group-item');
+  await page.waitForSelector('.v2board-knowledge-sheet-title, .ant-drawer-open .ant-drawer-title', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForFunction(
-    () => document.querySelector('.ant-drawer-title')?.textContent?.includes('Extreme Legacy'),
+    () =>
+      Array.from(
+        document.querySelectorAll('.v2board-knowledge-sheet-title, .ant-drawer-title'),
+      ).some((element) => element.textContent?.includes('Extreme Legacy')),
     { timeout: 5_000 },
   );
   const opened = await knowledgeState(page);
@@ -9748,7 +9763,14 @@ function normalizeInteractionResult(label, result) {
     };
   }
   if (
+    label === 'user-knowledge-drawer' ||
+    label === 'user-knowledge-extreme-content-matrix'
+  ) {
+    return normalizeKnowledgeInteractionResult(normalized);
+  }
+  if (
     [
+      'user-knowledge-fetch-timeout',
       'user-node-fetch-api-500',
       'user-node-fetch-timeout',
       'user-tickets-fetch-timeout',
@@ -10085,8 +10107,25 @@ function normalizeTicketTextArray(values, options = {}) {
   });
 }
 
+function normalizeKnowledgeInteractionResult(result) {
+  const normalizeState = (state) => {
+    if (!state || typeof state !== 'object') return state;
+    const normalized = { ...state };
+    if (normalized.drawerOpenCount === 0) {
+      normalized.drawerBodies = [];
+      normalized.drawerTitles = [];
+    }
+    return normalized;
+  };
+
+  return Object.fromEntries(
+    Object.entries(result).map(([key, value]) => [key, normalizeState(value)]),
+  );
+}
+
 function normalizeRedesignedFetchFailureInteractionResult(label, result) {
   const expectedCountKey = {
+    'user-knowledge-fetch-timeout': 'userKnowledgeFetch',
     'user-node-fetch-api-500': 'userServerFetch',
     'user-node-fetch-timeout': 'userServerFetch',
     'user-tickets-fetch-timeout': 'userTicketFetch',
@@ -12903,11 +12942,27 @@ async function waitForPageProperty(page, property, timeout = 5_000) {
 
 async function knowledgeState(page) {
   return {
-    articleTitles: await visibleTexts(page, '.list-group-item h5', 8),
-    categoryTitles: await visibleTexts(page, '.block-header .block-title', 8),
-    drawerBodies: await visibleTexts(page, '.ant-drawer-body .custom-html-style', 4),
-    drawerOpenCount: await visibleCount(page, '.ant-drawer-open'),
-    drawerTitles: await visibleTexts(page, '.ant-drawer-title', 4),
+    articleTitles: await visibleTexts(
+      page,
+      '.v2board-knowledge-item-title, .list-group-item h5',
+      8,
+    ),
+    categoryTitles: await visibleTexts(
+      page,
+      '.v2board-knowledge-category-title, .block-header .block-title',
+      8,
+    ),
+    drawerBodies: await visibleTexts(
+      page,
+      '.v2board-knowledge-sheet-body .custom-html-style, .ant-drawer-body .custom-html-style',
+      4,
+    ),
+    drawerOpenCount: await visibleCount(page, '.v2board-knowledge-sheet, .ant-drawer-open'),
+    drawerTitles: await visibleTexts(
+      page,
+      '.v2board-knowledge-sheet-title, .ant-drawer-title',
+      4,
+    ),
     searchValue: await firstInputValue(page, '.v2board-knowledge-search-bar input'),
   };
 }
@@ -14509,13 +14564,13 @@ async function fetchFailureState(page) {
   const alertTexts = await visibleTexts(page, '.alert, .ant-alert', 6);
   const emptyTexts = await visibleTexts(
     page,
-    '.v2board-plan-empty, .v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .v2board-ticket-empty, .ant-empty, .ant-table-placeholder',
+    '.v2board-plan-empty, .v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .v2board-ticket-empty, .v2board-knowledge-empty, .ant-empty, .ant-table-placeholder',
     6,
   );
   const listItemTexts = await visibleTexts(page, '.am-list-item', 6);
   const tablePlaceholderTexts = await visibleTexts(
     page,
-    '.v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .v2board-ticket-empty, .ant-table-placeholder',
+    '.v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .v2board-ticket-empty, .v2board-knowledge-empty, .ant-table-placeholder',
     4,
   );
   const tableRows = await visibleTexts(

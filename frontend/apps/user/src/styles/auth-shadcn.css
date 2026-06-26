@@ -44,6 +44,7 @@
 @source '../pages/traffic.tsx';
 @source '../pages/invite.tsx';
 @source '../pages/tickets/**/*.tsx';
+@source '../pages/knowledge/**/*.tsx';
 @source '../pages/plans/**/*.tsx';
 @source '../pages/orders/**/*.tsx';
 @source '../components/dialogs/*.tsx';

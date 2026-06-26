@@ -242,6 +242,22 @@ surfaces.
   `/ticket/:ticket_id`; keep behavior and interaction scenarios for the same
   routes.
 
+### User Knowledge Direction
+
+The user knowledge surface (`/knowledge`) is a redesigned shadcn surface.
+
+- Use shadcn/Radix composition for the searchable knowledge library, category
+  groups, article rows, loading and empty states, and the right-side article
+  reader sheet.
+- Do not keep Ant Design input/drawer shells, Bootstrap list groups, OneUI block
+  cards, or legacy body-scroll drawer wiring as the foundation for this route.
+- Keep knowledge behavior strict: fetch locale, debounced search, timeout
+  fallback, URL `id` opening, article detail fetches, copy and jump hooks inside
+  rendered markdown, current-article refetches, previous-article persistence
+  while jumping, routing, and i18n behavior must remain covered.
+- Retire old OneUI/Bootstrap/Ant visual parity for `/knowledge`; keep behavior
+  and interaction scenarios for the same route.
+
 For new redesigned surfaces, do not use:
 
 - Ant Design v3 components as new UI foundations.

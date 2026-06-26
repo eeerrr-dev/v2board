@@ -38,8 +38,6 @@ const mocks = vi.hoisted(() => {
   return {
     legacyCopyText: vi.fn(),
     toastSuccess: vi.fn(),
-    lockBodyScroll: vi.fn(),
-    unlockBodyScroll: vi.fn(),
     detailRefetch: vi.fn(),
     knowledgeArgs: [] as Array<{ language: string; keyword?: string }>,
     detailArgs: [] as Array<{ id: number | string | undefined; language: string }>,
@@ -79,6 +77,7 @@ const labels: Record<string, string> = {
   'dashboard.copy_success': '复制成功',
   'knowledge.last_update': '最后更新: {date}',
   'knowledge.search_placeholder': '搜索文档',
+  'nav.knowledge': '使用文档',
 };
 
 vi.mock('react-router-dom', () => ({
@@ -104,6 +103,7 @@ vi.mock('@/lib/queries', () => ({
     mocks.knowledgeArgs.push({ language, keyword });
     return {
       data: mocks.groups,
+      error: undefined,
       isFetching: mocks.fetching,
     };
   },
@@ -131,18 +131,7 @@ vi.mock('@/lib/legacy-toast', () => ({
   },
 }));
 
-vi.mock('@/lib/legacy-body-scroll', () => ({
-  lockLegacyDrawerBodyScroll: () => {
-    mocks.lockBodyScroll();
-    return mocks.unlockBodyScroll;
-  },
-}));
-
-vi.mock('@/lib/use-transition-status', () => ({
-  useTransitionStatus: (open: boolean) => (open ? 'entered' : 'exited'),
-}));
-
-describe('KnowledgePage bundled-theme list', () => {
+describe('KnowledgePage shadcn library surface', () => {
   beforeEach(() => {
     mocks.fetching = false;
     mocks.detailFetching = false;
@@ -158,79 +147,77 @@ describe('KnowledgePage bundled-theme list', () => {
     window.jump = undefined;
   });
 
+  it('renders the shadcn search card, category groups, article rows, and dates', () => {
+    const html = renderToStaticMarkup(<KnowledgePage />);
+
+    expect(html).toContain('v2board-knowledge-surface');
+    expect(html).toContain('v2board-knowledge-card');
+    expect(html).toContain('bg-card');
+    expect(html).toContain('border-border');
+    expect(html).toContain('v2board-knowledge-search-bar');
+    expect(html).toContain('placeholder="搜索文档"');
+    expect(html).toContain('value=""');
+    expect(html).toContain('使用文档');
+    expect(html).toContain('v2board-knowledge-category');
+    expect(html).toContain('v2board-knowledge-category-title');
+    expect(html).toContain('General');
+    expect(html).toContain('Router');
+    expect(html).toContain('v2board-knowledge-item');
+    expect(html).toContain('Copy Article');
+    expect(html).toContain('Router Guide');
+    expect(html).toContain('最后更新: 2023/11/14');
+    expect(html).toContain('最后更新: 2023/11/15');
+  });
+
   it('does not show the list spinner before the mount fetch dispatch equivalent', () => {
     mocks.fetching = true;
 
     const html = renderToStaticMarkup(<KnowledgePage />);
 
     expect(html).toContain('v2board-knowledge-search-bar');
-    expect(html).toContain(
-      'ant-input-search mb-3 ant-input-search-enter-button ant-input-search-large ant-input-group-wrapper ant-input-group-wrapper-lg',
-    );
-    expect(html).toContain('placeholder="搜索文档" class="ant-input ant-input-lg" type="text" value=""');
-    expect(html).toContain('ant-btn ant-input-search-button ant-btn-primary ant-btn-lg');
-    expect(html).not.toContain('spinner-grow');
+    expect(html).not.toContain('v2board-knowledge-loading');
   });
 
-  it('renders the legacy category blocks, list item styling, titles, and last update dates', () => {
-    const html = renderToStaticMarkup(<KnowledgePage />);
-
-    expect(html).toContain('row mb-3 mb-md-0');
-    expect(html).toContain('block block-rounded ');
-    expect(html).toContain('block-header block-header-default');
-    expect(html).toContain('<h3 class="block-title">General</h3>');
-    expect(html).toContain('<h3 class="block-title">Router</h3>');
-    expect(html).toContain('list-group-item list-group-item-action');
-    expect(html).toContain('style="border-radius:unset;border:unset;border-bottom:1px solid #e2e8f2"');
-    expect(html).toContain('<h5 class="font-size-base mb-1">Copy Article</h5>');
-    expect(html).toContain('<h5 class="font-size-base mb-1">Router Guide</h5>');
-    expect(html).toContain('最后更新: 2023/11/14');
-    expect(html).toContain('最后更新: 2023/11/15');
-  });
-
-  it('keeps an empty knowledge payload as the bundled search-only view', () => {
+  it('renders an explicit shadcn empty state for an empty knowledge payload', () => {
     mocks.groups = {};
 
     const html = renderToStaticMarkup(<KnowledgePage />);
 
-    expect(html).toContain('v2board-knowledge-search-bar');
-    expect(html).not.toContain('block block-rounded ');
+    expect(html).toContain('v2board-knowledge-empty');
     expect(html).not.toContain('class="ant-empty ant-empty-normal"');
-    expect(html).not.toContain('暂无数据');
+    expect(html).not.toContain('block block-rounded');
   });
 
-  it('uses stable keys for category and article rows without changing the legacy markup', () => {
-    const categorySource = knowledgeSource.slice(
-      knowledgeSource.indexOf('Object.keys(knowledgeGroups).map((category) => ('),
-      knowledgeSource.indexOf('{detailDrawerStatus', knowledgeSource.indexOf('Object.keys(knowledgeGroups).map')),
-    );
-
-    expect(categorySource).toContain('Object.keys(knowledgeGroups).map((category) => (');
-    expect(categorySource).toContain('knowledgeGroups[category]?.map((item) => (');
-    expect(categorySource).toContain('key={category}');
-    expect(categorySource).toContain('key={item.id}');
-    expect(categorySource).not.toContain('key={Math.random()}');
+  it('uses Radix sheet composition instead of legacy Ant and Bootstrap foundations', () => {
+    expect(knowledgeSource).toContain("from '@/components/ui/sheet'");
+    expect(knowledgeSource).toContain('<SheetContent');
+    expect(knowledgeSource).toContain('v2board-knowledge-item');
+    expect(knowledgeSource).not.toContain('AntBtn');
+    expect(knowledgeSource).not.toContain('createPortal');
+    expect(knowledgeSource).not.toContain('lockLegacyDrawerBodyScroll');
+    expect(knowledgeSource).not.toContain('ant-drawer');
+    expect(knowledgeSource).not.toContain('list-group-item');
+    expect(knowledgeSource).not.toContain('block block-rounded');
   });
 
-  it('keeps the bundled-theme markdown body fallback using logical OR', () => {
+  it('keeps the markdown body fallback using logical OR', () => {
     expect(knowledgeSource).toContain("renderLegacyMarkdown(visibleDetail?.body || '')");
     expect(knowledgeSource).not.toContain("renderLegacyMarkdown(visibleDetail?.body ?? '')");
   });
 
-  it('keeps the bundled search input uncontrolled while debouncing onChange', () => {
+  it('uses a controlled shadcn input while debouncing onChange', () => {
     const searchInputSource = knowledgeSource.slice(
-      knowledgeSource.indexOf('<input'),
-      knowledgeSource.indexOf('<span className="ant-input-group-addon">'),
+      knowledgeSource.indexOf('<Input'),
+      knowledgeSource.indexOf('/>', knowledgeSource.indexOf('<Input')),
     );
 
     expect(searchInputSource).toContain('onChange={(event) => setSearchValue(event.target.value)}');
-    expect(searchInputSource).toContain('defaultValue=""');
-    expect(searchInputSource).not.toContain('value={searchValue}');
-    expect(searchInputSource).not.toContain('defaultValue={searchValue}');
+    expect(searchInputSource).toContain('value={searchValue}');
+    expect(searchInputSource).not.toContain('defaultValue=""');
   });
 });
 
-describe('KnowledgePage legacy interactions', () => {
+describe('KnowledgePage redesigned interactions', () => {
   let container: HTMLDivElement;
   let root: Root | null;
 
@@ -247,8 +234,6 @@ describe('KnowledgePage legacy interactions', () => {
     mocks.detailArgs = [];
     mocks.legacyCopyText.mockClear();
     mocks.toastSuccess.mockClear();
-    mocks.lockBodyScroll.mockClear();
-    mocks.unlockBodyScroll.mockClear();
     mocks.detailRefetch.mockClear();
   });
 
@@ -264,7 +249,7 @@ describe('KnowledgePage legacy interactions', () => {
     vi.useRealTimers();
   });
 
-  it('debounces searches for 300ms and keeps the legacy request locale', async () => {
+  it('debounces searches for 300ms and keeps the request locale', async () => {
     await act(async () => {
       root!.render(<KnowledgePage />);
       await Promise.resolve();
@@ -291,7 +276,7 @@ describe('KnowledgePage legacy interactions', () => {
     expect(mocks.knowledgeArgs).toContainEqual({ language: 'zh-CN', keyword: 'router' });
   });
 
-  it('shows the legacy list spinner only after the mount fetch dispatch equivalent', async () => {
+  it('shows the shadcn loading card only after the mount fetch dispatch equivalent', async () => {
     mocks.fetching = true;
 
     await act(async () => {
@@ -300,12 +285,12 @@ describe('KnowledgePage legacy interactions', () => {
     });
 
     expect(container.innerHTML).toContain('v2board-knowledge-search-bar');
-    expect(container.innerHTML).toContain('spinner-grow text-primary');
+    expect(container.innerHTML).toContain('v2board-knowledge-loading');
     expect(container.innerHTML).toContain('Loading...');
-    expect(container.innerHTML).not.toContain('block block-rounded ');
+    expect(container.innerHTML).not.toContain('v2board-knowledge-category');
   });
 
-  it('opens the article drawer from the URL id and locks body scrolling', async () => {
+  it('opens the article sheet from the URL id', async () => {
     mocks.searchParams = new URLSearchParams('id=2');
 
     await act(async () => {
@@ -315,15 +300,14 @@ describe('KnowledgePage legacy interactions', () => {
     });
 
     expect(mocks.detailArgs).toContainEqual({ id: 2, language: 'zh-CN' });
-    expect(document.body.innerHTML).toContain('ant-drawer ant-drawer-right ant-drawer-open');
-    expect(document.body.innerHTML).toContain('ant-drawer-title');
+    expect(document.body.innerHTML).toContain('v2board-knowledge-sheet');
+    expect(document.body.innerHTML).toContain('v2board-knowledge-sheet-title');
     expect(document.body.innerHTML).toContain('Router Guide');
     expect(document.body.innerHTML).toContain('custom-html-style');
     expect(document.body.innerHTML).toContain('<a onclick="jump(1)">jump</a>');
-    expect(mocks.lockBodyScroll).toHaveBeenCalledTimes(1);
   });
 
-  it('shows legacy loading content while fetching an article and clears hooks on close', async () => {
+  it('shows sheet loading content while fetching an article and clears hooks on close', async () => {
     mocks.detailFetching = true;
 
     await act(async () => {
@@ -331,36 +315,37 @@ describe('KnowledgePage legacy interactions', () => {
       await Promise.resolve();
     });
 
-    const item = container.querySelector('.list-group-item') as HTMLElement;
+    const item = container.querySelector('.v2board-knowledge-item') as HTMLElement;
     await act(async () => {
       item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
+    expect(document.body.innerHTML).toContain('v2board-knowledge-sheet');
     expect(document.body.innerHTML).toContain('Loading...');
-    expect(document.body.innerHTML).toContain('anticon anticon-loading');
     expect(window.copy).toBeTypeOf('function');
     expect(window.jump).toBeTypeOf('function');
 
-    const closeButton = document.body.querySelector('.ant-drawer-close') as HTMLButtonElement;
+    const closeButton = document.body.querySelector(
+      '.v2board-knowledge-sheet button',
+    ) as HTMLButtonElement;
     await act(async () => {
       closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(document.body.innerHTML).not.toContain('ant-drawer-open');
+    expect(document.body.innerHTML).not.toContain('v2board-knowledge-sheet');
     expect(window.copy).toBeUndefined();
     expect(window.jump).toBeUndefined();
-    expect(mocks.unlockBodyScroll).toHaveBeenCalledTimes(1);
   });
 
-  it('copies once and shows the bundled theme success message once', async () => {
+  it('copies once and shows the success message once', async () => {
     await act(async () => {
       root!.render(<KnowledgePage />);
       await Promise.resolve();
     });
 
-    const item = container.querySelector('.list-group-item') as HTMLElement;
+    const item = container.querySelector('.v2board-knowledge-item') as HTMLElement;
     await act(async () => {
       item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
@@ -380,7 +365,7 @@ describe('KnowledgePage legacy interactions', () => {
       await Promise.resolve();
     });
 
-    const item = container.querySelector('.list-group-item') as HTMLElement;
+    const item = container.querySelector('.v2board-knowledge-item') as HTMLElement;
     await act(async () => {
       item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
@@ -402,13 +387,13 @@ describe('KnowledgePage legacy interactions', () => {
     expect(mocks.detailRefetch).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the previous article title while a legacy jump fetch is loading', async () => {
+  it('keeps the previous article title while a jump fetch is loading', async () => {
     await act(async () => {
       root!.render(<KnowledgePage />);
       await Promise.resolve();
     });
 
-    const item = container.querySelector('.list-group-item') as HTMLElement;
+    const item = container.querySelector('.v2board-knowledge-item') as HTMLElement;
     await act(async () => {
       item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
@@ -423,9 +408,9 @@ describe('KnowledgePage legacy interactions', () => {
       await Promise.resolve();
     });
 
-    const drawerHtml = document.body.querySelector('.ant-drawer')?.innerHTML ?? '';
-    expect(drawerHtml).toContain('Copy Article');
-    expect(drawerHtml).not.toContain('Router Guide');
-    expect(drawerHtml).toContain('anticon anticon-loading');
+    const sheetHtml = document.body.querySelector('.v2board-knowledge-sheet')?.innerHTML ?? '';
+    expect(sheetHtml).toContain('Copy Article');
+    expect(sheetHtml).not.toContain('Router Guide');
+    expect(sheetHtml).toContain('Loading...');
   });
 });

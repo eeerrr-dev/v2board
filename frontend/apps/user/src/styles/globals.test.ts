@@ -1822,7 +1822,7 @@ describe('legacy antd feedback CSS', () => {
     expect(globals).toContain(
       '  #cashier .ant-radio-button-wrapper {\n    width: 100%;\n    margin-top: 10px;\n  }',
     );
-    expect(globals).toContain('  .v2board-knowledge-search-bar button {\n    border-radius: 0;\n  }');
+    expect(globals).not.toContain('.v2board-knowledge-search-bar button');
   });
 
   it('keeps message and notification feedback chrome aligned with antd v3', () => {
