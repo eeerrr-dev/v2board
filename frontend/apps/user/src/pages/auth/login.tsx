@@ -68,7 +68,7 @@ export default function LoginPage() {
             {/* ring-offset-surface ties the focus-ring offset to the surface token, so on the dark
                 login theme the halo blends into the dark card instead of leaving a white gap; in
                 light mode the surface token is white, so the offset is unchanged. */}
-            <Button type="submit" block loading={isPending} className="tw:ring-offset-surface">
+            <Button type="submit" size="lg" block loading={isPending} className="tw:ring-offset-surface">
               {t('auth.submit_login')}
             </Button>
           </div>

@@ -32,7 +32,19 @@
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(135deg, var(--tw-color-background), var(--tw-color-primary-subtle));
+  background-color: var(--tw-color-background);
+  /* Token-driven wash plus a soft brand light-source at the top: gives the surface directional
+     depth and a quiet brand cue — no hero image, no decorative DOM layers — in both themes. The
+     glow tracks --tw-color-primary, so it stays a faint blue on the light wash and on the midnight
+     gradient in dark. The deepened --color-background / --color-primary-subtle tokens (now
+     #e9edf6 -> #dde7ff) restore legacy-grade figure-ground so the white card actually separates. */
+  background-image:
+    radial-gradient(
+      120% 90% at 50% -10%,
+      color-mix(in srgb, var(--tw-color-primary) 9%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(160deg, var(--tw-color-background), var(--tw-color-primary-subtle));
 }
 
 .v2board-auth-surface .v2board-auth-box {
@@ -89,6 +101,17 @@
   color: var(--tw-color-foreground);
 }
 
+/*
+ * On logoless installs the brand wordmark is the only brand mark, so it carries the primary hue
+ * (echoing the original login's blue wordmark) rather than body-heading slate. Same specificity as
+ * the base title rule and declared after it, so it wins; also unlayered, so it still outranks the
+ * vendored h1 color. In dark the primary blue is too dark on the navy card, so the dark block below
+ * resets it to the near-white foreground.
+ */
+.v2board-auth-surface .v2board-auth-title--wordmark {
+  color: var(--tw-color-primary);
+}
+
 .v2board-auth-toast-icon-success {
   border-color: rgba(82, 196, 26, 0.3);
   background: rgba(82, 196, 26, 0.12);
@@ -126,6 +149,12 @@
 
     --tw-color-destructive: #f87171;
     --tw-color-destructive-subtle: #2a1414;
+  }
+
+  /* On the dark navy card the primary blue is too low-contrast for a heading, so the wordmark
+     returns to the near-white foreground (the light-mode primary hue is reset here). */
+  html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-title--wordmark {
+    color: var(--tw-color-foreground);
   }
 
   /*

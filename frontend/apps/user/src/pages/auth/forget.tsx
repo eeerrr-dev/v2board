@@ -63,6 +63,7 @@ export default function ForgetPage() {
 
                 <Button
                   type="submit"
+                  size="lg"
                   block
                   loading={isPending}
                   disabled={isPending}

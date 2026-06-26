@@ -189,6 +189,7 @@ export default function RegisterPage() {
 
                 <Button
                   type="submit"
+                  size="lg"
                   block
                   loading={isPending}
                   disabled={isPending || Boolean(config?.tos_url && !tosChecked)}

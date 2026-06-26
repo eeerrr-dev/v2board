@@ -18,7 +18,7 @@ const buttonVariants = cva(
       size: {
         sm: 'tw:h-9 tw:px-3 tw:text-sm',
         md: 'tw:h-10 tw:px-4 tw:text-sm',
-        lg: 'tw:h-11 tw:px-5 tw:text-sm',
+        lg: 'tw:h-11 tw:px-5 tw:text-base',
       },
       block: { true: 'tw:w-full' },
     },
