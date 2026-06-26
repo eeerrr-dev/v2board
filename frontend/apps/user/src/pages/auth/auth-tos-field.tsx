@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Checkbox } from '@/components/ui/checkbox';
 
 export function getSafeTosHref(rawUrl: string): string | null {
   const url = rawUrl.trim();
@@ -39,7 +40,7 @@ function renderTosSentence(template: string, url: string): ReactNode {
         href={safeHref}
         target="_blank"
         rel="noopener noreferrer"
-        className="tw:text-primary tw:underline tw:transition tw:hover:text-primary-hover"
+        className="text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
       >
         {linkText}
       </a>
@@ -60,13 +61,13 @@ export function AuthTosField({ checked, id, template, url, onToggle }: AuthTosFi
   const textId = `${id}-text`;
 
   return (
-    <div className="tw:flex tw:items-start tw:gap-2 tw:text-sm tw:text-foreground-muted">
-      <input
-        type="checkbox"
+    <div className="flex items-start gap-2 text-sm text-muted-foreground">
+      <Checkbox
+        id={id}
         checked={checked}
-        onChange={onToggle}
+        onCheckedChange={onToggle}
         aria-labelledby={textId}
-        className="tw:mt-1 tw:size-4 tw:rounded tw:border-input tw:accent-primary"
+        className="mt-0.5"
       />
       <span id={textId}>{renderTosSentence(template, url)}</span>
     </div>

@@ -37,10 +37,16 @@ export default function RegisterPage() {
   return (
     <>
       <AuthPanel
+        title={t('auth.register_title')}
+        description={t('auth.register_description')}
         formRef={formRef}
         onSubmit={submit}
-        size="wide"
-        footer={<AuthFooterLink href="#/login">{t('auth.return_to_login')}</AuthFooterLink>}
+        footer={
+          <>
+            {t('auth.have_account')}{' '}
+            <AuthFooterLink href="#/login">{t('auth.sign_in')}</AuthFooterLink>
+          </>
+        }
       >
         {configLoading ? (
           <AuthLoadingState />
@@ -56,7 +62,12 @@ export default function RegisterPage() {
               />
             ) : (
               <FormField id="register-email" label={t('auth.email')}>
-                <Input type="email" name="email" autoComplete="username" />
+                <Input
+                  type="email"
+                  name="email"
+                  autoComplete="username"
+                  placeholder="m@example.com"
+                />
               </FormField>
             )}
 

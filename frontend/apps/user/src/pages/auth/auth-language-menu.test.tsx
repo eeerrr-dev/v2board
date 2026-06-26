@@ -38,10 +38,17 @@ describe('AuthLanguageMenu', () => {
     const trigger = container.querySelector('.v2board-auth-language-trigger') as HTMLElement;
     expect(trigger.tagName).toBe('BUTTON');
     expect(trigger.getAttribute('type')).toBe('button');
+    expect(trigger.textContent).toBe('English');
+    expect(trigger.getAttribute('aria-label')).toBe('Language: English');
     expect(trigger.hasAttribute('role')).toBe(false);
     expect(trigger.hasAttribute('tabindex')).toBe(false);
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(trigger.querySelectorAll('svg')).toHaveLength(1);
+    expect(trigger.className).toContain('h-9');
+    expect(trigger.className).toContain('font-medium');
+    expect(trigger.className).not.toContain('hover:bg-accent');
+    expect(trigger.className).not.toContain('border');
     expect(container.querySelectorAll('button')).toHaveLength(1);
 
     act(() => {

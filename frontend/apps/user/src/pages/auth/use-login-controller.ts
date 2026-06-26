@@ -10,6 +10,7 @@ import { fetchUserInfo, userKeys } from '@/lib/queries';
 
 function normalizeRedirectTarget(target: string | null): string {
   if (!target) return '/dashboard';
+  if (target.startsWith('//')) return '/dashboard';
   return target.startsWith('/') ? target : `/${target}`;
 }
 

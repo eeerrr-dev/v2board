@@ -6,7 +6,6 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   invalid?: boolean;
 }
 
-// Authored V2Board — clean-modern reskin primitive. Token-driven, `tw:`-prefixed.
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ className, type = 'text', invalid, ...props }, ref) => (
     <input
@@ -14,12 +13,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       type={type}
       aria-invalid={invalid || undefined}
       className={cn(
-        'tw:block tw:h-10 tw:w-full tw:rounded-field tw:border tw:bg-surface tw:px-3.5 tw:text-sm tw:text-foreground tw:shadow-sm tw:outline-none tw:transition',
-        'tw:placeholder:text-foreground-muted',
-        'tw:disabled:cursor-not-allowed tw:disabled:opacity-60',
+        'flex h-10 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
         invalid
-          ? 'tw:border-destructive tw:focus-visible:border-destructive tw:focus-visible:ring-2 tw:focus-visible:ring-destructive/25'
-          : 'tw:border-input tw:focus-visible:border-primary tw:focus-visible:ring-2 tw:focus-visible:ring-ring/25',
+          ? 'border-destructive focus-visible:border-destructive focus-visible:ring-[3px] focus-visible:ring-destructive/20'
+          : 'border-input focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
         className,
       )}
       {...props}

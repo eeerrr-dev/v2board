@@ -4,44 +4,58 @@ import type {
   ReactNode,
   Ref,
 } from 'react';
-import { Card, CardBody, CardFooter } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+} from '@/components/ui/card';
 import { cn } from '@/lib/cn';
-import { AuthBrand } from './auth-brand';
-import { AuthLanguageMenu } from './auth-language-menu';
 
-interface AuthPanelProps extends Omit<FormHTMLAttributes<HTMLFormElement>, 'children' | 'className'> {
+interface AuthPanelProps
+  extends Omit<FormHTMLAttributes<HTMLFormElement>, 'children' | 'className' | 'title'> {
   children: ReactNode;
   footer: ReactNode;
+  description?: ReactNode;
   formClassName?: string;
   formRef?: Ref<HTMLFormElement>;
-  size?: 'default' | 'wide';
+  title: ReactNode;
 }
 
 export function AuthPanel({
   children,
   footer,
+  description,
   formClassName,
   formRef,
-  size = 'default',
+  title,
   ...formProps
 }: AuthPanelProps) {
   return (
-    <Card className={cn('v2board-auth-card', size === 'wide' && 'v2board-auth-card--wide')}>
-      <form ref={formRef} noValidate className={formClassName} {...formProps}>
-        <CardBody>
-          <AuthBrand />
-          {children}
-        </CardBody>
-      </form>
-      <CardFooter className="v2board-auth-footer">
-        <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-3">
-          {footer}
-        </div>
-        <div className="tw:ml-auto tw:shrink-0">
-          <AuthLanguageMenu />
-        </div>
-      </CardFooter>
-    </Card>
+    <div className="v2board-auth-panel mx-auto w-full max-w-md">
+      <Card className="v2board-auth-card">
+        <CardHeader className="gap-1.5 px-7 text-center sm:px-8">
+          <h1 className="v2board-auth-title m-0 text-2xl font-bold leading-tight">
+            {title}
+          </h1>
+          {description ? (
+            <CardDescription className="mx-auto max-w-[30rem] text-balance leading-5">
+              {description}
+            </CardDescription>
+          ) : null}
+        </CardHeader>
+        <CardContent className="px-7 sm:px-8">
+          <form ref={formRef} noValidate className={formClassName} {...formProps}>
+            <div className="grid gap-6">
+              {children}
+              <div className="text-balance text-center text-sm leading-6 text-muted-foreground">
+                {footer}
+              </div>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -49,7 +63,7 @@ export function AuthFooterLink({ className, ...props }: AnchorHTMLAttributes<HTM
   return (
     <a
       className={cn(
-        'tw:rounded tw:text-foreground-muted tw:transition tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2 tw:ring-offset-surface',
+        'rounded-sm font-medium text-foreground underline underline-offset-4 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
         className,
       )}
       {...props}
@@ -57,10 +71,14 @@ export function AuthFooterLink({ className, ...props }: AnchorHTMLAttributes<HTM
   );
 }
 
-export function AuthFooterDivider() {
+export function AuthAuxiliaryLink({ className, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) {
   return (
-    <span aria-hidden="true" className="tw:text-border">
-      ·
-    </span>
+    <a
+      className={cn(
+        'rounded-sm text-sm font-normal text-foreground underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        className,
+      )}
+      {...props}
+    />
   );
 }

@@ -256,6 +256,7 @@ describe('legacy i18n dictionaries', () => {
         '当前已使用流量达{rate}%': '当前已使用流量达 {rate}%',
         '划转后的余额仅用于{title}消费使用': '划转后的余额仅用于{title}消费使用',
         '最后更新: {date}': '最后更新: {date}',
+        确认密码: '确认密码',
       },
       'en-US': {
         '订单系统正在进行处理，请稍等1-3分钟。':
@@ -287,6 +288,7 @@ describe('legacy i18n dictionaries', () => {
         '划转后的余额仅用于{title}消费使用':
           'The transferred balance will be used for {title} payments only',
         '最后更新: {date}': 'Last Updated: {date}',
+        确认密码: 'Confirm password',
       },
     });
 
@@ -299,6 +301,7 @@ describe('legacy i18n dictionaries', () => {
     expect(i18n.t('ticket.message_placeholder')).toBe(
       'Please describe the problem you encountered',
     );
+    expect(i18n.t('auth.confirm_password')).toBe('Confirm password');
     expect(i18n.t('plan.change_warning')).toBe(
       'Attention please, change subscription will overwrite your current subscription.',
     );

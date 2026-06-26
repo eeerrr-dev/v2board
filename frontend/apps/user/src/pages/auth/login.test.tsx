@@ -30,12 +30,15 @@ const mocks = vi.hoisted(() => ({
   isPending: false,
   labels: {
     'auth.email': '邮箱',
-    'auth.forget_password': '忘记密码',
+    'auth.forget_password': '忘记密码？',
     'auth.hide_password': '隐藏密码',
+    'auth.login_description': '输入邮箱和密码继续',
+    'auth.login_title': '欢迎回来',
+    'auth.no_account': '还没有账号？',
     'auth.password': '密码',
     'auth.show_password': '显示密码',
     'auth.sign_up': '注册',
-    'auth.submit_login': '登入',
+    'auth.submit_login': '登录',
   } as Record<string, string>,
   loginMutateAsync: vi.fn(),
   navigate: vi.fn(),
@@ -100,14 +103,6 @@ vi.mock('@/lib/queries', () => ({
   },
 }));
 
-vi.mock('./auth-language-menu', () => ({
-  AuthLanguageMenu: () => (
-    <button type="button" className="v2board-auth-language-trigger">
-      <span>简体中文</span>
-    </button>
-  ),
-}));
-
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     i18n: { language: 'zh-CN' },
@@ -134,6 +129,10 @@ function resetMocks() {
   mocks.settings.description = '';
   mocks.settings.logo = '';
   mocks.settings.title = 'V2Board';
+  window.g_lang = 'zh-CN';
+  window.settings = {
+    i18n: ['en-US', 'zh-CN'] as string[] & Record<string, Record<string, string>>,
+  };
   mocks.tokenLoginMutateAsync.mockReset();
   mocks.tokenLoginMutateAsync.mockResolvedValue({ auth_data: 'TOKEN_AUTH' });
 }
@@ -148,78 +147,70 @@ async function flushPromises() {
 describe('LoginPage modern markup', () => {
   beforeEach(resetMocks);
 
-  it('renders the modern login card, translated placeholders, footer links, and language trigger', () => {
+  it('renders the modern login card, translated labels, footer links, and action title', () => {
     const html = renderToStaticMarkup(<LoginPage />);
 
-    // Reskinned shell — the legacy OneUI/Bootstrap markup is retired. Tailwind
-    // utilities carry the `tw:` prefix so they never collide with the globally
-    // bundled vendored `.block`/`.container`/etc. legacy classes.
-    expect(html).toContain('tw:rounded-card');
-    // Token-driven primary + input surfaces (from @v2board/tokens) — never hardcoded blue/slate
-    // or a bespoke arbitrary shadow.
-    expect(html).toContain('tw:bg-primary');
-    expect(html).toContain('tw:border-input');
-    expect(html).toContain('tw:text-foreground');
-    expect(html).not.toContain('tw:bg-blue-600');
-    expect(html).not.toContain('tw:border-slate-300');
-    expect(html).not.toContain('tw:shadow-[');
-    // The display utility must stay prefixed (`tw:block`); a bare `block` class would
-    // collide with vendored OneUI `.block` cards and inherit their shadow/background.
-    expect(html).toContain('tw:block');
-    // A bare `block` token (preceded by quote/space, not the `tw:` prefix, and not
-    // part of `block-rounded`) must never appear — that is the OneUI card collision.
-    expect(html).not.toMatch(/[\s"]block[\s"]/);
+    // Pure shadcn island — auth now uses unprefixed registry-style utilities, while
+    // legacy OneUI/Bootstrap form chrome stays retired.
+    expect(html).toContain('v2board-auth-panel');
+    expect(html).toContain('rounded-xl');
+    expect(html).toContain('bg-card');
+    expect(html).toContain('border-input');
+    expect(html).toContain('text-card-foreground');
+    expect(html).not.toContain('v2board-auth-visual');
+    expect(html).not.toContain('md:grid-cols-2');
+    expect(html).not.toContain('tw:rounded-card');
     expect(html).not.toContain('block block-rounded block-transparent');
     expect(html).not.toContain('form-control form-control-alt');
     expect(html).not.toContain('btn btn-block btn-primary');
     expect(html).not.toContain('bg-gray-lighter');
 
-    // The brand title is a semantic <h1> (the page's main heading); the redesign-aware
-    // persistence gate releases its titleText rather than pinning the old empty value. It carries
-    // the v2board-auth-title hook (not a tw:text-foreground utility): vendored unlayered `h1{color}`
-    // rules outrank layered tw: utilities, so the title color is owned by the authored
-    // .v2board-auth-title rule — without the class the heading would stay antd-black on the dark card.
+    // New York-style block rhythm: top chrome belongs to AuthLayout; pages own only the card.
+    expect(html).toContain('max-w-md');
     expect(html).toContain('class="v2board-auth-title');
-    expect(html).toContain('>V2Board</h1>');
+    expect(html).toContain('>欢迎回来</h1>');
+    expect(html).toContain('输入邮箱和密码继续');
+    expect(html).not.toContain('>V2Board</h1>');
+    expect(html).not.toContain('v2board-auth-shell-brand');
+    expect(html).not.toContain('v2board-logo');
+    expect(html).not.toContain('size-12');
     expect(html).not.toContain('block-title');
 
-    // Label-only fields — the placeholder no longer duplicates the visible label.
+    // Shadcn-style examples: identifier fields may show examples, passwords stay label-only.
     expect(html).toContain('邮箱');
     expect(html).toContain('密码');
-    expect(html).not.toContain('placeholder=');
+    expect(html).toContain('placeholder="m@example.com"');
+    expect(html).not.toContain('placeholder="请输入密码"');
 
-    // The password reveal toggle ships as a native auxiliary button: the input still DEFAULTS to
-    // type="password" (so the behavior gate's input[type="password"] selector keeps matching),
-    // while the redesigned behavior gate releases the extra semantic button from old pixel-era
-    // button-list parity.
+    // Password fields stay as plain masked inputs; the auth island avoids decorative icons.
     expect(html).toContain('type="password"');
-    expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('登入');
+    expect(html).not.toContain('aria-pressed');
+    expect(html).toContain('登录');
     expect(html).toContain('注册');
-    expect(html).toContain('忘记密码');
-    expect(html).toContain('class="v2board-auth-language-trigger"');
-    expect(html).toContain('简体中文');
+    expect(html).toContain('忘记密码？');
+    expect(html).toContain('还没有账号？');
+    expect(html).not.toContain('v2board-auth-language-trigger');
     expect(source).toContain("from './auth-panel'");
-    expect(panelSource).toContain("from './auth-language-menu'");
+    expect(panelSource).not.toContain("from './auth-language-menu'");
     expect(source).not.toContain("components/layout/auth-language-menu");
     expect(source).not.toContain("components/layout/language-menu");
   });
 
-  it('renders the operator logo + description and the antd loading icon while login is pending', () => {
+  it('ignores operator logo and description inside the action card while login is pending', () => {
     mocks.isPending = true;
     mocks.settings.description = 'Legacy description';
     mocks.settings.logo = '/theme/logo.png';
 
     const html = renderToStaticMarkup(<LoginPage />);
 
-    expect(html).toContain('v2board-logo');
-    expect(html).toContain('src="/theme/logo.png"');
-    expect(html).toContain('alt="V2Board"');
-    expect(html).toContain('Legacy description');
+    expect(html).not.toContain('v2board-logo');
+    expect(html).not.toContain('src="/theme/logo.png"');
+    expect(html).toContain('>欢迎回来</h1>');
+    expect(html).not.toContain('Legacy description');
     expect(html).toContain('disabled=""');
     // The base Button shows its own spinner alongside the still-visible label while pending.
-    expect(html).toContain('tw:animate-spin');
-    expect(html).toContain('登入');
+    expect(html).toContain('animate-spin');
+    expect(html).toContain('登录');
   });
 });
 
@@ -238,6 +229,8 @@ describe('LoginPage bundled-theme behavior', () => {
     act(() => root.unmount());
     container.remove();
     document.body.innerHTML = '';
+    window.settings = undefined;
+    window.g_lang = undefined;
   });
 
   async function renderLogin() {
@@ -247,20 +240,18 @@ describe('LoginPage bundled-theme behavior', () => {
     });
   }
 
-  it('keeps focus order email → password → reveal → submit → language with no tabindex overrides', async () => {
+  it('keeps the card focus order email → password → submit with no tabindex overrides', async () => {
     await renderLogin();
 
     const controls = Array.from(container.querySelectorAll<HTMLElement>('input, button'));
     const order = controls.map((element) => {
       if (element.tagName === 'INPUT') return element.getAttribute('type');
-      if (element.getAttribute('aria-pressed') !== null) return 'reveal';
-      if (element.classList.contains('v2board-auth-language-trigger')) return 'language';
       return 'submit';
     });
 
     // The email field is a proper type="email"; the redesign-aware gate normalizes the identifier
     // input's type (email -> text) so this modernization is released, not pinned.
-    expect(order).toEqual(['email', 'password', 'reveal', 'submit', 'language']);
+    expect(order).toEqual(['email', 'password', 'submit']);
     expect(controls.every((element) => !element.hasAttribute('tabindex'))).toBe(true);
   });
 
@@ -293,6 +284,26 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(mocks.navigate).not.toHaveBeenCalledWith('order');
   });
 
+  it('falls back to dashboard for network-path redirect values', async () => {
+    mocks.params = new URLSearchParams('redirect=//evil.example/path');
+    await renderLogin();
+
+    const [email, password] = Array.from(container.querySelectorAll('input'));
+    email!.value = 'user@example.com';
+    password!.value = 'secret';
+
+    await act(async () => {
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
+    expect(mocks.navigate).not.toHaveBeenCalledWith('//evil.example/path');
+  });
+
   it('marks both fields invalid and ties them to the single alert when login fails', async () => {
     mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(422, '邮箱或密码错误'));
     await renderLogin();
@@ -310,8 +321,8 @@ describe('LoginPage bundled-theme behavior', () => {
 
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.id).toBe('login-error');
-    // The reserved icon slot now renders a decorative glyph hidden from assistive tech.
-    expect(alert.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+    // The auth island keeps error feedback textual; no decorative alert icon is required.
+    expect(alert.querySelector('svg')).toBeNull();
     expect(alert.textContent).toContain('邮箱或密码错误');
     // Both fields are programmatically invalid and described by the one alert box.
     for (const input of Array.from(container.querySelectorAll('input'))) {
@@ -321,38 +332,16 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it('reveals and re-hides the password via a native auxiliary button without submitting', async () => {
+  it('keeps the password field masked without rendering an icon reveal button', async () => {
     await renderLogin();
 
     const password = container.querySelector('input[name="password"]') as HTMLInputElement;
-    const toggle = container.querySelector('button[aria-pressed]') as HTMLButtonElement;
 
-    // Defaults to hidden: the behavior gate's input[type="password"] selector and browser autofill
-    // both keep matching until the user opts in.
     expect(password.getAttribute('type')).toBe('password');
-    expect(toggle.tagName).toBe('BUTTON');
-    expect(toggle.getAttribute('type')).toBe('button');
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
-    expect(container.querySelectorAll('button')).toHaveLength(3);
+    expect(container.querySelector('button[aria-pressed]')).toBeNull();
+    expect(container.querySelectorAll('button')).toHaveLength(1);
     expect(container.querySelector('.btn')).toBeNull();
-
-    // Click reveals.
-    await act(async () => {
-      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    expect(password.getAttribute('type')).toBe('text');
-    expect(toggle.getAttribute('aria-pressed')).toBe('true');
-
     expect(mocks.loginMutateAsync).not.toHaveBeenCalled();
-
-    // The browser owns Enter/Space activation for the native button; direct click re-hides it here.
-    await act(async () => {
-      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    expect(password.getAttribute('type')).toBe('password');
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('reads the submitted values from the native form, never via the retired refs', () => {
@@ -381,7 +370,7 @@ describe('LoginPage bundled-theme behavior', () => {
 
     const links = Array.from(container.querySelectorAll('a'));
     const register = links.find((link) => link.textContent === '注册')!;
-    const forget = links.find((link) => link.textContent === '忘记密码')!;
+    const forget = links.find((link) => link.textContent === '忘记密码？')!;
 
     // Real hash anchors — HashRouter navigates natively, with no JS click handler or
     // `javascript:` href. The behavior contract (lands on register/forgetpassword) is preserved.

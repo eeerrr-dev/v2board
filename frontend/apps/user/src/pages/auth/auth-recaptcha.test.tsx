@@ -1,28 +1,20 @@
 import { act } from 'react';
-import type { ReactNode } from 'react';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useAuthRecaptcha } from './auth-recaptcha';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
 const source = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), 'legacy-recaptcha.tsx'),
+  join(dirname(fileURLToPath(import.meta.url)), 'auth-recaptcha.tsx'),
   'utf8',
 );
 
-vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
-    open ? <>{children}</> : null,
-  DialogContent: ({ children }: { children: ReactNode }) => (
-    <div className="ant-modal-body">{children}</div>
-  ),
-}));
-
-describe('useLegacyRecaptcha legacy DOM', () => {
+describe('useAuthRecaptcha', () => {
   let container: HTMLDivElement;
   let root: Root | null;
 
@@ -48,11 +40,9 @@ describe('useLegacyRecaptcha legacy DOM', () => {
     delete window.onloadcallback;
   });
 
-  it('renders the reCAPTCHA widget in the single legacy container div', async () => {
-    const { useLegacyRecaptcha } = await import('./legacy-recaptcha');
-
+  it('renders the challenge inside the auth shadcn dialog', async () => {
     function Harness() {
-      const { run, recaptchaModal } = useLegacyRecaptcha(true, 'site-key');
+      const { run, recaptchaModal } = useAuthRecaptcha(true, 'site-key');
       return (
         <>
           <button onClick={() => run(() => {})}>open</button>
@@ -72,17 +62,18 @@ describe('useLegacyRecaptcha legacy DOM', () => {
       await Promise.resolve();
     });
 
-    const body = container.querySelector('.ant-modal-body')!;
-    expect(body.children).toHaveLength(1);
-    expect(body.firstElementChild?.tagName).toBe('DIV');
-    expect(body.firstElementChild?.children).toHaveLength(1);
-    expect(body.querySelector('.grecaptcha-render-target')).toBeTruthy();
+    expect(document.body.querySelector('.ant-modal-body')).toBeNull();
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(dialog.className).toContain('bg-background');
+    expect(dialog.className).toContain('rounded-lg');
+    expect(dialog.querySelector('.grecaptcha-render-target')).toBeTruthy();
+    expect(dialog.querySelector('.sr-only')?.textContent).toBe('reCAPTCHA');
   });
 
-  it('keeps the bundled modal props for the captcha challenge', () => {
-    expect(source).toContain(
-      '<DialogContent key={widgetKey} closable={false} footer={false} centered ariaLabel="reCAPTCHA">',
-    );
-    expect(source).not.toContain('footer={null}');
+  it('uses the auth Radix dialog wrapper instead of the legacy modal bridge', () => {
+    expect(source).toContain("from '@/components/ui/shadcn-dialog'");
+    expect(source).not.toContain("from '@/components/ui/dialog'");
+    expect(source).not.toContain('DialogContent key={widgetKey} closable=');
+    expect(source).not.toContain('ant-modal');
   });
 });

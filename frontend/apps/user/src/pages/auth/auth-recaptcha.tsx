@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/shadcn-dialog';
 
 interface RecaptchaApi {
   render: (
@@ -67,7 +71,7 @@ function loadRecaptcha() {
   return recaptchaPromise;
 }
 
-export function useLegacyRecaptcha(enabled: boolean, siteKey?: string | null) {
+export function useAuthRecaptcha(enabled: boolean, siteKey?: string | null) {
   const [open, setOpen] = useState(false);
   const [widgetKey, setWidgetKey] = useState(0);
   const actionRef = useRef<ProtectedAction | null>(null);
@@ -84,16 +88,13 @@ export function useLegacyRecaptcha(enabled: boolean, siteKey?: string | null) {
         return;
       }
       actionRef.current = action;
-      setWidgetKey(Math.random());
+      setWidgetKey((value) => value + 1);
       setOpen(true);
     },
     [enabled],
   );
 
   const handleToken = useCallback((token: string | null) => {
-    // The original's handle(e) runs for BOTH a fresh token and the expired
-    // callback's null: after 500ms it closes the modal and invokes the action.
-    // A null token omits recaptcha_data from the request (a && (l.recaptcha_data = a)).
     window.setTimeout(() => {
       const action = actionRef.current;
       setOpen(false);
@@ -103,16 +104,20 @@ export function useLegacyRecaptcha(enabled: boolean, siteKey?: string | null) {
   }, []);
 
   const recaptchaModal = (
-    // The old wrapper passes onCancel: hide(), so mask clicks and Esc close the modal
-    // without invoking the protected action.
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) cancel();
       }}
     >
-      <DialogContent key={widgetKey} closable={false} footer={false} centered ariaLabel="reCAPTCHA">
-        {enabled ? <LegacyRecaptchaWidget siteKey={siteKey} onToken={handleToken} /> : null}
+      <DialogContent
+        key={widgetKey}
+        aria-describedby={undefined}
+        className="w-fit max-w-[calc(100vw-2rem)] p-6"
+        showCloseButton={false}
+      >
+        <DialogTitle className="sr-only">reCAPTCHA</DialogTitle>
+        {enabled ? <AuthRecaptchaWidget siteKey={siteKey} onToken={handleToken} /> : null}
       </DialogContent>
     </Dialog>
   );
@@ -120,7 +125,7 @@ export function useLegacyRecaptcha(enabled: boolean, siteKey?: string | null) {
   return { run, recaptchaModal };
 }
 
-function LegacyRecaptchaWidget({
+function AuthRecaptchaWidget({
   siteKey,
   onToken,
 }: {

@@ -1,133 +1,130 @@
 /*
- * Route-scoped auth presentation.
+ * Pure shadcn auth island.
  *
- * The React pieces live in pages/auth; this file only owns the page-sized shell, card width, and
- * auth-local dark theme bridge for OS dark mode when DarkReader is not active.
+ * Layout and component styling live in auth React components through unprefixed
+ * Tailwind/shadcn classes. This file only scopes shadcn design variables and the
+ * tiny route-level feedback details that cannot live comfortably in JSX.
  */
 
-.v2board-auth-surface {
-  position: relative;
-  min-height: 100%;
-  isolation: isolate;
+.v2board-auth-surface,
+.v2board-auth-toast-root,
+.v2board-auth-language-menu-content {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
 }
 
-.v2board-auth-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--tw-color-surface) 65%, transparent), transparent 42%),
-    linear-gradient(180deg, var(--tw-color-muted), var(--tw-color-background));
+.v2board-auth-surface,
+.v2board-auth-toast-root,
+.v2board-auth-language-menu-content {
+  box-sizing: border-box;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    'Noto Sans',
+    'Liberation Sans',
+    sans-serif,
+    'Apple Color Emoji',
+    'Segoe UI Emoji',
+    'Segoe UI Symbol',
+    'Noto Color Emoji';
+  font-feature-settings: normal;
+  font-variant-numeric: normal;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-.v2board-auth-surface .v2board-auth-box {
-  position: relative;
-  inset: auto;
-  display: flex;
-  min-height: 100vh;
-  min-height: 100svh;
-  overflow-y: auto;
-  align-items: center;
-  padding: 1rem;
+.v2board-auth-surface *,
+.v2board-auth-surface *::before,
+.v2board-auth-surface *::after,
+.v2board-auth-toast-root *,
+.v2board-auth-toast-root *::before,
+.v2board-auth-toast-root *::after,
+.v2board-auth-language-menu-content *,
+.v2board-auth-language-menu-content *::before,
+.v2board-auth-language-menu-content *::after {
+  box-sizing: inherit;
+  letter-spacing: 0;
 }
 
-.v2board-auth-surface .v2board-auth-frame {
-  width: 100%;
-  margin: auto;
+.v2board-auth-surface :where(h1, h2, h3, h4, p) {
+  margin: 0;
 }
 
-.v2board-auth-surface .v2board-auth-card {
-  width: min(100%, 30rem);
-  margin-inline: auto;
+.v2board-auth-surface::selection,
+.v2board-auth-surface ::selection,
+.v2board-auth-toast-root::selection,
+.v2board-auth-toast-root ::selection,
+.v2board-auth-language-menu-content::selection,
+.v2board-auth-language-menu-content ::selection {
+  color: var(--primary-foreground);
+  background: var(--primary);
 }
 
-.v2board-auth-surface .v2board-auth-card--wide {
-  width: min(100%, 34rem);
+.v2board-auth-surface :where(button, input, select, textarea),
+.v2board-auth-language-menu-content :where(button) {
+  font-family: inherit;
 }
 
-@media (min-width: 640px) {
-  .v2board-auth-surface .v2board-auth-box {
-    padding: 1.5rem;
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .v2board-auth-surface .v2board-auth-frame {
-    animation: v2board-auth-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-}
-
-@keyframes v2board-auth-rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.v2board-auth-surface .v2board-auth-title {
-  color: var(--tw-color-foreground);
-}
-
-.v2board-auth-surface .v2board-auth-title--wordmark {
-  color: var(--tw-color-primary);
+#main-container.v2board-auth-surface {
+  background-color: var(--muted) !important;
+  color: var(--foreground);
 }
 
 .v2board-auth-toast-icon-success {
-  border-color: rgba(82, 196, 26, 0.3);
-  background: rgba(82, 196, 26, 0.12);
-  color: #237804;
+  border-color: color-mix(in oklch, oklch(0.627 0.194 149.214) 30%, transparent);
+  background: color-mix(in oklch, oklch(0.962 0.044 156.743) 70%, transparent);
+  color: oklch(0.448 0.119 151.328);
 }
 
 @media (prefers-color-scheme: dark) {
-  html:not([data-darkreader-scheme]) .v2board-auth-surface {
-    --tw-color-background: #0b1120;
-    --tw-color-surface: #131b2e;
-    --tw-color-foreground: #e6ebf5;
-    --tw-color-muted: #111827;
-    --tw-color-foreground-muted: #94a3b8;
-    --tw-color-border: #243049;
-    --tw-color-input: #33415c;
-    --tw-color-ring: #5b7cf5;
-    --tw-color-primary: #2457e5;
-    --tw-color-primary-hover: #3a63f0;
-    --tw-color-primary-subtle: #18233f;
-    --tw-color-destructive: #f87171;
-    --tw-color-destructive-subtle: #2a1414;
-  }
-
-  html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-title--wordmark {
-    color: var(--tw-color-foreground);
-  }
-
-  html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-card,
-  html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content,
-  html:not([data-darkreader-scheme]) .v2board-auth-toast-root {
-    box-shadow:
-      0 0 0 1px var(--tw-color-border),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
-      0 18px 48px -16px rgba(0, 0, 0, 0.65);
-  }
-
-  html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content,
-  html:not([data-darkreader-scheme]) .v2board-auth-toast-root {
-    --tw-color-surface: #131b2e;
-    --tw-color-foreground: #e6ebf5;
-    --tw-color-foreground-muted: #94a3b8;
-    --tw-color-muted: #1a2336;
-    --tw-color-border: #243049;
-    --tw-color-ring: #5b7cf5;
-    --tw-color-destructive: #f87171;
-    --tw-color-destructive-subtle: #2a1414;
+  html:not([data-darkreader-scheme]) .v2board-auth-surface,
+  html:not([data-darkreader-scheme]) .v2board-auth-toast-root,
+  html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
   }
 
   html:not([data-darkreader-scheme]) .v2board-auth-toast-icon-success {
-    border-color: rgba(74, 222, 128, 0.3);
-    background: rgba(20, 83, 45, 0.5);
-    color: #86efac;
+    border-color: color-mix(in oklch, oklch(0.765 0.177 163.223) 30%, transparent);
+    background: color-mix(in oklch, oklch(0.262 0.051 172.552) 70%, transparent);
+    color: oklch(0.765 0.177 163.223);
   }
 }

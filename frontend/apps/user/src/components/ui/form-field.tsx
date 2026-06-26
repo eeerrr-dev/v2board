@@ -19,9 +19,6 @@ export interface FormFieldProps {
   className?: string;
 }
 
-// Authored V2Board — clean-modern reskin primitive. Pairs a Label with one control plus optional
-// description/error text, wiring id + aria-describedby + the invalid state onto the control so
-// callers never hand-thread accessibility ids. Reused across the auth surfaces.
 export function FormField({ id, label, description, error, children, className }: FormFieldProps) {
   const childProps = children.props;
   const descriptionId = description ? `${id}-description` : undefined;
@@ -30,7 +27,7 @@ export function FormField({ id, label, description, error, children, className }
     [descriptionId, errorId, childProps['aria-describedby']].filter(Boolean).join(' ') || undefined;
 
   return (
-    <div className={cn('tw:space-y-1.5', className)}>
+    <div className={cn('grid gap-3', className)}>
       <Label htmlFor={id}>{label}</Label>
       {cloneElement(children, {
         // FormField owns the id so the label association always matches the control.
@@ -39,12 +36,12 @@ export function FormField({ id, label, description, error, children, className }
         'aria-describedby': describedBy,
       })}
       {description ? (
-        <p id={descriptionId} className="tw:text-sm tw:text-foreground-muted">
+        <p id={descriptionId} className="text-sm text-muted-foreground">
           {description}
         </p>
       ) : null}
       {error ? (
-        <p id={errorId} role="alert" className="tw:text-sm tw:text-destructive">
+        <p id={errorId} role="alert" className="text-sm text-destructive">
           {error}
         </p>
       ) : null}

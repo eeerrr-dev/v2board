@@ -1,9 +1,7 @@
 /*
- * Tailwind utilities are namespaced with the `tw:` prefix so the modern reskin
- * layer never collides with the globally-bundled vendored legacy CSS (Ant Design
- * v3, Bootstrap 4, OneUI, Font Awesome 5). Bare class names like `block`, `container`,
- * or `badge` belong to the vendored components; `tw:`-prefixed names are authored
- * V2Board reskin utilities. See styles/VENDOR.md and the auth surface for the pattern.
+ * Tailwind base/theme/utilities are emitted here only with the project `tw:`
+ * prefix so legacy replica CSS keeps owning bare global selectors. Explicit pure
+ * shadcn islands use their own no-preflight CSS entry for unprefixed utilities.
  */
 @import 'tailwindcss' prefix(tw);
 

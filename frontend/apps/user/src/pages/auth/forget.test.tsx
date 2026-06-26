@@ -21,10 +21,13 @@ const mocks = vi.hoisted(() => ({
     'auth.confirm_password': '确认密码',
     'auth.email': '邮箱',
     'auth.email_code': '邮箱验证码',
+    'auth.forget_password': '忘记密码？',
     'auth.hide_password': '隐藏密码',
     'auth.password': '密码',
     'auth.password_mismatch': '两次密码输入不同',
-    'auth.return_to_login': '返回登入',
+    'auth.reset_description': '验证邮箱并设置新密码',
+    'auth.reset_title': '重置密码',
+    'auth.return_to_login': '返回登录',
     'auth.send_code': '发送',
     'auth.show_password': '显示密码',
     'auth.submit_reset': '重置密码',
@@ -51,16 +54,8 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('./auth-language-menu', () => ({
-  AuthLanguageMenu: () => (
-    <button type="button" className="v2board-auth-language-trigger">
-      简体中文
-    </button>
-  ),
-}));
-
-vi.mock('@/components/legacy-recaptcha', () => ({
-  useLegacyRecaptcha: () => ({
+vi.mock('./auth-recaptcha', () => ({
+  useAuthRecaptcha: () => ({
     recaptchaModal: <div data-testid="recaptcha-modal" />,
     run: mocks.runRecaptcha,
   }),
@@ -117,6 +112,10 @@ function resetMocks() {
   mocks.settings.description = '';
   mocks.settings.logo = '';
   mocks.settings.title = 'V2Board';
+  window.g_lang = 'zh-CN';
+  window.settings = {
+    i18n: ['en-US', 'zh-CN'] as string[] & Record<string, Record<string, string>>,
+  };
   mocks.toastError.mockReset();
   mocks.toastSuccess.mockReset();
 }
@@ -131,28 +130,37 @@ async function flushPromises() {
 describe('ForgetPage modern markup', () => {
   beforeEach(resetMocks);
 
-  it('renders the reskinned reset card, labels, footer, and language trigger', () => {
+  it('renders the reskinned reset card, labels, footer, and action title', () => {
     const html = renderToStaticMarkup(<ForgetPage />);
 
     expect(html).toContain('v2board-auth-card');
-    expect(html).toContain('tw:rounded-card');
-    expect(html).toContain('>V2Board</h1>');
+    expect(html).toContain('v2board-auth-panel');
+    expect(html).toContain('rounded-xl');
+    expect(html).toContain('bg-card');
+    expect(html).not.toContain('v2board-auth-visual');
+    expect(html).not.toContain('v2board-auth-shell-brand');
+    expect(html).toContain('>重置密码</h1>');
+    expect(html).toContain('验证邮箱并设置新密码');
+    expect(html).not.toContain('>V2Board</h1>');
     expect(html).toContain('邮箱');
     expect(html).toContain('邮箱验证码');
     // The two password fields now carry distinct labels (password + confirm password).
     expect(html).toContain('>密码<');
     expect(html).toContain('>确认密码<');
     expect(html).toContain('重置密码');
-    expect(html).toContain('返回登入');
+    expect(html).toContain('返回登录');
     expect(html).toContain('href="#/login"');
-    expect(html).toContain('class="v2board-auth-language-trigger"');
+    expect(html).not.toContain('v2board-auth-language-trigger');
     expect(html).not.toContain('block block-rounded');
     expect(html).not.toContain('form-control');
     expect(html).not.toContain('btn btn-block');
-    expect(html).not.toContain('placeholder=');
+    expect(html).toContain('placeholder="m@example.com"');
+    expect(html).not.toContain('placeholder="请输入密码"');
     expect(source).toContain("from './auth-panel'");
     // The behavior controller owns the modern auth-toast; the view stays free of legacy toast/menu.
     expect(controllerSource).toContain("lib/auth-toast");
+    expect(controllerSource).toContain("from './auth-recaptcha'");
+    expect(controllerSource).not.toContain('useLegacyRecaptcha');
     expect(source).not.toContain("components/layout/auth-language-menu");
     expect(source).not.toContain("components/layout/language-menu");
     expect(source).not.toContain("lib/legacy-toast");
@@ -176,6 +184,8 @@ describe('ForgetPage behavior', () => {
     vi.useRealTimers();
     container.remove();
     document.body.innerHTML = '';
+    window.settings = undefined;
+    window.g_lang = undefined;
   });
 
   async function renderForget() {

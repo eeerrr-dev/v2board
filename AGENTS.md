@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Project instructions for agents working in this repository. Keep changes
-small, verified, and aligned with the gradual frontend reskin.
+verified, intentional, and aligned with the current frontend migration.
 
 ## Local Workflow
 
@@ -63,8 +63,9 @@ deploy, visual, and interaction artifacts in Docker volumes, not on the host.
 ## Frontend Reskin Direction
 
 The source-level replica milestone is complete and frozen as `replica-baseline`.
-The project is now a gradual reskin: behavior stays strict, appearance changes
-surface by surface.
+The project is now a surface-by-surface frontend migration: behavior stays
+strict, appearance may change decisively when a surface is explicitly
+redesigned.
 
 - Behavioral/contract parity is permanent. API calls and payloads, auth and
   redirects, routing, persistence, i18n behavior, and edge cases must stay green
@@ -80,6 +81,10 @@ surface by surface.
   reviewed.
 - Do not claim a still-replica surface is complete unless the relevant
   deploy/visual/behavior checks match the oracle.
+- A redesigned surface may become a pure shadcn island when the owner explicitly
+  chooses that direction. In that case, prioritize shadcn/Radix composition and
+  behavior tests over preserving legacy DOM, legacy class names, or old visual
+  shape.
 
 ## Modern Frontend Stack
 
@@ -91,28 +96,52 @@ frontend. New redesigned surfaces should use:
 - TanStack Query for server state.
 - `@v2board/api-client` for API contracts.
 - Existing i18n infrastructure.
-- Local `components/ui` primitives.
 - Radix primitives for accessible low-level behavior.
-- shadcn/ui as a code blueprint only: copy/adapt patterns into local source,
-  then make them fit this project. Do not blindly run generated defaults into
-  the app.
+- shadcn/ui registry components are allowed for explicitly designated pure
+  shadcn islands. Copy the generated source into the app, own it locally, and
+  keep the island coherent instead of mixing half-legacy and half-shadcn UI.
+- Local `components/ui` primitives remain preferred for gradual-reskin surfaces
+  that are not pure shadcn islands.
 - `lucide-react` for new icons.
-- `@v2board/tokens` for shared color, radius, elevation, and theme values.
-- Tailwind v4 with the mandatory `tw:` prefix.
+- Tailwind v4.
+- `@v2board/tokens` for gradual-reskin surfaces. Pure shadcn islands may use
+  shadcn's canonical token names and utility classes when that produces a
+  cleaner, more coherent implementation.
 
-The `tw:` prefix is non-negotiable. Vendored legacy CSS owns bare class names
-like `block`, `container`, `badge`, `.btn`, and `.form-control`. Bare class
-names belong to vendored/legacy components; `tw:` classes belong to authored
-reskin code.
+For gradual-reskin code, keep using the `tw:` prefix. Vendored legacy CSS owns
+bare class names like `block`, `container`, `badge`, `.btn`, and
+`.form-control`; prefixed utilities avoid accidental collisions.
+
+For pure shadcn islands, unprefixed Tailwind utilities and shadcn token names are
+allowed intentionally. Keep those islands route- or component-scoped, avoid
+leaking their assumptions into replica surfaces, and verify behavior with tests.
+
+### Auth Surface Direction
+
+The user auth surface (`/login`, `/register`, `/forgetpassword`) is a pure
+shadcn island.
+
+- Use shadcn registry-style composition for auth: `Button`, `Input`, `Card`,
+  `Label`, `Checkbox`, `Alert`, `DropdownMenu`, `Toast`, and related primitives
+  should look and read like mature shadcn code.
+- Use Radix for low-level accessible behavior and `lucide-react` for icons.
+- Unprefixed Tailwind utilities and shadcn canonical token names are allowed in
+  auth code.
+- Keep auth behavior strict: API payloads, hash routes, `token2Login`, redirect
+  safety, recaptcha, email verification, invite codes, TOS handling, language
+  persistence, auth storage, and i18n behavior must remain covered.
+- Retire legacy auth presentation code when the shadcn version replaces it; do
+  not keep compatibility CSS or DOM solely to resemble the packaged frontend.
+- Keep auth tests focused on behavior, accessibility, and shadcn structure
+  rather than old pixel-era class names.
 
 For new redesigned surfaces, do not use:
 
 - Ant Design v3 components as new UI foundations.
 - Bootstrap or OneUI classes such as `.btn`, `.block`, `.form-control`, or
   `.bg-gray-lighter`.
-- Unprefixed Tailwind utilities.
-- Page-local hardcoded color, radius, or shadow systems when tokens/primitives
-  can express the design.
+- Page-local hardcoded color, radius, or shadow systems on gradual-reskin
+  surfaces when tokens/primitives can express the design.
 - Hidden runtime dependencies on packaged legacy bundles.
 - Copying the old packaged bundle DOM, CSS, or file structure as the foundation
   for a redesigned surface.

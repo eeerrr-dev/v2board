@@ -1,36 +1,36 @@
 import type { ReactNode } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button, type ButtonProps } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { cn } from '@/lib/cn';
 import { PasswordField } from './password-field';
 
 export function AuthFormStack({ children }: { children: ReactNode }) {
-  return <div className="tw:space-y-5">{children}</div>;
+  return <div className="grid gap-6">{children}</div>;
 }
 
 export function AuthLoadingState() {
   return (
-    <div className="tw:flex tw:min-h-64 tw:items-center tw:justify-center" role="status">
-      <Spinner className="tw:size-6 tw:text-primary" />
+    <div className="flex min-h-64 items-center justify-center" role="status">
+      <Spinner className="size-5 text-muted-foreground" />
     </div>
   );
 }
 
 export function AuthInlineError({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <div
-      id={id}
-      role="alert"
-      className="tw:flex tw:items-start tw:gap-2 tw:rounded-field tw:border tw:border-destructive/30 tw:bg-destructive-subtle tw:px-3.5 tw:py-2.5 tw:text-sm tw:text-destructive"
-    >
-      <AlertCircle aria-hidden="true" className="tw:mt-0.5 tw:h-4 tw:w-4 tw:shrink-0" />
-      <span>{children}</span>
-    </div>
+    <Alert id={id} variant="destructive">
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   );
 }
 
@@ -50,21 +50,34 @@ export function AuthEmailWithSuffixField({
   onChange,
 }: AuthEmailWithSuffixFieldProps) {
   return (
-    <div className="tw:space-y-1.5">
+    <div className="grid gap-3">
       <Label htmlFor={id}>{label}</Label>
-      <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-2">
-        <Input id={id} type="text" name="email" autoComplete="username" className="tw:min-w-0" />
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
+        <Input
+          id={id}
+          type="text"
+          name="email"
+          autoComplete="username"
+          placeholder="name"
+          className="min-w-0"
+        />
         <Select
-          aria-label={typeof label === 'string' ? label : undefined}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="tw:max-w-40"
+          onValueChange={onChange}
         >
-          {suffixes.map((suffix) => (
-            <option key={suffix} value={suffix}>
-              @{suffix}
-            </option>
-          ))}
+          <SelectTrigger
+            aria-label={typeof label === 'string' ? label : undefined}
+            className="max-w-40"
+          >
+            <SelectValue>{value ? `@${value}` : undefined}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {suffixes.map((suffix) => (
+              <SelectItem key={suffix} value={suffix}>
+                @{suffix}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </div>
     </div>
@@ -89,16 +102,17 @@ export function AuthEmailCodeField({
   onSendCode,
 }: AuthEmailCodeFieldProps) {
   return (
-    <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-end tw:gap-2">
-      <FormField id={id} label={label} className="tw:min-w-0">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+      <FormField id={id} label={label} className="min-w-0">
         <Input type="text" name="email_code" inputMode="numeric" />
       </FormField>
       <Button
         type="button"
+        size="lg"
         disabled={disabled}
         loading={loading}
         onClick={onSendCode}
-        className="tw:min-w-20 tw:px-3"
+        className="min-w-24 px-3"
       >
         {buttonLabel}
       </Button>
@@ -137,7 +151,7 @@ export function AuthSubmitButton({ className, ...props }: ButtonProps) {
       type="submit"
       size="lg"
       block
-      className={cn('tw:ring-offset-surface', className)}
+      className={className}
       {...props}
     />
   );

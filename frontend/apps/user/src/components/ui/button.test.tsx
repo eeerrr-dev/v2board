@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { Button } from './button';
 
 describe('Button', () => {
-  it('renders a token-driven primary button by default', () => {
+  it('renders a shadcn-style primary button by default', () => {
     const html = renderToStaticMarkup(<Button>Go</Button>);
-    expect(html).toContain('tw:bg-primary');
-    expect(html).toContain('tw:text-primary-foreground');
-    expect(html).toContain('tw:rounded-field');
+    expect(html).toContain('bg-primary');
+    expect(html).toContain('text-primary-foreground');
+    expect(html).toContain('rounded-md');
     expect(html).toContain('type="button"');
     expect(html).toContain('>Go<');
   });
@@ -18,20 +18,31 @@ describe('Button', () => {
         x
       </Button>,
     );
-    expect(html).toContain('tw:border-input');
-    expect(html).toContain('tw:h-9');
+    expect(html).toContain('border');
+    expect(html).toContain('border-border');
+    expect(html).toContain('h-8');
   });
 
   it('stretches full width with block', () => {
-    expect(renderToStaticMarkup(<Button block>x</Button>)).toContain('tw:w-full');
+    expect(renderToStaticMarkup(<Button block>x</Button>)).toContain('w-full');
   });
 
   it('shows a spinner, disables, and marks aria-busy while loading, keeping the label visible', () => {
     const html = renderToStaticMarkup(<Button loading>Sign in</Button>);
-    expect(html).toContain('tw:animate-spin');
+    expect(html).toContain('animate-spin');
     expect(html).toContain('disabled=""');
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('Sign in');
+  });
+
+  it('keeps loading buttons disabled even when a caller passes disabled={false}', () => {
+    const html = renderToStaticMarkup(
+      <Button loading disabled={false}>
+        Saving
+      </Button>,
+    );
+    expect(html).toContain('disabled=""');
+    expect(html).toContain('aria-busy="true"');
   });
 
   it('honors an explicit disabled state and type', () => {
@@ -45,6 +56,6 @@ describe('Button', () => {
   });
 
   it('merges a caller className', () => {
-    expect(renderToStaticMarkup(<Button className="tw:mt-2">x</Button>)).toContain('tw:mt-2');
+    expect(renderToStaticMarkup(<Button className="mt-2">x</Button>)).toContain('mt-2');
   });
 });

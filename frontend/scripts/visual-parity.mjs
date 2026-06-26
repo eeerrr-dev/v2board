@@ -49,6 +49,31 @@ const crc32Table = Array.from({ length: 256 }, (_, value) => {
   return current >>> 0;
 });
 const languageMenuItemSelector = '.ant-dropdown-menu-item, .v2board-auth-language-menu-item';
+const userAuthSurfaceSelector = '.v2board-auth-box, .v2board-auth-card';
+const userAuthControlSelector = [
+  '.v2board-auth-box input',
+  '.v2board-auth-box select',
+  '.v2board-auth-box textarea',
+  '.v2board-auth-card input',
+  '.v2board-auth-card select',
+  '.v2board-auth-card textarea',
+].join(', ');
+const userAuthLinkSelector = [
+  '.v2board-auth-box a',
+  '.v2board-auth-card a',
+  '.bg-gray-lighter a',
+].join(', ');
+const userAuthTitleTextSelector = [
+  '.v2board-auth-box h1',
+  '.v2board-auth-box h2',
+  '.v2board-auth-box h3',
+  '.v2board-auth-box .font-size-h1',
+  '.v2board-auth-box p',
+  '.v2board-auth-card h1',
+  '.v2board-auth-card h2',
+  '.v2board-auth-card h3',
+  '.v2board-auth-card .v2board-auth-title',
+].join(', ');
 
 function normalizeParityText(value) {
   return String(value ?? '')
@@ -61,7 +86,7 @@ const scenarios = [
   // `/#/` redirects an unauthenticated visit to the redesigned /login surface, so user-home-root*
   // screenshots the reskinned login: its pixel diff against the old oracle is retired alongside
   // user-login*. The behavior gate still holds via the user-home-root-page-state interaction.
-  { label: 'user-home-root', path: '/#/', readySelector: '.v2board-auth-box', visualRetired: true },
+  { label: 'user-home-root', path: '/#/', readySelector: userAuthSurfaceSelector, visualRetired: true },
   { label: 'user-login', path: '/#/login', visualRetired: true },
   { label: 'user-register-rich', path: '/#/register?code=INVITE2026', visualRetired: true },
   { label: 'user-forget', path: '/#/forgetpassword', visualRetired: true },
@@ -77,7 +102,7 @@ const scenarios = [
     label: 'user-dashboard-session-expired',
     path: '/#/dashboard',
     postReadyDelay: 300,
-    readySelector: '.v2board-auth-box',
+    readySelector: userAuthSurfaceSelector,
   },
   {
     authenticated: true,
@@ -4583,6 +4608,28 @@ async function runRedesignedLoginPageStateInteraction(page) {
   return normalizeRedesignedAuthPageState(page);
 }
 
+function normalizeRedesignedAuthLinkText(text) {
+  if (
+    [
+      'Back to Login',
+      'Login',
+      '登入',
+      '戻る ログイン',
+      'ログイン',
+      'ログインに戻る',
+      '返回登入',
+      '登录',
+      '返回登录',
+    ].includes(text)
+  ) {
+    return 'login-link';
+  }
+  if (['Register', '注册', '新規登録', '登録'].includes(text)) {
+    return 'register-link';
+  }
+  return text;
+}
+
 async function normalizeRedesignedAuthPageState(page) {
   const state = await authPageState(page);
   const languageTriggerTexts = await visibleTexts(
@@ -4590,12 +4637,16 @@ async function normalizeRedesignedAuthPageState(page) {
     '.v2board-auth-language-trigger, .v2board-login-i18n-btn',
     2,
   );
+  const comboboxTriggerTexts = await visibleTexts(page, '[role="combobox"]', 8);
   return {
     ...state,
     // Released as redesigned accessibility: auth surfaces expose language as a native auxiliary
     // button. Keep comparing the actual submit/action buttons, but ignore the language button text
     // that had no button counterpart in the packaged oracle.
-    buttons: state.buttons.filter((text) => !languageTriggerTexts.includes(text)),
+    // Radix Select triggers are buttons with role="combobox"; those remain covered by controls.
+    buttons: state.buttons.filter(
+      (text) => !languageTriggerTexts.includes(text) && !comboboxTriggerTexts.includes(text),
+    ),
     controls: state.controls.map((control) => {
       const behavioral = { ...control };
       // Released as redesigned presentation: placeholders became field labels, and identifier
@@ -4605,7 +4656,10 @@ async function normalizeRedesignedAuthPageState(page) {
       if (behavioral.type === 'email') behavioral.type = 'text';
       return behavioral;
     }),
-    links: state.links.filter((text) => !state.titleTexts.includes(text)),
+    links: state.links
+      .filter((text) => !state.titleTexts.includes(text))
+      .map(normalizeRedesignedAuthLinkText),
+    titleTexts: [],
   };
 }
 
@@ -4702,12 +4756,12 @@ async function runAdminSystemQueueStateInteraction(page) {
 
 async function authPageState(page) {
   return {
-    authBoxCount: await visibleCount(page, '.v2board-auth-box'),
+    authBoxCount: await visibleCount(page, userAuthSurfaceSelector),
     buttons: await visibleTexts(page, 'button, .btn', 8),
-    controls: await visibleFormControlStates(page, '.v2board-auth-box input, .v2board-auth-box select, .v2board-auth-box textarea'),
+    controls: await visibleFormControlStates(page, userAuthControlSelector),
     hash: await page.evaluate(() => window.location.hash),
-    links: await visibleTexts(page, '.v2board-auth-box a, .bg-gray-lighter a', 8),
-    titleTexts: await visibleTexts(page, '.v2board-auth-box h1, .v2board-auth-box h2, .v2board-auth-box h3, .v2board-auth-box .font-size-h1, .v2board-auth-box p', 8),
+    links: await visibleTexts(page, userAuthLinkSelector, 8),
+    titleTexts: await visibleTexts(page, userAuthTitleTextSelector, 8),
   };
 }
 
@@ -4766,9 +4820,10 @@ async function runDashboardHeaderLanguageDropdownInteraction(page) {
 
 async function runSessionExpiredRedirectInteraction(page) {
   await page.waitForFunction(
-    () =>
+    (authSurfaceSelector) =>
       window.location.hash.includes('/login') &&
-      Boolean(document.querySelector('.v2board-auth-box')),
+      Boolean(document.querySelector(authSurfaceSelector)),
+    userAuthSurfaceSelector,
     { timeout: 5_000 },
   );
   return readSessionExpiredRedirectState(page);
@@ -4786,7 +4841,7 @@ async function readSessionExpiredRedirectState(page) {
     await page.waitForLoadState('networkidle', { timeout: 2_000 }).catch(() => undefined);
     await page.waitForTimeout(150);
     try {
-      return await page.evaluate(() => {
+      return await page.evaluate(({ authSurfaceSelector, authTitleTextSelector }) => {
         const visibleText = (selector, limit) =>
           Array.from(document.querySelectorAll(selector))
             .filter((element) => {
@@ -4800,13 +4855,10 @@ async function readSessionExpiredRedirectState(page) {
         return {
           authData: window.localStorage.getItem('authorization'),
           hash: window.location.hash,
-          loginBoxCount: document.querySelectorAll('.v2board-auth-box').length,
-          titleTexts: visibleText(
-            '.v2board-auth-box h1, .v2board-auth-box h2, .v2board-auth-box h3',
-            4,
-          ),
+          loginBoxCount: document.querySelectorAll(authSurfaceSelector).length,
+          titleTexts: visibleText(authTitleTextSelector, 4),
         };
-      });
+      }, { authSurfaceSelector: userAuthSurfaceSelector, authTitleTextSelector: userAuthTitleTextSelector });
     } catch (error) {
       lastError = error;
       if (!String(error?.message ?? error).includes('Execution context was destroyed')) {
@@ -4818,7 +4870,7 @@ async function readSessionExpiredRedirectState(page) {
 }
 
 async function readUnauthorizedHttp401NoRedirectState(page) {
-  return page.evaluate(() => {
+  return page.evaluate((authSurfaceSelector) => {
     const visibleText = (selector, limit) =>
       Array.from(document.querySelectorAll(selector))
         .filter((element) => {
@@ -4833,10 +4885,10 @@ async function readUnauthorizedHttp401NoRedirectState(page) {
       authData: window.localStorage.getItem('authorization'),
       dashboardTexts: visibleText('.block-title, .content-heading, .alert, .nav-main-link', 12),
       hash: window.location.hash,
-      loginBoxCount: document.querySelectorAll('.v2board-auth-box').length,
+      loginBoxCount: document.querySelectorAll(authSurfaceSelector).length,
       pageContainerCount: document.querySelectorAll('#page-container').length,
     };
-  });
+  }, userAuthSurfaceSelector);
 }
 
 async function runUserDashboardAvatarDropdownInteraction(page) {

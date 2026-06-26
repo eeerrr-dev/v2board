@@ -83,7 +83,7 @@ function AuthToastHost({
       {toastEntries.map((entry) => (
         <AuthToast key={entry.id} entry={entry} onDismiss={onDismiss} />
       ))}
-      <Toast.Viewport className="v2board-auth-toast-viewport tw:fixed tw:right-4 tw:top-4 tw:z-[1200] tw:flex tw:w-[min(24rem,calc(100vw-2rem))] tw:flex-col tw:gap-3 tw:outline-none" />
+      <Toast.Viewport className="v2board-auth-toast-viewport fixed top-4 right-4 z-[1200] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3 outline-none" />
     </Toast.Provider>
   );
 }
@@ -99,7 +99,7 @@ function AuthToast({
   const toneClass =
     entry.type === 'success'
       ? 'v2board-auth-toast-icon-success'
-      : 'tw:border-destructive/30 tw:bg-destructive-subtle tw:text-destructive';
+      : 'border-destructive/30 bg-destructive/10 text-destructive';
 
   return (
     <Toast.Root
@@ -108,29 +108,29 @@ function AuthToast({
       onOpenChange={(open) => {
         if (!open) onDismiss(entry.id);
       }}
-      className="v2board-auth-toast-root tw:grid tw:grid-cols-[auto_1fr_auto] tw:items-start tw:gap-3 tw:rounded-card tw:border tw:border-border tw:bg-surface tw:p-4 tw:text-foreground tw:shadow-card tw:ring-1 tw:ring-border data-[swipe=move]:tw:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=cancel]:tw:translate-x-0 data-[swipe=end]:tw:translate-x-[var(--radix-toast-swipe-end-x)]"
+        className="v2board-auth-toast-root grid grid-cols-[auto_1fr_auto] items-start gap-3 rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)]"
     >
       <span
         aria-hidden="true"
-        className={`tw:flex tw:size-9 tw:items-center tw:justify-center tw:rounded-field tw:border ${toneClass}`}
+        className={`flex size-9 items-center justify-center rounded-md border ${toneClass}`}
       >
-        <Icon className="tw:size-5" />
+        <Icon className="size-5" />
       </span>
-      <div className="tw:min-w-0">
-        <Toast.Title className="tw:text-sm tw:font-semibold tw:leading-5">
+      <div className="min-w-0">
+        <Toast.Title className="text-sm leading-5 font-semibold">
           {entry.message}
         </Toast.Title>
         {entry.description ? (
-          <Toast.Description className="tw:mt-1 tw:text-sm tw:leading-5 tw:text-foreground-muted">
+          <Toast.Description className="mt-1 text-sm leading-5 text-muted-foreground">
             {entry.description}
           </Toast.Description>
         ) : null}
       </div>
       <Toast.Close
         aria-label="Close"
-        className="tw:-mr-1 tw:-mt-1 tw:flex tw:size-7 tw:items-center tw:justify-center tw:rounded-field tw:text-foreground-muted tw:transition tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40"
+        className="-mt-1 -mr-1 flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
-        <X aria-hidden="true" className="tw:size-4" />
+        <X aria-hidden="true" className="size-4" />
       </Toast.Close>
     </Toast.Root>
   );

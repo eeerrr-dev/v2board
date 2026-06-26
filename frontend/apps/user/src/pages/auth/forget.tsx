@@ -27,6 +27,8 @@ export default function ForgetPage() {
   return (
     <>
       <AuthPanel
+        title={t('auth.reset_title')}
+        description={t('auth.reset_description')}
         formRef={formRef}
         onSubmit={submit}
         footer={<AuthFooterLink href="#/login">{t('auth.return_to_login')}</AuthFooterLink>}
@@ -36,7 +38,12 @@ export default function ForgetPage() {
         ) : (
           <AuthFormStack>
             <FormField id="forget-email" label={t('auth.email')}>
-              <Input type="email" name="email" autoComplete="username" />
+              <Input
+                type="email"
+                name="email"
+                autoComplete="username"
+                placeholder="m@example.com"
+              />
             </FormField>
 
             <AuthEmailCodeField

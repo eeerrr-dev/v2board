@@ -578,85 +578,67 @@ describe('legacy guest auth shell CSS', () => {
 });
 
 describe('2026 auth surface presentation CSS', () => {
-  it('owns the modern auth shell layout instead of relying on the legacy fixed auth box', () => {
+  it('declares the pure shadcn auth island theme variables', () => {
     const globals = css();
 
-    expect(globals).toContain('.v2board-auth-backdrop {\n  position: fixed;');
+    expect(globals).toContain("@import 'tailwindcss' prefix(tw);");
+    expect(globals).toContain("@import 'tailwindcss/theme.css';");
+    expect(globals).toContain('@media important {\n  @tailwind utilities source(none);');
+    expect(globals).not.toContain("@import 'tailwindcss';");
+    expect(globals).toContain('@theme inline {');
+    expect(globals).toContain('--color-card: var(--card);');
+    expect(globals).toContain('--color-muted-foreground: var(--muted-foreground);');
+    expect(globals).toContain("@source '../pages/auth/**/*.tsx';");
+    expect(globals).toContain('.v2board-auth-surface,\n.v2board-auth-toast-root,\n.v2board-auth-language-menu-content {\n  --radius: 0.625rem;');
+    expect(globals).toContain('--card: oklch(1 0 0);');
+    expect(globals).toContain('--background: oklch(1 0 0);');
+    expect(globals).toContain('--primary: oklch(0.205 0 0);');
     expect(globals).toContain(
-      '.v2board-auth-surface .v2board-auth-box {\n  position: relative;\n  inset: auto;',
-    );
-    expect(globals).toContain('min-height: 100svh;');
-    expect(globals).toContain(
-      '.v2board-auth-surface .v2board-auth-frame {\n  width: 100%;\n  margin: auto;',
+      '.v2board-auth-surface::selection,\n.v2board-auth-surface ::selection,\n.v2board-auth-toast-root::selection,',
     );
     expect(globals).toContain(
-      '.v2board-auth-surface .v2board-auth-card {\n  width: min(100%, 30rem);\n  margin-inline: auto;',
+      '.v2board-auth-language-menu-content::selection,\n.v2board-auth-language-menu-content ::selection {',
     );
-    expect(globals).toContain(
-      '.v2board-auth-surface .v2board-auth-card--wide {\n  width: min(100%, 34rem);',
-    );
-    expect(globals.indexOf('.v2board-auth-box {')).toBeLessThan(
-      globals.indexOf('.v2board-auth-surface .v2board-auth-box {'),
-    );
+    expect(globals).toContain('color: var(--primary-foreground);\n  background: var(--primary);');
   });
 
-  it('keeps the entrance motion gated behind prefers-reduced-motion and avoids decorative blobs', () => {
+  it('keeps only route-level auth CSS outside the shadcn JSX composition', () => {
     const globals = css();
 
-    expect(globals).toContain('@media (prefers-reduced-motion: no-preference) {');
-    expect(globals).toContain('.v2board-auth-surface .v2board-auth-frame {');
-    expect(globals).toContain('animation: v2board-auth-rise');
-    expect(globals).toContain('@keyframes v2board-auth-rise {');
+    expect(globals).toContain('#main-container.v2board-auth-surface {');
+    expect(globals).not.toContain('.v2board-auth-backdrop {');
+    expect(globals).not.toContain('radial-gradient(');
+    expect(globals).not.toContain('.v2board-auth-surface .v2board-auth-box {');
+    expect(globals).not.toContain('.v2board-auth-surface .v2board-auth-card {');
+    expect(globals).not.toContain('.v2board-auth-title--wordmark');
+  });
+
+  it('keeps the auth island static and avoids decorative motion or blobs', () => {
+    const globals = css();
+
+    expect(globals).not.toContain('v2board-auth-rise');
+    expect(globals).not.toContain('@keyframes v2board-auth-rise');
+    expect(globals).not.toContain('.v2board-auth-frame {\n    animation:');
     expect(globals).not.toContain('aurora');
     expect(globals).not.toContain('blur-3xl');
-    // The entrance only animates opacity + transform, so no capture-relevant layout collapse.
-    expect(globals).toContain('opacity: 0;\n    transform: translateY(10px);');
-  });
-
-  it('owns the brand-title color so vendored unlayered h1 rules cannot leave it antd-black on the dark card', () => {
-    const globals = css();
-
-    // Vendored Ant Design / OneUI heading rules are unlayered and thus outrank the layered tw:
-    // color utilities; the title color is owned by this authored, more-specific rule so it tracks
-    // the foreground token (and goes near-white on the dark card) instead of staying antd-black.
-    expect(globals).toContain('.v2board-auth-surface .v2board-auth-title {');
-    expect(globals).toContain('color: var(--tw-color-foreground);');
   });
 
   it('scopes the native dark theme to the auth surface and yields to DarkReader', () => {
     const globals = css();
 
     expect(globals).toContain('@media (prefers-color-scheme: dark) {');
-    // Excludes DarkReader's runtime inversion (data-darkreader-scheme on <html>) to avoid
-    // double-darkening, and is scoped to .v2board-auth-surface so no other surface is themed.
-    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-auth-surface {');
-    // The tw: utilities read the PREFIXED theme vars (Tailwind v4 `prefix(tw)` compiles @theme
-    // tokens to --tw-color-*), so the dark override must re-point --tw-color-*, not the unprefixed
-    // names — otherwise the recolor is inert for every utility-driven surface.
-    expect(globals).toContain('--tw-color-background: #0b1120;');
-    expect(globals).toContain('--tw-color-surface: #131b2e;');
-  });
-
-  it('applies the dark card elevation directly (Tailwind v4 inlines shadow tokens, so a --shadow override is inert)', () => {
-    const globals = css();
-
-    expect(globals).toContain(
-      'html:not([data-darkreader-scheme]) .v2board-auth-surface .v2board-auth-card,',
-    );
-    // The edge ring is re-declared (reading the same prefixed token the tw: ring utility uses) so
-    // hard-overriding box-shadow does not drop the card border.
-    expect(globals).toContain('0 0 0 1px var(--tw-color-border)');
-    // Dead --shadow-* token overrides were removed rather than shipped inert.
-    expect(globals).not.toContain('--shadow-card: 0 18px 48px');
+    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-auth-surface,');
+    expect(globals).toContain('--background: oklch(0.145 0 0);');
+    expect(globals).toContain('--card: oklch(0.205 0 0);');
+    expect(globals).toContain('--muted-foreground: oklch(0.708 0 0);');
   });
 
   it('themes auth-only portaled feedback without using legacy ant notification classes', () => {
     const globals = css();
 
     expect(globals).toContain('.v2board-auth-toast-icon-success {');
-    expect(globals).toContain(
-      'html:not([data-darkreader-scheme]) .v2board-auth-toast-root {',
-    );
+    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-auth-toast-root,');
+    expect(globals).toContain('html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content {');
     expect(globals).not.toContain('.v2board-login-i18n-btn {');
   });
 });

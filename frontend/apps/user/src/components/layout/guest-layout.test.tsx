@@ -19,9 +19,15 @@ vi.mock('@/lib/legacy-settings', () => ({
   getLegacySettings: () => ({
     background_url: mocks.backgroundUrl,
   }),
+  getLegacyTitle: () => 'V2Board',
 }));
 
 function renderGuest(path: string) {
+  window.g_lang = 'zh-CN';
+  window.settings = {
+    i18n: ['en-US', 'zh-CN'] as string[] & Record<string, Record<string, string>>,
+  };
+
   return renderToStaticMarkup(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
@@ -44,21 +50,18 @@ describe('GuestLayout auth shell', () => {
   });
 
   describe('redesigned auth chrome (route-isolated 2026 reskin)', () => {
-    it('renders the modern gradient backdrop and drops the legacy background + operator image', () => {
+    it('renders the shadcn auth surface and drops the legacy background + operator image', () => {
       mocks.backgroundUrl = 'https://cdn.example.test/bg.jpg';
       const html = renderGuest('/login');
 
       expect(html).toContain('id="page-container"');
       expect(html).toContain('id="main-container"');
-      expect(html).toContain('v2board-auth-backdrop');
+      expect(html).toContain('bg-muted');
       expect(html).toContain('v2board-auth-frame');
       expect(html).toContain('class="guest-probe"');
-      // The 2026 presentation hooks: the surface scope (motion + scoped dark theme) and no
-      // decorative blob/orb layers. See styles/user-auth-surface.css.
       expect(html).toContain('v2board-auth-surface');
-      expect(html).not.toContain('aurora');
-      // Route isolation: the redesigned surface does not use the packaged-oracle flat background
-      // layer or the operator background image.
+      expect(html).not.toContain('v2board-auth-backdrop');
+      expect(html).not.toContain('v2board-auth-box');
       expect(html).not.toContain('class="v2board-background"');
       expect(html).not.toContain('background-image');
       expect(guestLayoutSource).not.toContain('tw:fixed tw:inset-0');
@@ -70,19 +73,22 @@ describe('GuestLayout auth shell', () => {
         const html = renderGuest(path);
         expect(html).toContain('v2board-auth-surface');
         expect(html).toContain('v2board-auth-frame');
-        expect(html).not.toContain('aurora');
+        expect(html).not.toContain('v2board-auth-backdrop');
+        expect(html).not.toContain('v2board-auth-box');
         expect(html).not.toContain('class="v2board-background"');
         expect(html).not.toContain('background-image');
       }
     });
 
-    it('keeps exactly one auth box and adds no page-level button (behavior-gate contract)', () => {
+    it('keeps the centered auth shell free of page-level legacy chrome', () => {
       const html = renderGuest('/login');
-      // The route chrome must contribute neither a second auth box nor its own controls; the login
-      // component owns the redesigned buttons inside the auth box.
-      expect((html.match(/v2board-auth-box/g) ?? []).length).toBe(1);
-      expect(html).not.toContain('<button');
+      expect(html).toContain('v2board-auth-shell-brand');
+      expect(html).toContain('>V2Board</div>');
+      expect(html).toContain('v2board-auth-language-trigger');
+      expect(html).not.toContain('v2board-auth-chrome');
+      expect(html).not.toContain('v2board-auth-box');
       expect(html).not.toContain('class="btn');
+      expect(html).not.toContain('href="#/login"');
     });
   });
 });

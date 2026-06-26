@@ -9,7 +9,6 @@ import {
 } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useLegacyRecaptcha } from '@/components/legacy-recaptcha';
 import {
   useGuestConfig,
   useRegisterMutation,
@@ -18,6 +17,7 @@ import {
 import { authToast } from '@/lib/auth-toast';
 import { i18nGet } from '@/lib/errors';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
+import { useAuthRecaptcha } from './auth-recaptcha';
 
 function readFormValue(form: HTMLFormElement | null, name: string) {
   if (!form) return '';
@@ -58,7 +58,7 @@ export function useRegisterController(): RegisterController {
   const configLoading = useLegacyFetchLoading(guestConfig.isFetching);
   const { mutateAsync: register, isPending } = useRegisterMutation();
   const { mutateAsync: sendCodeMutation, isPending: isSendingCode } = useSendEmailVerifyMutation();
-  const { run: runRecaptcha, recaptchaModal } = useLegacyRecaptcha(
+  const { run: runRecaptcha, recaptchaModal } = useAuthRecaptcha(
     Boolean(config?.is_recaptcha),
     config?.recaptcha_site_key,
   );

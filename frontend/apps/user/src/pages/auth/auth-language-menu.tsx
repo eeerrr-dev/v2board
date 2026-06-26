@@ -1,6 +1,12 @@
 import { useState } from 'react';
-import { Languages } from 'lucide-react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { ChevronDown } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/cn';
 import {
   getCurrentLocaleLabel,
   getEnabledLocales,
@@ -8,12 +14,14 @@ import {
 } from '@/lib/locale-menu';
 
 interface AuthLanguageMenuProps {
+  align?: 'center' | 'end';
   className?: string;
   placement?: 'topCenter' | 'bottomCenter';
 }
 
 export function AuthLanguageMenu({
-  className = 'v2board-auth-language-trigger',
+  align = 'center',
+  className,
   placement = 'topCenter',
 }: AuthLanguageMenuProps) {
   const [open, setOpen] = useState(false);
@@ -22,37 +30,40 @@ export function AuthLanguageMenu({
   const currentLabel = getCurrentLocaleLabel();
 
   return (
-    <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
-      <DropdownMenu.Trigger asChild>
+    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
+      <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className={`${className} tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-field tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-sm tw:text-foreground-muted tw:transition tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40`}
+          aria-label={currentLabel ? `Language: ${currentLabel}` : 'Language'}
+          className={cn(
+            'v2board-auth-language-trigger',
+            className,
+            'group inline-flex h-9 cursor-pointer items-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:text-foreground',
+          )}
         >
-          <Languages aria-hidden="true" className="tw:h-4 tw:w-4" />
           <span>{currentLabel}</span>
+          <ChevronDown aria-hidden="true" className="size-3.5 opacity-70 transition-transform group-data-[state=open]:rotate-180" />
         </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="center"
-          side={side}
-          sideOffset={4}
-          className="v2board-auth-language-menu-content tw:z-[1050] tw:min-w-36 tw:rounded-card tw:border tw:border-border tw:bg-surface tw:p-1 tw:text-sm tw:text-foreground tw:shadow-card tw:outline-none"
-        >
-          {locales.map((locale) => (
-            <DropdownMenu.Item
-              key={locale.code}
-              className="v2board-auth-language-menu-item tw:cursor-pointer tw:rounded-field tw:px-3 tw:py-2 tw:outline-none tw:transition tw:hover:bg-muted tw:focus:bg-muted"
-              onSelect={(event) => {
-                event.preventDefault();
-                selectLocale(locale.code);
-              }}
-            >
-              {locale.label}
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align={align}
+        side={side}
+        sideOffset={4}
+        className="v2board-auth-language-menu-content z-[1050] min-w-24"
+      >
+        {locales.map((locale) => (
+          <DropdownMenuItem
+            key={locale.code}
+            className="v2board-auth-language-menu-item whitespace-nowrap"
+            onSelect={(event) => {
+              event.preventDefault();
+              selectLocale(locale.code);
+            }}
+          >
+            {locale.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

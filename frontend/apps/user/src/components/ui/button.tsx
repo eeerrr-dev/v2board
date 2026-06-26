@@ -1,51 +1,58 @@
 import { cva, type VariantProps } from 'class-variance-authority';
+import { Slot } from '@radix-ui/react-slot';
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 import { Spinner } from './spinner';
 
-// Authored V2Board — clean-modern reskin primitive. Token-driven (see @v2board/tokens);
-// all Tailwind utilities carry the `tw:` prefix so they never collide with vendored legacy CSS.
 const buttonVariants = cva(
-  'tw:inline-flex tw:items-center tw:justify-center tw:gap-2 tw:rounded-field tw:font-semibold tw:transition tw:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring/40 tw:focus-visible:ring-offset-2 tw:motion-safe:active:scale-[0.99] tw:disabled:cursor-not-allowed tw:disabled:opacity-60 tw:disabled:active:scale-100',
+  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium outline-none transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-[3px] aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=size-])]:size-4',
   {
     variants: {
       variant: {
-        primary: 'tw:bg-primary tw:text-primary-foreground tw:shadow-sm tw:hover:bg-primary-hover',
-        secondary: 'tw:bg-muted tw:text-foreground tw:hover:bg-primary-subtle',
-        outline: 'tw:border tw:border-input tw:bg-surface tw:text-foreground tw:hover:bg-muted',
-        ghost: 'tw:text-foreground tw:hover:bg-muted',
+        default: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90',
+        primary: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90',
+        secondary: 'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80',
+        outline: 'border border-border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground',
+        ghost: 'hover:bg-accent hover:text-accent-foreground',
+        link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        sm: 'tw:h-9 tw:px-3 tw:text-sm',
-        md: 'tw:h-10 tw:px-4 tw:text-sm',
-        lg: 'tw:h-11 tw:px-5 tw:text-base',
+        sm: 'h-8 gap-1.5 rounded-md px-3',
+        md: 'h-9 px-4 py-2',
+        lg: 'h-10 rounded-md px-6',
+        icon: 'size-9',
       },
-      block: { true: 'tw:w-full' },
+      block: { true: 'w-full' },
     },
-    defaultVariants: { variant: 'primary', size: 'md' },
+    defaultVariants: { variant: 'default', size: 'md' },
   },
 );
 
 export interface ButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
+  asChild?: boolean;
   loading?: boolean;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, block, loading, disabled, type, children, ...props }, ref) => (
-    <button
-      ref={ref}
-      type={type ?? 'button'}
-      className={cn(buttonVariants({ variant, size, block }), className)}
-      disabled={disabled ?? loading}
-      aria-busy={!!loading}
-      {...props}
-    >
-      {loading ? <Spinner /> : null}
-      {children}
-    </button>
-  ),
+  ({ asChild, className, variant, size, block, loading, disabled, type, children, ...props }, ref) => {
+    const Comp = asChild ? Slot : 'button';
+
+    return (
+      <Comp
+        ref={ref}
+        type={type ?? 'button'}
+        className={cn(buttonVariants({ variant, size, block }), className)}
+        disabled={disabled || loading}
+        aria-busy={!!loading}
+        {...props}
+      >
+        {loading ? <Spinner /> : null}
+        {children}
+      </Comp>
+    );
+  },
 );
 Button.displayName = 'Button';
 

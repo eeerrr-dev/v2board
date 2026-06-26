@@ -26,9 +26,13 @@ const mocks = vi.hoisted(() => ({
     'auth.invite_code_optional': '邀请码(选填)',
     'auth.password': '密码',
     'auth.password_mismatch': '两次密码输入不同',
-    'auth.return_to_login': '返回登入',
+    'auth.have_account': '已有账号？',
+    'auth.register_description': '填写信息开始使用',
+    'auth.register_title': '创建账户',
+    'auth.return_to_login': '返回登录',
     'auth.send_code': '发送',
     'auth.show_password': '显示密码',
+    'auth.sign_in': '登录',
     'auth.submit_register': '注册',
     'auth.tos_html': '我已阅读并同意 <a target="_blank" href="{url}">服务条款</a>',
     'auth.tos_required': '请同意服务条款',
@@ -58,16 +62,8 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('./auth-language-menu', () => ({
-  AuthLanguageMenu: () => (
-    <button type="button" className="v2board-auth-language-trigger">
-      简体中文
-    </button>
-  ),
-}));
-
-vi.mock('@/components/legacy-recaptcha', () => ({
-  useLegacyRecaptcha: () => ({
+vi.mock('./auth-recaptcha', () => ({
+  useAuthRecaptcha: () => ({
     recaptchaModal: <div data-testid="recaptcha-modal" />,
     run: mocks.runRecaptcha,
   }),
@@ -129,6 +125,10 @@ function resetMocks() {
   mocks.settings.description = '';
   mocks.settings.logo = '';
   mocks.settings.title = 'V2Board';
+  window.g_lang = 'zh-CN';
+  window.settings = {
+    i18n: ['en-US', 'zh-CN'] as string[] & Record<string, Record<string, string>>,
+  };
   mocks.toastError.mockReset();
   mocks.toastSuccess.mockReset();
 }
@@ -143,7 +143,7 @@ async function flushPromises() {
 describe('RegisterPage modern markup', () => {
   beforeEach(resetMocks);
 
-  it('renders the reskinned register card, labels, footer link, and language trigger', () => {
+  it('renders the reskinned register card, labels, footer link, and action title', () => {
     mocks.config = {
       email_whitelist_suffix: ['example.com', 'mail.test'],
       is_email_verify: true,
@@ -156,27 +156,42 @@ describe('RegisterPage modern markup', () => {
     const html = renderToStaticMarkup(<RegisterPage />);
 
     expect(html).toContain('v2board-auth-card');
-    expect(html).toContain('v2board-auth-card--wide');
-    expect(html).toContain('tw:rounded-card');
-    expect(html).toContain('>V2Board</h1>');
+    expect(html).toContain('max-w-md');
+    expect(html).toContain('rounded-xl');
+    expect(html).toContain('bg-card');
+    expect(html).not.toContain('v2board-auth-visual');
+    expect(html).not.toContain('md:grid-cols-2');
+    expect(html).not.toContain('v2board-auth-shell-brand');
+    expect(html).toContain('>创建账户</h1>');
+    expect(html).toContain('填写信息开始使用');
+    expect(html).not.toContain('>V2Board</h1>');
     expect(html).toContain('邮箱');
-    expect(html).toContain('<option value="example.com" selected="">@example.com</option>');
+    expect(html).toContain('placeholder="name"');
+    expect(html).toContain('role="combobox"');
+    expect(html).toContain('@example.com');
+    expect(html).not.toContain('<option');
     expect(html).toContain('邮箱验证码');
     expect(html).toContain('邀请码');
     expect(html).toContain('disabled=""');
     expect(html).toContain('value="INVITE123"');
+    expect(html).toContain('id="register-tos"');
+    expect(html).toContain('role="checkbox"');
+    expect(html).toContain('aria-labelledby="register-tos-text"');
     expect(html).toContain('href="https://terms.example"');
-    expect(html).toContain('返回登入');
+    expect(html).toContain('已有账号？');
+    expect(html).toContain('>登录</a>');
     expect(html).toContain('href="#/login"');
-    expect(html).toContain('class="v2board-auth-language-trigger"');
+    expect(html).not.toContain('v2board-auth-language-trigger');
     expect(html).not.toContain('block block-rounded');
     expect(html).not.toContain('form-control');
     expect(html).not.toContain('btn btn-block');
-    expect(html).not.toContain('placeholder=');
+    expect(html).not.toContain('placeholder="请输入密码"');
     expect(source).toContain("from './auth-panel'");
     expect(source).toContain("from './auth-tos-field'");
     // The behavior controller owns the modern auth-toast; the view stays free of legacy toast/menu.
     expect(controllerSource).toContain("lib/auth-toast");
+    expect(controllerSource).toContain("from './auth-recaptcha'");
+    expect(controllerSource).not.toContain('useLegacyRecaptcha');
     expect(source).not.toContain("components/layout/auth-language-menu");
     expect(source).not.toContain("components/layout/language-menu");
     expect(source).not.toContain("lib/legacy-toast");
@@ -218,6 +233,8 @@ describe('RegisterPage behavior', () => {
     vi.useRealTimers();
     container.remove();
     document.body.innerHTML = '';
+    window.settings = undefined;
+    window.g_lang = undefined;
   });
 
   async function renderRegister() {
@@ -240,7 +257,7 @@ describe('RegisterPage behavior', () => {
   it('sends the email-verify payload and starts the 60-second countdown after success', async () => {
     vi.useFakeTimers();
     mocks.config = {
-      email_whitelist_suffix: ['example.com', 'mail.test'],
+      email_whitelist_suffix: ['mail.test'],
       is_email_verify: true,
       is_invite_force: false,
       is_recaptcha: true,
@@ -249,11 +266,6 @@ describe('RegisterPage behavior', () => {
     await renderRegister();
 
     container.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'user';
-    const select = container.querySelector<HTMLSelectElement>('select')!;
-    select.value = 'mail.test';
-    await act(async () => {
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
 
     const sendButton = Array.from(container.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('发送'),
@@ -322,7 +334,7 @@ describe('RegisterPage behavior', () => {
     expect(submit.disabled).toBe(true);
 
     await act(async () => {
-      container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.dispatchEvent(
+      container.querySelector<HTMLElement>('[role="checkbox"]')!.dispatchEvent(
         new MouseEvent('click', { bubbles: true }),
       );
       await Promise.resolve();
@@ -349,7 +361,7 @@ describe('RegisterPage behavior', () => {
     container.querySelector<HTMLInputElement>('input[name="invite_code"]')!.value = 'INVITE';
 
     await act(async () => {
-      container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.dispatchEvent(
+      container.querySelector<HTMLElement>('[role="checkbox"]')!.dispatchEvent(
         new MouseEvent('click', { bubbles: true }),
       );
       await Promise.resolve();

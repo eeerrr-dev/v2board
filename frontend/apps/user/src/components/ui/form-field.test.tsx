@@ -26,7 +26,7 @@ describe('FormField', () => {
     expect(html).toContain('id="pw-error"');
     expect(html).toContain('aria-describedby="pw-error"');
     expect(html).toContain('aria-invalid="true"');
-    expect(html).toContain('tw:border-destructive');
+    expect(html).toContain('border-destructive');
     expect(html).toContain('Required');
   });
 

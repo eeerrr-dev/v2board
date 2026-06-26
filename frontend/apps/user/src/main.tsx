@@ -436,6 +436,7 @@ import './styles/user-sidebar-desktop-mini-content.css';
 import './styles/user-sidebar-desktop-mini-nav-motion.css';
 import './styles/user-sidebar-desktop-mini-visibility.css';
 import './styles/user-sidebar-desktop-mini-collapsed-nav.css';
+import './styles/auth-shadcn.css';
 import './styles/user-auth-surface.css';
 
 const legacyHashRouteOptions = {

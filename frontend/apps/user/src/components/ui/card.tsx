@@ -1,13 +1,12 @@
 import { forwardRef, type HTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 
-// Authored V2Board — clean-modern reskin primitive. Token-driven surface/elevation/radius.
 export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        'tw:overflow-hidden tw:rounded-card tw:bg-surface tw:shadow-card tw:ring-1 tw:ring-border',
+        'bg-card text-card-foreground flex flex-col gap-6 rounded-xl border border-border py-6 shadow-sm',
         className,
       )}
       {...props}
@@ -16,19 +15,46 @@ export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
 );
 Card.displayName = 'Card';
 
-export const CardBody = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+export const CardHeader = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('tw:px-6 tw:py-9 tw:sm:px-9', className)} {...props} />
+    <div
+      ref={ref}
+      className={cn('grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6', className)}
+      {...props}
+    />
   ),
 );
-CardBody.displayName = 'CardBody';
+CardHeader.displayName = 'CardHeader';
+
+export const CardTitle = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn('leading-none font-semibold', className)} {...props} />
+  ),
+);
+CardTitle.displayName = 'CardTitle';
+
+export const CardDescription = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn('text-muted-foreground text-sm', className)} {...props} />
+  ),
+);
+CardDescription.displayName = 'CardDescription';
+
+export const CardContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn('px-6', className)} {...props} />
+  ),
+);
+CardContent.displayName = 'CardContent';
+
+export const CardBody = CardContent;
 
 export const CardFooter = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        'tw:flex tw:items-center tw:gap-3 tw:border-t tw:border-border tw:bg-muted/60 tw:px-6 tw:py-4 tw:text-sm tw:sm:px-9',
+        'flex items-center px-6',
         className,
       )}
       {...props}

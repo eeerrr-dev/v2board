@@ -419,6 +419,7 @@ export const userStyleFiles = [
   'user-sidebar-desktop-mini-nav-motion.css',
   'user-sidebar-desktop-mini-visibility.css',
   'user-sidebar-desktop-mini-collapsed-nav.css',
+  'auth-shadcn.css',
   'user-auth-surface.css',
 ] as const;
 

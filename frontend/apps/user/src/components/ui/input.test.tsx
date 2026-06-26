@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { Input } from './input';
 
 describe('Input', () => {
-  it('renders a token-driven text input by default', () => {
+  it('renders a shadcn-style text input by default', () => {
     const html = renderToStaticMarkup(<Input />);
     expect(html).toContain('type="text"');
-    expect(html).toContain('tw:border-input');
-    expect(html).toContain('tw:rounded-field');
-    expect(html).toContain('tw:bg-surface');
+    expect(html).toContain('border-input');
+    expect(html).toContain('rounded-md');
+    expect(html).toContain('bg-transparent');
   });
 
   it('respects an explicit type and forwards attributes', () => {
@@ -24,11 +24,11 @@ describe('Input', () => {
   it('applies the destructive treatment and aria-invalid when invalid', () => {
     const html = renderToStaticMarkup(<Input invalid />);
     expect(html).toContain('aria-invalid="true"');
-    expect(html).toContain('tw:border-destructive');
-    expect(html).not.toContain('tw:border-input');
+    expect(html).toContain('border-destructive');
+    expect(html).not.toContain('border-input');
   });
 
   it('merges a caller className', () => {
-    expect(renderToStaticMarkup(<Input className="tw:mt-1" />)).toContain('tw:mt-1');
+    expect(renderToStaticMarkup(<Input className="mt-1" />)).toContain('mt-1');
   });
 });
