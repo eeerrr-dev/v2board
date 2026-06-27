@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
     'dashboard.new_period_confirm_content':
       '点击「确定」将会扣除当前流量周期剩余订阅时长（按月重置时扣除本周期剩余订阅时长，每月1号重置时扣除整月时间30天，年周期同理），系统将会重置您的已使用流量。',
     'dashboard.new_period_confirm_title': '确定开启下一个流量周期？',
+    'dashboard.new_period_success': '提前开启流量周期成功',
     'dashboard.plan': '我的订阅',
     'dashboard.qrcode_client_tip': '使用支持扫码的客户端进行订阅',
     'dashboard.renew_subscribe': '续费订阅',
@@ -150,7 +151,7 @@ vi.mock('@/lib/toast', () => ({
 }));
 
 vi.mock('qrcode.react', () => ({
-  default: ({ value }: { value?: string }) => <canvas data-qrcode={value} />,
+  QRCodeCanvas: ({ value }: { value?: string }) => <canvas data-qrcode={value} />,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =

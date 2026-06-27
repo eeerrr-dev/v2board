@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Check, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { sanitizeLegacyHtml } from '@/lib/sanitize-html';
 
 interface PlanContentProps {
   content?: string | null;
@@ -23,7 +24,7 @@ export function PlanContent({ content, className, htmlClassName }: PlanContentPr
     return (
       <div
         className={cn(htmlClassName ?? className)}
-        dangerouslySetInnerHTML={{ __html: content as string }}
+        dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(content as string) }}
       />
     );
   }

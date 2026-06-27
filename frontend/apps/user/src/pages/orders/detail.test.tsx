@@ -16,6 +16,9 @@ const cancelMutateAsync = vi.hoisted(() => vi.fn());
 const cancelState = vi.hoisted(() => ({ isPending: false }));
 const invalidateQueries = vi.hoisted(() => vi.fn());
 const removeQueries = vi.hoisted(() => vi.fn());
+const labels = vi.hoisted(() => ({
+  'order.deposit': '充值',
+}));
 const paymentState = vi.hoisted(() => ({
   data: [{ id: 1, name: 'Legacy Pay', payment: 'LegacyPay' }] as Array<
     { id: number; name: string; payment: string } & Record<string, unknown>
@@ -67,7 +70,10 @@ vi.mock('react-router-dom', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'zh-CN' } }),
+  useTranslation: () => ({
+    t: (key: string) => labels[key as keyof typeof labels] ?? key,
+    i18n: { language: 'zh-CN' },
+  }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -281,7 +287,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(orderDetailSource).toContain('preHandlingAmount');
     expect(orderDetailSource).toContain('order.pre_handling_amount');
     expect(orderDetailSource).toContain('calculatePreHandlingAmount(orderQuery.data, first)');
-    expect(orderDetailSource).toContain('calculatePreHandlingAmount(order, method)');
+    expect(orderDetailSource).toContain('calculatePreHandlingAmount(order, nextPayment)');
     expect(orderDetailSource).toContain(
       'order.total_amount * ((method.handling_fee_percent as number) / 100) +',
     );
@@ -299,8 +305,9 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     );
 
     expect(paymentMethodSource).toContain('paymentMethods?.map((method) => (');
+    expect(paymentMethodSource).toContain('RadioGroupItem');
+    expect(paymentMethodSource).toContain('RadioGroupIndicator');
     expect(paymentMethodSource).toContain('data-testid="payment-option"');
-    expect(paymentMethodSource).toContain("data-state={effectiveMethodId === method.id ? 'checked' : 'unchecked'}");
     expect(paymentMethodSource).not.toContain("'false'");
     expect(paymentMethodSource).not.toContain('key={index}');
     expect(paymentMethodSource).toContain('key={method.id}');
@@ -315,9 +322,11 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     );
   });
 
-  it('keeps the hard-coded Stripe verification loading message', () => {
-    expect(orderDetailSource).toContain("toast.loading('请稍等，我们正在验证该笔支付', { duration: 5000 })");
-    expect(orderDetailSource).not.toContain("toast.loading(t('order.stripe_verifying')");
+  it('keeps the Stripe verification loading message behind i18n', () => {
+    expect(orderDetailSource).toContain(
+      "toast.loading(t('order.stripe_verifying'), { duration: 5000 })",
+    );
+    expect(orderDetailSource).not.toContain("toast.loading('请稍等，我们正在验证该笔支付'");
   });
 
   it('keeps the QR code props for payment polling', () => {
@@ -326,8 +335,8 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       orderDetailSource.indexOf('</DialogContent>', orderDetailSource.indexOf('<DialogContent')),
     );
     const qrSource = orderDetailSource.slice(
-      orderDetailSource.indexOf('<QRCode'),
-      orderDetailSource.indexOf('/>', orderDetailSource.indexOf('<QRCode')) + 2,
+      orderDetailSource.indexOf('<QRCodeSVG'),
+      orderDetailSource.indexOf('/>', orderDetailSource.indexOf('<QRCodeSVG')) + 2,
     );
 
     expect(orderDetailSource).toContain("from '@/components/ui/shadcn-dialog'");
@@ -346,8 +355,8 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(modalSource).not.toContain('centered');
     expect(modalSource).not.toContain('footer=');
     expect(qrSource).toContain('value={payUrl}');
-    expect(qrSource).toContain('renderAs="svg"');
-    expect(qrSource).toContain('size="250"');
+    expect(qrSource).toContain('size={250}');
+    expect(qrSource).not.toContain('renderAs=');
     expect(qrSource).not.toContain('level=');
     expect(qrSource).not.toContain('bgColor=');
     expect(qrSource).not.toContain('fgColor=');

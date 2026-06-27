@@ -4,10 +4,8 @@ import { useTranslation } from 'react-i18next';
 import {
   AlertCircle,
   Bell,
-  Copy,
   Gift,
   KeyRound,
-  Link2,
   MessageCircle,
   RefreshCcw,
   Send,
@@ -22,19 +20,19 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/shadcn-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PageShell } from '@/components/ui/page';
-import { Spinner } from '@/components/ui/spinner';
-import { Switch } from '@/components/ui/switch';
+import {
+  PreferenceRow,
+  ProfileConfirmDialog,
+  ProfileDepositDialog,
+  ProfileField,
+  ProfileSwitch,
+  ProfileTelegramBindDialog,
+  type ProfileConfirmAction,
+  type ProfilePreferenceKey,
+} from './profile-components';
 import {
   useChangePasswordMutation,
   useCommConfig,
@@ -47,11 +45,7 @@ import {
   useUpdateProfileMutation,
   useUserInfo,
 } from '@/lib/queries';
-import { legacyCopyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
-
-type ProfilePreferenceKey = 'auto_renewal' | 'remind_expire' | 'remind_traffic';
-type ConfirmAction = 'reset-subscribe' | 'unbind-telegram' | null;
 
 export default function ProfilePage() {
   const { t } = useTranslation();
@@ -81,7 +75,7 @@ export default function ProfilePage() {
   const [redeemTimeoutStuck, setRedeemTimeoutStuck] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [telegramOpen, setTelegramOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  const [confirmAction, setConfirmAction] = useState<ProfileConfirmAction>(null);
   const [updatingPref, setUpdatingPref] = useState<Record<ProfilePreferenceKey, boolean>>({
     auto_renewal: false,
     remind_expire: false,
@@ -91,7 +85,7 @@ export default function ProfilePage() {
   const botInfo = useTelegramBotInfo(telegramOpen);
   const data = info.data;
   const currency = comm?.currency;
-  const depositPlaceholder = t(`请输入充值金额${currency}`);
+  const depositPlaceholder = t('profile.deposit_placeholder', { currency });
   const redeemLoading = redeem.isPending || redeemTimeoutStuck;
 
   const togglePref = async (key: ProfilePreferenceKey, value: 0 | 1) => {
@@ -119,7 +113,7 @@ export default function ProfilePage() {
         oldPassword: passwordForm.oldPassword,
         newPassword: passwordForm.newPassword,
       });
-      toast.success('修改成功，请重新登陆');
+      toast.success(t('profile.change_password_success'));
       navigate('/login');
     } catch {}
   };
@@ -133,7 +127,11 @@ export default function ProfilePage() {
     try {
       const result = await redeem.mutateAsync(giftCard);
       void info.refetch();
-      toast.success(`兑换成功: ${redeemGiftcardText(result.type, result.value)}`);
+      toast.success(
+        t('profile.redeem_success', {
+          detail: redeemGiftcardText(result.type, result.value, t),
+        }),
+      );
     } catch (error) {
       if (isLegacyTimeoutError(error)) setRedeemTimeoutStuck(true);
     }
@@ -194,19 +192,6 @@ export default function ProfilePage() {
       .catch(() => {});
     closeDeposit();
   };
-
-  const copyBindCommand = () => {
-    legacyCopyText(`/bind ${subscribe?.subscribe_url}`);
-  };
-
-  const confirmTitle =
-    confirmAction === 'unbind-telegram'
-      ? t('profile.telegram_unbind_confirm')
-      : t('profile.reset_subscribe_confirm');
-  const confirmDescription =
-    confirmAction === 'unbind-telegram'
-      ? t('profile.telegram_unbind_tip')
-      : t('profile.reset_subscribe_tip');
 
   return (
     <>
@@ -477,198 +462,50 @@ export default function ProfilePage() {
         </div>
       </PageShell>
 
-      <Dialog open={depositOpen} onOpenChange={(open) => (open ? setDepositOpen(true) : closeDeposit())}>
-        <DialogContent
-          className="sm:max-w-md"
-          data-testid="profile-deposit-dialog"
-          showCloseButton={false}
-        >
-          <DialogHeader>
-            <DialogTitle>{t('profile.recharge')}</DialogTitle>
-            <DialogDescription>{depositPlaceholder}</DialogDescription>
-          </DialogHeader>
-          <Input
-            data-testid="profile-deposit-input"
-            autoComplete="one-time-code"
-            placeholder={depositPlaceholder}
-            value={depositInput}
-            onChange={(event) => {
-              setDepositInput(event.target.value);
-              setDepositAmount(Number(event.target.value) * 100);
-            }}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={closeDeposit}>
-              {t('common.cancel')}
-            </Button>
-            <Button data-testid="profile-deposit-confirm" onClick={() => onDeposit()}>
-              {t('profile.confirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={telegramOpen} onOpenChange={setTelegramOpen}>
-        <DialogContent data-testid="profile-telegram-bind-dialog">
-          <DialogHeader>
-            <DialogTitle>{t('profile.telegram_bind')}</DialogTitle>
-          </DialogHeader>
-          {botInfo.data?.username ? (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Link2 className="size-4 text-muted-foreground" />
-                  {t('profile.telegram_step1')}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {t('profile.telegram_search')}
-                  <a
-                    href={`https://t.me/${botInfo.data.username}`}
-                    className="ml-1 font-medium text-foreground underline underline-offset-4"
-                  >
-                    @{botInfo.data.username}
-                  </a>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Copy className="size-4 text-muted-foreground" />
-                  {t('profile.telegram_step2')}
-                </div>
-                <div className="text-sm text-muted-foreground">{t('profile.telegram_send')}</div>
-                <code
-                  className="flex cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
-                  data-testid="profile-copy-code"
-                  onClick={() => copyBindCommand()}
-                >
-                  /bind {subscribe?.subscribe_url}
-                </code>
-              </div>
-            </div>
-          ) : (
-            <div className="flex min-h-24 items-center justify-center">
-              <Spinner />
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              data-testid="profile-telegram-bind-confirm"
-              onClick={() => setTelegramOpen(false)}
-            >
-              {t('profile.i_know')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={confirmAction !== null} onOpenChange={(open) => !open && setConfirmAction(null)}>
-        <DialogContent
-          className="sm:max-w-md"
-          data-testid="profile-confirm-dialog"
-          showCloseButton={false}
-        >
-          <DialogHeader>
-            <DialogTitle>{confirmTitle}</DialogTitle>
-            <DialogDescription>{confirmDescription}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmAction(null)}>
-              {t('common.cancel')}
-            </Button>
-            <Button data-testid="profile-confirm-primary" onClick={onConfirmAction}>
-              {t('profile.confirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ProfileDepositDialog
+        open={depositOpen}
+        input={depositInput}
+        placeholder={depositPlaceholder}
+        onClose={closeDeposit}
+        onInputChange={(value) => {
+          setDepositInput(value);
+          setDepositAmount(Number(value) * 100);
+        }}
+        onConfirm={onDeposit}
+      />
+      <ProfileTelegramBindDialog
+        open={telegramOpen}
+        botUsername={botInfo.data?.username}
+        subscribeUrl={subscribe?.subscribe_url}
+        onClose={() => setTelegramOpen(false)}
+      />
+      <ProfileConfirmDialog
+        action={confirmAction}
+        onCancel={() => setConfirmAction(null)}
+        onConfirm={onConfirmAction}
+      />
     </>
   );
 }
 
-const ProfileField = ({
-  id,
-  label,
-  onChange,
-  placeholder,
-  value,
-}: {
-  id: string;
-  label: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  value: string;
-}) => (
-  <div className="space-y-2.5">
-    <Label htmlFor={id}>{label}</Label>
-    <Input
-      id={id}
-      type="password"
-      placeholder={placeholder}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  </div>
-);
-
-function PreferenceRow({
-  label,
-  checked,
-  loading,
-  onChange,
-}: {
-  label: string;
-  checked?: unknown;
-  loading?: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
-      <div className="text-sm font-medium leading-5">{label}</div>
-      <ProfileSwitch checked={checked} loading={loading} onChange={onChange} />
-    </div>
-  );
-}
-
-function ProfileSwitch({
-  checked,
-  loading,
-  onChange,
-}: {
-  checked?: unknown;
-  loading?: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  const normalizedChecked = !!checked;
-  return (
-    <Switch
-      checked={normalizedChecked}
-      disabled={loading}
-      data-loading={loading ? 'true' : undefined}
-      data-testid="profile-switch"
-      aria-busy={!!loading}
-      onCheckedChange={(nextChecked) => onChange(nextChecked)}
-      onKeyDown={(event) => {
-        if (event.key === 'ArrowLeft') onChange(false);
-        else if (event.key === 'ArrowRight') onChange(true);
-      }}
-    />
-  );
-}
-
-function redeemGiftcardText(type: number, value: number) {
+function redeemGiftcardText(
+  type: number,
+  value: number,
+  t: ReturnType<typeof useTranslation>['t'],
+) {
   switch (type) {
     case 1:
-      return `账户余额 ${(value / 100).toFixed(2)}`;
+      return t('profile.redeem_balance', { amount: (value / 100).toFixed(2) });
     case 2:
-      return `订阅时长 ${value} 天`;
+      return t('profile.redeem_days', { days: value });
     case 3:
-      return `套餐流量 ${value} GB`;
+      return t('profile.redeem_traffic', { traffic: value });
     case 4:
-      return '流量已重置';
+      return t('profile.redeem_reset');
     case 5:
-      return `订阅套餐 ${value} 天`;
+      return t('profile.redeem_plan_days', { days: value });
     default:
-      return '未知类型';
+      return t('profile.redeem_unknown');
   }
 }
 

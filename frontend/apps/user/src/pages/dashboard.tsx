@@ -1,19 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import QRCode from 'qrcode.react';
+import { QRCodeCanvas } from 'qrcode.react';
 import type { Notice } from '@v2board/types';
 import {
   AlertCircle,
   Bell,
   BookOpen,
   CheckCircle2,
-  Copy,
   Headphones,
   LinkIcon,
   Package,
   Plus,
-  QrCode,
   RefreshCcw,
   ShoppingBag,
   Smartphone,
@@ -34,6 +32,7 @@ import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DashboardSubscribeMenu } from './dashboard-subscribe-menu';
 import {
   useCommConfig,
   useNewPeriodMutation,
@@ -43,24 +42,10 @@ import {
   useUserStat,
 } from '@/lib/queries';
 import { formatBytes } from '@v2board/config/format';
-import { legacyCopyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
 import { formatUserLegacyDate, formatUserLegacyDateSlash } from '@/lib/legacy-date';
+import { sanitizeLegacyHtml } from '@/lib/sanitize-html';
 import { cn } from '@/lib/cn';
-import clashForAndroidIcon from '../assets/images/icon/Clash For Android.png';
-import clashForWindowsIcon from '../assets/images/icon/Clash For Windows.png';
-import clashMetaForAndroidIcon from '../assets/images/icon/ClashMeta For Android.png';
-import clashMetaForWindowsIcon from '../assets/images/icon/ClashMeta For Windows.png';
-import clashMetaIcon from '../assets/images/icon/ClashMeta.png';
-import clashXIcon from '../assets/images/icon/ClashX.png';
-import hiddifyIcon from '../assets/images/icon/Hiddify.png';
-import nekoBoxForAndroidIcon from '../assets/images/icon/NekoBox For Android.png';
-import quantumultXIcon from '../assets/images/icon/QuantumultX.png';
-import shadowrocketIcon from '../assets/images/icon/Shadowrocket.png';
-import singBoxIcon from '../assets/images/icon/Sing-box.png';
-import stashIcon from '../assets/images/icon/Stash.png';
-import surfboardIcon from '../assets/images/icon/Surfboard.png';
-import surgeIcon from '../assets/images/icon/Surge.png';
 
 interface Shortcut {
   to: string;
@@ -71,23 +56,6 @@ interface Shortcut {
 }
 
 type ConfirmAction = 'reset-package' | 'new-period' | null;
-
-const SUBSCRIBE_TARGET_ICONS: Record<string, string> = {
-  'Clash For Android': clashForAndroidIcon,
-  'Clash For Windows': clashForWindowsIcon,
-  'ClashMeta For Android': clashMetaForAndroidIcon,
-  'ClashMeta For Windows': clashMetaForWindowsIcon,
-  ClashMeta: clashMetaIcon,
-  ClashX: clashXIcon,
-  Hiddify: hiddifyIcon,
-  'NekoBox For Android': nekoBoxForAndroidIcon,
-  QuantumultX: quantumultXIcon,
-  Shadowrocket: shadowrocketIcon,
-  'Sing-box': singBoxIcon,
-  Stash: stashIcon,
-  Surfboard: surfboardIcon,
-  Surge: surgeIcon,
-};
 
 export default function DashboardPage() {
   const { t } = useTranslation();
@@ -131,10 +99,6 @@ export default function DashboardPage() {
   const noticeList = notices.data ?? [];
   const activeNoticeCard = noticeList[activeNoticeIndex] ?? noticeList[0];
   const subscribeUrl = typeof sub?.subscribe_url === 'string' ? sub.subscribe_url : '';
-  const subscribeTargets = useMemo(
-    () => (subscribeUrl ? getSubscribeTargets(subscribeUrl) : []),
-    [subscribeUrl],
-  );
   const legacySub = sub!;
 
   useEffect(() => {
@@ -150,11 +114,6 @@ export default function DashboardPage() {
       setNoticeOpen(true);
     }
   }, [notices.data]);
-
-  const copyUrl = () => {
-    legacyCopyText(subscribeUrl);
-    toast.success(t('dashboard.copy_success'));
-  };
 
   const requestResetPackage = () => {
     if (!sub) return;
@@ -186,7 +145,7 @@ export default function DashboardPage() {
     try {
       await newPeriod.mutateAsync();
       await subscribe.refetch();
-      toast.success('提前开启流量周期成功');
+      toast.success(t('dashboard.new_period_success'));
       setConfirmAction(null);
       navigate('/dashboard');
     } catch {
@@ -232,56 +191,6 @@ export default function DashboardPage() {
       descKey: 'dashboard.shortcut_problem_desc',
     },
   ];
-
-  const renderSubscribeBox = () => (
-    <div data-testid="dashboard-subscribe-menu" className="grid gap-1 p-2">
-      <button
-        type="button"
-        data-testid="dashboard-subscribe-copy"
-        className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        onClick={copyUrl}
-      >
-        <Copy className="size-4 text-muted-foreground" />
-        <span>{t('dashboard.copy_subscribe')}</span>
-      </button>
-      <button
-        type="button"
-        data-testid="dashboard-subscribe-qrcode"
-        className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        onClick={() => setQrOpen(true)}
-      >
-        <QrCode className="size-4 text-muted-foreground" />
-        <span>{t('dashboard.scan_qrcode_subscribe')}</span>
-      </button>
-      {subscribeTargets.map((target) => (
-        <button
-          type="button"
-          key={target.title}
-          data-testid="dashboard-subscribe-target"
-          data-subscribe-target={subscribeTargetSlug(target.title)}
-          className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          onClick={() => {
-            window.location.href = target.href;
-          }}
-        >
-          <img className="size-5 rounded-sm" src={SUBSCRIBE_TARGET_ICONS[target.title]} />
-          <span>
-            {t('dashboard.import_to')} {target.title}
-          </span>
-        </button>
-      ))}
-      <div className="px-1 pb-1 pt-2">
-        <Button
-          type="button"
-          data-testid="dashboard-subscribe-tutorial"
-          className="w-full"
-          onClick={() => navigate('/knowledge')}
-        >
-          {t('dashboard.use_tutorial')}
-        </Button>
-      </div>
-    </div>
-  );
 
   const openNotice = (notice: Notice) => {
     setActiveNotice(notice);
@@ -636,7 +545,7 @@ export default function DashboardPage() {
           {activeNotice?.content ? (
             <div
               className="notice-content max-h-[60vh] overflow-auto text-sm leading-6"
-              dangerouslySetInnerHTML={{ __html: activeNotice.content }}
+              dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(activeNotice.content) }}
             />
           ) : null}
         </DialogContent>
@@ -647,7 +556,10 @@ export default function DashboardPage() {
           <DialogHeader className="px-5 pt-5">
             <DialogTitle>{t('dashboard.shortcut_one_click')}</DialogTitle>
           </DialogHeader>
-          {renderSubscribeBox()}
+          <DashboardSubscribeMenu
+            subscribeUrl={subscribeUrl}
+            onOpenQr={() => setQrOpen(true)}
+          />
         </DialogContent>
       </Dialog>
 
@@ -658,7 +570,7 @@ export default function DashboardPage() {
             <DialogDescription>{t('dashboard.qrcode_client_tip')}</DialogDescription>
           </DialogHeader>
           <div className="flex justify-center">
-            <QRCode value={subscribeUrl} renderAs="canvas" />
+            <QRCodeCanvas value={subscribeUrl} />
           </div>
         </DialogContent>
       </Dialog>
@@ -702,82 +614,6 @@ export default function DashboardPage() {
   );
 }
 
-function getSubscribeTargets(url: string) {
-  const title = window.settings!.title;
-  const userAgent = window.navigator.userAgent;
-  const lowerUserAgent = userAgent.toLowerCase();
-  const isAppleMobile =
-    lowerUserAgent.includes('iphone') ||
-    lowerUserAgent.includes('ipad') ||
-    (/Mac/.test(userAgent) && window.navigator.maxTouchPoints > 2);
-  const isMac = lowerUserAgent.includes('macintosh');
-  const isAndroid = lowerUserAgent.includes('android');
-  const isWindows = lowerUserAgent.includes('windows');
-  const shadowrocketPayload = window
-    .btoa(`${url}&flag=shadowrocket`)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-  const targets = [
-    { title: 'Hiddify', href: `hiddify://import/${url}&flag=sing#${title}` },
-    {
-      title: 'Sing-box',
-      href: `sing-box://import-remote-profile?url=${encodeURIComponent(url)}#${title}`,
-    },
-  ];
-  if (isAppleMobile) {
-    targets.push(
-      {
-        title: 'Shadowrocket',
-        href: `shadowrocket://add/sub://${shadowrocketPayload}?remark=${title}`,
-      },
-      {
-        title: 'QuantumultX',
-        href: `quantumult-x:///update-configuration?remote-resource=${encodeURI(
-          JSON.stringify({ server_remote: [`${url}, tag=${title}`] }),
-        )}`,
-      },
-      {
-        title: 'Surge',
-        href: `surge:///install-config?url=${encodeURIComponent(url)}&name=${title}`,
-      },
-      {
-        title: 'Stash',
-        href: `stash://install-config?url=${encodeURIComponent(url)}&name=${title}`,
-      },
-    );
-  }
-  if (isMac) {
-    targets.push({
-      title: 'ClashX',
-      href: `clash://install-config?url=${encodeURIComponent(url)}&name=${title}`,
-    });
-  }
-  if (isWindows) {
-    targets.push({
-      title: 'ClashMeta',
-      href: `clash://install-config?url=${encodeURIComponent(`${url}&flag=meta`)}&name=${title}`,
-    });
-  }
-  if (isAndroid) {
-    targets.push(
-      {
-        title: 'NekoBox For Android',
-        href: `clash://install-config?url=${encodeURIComponent(`${url}&flag=meta`)}&name=${title}`,
-      },
-      {
-        title: 'ClashMeta For Android',
-        href: `clash://install-config?url=${encodeURIComponent(`${url}&flag=meta`)}&name=${title}`,
-      },
-      {
-        title: 'Surfboard',
-        href: `surge:///install-config?url=${encodeURIComponent(url)}&name=${title}`,
-      },
-    );
-  }
-  return targets;
-}
-
 function isLegacyExpired(expiredAt: number | null | undefined) {
   return expiredAt !== null && expiredAt !== undefined && expiredAt < Date.now() / 1000;
 }
@@ -786,13 +622,6 @@ function getTrafficTone(usedPctRounded: number) {
   if (usedPctRounded >= 100) return 'danger';
   if (usedPctRounded >= 80) return 'warning';
   return 'success';
-}
-
-function subscribeTargetSlug(title: string) {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
 }
 
 function legacyDaysUntil(timestamp: number | string | null | undefined) {

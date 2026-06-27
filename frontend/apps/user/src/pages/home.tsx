@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getLegacySettings } from '@/lib/legacy-settings';
+import { sanitizeLegacyHtml } from '@/lib/sanitize-html';
 
 function decodeHomepage(value: string) {
   return decodeURI(window.atob(value));
@@ -15,7 +16,7 @@ export default function HomePage() {
   }, [homepage, navigate]);
 
   if (homepage) {
-    return <div dangerouslySetInnerHTML={{ __html: decodeHomepage(homepage) }} />;
+    return <div dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(decodeHomepage(homepage)) }} />;
   }
 
   return (

@@ -51,6 +51,8 @@ const labels: Record<string, string> = {
   'Ticket does not exist': '工单不存在',
   'common.loading': '加载中...',
   'ticket.reply_placeholder': '输入内容回复工单...',
+  'ticket.reply_sending': '发送中',
+  'ticket.reply_success': '发送成功',
 };
 
 vi.mock('react-router-dom', () => ({
@@ -227,13 +229,13 @@ describe('TicketDetailPage legacy polling and reply behavior', () => {
     const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
     const submitSource = source.slice(
       source.indexOf('const submitReply = async () => {'),
-      source.indexOf('const data = ticket.data;'),
+      source.indexOf('const data = ticket.data ??'),
     );
 
-    expect(submitSource).toContain("toast.success('发送成功');");
+    expect(submitSource).toContain("toast.success(t('ticket.reply_success'));");
     expect(submitSource).toContain('setMessage(undefined);');
     expect(submitSource).toContain("if (inputRef.current) inputRef.current.value = '';");
-    expect(submitSource.indexOf("toast.success('发送成功');")).toBeLessThan(
+    expect(submitSource.indexOf("toast.success(t('ticket.reply_success'));")).toBeLessThan(
       submitSource.indexOf('setMessage(undefined);'),
     );
     expect(submitSource.indexOf('setMessage(undefined);')).toBeLessThan(

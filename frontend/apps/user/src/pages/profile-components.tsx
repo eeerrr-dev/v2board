@@ -1,0 +1,248 @@
+import { useTranslation } from 'react-i18next';
+import { Copy, Link2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/shadcn-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { legacyCopyText } from '@/lib/legacy-settings';
+
+export type ProfilePreferenceKey = 'auto_renewal' | 'remind_expire' | 'remind_traffic';
+export type ProfileConfirmAction = 'reset-subscribe' | 'unbind-telegram' | null;
+
+interface ProfileFieldProps {
+  id: string;
+  label: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  value: string;
+}
+
+export function ProfileField({
+  id,
+  label,
+  onChange,
+  placeholder,
+  value,
+}: ProfileFieldProps) {
+  return (
+    <div className="space-y-2.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        type="password"
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+export function PreferenceRow({
+  label,
+  checked,
+  loading,
+  onChange,
+}: {
+  label: string;
+  checked?: unknown;
+  loading?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+      <div className="text-sm font-medium leading-5">{label}</div>
+      <ProfileSwitch checked={checked} loading={loading} onChange={onChange} />
+    </div>
+  );
+}
+
+export function ProfileSwitch({
+  checked,
+  loading,
+  onChange,
+}: {
+  checked?: unknown;
+  loading?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const normalizedChecked = !!checked;
+  return (
+    <Switch
+      checked={normalizedChecked}
+      disabled={loading}
+      data-loading={loading ? 'true' : undefined}
+      data-testid="profile-switch"
+      aria-busy={!!loading}
+      onCheckedChange={(nextChecked) => onChange(nextChecked)}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowLeft') onChange(false);
+        else if (event.key === 'ArrowRight') onChange(true);
+      }}
+    />
+  );
+}
+
+export function ProfileDepositDialog({
+  input,
+  onClose,
+  onConfirm,
+  onInputChange,
+  open,
+  placeholder,
+}: {
+  input: string;
+  onClose: () => void;
+  onConfirm: () => void;
+  onInputChange: (value: string) => void;
+  open: boolean;
+  placeholder: string;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => (nextOpen ? undefined : onClose())}>
+      <DialogContent
+        className="sm:max-w-md"
+        data-testid="profile-deposit-dialog"
+        showCloseButton={false}
+      >
+        <DialogHeader>
+          <DialogTitle>{t('profile.recharge')}</DialogTitle>
+          <DialogDescription>{placeholder}</DialogDescription>
+        </DialogHeader>
+        <Input
+          data-testid="profile-deposit-input"
+          autoComplete="one-time-code"
+          placeholder={placeholder}
+          value={input}
+          onChange={(event) => onInputChange(event.target.value)}
+        />
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button data-testid="profile-deposit-confirm" onClick={onConfirm}>
+            {t('profile.confirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function ProfileTelegramBindDialog({
+  botUsername,
+  onClose,
+  open,
+  subscribeUrl,
+}: {
+  botUsername?: string;
+  onClose: () => void;
+  open: boolean;
+  subscribeUrl?: string;
+}) {
+  const { t } = useTranslation();
+  const bindCommand = `/bind ${subscribeUrl}`;
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent data-testid="profile-telegram-bind-dialog">
+        <DialogHeader>
+          <DialogTitle>{t('profile.telegram_bind')}</DialogTitle>
+        </DialogHeader>
+        {botUsername ? (
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Link2 className="size-4 text-muted-foreground" />
+                {t('profile.telegram_step1')}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {t('profile.telegram_search')}
+                <a
+                  href={`https://t.me/${botUsername}`}
+                  className="ml-1 font-medium text-foreground underline underline-offset-4"
+                >
+                  @{botUsername}
+                </a>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Copy className="size-4 text-muted-foreground" />
+                {t('profile.telegram_step2')}
+              </div>
+              <div className="text-sm text-muted-foreground">{t('profile.telegram_send')}</div>
+              <code
+                className="flex cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+                data-testid="profile-copy-code"
+                onClick={() => legacyCopyText(bindCommand)}
+              >
+                {bindCommand}
+              </code>
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-24 items-center justify-center">
+            <Spinner />
+          </div>
+        )}
+        <DialogFooter>
+          <Button data-testid="profile-telegram-bind-confirm" onClick={onClose}>
+            {t('profile.i_know')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function ProfileConfirmDialog({
+  action,
+  onCancel,
+  onConfirm,
+}: {
+  action: ProfileConfirmAction;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+  const isTelegram = action === 'unbind-telegram';
+  const title = isTelegram
+    ? t('profile.telegram_unbind_confirm')
+    : t('profile.reset_subscribe_confirm');
+  const description = isTelegram ? t('profile.telegram_unbind_tip') : t('profile.reset_subscribe_tip');
+
+  return (
+    <Dialog open={action !== null} onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent
+        className="sm:max-w-md"
+        data-testid="profile-confirm-dialog"
+        showCloseButton={false}
+      >
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            {t('common.cancel')}
+          </Button>
+          <Button data-testid="profile-confirm-primary" onClick={onConfirm}>
+            {t('profile.confirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

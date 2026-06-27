@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, matchPath, useLocation } from 'react-router-do
 import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
+import { RequireAuth } from '@/components/layout/require-auth';
 import LoginPage from '@/pages/auth/login';
 import RegisterPage from '@/pages/auth/register';
 import ForgetPage from '@/pages/auth/forget';
@@ -125,7 +126,13 @@ export default function App() {
           <Route key={path} path={path} element={USER_ROUTE_ELEMENTS[path]} />
         ))}
       </Route>
-      <Route element={<AppLayout />}>
+      <Route
+        element={
+          <RequireAuth>
+            <AppLayout />
+          </RequireAuth>
+        }
+      >
         {USER_APP_LAYOUT_ROUTE_PATHS.map((path) => (
           <Route key={path} path={path} element={USER_ROUTE_ELEMENTS[path]} />
         ))}
@@ -133,7 +140,9 @@ export default function App() {
       <Route
         path="/ticket/:ticket_id"
         element={
-          <RouteBoundaryElement>{USER_ROUTE_ELEMENTS['/ticket/:ticket_id']}</RouteBoundaryElement>
+          <RouteBoundaryElement>
+            <RequireAuth>{USER_ROUTE_ELEMENTS['/ticket/:ticket_id']}</RequireAuth>
+          </RouteBoundaryElement>
         }
       />
       <Route

@@ -61,4 +61,15 @@ describe('HomePage legacy root entry', () => {
     expect(html).toContain('<section class="hero">欢迎回来</section>');
     expect(navigate).not.toHaveBeenCalled();
   });
+
+  it('sanitizes configured legacy homepage html before rendering', () => {
+    window.settings = {
+      homepage: window.btoa(encodeURI('<section onclick="alert(1)">欢迎回来</section>')),
+    };
+
+    const html = renderToStaticMarkup(<HomePage />);
+
+    expect(html).toContain('<section>欢迎回来</section>');
+    expect(html).not.toContain('onclick');
+  });
 });

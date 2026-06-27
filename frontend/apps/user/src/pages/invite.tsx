@@ -112,7 +112,7 @@ export default function InvitePage() {
     if (generate.isPending) return;
     try {
       await generate.mutateAsync();
-      toast.success('已生成');
+      toast.success(t('invite.generated'));
       void queryClient.invalidateQueries({ queryKey: userKeys.invite, exact: true });
     } catch {}
   };
@@ -166,11 +166,9 @@ export default function InvitePage() {
               icon={<Users className="size-4" />}
               label={t('invite.registered')}
               value={
-                registered !== undefined ? (
-                  <>
-                    {registered}人
-                  </>
-                ) : undefined
+                registered !== undefined
+                  ? t('invite.people_count', { count: registered })
+                  : undefined
               }
             />
             <StatTile

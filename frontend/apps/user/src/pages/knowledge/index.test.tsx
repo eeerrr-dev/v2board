@@ -118,7 +118,18 @@ vi.mock('@/lib/queries', () => ({
 }));
 
 vi.mock('@/lib/markdown', () => ({
-  renderLegacyMarkdown: (value: string) => value,
+  LEGACY_MARKDOWN_ACTION_ATTRIBUTE: 'data-v2board-markdown-action',
+  LEGACY_MARKDOWN_VALUE_ATTRIBUTE: 'data-v2board-markdown-value',
+  renderLegacyMarkdown: (value: string) =>
+    value
+      .replace(
+        'onclick="copy(`token`)"',
+        'data-v2board-markdown-action="copy" data-v2board-markdown-value="token"',
+      )
+      .replace(
+        'onclick="jump(1)"',
+        'data-v2board-markdown-action="jump" data-v2board-markdown-value="1"',
+      ),
 }));
 
 vi.mock('@/lib/legacy-settings', () => ({
@@ -306,7 +317,8 @@ describe('KnowledgePage redesigned interactions', () => {
     expect(document.body.innerHTML).toContain('data-testid="knowledge-sheet-title"');
     expect(document.body.innerHTML).toContain('Router Guide');
     expect(document.body.innerHTML).toContain('custom-html-style');
-    expect(document.body.innerHTML).toContain('<a onclick="jump(1)">jump</a>');
+    expect(document.body.innerHTML).toContain('data-v2board-markdown-action="jump"');
+    expect(document.body.innerHTML).not.toContain('onclick=');
   });
 
   it('shows sheet loading content while fetching an article and clears hooks on close', async () => {
@@ -359,6 +371,50 @@ describe('KnowledgePage redesigned interactions', () => {
     expect(mocks.legacyCopyText).toHaveBeenCalledWith('token');
     expect(mocks.toastSuccess).toHaveBeenCalledTimes(1);
     expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功');
+  });
+
+  it('runs sanitized markdown action hooks from article clicks and keyboard activation', async () => {
+    await act(async () => {
+      root!.render(<KnowledgePage />);
+      await Promise.resolve();
+    });
+
+    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
+    await act(async () => {
+      item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const copyAction = document.body.querySelector(
+      '[data-v2board-markdown-action="copy"]',
+    ) as HTMLElement;
+    expect(copyAction).not.toBeNull();
+
+    await act(async () => {
+      copyAction.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(mocks.legacyCopyText).toHaveBeenCalledWith('token');
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功');
+
+    mocks.detailFetching = false;
+    await act(async () => {
+      window.jump?.(2);
+      await Promise.resolve();
+    });
+
+    const jumpAction = document.body.querySelector(
+      '[data-v2board-markdown-action="jump"]',
+    ) as HTMLElement;
+    expect(jumpAction).not.toBeNull();
+
+    await act(async () => {
+      jumpAction.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+      await Promise.resolve();
+    });
+
+    expect(mocks.detailArgs).toContainEqual({ id: '1', language: 'zh-CN' });
   });
 
   it('jumps between articles and refetches when jumping to the currently visible one', async () => {

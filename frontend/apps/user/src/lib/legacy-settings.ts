@@ -303,6 +303,20 @@ export function isLegacyMobile(): boolean {
 
 export function legacyCopyText(text: string | number | null | undefined): boolean {
   const value = String(text);
+  if (canUseClipboardApi()) {
+    void navigator.clipboard.writeText(value).catch(() => {
+      legacyCopyTextFallback(value);
+    });
+    return true;
+  }
+  return legacyCopyTextFallback(value);
+}
+
+function canUseClipboardApi() {
+  return Boolean(window.isSecureContext && navigator.clipboard?.writeText);
+}
+
+function legacyCopyTextFallback(value: string): boolean {
   let mark: HTMLSpanElement | null = null;
   let range: Range | null = null;
   let copied = false;

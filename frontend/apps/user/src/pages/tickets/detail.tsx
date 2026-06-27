@@ -54,11 +54,11 @@ export default function TicketDetailPage() {
 
   const submitReply = async () => {
     if (reply.isPending) return;
-    toast.loading('发送中');
+    toast.loading(t('ticket.reply_sending'));
     try {
       await reply.mutateAsync({ id: ticketId as string, message });
       toast.destroy();
-      toast.success('发送成功');
+      toast.success(t('ticket.reply_success'));
       setMessage(undefined);
       if (inputRef.current) inputRef.current.value = '';
     } catch {

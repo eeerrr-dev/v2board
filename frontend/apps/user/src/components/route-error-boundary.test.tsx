@@ -3,6 +3,17 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteErrorBoundary } from './route-error-boundary';
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) =>
+      ({
+        'common.route_load_failed': '页面加载失败',
+        'common.route_refresh_hint': '请刷新页面后重试。',
+        'common.refresh_page': '刷新页面',
+      })[key] ?? key,
+  }),
+}));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 

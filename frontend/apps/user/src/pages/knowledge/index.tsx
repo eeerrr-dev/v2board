@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent, MouseEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getLocaleAntdMessages } from '@v2board/i18n';
@@ -20,7 +21,11 @@ import { getRequestLocale } from '@/lib/api';
 import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
 import { legacyCopyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
-import { renderLegacyMarkdown } from '@/lib/markdown';
+import {
+  LEGACY_MARKDOWN_ACTION_ATTRIBUTE,
+  LEGACY_MARKDOWN_VALUE_ATTRIBUTE,
+  renderLegacyMarkdown,
+} from '@/lib/markdown';
 import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
@@ -114,6 +119,30 @@ export default function KnowledgePage() {
   useEffect(() => {
     if (detail.data && !detail.isFetching) setVisibleDetail(detail.data);
   }, [detail.data, detail.isFetching]);
+
+  const runMarkdownAction = (element: HTMLElement) => {
+    const action = element.getAttribute(LEGACY_MARKDOWN_ACTION_ATTRIBUTE);
+    const value = element.getAttribute(LEGACY_MARKDOWN_VALUE_ATTRIBUTE) ?? '';
+    if (action === 'copy') window.copy?.(value);
+    if (action === 'jump') window.jump?.(value);
+  };
+
+  const handleMarkdownAction = (event: MouseEvent<HTMLDivElement>) => {
+    if (!(event.target instanceof Element)) return;
+    const element = event.target.closest<HTMLElement>(`[${LEGACY_MARKDOWN_ACTION_ATTRIBUTE}]`);
+    if (!element || !event.currentTarget.contains(element)) return;
+    event.preventDefault();
+    runMarkdownAction(element);
+  };
+
+  const handleMarkdownActionKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (!(event.target instanceof Element)) return;
+    const element = event.target.closest<HTMLElement>(`[${LEGACY_MARKDOWN_ACTION_ATTRIBUTE}]`);
+    if (!element || !event.currentTarget.contains(element)) return;
+    event.preventDefault();
+    runMarkdownAction(element);
+  };
 
   return (
     <PageShell className="gap-4" data-testid="knowledge-surface">
@@ -243,6 +272,8 @@ export default function KnowledgePage() {
               <div
                 className="custom-html-style min-w-0"
                 data-testid="knowledge-article"
+                onClick={handleMarkdownAction}
+                onKeyDown={handleMarkdownActionKeyDown}
                 dangerouslySetInnerHTML={{ __html: renderedBody }}
               />
             )}

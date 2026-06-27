@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
     'auth.confirm_password': '确认密码',
     'auth.email': '邮箱',
     'auth.email_code': '邮箱验证码',
+    'auth.email_code_sent_description': '如果没有收到验证码请检查垃圾箱。',
+    'auth.email_code_sent_title': '发送成功',
     'auth.hide_password': '隐藏密码',
     'auth.invite_code': '邀请码',
     'auth.invite_code_optional': '邀请码(选填)',

@@ -1,36 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
+import { CardElement, Elements, useElements, useStripe } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js/pure';
+import type { StripeCardElementOptions, Token } from '@stripe/stripe-js';
 
-type StripeToken = { id: string };
-type StripeChangeEvent = {
-  complete: boolean;
-  error?: { message?: string };
-};
-type StripeCardElement = {
-  mount: (selector: HTMLElement) => void;
-  unmount?: () => void;
-  destroy?: () => void;
-  on: (event: 'change', handler: (event: StripeChangeEvent) => void) => void;
-};
-type StripeElements = {
-  create: (type: 'card', options?: Record<string, unknown>) => StripeCardElement;
-};
-type StripeInstance = {
-  _registerWrapper?: (info: { name: string; version: string; startTime: number }) => void;
-  elements: () => StripeElements;
-  createToken: (
-    card: StripeCardElement,
-  ) => Promise<{ token?: StripeToken; error?: { message?: string } }>;
-};
+type StripeToken = Pick<Token, 'id'>;
 
-declare global {
-  interface Window {
-    Stripe?: (publicKey: string) => StripeInstance;
-  }
-}
-
-const STRIPE_SRC = 'https://js.stripe.com/v3';
-const STRIPE_SRC_PATTERN = /^https:\/\/js\.stripe\.com\/v3\/?(\?.*)?$/;
-const STRIPE_CARD_OPTIONS = {
+const STRIPE_CARD_OPTIONS: StripeCardElementOptions = {
   style: {
     base: {
       color: '#32325d',
@@ -47,110 +22,45 @@ const STRIPE_CARD_OPTIONS = {
     },
   },
 };
-let stripeScriptPromise: Promise<void> | null = null;
 
-function findStripeScript() {
-  const scripts = document.querySelectorAll<HTMLScriptElement>(`script[src^="${STRIPE_SRC}"]`);
-  for (const script of scripts) {
-    if (STRIPE_SRC_PATTERN.test(script.src)) return script;
-  }
-  return null;
-}
-
-function loadStripeScript() {
-  if (window.Stripe) return Promise.resolve();
-  if (!stripeScriptPromise) {
-    stripeScriptPromise = new Promise((resolve, reject) => {
-      const existing = findStripeScript();
-      if (existing) {
-        existing.addEventListener(
-          'load',
-          () => {
-            if (window.Stripe) resolve();
-            else reject(new Error('Stripe.js not available'));
-          },
-          { once: true },
-        );
-        existing.addEventListener('error', () => reject(new Error('Failed to load Stripe.js')), {
-          once: true,
-        });
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = STRIPE_SRC;
-      script.onload = () => {
-        if (window.Stripe) resolve();
-        else reject(new Error('Stripe.js not available'));
-      };
-      script.onerror = () => reject(new Error('Failed to load Stripe.js'));
-      const target = document.head || document.body;
-      if (!target) {
-        reject(new Error('Expected document.body not to be null. Stripe.js requires a <body> element.'));
-        return;
-      }
-      target.appendChild(script);
-    });
-  }
-  return stripeScriptPromise;
-}
-
-export function StripeCardForm({
-  publicKey,
-  onToken,
-  onError,
-}: {
+interface StripeCardFormProps {
   publicKey: string;
   onToken: (token: StripeToken | null) => void;
   onError?: (message: string | null) => void;
-}) {
-  const mountRef = useRef<HTMLDivElement | null>(null);
+}
 
-  useEffect(() => {
-    let mounted = true;
-    let card: StripeCardElement | null = null;
-    const startTime = Date.now();
+export function StripeCardForm({ publicKey, onToken, onError }: StripeCardFormProps) {
+  const stripePromise = useMemo(() => loadStripe(publicKey), [publicKey]);
 
-    void loadStripeScript()
-      .then(() => {
-        if (!mounted || !mountRef.current || !window.Stripe) return;
-        const stripe = window.Stripe(publicKey);
-        stripe._registerWrapper?.({
-          name: 'stripe-js',
-          version: '1.38.1',
-          startTime,
-        });
-        const elements = stripe.elements();
-        card = elements.create('card', STRIPE_CARD_OPTIONS);
-        card.mount(mountRef.current);
-        // The original ignores the change event and calls createToken on every
-        // change (no event.complete/error guard), reporting the result each time.
-        card.on('change', () => {
-          if (!card) return;
-          void stripe.createToken(card).then((result) => {
-            if (!mounted) return;
-            if (result.error?.message) {
-              onToken(null);
-              onError?.(result.error.message);
-              return;
-            }
-            onError?.(null);
-            onToken(result.token ?? null);
-          });
-        });
-      })
-      .catch((error: Error) => {
-        if (!mounted) return;
-        onError?.(error.message);
-      });
+  return (
+    <Elements stripe={stripePromise}>
+      <StripeCardElement onError={onError} onToken={onToken} />
+    </Elements>
+  );
+}
 
-    return () => {
-      mounted = false;
-      if (card) {
-        if (card.destroy) card.destroy();
-        else card.unmount?.();
+function StripeCardElement({
+  onToken,
+  onError,
+}: Pick<StripeCardFormProps, 'onToken' | 'onError'>) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const tokenize = useCallback(() => {
+    const card = elements?.getElement(CardElement);
+    if (!stripe || !card) return;
+
+    // Keep the legacy checkout contract: every Stripe CardElement change attempts
+    // tokenization, and the parent only enables checkout once a token id exists.
+    void stripe.createToken(card).then((result) => {
+      if (result.error?.message) {
+        onToken(null);
+        onError?.(result.error.message);
+        return;
       }
-    };
-  }, [onError, onToken, publicKey]);
+      onError?.(null);
+      onToken(result.token ?? null);
+    });
+  }, [elements, onError, onToken, stripe]);
 
-  return <div ref={mountRef} />;
+  return <CardElement options={STRIPE_CARD_OPTIONS} onChange={tokenize} />;
 }

@@ -1,0 +1,9 @@
+/*
+ * Modern user-surface styles.
+ *
+ * These imports belong to the redesigned shadcn/Radix islands and should remain
+ * the only unprefixed Tailwind utility entry for user surfaces.
+ */
+@import './user-shadcn.css';
+@import './user-shadcn-motion.css';
+@import './user-auth-surface.css';

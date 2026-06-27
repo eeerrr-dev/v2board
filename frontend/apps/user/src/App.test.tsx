@@ -41,6 +41,7 @@ describe('user legacy route table', () => {
     expect(USER_APP_LAYOUT_ROUTE_PATHS).not.toContain('/ticket/:ticket_id');
     expect(source).toContain('path="/ticket/:ticket_id"');
     expect(source).toContain("USER_ROUTE_ELEMENTS['/ticket/:ticket_id']");
+    expect(source).toContain("<RequireAuth>{USER_ROUTE_ELEMENTS['/ticket/:ticket_id']}</RequireAuth>");
   });
 
   it('normalizes unmatched legacy hashes without rendering the bundled home route first', () => {
@@ -71,7 +72,8 @@ describe('user legacy route table', () => {
 
   it('keeps the shared layout mounted while switching routes', () => {
     expect(source).toContain('<Route element={<GuestLayout />}>');
-    expect(source).toContain('<Route element={<AppLayout />}>');
+    expect(source).toContain('<RequireAuth>');
+    expect(source).toContain('<AppLayout />');
     expect(source).not.toContain('key={routeComponentKey');
     expect(source).not.toContain('function KeyedAppLayout');
     expect(source).not.toContain('function KeyedGuestLayout');

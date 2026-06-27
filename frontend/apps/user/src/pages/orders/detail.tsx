@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import QRCode from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 import type { Order, PaymentMethod } from '@v2board/types';
 import { BookOpen, CheckCircle2, Info, TriangleAlert } from 'lucide-react';
 import {
@@ -33,6 +33,7 @@ import { formatUserLegacyDateTime } from '@/lib/legacy-date';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page';
+import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/cn';
 
@@ -204,7 +205,7 @@ export default function OrderDetailPage() {
         token: isStripePayment ? stripeToken?.id : undefined,
       });
       if (isStripePayment) {
-        toast.loading('请稍等，我们正在验证该笔支付', { duration: 5000 });
+        toast.loading(t('order.stripe_verifying'), { duration: 5000 });
         return;
       }
       if (result.type === 0) {
@@ -212,7 +213,7 @@ export default function OrderDetailPage() {
         setPayUrl(typeof result.data === 'string' ? result.data : undefined);
       } else if (result.type === 1 && typeof result.data === 'string') {
         window.location.href = result.data;
-        toast.info('正在前往收银台');
+        toast.info(t('order.redirecting_checkout'));
       }
     } catch (error) {
       if (isLegacyCheckoutNetworkError(error)) {
@@ -257,7 +258,7 @@ export default function OrderDetailPage() {
           <OrderInfoCard title={t('order.product_info')} tradeTitle>
             <div data-testid="order-info">
               {isDeposit ? (
-                <InfoRow label={t('order.product_name')}>充值</InfoRow>
+                <InfoRow label={t('order.product_name')}>{t('order.deposit')}</InfoRow>
               ) : (
                 <>
                   <InfoRow label={t('order.product_name')}>{order.plan?.name}</InfoRow>
@@ -322,44 +323,32 @@ export default function OrderDetailPage() {
                 <CardHeader>
                   <CardTitle className="text-base leading-6">{t('order.payment_method')}</CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-3 p-6 pt-0">
-                  {paymentMethods?.map((method) => (
-                    <button
-                      type="button"
-                      key={method.id}
-                      className={cn(
-                        'flex min-h-12 items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                        effectiveMethodId === method.id && 'border-primary bg-accent text-accent-foreground',
-                      )}
-                      data-testid="payment-option"
-                      data-state={effectiveMethodId === method.id ? 'checked' : 'unchecked'}
-                      onClick={() => {
-                        setMethodId(method.id);
-                        setPreHandlingAmount(calculatePreHandlingAmount(order, method));
-                      }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={cn(
-                            'flex size-4 items-center justify-center rounded-full border border-input',
-                            effectiveMethodId === method.id && 'border-primary',
-                          )}
-                          data-testid="payment-option-radio"
-                        >
-                          <span
-                            className={cn(
-                              'size-2 rounded-full bg-primary opacity-0',
-                              effectiveMethodId === method.id && 'opacity-100',
-                            )}
-                          />
-                        </span>
-                        {method.name}
-                      </div>
-                      {method.icon && (
-                        <img className="h-7 w-auto" src={method.icon} alt="" />
-                      )}
-                    </button>
-                  ))}
+                <CardContent className="p-6 pt-0">
+                  <RadioGroup
+                    value={effectiveMethodId === undefined ? undefined : String(effectiveMethodId)}
+                    onValueChange={(nextMethodId) => {
+                      const nextId = Number(nextMethodId);
+                      const nextPayment = paymentMethods?.find((method) => method.id === nextId);
+                      setMethodId(nextId);
+                      setPreHandlingAmount(calculatePreHandlingAmount(order, nextPayment));
+                    }}
+                  >
+                    {paymentMethods?.map((method) => (
+                      <RadioGroupItem
+                        key={method.id}
+                        value={String(method.id)}
+                        data-testid="payment-option"
+                      >
+                        <div className="flex items-center gap-3">
+                          <RadioGroupIndicator data-testid="payment-option-radio" />
+                          {method.name}
+                        </div>
+                        {method.icon && (
+                          <img className="h-7 w-auto" src={method.icon} alt="" />
+                        )}
+                      </RadioGroupItem>
+                    ))}
+                  </RadioGroup>
                 </CardContent>
               </Card>
 
@@ -480,10 +469,9 @@ export default function OrderDetailPage() {
           </DialogHeader>
           {payUrl && (
             <div className="flex justify-center">
-              <QRCode
+              <QRCodeSVG
                 value={payUrl}
-                renderAs="svg"
-                size="250"
+                size={250}
               />
             </div>
           )}

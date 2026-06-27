@@ -1,16 +1,58 @@
+import type { ReactNode } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StripeCardForm } from './stripe-card-form';
 
+const stripeMocks = vi.hoisted(() => ({
+  cardElement: { kind: 'card-element' },
+  cardElementProps: null as null | {
+    onChange?: () => void;
+    options?: unknown;
+  },
+  createToken: vi.fn(),
+  elementsStripe: null as unknown,
+  getElement: vi.fn(),
+  loadStripe: vi.fn(),
+}));
+
+vi.mock('@stripe/stripe-js/pure', () => ({
+  loadStripe: stripeMocks.loadStripe,
+}));
+
+vi.mock('@stripe/react-stripe-js', () => ({
+  CardElement: (props: { onChange?: () => void; options?: unknown }) => {
+    stripeMocks.cardElementProps = props;
+    return <div data-testid="stripe-card-element" />;
+  },
+  Elements: ({ children, stripe }: { children: ReactNode; stripe: unknown }) => {
+    stripeMocks.elementsStripe = stripe;
+    return <div data-testid="stripe-elements">{children}</div>;
+  },
+  useElements: () => ({
+    getElement: stripeMocks.getElement,
+  }),
+  useStripe: () => ({
+    createToken: stripeMocks.createToken,
+  }),
+}));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-describe('StripeCardForm legacy behavior', () => {
+describe('StripeCardForm official Stripe integration', () => {
   let container: HTMLDivElement;
   let root: Root | null;
 
   beforeEach(() => {
+    stripeMocks.cardElementProps = null;
+    stripeMocks.createToken.mockReset();
+    stripeMocks.createToken.mockResolvedValue({ token: { id: 'tok_modern' } });
+    stripeMocks.elementsStripe = null;
+    stripeMocks.getElement.mockReset();
+    stripeMocks.getElement.mockReturnValue(stripeMocks.cardElement);
+    stripeMocks.loadStripe.mockReset();
+    stripeMocks.loadStripe.mockReturnValue(Promise.resolve({ stripe: true }));
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -20,47 +62,19 @@ describe('StripeCardForm legacy behavior', () => {
     if (root) act(() => root?.unmount());
     container.remove();
     document.body.innerHTML = '';
-    document
-      .querySelectorAll('script[src^="https://js.stripe.com/v3"]')
-      .forEach((script) => script.remove());
-    delete window.Stripe;
     vi.restoreAllMocks();
   });
 
-  it('passes the bundled theme CardElement style and tokenizes on every change', async () => {
-    let onChange: ((event: { complete: boolean }) => void) | undefined;
-    const card = {
-      mount: vi.fn(),
-      unmount: vi.fn(),
-      destroy: vi.fn(),
-      on: vi.fn((event: 'change', handler: (event: { complete: boolean }) => void) => {
-        if (event === 'change') onChange = handler;
-      }),
-    };
-    const create = vi.fn(() => card);
-    const createToken = vi.fn().mockResolvedValue({ token: { id: 'tok_legacy' } });
-    const registerWrapper = vi.fn();
-    vi.spyOn(Date, 'now').mockReturnValue(1234);
-    const stripe = vi.fn(() => ({
-      _registerWrapper: registerWrapper,
-      elements: () => ({ create }),
-      createToken,
-    })) as unknown as NonNullable<typeof window.Stripe>;
-    window.Stripe = stripe;
+  it('loads Stripe through the official SDK and tokenizes on every CardElement change', async () => {
     const handleToken = vi.fn();
 
     act(() => {
       root!.render(<StripeCardForm publicKey="pk_test" onToken={handleToken} />);
     });
 
-    await vi.waitFor(() => expect(create).toHaveBeenCalled());
-    expect(stripe).toHaveBeenCalledWith('pk_test');
-    expect(registerWrapper).toHaveBeenCalledWith({
-      name: 'stripe-js',
-      version: '1.38.1',
-      startTime: 1234,
-    });
-    expect(create).toHaveBeenCalledWith('card', {
+    expect(stripeMocks.loadStripe).toHaveBeenCalledWith('pk_test');
+    expect(stripeMocks.elementsStripe).toBe(stripeMocks.loadStripe.mock.results[0]?.value);
+    expect(stripeMocks.cardElementProps?.options).toEqual({
       style: {
         base: {
           color: '#32325d',
@@ -79,73 +93,32 @@ describe('StripeCardForm legacy behavior', () => {
     });
 
     await act(async () => {
-      onChange?.({ complete: false });
+      stripeMocks.cardElementProps?.onChange?.();
       await Promise.resolve();
     });
 
-    expect(createToken).toHaveBeenCalledWith(card);
-    expect(handleToken).toHaveBeenCalledWith({ id: 'tok_legacy' });
-
-    act(() => root?.unmount());
-    root = null;
-
-    expect(card.destroy).toHaveBeenCalledTimes(1);
-    expect(card.unmount).not.toHaveBeenCalled();
+    expect(stripeMocks.getElement).toHaveBeenCalled();
+    expect(stripeMocks.createToken).toHaveBeenCalledWith(stripeMocks.cardElement);
+    expect(handleToken).toHaveBeenCalledWith({ id: 'tok_modern' });
   });
 
-  it('uses the loadStripe call time as the legacy wrapper startTime', async () => {
-    let onChange: ((event: { complete: boolean }) => void) | undefined;
-    const card = {
-      mount: vi.fn(),
-      destroy: vi.fn(),
-      on: vi.fn((event: 'change', handler: (event: { complete: boolean }) => void) => {
-        if (event === 'change') onChange = handler;
-      }),
-    };
-    const create = vi.fn(() => card);
-    const createToken = vi.fn().mockResolvedValue({ token: { id: 'tok_delayed' } });
-    const registerWrapper = vi.fn();
-    let loaded = false;
-    vi.spyOn(Date, 'now').mockImplementation(() => (loaded ? 5678 : 1234));
-    let script: HTMLScriptElement | null = null;
-    vi.spyOn(document.head, 'appendChild').mockImplementation((node: Node) => {
-      script = node as HTMLScriptElement;
-      return node;
-    });
-    const stripe = vi.fn(() => ({
-      _registerWrapper: registerWrapper,
-      elements: () => ({ create }),
-      createToken,
-    })) as unknown as NonNullable<typeof window.Stripe>;
+  it('reports Stripe tokenization errors without enabling checkout', async () => {
     const handleToken = vi.fn();
+    const handleError = vi.fn();
+    stripeMocks.createToken.mockResolvedValue({ error: { message: 'Card declined' } });
 
     act(() => {
-      root!.render(<StripeCardForm publicKey="pk_delayed" onToken={handleToken} />);
-    });
-
-    expect(script).not.toBeNull();
-    expect(script!.src).toBe('https://js.stripe.com/v3');
-    window.Stripe = stripe;
-    loaded = true;
-
-    await act(async () => {
-      script!.dispatchEvent(new Event('load'));
-      await Promise.resolve();
-    });
-
-    await vi.waitFor(() => expect(create).toHaveBeenCalled());
-    expect(registerWrapper).toHaveBeenCalledWith({
-      name: 'stripe-js',
-      version: '1.38.1',
-      startTime: 1234,
+      root!.render(
+        <StripeCardForm publicKey="pk_error" onToken={handleToken} onError={handleError} />,
+      );
     });
 
     await act(async () => {
-      onChange?.({ complete: false });
+      stripeMocks.cardElementProps?.onChange?.();
       await Promise.resolve();
     });
 
-    expect(createToken).toHaveBeenCalledWith(card);
-    expect(handleToken).toHaveBeenCalledWith({ id: 'tok_delayed' });
+    expect(handleToken).toHaveBeenCalledWith(null);
+    expect(handleError).toHaveBeenCalledWith('Card declined');
   });
 });

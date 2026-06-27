@@ -9,6 +9,7 @@ import ProfilePage from './profile';
   true;
 
 const source = readFileSync(`${process.cwd()}/src/pages/profile.tsx`, 'utf8');
+const componentSource = readFileSync(`${process.cwd()}/src/pages/profile-components.tsx`, 'utf8');
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -49,6 +50,13 @@ const labels: Record<string, string> = {
   'profile.redeem_giftcard': '礼品卡',
   'profile.redeem_placeholder': '请输入礼品卡',
   'profile.redeem_submit': '兑换',
+  'profile.redeem_success': '兑换成功: {{detail}}',
+  'profile.redeem_balance': '账户余额 {{amount}}',
+  'profile.redeem_days': '订阅时长 {{days}} 天',
+  'profile.redeem_traffic': '套餐流量 {{traffic}} GB',
+  'profile.redeem_reset': '流量已重置',
+  'profile.redeem_plan_days': '订阅套餐 {{days}} 天',
+  'profile.redeem_unknown': '未知类型',
   'profile.change_password': '修改密码',
   'profile.old_password': '旧密码',
   'profile.new_password': '新密码',
@@ -80,6 +88,8 @@ const labels: Record<string, string> = {
   'profile.telegram_search': '打开Telegram搜索',
   'profile.telegram_send': '向机器人发送您的',
   'profile.password_mismatch': '两次新密码输入不同',
+  'profile.change_password_success': '修改成功，请重新登陆',
+  'profile.deposit_placeholder': '请输入充值金额{{currency}}',
 };
 
 vi.mock('react-router-dom', () => ({
@@ -87,7 +97,15 @@ vi.mock('react-router-dom', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => labels[key] ?? key }),
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, unknown>) => {
+      let label = labels[key] ?? key;
+      Object.entries(values ?? {}).forEach(([name, value]) => {
+        label = label.replaceAll(`{{${name}}}`, String(value));
+      });
+      return label;
+    },
+  }),
 }));
 
 vi.mock('@/components/ui/shadcn-dialog', () => ({
@@ -323,11 +341,11 @@ describe('ProfilePage shadcn account surface', () => {
     expect(source).toContain('checked={data?.auto_renewal}');
     expect(source).toContain('checked={data?.remind_expire}');
     expect(source).toContain('checked={data?.remind_traffic}');
-    expect(source).toContain('/bind {subscribe?.subscribe_url}');
+    expect(componentSource).toContain('const bindCommand = `/bind ${subscribeUrl}`;');
     expect(source).not.toContain('checked={Boolean(data?.auto_renewal)}');
     expect(source).not.toContain('checked={Boolean(data?.remind_expire)}');
     expect(source).not.toContain('checked={Boolean(data?.remind_traffic)}');
-    expect(source).not.toContain("/bind {subscribe?.subscribe_url ?? ''}");
+    expect(componentSource).not.toContain("`/bind ${subscribeUrl ?? ''}`");
   });
 
   it('updates profile switches with the original 0/1 payload and refetches after success', async () => {

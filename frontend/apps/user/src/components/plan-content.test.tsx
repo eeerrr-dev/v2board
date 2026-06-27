@@ -69,8 +69,19 @@ describe('PlanContent shadcn feature rendering', () => {
     expect(html).toContain('>null</div>');
   });
 
-  it('keeps the direct raw HTML handoff without an empty-string fallback', () => {
-    expect(planContentSource).toContain('dangerouslySetInnerHTML={{ __html: content as string }}');
+  it('sanitizes the direct raw HTML handoff without an empty-string fallback', () => {
+    expect(planContentSource).toContain(
+      'dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(content as string) }}',
+    );
     expect(planContentSource).not.toContain("dangerouslySetInnerHTML={{ __html: content ?? '' }}");
+  });
+
+  it('removes unsafe attributes from non-JSON plan HTML', () => {
+    const html = renderToStaticMarkup(
+      <PlanContent content={'<p onclick="alert(1)">Raw HTML</p>'} className="mb-3" />,
+    );
+
+    expect(html).toContain('<p>Raw HTML</p>');
+    expect(html).not.toContain('onclick');
   });
 });

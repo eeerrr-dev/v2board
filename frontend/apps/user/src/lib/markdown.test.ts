@@ -25,4 +25,20 @@ describe('legacy markdown rendering', () => {
   ])('matches the legacy markdown-it output for %s', (source, expected) => {
     expect(renderLegacyMarkdown(source)).toBe(expected);
   });
+
+  it('removes unsafe markdown html while preserving safe markup', () => {
+    expect(renderLegacyMarkdown('<img src=x onerror="alert(1)"><script>alert(1)</script>')).toBe(
+      '<p><img src="x"></p>\n',
+    );
+  });
+
+  it('translates legacy copy and jump inline handlers into safe React action hooks', () => {
+    expect(
+      renderLegacyMarkdown(
+        `<button onclick="copy('token')">Copy</button><span onclick="jump(2)">Jump</span>`,
+      ),
+    ).toBe(
+      '<p><button data-v2board-markdown-action="copy" data-v2board-markdown-value="token">Copy</button><span data-v2board-markdown-action="jump" data-v2board-markdown-value="2" tabindex="0" role="button">Jump</span></p>\n',
+    );
+  });
 });

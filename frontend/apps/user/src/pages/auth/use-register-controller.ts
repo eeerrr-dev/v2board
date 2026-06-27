@@ -111,7 +111,9 @@ export function useRegisterController(): RegisterController {
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
       if (!sent) return;
-      authToast.success('发送成功', { description: '如果没有收到验证码请检查垃圾箱。' });
+      authToast.success(t('auth.email_code_sent_title'), {
+        description: t('auth.email_code_sent_description'),
+      });
       startSendEmailVerifyCountdown();
     } catch {}
   };

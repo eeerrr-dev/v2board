@@ -28,6 +28,14 @@ describe('legacy settings bootstrap', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     document.body.innerHTML = '';
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value: false,
+    });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    });
   });
 
   it('applies the selected theme from source variables without loading packaged css', () => {
@@ -95,6 +103,30 @@ describe('legacy settings bootstrap', () => {
     expect(legacyCopyText('legacy text')).toBe(true);
 
     expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('span')).toBeNull();
+  });
+
+  it('uses the modern Clipboard API when the page has a secure clipboard context', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const execCommand = vi.fn(() => true);
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    expect(legacyCopyText('modern text')).toBe(true);
+    await Promise.resolve();
+
+    expect(writeText).toHaveBeenCalledWith('modern text');
+    expect(execCommand).not.toHaveBeenCalled();
     expect(document.querySelector('span')).toBeNull();
   });
 

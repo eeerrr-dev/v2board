@@ -22,8 +22,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { PageShell } from '@/components/ui/page';
+import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group';
 import { Spinner } from '@/components/ui/spinner';
-import { cn } from '@/lib/cn';
 
 const PERIOD_LABELS: Record<PlanPeriod, string> = {
   month_price: 'plan.monthly',
@@ -239,46 +239,32 @@ export default function PlanCheckoutPage() {
           <CardHeader>
             <CardTitle className="text-base leading-6">{t('plan.select_period')}</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 p-6 pt-0">
-            {periods.map((item) => {
-              const price = plan[item.period];
-              if (price === null) return null;
-              return (
-                <button
-                  type="button"
-                  key={item.period}
-                  onClick={() => setPeriod(item.period)}
-                  data-testid="checkout-period-option"
-                  className={cn(
-                    'flex min-h-12 items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                    selectedPeriod === item.period && 'border-primary bg-accent text-accent-foreground',
-                  )}
-                  data-state={selectedPeriod === item.period ? 'checked' : 'unchecked'}
-                >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={cn(
-                        'flex size-4 items-center justify-center rounded-full border border-input',
-                        selectedPeriod === item.period && 'border-primary',
-                      )}
-                      data-testid="checkout-period-radio"
-                    >
-                      <span
-                        className={cn(
-                          'size-2 rounded-full bg-primary opacity-0',
-                          selectedPeriod === item.period && 'opacity-100',
-                        )}
-                      />
+          <CardContent className="p-6 pt-0">
+            <RadioGroup
+              value={selectedPeriod}
+              onValueChange={(nextPeriod) => setPeriod(nextPeriod as PlanPeriod)}
+            >
+              {periods.map((item) => {
+                const price = plan[item.period];
+                if (price === null) return null;
+                return (
+                  <RadioGroupItem
+                    key={item.period}
+                    value={item.period}
+                    data-testid="checkout-period-option"
+                  >
+                    <div className="flex items-center gap-3">
+                      <RadioGroupIndicator data-testid="checkout-period-radio" />
+                      {t(item.labelKey)}
+                    </div>
+                    <span className="price font-medium">
+                      {symbol}
+                      {(price / 100).toFixed(2)}
                     </span>
-                    {t(item.labelKey)}
-                  </div>
-                  <span className="price font-medium">
-                    {symbol}
-                    {(price / 100).toFixed(2)}
-                  </span>
-                </button>
-              );
-            })}
+                  </RadioGroupItem>
+                );
+              })}
+            </RadioGroup>
           </CardContent>
         </Card>
       </div>
