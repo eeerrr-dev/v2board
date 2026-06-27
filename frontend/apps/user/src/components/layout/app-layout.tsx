@@ -311,7 +311,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
             <div
               className={cn(
                 'border-t border-border bg-background px-4 py-3 sm:px-6 lg:px-8',
-                showSearchBar ? 'block' : 'hidden',
+                !showSearchBar && 'hidden',
               )}
             >
               <div className="flex gap-2">

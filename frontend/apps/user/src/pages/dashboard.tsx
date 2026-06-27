@@ -285,7 +285,7 @@ export default function DashboardPage() {
   const renderNoticeCard = (notice: Notice) => (
     <button
       type="button"
-      className="v2board-notice-card block w-full overflow-hidden rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="v2board-notice-card flex w-full flex-col overflow-hidden rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       onClick={() => openNotice(notice)}
     >
       <div
@@ -577,8 +577,8 @@ export default function DashboardPage() {
                     <Icon className="size-4" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium">{t(shortcut.titleKey)}</span>
-                    <span className="block truncate text-sm leading-6 text-muted-foreground">
+                    <span className="flex text-sm font-medium">{t(shortcut.titleKey)}</span>
+                    <span className="flex overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-6 text-muted-foreground">
                       {t(shortcut.descKey)}
                       {shortcut.descKey === 'dashboard.shortcut_tutorial_desc' ? (
                         <> {window.settings?.title}</>

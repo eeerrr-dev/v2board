@@ -163,6 +163,8 @@ describe('KnowledgePage shadcn library surface', () => {
     expect(html).toContain('General');
     expect(html).toContain('Router');
     expect(html).toContain('v2board-knowledge-item');
+    expect(html).not.toContain('v2board-knowledge-item-title block');
+    expect(html).not.toContain('v2board-knowledge-item-date block');
     expect(html).toContain('Copy Article');
     expect(html).toContain('Router Guide');
     expect(html).toContain('最后更新: 2023/11/14');

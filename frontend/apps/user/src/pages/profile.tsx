@@ -519,7 +519,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="text-sm text-muted-foreground">{t('profile.telegram_send')}</div>
                 <code
-                  className="v2board-profile-copy-code block cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+                  className="v2board-profile-copy-code flex cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
                   onClick={() => copyBindCommand()}
                 >
                   /bind {subscribe?.subscribe_url}

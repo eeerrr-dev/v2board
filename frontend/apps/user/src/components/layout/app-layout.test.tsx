@@ -246,6 +246,7 @@ describe('AppLayout shadcn app shell behavior', () => {
     });
 
     const input = container.querySelector<HTMLInputElement>('input[placeholder="Search..."]')!;
+    expect(input.closest('.border-t')?.className).not.toMatch(/(^|\s)block(\s|$)/);
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
     valueSetter?.call(input, 'node');
     await act(async () => {

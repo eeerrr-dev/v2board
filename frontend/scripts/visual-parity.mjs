@@ -24,6 +24,7 @@ const maxDiffRatio = Number(process.env.VISUAL_PARITY_MAX_DIFF_RATIO ?? '0.01');
 const maxAverageDelta = Number(process.env.VISUAL_PARITY_MAX_AVERAGE_DELTA ?? '2');
 const channelThreshold = Number(process.env.VISUAL_PARITY_CHANNEL_THRESHOLD ?? '24');
 const parityMode = process.env.VISUAL_PARITY_MODE ?? 'screenshots';
+const captureRetiredSource = process.env.VISUAL_PARITY_CAPTURE_RETIRED === '1';
 const scenarioFilter = process.env.VISUAL_PARITY_FILTER ?? '';
 const exactScenarioFilter = process.env.VISUAL_PARITY_EXACT_FILTER === '1';
 const scenarioLabelList = (process.env.VISUAL_PARITY_SCENARIO_LABELS ?? '')
@@ -4442,6 +4443,14 @@ try {
   await writeReport();
   for (const scenario of selectedScenarios) {
     if (scenario.visualRetired) {
+      if (captureRetiredSource) {
+        for (const viewport of selectedViewports) {
+          const result = await captureRetiredScenario(scenario, viewport);
+          report.push(result);
+          await writeReport();
+        }
+        continue;
+      }
       // Redesigned surface: comparing the new design against the old packaged
       // oracle is meaningless, so the pixel diff is intentionally retired. The
       // route's behavior/contract parity still gates it via the interactions
@@ -4475,14 +4484,55 @@ if (failures.length) {
   );
 }
 
-console.log('Visual parity OK: source screenshots match the packaged oracle threshold.');
+const sourceOnlyCount = report.filter((item) => item.sourceOnly).length;
+if (sourceOnlyCount && sourceOnlyCount === report.length) {
+  console.log('Visual source capture OK: retired redesigned source screenshots captured.');
+} else {
+  console.log('Visual parity OK: source screenshots match the packaged oracle threshold.');
+}
 for (const item of report) {
-  console.log(
-    `  ${item.label}/${item.viewport}/${item.browser}: diff ${(item.diffRatio * 100).toFixed(3)}%, ` +
-      `average delta ${item.averageDelta.toFixed(3)}`,
-  );
+  if (item.sourceOnly) {
+    console.log(
+      `  ${item.label}/${item.viewport}/${item.browser}: source captured, ` +
+        `${Math.round(item.sourceMetrics.rootWidth)}x${Math.round(item.sourceMetrics.rootHeight)} root`,
+    );
+  } else {
+    console.log(
+      `  ${item.label}/${item.viewport}/${item.browser}: diff ${(item.diffRatio * 100).toFixed(3)}%, ` +
+        `average delta ${item.averageDelta.toFixed(3)}`,
+    );
+  }
 }
 console.log(`Artifacts: ${artifactDir}`);
+
+async function captureRetiredScenario(scenario, viewport) {
+  const name = `${scenario.label}-${viewport.label}-${browserName}`;
+  let sourceCapture;
+
+  try {
+    sourceCapture = await captureScenarioWithFreshBrowser(
+      new URL(scenario.path, sourceBaseUrl).toString(),
+      scenario,
+      viewport,
+      'source',
+    );
+  } catch (error) {
+    throw new Error(`${name}/source: ${error.message}`);
+  }
+
+  const sourcePath = join(artifactDir, `${name}-source.png`);
+  await writeFile(sourcePath, sourceCapture.screenshot);
+
+  return {
+    browser: browserName,
+    label: scenario.label,
+    sourceDiagnostics: sourceCapture.diagnostics,
+    sourceMetrics: sourceCapture.metrics,
+    sourceOnly: true,
+    sourcePath,
+    viewport: viewport.label,
+  };
+}
 
 async function compareScenario(oracleBaseUrl, scenario, viewport) {
   const name = `${scenario.label}-${viewport.label}-${browserName}`;

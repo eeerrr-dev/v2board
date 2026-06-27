@@ -268,6 +268,10 @@ Shared redesigned user primitives should live in `frontend/apps/user/src/compone
   behavior or interaction parity needs stable selectors.
 - Do not reintroduce Ant table class names such as `ant-table-column-title` or
   `ant-table-tbody` as presentation helpers on redesigned user tables.
+- Avoid bare Tailwind utility classes that collide with legacy global selectors
+  on redesigned user surfaces. In particular, do not use `.block` as a layout
+  utility because OneUI owns that class; use `flex`, `grid`, `inline-block`, or
+  no display class instead.
 
 For new redesigned surfaces, do not use:
 

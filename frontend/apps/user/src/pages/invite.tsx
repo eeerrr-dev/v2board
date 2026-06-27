@@ -244,7 +244,7 @@ export default function InvitePage() {
               empty={codes.length === 0 ? emptyDescription : undefined}
               headers={[
                 <span key="code">{t('invite.code_col')}</span>,
-                <span key="created" className="block text-right">
+                <span key="created" className="inline-block text-right">
                   {t('invite.created_at_col')}
                 </span>,
               ]}
@@ -296,7 +296,7 @@ export default function InvitePage() {
               empty={!detailRows.length ? emptyDescription : undefined}
               headers={[
                 <span key="issued">{t('invite.issued_at')}</span>,
-                <span key="commission" className="block text-right">
+                <span key="commission" className="inline-block text-right">
                   {t('invite.commission_col')}
                 </span>,
               ]}

@@ -553,6 +553,7 @@ visual-parity: legacy-oracle-check
 						-e NODE_OPTIONS=$(VISUAL_PARITY_NODE_OPTIONS) \
 						-e PLAYWRIGHT_BROWSERS_PATH=/app/frontend/.cache/ms-playwright \
 						-e VISUAL_PARITY_MODE=$${VISUAL_PARITY_MODE:-screenshots} \
+						-e VISUAL_PARITY_CAPTURE_RETIRED="$${VISUAL_PARITY_CAPTURE_RETIRED:-}" \
 						-e VISUAL_PARITY_SOURCE_BASE_URL=$(VISUAL_SOURCE_BASE_URL) \
 						-e VISUAL_PARITY_ADMIN_PATH=$$admin_path \
 						-e VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle \
@@ -686,6 +687,7 @@ visual-parity: legacy-oracle-check
 					-e NODE_OPTIONS=$(VISUAL_PARITY_NODE_OPTIONS) \
 					-e PLAYWRIGHT_BROWSERS_PATH=/app/frontend/.cache/ms-playwright \
 					-e VISUAL_PARITY_MODE=$${VISUAL_PARITY_MODE:-screenshots} \
+					-e VISUAL_PARITY_CAPTURE_RETIRED="$${VISUAL_PARITY_CAPTURE_RETIRED:-}" \
 					-e VISUAL_PARITY_SOURCE_BASE_URL=$(VISUAL_SOURCE_BASE_URL) \
 					-e VISUAL_PARITY_ADMIN_PATH=$$admin_path \
 					-e VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle \

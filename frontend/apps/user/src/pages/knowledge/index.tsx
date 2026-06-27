@@ -168,10 +168,10 @@ export default function KnowledgePage() {
                       onClick={() => openDetail(item)}
                     >
                       <span className="min-w-0 flex-1 space-y-1">
-                        <span className="v2board-knowledge-item-title block truncate text-sm font-medium text-foreground">
+                        <span className="v2board-knowledge-item-title flex overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-foreground">
                           {item.title}
                         </span>
-                        <span className="v2board-knowledge-item-date block text-xs text-muted-foreground">
+                        <span className="v2board-knowledge-item-date flex text-xs text-muted-foreground">
                           {t('knowledge.last_update', {
                             date: formatUserLegacyDateSlash(item.updated_at),
                           })}
