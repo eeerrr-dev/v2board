@@ -117,8 +117,6 @@ describe('OrdersPage shadcn commerce table', () => {
 
     expect(html).toContain('v2board-orders-card');
     expect(html).toContain('v2board-orders-table');
-    expect(html).toContain('ant-table-column-title');
-    expect(html).toContain('ant-table-tbody');
     expect(html).toContain('# 订单号');
     expect(html).toContain('周期');
     expect(html).toContain('订单金额');
@@ -137,6 +135,8 @@ describe('OrdersPage shadcn commerce table', () => {
     expect(html).toContain('查看详情');
     expect(html).toContain('取消');
     expect(html).not.toContain('ant-table-wrapper');
+    expect(html).not.toContain('ant-table-column-title');
+    expect(html).not.toContain('ant-table-tbody');
     expect(html).not.toContain('ant-badge-status');
     expect(html).not.toContain('am-list');
   });
@@ -160,7 +160,7 @@ describe('OrdersPage shadcn commerce table', () => {
   });
 
   it('keys table rows by trade number now that the shadcn table owns the DOM', () => {
-    expect(ordersSource).toContain('<tr key={order.trade_no}');
+    expect(ordersSource).toContain('<TableRow key={order.trade_no}');
     expect(ordersSource).not.toContain('data-row-key={index}');
     expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
   });

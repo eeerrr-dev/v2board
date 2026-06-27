@@ -6,6 +6,15 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableScroll,
+} from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import { useServers, useSubscribe } from '@/lib/queries';
@@ -67,40 +76,36 @@ export default function NodePage() {
     <TooltipProvider delayDuration={100}>
       <Card className="v2board-node-card overflow-hidden">
         <CardContent className="p-0">
-          <div
+          <TableScroll
             ref={bodyRef}
-            className={cn('v2board-service-table-scroll overflow-x-auto', scrollPositionClassName)}
+            className={cn('v2board-service-table-scroll', scrollPositionClassName)}
             tabIndex={-1}
             onScroll={onScroll}
           >
-            <table className="v2board-service-table v2board-node-table w-full min-w-[900px] text-sm">
-              <thead className="border-b border-border bg-muted/50 text-muted-foreground">
+            <Table className="v2board-service-table v2board-node-table min-w-[900px]">
+              <TableHeader>
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium">
+                  <TableHead>
                     <span className="v2board-table-column-title">{t('node.simple_name')}</span>
-                  </th>
-                  <th className="px-4 py-3 text-center font-medium">
+                  </TableHead>
+                  <TableHead className="text-center">
                     <HeaderTooltip title={t('node.status_tip')}>{t('node.status')}</HeaderTooltip>
-                  </th>
-                  <th className="px-4 py-3 text-center font-medium">
+                  </TableHead>
+                  <TableHead className="text-center">
                     <HeaderTooltip title={t('node.rate_tip')}>{t('node.rate')}</HeaderTooltip>
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium">
+                  </TableHead>
+                  <TableHead>
                     <span className="v2board-table-column-title">{t('node.tags')}</span>
-                  </th>
+                  </TableHead>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+              </TableHeader>
+              <TableBody>
                 {servers.map((server, index) => {
                   const online = Boolean(parseInt(String(server.is_online)));
                   return (
-                    <tr
-                      className="transition-colors hover:bg-muted/50"
-                      data-row-key={index}
-                      key={index}
-                    >
-                      <td className="px-4 py-4 font-medium text-foreground">{server.name}</td>
-                      <td className="px-4 py-4 text-center">
+                    <TableRow data-row-key={index} key={index}>
+                      <TableCell className="font-medium text-foreground">{server.name}</TableCell>
+                      <TableCell className="text-center">
                         <span
                           className={cn(
                             'inline-flex size-2.5 rounded-full',
@@ -108,13 +113,13 @@ export default function NodePage() {
                           )}
                           aria-label={online ? 'online' : 'offline'}
                         />
-                      </td>
-                      <td className="px-4 py-4 text-center">
+                      </TableCell>
+                      <TableCell className="text-center">
                         <span className="inline-flex min-w-16 items-center justify-center rounded-md border border-border bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
                           {String(server.rate)} x
                         </span>
-                      </td>
-                      <td className="px-4 py-4">
+                      </TableCell>
+                      <TableCell>
                         {server.tags?.length ? (
                           <div className="flex flex-wrap gap-1.5">
                             {server.tags.map((tag) => (
@@ -129,13 +134,13 @@ export default function NodePage() {
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableScroll>
         </CardContent>
       </Card>
     </TooltipProvider>

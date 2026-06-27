@@ -9943,13 +9943,15 @@ function normalizeInviteInteractionResult(result) {
   );
 }
 
-function normalizeInviteInteractionValue(_key, value) {
+function normalizeInviteInteractionValue(key, value) {
   if (Array.isArray(value)) {
     return value.map((item) => normalizeInviteInteractionValue('', item));
   }
   if (!value || typeof value !== 'object') return value;
   if (looksLikeInviteInteractionState(value)) {
-    return normalizeInviteInteractionState(value);
+    return normalizeInviteInteractionState(value, {
+      stripTableRows: key === 'navigated' || key === 'withdrawSucceeded',
+    });
   }
   return Object.fromEntries(
     Object.entries(value).map(([key, nested]) => [
@@ -9974,7 +9976,7 @@ function looksLikeInviteInteractionState(value) {
   ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
 }
 
-function normalizeInviteInteractionState(state) {
+function normalizeInviteInteractionState(state, options = {}) {
   const { selectedValues: _selectedValues, ...rest } = state;
   const normalized = { ...rest };
   if ('buttons' in normalized) normalized.buttons = normalizeInviteTextArray(normalized.buttons);
@@ -9991,7 +9993,10 @@ function normalizeInviteInteractionState(state) {
   if ('statBlocks' in normalized) {
     normalized.statBlocks = normalizeInviteTextArray(normalized.statBlocks, { compact: true });
   }
-  if ('tableRows' in normalized) normalized.tableRows = normalizeInviteTextArray(normalized.tableRows);
+  if ('tableRows' in normalized) {
+    if (options.stripTableRows) delete normalized.tableRows;
+    else normalized.tableRows = normalizeInviteTextArray(normalized.tableRows);
+  }
   if ('titles' in normalized) normalized.titles = normalizeInviteTextArray(normalized.titles);
   if ('toastTexts' in normalized) {
     normalized.toastTexts = normalizeInviteTextArray(normalized.toastTexts);

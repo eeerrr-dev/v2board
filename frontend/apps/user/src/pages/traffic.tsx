@@ -6,6 +6,16 @@ import { formatBytes } from '@v2board/config/format';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableEmpty,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableScroll,
+} from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import { useTrafficLog } from '@/lib/queries';
@@ -42,29 +52,29 @@ export default function TrafficPage() {
             </div>
           ) : null}
 
-          <div
+          <TableScroll
             ref={bodyRef}
             tabIndex={-1}
-            className={cn('v2board-service-table-scroll overflow-x-auto', scrollPositionClassName)}
+            className={cn('v2board-service-table-scroll', scrollPositionClassName)}
             onScroll={onScroll}
           >
-            <table className="v2board-service-table v2board-traffic-table w-full min-w-[800px] text-sm">
-              <thead className="border-b border-border bg-muted/50 text-muted-foreground">
+            <Table className="v2board-service-table v2board-traffic-table min-w-[800px]">
+              <TableHeader>
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium">{t('traffic.record_at')}</th>
-                  <th className="px-4 py-3 text-right font-medium">{t('traffic.actual_upload')}</th>
-                  <th className="px-4 py-3 text-right font-medium">
+                  <TableHead>{t('traffic.record_at')}</TableHead>
+                  <TableHead className="text-right">{t('traffic.actual_upload')}</TableHead>
+                  <TableHead className="text-right">
                     {t('traffic.actual_download')}
-                  </th>
-                  <th className="px-4 py-3 text-center font-medium">{t('traffic.deduct_rate')}</th>
-                  <th className="px-4 py-3 text-right font-medium">
+                  </TableHead>
+                  <TableHead className="text-center">{t('traffic.deduct_rate')}</TableHead>
+                  <TableHead className="text-right">
                     <HeaderTooltip title={t('traffic.total_formula')} placement="topRight">
                       {t('traffic.total_charged')}
                     </HeaderTooltip>
-                  </th>
+                  </TableHead>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+              </TableHeader>
+              <TableBody>
                 {rows.length ? (
                   rows.map((row, index) => {
                     const rate = Number.parseFloat(row.server_rate);
@@ -72,42 +82,35 @@ export default function TrafficPage() {
                     const download = parseInt(String(row.d));
                     const charged = (upload + download) * (row.server_rate as unknown as number);
                     return (
-                      <tr
-                        className="transition-colors hover:bg-muted/50"
-                        data-row-key={index}
-                        key={index}
-                      >
-                        <td className="px-4 py-4">
+                      <TableRow data-row-key={index} key={index}>
+                        <TableCell>
                           {row.record_at ? formatUserLegacyDateSlash(row.record_at) : '-'}
-                        </td>
-                        <td className="px-4 py-4 text-right">
+                        </TableCell>
+                        <TableCell className="text-right">
                           {row.server_rate ? formatBytes(upload) : 0}
-                        </td>
-                        <td className="px-4 py-4 text-right">
+                        </TableCell>
+                        <TableCell className="text-right">
                           {row.server_rate ? formatBytes(download) : 0}
-                        </td>
-                        <td className="px-4 py-4 text-center">
+                        </TableCell>
+                        <TableCell className="text-center">
                           <span className="inline-flex min-w-16 items-center justify-center rounded-md border border-border bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
                             {rate ? `${rate.toFixed(2)} x` : '-'}
                           </span>
-                        </td>
-                        <td className="px-4 py-4 text-right font-medium">{formatBytes(charged)}</td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatBytes(charged)}
+                        </TableCell>
+                      </TableRow>
                     );
                   })
                 ) : (
-                  <tr className="v2board-traffic-empty">
-                    <td
-                      className="px-4 py-16 text-center text-sm text-muted-foreground"
-                      colSpan={5}
-                    >
-                      {emptyDescription}
-                    </td>
-                  </tr>
+                  <TableEmpty className="py-16" colSpan={5} rowClassName="v2board-traffic-empty">
+                    {emptyDescription}
+                  </TableEmpty>
                 )}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableScroll>
         </CardContent>
       </Card>
     </TooltipProvider>

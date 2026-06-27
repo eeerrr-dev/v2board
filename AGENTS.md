@@ -258,6 +258,17 @@ The user knowledge surface (`/knowledge`) is a redesigned shadcn surface.
 - Retire old OneUI/Bootstrap/Ant visual parity for `/knowledge`; keep behavior
   and interaction scenarios for the same route.
 
+### User Surface System Direction
+
+Shared redesigned user primitives should live in `frontend/apps/user/src/components/ui`.
+
+- Use the local shadcn-style table primitives for redesigned user tables instead
+  of page-local `thead`/`tbody`/`th`/`td` class systems.
+- Keep route-specific `v2board-*` hooks on top of shared primitives when
+  behavior or interaction parity needs stable selectors.
+- Do not reintroduce Ant table class names such as `ant-table-column-title` or
+  `ant-table-tbody` as presentation helpers on redesigned user tables.
+
 For new redesigned surfaces, do not use:
 
 - Ant Design v3 components as new UI foundations.

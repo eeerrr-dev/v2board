@@ -34,6 +34,16 @@ import {
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableEmpty,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableScroll,
+} from '@/components/ui/table';
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -240,8 +250,8 @@ export default function InvitePage() {
               ]}
             >
               {codes.map((code, index) => (
-                <tr className="transition-colors hover:bg-muted/50" data-row-key={index} key={index}>
-                  <td className="px-4 py-4">
+                <TableRow data-row-key={index} key={index}>
+                  <TableCell>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-foreground">{code.code}</span>
                       <Button
@@ -254,11 +264,11 @@ export default function InvitePage() {
                         {t('invite.invite_link')}
                       </Button>
                     </div>
-                  </td>
-                  <td className="px-4 py-4 text-right text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground">
                     {formatUserLegacyDateMinuteSlash(code.created_at)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
             </ServiceTable>
           </CardContent>
@@ -292,14 +302,14 @@ export default function InvitePage() {
               ]}
             >
               {detailRows.map((row, index) => (
-                <tr className="transition-colors hover:bg-muted/50" data-row-key={index} key={index}>
-                  <td className="px-4 py-4 text-muted-foreground">
+                <TableRow data-row-key={index} key={index}>
+                  <TableCell className="text-muted-foreground">
                     {formatUserLegacyDateMinuteSlash(row.created_at)}
-                  </td>
-                  <td className="px-4 py-4 text-right font-medium text-foreground">
+                  </TableCell>
+                  <TableCell className="text-right font-medium text-foreground">
                     {(row.get_amount / 100).toFixed(2)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
             </ServiceTable>
             {detailPaginationItemTotal > 0 && (
@@ -370,33 +380,31 @@ function ServiceTable({
   headers: ReactNode[];
 }) {
   return (
-    <div className="v2board-invite-table-scroll overflow-x-auto">
-      <table className={cn('v2board-invite-table w-full min-w-[620px] text-sm', className)}>
-        <thead className="border-y border-border bg-muted/50 text-muted-foreground">
+    <TableScroll className="v2board-invite-table-scroll">
+      <Table className={cn('v2board-invite-table min-w-[620px]', className)}>
+        <TableHeader className="border-y">
           <tr>
             {headers.map((header, index) => (
-              <th
-                className={cn('px-4 py-3 font-medium', index === 0 ? 'text-left' : 'text-right')}
+              <TableHead
+                className={index === 0 ? 'text-left' : 'text-right'}
                 key={index}
               >
                 {header}
-              </th>
+              </TableHead>
             ))}
           </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
+        </TableHeader>
+        <TableBody>
           {empty ? (
-            <tr className="v2board-invite-empty">
-              <td className="px-4 py-14 text-center text-sm text-muted-foreground" colSpan={2}>
-                {empty}
-              </td>
-            </tr>
+            <TableEmpty colSpan={2} rowClassName="v2board-invite-empty">
+              {empty}
+            </TableEmpty>
           ) : (
             children
           )}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </TableScroll>
   );
 }
 

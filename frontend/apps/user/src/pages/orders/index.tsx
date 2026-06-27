@@ -8,6 +8,15 @@ import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableScroll,
+} from '@/components/ui/table';
 import { cn } from '@/lib/cn';
 
 const STATUS_LABEL: Record<number, { key: string; status: string }> = {
@@ -65,38 +74,26 @@ export default function OrdersPage() {
             {t('order.no_orders')}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="v2board-orders-table w-full min-w-[760px] text-sm">
-              <thead className="border-b border-border bg-muted/50 text-muted-foreground">
+          <TableScroll>
+            <Table className="v2board-orders-table min-w-[760px]">
+              <TableHeader>
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium">
-                    <span className="ant-table-column-title">{t('order.trade_no_col')}</span>
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium">
-                    <span className="ant-table-column-title">{t('order.period')}</span>
-                  </th>
-                  <th className="px-4 py-3 text-right font-medium">
-                    <span className="ant-table-column-title">{t('order.amount')}</span>
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium">
-                    <span className="ant-table-column-title">{t('order.status')}</span>
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium">
-                    <span className="ant-table-column-title">{t('order.created_at')}</span>
-                  </th>
-                  <th className="px-4 py-3 text-right font-medium">
-                    <span className="ant-table-column-title">{t('order.action_col')}</span>
-                  </th>
+                  <TableHead>{t('order.trade_no_col')}</TableHead>
+                  <TableHead>{t('order.period')}</TableHead>
+                  <TableHead className="text-right">{t('order.amount')}</TableHead>
+                  <TableHead>{t('order.status')}</TableHead>
+                  <TableHead>{t('order.created_at')}</TableHead>
+                  <TableHead className="text-right">{t('order.action_col')}</TableHead>
                 </tr>
-              </thead>
-              <tbody className="ant-table-tbody divide-y divide-border">
+              </TableHeader>
+              <TableBody>
                 {orders.map((order) => {
                   const status = STATUS_LABEL[order.status];
                   const periodLabelKey = order.period ? PERIOD_LABEL[order.period] : undefined;
                   const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
                   return (
-                    <tr key={order.trade_no} className="transition-colors hover:bg-muted/50">
-                      <td className="px-4 py-4">
+                    <TableRow key={order.trade_no}>
+                      <TableCell>
                         <a
                           ref={legacyHref()}
                           className="font-medium text-foreground underline-offset-4 hover:underline"
@@ -104,22 +101,22 @@ export default function OrdersPage() {
                         >
                           {order.trade_no}
                         </a>
-                      </td>
-                      <td className="px-4 py-4">
+                      </TableCell>
+                      <TableCell>
                         <span className="rounded-md border border-border bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
                           {periodLabel}
                         </span>
-                      </td>
-                      <td className="px-4 py-4 text-right font-medium">
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
                         {(order.total_amount / 100).toFixed(2)}
-                      </td>
-                      <td className="px-4 py-4">
+                      </TableCell>
+                      <TableCell>
                         <StatusPill status={status?.status}>{status ? t(status.key) : ''}</StatusPill>
-                      </td>
-                      <td className="px-4 py-4 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
                         {formatUserLegacyDateMinuteSlash(order.created_at)}
-                      </td>
-                      <td className="px-4 py-4 text-right">
+                      </TableCell>
+                      <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button asChild variant="ghost" size="sm">
                             <a
@@ -145,13 +142,13 @@ export default function OrdersPage() {
                             </a>
                           </Button>
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableScroll>
         )}
       </CardContent>
     </Card>

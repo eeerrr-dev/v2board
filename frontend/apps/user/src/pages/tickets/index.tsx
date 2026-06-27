@@ -30,6 +30,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableEmpty,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableScroll,
+} from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
@@ -123,9 +133,9 @@ export default function TicketsPage() {
           </Button>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="v2board-ticket-table-scroll overflow-x-auto">
-            <table className="v2board-ticket-table w-full min-w-[900px] text-sm">
-              <thead className="border-y border-border bg-muted/50 text-muted-foreground">
+          <TableScroll className="v2board-ticket-table-scroll">
+            <Table className="v2board-ticket-table min-w-[900px]">
+              <TableHeader className="border-y">
                 <tr>
                   <TicketHeader className="w-16">{t('ticket.col_id')}</TicketHeader>
                   <TicketHeader>{t('ticket.subject')}</TicketHeader>
@@ -135,17 +145,13 @@ export default function TicketsPage() {
                   <TicketHeader>{t('ticket.last_reply_col')}</TicketHeader>
                   <TicketHeader className="text-right">{t('ticket.action')}</TicketHeader>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+              </TableHeader>
+              <TableBody>
                 {tickets.length ? (
                   tickets.map((ticket, index) => {
                     const levelLabel = LEVELS[ticket.level]?.labelKey;
                     return (
-                      <tr
-                        className="transition-colors hover:bg-muted/50"
-                        data-row-key={index}
-                        key={index}
-                      >
+                      <TableRow data-row-key={index} key={index}>
                         <TicketCell className="font-medium text-foreground">{ticket.id}</TicketCell>
                         <TicketCell className="max-w-[260px] truncate font-medium text-foreground">
                           {ticket.subject}
@@ -186,19 +192,17 @@ export default function TicketsPage() {
                             </Button>
                           </div>
                         </TicketCell>
-                      </tr>
+                      </TableRow>
                     );
                   })
                 ) : (
-                  <tr className="v2board-ticket-empty">
-                    <td className="px-4 py-14 text-center text-sm text-muted-foreground" colSpan={7}>
-                      {emptyDescription}
-                    </td>
-                  </tr>
+                  <TableEmpty colSpan={7} rowClassName="v2board-ticket-empty">
+                    {emptyDescription}
+                  </TableEmpty>
                 )}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableScroll>
         </CardContent>
       </Card>
 
@@ -294,7 +298,7 @@ function TicketHeader({
   children: ReactNode;
   className?: string;
 }) {
-  return <th className={cn('px-4 py-3 text-left font-medium', className)}>{children}</th>;
+  return <TableHead className={className}>{children}</TableHead>;
 }
 
 function TicketCell({
@@ -304,5 +308,5 @@ function TicketCell({
   children: ReactNode;
   className?: string;
 }) {
-  return <td className={cn('px-4 py-4 text-muted-foreground', className)}>{children}</td>;
+  return <TableCell className={cn('text-muted-foreground', className)}>{children}</TableCell>;
 }
