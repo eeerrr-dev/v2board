@@ -9,13 +9,9 @@ import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
 import {
-  Table,
-  TableBody,
+  DataTable,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
-  TableScroll,
 } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useServers, useSubscribe } from '@/lib/queries';
@@ -83,67 +79,64 @@ export default function NodePage() {
       <PageShell data-testid="node-page">
         <Card className="overflow-hidden py-0" data-testid="node-card">
           <CardContent className="p-0">
-            <TableScroll
-              ref={bodyRef}
-              data-scroll-position={scrollPosition}
-              data-testid="service-table-scroll"
-              tabIndex={-1}
-              onScroll={onScroll}
+            <DataTable
+              className="min-w-[900px]"
+              data-table-kind="service"
+              data-testid="node-table"
+              headers={[
+                { content: <span>{t('node.simple_name')}</span> },
+                {
+                  align: 'center',
+                  content: <HeaderTooltip title={t('node.status_tip')}>{t('node.status')}</HeaderTooltip>,
+                },
+                {
+                  align: 'center',
+                  content: <HeaderTooltip title={t('node.rate_tip')}>{t('node.rate')}</HeaderTooltip>,
+                },
+                { content: <span>{t('node.tags')}</span> },
+              ]}
+              scrollRef={bodyRef}
+              scrollProps={{
+                'data-scroll-position': scrollPosition,
+                'data-testid': 'service-table-scroll',
+                tabIndex: -1,
+                onScroll,
+              }}
             >
-              <Table className="min-w-[900px]" data-table-kind="service" data-testid="node-table">
-                <TableHeader>
-                  <tr>
-                    <TableHead>
-                      <span>{t('node.simple_name')}</span>
-                    </TableHead>
-                    <TableHead className="text-center">
-                      <HeaderTooltip title={t('node.status_tip')}>{t('node.status')}</HeaderTooltip>
-                    </TableHead>
-                    <TableHead className="text-center">
-                      <HeaderTooltip title={t('node.rate_tip')}>{t('node.rate')}</HeaderTooltip>
-                    </TableHead>
-                    <TableHead>
-                      <span>{t('node.tags')}</span>
-                    </TableHead>
-                  </tr>
-                </TableHeader>
-                <TableBody>
-                  {servers.map((server, index) => {
-                    const online = Boolean(parseInt(String(server.is_online)));
-                    return (
-                      <TableRow data-row-key={index} key={index}>
-                        <TableCell className="font-medium text-foreground">{server.name}</TableCell>
-                        <TableCell className="text-center">
-                          <StatusBadge
-                            tone={online ? 'success' : 'destructive'}
-                            showDot
-                            aria-label={online ? 'online' : 'offline'}
-                          >
-                            {online ? t('node.online') : t('node.offline')}
-                          </StatusBadge>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <StatusBadge>{String(server.rate)} x</StatusBadge>
-                        </TableCell>
-                        <TableCell>
-                          {server.tags?.length ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              {server.tags.map((tag) => (
-                                <StatusBadge className="bg-background text-muted-foreground" key={tag}>
-                                  {tag}
-                                </StatusBadge>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </TableScroll>
+              {servers.map((server, index) => {
+                const online = Boolean(parseInt(String(server.is_online)));
+                return (
+                  <TableRow data-row-key={index} key={index}>
+                    <TableCell className="font-medium text-foreground">{server.name}</TableCell>
+                    <TableCell className="text-center">
+                      <StatusBadge
+                        tone={online ? 'success' : 'destructive'}
+                        showDot
+                        aria-label={online ? 'online' : 'offline'}
+                      >
+                        {online ? t('node.online') : t('node.offline')}
+                      </StatusBadge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <StatusBadge>{String(server.rate)} x</StatusBadge>
+                    </TableCell>
+                    <TableCell>
+                      {server.tags?.length ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {server.tags.map((tag) => (
+                            <StatusBadge className="bg-background text-muted-foreground" key={tag}>
+                              {tag}
+                            </StatusBadge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </DataTable>
           </CardContent>
         </Card>
       </PageShell>

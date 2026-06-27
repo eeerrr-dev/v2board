@@ -119,17 +119,6 @@ vi.mock('@tanstack/react-query', () => ({
   }),
 }));
 
-vi.mock('@/lib/api', () => ({
-  apiClient: {},
-}));
-
-vi.mock('@v2board/api-client', () => ({
-  user: {
-    checkCoupon: mocks.checkCoupon,
-    saveOrder: mocks.saveOrder,
-  },
-}));
-
 vi.mock('@/components/legacy-confirm', () => ({
   legacyConfirm: mocks.legacyConfirm,
 }));
@@ -164,6 +153,14 @@ vi.mock('@/lib/queries', () => ({
   useCancelOrderMutation: () => ({
     isPending: false,
     mutateAsync: mocks.cancelOrder,
+  }),
+  useCheckCouponMutation: () => ({
+    isPending: false,
+    mutateAsync: mocks.checkCoupon,
+  }),
+  useSaveOrderMutation: () => ({
+    isPending: false,
+    mutateAsync: mocks.saveOrder,
   }),
 }));
 
@@ -258,8 +255,10 @@ describe('PlanCheckoutPage shadcn commerce markup', () => {
     );
   });
 
-  it('keeps the direct coupon input value for coupon checks', () => {
-    expect(checkoutSource).toContain('couponRef.current!.value');
+  it('keeps coupon checks on controlled state instead of imperative input refs', () => {
+    expect(checkoutSource).toContain("const [couponCode, setCouponCode] = useState('');");
+    expect(checkoutSource).toContain('code: couponCode');
+    expect(checkoutSource).not.toContain('couponRef.current!.value');
     expect(checkoutSource).not.toContain("couponRef.current?.value ?? ''");
   });
 
@@ -343,7 +342,14 @@ describe('PlanCheckoutPage commerce behavior', () => {
     });
 
     const couponInput = container.querySelector<HTMLInputElement>('[data-testid="coupon-input"]')!;
-    couponInput.value = 'SAVE';
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        couponInput,
+        'SAVE',
+      );
+      couponInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await Promise.resolve();
+    });
     const verifyButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('验证'),
     )!;
@@ -354,7 +360,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.checkCoupon).toHaveBeenCalledWith(expect.anything(), 'SAVE', '1');
+    expect(mocks.checkCoupon).toHaveBeenCalledWith({ code: 'SAVE', planId: '1' });
     expect(container.textContent).toContain('Legacy Coupon');
     expect(container.textContent).toContain('-¥2.50');
     expect(container.textContent).toContain('¥ 7.50 CNY');
@@ -369,7 +375,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
+    expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
       period: 'month_price',
       coupon_code: 'SAVE',
@@ -404,7 +410,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
+    expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
       period: undefined,
     });
@@ -457,7 +463,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
     expect(checkoutSource).toContain('Legacy order/cancel owns the list refresh');
     expect(checkoutSource).not.toContain('userKeys.orderDetail(unfinishedOrder.trade_no)');
     expect(checkoutSource).not.toContain('orders.refetch()');
-    expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
+    expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
       period: 'month_price',
     });
@@ -496,7 +502,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
+    expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
       period: 'month_price',
     });
@@ -524,7 +530,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
     });
 
     expect(mocks.legacyConfirm).not.toHaveBeenCalled();
-    expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
+    expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
       period: 'month_price',
     });

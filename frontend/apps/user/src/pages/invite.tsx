@@ -47,7 +47,7 @@ import {
 } from '@/lib/queries';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { legacyCopyText } from '@/lib/legacy-settings';
-import { toast } from '@/lib/legacy-toast';
+import { toast } from '@/lib/toast';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
 export default function InvitePage() {

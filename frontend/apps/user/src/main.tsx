@@ -16,6 +16,7 @@ import { HashRouter, Navigate, useLocation } from 'react-router-dom';
 import App, { USER_LEGACY_ROUTE_PATHS } from './App';
 import { LegacyConfirmProvider } from './components/legacy-confirm';
 import { RouteBoundaryElement } from './components/route-error-boundary';
+import { Toaster } from './components/ui/toaster';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyLegacySettings } from './lib/legacy-settings';
 import './styles/globals.css';
@@ -111,7 +112,7 @@ import './styles/user-bootstrap-spinner-grow.css';
 import './styles/user-bootstrap-screen-reader.css';
 import './styles/user-bootstrap-spinner-grow-keyframes.css';
 import './styles/user-background-utilities.css';
-import './styles/auth-shadcn.css';
+import './styles/user-shadcn.css';
 import './styles/user-shadcn-motion.css';
 import './styles/user-auth-surface.css';
 
@@ -178,6 +179,7 @@ createRoot(root).render(
             <App />
           </LegacyRouteGate>
           <LegacyConfirmProvider />
+          <Toaster />
         </RouteBoundaryElement>
       </HashRouter>
     </QueryClientProvider>

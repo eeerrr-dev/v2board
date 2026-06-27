@@ -4,6 +4,9 @@ import type { SubscribeInfo, UserInfo } from '@v2board/types';
 import { formatBytes } from '@v2board/config/format';
 import { apiClient } from './api';
 
+export type SaveOrderPayload = Parameters<typeof user.saveOrder>[1];
+export type CheckoutOrderPayload = Parameters<typeof user.checkoutOrder>[1];
+
 interface QueryFreshnessOptions {
   refetchOnMount?: boolean | 'always';
 }
@@ -235,6 +238,37 @@ export function useTransferMutation() {
 export function useRedeemGiftCardMutation() {
   return useMutation({
     mutationFn: (code: string) => user.redeemGiftCard(apiClient, code),
+  });
+}
+
+export function useCheckCouponMutation() {
+  return useMutation({
+    mutationFn: ({ code, planId }: { code: string; planId: number | string }) =>
+      user.checkCoupon(apiClient, code, planId),
+  });
+}
+
+export function useSaveOrderMutation() {
+  return useMutation({
+    mutationFn: (payload: SaveOrderPayload) => user.saveOrder(apiClient, payload),
+  });
+}
+
+export function useCheckOrderMutation() {
+  return useMutation({
+    mutationFn: (tradeNo: string) => user.checkOrder(apiClient, tradeNo),
+  });
+}
+
+export function useStripePublicKeyMutation() {
+  return useMutation({
+    mutationFn: (methodId: number) => user.getStripePublicKey(apiClient, methodId),
+  });
+}
+
+export function useCheckoutOrderMutation() {
+  return useMutation({
+    mutationFn: (payload: CheckoutOrderPayload) => user.checkoutOrder(apiClient, payload),
   });
 }
 

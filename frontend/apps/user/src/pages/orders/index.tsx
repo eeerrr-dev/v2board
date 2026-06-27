@@ -11,13 +11,9 @@ import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import {
-  Table,
-  TableBody,
+  DataTable,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
-  TableScroll,
 } from '@/components/ui/table';
 
 const STATUS_LABEL: Record<number, { key: string; status: string }> = {
@@ -79,79 +75,76 @@ export default function OrdersPage() {
               {t('order.no_orders')}
             </div>
           ) : (
-            <TableScroll>
-              <Table className="min-w-[760px]" data-testid="orders-table">
-                <TableHeader>
-                  <tr>
-                    <TableHead>{t('order.trade_no_col')}</TableHead>
-                    <TableHead>{t('order.period')}</TableHead>
-                    <TableHead className="text-right">{t('order.amount')}</TableHead>
-                    <TableHead>{t('order.status')}</TableHead>
-                    <TableHead>{t('order.created_at')}</TableHead>
-                    <TableHead className="text-right">{t('order.action_col')}</TableHead>
-                  </tr>
-                </TableHeader>
-                <TableBody>
-                  {orders.map((order) => {
-                    const status = STATUS_LABEL[order.status];
-                    const periodLabelKey = order.period ? PERIOD_LABEL[order.period] : undefined;
-                    const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
-                    return (
-                      <TableRow key={order.trade_no}>
-                        <TableCell>
+            <DataTable
+              className="min-w-[760px]"
+              data-testid="orders-table"
+              headers={[
+                { content: t('order.trade_no_col') },
+                { content: t('order.period') },
+                { align: 'right', content: t('order.amount') },
+                { content: t('order.status') },
+                { content: t('order.created_at') },
+                { align: 'right', content: t('order.action_col') },
+              ]}
+            >
+              {orders.map((order) => {
+                const status = STATUS_LABEL[order.status];
+                const periodLabelKey = order.period ? PERIOD_LABEL[order.period] : undefined;
+                const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
+                return (
+                  <TableRow key={order.trade_no}>
+                    <TableCell>
+                      <a
+                        ref={legacyHref()}
+                        className="font-medium text-foreground underline-offset-4 hover:underline"
+                        onClick={() => navigate(`/order/${order.trade_no}`)}
+                      >
+                        {order.trade_no}
+                      </a>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge>{periodLabel}</StatusBadge>
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {(order.total_amount / 100).toFixed(2)}
+                    </TableCell>
+                    <TableCell>
+                      <StatusPill status={status?.status}>{status ? t(status.key) : ''}</StatusPill>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatUserLegacyDateMinuteSlash(order.created_at)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button asChild variant="ghost" size="sm">
                           <a
                             ref={legacyHref()}
-                            className="font-medium text-foreground underline-offset-4 hover:underline"
                             onClick={() => navigate(`/order/${order.trade_no}`)}
                           >
-                            {order.trade_no}
+                            {t('order.return')}
                           </a>
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge>{periodLabel}</StatusBadge>
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {(order.total_amount / 100).toFixed(2)}
-                        </TableCell>
-                        <TableCell>
-                          <StatusPill status={status?.status}>{status ? t(status.key) : ''}</StatusPill>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatUserLegacyDateMinuteSlash(order.created_at)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button asChild variant="ghost" size="sm">
-                              <a
-                                ref={legacyHref()}
-                                onClick={() => navigate(`/order/${order.trade_no}`)}
-                              >
-                                {t('order.return')}
-                              </a>
-                            </Button>
-                            <Button asChild variant="ghost" size="sm" disabled={order.status !== 0}>
-                              <a
-                                ref={legacyHref()}
-                                aria-disabled={order.status !== 0}
-                                onClick={(event) => {
-                                  if (order.status !== 0) {
-                                    event.preventDefault();
-                                    return;
-                                  }
-                                  void onCancelOrder(order.trade_no);
-                                }}
-                              >
-                                {t('common.cancel')}
-                              </a>
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </TableScroll>
+                        </Button>
+                        <Button asChild variant="ghost" size="sm" disabled={order.status !== 0}>
+                          <a
+                            ref={legacyHref()}
+                            aria-disabled={order.status !== 0}
+                            onClick={(event) => {
+                              if (order.status !== 0) {
+                                event.preventDefault();
+                                return;
+                              }
+                              void onCancelOrder(order.trade_no);
+                            }}
+                          >
+                            {t('common.cancel')}
+                          </a>
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </DataTable>
           )}
         </CardContent>
       </Card>

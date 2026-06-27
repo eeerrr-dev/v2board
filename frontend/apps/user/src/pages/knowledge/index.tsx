@@ -19,7 +19,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { getRequestLocale } from '@/lib/api';
 import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
 import { legacyCopyText } from '@/lib/legacy-settings';
-import { toast } from '@/lib/legacy-toast';
+import { toast } from '@/lib/toast';
 import { renderLegacyMarkdown } from '@/lib/markdown';
 import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';

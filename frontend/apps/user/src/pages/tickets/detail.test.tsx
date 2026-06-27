@@ -77,7 +77,7 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-vi.mock('@/lib/legacy-toast', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: toastMocks,
 }));
 

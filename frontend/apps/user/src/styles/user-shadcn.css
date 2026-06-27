@@ -1,5 +1,5 @@
 /*
- * Pure shadcn islands Tailwind entry.
+ * Pure user shadcn island Tailwind entry.
  *
  * Keep this separate from globals.css so redesigned islands can use unprefixed
  * registry-style classes without injecting a second Tailwind preflight over the
@@ -9,6 +9,7 @@
  * text-center inside those islands.
  */
 @import 'tailwindcss/theme.css';
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -54,7 +55,7 @@
 @source '../components/legacy-confirm.tsx';
 @source '../components/ui/**/*.tsx';
 @source '../lib/auth-toast.tsx';
-@source '../lib/legacy-toast.ts';
+@source '../components/ui/toaster.tsx';
 
 @media important {
   @tailwind utilities source(none);

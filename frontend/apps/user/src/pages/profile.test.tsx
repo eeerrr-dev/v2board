@@ -135,6 +135,9 @@ vi.mock('@/lib/queries', () => ({
   useUnbindTelegramMutation: () => ({
     mutateAsync: mocks.unbindTelegram,
   }),
+  useSaveOrderMutation: () => ({
+    mutateAsync: mocks.saveOrder,
+  }),
   useTelegramBotInfo: () => ({
     data: mocks.botInfo,
   }),
@@ -144,20 +147,10 @@ vi.mock('@/lib/legacy-settings', () => ({
   legacyCopyText: mocks.copyText,
 }));
 
-vi.mock('@/lib/legacy-toast', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: {
     error: mocks.toastError,
     success: mocks.toastSuccess,
-  },
-}));
-
-vi.mock('@/lib/api', () => ({
-  apiClient: {},
-}));
-
-vi.mock('@v2board/api-client', () => ({
-  user: {
-    saveOrder: mocks.saveOrder,
   },
 }));
 
@@ -225,7 +218,10 @@ describe('ProfilePage shadcn account surface', () => {
     expect(giftCardInput).toBeTruthy();
 
     await act(async () => {
-      giftCardInput!.value = 'CARD-123';
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        giftCardInput,
+        'CARD-123',
+      );
       giftCardInput!.dispatchEvent(new Event('input', { bubbles: true }));
       container.querySelector<HTMLButtonElement>('[data-testid="profile-redeem-button"]')!.click();
       await Promise.resolve();
@@ -257,7 +253,10 @@ describe('ProfilePage shadcn account surface', () => {
     expect(giftCardInput).toBeTruthy();
 
     await act(async () => {
-      giftCardInput!.value = 'CARD-FAIL';
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        giftCardInput,
+        'CARD-FAIL',
+      );
       giftCardInput!.dispatchEvent(new Event('input', { bubbles: true }));
       container.querySelector<HTMLButtonElement>('[data-testid="profile-redeem-button"]')!.click();
       await Promise.resolve();
@@ -402,15 +401,15 @@ describe('ProfilePage shadcn account surface', () => {
     expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: 0 });
   });
 
-  it('keeps the original profile form values as direct ref reads', () => {
-    expect(source).toContain('const oldPassword = oldPasswordRef.current!.value;');
-    expect(source).toContain('const newPassword = newPasswordRef.current!.value;');
-    expect(source).toContain('const confirmPassword = confirmPasswordRef.current!.value;');
-    expect(source).toContain('const giftcard = giftCardRef.current!.value;');
-    expect(source).not.toContain("oldPasswordRef.current?.value ?? ''");
-    expect(source).not.toContain("newPasswordRef.current?.value ?? ''");
-    expect(source).not.toContain("confirmPasswordRef.current?.value ?? ''");
-    expect(source).not.toContain("giftCardRef.current?.value ?? ''");
+  it('keeps profile form values in controlled state instead of imperative refs', () => {
+    expect(source).toContain("const [giftCard, setGiftCard] = useState('');");
+    expect(source).toContain('const [passwordForm, setPasswordForm] = useState({');
+    expect(source).toContain("oldPassword: passwordForm.oldPassword");
+    expect(source).toContain("newPassword: passwordForm.newPassword");
+    expect(source).not.toContain('oldPasswordRef.current!.value');
+    expect(source).not.toContain('newPasswordRef.current!.value');
+    expect(source).not.toContain('confirmPasswordRef.current!.value');
+    expect(source).not.toContain('giftCardRef.current!.value');
   });
 
   it('keeps the old password-change success flow without clearing local auth', async () => {
@@ -506,7 +505,7 @@ describe('ProfilePage shadcn account surface', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.saveOrder).toHaveBeenCalledWith(expect.anything(), {
+    expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 0,
       period: 'deposit',
       deposit_amount: 1234,

@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { user } from '@v2board/api-client';
-import { apiClient } from '@/lib/api';
 import {
   userKeys,
+  type SaveOrderPayload,
   useCancelOrderMutation,
+  useCheckCouponMutation,
   useCommConfig,
   useOrders,
   usePlan,
+  useSaveOrderMutation,
   useSubscribe,
   useUserInfo,
 } from '@/lib/queries';
@@ -59,10 +60,11 @@ export default function PlanCheckoutPage() {
   const { data: info } = useUserInfo({ refetchOnMount: false });
   const { data: subscribe } = useSubscribe({ enabled: false });
   const cancelOrder = useCancelOrderMutation();
+  const checkCoupon = useCheckCouponMutation();
+  const saveOrderMutation = useSaveOrderMutation();
   const [period, setPeriod] = useState<PlanPeriod | undefined>();
+  const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const couponRef = useRef<HTMLInputElement>(null);
 
   const symbol = comm?.currency_symbol;
   const currency = comm?.currency;
@@ -94,11 +96,10 @@ export default function PlanCheckoutPage() {
 
   const onApplyCoupon = async () => {
     try {
-      const checked = await user.checkCoupon(
-        apiClient,
-        couponRef.current!.value,
-        planId as string,
-      );
+      const checked = await checkCoupon.mutateAsync({
+        code: couponCode,
+        planId: planId as string,
+      });
       setAppliedCoupon(checked);
     } catch {}
   };
@@ -106,20 +107,16 @@ export default function PlanCheckoutPage() {
   const saveOrder = async () => {
     if (!planQuery.data) return;
     const currentPeriod = period ?? getDefaultPeriod(planQuery.data);
-    const payload: Parameters<typeof user.saveOrder>[1] = {
+    const payload: SaveOrderPayload = {
       plan_id: planQuery.data.id,
       period: currentPeriod,
     };
     if (appliedCoupon?.name) payload.coupon_code = appliedCoupon.code;
 
-    setSubmitting(true);
     try {
-      const tradeNo = await user.saveOrder(apiClient, payload);
+      const tradeNo = await saveOrderMutation.mutateAsync(payload);
       navigate(`/order/${tradeNo}`);
-    } catch {
-    } finally {
-      setSubmitting(false);
-    }
+    } catch {}
   };
 
   const onSubmit = async () => {
@@ -292,10 +289,11 @@ export default function PlanCheckoutPage() {
             <Input
               type="text"
               data-testid="coupon-input"
-              ref={couponRef}
+              value={couponCode}
               placeholder={t('plan.coupon_question')}
+              onChange={(event) => setCouponCode(event.target.value)}
             />
-            <Button onClick={onApplyCoupon} type="button">
+            <Button loading={checkCoupon.isPending} onClick={onApplyCoupon} type="button">
               {t('plan.verify')}
             </Button>
           </CardContent>
@@ -340,7 +338,7 @@ export default function PlanCheckoutPage() {
               type="button"
               block
               data-testid="commerce-submit"
-              loading={submitting}
+              loading={saveOrderMutation.isPending}
               onClick={onSubmit}
             >
               {t('plan.place_order')}

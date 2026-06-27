@@ -1,7 +1,6 @@
-import { useRef, useState, type Ref } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { user } from '@v2board/api-client';
 import {
   AlertCircle,
   Bell,
@@ -14,7 +13,6 @@ import {
   Send,
   WalletCards,
 } from 'lucide-react';
-import { apiClient } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -42,6 +40,7 @@ import {
   useCommConfig,
   useRedeemGiftCardMutation,
   useResetSubscribeMutation,
+  useSaveOrderMutation,
   useSubscribe,
   useTelegramBotInfo,
   useUnbindTelegramMutation,
@@ -49,7 +48,7 @@ import {
   useUserInfo,
 } from '@/lib/queries';
 import { legacyCopyText } from '@/lib/legacy-settings';
-import { toast } from '@/lib/legacy-toast';
+import { toast } from '@/lib/toast';
 
 type ProfilePreferenceKey = 'auto_renewal' | 'remind_expire' | 'remind_traffic';
 type ConfirmAction = 'reset-subscribe' | 'unbind-telegram' | null;
@@ -69,14 +68,16 @@ export default function ProfilePage() {
   const redeem = useRedeemGiftCardMutation();
   const resetSub = useResetSubscribeMutation();
   const unbindTelegram = useUnbindTelegramMutation();
+  const saveOrder = useSaveOrderMutation();
 
-  const giftCardRef = useRef<HTMLInputElement>(null);
-  const oldPasswordRef = useRef<HTMLInputElement>(null);
-  const newPasswordRef = useRef<HTMLInputElement>(null);
-  const confirmPasswordRef = useRef<HTMLInputElement>(null);
-  const depositInputRef = useRef<HTMLInputElement>(null);
-  const depositAmountRef = useRef<number | undefined>(undefined);
-
+  const [giftCard, setGiftCard] = useState('');
+  const [passwordForm, setPasswordForm] = useState({
+    oldPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [depositInput, setDepositInput] = useState('');
+  const [depositAmount, setDepositAmount] = useState<number | undefined>(undefined);
   const [redeemTimeoutStuck, setRedeemTimeoutStuck] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [telegramOpen, setTelegramOpen] = useState(false);
@@ -109,29 +110,28 @@ export default function ProfilePage() {
   };
 
   const onChangePwd = async () => {
-    const oldPassword = oldPasswordRef.current!.value;
-    const newPassword = newPasswordRef.current!.value;
-    const confirmPassword = confirmPasswordRef.current!.value;
-    if (newPassword !== confirmPassword) {
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       toast.error(t('profile.password_mismatch'));
       return;
     }
     try {
-      await changePassword.mutateAsync({ oldPassword, newPassword });
+      await changePassword.mutateAsync({
+        oldPassword: passwordForm.oldPassword,
+        newPassword: passwordForm.newPassword,
+      });
       toast.success('修改成功，请重新登陆');
       navigate('/login');
     } catch {}
   };
 
   const onRedeem = async () => {
-    const giftcard = giftCardRef.current!.value;
-    if (giftcard.length === 0) {
+    if (giftCard.length === 0) {
       toast.error(t('profile.redeem_placeholder'));
       return;
     }
     setRedeemTimeoutStuck(false);
     try {
-      const result = await redeem.mutateAsync(giftcard);
+      const result = await redeem.mutateAsync(giftCard);
       void info.refetch();
       toast.success(`兑换成功: ${redeemGiftcardText(result.type, result.value)}`);
     } catch (error) {
@@ -172,24 +172,23 @@ export default function ProfilePage() {
   };
 
   const openDeposit = () => {
-    if (depositInputRef.current) depositInputRef.current.value = '';
+    setDepositInput('');
     setDepositOpen(true);
   };
 
   const closeDeposit = () => {
     setDepositOpen(false);
-    if (depositInputRef.current) depositInputRef.current.value = '';
+    setDepositInput('');
   };
 
   const onDeposit = () => {
     // The legacy page keeps the last typed amount on the page instance and only
     // destroys the input DOM. Preserve that small behavior quirk.
-    const depositAmountValue = depositAmountRef.current;
-    void user
-      .saveOrder(apiClient, {
+    void saveOrder
+      .mutateAsync({
         plan_id: 0,
         period: 'deposit',
-        deposit_amount: depositAmountValue,
+        deposit_amount: depositAmount,
       })
       .then((tradeNo) => navigate(`/order/${tradeNo}`))
       .catch(() => {});
@@ -276,7 +275,8 @@ export default function ProfilePage() {
                   data-testid="profile-giftcard-input"
                   placeholder={t('profile.redeem_placeholder')}
                   autoComplete="one-time-code"
-                  ref={giftCardRef}
+                  value={giftCard}
+                  onChange={(event) => setGiftCard(event.target.value)}
                 />
               </div>
               <Button
@@ -311,19 +311,28 @@ export default function ProfilePage() {
                   id="profile-old-password"
                   label={t('profile.old_password')}
                   placeholder={t('profile.old_password_placeholder')}
-                  inputRef={oldPasswordRef}
+                  value={passwordForm.oldPassword}
+                  onChange={(value) =>
+                    setPasswordForm((current) => ({ ...current, oldPassword: value }))
+                  }
                 />
                 <ProfileField
                   id="profile-new-password"
                   label={t('profile.new_password')}
                   placeholder={t('profile.new_password_placeholder')}
-                  inputRef={newPasswordRef}
+                  value={passwordForm.newPassword}
+                  onChange={(value) =>
+                    setPasswordForm((current) => ({ ...current, newPassword: value }))
+                  }
                 />
                 <ProfileField
                   id="profile-confirm-password"
                   label={t('profile.new_password')}
                   placeholder={t('profile.new_password_placeholder')}
-                  inputRef={confirmPasswordRef}
+                  value={passwordForm.confirmPassword}
+                  onChange={(value) =>
+                    setPasswordForm((current) => ({ ...current, confirmPassword: value }))
+                  }
                 />
               </div>
               <Button
@@ -482,9 +491,10 @@ export default function ProfilePage() {
             data-testid="profile-deposit-input"
             autoComplete="one-time-code"
             placeholder={depositPlaceholder}
-            ref={depositInputRef}
+            value={depositInput}
             onChange={(event) => {
-              depositAmountRef.current = Number(event.target.value) * 100;
+              setDepositInput(event.target.value);
+              setDepositAmount(Number(event.target.value) * 100);
             }}
           />
           <DialogFooter>
@@ -577,18 +587,26 @@ export default function ProfilePage() {
 
 const ProfileField = ({
   id,
-  inputRef,
   label,
+  onChange,
   placeholder,
+  value,
 }: {
   id: string;
-  inputRef: Ref<HTMLInputElement>;
   label: string;
+  onChange: (value: string) => void;
   placeholder: string;
+  value: string;
 }) => (
   <div className="space-y-2.5">
     <Label htmlFor={id}>{label}</Label>
-    <Input id={id} ref={inputRef} type="password" placeholder={placeholder} />
+    <Input
+      id={id}
+      type="password"
+      placeholder={placeholder}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
   </div>
 );
 

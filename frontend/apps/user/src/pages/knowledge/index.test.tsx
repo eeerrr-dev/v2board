@@ -125,7 +125,7 @@ vi.mock('@/lib/legacy-settings', () => ({
   legacyCopyText: mocks.legacyCopyText,
 }));
 
-vi.mock('@/lib/legacy-toast', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: {
     success: mocks.toastSuccess,
   },

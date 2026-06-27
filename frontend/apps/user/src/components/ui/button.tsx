@@ -37,24 +37,60 @@ export interface ButtonProps
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ asChild, className, variant, size, block, loading, disabled, type, children, ...props }, ref) => {
+  (
+    {
+      asChild,
+      className,
+      variant,
+      size,
+      block,
+      loading,
+      disabled,
+      type,
+      children,
+      onClick,
+      tabIndex,
+      ...props
+    },
+    ref,
+  ) => {
     const Comp = asChild ? Slot : 'button';
+    const isDisabled = disabled || loading;
     const sharedProps = {
       ref,
       className: cn(buttonVariants({ variant, size, block }), className),
-      disabled: disabled || loading,
       'aria-busy': !!loading,
       ...props,
     };
 
     if (asChild) {
-      return <Comp {...sharedProps}>{children}</Comp>;
+      return (
+        <Comp
+          {...sharedProps}
+          aria-disabled={isDisabled || props['aria-disabled']}
+          data-disabled={isDisabled ? '' : undefined}
+          tabIndex={isDisabled ? -1 : tabIndex}
+          onClick={(event) => {
+            if (isDisabled) {
+              event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
+            onClick?.(event);
+          }}
+        >
+          {children}
+        </Comp>
+      );
     }
 
     return (
       <Comp
         {...sharedProps}
+        disabled={isDisabled}
         type={type ?? 'button'}
+        onClick={onClick}
+        tabIndex={tabIndex}
       >
         {loading ? <Spinner /> : null}
         {children}

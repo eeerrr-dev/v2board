@@ -4,10 +4,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import QRCode from 'qrcode.react';
-import { user } from '@v2board/api-client';
 import type { Order, PaymentMethod } from '@v2board/types';
 import { BookOpen, CheckCircle2, Info, TriangleAlert } from 'lucide-react';
-import { apiClient } from '@/lib/api';
 import {
   Dialog,
   DialogContent,
@@ -18,15 +16,18 @@ import {
 } from '@/components/ui/shadcn-dialog';
 import {
   userKeys,
+  useCheckOrderMutation,
+  useCheckoutOrderMutation,
   useCommConfig,
   useOrder,
   usePaymentMethods,
   useCancelOrderMutation,
+  useStripePublicKeyMutation,
   useUserInfo,
 } from '@/lib/queries';
 import { legacyConfirm } from '@/components/legacy-confirm';
 import { StripeCardForm } from '@/components/stripe-card-form';
-import { toast } from '@/lib/legacy-toast';
+import { toast } from '@/lib/toast';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { formatUserLegacyDateTime } from '@/lib/legacy-date';
 import { Button } from '@/components/ui/button';
@@ -57,6 +58,9 @@ export default function OrderDetailPage() {
   useUserInfo({ refetchOnMount: 'always' });
   const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
   const cancel = useCancelOrderMutation();
+  const { mutateAsync: checkOrder } = useCheckOrderMutation();
+  const { mutateAsync: checkoutOrder } = useCheckoutOrderMutation();
+  const { mutateAsync: fetchStripePublicKey } = useStripePublicKeyMutation();
   const [methodId, setMethodId] = useState<number | undefined>();
   const [qrcodeVisible, setQrcodeVisible] = useState(false);
   const [payUrl, setPayUrl] = useState<string | undefined>();
@@ -84,8 +88,7 @@ export default function OrderDetailPage() {
     let timer = 0;
     const check = () => {
       timer = window.setTimeout(() => {
-        user
-          .checkOrder(apiClient, tradeNo)
+        checkOrder(tradeNo)
           .then((status) => {
             if (cancelled) return;
             if (status !== 0) {
@@ -105,7 +108,7 @@ export default function OrderDetailPage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [tradeNo, hasLoadedOrder]);
+  }, [checkOrder, tradeNo, hasLoadedOrder]);
 
   useEffect(() => {
     const first = paymentMethods?.[0];
@@ -154,8 +157,7 @@ export default function OrderDetailPage() {
     // — match that by fetching once and never clearing either piece of state.
     if (!isStripePayment || effectiveMethodId === undefined || stripePk) return;
     let cancelled = false;
-    user
-      .getStripePublicKey(apiClient, effectiveMethodId)
+    fetchStripePublicKey(effectiveMethodId)
       .then((pk) => {
         if (!cancelled) setStripePk(pk);
       })
@@ -163,7 +165,7 @@ export default function OrderDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [effectiveMethodId, isStripePayment, stripePk]);
+  }, [effectiveMethodId, fetchStripePublicKey, isStripePayment, stripePk]);
 
   const handleStripeToken = useCallback((token: { id: string } | null) => {
     setStripeToken(token);
@@ -196,7 +198,7 @@ export default function OrderDetailPage() {
     setPaying(true);
     let keepLegacyLoading = false;
     try {
-      const result = await user.checkoutOrder(apiClient, {
+      const result = await checkoutOrder({
         trade_no: tradeNo,
         method: effectiveMethodId as number,
         token: isStripePayment ? stripeToken?.id : undefined,

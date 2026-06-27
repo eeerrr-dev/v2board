@@ -2,6 +2,7 @@ import {
   forwardRef,
   type ReactNode,
   type HTMLAttributes,
+  type Ref,
   type TableHTMLAttributes,
   type TdHTMLAttributes,
   type ThHTMLAttributes,
@@ -102,6 +103,7 @@ interface DataTableProps extends Omit<TableHTMLAttributes<HTMLTableElement>, 'ch
   headers: DataTableHeader[];
   scrollClassName?: string;
   scrollProps?: TableScrollProps;
+  scrollRef?: Ref<HTMLDivElement>;
 }
 
 function DataTable({
@@ -115,10 +117,12 @@ function DataTable({
   headers,
   scrollClassName,
   scrollProps,
+  scrollRef,
   ...props
 }: DataTableProps) {
   return (
     <TableScroll
+      ref={scrollRef}
       {...scrollProps}
       className={cn(scrollClassName, scrollProps?.className)}
     >

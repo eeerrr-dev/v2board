@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/cn';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
-import { toast } from '@/lib/legacy-toast';
+import { toast } from '@/lib/toast';
 import { useReplyTicketMutation, useTicket } from '@/lib/queries';
 
 function legacyTicketMessageLength(data?: { message?: unknown[] }) {

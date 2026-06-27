@@ -4,7 +4,7 @@ import { legacyGetLocale } from '@v2board/i18n';
 import { getAuthData } from './auth';
 import { i18nGet } from './errors';
 import { getLegacySettings } from './legacy-settings';
-import { toast } from './legacy-toast';
+import { toast } from './toast';
 
 let redirectingToLogin = false;
 const LEGACY_AUTH_STORAGE_KEY = 'authorization';

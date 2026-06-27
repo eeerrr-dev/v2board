@@ -1,25 +1,36 @@
 import { readFileSync } from 'node:fs';
-import { act } from 'react';
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { toast } from './legacy-toast';
+import { Toaster } from '@/components/ui/toaster';
+import { toast } from './toast';
 
-const source = readFileSync(`${process.cwd()}/src/lib/legacy-toast.ts`, 'utf8');
+const source = readFileSync(`${process.cwd()}/src/components/ui/toaster.tsx`, 'utf8');
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
 describe('legacy toast behavior', () => {
+  let root: Root;
+
   beforeEach(() => {
     vi.useFakeTimers();
     act(() => {
       toast.dismiss();
     });
     document.body.innerHTML = '';
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => {
+      root.render(createElement(Toaster));
+    });
   });
 
   afterEach(() => {
     act(() => {
       toast.dismiss();
+      root.unmount();
     });
     vi.useRealTimers();
   });

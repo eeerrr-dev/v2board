@@ -123,6 +123,9 @@ vi.mock('@/lib/queries', () => ({
   useNewPeriodMutation: () => ({
     mutateAsync: mocks.newPeriodMutateAsync,
   }),
+  useSaveOrderMutation: () => ({
+    mutateAsync: mocks.saveOrder,
+  }),
   useNotices: () => ({
     data: mocks.notices,
   }),
@@ -140,19 +143,9 @@ vi.mock('@/lib/legacy-settings', () => ({
   legacyCopyText: mocks.copyText,
 }));
 
-vi.mock('@/lib/api', () => ({
-  apiClient: { name: 'apiClient' },
-}));
-
-vi.mock('@/lib/legacy-toast', () => ({
+vi.mock('@/lib/toast', () => ({
   toast: {
     success: mocks.toastSuccess,
-  },
-}));
-
-vi.mock('@v2board/api-client', () => ({
-  user: {
-    saveOrder: mocks.saveOrder,
   },
 }));
 
@@ -414,10 +407,7 @@ describe('DashboardPage shadcn shell actions', () => {
     });
     await flushPromises();
 
-    expect(mocks.saveOrder).toHaveBeenCalledWith(
-      { name: 'apiClient' },
-      { period: 'reset_price', plan_id: 1 },
-    );
+    expect(mocks.saveOrder).toHaveBeenCalledWith({ period: 'reset_price', plan_id: 1 });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
   });
 

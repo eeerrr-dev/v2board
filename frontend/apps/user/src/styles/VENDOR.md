@@ -36,7 +36,7 @@ Every file whose header begins `/* Authored V2Board …` is V2Board's own stylin
 (identifiable by `___`-hashed CSS-module classes or `.v2board-*` selectors). These
 are the organized source layer and may be edited normally. In this app they are:
 
-- `auth-shadcn.css`, `user-auth-surface.css`, `user-shadcn-motion.css` — pure shadcn island tokens, utilities, and motion
+- `user-shadcn.css`, `user-auth-surface.css`, `user-shadcn-motion.css` — pure shadcn island tokens, utilities, and motion
 
 ## How to classify a file here
 

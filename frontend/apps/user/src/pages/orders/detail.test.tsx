@@ -77,18 +77,6 @@ vi.mock('@tanstack/react-query', () => ({
   }),
 }));
 
-vi.mock('@/lib/api', () => ({
-  apiClient: {},
-}));
-
-vi.mock('@v2board/api-client', () => ({
-  user: {
-    checkoutOrder,
-    checkOrder,
-    getStripePublicKey,
-  },
-}));
-
 vi.mock('@/components/legacy-confirm', () => ({
   legacyConfirm,
 }));
@@ -116,6 +104,15 @@ vi.mock('@/lib/queries', () => ({
   useCancelOrderMutation: () => ({
     isPending: cancelState.isPending,
     mutateAsync: cancelMutateAsync,
+  }),
+  useCheckOrderMutation: () => ({
+    mutateAsync: checkOrder,
+  }),
+  useCheckoutOrderMutation: () => ({
+    mutateAsync: checkoutOrder,
+  }),
+  useStripePublicKeyMutation: () => ({
+    mutateAsync: getStripePublicKey,
   }),
   useUserInfo: () => ({}),
 }));
@@ -384,7 +381,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(checkOrder).toHaveBeenCalledWith(expect.anything(), 'ORDER123');
+    expect(checkOrder).toHaveBeenCalledWith('ORDER123');
     expect(orderRefetch).toHaveBeenCalledTimes(1);
     expect(document.querySelector('[data-testid="payment-qrcode"] svg')).toBeNull();
   });

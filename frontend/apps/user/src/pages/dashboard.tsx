@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import QRCode from 'qrcode.react';
-import { user } from '@v2board/api-client';
 import type { Notice } from '@v2board/types';
 import {
   AlertCircle,
@@ -19,7 +18,6 @@ import {
   ShoppingBag,
   Smartphone,
 } from 'lucide-react';
-import { apiClient } from '@/lib/api';
 import {
   Dialog,
   DialogContent,
@@ -40,12 +38,13 @@ import {
   useCommConfig,
   useNewPeriodMutation,
   useNotices,
+  useSaveOrderMutation,
   useSubscribe,
   useUserStat,
 } from '@/lib/queries';
 import { formatBytes } from '@v2board/config/format';
 import { legacyCopyText } from '@/lib/legacy-settings';
-import { toast } from '@/lib/legacy-toast';
+import { toast } from '@/lib/toast';
 import { formatUserLegacyDate, formatUserLegacyDateSlash } from '@/lib/legacy-date';
 import { cn } from '@/lib/cn';
 import clashForAndroidIcon from '../assets/images/icon/Clash For Android.png';
@@ -98,6 +97,7 @@ export default function DashboardPage() {
   const notices = useNotices();
   useCommConfig();
   const newPeriod = useNewPeriodMutation();
+  const saveOrder = useSaveOrderMutation();
   const [activeNotice, setActiveNotice] = useState<Notice | null>(null);
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [activeNoticeIndex, setActiveNoticeIndex] = useState(0);
@@ -169,7 +169,7 @@ export default function DashboardPage() {
     if (!sub) return;
     setSavingResetPackage(true);
     try {
-      const tradeNo = await user.saveOrder(apiClient, {
+      const tradeNo = await saveOrder.mutateAsync({
         period: 'reset_price',
         plan_id: sub.plan_id as number,
       });

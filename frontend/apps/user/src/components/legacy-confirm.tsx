@@ -18,7 +18,6 @@ interface LegacyConfirmOptions {
   onCancel?: LegacyConfirmAction;
   okText?: ReactNode;
   cancelText?: ReactNode;
-  maskClosable?: boolean;
   showCancel?: boolean;
   okButtonProps?: {
     disabled?: boolean;
@@ -145,12 +144,7 @@ export function LegacyConfirmProvider() {
         }
       }}
     >
-      <AlertDialogContent
-        className="v2board-confirm-dialog sm:max-w-[26rem]"
-        onPointerDownOutside={(event) => {
-          if (!options?.maskClosable) event.preventDefault();
-        }}
-      >
+      <AlertDialogContent className="v2board-confirm-dialog sm:max-w-[26rem]">
         <AlertDialogHeader>
           <AlertDialogTitle className="v2board-confirm-title">
             {options?.title}

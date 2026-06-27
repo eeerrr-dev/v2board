@@ -94,7 +94,7 @@ export const userStyleFiles = [
   'user-bootstrap-screen-reader.css',
   'user-bootstrap-spinner-grow-keyframes.css',
   'user-background-utilities.css',
-  'auth-shadcn.css',
+  'user-shadcn.css',
   'user-shadcn-motion.css',
   'user-auth-surface.css',
 ] as const;
