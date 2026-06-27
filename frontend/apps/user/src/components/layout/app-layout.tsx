@@ -139,14 +139,14 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
     <aside
       id="sidebar"
       className={cn(
-        'fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-border bg-background transition-transform duration-200 ease-out lg:translate-x-0',
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+        'fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-border bg-card/95 text-card-foreground shadow-sm backdrop-blur transition-transform duration-200 ease-out lg:translate-x-0',
+        sidebarOpen ? 'translate-x-0' : 'max-lg:-translate-x-full',
       )}
     >
       <div className="flex h-16 items-center justify-between border-b border-border px-5">
         <button
           type="button"
-          className="text-lg font-semibold tracking-normal text-foreground"
+          className="rounded-md text-lg font-semibold tracking-normal text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => go('/dashboard')}
         >
           {siteTitle}
@@ -167,7 +167,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
         {NAV.map((group, groupIndex) => (
           <Fragment key={group.labelKey ?? `group-${groupIndex}`}>
             {group.labelKey ? (
-              <div className="px-3 pb-2 pt-4 text-xs font-medium uppercase text-muted-foreground first:pt-0">
+              <div className="px-3 pb-2 pt-4 text-xs font-medium uppercase tracking-normal text-muted-foreground first:pt-0">
                 {t(group.labelKey)}
               </div>
             ) : null}
@@ -182,8 +182,8 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
                     type="button"
                     key={item.to}
                     className={cn(
-                      'flex h-9 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                      active && 'bg-accent text-accent-foreground',
+                      'flex h-9 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm font-medium text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                      active && 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 hover:text-primary-foreground',
                     )}
                     onClick={() => go(item.to)}
                   >
@@ -215,7 +215,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
 
       {sidebar}
 
-      <div className="min-h-screen bg-muted lg:pl-72">
+      <div className="min-h-screen bg-muted/40 lg:pl-72">
         <header
           id="page-header"
           className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
@@ -261,8 +261,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
                 setDarkModeState(next);
               }}
             >
-              <i className={darkMode ? 'far fa fa-moon' : 'far fa fa-sun'} aria-hidden="true" />
-              {darkMode ? <Moon className="sr-only size-4" /> : <Sun className="sr-only size-4" />}
+              {darkMode ? <Moon className="size-4" /> : <Sun className="size-4" />}
             </Button>
 
             <ShadcnLanguageMenu />
@@ -272,10 +271,10 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
                 <Button
                   type="button"
                   variant="ghost"
-                  className="v2board-app-avatar-trigger h-9 max-w-[220px] gap-2 px-2.5"
+                  className="h-9 max-w-[220px] gap-2 px-2.5"
+                  data-testid="app-avatar-trigger"
                 >
                   <CircleUserRound className="size-4" />
-                  <i className="far fa fa-user-circle sr-only" aria-hidden="true" />
                   <span className="hidden truncate text-sm font-medium lg:inline">
                     {user?.email || 'Loading...'}
                   </span>
@@ -284,7 +283,8 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
               <DropdownMenuContent
                 align="end"
                 sideOffset={8}
-                className="v2board-app-shell-menu-content v2board-app-avatar-menu w-56"
+                className="v2board-app-shell-menu-content w-56"
+                data-testid="app-avatar-menu"
               >
                 <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
                   {user?.email || 'Loading...'}
@@ -336,7 +336,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
           </main>
         ) : (
           <main id="main-container" className="v2board-app-main">
-            <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+            <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
               <RouteBoundaryOutlet />
             </div>
           </main>

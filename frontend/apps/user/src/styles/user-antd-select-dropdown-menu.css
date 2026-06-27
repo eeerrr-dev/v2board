@@ -1,9 +1,0 @@
-/* Restored Ant Design v3 select dropdown menu viewport styles. */
-.ant-select-dropdown-menu {
-  max-height: 250px;
-  margin: 0;
-  padding: 4px 0;
-  overflow: auto;
-  list-style: none;
-  outline: none;
-}

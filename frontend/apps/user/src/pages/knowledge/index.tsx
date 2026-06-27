@@ -7,6 +7,7 @@ import { ChevronRight, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { PageShell } from '@/components/ui/page';
 import {
   Sheet,
   SheetContent,
@@ -115,8 +116,8 @@ export default function KnowledgePage() {
   }, [detail.data, detail.isFetching]);
 
   return (
-    <div className="v2board-knowledge-surface space-y-4">
-      <Card className="v2board-knowledge-card overflow-hidden">
+    <PageShell className="gap-4" data-testid="knowledge-surface">
+      <Card className="overflow-hidden" data-testid="knowledge-card">
         <CardHeader className="gap-4 sm:flex sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-2">
             <CardTitle className="truncate text-xl">{t('nav.knowledge')}</CardTitle>
@@ -124,7 +125,7 @@ export default function KnowledgePage() {
               <Badge variant="secondary">{articleCount}</Badge>
             ) : null}
           </div>
-          <div className="v2board-knowledge-search-bar relative w-full sm:max-w-sm">
+          <div className="relative w-full sm:max-w-sm" data-testid="knowledge-search-bar">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               aria-label={t('knowledge.search_placeholder')}
@@ -138,7 +139,7 @@ export default function KnowledgePage() {
       </Card>
 
       {loading ? (
-        <Card className="v2board-knowledge-loading">
+        <Card data-testid="knowledge-loading">
           <CardContent className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
             <span role="status" className="inline-flex items-center gap-2">
               <Spinner />
@@ -149,29 +150,36 @@ export default function KnowledgePage() {
       ) : categories.length ? (
         <div className="grid gap-4">
           {categories.map(([category, items]) => (
-            <Card key={category} className="v2board-knowledge-category overflow-hidden py-0">
+            <Card key={category} className="overflow-hidden py-0" data-testid="knowledge-category">
               <CardHeader className="border-b border-border py-4">
                 <div className="flex min-w-0 items-center justify-between gap-3">
-                  <CardTitle className="v2board-knowledge-category-title truncate text-base">
+                  <CardTitle className="truncate text-base" data-testid="knowledge-category-title">
                     {category}
                   </CardTitle>
                   <Badge variant="secondary">{items?.length ?? 0}</Badge>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="v2board-knowledge-list divide-y divide-border">
+                <div className="divide-y divide-border" data-testid="knowledge-list">
                   {items?.map((item) => (
                     <button
                       key={item.id}
                       type="button"
-                      className="v2board-knowledge-item flex w-full items-center gap-4 px-6 py-4 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      className="flex w-full items-center gap-4 px-6 py-4 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      data-testid="knowledge-item"
                       onClick={() => openDetail(item)}
                     >
                       <span className="min-w-0 flex-1 space-y-1">
-                        <span className="v2board-knowledge-item-title flex overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-foreground">
+                        <span
+                          className="flex overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-foreground"
+                          data-testid="knowledge-item-title"
+                        >
                           {item.title}
                         </span>
-                        <span className="v2board-knowledge-item-date flex text-xs text-muted-foreground">
+                        <span
+                          className="flex text-xs text-muted-foreground"
+                          data-testid="knowledge-item-date"
+                        >
                           {t('knowledge.last_update', {
                             date: formatUserLegacyDateSlash(item.updated_at),
                           })}
@@ -187,7 +195,10 @@ export default function KnowledgePage() {
         </div>
       ) : (
         <Card>
-          <CardContent className="v2board-knowledge-empty py-14 text-center text-sm text-muted-foreground">
+          <CardContent
+            className="py-14 text-center text-sm text-muted-foreground"
+            data-testid="knowledge-empty"
+          >
             {emptyDescription}
           </CardContent>
         </Card>
@@ -201,10 +212,11 @@ export default function KnowledgePage() {
       >
         <SheetContent
           side="right"
-          className="v2board-knowledge-sheet w-full p-0 sm:max-w-2xl"
+          className="w-full p-0 sm:max-w-2xl"
+          data-testid="knowledge-sheet"
         >
           <SheetHeader className="border-b border-border px-6 py-5 pr-12">
-            <SheetTitle className="v2board-knowledge-sheet-title leading-6">
+            <SheetTitle className="leading-6" data-testid="knowledge-sheet-title">
               {visibleDetail?.title || 'Loading...'}
             </SheetTitle>
             <SheetDescription className={visibleDetail?.updated_at ? undefined : 'sr-only'}>
@@ -215,7 +227,10 @@ export default function KnowledgePage() {
                 : 'Loading...'}
             </SheetDescription>
           </SheetHeader>
-          <div className="v2board-knowledge-sheet-body min-h-0 flex-1 overflow-y-auto px-6 py-6">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto px-6 py-6"
+            data-testid="knowledge-sheet-body"
+          >
             {detail.isFetching ? (
               <div
                 role="status"
@@ -226,13 +241,14 @@ export default function KnowledgePage() {
               </div>
             ) : (
               <div
-                className="v2board-knowledge-article custom-html-style min-w-0"
+                className="custom-html-style min-w-0"
+                data-testid="knowledge-article"
                 dangerouslySetInnerHTML={{ __html: renderedBody }}
               />
             )}
           </div>
         </SheetContent>
       </Sheet>
-    </div>
+    </PageShell>
   );
 }

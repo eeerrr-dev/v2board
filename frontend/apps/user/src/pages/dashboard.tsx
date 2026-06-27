@@ -31,7 +31,11 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageShell } from '@/components/ui/page';
+import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   useCommConfig,
   useNewPeriodMutation,
@@ -230,10 +234,11 @@ export default function DashboardPage() {
   ];
 
   const renderSubscribeBox = () => (
-    <div className="v2board-dashboard-subscribe-menu grid gap-1 p-2">
+    <div data-testid="dashboard-subscribe-menu" className="grid gap-1 p-2">
       <button
         type="button"
-        className="v2board-dashboard-subscribe-item v2board-dashboard-subscribe-copy flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        data-testid="dashboard-subscribe-copy"
+        className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         onClick={copyUrl}
       >
         <Copy className="size-4 text-muted-foreground" />
@@ -241,7 +246,8 @@ export default function DashboardPage() {
       </button>
       <button
         type="button"
-        className="v2board-dashboard-subscribe-item v2board-dashboard-subscribe-qrcode flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        data-testid="dashboard-subscribe-qrcode"
+        className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         onClick={() => setQrOpen(true)}
       >
         <QrCode className="size-4 text-muted-foreground" />
@@ -251,10 +257,9 @@ export default function DashboardPage() {
         <button
           type="button"
           key={target.title}
-          className={cn(
-            'v2board-dashboard-subscribe-item flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-            `v2board-dashboard-subscribe-target-${subscribeTargetSlug(target.title)}`,
-          )}
+          data-testid="dashboard-subscribe-target"
+          data-subscribe-target={subscribeTargetSlug(target.title)}
+          className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => {
             window.location.href = target.href;
           }}
@@ -268,7 +273,8 @@ export default function DashboardPage() {
       <div className="px-1 pb-1 pt-2">
         <Button
           type="button"
-          className="v2board-dashboard-subscribe-tutorial w-full"
+          data-testid="dashboard-subscribe-tutorial"
+          className="w-full"
           onClick={() => navigate('/knowledge')}
         >
           {t('dashboard.use_tutorial')}
@@ -285,7 +291,8 @@ export default function DashboardPage() {
   const renderNoticeCard = (notice: Notice) => (
     <button
       type="button"
-      className="v2board-notice-card flex w-full flex-col overflow-hidden rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      data-testid="dashboard-notice-card"
+      className="flex w-full flex-col overflow-hidden rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       onClick={() => openNotice(notice)}
     >
       <div
@@ -317,11 +324,13 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="v2board-dashboard-page space-y-6">
-      <div className="v2board-dashboard-alerts grid gap-3">
+    <PageShell data-testid="dashboard-page">
+      <div data-testid="dashboard-alerts" className="grid gap-3">
         {pendingOrderCount > 0 && (
           <Alert
-            className="v2board-dashboard-alert v2board-dashboard-alert-danger border-destructive/25 bg-destructive/5 text-foreground"
+            data-testid="dashboard-alert"
+            data-alert-kind="danger"
+            className="border-destructive/25 bg-destructive/5 text-foreground"
             role="alert"
           >
             <AlertCircle className="size-4 text-destructive" />
@@ -329,7 +338,8 @@ export default function DashboardPage() {
               <span>{t('dashboard.alert_pending_order')}</span>
               <button
                 type="button"
-                className="v2board-dashboard-alert-link font-medium text-foreground underline-offset-4 hover:underline"
+                data-testid="dashboard-alert-link"
+                className="font-medium text-foreground underline-offset-4 hover:underline"
                 onClick={() => navigate('/order')}
               >
                 {t('order.pay_now')}
@@ -339,7 +349,9 @@ export default function DashboardPage() {
         )}
         {openTicketCount > 0 && (
           <Alert
-            className="v2board-dashboard-alert v2board-dashboard-alert-warning border-amber-200 bg-amber-50 text-foreground"
+            data-testid="dashboard-alert"
+            data-alert-kind="warning"
+            className="border-amber-200 bg-amber-50 text-foreground"
             role="alert"
           >
             <Bell className="size-4 text-amber-600" />
@@ -349,7 +361,8 @@ export default function DashboardPage() {
               </span>
               <button
                 type="button"
-                className="v2board-dashboard-alert-link font-medium text-foreground underline-offset-4 hover:underline"
+                data-testid="dashboard-alert-link"
+                className="font-medium text-foreground underline-offset-4 hover:underline"
                 onClick={() => navigate('/ticket')}
               >
                 {t('dashboard.alert_view')}
@@ -359,7 +372,9 @@ export default function DashboardPage() {
         )}
         {shouldShowTrafficAlert && (
           <Alert
-            className="v2board-dashboard-alert v2board-dashboard-alert-info border-sky-200 bg-sky-50 text-foreground"
+            data-testid="dashboard-alert"
+            data-alert-kind="info"
+            className="border-sky-200 bg-sky-50 text-foreground"
             role="alert"
           >
             <AlertCircle className="size-4 text-sky-600" />
@@ -368,7 +383,8 @@ export default function DashboardPage() {
               {trafficAlertResetAvailable ? (
                 <button
                   type="button"
-                  className="v2board-dashboard-alert-link font-medium text-foreground underline-offset-4 hover:underline"
+                  data-testid="dashboard-alert-link"
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
                   onClick={requestResetPackage}
                 >
                   {t('dashboard.buy_reset_package')}
@@ -380,43 +396,52 @@ export default function DashboardPage() {
       </div>
 
       {noticeList.length > 0 && activeNoticeCard ? (
-        <section className="v2board-dashboard-notices space-y-3">
-          <div className="v2board-dashboard-notice-carousel">
-            <div className="v2board-dashboard-notice-slide is-active">
-              {renderNoticeCard(activeNoticeCard)}
-            </div>
+        <section data-testid="dashboard-notices" className="space-y-3">
+          <Tabs
+            data-testid="dashboard-notice-carousel"
+            value={String(activeNoticeIndex)}
+            onValueChange={(value) => setActiveNoticeIndex(Number(value))}
+          >
+            {noticeList.map((notice, index) => (
+              <TabsContent
+                key={notice.id}
+                value={String(index)}
+                data-testid="dashboard-notice-slide"
+                data-active={index === activeNoticeIndex ? 'true' : 'false'}
+                className="mt-0 data-[state=inactive]:hidden"
+              >
+                {renderNoticeCard(notice)}
+              </TabsContent>
+            ))}
             {noticeList.length > 1 ? (
-              <ul className="v2board-dashboard-notice-dots mt-3 flex justify-center gap-1">
+              <TabsList
+                data-testid="dashboard-notice-dots"
+                aria-label={t('notice.title')}
+                className="mt-3 flex h-auto justify-center gap-1 border-0 bg-transparent p-0 shadow-none"
+              >
                 {noticeList.map((notice, index) => (
-                  <li
+                  <TabsTrigger
                     key={notice.id}
-                    className={cn(index === activeNoticeIndex && 'is-active')}
+                    value={String(index)}
+                    onClick={() => setActiveNoticeIndex(index)}
+                    className="h-1.5 w-6 rounded-full bg-border p-0 text-[0px] shadow-none transition-colors hover:bg-muted-foreground/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=active]:bg-primary data-[state=active]:shadow-none dark:data-[state=active]:bg-primary"
+                    data-testid="dashboard-notice-dot"
+                    aria-label={`${t('notice.title')} ${index + 1}`}
                   >
-                    <button
-                      type="button"
-                      className={cn(
-                        'v2board-dashboard-notice-dot h-1.5 w-6 rounded-full bg-border text-[0px] transition-colors hover:bg-muted-foreground/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                        index === activeNoticeIndex && 'bg-primary',
-                      )}
-                      aria-label={`${t('notice.title')} ${index + 1}`}
-                      aria-selected={index === activeNoticeIndex}
-                      onClick={() => setActiveNoticeIndex(index)}
-                    >
-                      {index + 1}
-                    </button>
-                  </li>
+                    {index + 1}
+                  </TabsTrigger>
                 ))}
-              </ul>
+              </TabsList>
             ) : null}
-          </div>
+          </Tabs>
         </section>
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
-        <Card className="v2board-dashboard-card overflow-hidden">
+        <Card data-testid="dashboard-card" className="overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 border-b border-border pb-5">
             <div className="space-y-1">
-              <CardTitle className="v2board-dashboard-card-title text-xl">
+              <CardTitle data-testid="dashboard-card-title" className="text-xl">
                 {t('dashboard.plan')}
               </CardTitle>
               {hasPlan && hasSubscribeData ? (
@@ -440,14 +465,20 @@ export default function DashboardPage() {
                       {legacySub.plan!.name}
                     </h2>
                     {expired ? (
-                      <span className="v2board-dashboard-status-expired inline-flex rounded-md border border-destructive/25 bg-destructive/5 px-2 py-1 text-xs font-medium text-destructive">
+                      <StatusBadge
+                        data-testid="dashboard-status-expired"
+                        tone="destructive"
+                      >
                         {t('dashboard.expired_label')}
-                      </span>
+                      </StatusBadge>
                     ) : (
-                      <span className="v2board-dashboard-status-active inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                      <StatusBadge
+                        data-testid="dashboard-status-active"
+                        tone="success"
+                      >
                         <CheckCircle2 className="size-3" />
                         {legacySub.expired_at === null ? t('dashboard.long_term') : t('dashboard.plan')}
-                      </span>
+                      </StatusBadge>
                     )}
                   </div>
                   {legacySub.expired_at === null ? (
@@ -470,22 +501,19 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="space-y-3">
-                  <div className="v2board-dashboard-progress h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={cn(
-                        'v2board-dashboard-progress-bar h-full rounded-full transition-all',
-                        trafficTone === 'danger' && 'bg-destructive',
-                        trafficTone === 'warning' && 'bg-amber-500',
-                        trafficTone === 'success' && 'bg-emerald-500',
-                      )}
-                      data-status={trafficTone}
-                      role="progressbar"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={Math.round(usedPctClamped)}
-                      style={{ width: `${usedPctClamped}%` }}
-                    />
-                  </div>
+                  <Progress
+                    data-testid="dashboard-progress"
+                    value={usedPctClamped}
+                    indicatorClassName={cn(
+                      trafficTone === 'danger' && 'bg-destructive',
+                      trafficTone === 'warning' && 'bg-amber-500',
+                      trafficTone === 'success' && 'bg-emerald-500',
+                    )}
+                    indicatorProps={{
+                      'data-testid': 'dashboard-progress-bar',
+                      'data-status': trafficTone,
+                    }}
+                  />
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-lg border border-border bg-muted/30 p-3">
                       <p className="text-sm font-medium">
@@ -544,7 +572,8 @@ export default function DashboardPage() {
             ) : (
               <button
                 type="button"
-                className="v2board-dashboard-empty-plan flex min-h-40 w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 text-center transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                data-testid="dashboard-empty-plan"
+                className="flex min-h-40 w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 text-center transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 onClick={() => navigate('/plan')}
               >
                 <Plus className="size-8 text-muted-foreground" />
@@ -554,9 +583,9 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="v2board-dashboard-card overflow-hidden">
+        <Card data-testid="dashboard-card" className="overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 border-b border-border pb-5">
-            <CardTitle className="v2board-dashboard-card-title text-xl">
+            <CardTitle data-testid="dashboard-card-title" className="text-xl">
               {t('dashboard.shortcuts')}
             </CardTitle>
             <span className="flex size-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
@@ -570,7 +599,8 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   key={shortcut.titleKey}
-                  className="v2board-shortcuts-item group flex min-h-[4.5rem] items-center gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  data-testid="dashboard-shortcut"
+                  className="group flex min-h-[4.5rem] items-center gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   onClick={shortcut.onClick ?? (() => navigate(shortcut.to))}
                 >
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:bg-background group-hover:text-foreground">
@@ -599,7 +629,7 @@ export default function DashboardPage() {
           if (!open) setActiveNotice(null);
         }}
       >
-        <DialogContent className="v2board-dashboard-dialog">
+        <DialogContent data-testid="dashboard-dialog">
           <DialogHeader>
             <DialogTitle>{activeNotice?.title}</DialogTitle>
           </DialogHeader>
@@ -613,7 +643,7 @@ export default function DashboardPage() {
       </Dialog>
 
       <Dialog open={subscribeOpen} onOpenChange={setSubscribeOpen}>
-        <DialogContent className="v2board-dashboard-dialog p-0 sm:max-w-sm">
+        <DialogContent data-testid="dashboard-dialog" className="p-0 sm:max-w-sm">
           <DialogHeader className="px-5 pt-5">
             <DialogTitle>{t('dashboard.shortcut_one_click')}</DialogTitle>
           </DialogHeader>
@@ -622,7 +652,7 @@ export default function DashboardPage() {
       </Dialog>
 
       <Dialog open={qrOpen} onOpenChange={setQrOpen}>
-        <DialogContent className="v2board-dashboard-dialog sm:max-w-xs">
+        <DialogContent data-testid="dashboard-dialog" className="sm:max-w-xs">
           <DialogHeader>
             <DialogTitle>{t('dashboard.scan_qrcode_subscribe')}</DialogTitle>
             <DialogDescription>{t('dashboard.qrcode_client_tip')}</DialogDescription>
@@ -639,7 +669,7 @@ export default function DashboardPage() {
           if (!open && !confirmLoading) setConfirmAction(null);
         }}
       >
-        <DialogContent className="v2board-dashboard-dialog sm:max-w-md">
+        <DialogContent data-testid="dashboard-dialog" className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{confirmTitle}</DialogTitle>
             <DialogDescription>{confirmContent}</DialogDescription>
@@ -655,7 +685,7 @@ export default function DashboardPage() {
             </Button>
             <Button
               type="button"
-              className="v2board-dashboard-confirm-primary"
+              data-testid="dashboard-confirm-primary"
               loading={confirmLoading}
               onClick={() => {
                 void (confirmAction === 'reset-package'
@@ -668,7 +698,7 @@ export default function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }
 

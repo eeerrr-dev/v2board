@@ -1,9 +1,0 @@
-/* Restored Font Awesome spin keyframes used by the legacy OneUI loading state. */
-@keyframes fa-spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}

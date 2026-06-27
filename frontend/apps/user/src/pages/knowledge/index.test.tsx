@@ -150,21 +150,21 @@ describe('KnowledgePage shadcn library surface', () => {
   it('renders the shadcn search card, category groups, article rows, and dates', () => {
     const html = renderToStaticMarkup(<KnowledgePage />);
 
-    expect(html).toContain('v2board-knowledge-surface');
-    expect(html).toContain('v2board-knowledge-card');
+    expect(html).toContain('data-testid="knowledge-surface"');
+    expect(html).toContain('data-testid="knowledge-card"');
     expect(html).toContain('bg-card');
     expect(html).toContain('border-border');
-    expect(html).toContain('v2board-knowledge-search-bar');
+    expect(html).toContain('data-testid="knowledge-search-bar"');
     expect(html).toContain('placeholder="搜索文档"');
     expect(html).toContain('value=""');
     expect(html).toContain('使用文档');
-    expect(html).toContain('v2board-knowledge-category');
-    expect(html).toContain('v2board-knowledge-category-title');
+    expect(html).toContain('data-testid="knowledge-category"');
+    expect(html).toContain('data-testid="knowledge-category-title"');
     expect(html).toContain('General');
     expect(html).toContain('Router');
-    expect(html).toContain('v2board-knowledge-item');
-    expect(html).not.toContain('v2board-knowledge-item-title block');
-    expect(html).not.toContain('v2board-knowledge-item-date block');
+    expect(html).toContain('data-testid="knowledge-item"');
+    expect(html).not.toContain('data-testid="knowledge-item-title" class="block');
+    expect(html).not.toContain('data-testid="knowledge-item-date" class="block');
     expect(html).toContain('Copy Article');
     expect(html).toContain('Router Guide');
     expect(html).toContain('最后更新: 2023/11/14');
@@ -176,8 +176,8 @@ describe('KnowledgePage shadcn library surface', () => {
 
     const html = renderToStaticMarkup(<KnowledgePage />);
 
-    expect(html).toContain('v2board-knowledge-search-bar');
-    expect(html).not.toContain('v2board-knowledge-loading');
+    expect(html).toContain('data-testid="knowledge-search-bar"');
+    expect(html).not.toContain('data-testid="knowledge-loading"');
   });
 
   it('renders an explicit shadcn empty state for an empty knowledge payload', () => {
@@ -185,7 +185,7 @@ describe('KnowledgePage shadcn library surface', () => {
 
     const html = renderToStaticMarkup(<KnowledgePage />);
 
-    expect(html).toContain('v2board-knowledge-empty');
+    expect(html).toContain('data-testid="knowledge-empty"');
     expect(html).not.toContain('class="ant-empty ant-empty-normal"');
     expect(html).not.toContain('block block-rounded');
   });
@@ -193,7 +193,7 @@ describe('KnowledgePage shadcn library surface', () => {
   it('uses Radix sheet composition instead of legacy Ant and Bootstrap foundations', () => {
     expect(knowledgeSource).toContain("from '@/components/ui/sheet'");
     expect(knowledgeSource).toContain('<SheetContent');
-    expect(knowledgeSource).toContain('v2board-knowledge-item');
+    expect(knowledgeSource).toContain('data-testid="knowledge-item"');
     expect(knowledgeSource).not.toContain('AntBtn');
     expect(knowledgeSource).not.toContain('createPortal');
     expect(knowledgeSource).not.toContain('lockLegacyDrawerBodyScroll');
@@ -286,10 +286,10 @@ describe('KnowledgePage redesigned interactions', () => {
       await Promise.resolve();
     });
 
-    expect(container.innerHTML).toContain('v2board-knowledge-search-bar');
-    expect(container.innerHTML).toContain('v2board-knowledge-loading');
+    expect(container.innerHTML).toContain('data-testid="knowledge-search-bar"');
+    expect(container.innerHTML).toContain('data-testid="knowledge-loading"');
     expect(container.innerHTML).toContain('Loading...');
-    expect(container.innerHTML).not.toContain('v2board-knowledge-category');
+    expect(container.innerHTML).not.toContain('data-testid="knowledge-category"');
   });
 
   it('opens the article sheet from the URL id', async () => {
@@ -302,8 +302,8 @@ describe('KnowledgePage redesigned interactions', () => {
     });
 
     expect(mocks.detailArgs).toContainEqual({ id: 2, language: 'zh-CN' });
-    expect(document.body.innerHTML).toContain('v2board-knowledge-sheet');
-    expect(document.body.innerHTML).toContain('v2board-knowledge-sheet-title');
+    expect(document.body.innerHTML).toContain('data-testid="knowledge-sheet"');
+    expect(document.body.innerHTML).toContain('data-testid="knowledge-sheet-title"');
     expect(document.body.innerHTML).toContain('Router Guide');
     expect(document.body.innerHTML).toContain('custom-html-style');
     expect(document.body.innerHTML).toContain('<a onclick="jump(1)">jump</a>');
@@ -317,26 +317,26 @@ describe('KnowledgePage redesigned interactions', () => {
       await Promise.resolve();
     });
 
-    const item = container.querySelector('.v2board-knowledge-item') as HTMLElement;
+    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
     await act(async () => {
       item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(document.body.innerHTML).toContain('v2board-knowledge-sheet');
+    expect(document.body.innerHTML).toContain('data-testid="knowledge-sheet"');
     expect(document.body.innerHTML).toContain('Loading...');
     expect(window.copy).toBeTypeOf('function');
     expect(window.jump).toBeTypeOf('function');
 
     const closeButton = document.body.querySelector(
-      '.v2board-knowledge-sheet button',
+      '[data-testid="knowledge-sheet"] button',
     ) as HTMLButtonElement;
     await act(async () => {
       closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(document.body.innerHTML).not.toContain('v2board-knowledge-sheet');
+    expect(document.body.innerHTML).not.toContain('data-testid="knowledge-sheet"');
     expect(window.copy).toBeUndefined();
     expect(window.jump).toBeUndefined();
   });
@@ -347,7 +347,7 @@ describe('KnowledgePage redesigned interactions', () => {
       await Promise.resolve();
     });
 
-    const item = container.querySelector('.v2board-knowledge-item') as HTMLElement;
+    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
     await act(async () => {
       item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
@@ -367,7 +367,7 @@ describe('KnowledgePage redesigned interactions', () => {
       await Promise.resolve();
     });
 
-    const item = container.querySelector('.v2board-knowledge-item') as HTMLElement;
+    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
     await act(async () => {
       item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
@@ -395,7 +395,7 @@ describe('KnowledgePage redesigned interactions', () => {
       await Promise.resolve();
     });
 
-    const item = container.querySelector('.v2board-knowledge-item') as HTMLElement;
+    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
     await act(async () => {
       item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
@@ -410,7 +410,7 @@ describe('KnowledgePage redesigned interactions', () => {
       await Promise.resolve();
     });
 
-    const sheetHtml = document.body.querySelector('.v2board-knowledge-sheet')?.innerHTML ?? '';
+    const sheetHtml = document.body.querySelector('[data-testid="knowledge-sheet"]')?.innerHTML ?? '';
     expect(sheetHtml).toContain('Copy Article');
     expect(sheetHtml).not.toContain('Router Guide');
     expect(sheetHtml).toContain('Loading...');

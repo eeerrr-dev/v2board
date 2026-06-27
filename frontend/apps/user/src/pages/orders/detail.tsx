@@ -8,7 +8,14 @@ import { user } from '@v2board/api-client';
 import type { Order, PaymentMethod } from '@v2board/types';
 import { BookOpen, CheckCircle2, Info, TriangleAlert } from 'lucide-react';
 import { apiClient } from '@/lib/api';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/shadcn-dialog';
 import {
   userKeys,
   useCommConfig,
@@ -24,6 +31,7 @@ import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { formatUserLegacyDateTime } from '@/lib/legacy-date';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/cn';
 
@@ -237,12 +245,15 @@ export default function OrderDetailPage() {
 
   return (
     <>
-      <div id="cashier" className={cn('grid gap-6', isPending && 'lg:grid-cols-[minmax(0,1fr)_24rem]')}>
+      <PageShell
+        id="cashier"
+        className={cn('grid max-w-6xl gap-6', isPending && 'lg:grid-cols-[minmax(0,1fr)_24rem]')}
+      >
         <div className="space-y-6">
           {!isPending && <OrderResult status={order.status} />}
 
           <OrderInfoCard title={t('order.product_info')} tradeTitle>
-            <div className="v2board-order-info">
+            <div data-testid="order-info">
               {isDeposit ? (
                 <InfoRow label={t('order.product_name')}>充值</InfoRow>
               ) : (
@@ -274,7 +285,7 @@ export default function OrderDetailPage() {
               ) : null
             }
           >
-            <div className="v2board-order-info">
+            <div data-testid="order-info">
               <InfoRow label={t('order.trade_no')}>{order.trade_no}</InfoRow>
               {order.discount_amount ? (
                 <InfoRow label={t('order.discount_amount')}>
@@ -315,9 +326,11 @@ export default function OrderDetailPage() {
                       type="button"
                       key={method.id}
                       className={cn(
-                        'v2board-select flex min-h-12 items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                        effectiveMethodId === method.id && 'active border-primary bg-accent text-accent-foreground',
+                        'flex min-h-12 items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                        effectiveMethodId === method.id && 'border-primary bg-accent text-accent-foreground',
                       )}
+                      data-testid="payment-option"
+                      data-state={effectiveMethodId === method.id ? 'checked' : 'unchecked'}
                       onClick={() => {
                         setMethodId(method.id);
                         setPreHandlingAmount(calculatePreHandlingAmount(order, method));
@@ -326,9 +339,10 @@ export default function OrderDetailPage() {
                       <div className="flex items-center gap-3">
                         <span
                           className={cn(
-                            'v2board-select-radio flex size-4 items-center justify-center rounded-full border border-input',
+                            'flex size-4 items-center justify-center rounded-full border border-input',
                             effectiveMethodId === method.id && 'border-primary',
                           )}
+                          data-testid="payment-option-radio"
                         >
                           <span
                             className={cn(
@@ -361,8 +375,8 @@ export default function OrderDetailPage() {
         </div>
 
         {isPending && (
-          <aside className="v2board-order-side">
-            <Card className="v2board-order-summary">
+          <aside data-testid="order-side">
+            <Card data-testid="order-summary">
               <CardHeader>
                 <CardTitle className="text-base leading-6">{t('order.total')}</CardTitle>
               </CardHeader>
@@ -431,7 +445,7 @@ export default function OrderDetailPage() {
                 <Button
                   type="button"
                   block
-                  className="btn-block btn-primary"
+                  data-testid="commerce-submit"
                   loading={paying}
                   disabled={isStripePayment && !stripeToken}
                   onClick={onPay}
@@ -442,7 +456,7 @@ export default function OrderDetailPage() {
             </Card>
           </aside>
         )}
-      </div>
+      </PageShell>
 
       <Dialog
         open={qrcodeVisible}
@@ -454,20 +468,31 @@ export default function OrderDetailPage() {
         }}
       >
         <DialogContent
-          className="v2board-payment-qrcode"
-          closable={false}
-          maskClosable
-          width={300}
-          centered
-          footer={<div style={{ textAlign: 'center' }}>{t('order.waiting_pay')}</div>}
+          className="w-[min(calc(100vw-2rem),20rem)]"
+          data-testid="payment-qrcode"
+          showCloseButton={false}
         >
+          <DialogHeader className="sr-only">
+            <DialogTitle>{t('order.checkout')}</DialogTitle>
+            <DialogDescription>{t('order.waiting_pay')}</DialogDescription>
+          </DialogHeader>
           {payUrl && (
-            <QRCode
-              value={payUrl}
-              renderAs="svg"
-              size="250"
-            />
+            <div className="flex justify-center">
+              <QRCode
+                value={payUrl}
+                renderAs="svg"
+                size="250"
+              />
+            </div>
           )}
+          <DialogFooter className="justify-center sm:justify-center">
+            <p
+              className="text-center text-sm text-muted-foreground"
+              data-testid="payment-qrcode-status"
+            >
+              {t('order.waiting_pay')}
+            </p>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
@@ -488,7 +513,10 @@ function OrderInfoCard({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <CardTitle className={cn('block-title text-base leading-6', tradeTitle && 'v2board-trade-no')}>
+        <CardTitle
+          className={cn('text-base leading-6', tradeTitle && 'truncate')}
+          data-testid="order-info-title"
+        >
           {title}
         </CardTitle>
         {options ? <div>{options}</div> : null}
@@ -578,7 +606,7 @@ function OrderResult({ status }: { status?: number }) {
             };
 
   return (
-    <Card className={cn('v2board-order-result', `v2board-order-result-${result.status}`)}>
+    <Card data-result-status={result.status} data-testid="order-result">
       <CardContent className="flex flex-col items-center gap-4 py-8 text-center">
         <div
           className={cn(

@@ -7,7 +7,9 @@ import { legacyHref } from '@/lib/legacy-href';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import {
   Table,
   TableBody,
@@ -17,7 +19,6 @@ import {
   TableRow,
   TableScroll,
 } from '@/components/ui/table';
-import { cn } from '@/lib/cn';
 
 const STATUS_LABEL: Record<number, { key: string; status: string }> = {
   0: { key: 'order.status_unpaid', status: 'error' },
@@ -60,113 +61,116 @@ export default function OrdersPage() {
   };
 
   return (
-    <Card className="v2board-orders-card">
-      <CardContent className="p-0">
-        {loading ? (
-          <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground">
-            <Spinner className="size-4" />
-            <span>{t('common.loading')}</span>
-          </div>
-        ) : null}
+    <PageShell data-testid="orders-page">
+      <Card className="overflow-hidden py-0" data-testid="orders-card">
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground">
+              <Spinner className="size-4" />
+              <span>{t('common.loading')}</span>
+            </div>
+          ) : null}
 
-        {orders.length === 0 ? (
-          <div className="v2board-orders-empty flex min-h-44 items-center justify-center px-6 text-sm text-muted-foreground">
-            {t('order.no_orders')}
-          </div>
-        ) : (
-          <TableScroll>
-            <Table className="v2board-orders-table min-w-[760px]">
-              <TableHeader>
-                <tr>
-                  <TableHead>{t('order.trade_no_col')}</TableHead>
-                  <TableHead>{t('order.period')}</TableHead>
-                  <TableHead className="text-right">{t('order.amount')}</TableHead>
-                  <TableHead>{t('order.status')}</TableHead>
-                  <TableHead>{t('order.created_at')}</TableHead>
-                  <TableHead className="text-right">{t('order.action_col')}</TableHead>
-                </tr>
-              </TableHeader>
-              <TableBody>
-                {orders.map((order) => {
-                  const status = STATUS_LABEL[order.status];
-                  const periodLabelKey = order.period ? PERIOD_LABEL[order.period] : undefined;
-                  const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
-                  return (
-                    <TableRow key={order.trade_no}>
-                      <TableCell>
-                        <a
-                          ref={legacyHref()}
-                          className="font-medium text-foreground underline-offset-4 hover:underline"
-                          onClick={() => navigate(`/order/${order.trade_no}`)}
-                        >
-                          {order.trade_no}
-                        </a>
-                      </TableCell>
-                      <TableCell>
-                        <span className="rounded-md border border-border bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
-                          {periodLabel}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {(order.total_amount / 100).toFixed(2)}
-                      </TableCell>
-                      <TableCell>
-                        <StatusPill status={status?.status}>{status ? t(status.key) : ''}</StatusPill>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatUserLegacyDateMinuteSlash(order.created_at)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button asChild variant="ghost" size="sm">
-                            <a
-                              ref={legacyHref()}
-                              onClick={() => navigate(`/order/${order.trade_no}`)}
-                            >
-                              {t('order.return')}
-                            </a>
-                          </Button>
-                          <Button asChild variant="ghost" size="sm" disabled={order.status !== 0}>
-                            <a
-                              ref={legacyHref()}
-                              aria-disabled={order.status !== 0}
-                              onClick={(event) => {
-                                if (order.status !== 0) {
-                                  event.preventDefault();
-                                  return;
-                                }
-                                void onCancelOrder(order.trade_no);
-                              }}
-                            >
-                              {t('common.cancel')}
-                            </a>
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableScroll>
-        )}
-      </CardContent>
-    </Card>
+          {orders.length === 0 ? (
+            <div
+              className="flex min-h-44 items-center justify-center px-6 text-sm text-muted-foreground"
+              data-testid="orders-empty"
+            >
+              {t('order.no_orders')}
+            </div>
+          ) : (
+            <TableScroll>
+              <Table className="min-w-[760px]" data-testid="orders-table">
+                <TableHeader>
+                  <tr>
+                    <TableHead>{t('order.trade_no_col')}</TableHead>
+                    <TableHead>{t('order.period')}</TableHead>
+                    <TableHead className="text-right">{t('order.amount')}</TableHead>
+                    <TableHead>{t('order.status')}</TableHead>
+                    <TableHead>{t('order.created_at')}</TableHead>
+                    <TableHead className="text-right">{t('order.action_col')}</TableHead>
+                  </tr>
+                </TableHeader>
+                <TableBody>
+                  {orders.map((order) => {
+                    const status = STATUS_LABEL[order.status];
+                    const periodLabelKey = order.period ? PERIOD_LABEL[order.period] : undefined;
+                    const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
+                    return (
+                      <TableRow key={order.trade_no}>
+                        <TableCell>
+                          <a
+                            ref={legacyHref()}
+                            className="font-medium text-foreground underline-offset-4 hover:underline"
+                            onClick={() => navigate(`/order/${order.trade_no}`)}
+                          >
+                            {order.trade_no}
+                          </a>
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge>{periodLabel}</StatusBadge>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {(order.total_amount / 100).toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                          <StatusPill status={status?.status}>{status ? t(status.key) : ''}</StatusPill>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatUserLegacyDateMinuteSlash(order.created_at)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button asChild variant="ghost" size="sm">
+                              <a
+                                ref={legacyHref()}
+                                onClick={() => navigate(`/order/${order.trade_no}`)}
+                              >
+                                {t('order.return')}
+                              </a>
+                            </Button>
+                            <Button asChild variant="ghost" size="sm" disabled={order.status !== 0}>
+                              <a
+                                ref={legacyHref()}
+                                aria-disabled={order.status !== 0}
+                                onClick={(event) => {
+                                  if (order.status !== 0) {
+                                    event.preventDefault();
+                                    return;
+                                  }
+                                  void onCancelOrder(order.trade_no);
+                                }}
+                              >
+                                {t('common.cancel')}
+                              </a>
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableScroll>
+          )}
+        </CardContent>
+      </Card>
+    </PageShell>
   );
 }
 
 function StatusPill({ status, children }: { status?: string; children: string }) {
+  const tone: StatusTone =
+    status === 'success'
+      ? 'success'
+      : status === 'processing'
+        ? 'info'
+        : status === 'error'
+          ? 'destructive'
+          : 'default';
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium',
-        status === 'success' && 'border-green-200 bg-green-50 text-green-700',
-        status === 'processing' && 'border-blue-200 bg-blue-50 text-blue-700',
-        status === 'error' && 'border-destructive/20 bg-destructive/10 text-destructive',
-        (!status || status === 'default') && 'border-border bg-secondary text-secondary-foreground',
-      )}
-    >
+    <StatusBadge tone={tone} showDot>
       {children}
-    </span>
+    </StatusBadge>
   );
 }

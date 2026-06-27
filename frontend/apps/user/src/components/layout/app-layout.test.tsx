@@ -49,8 +49,7 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('./shadcn-language-menu', () => ({
   ShadcnLanguageMenu: () => (
-    <button type="button" className="v2board-app-language-trigger">
-      <i className="far fa fa-language" />
+    <button type="button" data-testid="app-language-trigger">
       简体中文
     </button>
   ),
@@ -107,8 +106,8 @@ describe('AppLayout shadcn app shell markup', () => {
     expect(html).toContain('个人中心');
     expect(html).toContain('id="page-header"');
     expect(html).toContain('v2board-container-title');
-    expect(html).toContain('v2board-app-language-trigger');
-    expect(html).toContain('v2board-app-avatar-trigger');
+    expect(html).toContain('data-testid="app-language-trigger"');
+    expect(html).toContain('data-testid="app-avatar-trigger"');
     expect(html).toContain('user@example.com');
     expect(html).toContain('id="main-container"');
     expect(html).toContain('v2board-app-main');
@@ -188,7 +187,7 @@ describe('AppLayout shadcn app shell behavior', () => {
     });
 
     expect(mocks.navigate).toHaveBeenCalledWith('/knowledge');
-    expect(container.querySelector('#sidebar')?.className).toContain('-translate-x-full');
+    expect(container.querySelector('#sidebar')?.className).toContain('max-lg:-translate-x-full');
   });
 
   it('toggles dark mode through the header button', async () => {
@@ -201,15 +200,16 @@ describe('AppLayout shadcn app shell behavior', () => {
     });
 
     expect(mocks.setDarkMode).toHaveBeenCalledWith(true);
-    expect(container.querySelector('button[data-dark-mode-trigger] i')?.className).toContain(
-      'fa-moon',
-    );
+    expect(toggle.getAttribute('aria-label')).toBe('Disable dark mode');
+    expect(container.querySelector('button[data-dark-mode-trigger] svg')).not.toBeNull();
   });
 
   it('opens the user menu and logs out through the shadcn dropdown', async () => {
     await renderLayout();
 
-    const trigger = container.querySelector<HTMLButtonElement>('.v2board-app-avatar-trigger')!;
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="app-avatar-trigger"]',
+    )!;
     await act(async () => {
       trigger.dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),

@@ -85,8 +85,8 @@ describe('NodePage shadcn loading timing', () => {
 
     expect(html).toContain('没有可用节点，如果您未订阅或已过期请');
     expect(html).toContain('订阅');
-    expect(html).toContain('v2board-node-empty');
-    expect(html).not.toContain('v2board-node-loading');
+    expect(html).toContain('data-testid="node-empty"');
+    expect(html).not.toContain('data-testid="node-loading"');
   });
 
   it('shows only the centered shadcn loading state after the mount fetch dispatch equivalent', async () => {
@@ -95,10 +95,10 @@ describe('NodePage shadcn loading timing', () => {
       await Promise.resolve();
     });
 
-    expect(container.innerHTML).toContain('v2board-node-loading');
+    expect(container.innerHTML).toContain('data-testid="node-loading"');
     expect(container.innerHTML).toContain('Loading...');
-    expect(container.innerHTML).not.toContain('v2board-node-table');
-    expect(container.innerHTML).not.toContain('v2board-node-empty');
+    expect(container.innerHTML).not.toContain('data-testid="node-table"');
+    expect(container.innerHTML).not.toContain('data-testid="node-empty"');
   });
 });
 
@@ -157,9 +157,11 @@ describe('NodePage shadcn table and empty state', () => {
 
     const html = renderToStaticMarkup(<NodePage />);
 
-    expect(html).toContain('v2board-node-card');
-    expect(html).toContain('v2board-service-table-scroll');
-    expect(html).toContain('v2board-service-table v2board-node-table');
+    expect(html).toContain('data-testid="node-card"');
+    expect(html).toContain('data-testid="service-table-scroll"');
+    expect(html).toContain('data-scroll-position="left"');
+    expect(html).toContain('data-table-kind="service"');
+    expect(html).toContain('data-testid="node-table"');
     expect(html).toContain('名称');
     expect(html).toContain('状态');
     expect(html).toContain('倍率');
@@ -173,6 +175,7 @@ describe('NodePage shadcn table and empty state', () => {
     expect(html).toContain('>-</span>');
     expect(html).toContain('data-row-key="0"');
     expect(html).toContain('data-row-key="1"');
+    expect(html).not.toContain('ant-table-scroll-position');
   });
 
   it('keeps the durable row key as an index DOM attribute', () => {
@@ -189,7 +192,7 @@ describe('NodePage shadcn table and empty state', () => {
       await Promise.resolve();
     });
 
-    const link = container.querySelector<HTMLAnchorElement>('a.v2board-node-empty-action');
+    const link = container.querySelector<HTMLAnchorElement>('a[data-testid="node-empty-action"]');
     expect(link).toBeTruthy();
     expect(link!.getAttribute('href')).toBe('javascript:void(0);');
     expect(link!.textContent).toBe('续费');
@@ -208,7 +211,9 @@ describe('NodePage shadcn table and empty state', () => {
       await Promise.resolve();
     });
 
-    const subscribeLink = container.querySelector<HTMLAnchorElement>('a.v2board-node-empty-action');
+    const subscribeLink = container.querySelector<HTMLAnchorElement>(
+      'a[data-testid="node-empty-action"]',
+    );
     expect(subscribeLink!.getAttribute('href')).toBe('javascript:void(0);');
     expect(subscribeLink!.textContent).toBe('订阅');
 

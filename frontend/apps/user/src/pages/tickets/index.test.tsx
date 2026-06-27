@@ -128,7 +128,7 @@ vi.mock('@/components/ui/select', () => ({
     value?: string;
   }) => (
     <select
-      className="v2board-ticket-select-trigger v2board-ticket-select-native"
+      data-testid="ticket-select-native"
       value={value ?? ''}
       onChange={(event) => onValueChange(event.currentTarget.value)}
     >
@@ -172,9 +172,9 @@ describe('TicketsPage shadcn surface', () => {
   it('renders the shadcn ticket card, table, statuses, actions, and dates', () => {
     const html = renderToStaticMarkup(<TicketsPage />);
 
-    expect(html).toContain('v2board-ticket-surface');
-    expect(html).toContain('v2board-ticket-table');
-    expect(html).toContain('v2board-ticket-new-trigger');
+    expect(html).toContain('data-testid="ticket-surface"');
+    expect(html).toContain('data-testid="ticket-table"');
+    expect(html).toContain('data-testid="ticket-new-trigger"');
     expect(html).toContain('工单历史');
     expect(html).toContain('新的工单');
     expect(html).toContain('Need help');
@@ -188,8 +188,8 @@ describe('TicketsPage shadcn surface', () => {
     expect(html).toContain('已关闭');
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
     expect(html).toContain(formatLegacyDateMinuteSlash(60));
-    expect(html).toContain('v2board-ticket-view');
-    expect(html).toContain('v2board-ticket-close');
+    expect(html).toContain('data-testid="ticket-view"');
+    expect(html).toContain('data-testid="ticket-close"');
     expect(html.match(/data-row-key="0"/g)).toHaveLength(1);
     expect(html.match(/data-row-key="1"/g)).toHaveLength(1);
     expect(html.match(/data-row-key="2"/g)).toHaveLength(1);
@@ -208,7 +208,7 @@ describe('TicketsPage shadcn surface', () => {
 
     const html = renderToStaticMarkup(<TicketsPage />);
 
-    expect(html).toContain('v2board-ticket-new-trigger');
+    expect(html).toContain('data-testid="ticket-new-trigger"');
     expect(html).toContain('新的工单</button>');
   });
 
@@ -224,7 +224,9 @@ describe('TicketsPage shadcn surface', () => {
         await Promise.resolve();
       });
 
-      expect(container.querySelector('.v2board-ticket-surface')?.className).toContain('opacity-80');
+      expect(container.querySelector('[data-testid="ticket-surface"]')?.className).toContain(
+        'opacity-80',
+      );
       expect(container.innerHTML).not.toContain('block-mode-loading');
       expect(container.innerHTML).not.toContain('ant-spin-spinning');
     } finally {
@@ -238,7 +240,7 @@ describe('TicketsPage shadcn surface', () => {
 
     const html = renderToStaticMarkup(<TicketsPage />);
 
-    expect(html).toContain('v2board-ticket-empty');
+    expect(html).toContain('data-testid="ticket-empty"');
     expect(html).not.toContain('ant-table-placeholder');
     expect(html).not.toContain('ant-empty');
   });
@@ -284,7 +286,9 @@ describe('TicketsPage shadcn interactions', () => {
   }
 
   async function openCreateDialog() {
-    const trigger = container.querySelector<HTMLButtonElement>('.v2board-ticket-new-trigger')!;
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="ticket-new-trigger"]',
+    )!;
     await act(async () => {
       trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
@@ -295,7 +299,7 @@ describe('TicketsPage shadcn interactions', () => {
     await renderTickets();
 
     const viewButtons = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('.v2board-ticket-view'),
+      container.querySelectorAll<HTMLButtonElement>('[data-testid="ticket-view"]'),
     );
     expect(viewButtons).toHaveLength(3);
 
@@ -314,7 +318,7 @@ describe('TicketsPage shadcn interactions', () => {
     await renderTickets();
     await openCreateDialog();
 
-    expect(document.body.innerHTML).toContain('v2board-ticket-dialog');
+    expect(document.body.innerHTML).toContain('data-testid="ticket-dialog"');
     expect(document.body.innerHTML).toContain('新的工单');
     expect(document.body.innerHTML).toContain('请输入工单主题');
     expect(document.body.innerHTML).toContain('请选择工单等级');
@@ -323,7 +327,9 @@ describe('TicketsPage shadcn interactions', () => {
     const subject = document.body.querySelector<HTMLInputElement>(
       'input[placeholder="请输入工单主题"]',
     )!;
-    const level = document.body.querySelector<HTMLSelectElement>('.v2board-ticket-select-native')!;
+    const level = document.body.querySelector<HTMLSelectElement>(
+      '[data-testid="ticket-select-native"]',
+    )!;
     const message = document.body.querySelector<HTMLTextAreaElement>(
       'textarea[placeholder="请描述您遇到的问题"]',
     )!;
@@ -337,7 +343,7 @@ describe('TicketsPage shadcn interactions', () => {
     });
 
     const confirm = document.body.querySelector<HTMLButtonElement>(
-      '.v2board-ticket-dialog-footer button:last-child',
+      '[data-testid="ticket-dialog-footer"] button:last-child',
     )!;
     expect(confirm.textContent).toBe('确认');
 
@@ -361,7 +367,9 @@ describe('TicketsPage shadcn interactions', () => {
     const subject = document.body.querySelector<HTMLInputElement>(
       'input[placeholder="请输入工单主题"]',
     )!;
-    const level = document.body.querySelector<HTMLSelectElement>('.v2board-ticket-select-native')!;
+    const level = document.body.querySelector<HTMLSelectElement>(
+      '[data-testid="ticket-select-native"]',
+    )!;
     const message = document.body.querySelector<HTMLTextAreaElement>(
       'textarea[placeholder="请描述您遇到的问题"]',
     )!;
@@ -376,7 +384,7 @@ describe('TicketsPage shadcn interactions', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.v2board-ticket-dialog-footer button:first-child')!
+        .querySelector<HTMLButtonElement>('[data-testid="ticket-dialog-footer"] button:first-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -386,9 +394,9 @@ describe('TicketsPage shadcn interactions', () => {
     expect(
       document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!.value,
     ).toBe('Still here');
-    expect(document.body.querySelector<HTMLSelectElement>('.v2board-ticket-select-native')!.value).toBe(
-      '1',
-    );
+    expect(
+      document.body.querySelector<HTMLSelectElement>('[data-testid="ticket-select-native"]')!.value,
+    ).toBe('1');
     expect(
       document.body.querySelector<HTMLTextAreaElement>(
         'textarea[placeholder="请描述您遇到的问题"]',
@@ -405,7 +413,9 @@ describe('TicketsPage shadcn interactions', () => {
         document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!,
         'Saved subject',
       );
-      const level = document.body.querySelector<HTMLSelectElement>('.v2board-ticket-select-native')!;
+      const level = document.body.querySelector<HTMLSelectElement>(
+        '[data-testid="ticket-select-native"]',
+      )!;
       level.value = '2';
       level.dispatchEvent(new Event('change', { bubbles: true }));
       setNativeTextareaValue(
@@ -419,7 +429,7 @@ describe('TicketsPage shadcn interactions', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.v2board-ticket-dialog-footer button:last-child')!
+        .querySelector<HTMLButtonElement>('[data-testid="ticket-dialog-footer"] button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
       await Promise.resolve();
@@ -436,9 +446,9 @@ describe('TicketsPage shadcn interactions', () => {
     expect(
       document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!.value,
     ).toBe('');
-    expect(document.body.querySelector<HTMLSelectElement>('.v2board-ticket-select-native')!.value).toBe(
-      '',
-    );
+    expect(
+      document.body.querySelector<HTMLSelectElement>('[data-testid="ticket-select-native"]')!.value,
+    ).toBe('');
     expect(
       document.body.querySelector<HTMLTextAreaElement>(
         'textarea[placeholder="请描述您遇到的问题"]',
@@ -447,7 +457,7 @@ describe('TicketsPage shadcn interactions', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.v2board-ticket-dialog-footer button:last-child')!
+        .querySelector<HTMLButtonElement>('[data-testid="ticket-dialog-footer"] button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
       await Promise.resolve();
@@ -470,7 +480,7 @@ describe('TicketsPage shadcn interactions', () => {
     await renderTickets();
 
     const closeButtons = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('.v2board-ticket-close'),
+      container.querySelectorAll<HTMLButtonElement>('[data-testid="ticket-close"]'),
     );
     expect(closeButtons).toHaveLength(3);
 
@@ -493,7 +503,7 @@ describe('TicketsPage shadcn interactions', () => {
     await renderTickets();
 
     const closeButtons = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('.v2board-ticket-close'),
+      container.querySelectorAll<HTMLButtonElement>('[data-testid="ticket-close"]'),
     );
     const closed = closeButtons[2]!;
 

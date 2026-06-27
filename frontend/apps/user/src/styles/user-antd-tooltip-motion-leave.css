@@ -1,7 +1,0 @@
-/* Restored Ant Design v3 tooltip zoom-big-fast leave state. */
-.zoom-big-fast-leave {
-  animation-duration: 0.1s;
-  animation-fill-mode: both;
-  animation-play-state: paused;
-  animation-timing-function: cubic-bezier(0.78, 0.14, 0.15, 0.86);
-}

@@ -115,8 +115,8 @@ describe('OrdersPage shadcn commerce table', () => {
   it('renders the shadcn table shell, columns, status pills, actions, and row formatting', () => {
     const html = renderToStaticMarkup(<OrdersPage />);
 
-    expect(html).toContain('v2board-orders-card');
-    expect(html).toContain('v2board-orders-table');
+    expect(html).toContain('data-testid="orders-card"');
+    expect(html).toContain('data-testid="orders-table"');
     expect(html).toContain('# 订单号');
     expect(html).toContain('周期');
     expect(html).toContain('订单金额');
@@ -146,9 +146,9 @@ describe('OrdersPage shadcn commerce table', () => {
 
     const html = renderToStaticMarkup(<OrdersPage />);
 
-    expect(html).toContain('v2board-orders-empty');
+    expect(html).toContain('data-testid="orders-empty"');
     expect(html).toContain('暂无订单');
-    expect(html).not.toContain('v2board-orders-table');
+    expect(html).not.toContain('data-testid="orders-table"');
   });
 
   it('keeps the order-period short-circuit without an empty-key fallback', () => {
@@ -170,7 +170,7 @@ describe('OrdersPage shadcn commerce table', () => {
 
     const html = renderToStaticMarkup(<OrdersPage />);
 
-    expect(html).toContain('v2board-orders-card');
+    expect(html).toContain('data-testid="orders-card"');
     expect(html).not.toContain('正在加载');
     expect(html).not.toContain('block-mode-loading');
   });

@@ -4,7 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import { useCommConfig, usePlans } from '@/lib/queries';
 import { PlanContent } from '@/components/plan-content';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState, PageHeader, PageShell } from '@/components/ui/page';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Spinner } from '@/components/ui/spinner';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { cn } from '@/lib/cn';
 
 type PlanLike = NonNullable<ReturnType<typeof usePlans>['data']>[number];
@@ -49,72 +52,32 @@ export default function PlansPage() {
   }, [data, filter]);
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-2xl font-semibold tracking-normal text-foreground">
-            {t('plan.pick_title')}
-          </h2>
-          <p className="text-sm text-muted-foreground">{t('plan.pick_best_for_you')}</p>
-        </div>
-        <span className="v2board-plan-tabs inline-flex w-fit rounded-lg border border-border bg-background p-1 text-sm shadow-xs">
-          <span
-            role="button"
-            tabIndex={0}
-            className={cn(
-              'cursor-pointer rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:text-foreground',
-              filter === 'all' && 'active bg-primary text-primary-foreground hover:text-primary-foreground',
-            )}
-            onClick={() => setFilter('all')}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') setFilter('all');
-            }}
-          >
-            {t('plan.filter_all')}
-          </span>
-          <span
-            role="button"
-            tabIndex={0}
-            className={cn(
-              'cursor-pointer rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:text-foreground',
-              filter === 'period' && 'active bg-primary text-primary-foreground hover:text-primary-foreground',
-            )}
-            onClick={() => setFilter('period')}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') setFilter('period');
-            }}
-          >
-            {t('plan.filter_period')}
-          </span>
-          <span
-            role="button"
-            tabIndex={0}
-            className={cn(
-              'cursor-pointer rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:text-foreground',
-              filter === 'traffic' && 'active bg-primary text-primary-foreground hover:text-primary-foreground',
-            )}
-            onClick={() => setFilter('traffic')}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') setFilter('traffic');
-            }}
-          >
-            {t('plan.filter_traffic')}
-          </span>
-        </span>
-      </div>
+    <PageShell data-testid="plans-page">
+      <PageHeader
+        title={t('plan.pick_title')}
+        description={t('plan.pick_best_for_you')}
+        actions={
+          <SegmentedControl
+            data-testid="plan-tabs"
+            value={filter}
+            onValueChange={setFilter}
+            items={[
+              { value: 'all', label: t('plan.filter_all') },
+              { value: 'period', label: t('plan.filter_period') },
+              { value: 'traffic', label: t('plan.filter_traffic') },
+            ]}
+          />
+        }
+      />
 
       {isLoading || !data ? (
-        <Card className="v2board-plan-empty">
+        <Card data-testid="plan-empty">
           <CardContent className="flex min-h-44 items-center justify-center">
             <Spinner className="size-5" />
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
-        <Card className="v2board-plan-empty">
-          <CardContent className="flex min-h-44 items-center justify-center">
-            <p className="text-sm text-muted-foreground">{t('plan.no_plan')}</p>
-          </CardContent>
-        </Card>
+        <EmptyState data-testid="plan-empty" title={t('plan.no_plan')} />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((plan) => {
@@ -130,21 +93,22 @@ export default function PlansPage() {
                 key={plan.id}
                 type="button"
                 disabled={isSoldOut}
+                data-testid="plan-card"
                 className={cn(
-                  'v2board-plan-card group flex h-full w-full rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-60',
+                  'group flex h-full w-full rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-60',
                 )}
                 onClick={() => navigate(`/plan/${plan.id}`)}
               >
                 <Card className="h-full border-0 bg-transparent shadow-none">
                   <CardHeader className="gap-3">
                     <div className="flex items-start justify-between gap-3">
-                      <CardTitle className="v2board-plan-card-title text-base leading-6">
+                      <CardTitle data-testid="plan-card-title" className="text-base leading-6">
                         {plan.name}
                       </CardTitle>
                       {almostSoldOut ? (
-                        <span className="v2board-sold-out-tag whitespace-nowrap rounded-md border border-border bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+                        <StatusBadge data-testid="plan-stock-badge" className="whitespace-nowrap" tone="warning">
                           {t('plan.almost_sold_out')}
-                        </span>
+                        </StatusBadge>
                       ) : null}
                     </div>
                     <div>
@@ -175,6 +139,6 @@ export default function PlansPage() {
           })}
         </div>
       )}
-    </section>
+    </PageShell>
   );
 }

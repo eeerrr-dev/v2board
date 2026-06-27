@@ -20,6 +20,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/cn';
 
@@ -206,7 +207,7 @@ export default function PlanCheckoutPage() {
 
   if (!canRenew) {
     return (
-      <Card className="v2board-plan-non-renewable">
+      <Card data-testid="plan-non-renewable">
         <CardContent className="flex min-h-64 flex-col items-center justify-center gap-4 text-center">
           <div className="space-y-2">
             <h3 className="text-lg font-semibold leading-7">{t('plan.cannot_renew_current')}</h3>
@@ -221,7 +222,7 @@ export default function PlanCheckoutPage() {
   }
 
   return (
-    <div id="cashier" className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
+    <PageShell id="cashier" data-testid="checkout-page" className="grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <div className="space-y-6">
         <Card>
           <CardHeader>
@@ -230,8 +231,8 @@ export default function PlanCheckoutPage() {
           <CardContent>
             <PlanContent
               content={plan.content}
-              className="v2board-plan-content"
-              htmlClassName="v2board-plan-content"
+              className="plan-content"
+              htmlClassName="plan-content"
               guardNull
             />
           </CardContent>
@@ -250,17 +251,20 @@ export default function PlanCheckoutPage() {
                   type="button"
                   key={item.period}
                   onClick={() => setPeriod(item.period)}
+                  data-testid="checkout-period-option"
                   className={cn(
-                    'v2board-select flex min-h-12 items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                    selectedPeriod === item.period && 'active border-primary bg-accent text-accent-foreground',
+                    'flex min-h-12 items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                    selectedPeriod === item.period && 'border-primary bg-accent text-accent-foreground',
                   )}
+                  data-state={selectedPeriod === item.period ? 'checked' : 'unchecked'}
                 >
                   <div className="flex items-center gap-3">
                     <span
                       className={cn(
-                        'v2board-select-radio flex size-4 items-center justify-center rounded-full border border-input',
+                        'flex size-4 items-center justify-center rounded-full border border-input',
                         selectedPeriod === item.period && 'border-primary',
                       )}
+                      data-testid="checkout-period-radio"
                     >
                       <span
                         className={cn(
@@ -282,12 +286,12 @@ export default function PlanCheckoutPage() {
         </Card>
       </div>
 
-      <aside className="v2board-checkout-side space-y-4">
+      <aside data-testid="checkout-side" className="space-y-4">
         <Card>
           <CardContent className="flex flex-col gap-2 p-4 sm:flex-row">
             <Input
               type="text"
-              className="v2board-input-coupon"
+              data-testid="coupon-input"
               ref={couponRef}
               placeholder={t('plan.coupon_question')}
             />
@@ -297,7 +301,7 @@ export default function PlanCheckoutPage() {
           </CardContent>
         </Card>
 
-        <Card className="v2board-checkout-summary">
+        <Card data-testid="checkout-summary">
           <CardHeader>
             <CardTitle className="text-base leading-6">{t('plan.order_total')}</CardTitle>
           </CardHeader>
@@ -335,7 +339,7 @@ export default function PlanCheckoutPage() {
             <Button
               type="button"
               block
-              className="btn-block btn-primary"
+              data-testid="commerce-submit"
               loading={submitting}
               onClick={onSubmit}
             >
@@ -344,7 +348,7 @@ export default function PlanCheckoutPage() {
           </CardContent>
         </Card>
       </aside>
-    </div>
+    </PageShell>
   );
 }
 

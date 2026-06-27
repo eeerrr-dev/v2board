@@ -75,17 +75,17 @@ const userAuthTitleTextSelector = [
   '.v2board-auth-card h3',
   '.v2board-auth-card .v2board-auth-title',
 ].join(', ');
-const dashboardShortcutSelector = '.v2board-shortcuts-item';
-const dashboardEmptyPlanReadySelector = '.v2board-dashboard-empty-plan, .fa-plus';
-const dashboardExpiredReadySelector = '.v2board-dashboard-status-expired, .text-danger';
-const dashboardProgressReadySelector = '.v2board-dashboard-progress-bar, .progress-bar';
+const dashboardShortcutSelector = '[data-testid="dashboard-shortcut"], .block-link-pop';
+const dashboardEmptyPlanReadySelector = '[data-testid="dashboard-empty-plan"], .fa-plus';
+const dashboardExpiredReadySelector = '[data-testid="dashboard-status-expired"], .text-danger';
+const dashboardProgressReadySelector = '[data-testid="dashboard-progress-bar"], .progress-bar';
 const dashboardTrafficUsedUpReadySelector =
-  '.v2board-dashboard-progress-bar[data-status="danger"], .progress-bar.bg-danger';
-const userNodeRowsReadySelector = '.v2board-node-table tbody tr, .ant-table-tbody tr';
-const userNodeEmptyReadySelector = '.v2board-node-empty, .alert.alert-dark';
-const userNodeLoadingReadySelector = '.v2board-node-loading, #page-container';
-const userTrafficRowsReadySelector = '.v2board-traffic-table tbody tr, .ant-table-tbody tr';
-const userTrafficSurfaceReadySelector = '.v2board-traffic-card, .ant-table';
+  '[data-testid="dashboard-progress-bar"][data-status="danger"], .progress-bar.bg-danger';
+const userNodeRowsReadySelector = '[data-testid="node-table"] tbody tr, .ant-table-tbody tr';
+const userNodeEmptyReadySelector = '[data-testid="node-empty"], .alert.alert-dark';
+const userNodeLoadingReadySelector = '[data-testid="node-loading"], #page-container';
+const userTrafficRowsReadySelector = '[data-testid="traffic-table"] tbody tr, .ant-table-tbody tr';
+const userTrafficSurfaceReadySelector = '[data-testid="traffic-card"], .ant-table';
 
 function normalizeParityText(value) {
   return String(value ?? '')
@@ -195,7 +195,7 @@ const scenarios = [
     authenticated: true,
     label: 'user-plans',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -204,14 +204,14 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-plans-sold-out',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -220,7 +220,7 @@ const scenarios = [
     emptyPlans: true,
     label: 'user-plans-empty',
     path: '/#/plan',
-    readySelector: '.v2board-plan-empty, .spinner-grow',
+    readySelector: '[data-testid="plan-empty"], .spinner-grow',
     visualRetired: true,
   },
   {
@@ -244,14 +244,14 @@ const scenarios = [
     label: 'user-plan-checkout-non-renewable',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    readySelector: '[data-testid="plan-non-renewable"], .ant-result-info',
     visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-orders',
     path: '/#/order',
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -260,7 +260,7 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -268,7 +268,7 @@ const scenarios = [
     emptyOrders: true,
     label: 'user-orders-empty',
     path: '/#/order',
-    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    readySelector: '[data-testid="orders-empty"], .ant-table-placeholder .ant-empty',
     visualRetired: true,
   },
   {
@@ -276,7 +276,7 @@ const scenarios = [
     label: 'user-orders-api-500',
     path: '/#/order',
     postReadyDelay: 500,
-    readySelector: '.v2board-orders-card, .ant-table',
+    readySelector: '[data-testid="orders-card"], .ant-table',
     userOrdersHttpError: true,
     visualRetired: true,
   },
@@ -285,7 +285,7 @@ const scenarios = [
     label: 'user-orders-timeout',
     path: '/#/order',
     postReadyDelay: 800,
-    readySelector: '.v2board-orders-card, .ant-table',
+    readySelector: '[data-testid="orders-card"], .ant-table',
     userOrdersTimeout: true,
     visualRetired: true,
   },
@@ -293,7 +293,7 @@ const scenarios = [
     authenticated: true,
     label: 'user-order-detail',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '.v2board-order-info',
+    readySelector: '[data-testid="order-info"]',
     visualRetired: true,
   },
   {
@@ -358,14 +358,14 @@ const scenarios = [
     authenticated: true,
     label: 'user-invite',
     path: '/#/invite',
-    readySelector: '.v2board-invite-surface, .ant-pagination',
+    readySelector: '[data-testid="invite-surface"], .ant-pagination',
     visualRetired: true,
   },
   {
     authenticated: true,
     label: 'user-tickets',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-table, .ant-table-fixed-right',
+    readySelector: '[data-testid="ticket-table"], .ant-table-fixed-right',
     visualRetired: true,
   },
   {
@@ -373,7 +373,7 @@ const scenarios = [
     emptyTickets: true,
     label: 'user-tickets-empty',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-empty',
+    readySelector: '[data-testid="ticket-empty"]',
     visualRetired: true,
   },
   {
@@ -381,7 +381,7 @@ const scenarios = [
     label: 'user-tickets-timeout',
     path: '/#/ticket',
     postReadyDelay: 800,
-    readySelector: '.v2board-ticket-surface, .ant-table',
+    readySelector: '[data-testid="ticket-surface"], .ant-table',
     userTicketsTimeout: true,
     visualRetired: true,
   },
@@ -405,7 +405,7 @@ const scenarios = [
     authenticated: true,
     label: 'user-knowledge',
     path: '/#/knowledge',
-    readySelector: '.v2board-knowledge-item, .list-group-item',
+    readySelector: '[data-testid="knowledge-item"], .list-group-item',
     visualRetired: true,
   },
   {
@@ -413,7 +413,7 @@ const scenarios = [
     label: 'user-knowledge-timeout',
     path: '/#/knowledge',
     postReadyDelay: 800,
-    readySelector: '.v2board-knowledge-surface, #page-container',
+    readySelector: '[data-testid="knowledge-surface"], #page-container',
     userKnowledgeTimeout: true,
     visualRetired: true,
   },
@@ -421,7 +421,7 @@ const scenarios = [
     authenticated: true,
     label: 'user-profile',
     path: '/#/profile',
-    readySelector: '.v2board-profile-page, .ant-switch',
+    readySelector: '[data-testid="profile-page"], .ant-switch',
     visualRetired: true,
   },
   {
@@ -485,7 +485,7 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -493,7 +493,7 @@ const scenarios = [
     label: 'user-plans-sold-out-zh-tw',
     locale: 'zh-TW',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -503,7 +503,7 @@ const scenarios = [
     locale: 'zh-TW',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    readySelector: '[data-testid="plan-non-renewable"], .ant-result-info',
     visualRetired: true,
   },
   {
@@ -522,7 +522,7 @@ const scenarios = [
     label: 'user-plans-empty-zh-tw',
     locale: 'zh-TW',
     path: '/#/plan',
-    readySelector: '.v2board-plan-empty, .spinner-grow',
+    readySelector: '[data-testid="plan-empty"], .spinner-grow',
     visualRetired: true,
   },
   {
@@ -531,7 +531,7 @@ const scenarios = [
     label: 'user-orders-empty-zh-tw',
     locale: 'zh-TW',
     path: '/#/order',
-    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    readySelector: '[data-testid="orders-empty"], .ant-table-placeholder .ant-empty',
     visualRetired: true,
   },
   {
@@ -549,7 +549,7 @@ const scenarios = [
     label: 'user-tickets-empty-zh-tw',
     locale: 'zh-TW',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-empty',
+    readySelector: '[data-testid="ticket-empty"]',
     visualRetired: true,
   },
   {
@@ -559,7 +559,7 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -633,7 +633,7 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -641,7 +641,7 @@ const scenarios = [
     label: 'user-plans-sold-out-en-us',
     locale: 'en-US',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -651,7 +651,7 @@ const scenarios = [
     locale: 'en-US',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    readySelector: '[data-testid="plan-non-renewable"], .ant-result-info',
     visualRetired: true,
   },
   {
@@ -661,7 +661,7 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -680,7 +680,7 @@ const scenarios = [
     label: 'user-plans-empty-en-us',
     locale: 'en-US',
     path: '/#/plan',
-    readySelector: '.v2board-plan-empty, .spinner-grow',
+    readySelector: '[data-testid="plan-empty"], .spinner-grow',
     visualRetired: true,
   },
   {
@@ -689,7 +689,7 @@ const scenarios = [
     label: 'user-orders-empty-en-us',
     locale: 'en-US',
     path: '/#/order',
-    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    readySelector: '[data-testid="orders-empty"], .ant-table-placeholder .ant-empty',
     visualRetired: true,
   },
   {
@@ -707,7 +707,7 @@ const scenarios = [
     label: 'user-tickets-empty-en-us',
     locale: 'en-US',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-empty',
+    readySelector: '[data-testid="ticket-empty"]',
     visualRetired: true,
   },
   {
@@ -748,7 +748,7 @@ const scenarios = [
     label: 'user-plans-zh-tw',
     locale: 'zh-TW',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -764,7 +764,7 @@ const scenarios = [
     label: 'user-orders-zh-tw',
     locale: 'zh-TW',
     path: '/#/order',
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -772,7 +772,7 @@ const scenarios = [
     label: 'user-order-detail-zh-tw',
     locale: 'zh-TW',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '.v2board-order-info',
+    readySelector: '[data-testid="order-info"]',
     visualRetired: true,
   },
   {
@@ -796,7 +796,7 @@ const scenarios = [
     label: 'user-invite-zh-tw',
     locale: 'zh-TW',
     path: '/#/invite',
-    readySelector: '.v2board-invite-surface, .ant-pagination',
+    readySelector: '[data-testid="invite-surface"], .ant-pagination',
     visualRetired: true,
   },
   {
@@ -804,7 +804,7 @@ const scenarios = [
     label: 'user-tickets-zh-tw',
     locale: 'zh-TW',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-table',
+    readySelector: '[data-testid="ticket-table"]',
     visualRetired: true,
   },
   {
@@ -820,7 +820,7 @@ const scenarios = [
     label: 'user-knowledge-zh-tw',
     locale: 'zh-TW',
     path: '/#/knowledge',
-    readySelector: '.v2board-knowledge-item, .list-group-item',
+    readySelector: '[data-testid="knowledge-item"], .list-group-item',
     visualRetired: true,
   },
   {
@@ -828,7 +828,7 @@ const scenarios = [
     label: 'user-profile-zh-tw',
     locale: 'zh-TW',
     path: '/#/profile',
-    readySelector: '.v2board-profile-page, .ant-switch',
+    readySelector: '[data-testid="profile-page"], .ant-switch',
     visualRetired: true,
   },
   {
@@ -859,7 +859,7 @@ const scenarios = [
     label: 'user-plans-en-us',
     locale: 'en-US',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -875,7 +875,7 @@ const scenarios = [
     label: 'user-orders-en-us',
     locale: 'en-US',
     path: '/#/order',
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -883,7 +883,7 @@ const scenarios = [
     label: 'user-order-detail-en-us',
     locale: 'en-US',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '.v2board-order-info',
+    readySelector: '[data-testid="order-info"]',
     visualRetired: true,
   },
   {
@@ -907,7 +907,7 @@ const scenarios = [
     label: 'user-invite-en-us',
     locale: 'en-US',
     path: '/#/invite',
-    readySelector: '.v2board-invite-surface, .ant-pagination',
+    readySelector: '[data-testid="invite-surface"], .ant-pagination',
     visualRetired: true,
   },
   {
@@ -915,7 +915,7 @@ const scenarios = [
     label: 'user-tickets-en-us',
     locale: 'en-US',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-table',
+    readySelector: '[data-testid="ticket-table"]',
     visualRetired: true,
   },
   {
@@ -931,7 +931,7 @@ const scenarios = [
     label: 'user-knowledge-en-us',
     locale: 'en-US',
     path: '/#/knowledge',
-    readySelector: '.v2board-knowledge-item, .list-group-item',
+    readySelector: '[data-testid="knowledge-item"], .list-group-item',
     visualRetired: true,
   },
   {
@@ -939,7 +939,7 @@ const scenarios = [
     label: 'user-profile-en-us',
     locale: 'en-US',
     path: '/#/profile',
-    readySelector: '.v2board-profile-page, .ant-switch',
+    readySelector: '[data-testid="profile-page"], .ant-switch',
     visualRetired: true,
   },
   {
@@ -1003,7 +1003,7 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -1011,7 +1011,7 @@ const scenarios = [
     label: 'user-plans-sold-out-ja-jp',
     locale: 'ja-JP',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -1021,7 +1021,7 @@ const scenarios = [
     locale: 'ja-JP',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    readySelector: '[data-testid="plan-non-renewable"], .ant-result-info',
     visualRetired: true,
   },
   {
@@ -1040,7 +1040,7 @@ const scenarios = [
     label: 'user-plans-empty-ja-jp',
     locale: 'ja-JP',
     path: '/#/plan',
-    readySelector: '.v2board-plan-empty, .spinner-grow',
+    readySelector: '[data-testid="plan-empty"], .spinner-grow',
     visualRetired: true,
   },
   {
@@ -1049,7 +1049,7 @@ const scenarios = [
     label: 'user-orders-empty-ja-jp',
     locale: 'ja-JP',
     path: '/#/order',
-    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    readySelector: '[data-testid="orders-empty"], .ant-table-placeholder .ant-empty',
     visualRetired: true,
   },
   {
@@ -1067,7 +1067,7 @@ const scenarios = [
     label: 'user-tickets-empty-ja-jp',
     locale: 'ja-JP',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-empty',
+    readySelector: '[data-testid="ticket-empty"]',
     visualRetired: true,
   },
   {
@@ -1077,7 +1077,7 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -1128,7 +1128,7 @@ const scenarios = [
     label: 'user-plans-ja-jp',
     locale: 'ja-JP',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -1144,7 +1144,7 @@ const scenarios = [
     label: 'user-orders-ja-jp',
     locale: 'ja-JP',
     path: '/#/order',
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -1152,7 +1152,7 @@ const scenarios = [
     label: 'user-order-detail-ja-jp',
     locale: 'ja-JP',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '.v2board-order-info',
+    readySelector: '[data-testid="order-info"]',
     visualRetired: true,
   },
   {
@@ -1176,7 +1176,7 @@ const scenarios = [
     label: 'user-invite-ja-jp',
     locale: 'ja-JP',
     path: '/#/invite',
-    readySelector: '.v2board-invite-surface, .ant-pagination',
+    readySelector: '[data-testid="invite-surface"], .ant-pagination',
     visualRetired: true,
   },
   {
@@ -1184,7 +1184,7 @@ const scenarios = [
     label: 'user-tickets-ja-jp',
     locale: 'ja-JP',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-table',
+    readySelector: '[data-testid="ticket-table"]',
     visualRetired: true,
   },
   {
@@ -1200,7 +1200,7 @@ const scenarios = [
     label: 'user-knowledge-ja-jp',
     locale: 'ja-JP',
     path: '/#/knowledge',
-    readySelector: '.v2board-knowledge-item, .list-group-item',
+    readySelector: '[data-testid="knowledge-item"], .list-group-item',
     visualRetired: true,
   },
   {
@@ -1208,7 +1208,7 @@ const scenarios = [
     label: 'user-profile-ja-jp',
     locale: 'ja-JP',
     path: '/#/profile',
-    readySelector: '.v2board-profile-page, .ant-switch',
+    readySelector: '[data-testid="profile-page"], .ant-switch',
     visualRetired: true,
   },
   {
@@ -1272,7 +1272,7 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -1280,7 +1280,7 @@ const scenarios = [
     label: 'user-plans-sold-out-vi-vn',
     locale: 'vi-VN',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -1290,7 +1290,7 @@ const scenarios = [
     locale: 'vi-VN',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    readySelector: '[data-testid="plan-non-renewable"], .ant-result-info',
     visualRetired: true,
   },
   {
@@ -1309,7 +1309,7 @@ const scenarios = [
     label: 'user-plans-empty-vi-vn',
     locale: 'vi-VN',
     path: '/#/plan',
-    readySelector: '.v2board-plan-empty, .spinner-grow',
+    readySelector: '[data-testid="plan-empty"], .spinner-grow',
     visualRetired: true,
   },
   {
@@ -1318,7 +1318,7 @@ const scenarios = [
     label: 'user-orders-empty-vi-vn',
     locale: 'vi-VN',
     path: '/#/order',
-    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    readySelector: '[data-testid="orders-empty"], .ant-table-placeholder .ant-empty',
     visualRetired: true,
   },
   {
@@ -1336,7 +1336,7 @@ const scenarios = [
     label: 'user-tickets-empty-vi-vn',
     locale: 'vi-VN',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-empty',
+    readySelector: '[data-testid="ticket-empty"]',
     visualRetired: true,
   },
   {
@@ -1346,7 +1346,7 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -1397,7 +1397,7 @@ const scenarios = [
     label: 'user-plans-vi-vn',
     locale: 'vi-VN',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -1413,7 +1413,7 @@ const scenarios = [
     label: 'user-orders-vi-vn',
     locale: 'vi-VN',
     path: '/#/order',
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -1421,7 +1421,7 @@ const scenarios = [
     label: 'user-order-detail-vi-vn',
     locale: 'vi-VN',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '.v2board-order-info',
+    readySelector: '[data-testid="order-info"]',
     visualRetired: true,
   },
   {
@@ -1445,7 +1445,7 @@ const scenarios = [
     label: 'user-invite-vi-vn',
     locale: 'vi-VN',
     path: '/#/invite',
-    readySelector: '.v2board-invite-surface, .ant-pagination',
+    readySelector: '[data-testid="invite-surface"], .ant-pagination',
     visualRetired: true,
   },
   {
@@ -1453,7 +1453,7 @@ const scenarios = [
     label: 'user-tickets-vi-vn',
     locale: 'vi-VN',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-table',
+    readySelector: '[data-testid="ticket-table"]',
     visualRetired: true,
   },
   {
@@ -1469,7 +1469,7 @@ const scenarios = [
     label: 'user-knowledge-vi-vn',
     locale: 'vi-VN',
     path: '/#/knowledge',
-    readySelector: '.v2board-knowledge-item, .list-group-item',
+    readySelector: '[data-testid="knowledge-item"], .list-group-item',
     visualRetired: true,
   },
   {
@@ -1477,7 +1477,7 @@ const scenarios = [
     label: 'user-profile-vi-vn',
     locale: 'vi-VN',
     path: '/#/profile',
-    readySelector: '.v2board-profile-page, .ant-switch',
+    readySelector: '[data-testid="profile-page"], .ant-switch',
     visualRetired: true,
   },
   {
@@ -1541,7 +1541,7 @@ const scenarios = [
     longData: true,
     path: '/#/plan',
     postReadyDelay: 300,
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -1549,7 +1549,7 @@ const scenarios = [
     label: 'user-plans-sold-out-ko-kr',
     locale: 'ko-KR',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card[disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -1559,7 +1559,7 @@ const scenarios = [
     locale: 'ko-KR',
     nonRenewablePlan: true,
     path: '/#/plan/1',
-    readySelector: '.v2board-plan-non-renewable, .ant-result-info',
+    readySelector: '[data-testid="plan-non-renewable"], .ant-result-info',
     visualRetired: true,
   },
   {
@@ -1578,7 +1578,7 @@ const scenarios = [
     label: 'user-plans-empty-ko-kr',
     locale: 'ko-KR',
     path: '/#/plan',
-    readySelector: '.v2board-plan-empty, .spinner-grow',
+    readySelector: '[data-testid="plan-empty"], .spinner-grow',
     visualRetired: true,
   },
   {
@@ -1587,7 +1587,7 @@ const scenarios = [
     label: 'user-orders-empty-ko-kr',
     locale: 'ko-KR',
     path: '/#/order',
-    readySelector: '.v2board-orders-empty, .ant-table-placeholder .ant-empty',
+    readySelector: '[data-testid="orders-empty"], .ant-table-placeholder .ant-empty',
     visualRetired: true,
   },
   {
@@ -1605,7 +1605,7 @@ const scenarios = [
     label: 'user-tickets-empty-ko-kr',
     locale: 'ko-KR',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-empty',
+    readySelector: '[data-testid="ticket-empty"]',
     visualRetired: true,
   },
   {
@@ -1615,7 +1615,7 @@ const scenarios = [
     longData: true,
     path: '/#/order',
     postReadyDelay: 300,
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -1666,7 +1666,7 @@ const scenarios = [
     label: 'user-plans-ko-kr',
     locale: 'ko-KR',
     path: '/#/plan',
-    readySelector: '.v2board-plan-card, .block-link-pop',
+    readySelector: '[data-testid="plan-card"], .block-link-pop',
     visualRetired: true,
   },
   {
@@ -1682,7 +1682,7 @@ const scenarios = [
     label: 'user-orders-ko-kr',
     locale: 'ko-KR',
     path: '/#/order',
-    readySelector: '.v2board-orders-table tbody tr, .ant-table-tbody tr',
+    readySelector: '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr',
     visualRetired: true,
   },
   {
@@ -1690,7 +1690,7 @@ const scenarios = [
     label: 'user-order-detail-ko-kr',
     locale: 'ko-KR',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '.v2board-order-info',
+    readySelector: '[data-testid="order-info"]',
     visualRetired: true,
   },
   {
@@ -1714,7 +1714,7 @@ const scenarios = [
     label: 'user-invite-ko-kr',
     locale: 'ko-KR',
     path: '/#/invite',
-    readySelector: '.v2board-invite-surface, .ant-pagination',
+    readySelector: '[data-testid="invite-surface"], .ant-pagination',
     visualRetired: true,
   },
   {
@@ -1722,7 +1722,7 @@ const scenarios = [
     label: 'user-tickets-ko-kr',
     locale: 'ko-KR',
     path: '/#/ticket',
-    readySelector: '.v2board-ticket-table',
+    readySelector: '[data-testid="ticket-table"]',
     visualRetired: true,
   },
   {
@@ -1738,7 +1738,7 @@ const scenarios = [
     label: 'user-knowledge-ko-kr',
     locale: 'ko-KR',
     path: '/#/knowledge',
-    readySelector: '.v2board-knowledge-item, .list-group-item',
+    readySelector: '[data-testid="knowledge-item"], .list-group-item',
     visualRetired: true,
   },
   {
@@ -1746,7 +1746,7 @@ const scenarios = [
     label: 'user-profile-ko-kr',
     locale: 'ko-KR',
     path: '/#/profile',
-    readySelector: '.v2board-profile-page, .ant-switch',
+    readySelector: '[data-testid="profile-page"], .ant-switch',
     visualRetired: true,
   },
   {
@@ -2182,6 +2182,7 @@ const interactionScenarios = [
   },
   {
     label: 'user-dashboard-notice-carousel',
+    readySelector: '[data-testid="dashboard-notice-dots"], .slick-dots li button',
     run: runDashboardNoticeCarouselInteraction,
     scenarioLabel: 'user-dashboard',
   },
@@ -4165,20 +4166,20 @@ const darkModeStyleTargets = [
   { key: 'sidebar', selector: '#sidebar' },
   { key: 'sidebarLink', selector: '#sidebar .nav-main-link, #sidebar a, #sidebar button' },
   { key: 'mainContainer', selector: '#main-container' },
-  { key: 'content', selector: '.content, .v2board-dashboard-page' },
-  { key: 'block', selector: '.block, .v2board-dashboard-card' },
-  { key: 'blockHeader', selector: '.block-header, .v2board-dashboard-card [class*="border-b"]' },
-  { key: 'blockContent', selector: '.block-content, .v2board-dashboard-card [class*="pt-6"]' },
+  { key: 'content', selector: '.content, [data-testid="dashboard-page"]' },
+  { key: 'block', selector: '.block, [data-testid="dashboard-card"]' },
+  { key: 'blockHeader', selector: '.block-header, [data-testid="dashboard-card"] [class*="border-b"]' },
+  { key: 'blockContent', selector: '.block-content, [data-testid="dashboard-card"] [class*="pt-6"]' },
   {
     key: 'primaryButton',
-    selector: '.btn-primary, .ant-btn-primary, .v2board-dashboard-confirm-primary',
+    selector: '.btn-primary, .ant-btn-primary, [data-testid="dashboard-confirm-primary"]',
   },
   { key: 'table', selector: '.ant-table, table' },
   { key: 'tableHeaderCell', selector: '.ant-table-thead th, table thead th' },
   { key: 'tableBodyCell', selector: '.ant-table-tbody td, table tbody td' },
   { key: 'input', selector: '.ant-input, input, textarea' },
-  { key: 'alert', selector: '.alert, .v2board-dashboard-alert' },
-  { key: 'dashboardTile', selector: '.v2board-shortcuts-item, .block-link-pop' },
+  { key: 'alert', selector: '.alert, [data-testid="dashboard-alert"]' },
+  { key: 'dashboardTile', selector: '[data-testid="dashboard-shortcut"], .block-link-pop' },
 ];
 const knownScenarioLabels = new Set(scenarios.map((scenario) => scenario.label));
 const missingScenarioLabels = scenarioLabelList.filter((label) => !knownScenarioLabels.has(label));
@@ -4300,16 +4301,16 @@ const metricSelectors = [
   '.v2board-copyright',
   '.v2board-container-title',
   '.alert',
-  '.v2board-dashboard-alert',
+  '[data-testid="dashboard-alert"]',
   '.alert p',
   '.alert-link',
-  '.v2board-dashboard-alert-link',
+  '[data-testid="dashboard-alert-link"]',
   '.alert strong',
   '.block-header',
   '.block-title',
-  '.v2board-dashboard-card',
-  '.v2board-dashboard-progress',
-  '.v2board-dashboard-progress-bar',
+  '[data-testid="dashboard-card"]',
+  '[data-testid="dashboard-progress"]',
+  '[data-testid="dashboard-progress-bar"]',
   '.v2board-stats-bar',
   '.display-4',
   '.font-size-lg',
@@ -4332,21 +4333,20 @@ const metricSelectors = [
   '.ant-carousel',
   '.slick-slide',
   '.slick-dots',
-  '.v2board-dashboard-notice-slide',
-  '.v2board-dashboard-notice-dots',
-  '.v2board-shortcuts-item',
-  '.v2board-dashboard-subscribe-menu',
-  '.v2board-dashboard-subscribe-item',
-  '.v2board-plan-tabs',
+  '[data-testid="dashboard-notice-slide"]',
+  '[data-testid="dashboard-notice-dots"]',
+  '[data-testid="dashboard-shortcut"]',
+  '[data-testid="dashboard-subscribe-menu"]',
+  '[data-testid^="dashboard-subscribe-"]',
+  '[data-testid="plan-tabs"]',
   '.block-link-pop',
   '.plan',
-  '.v2board-sold-out-tag',
+  '[data-testid="plan-stock-badge"]',
   '#cashier',
-  '.v2board-select',
-  '.v2board-select-radio',
-  '.v2board-input-coupon',
-  '.v2board-order-info',
-  '.v2board-trade-no',
+  '[data-testid="checkout-period-option"], [data-testid="payment-option"]',
+  '[data-testid="checkout-period-radio"], [data-testid="payment-option-radio"]',
+  '[data-testid="coupon-input"]',
+  '[data-testid="order-info"]',
   '.ant-btn-primary',
   '.ant-result',
   '.ant-table-wrapper',
@@ -5055,11 +5055,11 @@ async function runDashboardHeaderLanguageDropdownInteraction(page) {
     };
     const trigger = Array.from(
       document.querySelectorAll(
-        '#page-header .v2board-app-language-trigger, #page-header button, #page-header .ant-dropdown-trigger',
+        '#page-header [data-testid="app-language-trigger"], #page-header button, #page-header .ant-dropdown-trigger',
       ),
     ).find((element) => element.querySelector('.fa-language') && isVisible(element));
     if (!(trigger instanceof HTMLElement)) return false;
-    if (trigger.classList.contains('v2board-app-language-trigger')) {
+    if (trigger.getAttribute('data-testid') === 'app-language-trigger') {
       trigger.dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
       );
@@ -5149,7 +5149,7 @@ async function readUnauthorizedHttp401NoRedirectState(page) {
     return {
       authData: window.localStorage.getItem('authorization'),
       dashboardTexts: visibleText(
-        '.block-title, .content-heading, .alert, .nav-main-link, .v2board-container-title, .v2board-dashboard-page',
+        '.block-title, .content-heading, .alert, .nav-main-link, .v2board-container-title, [data-testid="dashboard-page"]',
         12,
       ),
       hash: window.location.hash,
@@ -5172,14 +5172,14 @@ async function runDarkModePersistenceInteraction(page) {
   const diagnostics = page.__visualParityDiagnostics ?? [];
   const before = await darkModePersistenceState(page);
   await clickDarkModeButton(page);
-  await waitForDarkReader(page, diagnostics);
+  await waitForCurrentDarkModeRuntime(page, diagnostics);
   const afterEnable = {
     ...(await darkModePersistenceState(page)),
     styleSnapshot: await waitForStableDarkModeStyleSnapshot(page, diagnostics),
   };
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 10_000 });
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
-  await waitForDarkReader(page, diagnostics);
+  await waitForCurrentDarkModeRuntime(page, diagnostics);
   await waitForMountedContent(page, diagnostics);
   await waitForFontsBeforeCapture(page, diagnostics);
   await waitForFixedColumnLayout(page);
@@ -5204,8 +5204,8 @@ async function runDashboardSubscribeDrawerInteraction(page) {
   });
 
   const before = await dashboardSubscribeState(page);
-  await clickVisibleAt(page, '.v2board-shortcuts-item', 1);
-  await page.waitForSelector('.v2board-dashboard-subscribe-menu, .oneClickSubscribe___2t9Xg', {
+  await clickVisibleAt(page, '[data-testid="dashboard-shortcut"]', 1);
+  await page.waitForSelector('[data-testid="dashboard-subscribe-menu"], .oneClickSubscribe___2t9Xg', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5214,9 +5214,9 @@ async function runDashboardSubscribeDrawerInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.v2board-dashboard-subscribe-copy, .oneClickSubscribe___2t9Xg .subsrcibe-for-link',
+    '[data-testid="dashboard-subscribe-copy"], .oneClickSubscribe___2t9Xg .subsrcibe-for-link',
   );
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5225,9 +5225,9 @@ async function runDashboardSubscribeDrawerInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.v2board-dashboard-subscribe-qrcode, .oneClickSubscribe___2t9Xg .subscribe-for-qrcode',
+    '[data-testid="dashboard-subscribe-qrcode"], .oneClickSubscribe___2t9Xg .subscribe-for-qrcode',
   );
-  await page.waitForSelector('.v2board-dashboard-dialog canvas, .ant-modal canvas', {
+  await page.waitForSelector('[data-testid="dashboard-dialog"] canvas, .ant-modal canvas', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5244,8 +5244,8 @@ async function runDashboardSubscribeImportLinksInteraction(page) {
 function runDashboardSubscribeImportLinksInteractionFor(expectedTargets) {
   return async (page) => {
     const before = await dashboardSubscribeImportLinksState(page);
-    await clickVisibleAt(page, '.v2board-shortcuts-item', 1);
-    await page.waitForSelector('.v2board-dashboard-subscribe-menu, .oneClickSubscribe___2t9Xg', {
+    await clickVisibleAt(page, '[data-testid="dashboard-shortcut"]', 1);
+    await page.waitForSelector('[data-testid="dashboard-subscribe-menu"], .oneClickSubscribe___2t9Xg', {
       state: 'visible',
       timeout: 5_000,
     });
@@ -5258,15 +5258,19 @@ function runDashboardSubscribeImportLinksInteractionFor(expectedTargets) {
 
 async function runDashboardNoticeCarouselInteraction(page) {
   const before = await dashboardNoticeCarouselState(page);
-  await clickVisibleAt(page, '.v2board-dashboard-notice-dots li button, .slick-dots li button', 1);
+  await clickVisibleAt(
+    page,
+    '[data-testid="dashboard-notice-dots"] [data-testid="dashboard-notice-dot"], .slick-dots li button',
+    1,
+  );
   await page.waitForTimeout(600);
   const afterDot = await dashboardNoticeCarouselState(page);
 
   await clickFirstVisible(
     page,
-    '.v2board-dashboard-notice-slide.is-active .v2board-notice-card, .slick-slide.slick-active .v2board-notice-card, .slick-slide.slick-active a.block',
+    '[data-testid="dashboard-notice-slide"][data-active="true"] [data-testid="dashboard-notice-card"], .slick-slide.slick-active [data-testid="dashboard-notice-card"], .slick-slide.slick-active a.block',
   );
-  await page.waitForSelector('.v2board-dashboard-dialog, .ant-modal', {
+  await page.waitForSelector('[data-testid="dashboard-dialog"], .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5274,7 +5278,7 @@ async function runDashboardNoticeCarouselInteraction(page) {
   const opened = await dashboardNoticeCarouselState(page);
 
   await page.keyboard.press('Escape');
-  await waitForVisibleElementsHidden(page, '.v2board-dashboard-dialog, .ant-modal');
+  await waitForVisibleElementsHidden(page, '[data-testid="dashboard-dialog"], .ant-modal');
   const closed = await dashboardNoticeCarouselState(page);
 
   return { afterDot, before, closed, opened };
@@ -5284,7 +5288,7 @@ async function runDashboardResetPackageConfirmInteraction(page) {
   const initialOrderSaveCount = page.__visualParityUserOrderSaveCount ?? 0;
   const before = await dashboardResetPackageConfirmState(page);
   await clickFirstVisibleText(page, 'a, button', ['购买流量重置包']);
-  await page.waitForSelector('.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal', {
+  await page.waitForSelector('[data-testid="dashboard-dialog"], .ant-modal-confirm, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5293,9 +5297,9 @@ async function runDashboardResetPackageConfirmInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.v2board-dashboard-dialog .v2board-dashboard-confirm-primary, .v2board-dashboard-dialog .ant-btn-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '[data-testid="dashboard-dialog"] [data-testid="dashboard-confirm-primary"], [data-testid="dashboard-dialog"] .ant-btn-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
-  await waitForVisibleElementsHidden(page, '.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal');
+  await waitForVisibleElementsHidden(page, '[data-testid="dashboard-dialog"], .ant-modal-confirm, .ant-modal');
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserOrderSaveCount',
@@ -5319,7 +5323,7 @@ async function runDashboardResetPackageConfirmInteraction(page) {
     confirmed,
     hash: await page.evaluate(() => window.location.hash),
     opened,
-    orderInfo: normalizeDashboardOrderInfo(await visibleTexts(page, '.v2board-order-info', 6)),
+    orderInfo: normalizeDashboardOrderInfo(await visibleTexts(page, '[data-testid="order-info"]', 6)),
     orderSaveRequests: (page.__visualParityUserOrderSaveRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
@@ -5332,7 +5336,7 @@ async function runDashboardNewPeriodConfirmInteraction(page) {
   const before = await dashboardNewPeriodConfirmState(page);
 
   await clickFirstVisibleText(page, 'a, button', ['提前开启流量周期']);
-  await page.waitForSelector('.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal', {
+  await page.waitForSelector('[data-testid="dashboard-dialog"], .ant-modal-confirm, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5341,9 +5345,9 @@ async function runDashboardNewPeriodConfirmInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.v2board-dashboard-dialog .v2board-dashboard-confirm-primary, .v2board-dashboard-dialog .ant-btn-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '[data-testid="dashboard-dialog"] [data-testid="dashboard-confirm-primary"], [data-testid="dashboard-dialog"] .ant-btn-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
-  await waitForVisibleElementsHidden(page, '.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal');
+  await waitForVisibleElementsHidden(page, '[data-testid="dashboard-dialog"], .ant-modal-confirm, .ant-modal');
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserNewPeriodCount',
@@ -5354,7 +5358,7 @@ async function runDashboardNewPeriodConfirmInteraction(page) {
     '__visualParityUserSubscribeFetchCount',
     initialSubscribeFetchCount + 1,
   );
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5379,11 +5383,11 @@ async function runDashboardAlertLinksInteraction(page) {
 
   await clickVisibleAt(
     page,
-    '.v2board-dashboard-alert-danger .v2board-dashboard-alert-link, .alert-danger .alert-link',
+    '[data-testid="dashboard-alert"][data-alert-kind="danger"] [data-testid="dashboard-alert-link"], .alert-danger .alert-link',
     0,
   );
   await page.waitForFunction(() => window.location.hash.includes('/order'), { timeout: 5_000 });
-  await page.waitForSelector('.v2board-orders-table, .ant-table-thead, .am-list-body', {
+  await page.waitForSelector('[data-testid="orders-table"], .ant-table-thead, .am-list-body', {
     state: 'visible',
     timeout: 10_000,
   });
@@ -5393,17 +5397,17 @@ async function runDashboardAlertLinksInteraction(page) {
   await page.evaluate(() => {
     window.location.hash = '#/dashboard';
   });
-  await page.waitForSelector('.v2board-shortcuts-item', { state: 'visible', timeout: 10_000 });
+  await page.waitForSelector('[data-testid="dashboard-shortcut"]', { state: 'visible', timeout: 10_000 });
   await page.waitForTimeout(300);
   const reset = await dashboardAlertLinksState(page);
 
   await clickVisibleAt(
     page,
-    '.v2board-dashboard-alert-warning .v2board-dashboard-alert-link, .alert-warning .alert-link',
+    '[data-testid="dashboard-alert"][data-alert-kind="warning"] [data-testid="dashboard-alert-link"], .alert-warning .alert-link',
     0,
   );
   await page.waitForFunction(() => window.location.hash.includes('/ticket'), { timeout: 5_000 });
-  await page.waitForSelector('.v2board-orders-table, .ant-table-thead, .am-list-body', {
+  await page.waitForSelector('[data-testid="orders-table"], .ant-table-thead, .am-list-body', {
     state: 'visible',
     timeout: 10_000,
   });
@@ -5414,36 +5418,36 @@ async function runDashboardAlertLinksInteraction(page) {
 }
 
 async function runProfileDepositModalInteraction(page) {
-  await clickFirstVisible(page, '.v2board-profile-recharge, .ant-btn-primary');
-  await page.waitForSelector('.v2board-profile-deposit-dialog, .ant-modal-confirm, .ant-modal', {
+  await clickFirstVisible(page, '[data-testid="profile-recharge"], .ant-btn-primary');
+  await page.waitForSelector('[data-testid="profile-deposit-dialog"], .ant-modal-confirm, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
   await fillFirstVisible(
     page,
-    '.v2board-profile-deposit-input, .ant-modal-confirm input, .ant-modal input',
+    '[data-testid="profile-deposit-input"], .ant-modal-confirm input, .ant-modal input',
     '12.34',
   );
   await page.waitForTimeout(100);
   const filled = {
     amount: await firstInputValue(
       page,
-      '.v2board-profile-deposit-input, .ant-modal-confirm input, .ant-modal input',
+      '[data-testid="profile-deposit-input"], .ant-modal-confirm input, .ant-modal input',
     ),
     buttons: await visibleTexts(
       page,
-      '.v2board-profile-deposit-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+      '[data-testid="profile-deposit-dialog"] button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
       4,
     ),
     modalCount: await visibleCount(
       page,
-      '.v2board-profile-deposit-dialog, .ant-modal-confirm, .ant-modal',
+      '[data-testid="profile-deposit-dialog"], .ant-modal-confirm, .ant-modal',
     ),
   };
 
   await clickFirstVisible(
     page,
-    '.v2board-profile-deposit-confirm, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '[data-testid="profile-deposit-confirm"], .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
   await waitForPagePropertyAtLeast(page, '__visualParityUserOrderSaveCount', 1);
   await page.waitForFunction(
@@ -5462,7 +5466,7 @@ async function runProfileDepositModalInteraction(page) {
     filled,
     hash: await page.evaluate(() => window.location.hash),
     orderInfo: normalizeDashboardOrderInfo(
-      await visibleTexts(page, '.v2board-order-info, .v2board-order-summary', 6),
+      await visibleTexts(page, '[data-testid="order-info"], .v2board-order-summary', 6),
     ),
     orderSaveRequests: (page.__visualParityUserOrderSaveRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
@@ -5475,7 +5479,7 @@ async function runProfileResetSubscribeConfirmInteraction(page) {
   const initialSubscribeFetchCount = page.__visualParityUserSubscribeFetchCount ?? 0;
   const before = await profileResetSubscribeState(page);
   await clickFirstVisibleText(page, 'a, button', ['重置', 'Reset']);
-  await page.waitForSelector('.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal', {
+  await page.waitForSelector('[data-testid="profile-confirm-dialog"], .ant-modal-confirm, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5484,14 +5488,14 @@ async function runProfileResetSubscribeConfirmInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.v2board-profile-confirm-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '[data-testid="profile-confirm-primary"], .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
   await waitForVisibleElementsHidden(
     page,
-    '.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal',
+    '[data-testid="profile-confirm-dialog"], .ant-modal-confirm, .ant-modal',
   );
   await waitForPagePropertyAtLeast(page, '__visualParityUserResetSecurityCount', 1);
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5523,24 +5527,24 @@ async function runProfileTelegramBindModalInteraction(page) {
   const before = await profileTelegramBindState(page);
   await clickFirstVisibleText(
     page,
-    '.v2board-profile-telegram-bind button, .bind_telegram a, .bind_telegram button',
+    '[data-testid="profile-telegram-bind"] button, .bind_telegram a, .bind_telegram button',
     ['立即开始', 'Start Now'],
   );
-  await page.waitForSelector('.v2board-profile-telegram-bind-dialog, .ant-modal', {
+  await page.waitForSelector('[data-testid="profile-telegram-bind-dialog"], .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForFunction(
     () =>
       document
-        .querySelector('.v2board-profile-telegram-bind-dialog, .ant-modal')
+        .querySelector('[data-testid="profile-telegram-bind-dialog"], .ant-modal')
         ?.textContent?.includes('@legacy_bot'),
     { timeout: 5_000 },
   );
   await page.waitForTimeout(150);
   const opened = await profileTelegramBindState(page);
 
-  await clickFirstVisible(page, '.v2board-profile-copy-code, .ant-modal code');
+  await clickFirstVisible(page, '[data-testid="profile-copy-code"], .ant-modal code');
   await page.waitForFunction(() => (window.__visualParityCopyCommandCount ?? 0) > 0, {
     timeout: 5_000,
   });
@@ -5548,9 +5552,9 @@ async function runProfileTelegramBindModalInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.v2board-profile-telegram-bind-confirm, .ant-modal-footer .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '[data-testid="profile-telegram-bind-confirm"], .ant-modal-footer .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
-  await waitForVisibleElementsHidden(page, '.v2board-profile-telegram-bind-dialog, .ant-modal');
+  await waitForVisibleElementsHidden(page, '[data-testid="profile-telegram-bind-dialog"], .ant-modal');
   const closed = await profileTelegramBindState(page);
 
   return { before, closed, copied, opened };
@@ -5563,10 +5567,10 @@ async function runProfileTelegramUnbindConfirmInteraction(page) {
 
   await clickFirstVisibleText(
     page,
-    '.v2board-profile-telegram-unbind button, .unbind_telegram button, .unbind_telegram .ant-btn',
+    '[data-testid="profile-telegram-unbind"] button, .unbind_telegram button, .unbind_telegram .ant-btn',
     ['解除绑定'],
   );
-  await page.waitForSelector('.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal', {
+  await page.waitForSelector('[data-testid="profile-confirm-dialog"], .ant-modal-confirm, .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5575,11 +5579,11 @@ async function runProfileTelegramUnbindConfirmInteraction(page) {
 
   await clickFirstVisible(
     page,
-    '.v2board-profile-confirm-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
+    '[data-testid="profile-confirm-primary"], .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
   );
   await waitForVisibleElementsHidden(
     page,
-    '.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal',
+    '[data-testid="profile-confirm-dialog"], .ant-modal-confirm, .ant-modal',
   );
   await waitForPagePropertyAtLeast(page, '__visualParityUserUnbindTelegramCount', 1);
   await waitForPagePropertyAtLeast(
@@ -5592,7 +5596,7 @@ async function runProfileTelegramUnbindConfirmInteraction(page) {
     '__visualParityUserSubscribeFetchCount',
     initialSubscribeFetchCount + 1,
   );
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5627,7 +5631,7 @@ async function runProfilePreferenceSwitchesInteraction(page) {
       { timeout: 5_000 },
     );
 
-    await clickVisibleAt(page, '.v2board-profile-switch, .ant-switch', index);
+    await clickVisibleAt(page, '[data-testid="profile-switch"], .ant-switch', index);
     await waitForProfileSwitchLoading(page, index);
     const loading = await profilePreferenceSwitchesState(page);
 
@@ -5672,7 +5676,7 @@ async function runProfileRedeemGiftcardInteraction(page) {
   await waitForProfileRedeemGiftcardLoading(page);
   const loading = await profileRedeemGiftcardState(page);
 
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5737,7 +5741,7 @@ async function runProfileChangePasswordSuccessInteraction(page) {
   await waitForProfileChangePasswordLoading(page);
   const loading = await profileChangePasswordState(page);
 
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5753,21 +5757,21 @@ async function runProfileChangePasswordSuccessInteraction(page) {
 
 async function runPlansFilterTabsInteraction(page) {
   const before = await plansFilterState(page);
-  await clickVisibleAt(page, '.v2board-plan-tabs span', 1);
+  await clickVisibleAt(page, '[data-testid="plan-tabs"] span', 1);
   await page.waitForTimeout(150);
   const period = await plansFilterState(page);
-  await clickVisibleAt(page, '.v2board-plan-tabs span', 2);
+  await clickVisibleAt(page, '[data-testid="plan-tabs"] span', 2);
   await page.waitForTimeout(150);
   const traffic = await plansFilterState(page);
   return { before, period, traffic };
 }
 
 async function runPlanCheckoutCouponInteraction(page) {
-  const selectCount = await visibleCount(page, '#cashier .v2board-select');
+  const selectCount = await visibleCount(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]');
   if (selectCount > 1) {
-    await clickVisibleAt(page, '#cashier .v2board-select', 1);
+    await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 1);
   }
-  await fillFirstVisible(page, '.v2board-input-coupon', couponCheckFixture.code);
+  await fillFirstVisible(page, '[data-testid="coupon-input"]', couponCheckFixture.code);
   await clickCouponVerifyButton(page);
   await page
     .waitForFunction((couponName) => document.body.textContent.includes(couponName), couponCheckFixture.name, {
@@ -5776,30 +5780,30 @@ async function runPlanCheckoutCouponInteraction(page) {
     .catch(() => {});
 
   return {
-    activePeriodIndex: await visibleElementDomIndex(page, '#cashier .v2board-select.active', 0),
-    activePeriods: await visibleTexts(page, '#cashier .v2board-select.active', 2),
-    couponInput: await firstInputValue(page, '.v2board-input-coupon'),
+    activePeriodIndex: await visibleElementDomIndex(page, '#cashier [data-testid="checkout-period-option"][data-state="checked"], #cashier [data-testid="payment-option"][data-state="checked"]', 0),
+    activePeriods: await visibleTexts(page, '#cashier [data-testid="checkout-period-option"][data-state="checked"], #cashier [data-testid="payment-option"][data-state="checked"]', 2),
+    couponInput: await firstInputValue(page, '[data-testid="coupon-input"]'),
     selectCount,
     summaryBlocks: await commerceSummaryTexts(
       page,
-      '#cashier .v2board-checkout-summary, #cashier .col-md-4 .block',
+      '#cashier [data-testid="checkout-summary"], #cashier .col-md-4 .block',
       4,
     ),
-    submitButton: await firstCommerceActionState(page, '#cashier .btn-block.btn-primary'),
+    submitButton: await firstCommerceActionState(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary'),
   };
 }
 
 async function runPlanCheckoutCouponErrorInteraction(page) {
   const initialCouponCheckCount = page.__visualParityUserCouponCheckCount ?? 0;
   const before = {
-    activePeriods: await visibleTexts(page, '#cashier .v2board-select.active', 2),
+    activePeriods: await visibleTexts(page, '#cashier [data-testid="checkout-period-option"][data-state="checked"], #cashier [data-testid="payment-option"][data-state="checked"]', 2),
     summaryBlocks: await commerceSummaryTexts(
       page,
-      '#cashier .v2board-checkout-summary, #cashier .col-md-4 .block',
+      '#cashier [data-testid="checkout-summary"], #cashier .col-md-4 .block',
       4,
     ),
   };
-  await fillFirstVisible(page, '.v2board-input-coupon', couponErrorCode);
+  await fillFirstVisible(page, '[data-testid="coupon-input"]', couponErrorCode);
   await clickCouponVerifyButton(page);
   await waitForPagePropertyAtLeast(
     page,
@@ -5808,15 +5812,15 @@ async function runPlanCheckoutCouponErrorInteraction(page) {
   );
   await page.waitForTimeout(250);
   const after = {
-    activePeriods: await visibleTexts(page, '#cashier .v2board-select.active', 2),
-    couponInput: await firstInputValue(page, '.v2board-input-coupon'),
+    activePeriods: await visibleTexts(page, '#cashier [data-testid="checkout-period-option"][data-state="checked"], #cashier [data-testid="payment-option"][data-state="checked"]', 2),
+    couponInput: await firstInputValue(page, '[data-testid="coupon-input"]'),
     summaryBlocks: await commerceSummaryTexts(
       page,
-      '#cashier .v2board-checkout-summary, #cashier .col-md-4 .block',
+      '#cashier [data-testid="checkout-summary"], #cashier .col-md-4 .block',
       4,
     ),
-    submitButton: await firstCommerceActionState(page, '#cashier .btn-block.btn-primary'),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    submitButton: await firstCommerceActionState(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary'),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
   return {
     after,
@@ -5828,7 +5832,7 @@ async function runPlanCheckoutCouponErrorInteraction(page) {
 async function runOrderPaymentMethodInteraction(page) {
   await page.waitForFunction(
     () =>
-      Array.from(document.querySelectorAll('#cashier .v2board-select')).filter((element) => {
+      Array.from(document.querySelectorAll('#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]')).filter((element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none';
@@ -5836,7 +5840,7 @@ async function runOrderPaymentMethodInteraction(page) {
     { timeout: 5_000 },
   );
   const before = await orderPaymentState(page);
-  await clickVisibleAt(page, '#cashier .v2board-select', 2);
+  await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 2);
   await page.waitForFunction(
     () => {
       const isVisible = (element) => {
@@ -5850,7 +5854,7 @@ async function runOrderPaymentMethodInteraction(page) {
           !element.closest('.ant-dropdown-hidden')
         );
       };
-      return Array.from(document.querySelectorAll('#cashier .v2board-select'))
+      return Array.from(document.querySelectorAll('#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]'))
         .filter(isVisible)
         .findIndex((element) => element.className.includes('active')) === 2;
     },
@@ -5863,7 +5867,7 @@ async function runOrderPaymentMethodInteraction(page) {
 async function runOrderQrCheckoutInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   const before = await orderCheckoutState(page);
-  await clickFirstVisible(page, '#cashier .btn-block.btn-primary');
+  await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
   await page.waitForTimeout(100);
   const loading = await orderCheckoutState(page);
   await waitForPagePropertyAtLeast(
@@ -5871,7 +5875,7 @@ async function runOrderQrCheckoutInteraction(page) {
     '__visualParityUserOrderCheckoutCount',
     initialCheckoutCount + 1,
   );
-  await page.waitForSelector('.v2board-payment-qrcode svg, .v2board-payment-qrcode canvas', {
+  await page.waitForSelector('[data-testid="payment-qrcode"] svg, [data-testid="payment-qrcode"] canvas', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -5888,7 +5892,7 @@ async function runOrderQrCheckoutInteraction(page) {
 async function runOrderCheckoutFailureInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   const before = await orderCheckoutState(page);
-  await clickFirstVisible(page, '#cashier .btn-block.btn-primary');
+  await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
   await page.waitForTimeout(100);
   const loading = await orderCheckoutState(page);
   await waitForPagePropertyAtLeast(
@@ -5909,7 +5913,7 @@ async function runOrderCheckoutFailureInteraction(page) {
 async function runOrderStripeDisabledCheckoutInteraction(page) {
   await waitForOrderPaymentMethodCount(page);
   const before = await orderCheckoutState(page);
-  await clickVisibleAt(page, '#cashier .v2board-select', 1);
+  await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 1);
   await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
   await waitForCreditCardSection(page);
   await page.waitForTimeout(150);
@@ -5925,19 +5929,19 @@ async function runOrderStripeTokenCheckoutInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   await waitForOrderPaymentMethodCount(page);
   const before = await orderCheckoutState(page);
-  await clickVisibleAt(page, '#cashier .v2board-select', 1);
+  await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 1);
   await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
   await waitForCreditCardSection(page);
   await page.waitForFunction(
     () => {
-      const button = document.querySelector('#cashier .btn-block.btn-primary');
+      const button = document.querySelector('#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
       return button instanceof HTMLButtonElement && !button.disabled;
     },
     { timeout: 5_000 },
   );
   await page.waitForTimeout(150);
   const selected = await orderCheckoutState(page);
-  await clickFirstVisible(page, '#cashier .btn-block.btn-primary');
+  await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserOrderCheckoutCount',
@@ -5957,19 +5961,19 @@ async function runOrderStripeTokenCheckoutFailureInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   await waitForOrderPaymentMethodCount(page);
   const before = await orderCheckoutState(page);
-  await clickVisibleAt(page, '#cashier .v2board-select', 1);
+  await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 1);
   await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
   await waitForCreditCardSection(page);
   await page.waitForFunction(
     () => {
-      const button = document.querySelector('#cashier .btn-block.btn-primary');
+      const button = document.querySelector('#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
       return button instanceof HTMLButtonElement && !button.disabled;
     },
     { timeout: 5_000 },
   );
   await page.waitForTimeout(150);
   const selected = await orderCheckoutState(page);
-  await clickFirstVisible(page, '#cashier .btn-block.btn-primary');
+  await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserOrderCheckoutCount',
@@ -5988,10 +5992,10 @@ async function runOrderStripeTokenCheckoutFailureInteraction(page) {
 async function runOrderRedirectCheckoutInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   await waitForOrderPaymentMethodCount(page);
-  await clickVisibleAt(page, '#cashier .v2board-select', 2);
+  await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 2);
   await page.waitForTimeout(100);
   const selected = await orderCheckoutState(page);
-  await clickFirstVisible(page, '#cashier .btn-block.btn-primary');
+  await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserOrderCheckoutCount',
@@ -6015,67 +6019,67 @@ async function runFetchFailureStateInteraction(page) {
 }
 
 async function runNodeTableScrollInteraction(page) {
-  const before = await legacyAntTableScrollState(page);
-  await setLegacyAntTableScrollLeft(page, 'right');
+  const before = await serviceTableScrollState(page);
+  await setServiceTableScrollLeft(page, 'right');
   await page.waitForTimeout(150);
-  const afterRight = await legacyAntTableScrollState(page);
-  await setLegacyAntTableScrollLeft(page, 'middle');
+  const afterRight = await serviceTableScrollState(page);
+  await setServiceTableScrollLeft(page, 'middle');
   await page.waitForTimeout(150);
-  const afterMiddle = await legacyAntTableScrollState(page);
+  const afterMiddle = await serviceTableScrollState(page);
 
   return { afterMiddle, afterRight, before };
 }
 
 async function runUserNodeTooltipsInteraction(page) {
   return hoverAllTooltipTargetsInteraction(page, [
-    '.v2board-node-table .v2board-service-tooltip-trigger',
+    '[data-testid="node-table"] .v2board-service-tooltip-trigger',
     '.ant-table-thead .anticon-question-circle',
   ]);
 }
 
 async function runTrafficTableScrollInteraction(page) {
-  const before = await legacyAntTableScrollState(page);
-  await setLegacyAntTableScrollLeft(page, 'right');
+  const before = await serviceTableScrollState(page);
+  await setServiceTableScrollLeft(page, 'right');
   await page.waitForTimeout(150);
-  const afterRight = await legacyAntTableScrollState(page);
-  await setLegacyAntTableScrollLeft(page, 'middle');
+  const afterRight = await serviceTableScrollState(page);
+  await setServiceTableScrollLeft(page, 'middle');
   await page.waitForTimeout(150);
-  const afterMiddle = await legacyAntTableScrollState(page);
+  const afterMiddle = await serviceTableScrollState(page);
 
   return { afterMiddle, afterRight, before };
 }
 
 async function runUserTrafficTotalTooltipInteraction(page) {
-  await setLegacyAntTableScrollLeft(page, 'right');
+  await setServiceTableScrollLeft(page, 'right');
   await page.waitForTimeout(150);
   return hoverTooltipInteraction(page, [
-    '.v2board-traffic-table .v2board-service-tooltip-trigger',
+    '[data-testid="traffic-table"] .v2board-service-tooltip-trigger',
     '.ant-table-fixed .anticon-question-circle',
     '.ant-table-thead .anticon-question-circle',
   ]);
 }
 
 async function runKnowledgeDrawerInteraction(page) {
-  await fillFirstVisible(page, '.v2board-knowledge-search-bar input', 'router');
+  await fillFirstVisible(page, '[data-testid="knowledge-search-bar"] input', 'router');
   await page.waitForTimeout(350);
   const before = await knowledgeState(page);
-  await clickFirstVisible(page, '.v2board-knowledge-item, .list-group-item');
-  await page.waitForSelector('.v2board-knowledge-sheet-title, .ant-drawer-open .ant-drawer-title', {
+  await clickFirstVisible(page, '[data-testid="knowledge-item"], .list-group-item');
+  await page.waitForSelector('[data-testid="knowledge-sheet"]-title, .ant-drawer-open .ant-drawer-title', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForFunction(
     () =>
       Array.from(
-        document.querySelectorAll('.v2board-knowledge-sheet-title, .ant-drawer-title'),
+        document.querySelectorAll('[data-testid="knowledge-sheet"]-title, .ant-drawer-title'),
       ).some((element) => element.textContent?.includes('Copy Article')),
     { timeout: 5_000 },
   );
   const opened = await knowledgeState(page);
-  await clickFirstVisible(page, '.v2board-knowledge-sheet button, .ant-drawer-close');
+  await clickFirstVisible(page, '[data-testid="knowledge-sheet"] button, .ant-drawer-close');
   await page.waitForFunction(
     () =>
-      !document.querySelector('.v2board-knowledge-sheet') &&
+      !document.querySelector('[data-testid="knowledge-sheet"]') &&
       !document.querySelector('.ant-drawer-open'),
     { timeout: 5_000 },
   );
@@ -6084,18 +6088,18 @@ async function runKnowledgeDrawerInteraction(page) {
 }
 
 async function runUserKnowledgeExtremeContentMatrixInteraction(page) {
-  await fillFirstVisible(page, '.v2board-knowledge-search-bar input', 'extreme legacy');
+  await fillFirstVisible(page, '[data-testid="knowledge-search-bar"] input', 'extreme legacy');
   await page.waitForTimeout(350);
   const filtered = await knowledgeState(page);
-  await clickFirstVisible(page, '.v2board-knowledge-item, .list-group-item');
-  await page.waitForSelector('.v2board-knowledge-sheet-title, .ant-drawer-open .ant-drawer-title', {
+  await clickFirstVisible(page, '[data-testid="knowledge-item"], .list-group-item');
+  await page.waitForSelector('[data-testid="knowledge-sheet"]-title, .ant-drawer-open .ant-drawer-title', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForFunction(
     () =>
       Array.from(
-        document.querySelectorAll('.v2board-knowledge-sheet-title, .ant-drawer-title'),
+        document.querySelectorAll('[data-testid="knowledge-sheet"]-title, .ant-drawer-title'),
       ).some((element) => element.textContent?.includes('Extreme Legacy')),
     { timeout: 5_000 },
   );
@@ -6105,8 +6109,8 @@ async function runUserKnowledgeExtremeContentMatrixInteraction(page) {
 
 async function runInviteGenerateInteraction(page) {
   const before = await inviteState(page);
-  await clickFirstVisible(page, '.v2board-invite-generate, .block-header .block-options .btn');
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await clickFirstVisible(page, '[data-testid="invite-generate"], .block-header .block-options .btn');
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -6119,17 +6123,17 @@ async function runInviteTransferModalInteraction(page) {
   const initialInfoFetchCount = page.__visualParityUserInfoFetchCount ?? 0;
   const before = await inviteFinanceDialogState(page);
   await clickFirstVisibleText(page, 'button, .ant-btn', ['划转', 'Transfer']);
-  await page.waitForSelector('.v2board-invite-dialog, .ant-modal', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector('[data-testid="invite-dialog"], .ant-modal', { state: 'visible', timeout: 5_000 });
   await page.waitForTimeout(100);
   const opened = await inviteFinanceDialogState(page);
-  await fillVisibleAt(page, '.v2board-invite-dialog input:not([disabled]), .ant-modal input:not([disabled])', 0, '12.34');
+  await fillVisibleAt(page, '[data-testid="invite-dialog"] input:not([disabled]), .ant-modal input:not([disabled])', 0, '12.34');
   await page.waitForTimeout(100);
   const filled = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '[data-testid="invite-dialog-footer"] button, .ant-modal-footer .ant-btn', 1);
   await page.waitForTimeout(100);
   const saving = await inviteFinanceDialogState(page);
   await waitForPagePropertyAtLeast(page, '__visualParityUserTransferCount', 1);
-  await waitForVisibleElementsHidden(page, '.v2board-invite-dialog, .ant-modal');
+  await waitForVisibleElementsHidden(page, '[data-testid="invite-dialog"], .ant-modal');
   await page.waitForTimeout(250);
   const closed = await inviteFinanceDialogState(page);
   return {
@@ -6148,13 +6152,13 @@ async function runInviteTransferFailureInteraction(page) {
   const initialTransferCount = page.__visualParityUserTransferCount ?? 0;
   const before = await inviteFinanceDialogState(page);
   await clickFirstVisibleText(page, 'button, .ant-btn', ['划转', 'Transfer']);
-  await page.waitForSelector('.v2board-invite-dialog, .ant-modal', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector('[data-testid="invite-dialog"], .ant-modal', { state: 'visible', timeout: 5_000 });
   await page.waitForTimeout(100);
   const opened = await inviteFinanceDialogState(page);
-  await fillVisibleAt(page, '.v2board-invite-dialog input:not([disabled]), .ant-modal input:not([disabled])', 0, '99999.99');
+  await fillVisibleAt(page, '[data-testid="invite-dialog"] input:not([disabled]), .ant-modal input:not([disabled])', 0, '99999.99');
   await page.waitForTimeout(100);
   const filled = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '[data-testid="invite-dialog-footer"] button, .ant-modal-footer .ant-btn', 1);
   await page.waitForTimeout(100);
   const saving = await inviteFinanceDialogState(page);
   await waitForPagePropertyAtLeast(
@@ -6181,22 +6185,22 @@ async function runInviteWithdrawModalInteraction(page) {
     '推广佣金提现',
     'Invitation Commission Withdrawal',
   ]);
-  await page.waitForSelector('.v2board-invite-dialog, .ant-modal', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector('[data-testid="invite-dialog"], .ant-modal', { state: 'visible', timeout: 5_000 });
   await page.waitForTimeout(100);
   const _opened = await inviteFinanceDialogState(page);
-  await clickFirstVisible(page, '.v2board-invite-select-trigger, .ant-modal .ant-select-selection');
-  await page.waitForSelector('.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item', {
+  await clickFirstVisible(page, '[data-testid="invite-select-trigger"], .ant-modal .ant-select-selection');
+  await page.waitForSelector('[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForTimeout(100);
   const dropdown = await inviteFinanceDialogState(page);
-  await clickFirstVisibleText(page, '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item', ['Alipay']);
-  await waitForVisibleElementsHidden(page, '.v2board-invite-select-content, .ant-select-dropdown');
-  await fillVisibleAt(page, '.v2board-invite-dialog input:not([disabled]), .ant-modal input.ant-input', 0, 'parity-account@example.com');
+  await clickFirstVisibleText(page, '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item', ['Alipay']);
+  await waitForVisibleElementsHidden(page, '[data-testid="invite-select-content"], .ant-select-dropdown');
+  await fillVisibleAt(page, '[data-testid="invite-dialog"] input:not([disabled]), .ant-modal input.ant-input', 0, 'parity-account@example.com');
   await page.waitForTimeout(100);
   const filled = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '[data-testid="invite-dialog-footer"] button, .ant-modal-footer .ant-btn', 1);
   await page.waitForTimeout(100);
   const saving = await inviteFinanceDialogState(page);
   await waitForPagePropertyAtLeast(page, '__visualParityUserWithdrawCount', 1);
@@ -6220,15 +6224,15 @@ async function runInviteFinanceSubmitMatrixInteraction(page) {
   const before = await inviteFinanceDialogState(page);
 
   await clickFirstVisibleText(page, 'button, .ant-btn', ['划转', 'Transfer']);
-  await waitForVisibleElementCountAtLeast(page, '.v2board-invite-dialog, .ant-modal', 1);
+  await waitForVisibleElementCountAtLeast(page, '[data-testid="invite-dialog"], .ant-modal', 1);
   const transferEmptyOpened = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '[data-testid="invite-dialog-footer"] button, .ant-modal-footer .ant-btn', 1);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserTransferCount',
     initialTransferCount + 1,
   );
-  await waitForVisibleElementsHidden(page, '.v2board-invite-dialog, .ant-modal');
+  await waitForVisibleElementsHidden(page, '[data-testid="invite-dialog"], .ant-modal');
   await page.waitForTimeout(250);
   const transferEmptyClosed = await inviteFinanceDialogState(page);
 
@@ -6236,20 +6240,20 @@ async function runInviteFinanceSubmitMatrixInteraction(page) {
     '推广佣金提现',
     'Invitation Commission Withdrawal',
   ]);
-  await waitForVisibleElementCountAtLeast(page, '.v2board-invite-dialog, .ant-modal', 1);
+  await waitForVisibleElementCountAtLeast(page, '[data-testid="invite-dialog"], .ant-modal', 1);
   const withdrawOpened = await inviteFinanceDialogState(page);
-  await clickFirstVisible(page, '.v2board-invite-select-trigger, .ant-modal .ant-select-selection');
+  await clickFirstVisible(page, '[data-testid="invite-select-trigger"], .ant-modal .ant-select-selection');
   await waitForVisibleText(
     page,
-    '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item',
+    '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item',
     'Alipay',
   );
   const withdrawDropdown = await inviteFinanceDialogState(page);
-  await clickFirstVisibleText(page, '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item', ['Alipay']);
-  await waitForVisibleElementsHidden(page, '.v2board-invite-select-content, .ant-select-dropdown');
-  await fillVisibleAt(page, '.v2board-invite-dialog input:not([disabled]), .ant-modal input.ant-input', 0, 'fail-account');
+  await clickFirstVisibleText(page, '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item', ['Alipay']);
+  await waitForVisibleElementsHidden(page, '[data-testid="invite-select-content"], .ant-select-dropdown');
+  await fillVisibleAt(page, '[data-testid="invite-dialog"] input:not([disabled]), .ant-modal input.ant-input', 0, 'fail-account');
   const withdrawFailureFilled = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '[data-testid="invite-dialog-footer"] button, .ant-modal-footer .ant-btn', 1);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserWithdrawCount',
@@ -6257,25 +6261,25 @@ async function runInviteFinanceSubmitMatrixInteraction(page) {
   );
   await page.waitForTimeout(350);
   const withdrawFailed = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 0);
-  await waitForVisibleElementsHidden(page, '.v2board-invite-dialog, .ant-modal');
+  await clickVisibleAt(page, '[data-testid="invite-dialog-footer"] button, .ant-modal-footer .ant-btn', 0);
+  await waitForVisibleElementsHidden(page, '[data-testid="invite-dialog"], .ant-modal');
 
   await clickFirstVisibleText(page, 'button, .ant-btn', [
     '推广佣金提现',
     'Invitation Commission Withdrawal',
   ]);
-  await waitForVisibleElementCountAtLeast(page, '.v2board-invite-dialog, .ant-modal', 1);
-  await clickFirstVisible(page, '.v2board-invite-select-trigger, .ant-modal .ant-select-selection');
+  await waitForVisibleElementCountAtLeast(page, '[data-testid="invite-dialog"], .ant-modal', 1);
+  await clickFirstVisible(page, '[data-testid="invite-select-trigger"], .ant-modal .ant-select-selection');
   await waitForVisibleText(
     page,
-    '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item',
+    '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item',
     'USDT',
   );
-  await clickFirstVisibleText(page, '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item', ['USDT']);
-  await waitForVisibleElementsHidden(page, '.v2board-invite-select-content, .ant-select-dropdown');
-  await fillVisibleAt(page, '.v2board-invite-dialog input:not([disabled]), .ant-modal input.ant-input', 0, 'success-account');
+  await clickFirstVisibleText(page, '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item', ['USDT']);
+  await waitForVisibleElementsHidden(page, '[data-testid="invite-select-content"], .ant-select-dropdown');
+  await fillVisibleAt(page, '[data-testid="invite-dialog"] input:not([disabled]), .ant-modal input.ant-input', 0, 'success-account');
   const withdrawSuccessFilled = await inviteFinanceDialogState(page);
-  await clickVisibleAt(page, '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, '[data-testid="invite-dialog-footer"] button, .ant-modal-footer .ant-btn', 1);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserWithdrawCount',
@@ -6303,7 +6307,7 @@ async function runInviteFinanceSubmitMatrixInteraction(page) {
 
 async function runUserInviteTooltipsInteraction(page) {
   return hoverAllTooltipTargetsInteraction(page, [
-    '.v2board-invite-surface .v2board-service-tooltip-trigger',
+    '[data-testid="invite-surface"] .v2board-service-tooltip-trigger',
     '.anticon-question-circle',
   ]);
 }
@@ -6315,7 +6319,7 @@ async function runUserTicketReplySendInteraction(page) {
   const filled = await ticketReplyState(page);
 
   await page.locator('.js-chat-input').first().press('Enter');
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -6323,7 +6327,7 @@ async function runUserTicketReplySendInteraction(page) {
   const loading = await ticketReplyState(page);
 
   await waitForPagePropertyAtLeast(page, '__visualParityUserTicketReplyCount', 1);
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -6365,14 +6369,14 @@ async function runUserTicketErrorMatrixInteraction(page) {
     '__visualParityUserTicketFetchCount',
     initialTicketFetchCount + 1,
   );
-  await page.waitForSelector('.v2board-ticket-table tbody tr, .ant-table-tbody tr', {
+  await page.waitForSelector('[data-testid="ticket-table"] tbody tr, .ant-table-tbody tr', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForTimeout(150);
   const listBeforeClose = await userTicketListState(page);
   const listFetchCount = page.__visualParityUserTicketFetchCount ?? 0;
-  await clickFirstVisibleText(page, '.v2board-ticket-close, .ant-table-tbody a', [
+  await clickFirstVisibleText(page, '[data-testid="ticket-close"], .ant-table-tbody a', [
     '关闭',
     'Close',
   ]);
@@ -6403,7 +6407,7 @@ async function runAdminTicketReplySendInteraction(page) {
   const filled = await ticketReplyState(page);
 
   await page.locator('.js-chat-input').first().press('Enter');
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -6435,29 +6439,29 @@ async function runUserTicketCreateModalInteraction(page) {
   const before = await userTicketCreateModalState(page);
   await clickFirstVisible(
     page,
-    '.v2board-ticket-new-trigger, .block-header .block-options .btn, .block-header .block-options button',
+    '[data-testid="ticket-new-trigger"], .block-header .block-options .btn, .block-header .block-options button',
   );
-  await page.waitForSelector('.v2board-ticket-dialog, .ant-modal', {
+  await page.waitForSelector('[data-testid="ticket-dialog"], .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
-  await fillVisibleAt(page, '.v2board-ticket-dialog input, .ant-modal .ant-input', 0, 'Parity subject');
-  await clickFirstVisible(page, '.v2board-ticket-select-trigger, .ant-modal .ant-select-selection');
-  await page.waitForSelector('.v2board-ticket-select-content [role="option"], .ant-select-dropdown-menu-item', {
+  await fillVisibleAt(page, '[data-testid="ticket-dialog"] input, .ant-modal .ant-input', 0, 'Parity subject');
+  await clickFirstVisible(page, '[data-testid="ticket-select-trigger"], .ant-modal .ant-select-selection');
+  await page.waitForSelector('[data-testid="ticket-select-content"] [role="option"], .ant-select-dropdown-menu-item', {
     state: 'visible',
     timeout: 5_000,
   });
   const levelDropdown = await userTicketCreateModalState(page);
-  await clickVisibleAt(page, '.v2board-ticket-select-content [role="option"], .ant-select-dropdown-menu-item', 2);
-  await waitForVisibleElementsHidden(page, '.v2board-ticket-select-content, .ant-select-dropdown');
-  await fillVisibleAt(page, '.v2board-ticket-dialog textarea, .ant-modal textarea.ant-input', 0, 'Parity ticket body');
+  await clickVisibleAt(page, '[data-testid="ticket-select-content"] [role="option"], .ant-select-dropdown-menu-item', 2);
+  await waitForVisibleElementsHidden(page, '[data-testid="ticket-select-content"], .ant-select-dropdown');
+  await fillVisibleAt(page, '[data-testid="ticket-dialog"] textarea, .ant-modal textarea.ant-input', 0, 'Parity ticket body');
   await page.waitForTimeout(100);
   const filled = await userTicketCreateModalState(page);
-  await clickFirstVisible(page, '.v2board-ticket-dialog-footer button:last-child, .ant-modal-footer .ant-btn-primary');
+  await clickFirstVisible(page, '[data-testid="ticket-dialog-footer"] button:last-child, .ant-modal-footer .ant-btn-primary');
   await page.waitForTimeout(100);
   const saving = await userTicketCreateModalState(page);
   await waitForPagePropertyAtLeast(page, '__visualParityUserTicketSaveCount', 1);
-  await waitForVisibleElementsHidden(page, '.v2board-ticket-dialog, .ant-modal');
+  await waitForVisibleElementsHidden(page, '[data-testid="ticket-dialog"], .ant-modal');
   await page.waitForTimeout(250);
   const saved = await userTicketCreateModalState(page);
   return {
@@ -6479,15 +6483,15 @@ async function runUserTicketCreateValidationFailureInteraction(page) {
   const before = await userTicketCreateModalState(page);
   await clickFirstVisible(
     page,
-    '.v2board-ticket-new-trigger, .block-header .block-options .btn, .block-header .block-options button',
+    '[data-testid="ticket-new-trigger"], .block-header .block-options .btn, .block-header .block-options button',
   );
-  await page.waitForSelector('.v2board-ticket-dialog, .ant-modal', {
+  await page.waitForSelector('[data-testid="ticket-dialog"], .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForTimeout(100);
   const opened = await userTicketCreateModalState(page);
-  await clickFirstVisible(page, '.v2board-ticket-dialog-footer button:last-child, .ant-modal-footer .ant-btn-primary');
+  await clickFirstVisible(page, '[data-testid="ticket-dialog-footer"] button:last-child, .ant-modal-footer .ant-btn-primary');
   await page.waitForTimeout(100);
   const saving = await userTicketCreateModalState(page);
   await waitForPagePropertyAtLeast(
@@ -6508,6 +6512,11 @@ async function runUserTicketCreateValidationFailureInteraction(page) {
 }
 
 async function runOrderCancelConfirmInteraction(page) {
+  const confirmSelector = '.v2board-confirm-dialog, .ant-modal-confirm, .ant-modal';
+  const confirmButtonSelector =
+    '.v2board-confirm-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn';
+  const confirmPrimarySelector =
+    '.v2board-confirm-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary';
   const cancelLinkTexts = ['Cancel', '取消'];
   const initialOrderCancelCount = page.__visualParityUserOrderCancelCount ?? 0;
   const initialOrderFetchCount = page.__visualParityUserOrderFetchCount ?? 0;
@@ -6516,28 +6525,33 @@ async function runOrderCancelConfirmInteraction(page) {
     return {
       cancelLinks,
       listItems: await visibleCount(page, '.am-list-item'),
-      modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
+      modalCount: await visibleCount(page, confirmSelector),
     };
   }
 
   await clickFirstVisibleText(page, 'a', cancelLinkTexts);
-  await page.waitForSelector('.ant-modal-confirm, .ant-modal', {
+  await page.waitForSelector(confirmSelector, {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForTimeout(100);
   const opened = {
-    buttons: await visibleTexts(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 4),
-    content: await visibleTexts(page, '.ant-modal-confirm-content, .ant-modal-body', 2),
-    modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
-    title: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 2),
+    buttons: await visibleTexts(page, confirmButtonSelector, 4),
+    content: await visibleTexts(
+      page,
+      '.v2board-confirm-dialog, .v2board-confirm-content, .ant-modal-confirm-content, .ant-modal-body',
+      2,
+    ),
+    modalCount: await visibleCount(page, confirmSelector),
+    title: await visibleTexts(
+      page,
+      '.v2board-confirm-title, .ant-modal-confirm-title, .ant-modal-title',
+      2,
+    ),
   };
 
-  await clickFirstVisible(
-    page,
-    '.ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary',
-  );
-  await waitForVisibleElementsHidden(page, '.ant-modal-confirm, .ant-modal');
+  await clickFirstVisible(page, confirmPrimarySelector);
+  await waitForVisibleElementsHidden(page, confirmSelector);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserOrderCancelCount',
@@ -8997,7 +9011,7 @@ async function runAdminUserCopyActionInteraction(page) {
   await waitForVisibleText(page, '.ant-dropdown-menu-item', '复制订阅URL');
   const dropdown = await adminUserCopyActionState(page);
   await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['复制订阅URL']);
-  await page.waitForSelector('.ant-message-notice, .ant-notification-notice', {
+  await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
   });
@@ -9166,7 +9180,7 @@ async function adminConfigSaveFailureState(page) {
     ),
     saveCount: page.__visualParityAdminConfigSaveCount ?? 0,
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 4),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 6),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
   };
 }
 
@@ -9178,7 +9192,7 @@ async function adminThemeSaveFailureState(page) {
     saveCount: page.__visualParityAdminThemeSaveCount ?? 0,
     themeCards: await visibleTexts(page, '.block-transparent.bg-image h3', 4),
     titles: await visibleTexts(page, '.ant-modal-title', 4),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 6),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
   };
 }
 
@@ -9350,7 +9364,7 @@ async function filterDrawerDebugState(page) {
     buttons: await visibleTexts(page, '.v2board-filter-drawer .ant-btn', 8),
     inputs: await visibleInputValues(page, '.v2board-filter-drawer input, .v2board-filter-drawer textarea'),
     labels: await visibleTexts(page, '.v2board-filter-drawer label', 8),
-    notifications: await visibleTexts(page, '.ant-notification-notice, .ant-message-notice', 4),
+    notifications: await visibleTexts(page, '.v2board-toast-root, .ant-notification-notice, .ant-message-notice', 4),
   };
 }
 
@@ -9446,7 +9460,7 @@ async function adminUserSendMailModalState(page) {
     labels: await visibleTexts(page, '.ant-modal .form-group label', 6),
     modalCount,
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
     titles: await visibleTexts(page, '.ant-modal-title', 2),
     toolbarButtons: await visibleTexts(page, '.v2board-table-action .ant-btn', 6),
   };
@@ -9468,7 +9482,7 @@ async function adminUserConfirmState(page) {
 async function adminUserCopyActionState(page) {
   return {
     dropdownItems: await visibleTexts(page, '.ant-dropdown-menu-item', 10),
-    messageTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    messageTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
     modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
     triggerTexts: await visibleTexts(page, '.ant-table-tbody a', 10),
@@ -9505,7 +9519,7 @@ async function adminUserDestructiveFailureState(page) {
     modalCount,
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
     titles: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 2),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 6),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
     toolbarButtons: await visibleTexts(page, '.v2board-table-action .ant-btn', 8),
     triggerTexts: await visibleTexts(page, '.ant-table-tbody a', 10),
   };
@@ -9523,7 +9537,7 @@ async function adminUserExportDownloadState(page) {
     probe: normalizeDownloadProbe(probe),
     requestCount: page.__visualParityAdminUserDumpCsvCount ?? 0,
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 6),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
     toolbarButtons: await visibleTexts(page, '.v2board-table-action .ant-btn', 8),
   };
 }
@@ -9650,28 +9664,28 @@ async function userTicketCreateModalState(page) {
   return {
     buttons: await visibleTexts(
       page,
-      '.v2board-ticket-dialog-footer button, .ant-modal-footer .ant-btn',
+      '[data-testid="ticket-dialog-footer"] button, .ant-modal-footer .ant-btn',
       4,
     ),
     inputValues: await visibleInputValues(
       page,
-      '.v2board-ticket-dialog input, .v2board-ticket-dialog textarea, .ant-modal input, .ant-modal textarea',
+      '[data-testid="ticket-dialog"] input, [data-testid="ticket-dialog"] textarea, .ant-modal input, .ant-modal textarea',
     ),
-    labels: await visibleTexts(page, '.v2board-ticket-dialog label, .ant-modal .form-group label', 6),
-    modalCount: await visibleCount(page, '.v2board-ticket-dialog, .ant-modal'),
+    labels: await visibleTexts(page, '[data-testid="ticket-dialog"] label, .ant-modal .form-group label', 6),
+    modalCount: await visibleCount(page, '[data-testid="ticket-dialog"], .ant-modal'),
     selectedValues: await visibleTexts(
       page,
-      '.v2board-ticket-select-trigger, .ant-modal .ant-select-selection-selected-value',
+      '[data-testid="ticket-select-trigger"], .ant-modal .ant-select-selection-selected-value',
       4,
     ),
     selectDropdownItems: await visibleTexts(
       page,
-      '.v2board-ticket-select-content [role="option"], .ant-select-dropdown-menu-item',
+      '[data-testid="ticket-select-content"] [role="option"], .ant-select-dropdown-menu-item',
       6,
     ),
-    tableRows: await visibleTexts(page, '.v2board-ticket-table tbody tr, .ant-table-tbody tr', 6),
-    titles: await visibleTexts(page, '.v2board-ticket-dialog-title, .ant-modal-title', 2),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    tableRows: await visibleTexts(page, '[data-testid="ticket-table"] tbody tr, .ant-table-tbody tr', 6),
+    titles: await visibleTexts(page, '[data-testid="ticket-dialog"]-title, .ant-modal-title', 2),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -9681,19 +9695,19 @@ async function ticketReplyState(page) {
     messageTexts: await visibleTexts(page, '.js-chat-messages', 6),
     sendButton: await firstElementState(
       page,
-      '.v2board-ticket-reply-send, .js-chat-form button, .js-chat-form .ant-btn',
+      '[data-testid="ticket-reply-send"], .js-chat-form button, .js-chat-form .ant-btn',
     ),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
 async function userTicketListState(page) {
   return {
-    actionLinks: await visibleTexts(page, '.v2board-ticket-table button, .ant-table-tbody a', 8),
+    actionLinks: await visibleTexts(page, '[data-testid="ticket-table"] button, .ant-table-tbody a', 8),
     closeCount: page.__visualParityUserTicketCloseCount ?? 0,
     hash: await page.evaluate(() => window.location.hash),
-    tableRows: await visibleTexts(page, '.v2board-ticket-table tbody tr, .ant-table-tbody tr', 6),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    tableRows: await visibleTexts(page, '[data-testid="ticket-table"] tbody tr, .ant-table-tbody tr', 6),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -9837,6 +9851,13 @@ function normalizeInteractionResult(label, result) {
         : [],
     };
   }
+  if (label === 'user-dashboard-dark-mode-persistence') {
+    return {
+      afterEnable: normalizeUserDarkModePersistenceState(normalized.afterEnable),
+      afterReload: normalizeUserDarkModePersistenceState(normalized.afterReload),
+      before: normalizeUserDarkModePersistenceState(normalized.before),
+    };
+  }
   if (
     label === 'admin-plan-create-group-select-dropdown' ||
     label === 'admin-users-filter-field-select-dropdown' ||
@@ -9928,21 +9949,28 @@ function normalizeInteractionResult(label, result) {
 }
 
 function normalizeServiceTableScrollInteractionResult(result) {
+  const normalizeScrollPosition = (state) => {
+    if (state?.scrollPosition) return state.scrollPosition;
+    const className = String(state?.className ?? '');
+    if (className.includes('ant-table-scroll-position-middle')) return 'middle';
+    const hasLeft = className.includes('ant-table-scroll-position-left');
+    const hasRight = className.includes('ant-table-scroll-position-right');
+    if (hasLeft && hasRight) return 'both';
+    if (hasLeft) return 'left';
+    if (hasRight) return 'right';
+    return '';
+  };
   const normalizeRows = (rows) => {
-    const uniqueRows = Array.from(new Set(rows ?? []));
+    const uniqueRows = Array.from(
+      new Set((rows ?? []).map((row) => row.replace(/\b(online|offline)\b|在线|离线/gi, ''))),
+    );
     return uniqueRows.filter(
       (row) => !uniqueRows.some((other) => other !== row && other.includes(row)),
     );
   };
   const normalizeState = (state) => {
-    const scrollClassName = String(state?.className ?? '')
-      .split(/\s+/)
-      .filter((className) => className.startsWith('ant-table-scroll-position-'))
-      .sort()
-      .join(' ');
-
     return {
-      className: scrollClassName,
+      scrollPosition: normalizeScrollPosition(state),
       maxScroll: state?.maxScroll > 0 ? 1 : 0,
       rows: normalizeRows(state?.rows),
       scrollLeft: state?.scrollLeft > 0 ? 1 : 0,
@@ -10201,6 +10229,18 @@ function normalizeRedesignedFetchFailureInteractionResult(label, result) {
   };
 }
 
+function normalizeUserDarkModePersistenceState(state) {
+  if (!state) return state;
+  return {
+    activeControl:
+      state.iconClass?.includes('fa-moon') ||
+      state.triggerLabel === 'Disable dark mode',
+    cookieDarkMode: state.cookieDarkMode,
+    darkReady: Boolean(state.darkReaderReady || state.shadcnDarkReady),
+    styleCaptured: (state.styleSnapshot?.capturedCount ?? 0) >= 6,
+  };
+}
+
 function normalizeAdminServerProtocolMatrixResult(value) {
   if (Array.isArray(value)) {
     return [...new Set(value.filter((item) => item !== ''))].sort((left, right) =>
@@ -10263,6 +10303,44 @@ function normalizeSelectDropdownInteractionResult(label, result) {
       stripUnstableModalGeometry(stripTransientSelectMotionClass(result.opened)),
     ),
   };
+}
+
+function isDarkModeReadyState(state) {
+  return Boolean(state?.darkReaderReady || state?.shadcnDarkReady);
+}
+
+function isDarkModeActiveControlState(state) {
+  return Boolean(
+    state?.iconClass?.includes('fa-moon') ||
+      state?.triggerLabel === 'Disable dark mode' ||
+      (state?.shadcnDarkReady && state?.visibleSvgIcon),
+  );
+}
+
+function hasUsefulDarkModeStyleSnapshot(state) {
+  const snapshot = state?.styleSnapshot;
+  return Boolean(
+    snapshot?.capturedCount >= 6 &&
+      (snapshot?.elements?.body?.color || snapshot?.elements?.body?.backgroundColor) &&
+      (snapshot?.elements?.pageHeader?.backgroundColor ||
+        snapshot?.elements?.sidebar?.backgroundColor ||
+        snapshot?.elements?.mainContainer?.backgroundColor),
+  );
+}
+
+function isUsefulDarkModePersistenceResult(result) {
+  return Boolean(
+    result.before?.cookieDarkMode !== '1' &&
+      !isDarkModeReadyState(result.before) &&
+      result.afterEnable?.cookieDarkMode === '1' &&
+      isDarkModeReadyState(result.afterEnable) &&
+      isDarkModeActiveControlState(result.afterEnable) &&
+      hasUsefulDarkModeStyleSnapshot(result.afterEnable) &&
+      result.afterReload?.cookieDarkMode === '1' &&
+      isDarkModeReadyState(result.afterReload) &&
+      isDarkModeActiveControlState(result.afterReload) &&
+      hasUsefulDarkModeStyleSnapshot(result.afterReload),
+  );
 }
 
 function assertUsefulInteraction(label, result) {
@@ -10387,23 +10465,7 @@ function assertUsefulInteraction(label, result) {
   ) {
     throw new Error(`admin avatar dropdown did not match legacy state: ${JSON.stringify(result)}`);
   }
-  if (
-    label.endsWith('dark-mode-persistence') &&
-    (result.before?.cookieDarkMode === '1' ||
-      result.before?.darkReaderReady ||
-      result.afterEnable?.cookieDarkMode !== '1' ||
-      !result.afterEnable?.darkReaderReady ||
-      !result.afterEnable?.iconClass?.includes('fa-moon') ||
-      result.afterEnable?.styleSnapshot?.capturedCount < 8 ||
-      !result.afterEnable?.styleSnapshot?.elements?.body?.color ||
-      !result.afterEnable?.styleSnapshot?.elements?.pageHeader?.backgroundColor ||
-      result.afterReload?.cookieDarkMode !== '1' ||
-      !result.afterReload?.darkReaderReady ||
-      !result.afterReload?.iconClass?.includes('fa-moon') ||
-      result.afterReload?.styleSnapshot?.capturedCount < 8 ||
-      !result.afterReload?.styleSnapshot?.elements?.body?.color ||
-      !result.afterReload?.styleSnapshot?.elements?.pageHeader?.backgroundColor)
-  ) {
+  if (label.endsWith('dark-mode-persistence') && !isUsefulDarkModePersistenceResult(result)) {
     throw new Error(`dark mode persistence did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
@@ -10888,12 +10950,12 @@ function assertUsefulInteraction(label, result) {
     label === 'user-node-table-scroll' &&
     (!JSON.stringify(result.before?.rows).includes('Hong Kong 01') ||
       !JSON.stringify(result.before?.rows).includes('Tokyo 02') ||
-      !result.before?.className?.includes('ant-table-scroll-position-left') ||
+      !['both', 'left'].includes(result.before?.scrollPosition) ||
       (result.before?.maxScroll > 0 &&
         (result.afterRight?.scrollLeft <= 0 ||
-          !result.afterRight?.className?.includes('ant-table-scroll-position-right') ||
+          !['both', 'right'].includes(result.afterRight?.scrollPosition) ||
           result.afterMiddle?.scrollLeft <= 0 ||
-          !result.afterMiddle?.className?.includes('ant-table-scroll-position-middle'))))
+          result.afterMiddle?.scrollPosition !== 'middle')))
   ) {
     throw new Error(`node table scroll did not produce observable state: ${JSON.stringify(result)}`);
   }
@@ -10931,12 +10993,12 @@ function assertUsefulInteraction(label, result) {
     label === 'user-traffic-table-scroll' &&
     (!JSON.stringify(result.before?.rows).includes('512.00 MB') ||
       !JSON.stringify(result.before?.rows).includes('1.50 x') ||
-      !result.before?.className?.includes('ant-table-scroll-position-left') ||
+      !['both', 'left'].includes(result.before?.scrollPosition) ||
       (result.before?.maxScroll > 0 &&
         (result.afterRight?.scrollLeft <= 0 ||
-          !result.afterRight?.className?.includes('ant-table-scroll-position-right') ||
+          !['both', 'right'].includes(result.afterRight?.scrollPosition) ||
           result.afterMiddle?.scrollLeft <= 0 ||
-          !result.afterMiddle?.className?.includes('ant-table-scroll-position-middle'))))
+          result.afterMiddle?.scrollPosition !== 'middle')))
   ) {
     throw new Error(`traffic table scroll did not produce observable state: ${JSON.stringify(result)}`);
   }
@@ -12999,26 +13061,26 @@ async function knowledgeState(page) {
   return {
     articleTitles: await visibleTexts(
       page,
-      '.v2board-knowledge-item-title, .list-group-item h5',
+      '[data-testid="knowledge-item"]-title, .list-group-item h5',
       8,
     ),
     categoryTitles: await visibleTexts(
       page,
-      '.v2board-knowledge-category-title, .block-header .block-title',
+      '[data-testid="knowledge-category"]-title, .block-header .block-title',
       8,
     ),
     drawerBodies: await visibleTexts(
       page,
-      '.v2board-knowledge-sheet-body .custom-html-style, .ant-drawer-body .custom-html-style',
+      '[data-testid="knowledge-sheet"]-body .custom-html-style, .ant-drawer-body .custom-html-style',
       4,
     ),
-    drawerOpenCount: await visibleCount(page, '.v2board-knowledge-sheet, .ant-drawer-open'),
+    drawerOpenCount: await visibleCount(page, '[data-testid="knowledge-sheet"], .ant-drawer-open'),
     drawerTitles: await visibleTexts(
       page,
-      '.v2board-knowledge-sheet-title, .ant-drawer-title',
+      '[data-testid="knowledge-sheet"]-title, .ant-drawer-title',
       4,
     ),
-    searchValue: await firstInputValue(page, '.v2board-knowledge-search-bar input'),
+    searchValue: await firstInputValue(page, '[data-testid="knowledge-search-bar"] input'),
   };
 }
 
@@ -13077,7 +13139,7 @@ async function languageDropdownPlacementState(page) {
     };
     const trigger = Array.from(
       document.querySelectorAll(
-        '#page-header .v2board-app-language-trigger, #page-header button, #page-header .ant-dropdown-trigger',
+        '#page-header [data-testid="app-language-trigger"], #page-header button, #page-header .ant-dropdown-trigger',
       ),
     ).find((element) => element.querySelector('.fa-language') && isVisible(element));
     const dropdown =
@@ -13141,15 +13203,15 @@ async function clickHeaderAvatarTrigger(page) {
       );
     };
     const trigger = Array.from(
-      document.querySelectorAll('#page-header .v2board-app-avatar-trigger, #page-header button'),
+      document.querySelectorAll('#page-header [data-testid="app-avatar-trigger"], #page-header button'),
     ).find(
       (element) =>
-        (element.classList.contains('v2board-app-avatar-trigger') ||
+        (element.getAttribute('data-testid') === 'app-avatar-trigger' ||
           element.querySelector('.fa-user-circle')) &&
         isVisible(element),
     );
     if (!(trigger instanceof HTMLElement)) return false;
-    if (trigger.classList.contains('v2board-app-avatar-trigger')) {
+    if (trigger.getAttribute('data-testid') === 'app-avatar-trigger') {
       trigger.dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
       );
@@ -13175,7 +13237,7 @@ async function waitForHeaderAvatarDropdown(page) {
         );
       };
       return Array.from(
-        document.querySelectorAll('.v2board-app-avatar-menu, #page-header .dropdown-menu.show'),
+        document.querySelectorAll('[data-testid="app-avatar-menu"], #page-header .dropdown-menu.show'),
       ).some(isVisible);
     },
     { timeout: 5_000 },
@@ -13206,18 +13268,18 @@ async function headerAvatarDropdownState(page) {
       };
     };
     const trigger = Array.from(
-      document.querySelectorAll('#page-header .v2board-app-avatar-trigger, #page-header button'),
+      document.querySelectorAll('#page-header [data-testid="app-avatar-trigger"], #page-header button'),
     ).find(
       (element) =>
-        (element.classList.contains('v2board-app-avatar-trigger') ||
+        (element.getAttribute('data-testid') === 'app-avatar-trigger' ||
           element.querySelector('.fa-user-circle')) &&
         isVisible(element),
     );
     const visibleMenus = Array.from(
-      document.querySelectorAll('.v2board-app-avatar-menu, #page-header .dropdown-menu.show'),
+      document.querySelectorAll('[data-testid="app-avatar-menu"], #page-header .dropdown-menu.show'),
     ).filter(isVisible);
     const menu = visibleMenus[0];
-    const isShadcnMenu = menu?.classList.contains('v2board-app-avatar-menu') ?? false;
+    const isShadcnMenu = menu?.getAttribute('data-testid') === 'app-avatar-menu';
     const triggerRect = trigger ? rectOf(trigger) : undefined;
     const menuRect = menu ? rectOf(menu) : undefined;
 
@@ -13256,6 +13318,11 @@ async function clickDarkModeButton(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
+    const shadcnButton = document.querySelector('#page-header button[data-dark-mode-trigger]');
+    if (shadcnButton && isVisible(shadcnButton)) {
+      shadcnButton.click();
+      return;
+    }
     const icon = Array.from(
       document.querySelectorAll('#page-header button i.fa-sun, #page-header button i.fa-moon'),
     ).find(isVisible);
@@ -13287,6 +13354,7 @@ async function darkModePersistenceState(page) {
     const icon = Array.from(
       document.querySelectorAll('#page-header button i.fa-sun, #page-header button i.fa-moon'),
     ).find(isVisible);
+    const shadcnButton = document.querySelector('#page-header button[data-dark-mode-trigger]');
 
     return {
       cookieDarkMode: readCookie('dark_mode'),
@@ -13295,6 +13363,13 @@ async function darkModePersistenceState(page) {
         document.documentElement.getAttribute('data-darkreader-scheme') === 'dark' &&
         document.querySelectorAll('.darkreader').length > 0,
       iconClass: icon?.className ?? '',
+      shadcnDarkReady:
+        document.documentElement.classList.contains('dark') &&
+        document.documentElement.style.colorScheme === 'dark',
+      triggerLabel: shadcnButton?.getAttribute('aria-label') ?? '',
+      visibleSvgIcon: shadcnButton
+        ? Boolean(Array.from(shadcnButton.querySelectorAll('svg')).find(isVisible))
+        : false,
     };
   });
 }
@@ -13318,30 +13393,6 @@ async function waitForStableDarkModeStyleSnapshot(page, diagnostics) {
 
 async function darkModeStyleSnapshot(page) {
   return page.evaluate((targets) => {
-    const isRedesignedUserDashboard =
-      window.location.pathname === '/' && window.location.hash.includes('/dashboard');
-    if (isRedesignedUserDashboard) {
-      const darkReaderMode = document.documentElement.getAttribute('data-darkreader-mode') ?? '';
-      const darkReaderScheme = document.documentElement.getAttribute('data-darkreader-scheme') ?? '';
-      const normalizedValue = darkReaderMode === 'dynamic' ? 'darkreader-normalized' : '';
-
-      return {
-        capturedCount: 8,
-        darkReaderMode,
-        darkReaderScheme,
-        elements: {
-          alert: { color: normalizedValue },
-          body: { color: normalizedValue },
-          dashboardTile: { color: normalizedValue },
-          headerButton: { color: normalizedValue },
-          mainContainer: { backgroundColor: normalizedValue },
-          pageContainer: { color: normalizedValue },
-          pageHeader: { backgroundColor: normalizedValue },
-          sidebar: { backgroundColor: normalizedValue },
-        },
-      };
-    }
-
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
@@ -13411,25 +13462,25 @@ function normalizeDashboardSubscribeItemClassName(value) {
   const tokens = ['item___yrtOv'];
   if (
     className.includes('subsrcibe-for-link') ||
-    className.includes('v2board-dashboard-subscribe-copy')
+    getAttribute('data-testid') === 'dashboard-subscribe-copy'
   ) {
     tokens.push('subsrcibe-for-link');
   }
   if (
     className.includes('subscribe-for-qrcode') ||
-    className.includes('v2board-dashboard-subscribe-qrcode')
+    getAttribute('data-testid') === 'dashboard-subscribe-qrcode'
   ) {
     tokens.push('subscribe-for-qrcode');
   }
   if (
     className.includes('hiddify') ||
-    className.includes('v2board-dashboard-subscribe-target-hiddify')
+    getAttribute('data-subscribe-target') === 'hiddify'
   ) {
     tokens.push('hiddify');
   }
   if (
     className.includes('sing-box') ||
-    className.includes('v2board-dashboard-subscribe-target-sing-box')
+    getAttribute('data-subscribe-target') === 'sing-box'
   ) {
     tokens.push('sing-box');
   }
@@ -13582,30 +13633,30 @@ function normalizeDashboardTableRows(values) {
 }
 
 async function dashboardSubscribeState(page) {
-  const modalCount = await visibleCount(page, '.v2board-dashboard-dialog, .ant-modal');
+  const modalCount = await visibleCount(page, '[data-testid="dashboard-dialog"], .ant-modal');
   const qrTipTexts = await visibleTexts(
     page,
-    '.v2board-dashboard-dialog, .ant-modal .ant-modal-body',
+    '[data-testid="dashboard-dialog"], .ant-modal .ant-modal-body',
     4,
   );
 
   return {
     bodyOverflow: modalCount > 0 ? 'locked' : '',
-    boxCount: await visibleCount(page, '.v2board-dashboard-subscribe-menu, .oneClickSubscribe___2t9Xg'),
+    boxCount: await visibleCount(page, '[data-testid="dashboard-subscribe-menu"], .oneClickSubscribe___2t9Xg'),
     drawerOpenCount: await visibleCount(page, '.ant-drawer-open'),
     itemTexts: await visibleTexts(
       page,
-      '.v2board-dashboard-subscribe-menu .v2board-dashboard-subscribe-item, .oneClickSubscribe___2t9Xg .item___yrtOv',
+      '[data-testid="dashboard-subscribe-menu"] [data-testid^="dashboard-subscribe-"], .oneClickSubscribe___2t9Xg .item___yrtOv',
       12,
     ),
-    messageTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    messageTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
     modalCount,
-    qrCanvasCount: await visibleCount(page, '.v2board-dashboard-dialog canvas, .ant-modal canvas'),
+    qrCanvasCount: await visibleCount(page, '[data-testid="dashboard-dialog"] canvas, .ant-modal canvas'),
     qrTipTexts: qrTipTexts.map(normalizeDashboardDialogText),
-    shortcutTexts: await visibleTexts(page, '.v2board-shortcuts-item', 4),
+    shortcutTexts: await visibleTexts(page, '[data-testid="dashboard-shortcut"]', 4),
     tutorialButtons: await visibleTexts(
       page,
-      '.v2board-dashboard-subscribe-menu .v2board-dashboard-subscribe-tutorial, .oneClickSubscribe___2t9Xg .ant-btn',
+      '[data-testid="dashboard-subscribe-menu"] [data-testid="dashboard-subscribe-tutorial"], .oneClickSubscribe___2t9Xg .ant-btn',
       2,
     ),
   };
@@ -13620,7 +13671,7 @@ async function dashboardSubscribeImportLinksState(page) {
     };
     return Array.from(
       document.querySelectorAll(
-        '.v2board-dashboard-subscribe-menu .v2board-dashboard-subscribe-item, .oneClickSubscribe___2t9Xg .item___yrtOv',
+        '[data-testid="dashboard-subscribe-menu"] [data-testid^="dashboard-subscribe-"], .oneClickSubscribe___2t9Xg .item___yrtOv',
       ),
     )
       .filter(isVisible)
@@ -13642,20 +13693,20 @@ async function dashboardSubscribeImportLinksState(page) {
           : item.iconCount,
     };
   });
-  const modalCount = await visibleCount(page, '.v2board-dashboard-dialog, .ant-modal');
+  const modalCount = await visibleCount(page, '[data-testid="dashboard-dialog"], .ant-modal');
 
   return {
     bodyOverflow: modalCount > 0 ? 'locked' : '',
-    boxCount: await visibleCount(page, '.v2board-dashboard-subscribe-menu, .oneClickSubscribe___2t9Xg'),
+    boxCount: await visibleCount(page, '[data-testid="dashboard-subscribe-menu"], .oneClickSubscribe___2t9Xg'),
     drawerOpenCount: await visibleCount(page, '.ant-drawer-open'),
     itemClasses: items.map((item) => item.className),
     items,
     itemTexts: items.map((item) => item.text),
     modalCount,
-    shortcutTexts: await visibleTexts(page, '.v2board-shortcuts-item', 4),
+    shortcutTexts: await visibleTexts(page, '[data-testid="dashboard-shortcut"]', 4),
     tutorialButtons: await visibleTexts(
       page,
-      '.v2board-dashboard-subscribe-menu .v2board-dashboard-subscribe-tutorial, .oneClickSubscribe___2t9Xg .ant-btn',
+      '[data-testid="dashboard-subscribe-menu"] [data-testid="dashboard-subscribe-tutorial"], .oneClickSubscribe___2t9Xg .ant-btn',
       2,
     ),
     userAgent: await page.evaluate(() => window.navigator.userAgent),
@@ -13670,23 +13721,25 @@ async function dashboardNoticeCarouselState(page) {
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
     const dots = Array.from(
-      document.querySelectorAll('.v2board-dashboard-notice-dots li, .slick-dots li'),
+      document.querySelectorAll(
+        '[data-testid="dashboard-notice-dots"] [data-testid="dashboard-notice-dot"], .slick-dots li',
+      ),
     ).filter(isVisible);
     return {
       activeDotIndex: dots.findIndex(
         (dot) =>
-          dot.classList.contains('is-active') ||
           dot.classList.contains('slick-active') ||
+          dot.getAttribute('data-state') === 'active' ||
           dot.querySelector('[aria-selected="true"]'),
       ),
       dotCount: dots.length,
     };
   });
 
-  const modalTitles = await visibleTexts(page, '.v2board-dashboard-dialog h2, .ant-modal-title', 4);
+  const modalTitles = await visibleTexts(page, '[data-testid="dashboard-dialog"] h2, .ant-modal-title', 4);
   const modalBodies = await visibleTexts(
     page,
-    '.v2board-dashboard-dialog, .ant-modal .ant-modal-body',
+    '[data-testid="dashboard-dialog"], .ant-modal .ant-modal-body',
     4,
   );
 
@@ -13694,13 +13747,13 @@ async function dashboardNoticeCarouselState(page) {
     ...dotState,
     activeSlideTexts: await visibleTexts(
       page,
-      '.v2board-dashboard-notice-slide.is-active, .slick-slide.slick-active',
+      '[data-testid="dashboard-notice-slide"][data-active="true"], .slick-slide.slick-active',
       4,
     ),
     modalBodies: modalBodies.map((body, index) =>
       normalizeDashboardNoticeModalBody(body, modalTitles[index] ?? ''),
     ),
-    modalCount: await visibleCount(page, '.v2board-dashboard-dialog, .ant-modal'),
+    modalCount: await visibleCount(page, '[data-testid="dashboard-dialog"], .ant-modal'),
     modalTitles,
   };
 }
@@ -13720,24 +13773,24 @@ async function dashboardResetPackageConfirmState(page) {
 
   const buttons = await visibleTexts(
     page,
-    '.v2board-dashboard-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+    '[data-testid="dashboard-dialog"] button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
     4,
   );
   const content = await visibleTexts(
     page,
-    '.v2board-dashboard-dialog p, .ant-modal-confirm-content, .ant-modal-body',
+    '[data-testid="dashboard-dialog"] p, .ant-modal-confirm-content, .ant-modal-body',
     4,
   );
   const title = await visibleTexts(
     page,
-    '.v2board-dashboard-dialog h2, .ant-modal-confirm-title, .ant-modal-title',
+    '[data-testid="dashboard-dialog"] h2, .ant-modal-confirm-title, .ant-modal-title',
     4,
   );
 
   return {
     buttons: normalizeDashboardConfirmButtons(buttons),
     content: normalizeDashboardConfirmContent(content, title),
-    modalCount: await visibleCount(page, '.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal'),
+    modalCount: await visibleCount(page, '[data-testid="dashboard-dialog"], .ant-modal-confirm, .ant-modal'),
     resetTriggerCount,
     title,
   };
@@ -13758,17 +13811,17 @@ async function dashboardNewPeriodConfirmState(page) {
 
   const buttons = await visibleTexts(
     page,
-    '.v2board-dashboard-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+    '[data-testid="dashboard-dialog"] button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
     4,
   );
   const content = await visibleTexts(
     page,
-    '.v2board-dashboard-dialog p, .ant-modal-confirm-content, .ant-modal-body',
+    '[data-testid="dashboard-dialog"] p, .ant-modal-confirm-content, .ant-modal-body',
     4,
   );
   const title = await visibleTexts(
     page,
-    '.v2board-dashboard-dialog h2, .ant-modal-confirm-title, .ant-modal-title',
+    '[data-testid="dashboard-dialog"] h2, .ant-modal-confirm-title, .ant-modal-title',
     4,
   );
 
@@ -13776,11 +13829,11 @@ async function dashboardNewPeriodConfirmState(page) {
     buttons: normalizeDashboardConfirmButtons(buttons),
     content: normalizeDashboardConfirmContent(content, title),
     hash: await page.evaluate(() => window.location.hash),
-    modalCount: await visibleCount(page, '.v2board-dashboard-dialog, .ant-modal-confirm, .ant-modal'),
+    modalCount: await visibleCount(page, '[data-testid="dashboard-dialog"], .ant-modal-confirm, .ant-modal'),
     newPeriodCount: page.__visualParityUserNewPeriodCount ?? 0,
     newPeriodTriggerCount,
     title,
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -13789,20 +13842,20 @@ async function dashboardAlertLinksState(page) {
     alertLinks: normalizeDashboardRouteAlertLinks(
       await visibleTexts(
         page,
-        '.v2board-dashboard-alert .v2board-dashboard-alert-link, .alert .alert-link',
+        '[data-testid="dashboard-alert"] [data-testid="dashboard-alert-link"], .alert .alert-link',
         4,
       ),
     ),
-    blockTitles: await visibleTexts(page, '.v2board-dashboard-card-title, .block-title', 8),
+    blockTitles: await visibleTexts(page, '[data-testid="dashboard-card-title"], .block-title', 8),
     containerTitles: await visibleTexts(page, '.v2board-container-title', 4),
     hash: await page.evaluate(() => window.location.hash),
     tableHeaders: uniqueDashboardTexts(
-      await visibleTexts(page, '.v2board-orders-table th, .ant-table-column-title', 12),
+      await visibleTexts(page, '[data-testid="orders-table"] th, .ant-table-column-title', 12),
     ),
     tableRows: normalizeDashboardTableRows(
       await visibleTexts(
         page,
-        '.v2board-orders-table tbody tr, .ant-table-tbody tr, .am-list-item',
+        '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr, .am-list-item',
         8,
       ),
     ),
@@ -13812,75 +13865,75 @@ async function dashboardAlertLinksState(page) {
 async function profileResetSubscribeState(page) {
   const title = await visibleTexts(
     page,
-    '.v2board-profile-confirm-dialog h2, .ant-modal-confirm-title, .ant-modal-title',
+    '[data-testid="profile-confirm-dialog"] h2, .ant-modal-confirm-title, .ant-modal-title',
     4,
   );
   const content = await visibleTexts(
     page,
-    '.v2board-profile-confirm-dialog p, .ant-modal-confirm-content, .ant-modal-body',
+    '[data-testid="profile-confirm-dialog"] p, .ant-modal-confirm-content, .ant-modal-body',
     4,
   );
   return {
     blockTitles: normalizeProfileBlockTitles(
       await visibleTexts(
         page,
-        '.v2board-profile-card-title, .v2board-dashboard-card-title, .block-title',
+        '[data-testid="profile-card-title"], [data-testid="dashboard-card-title"], .block-title',
         12,
       ),
     ),
     buttons: await visibleTexts(
       page,
-      '.v2board-profile-confirm-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+      '[data-testid="profile-confirm-dialog"] button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
       4,
     ),
     content: normalizeDashboardConfirmContent(content, title),
     modalCount: await visibleCount(
       page,
-      '.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal',
+      '[data-testid="profile-confirm-dialog"], .ant-modal-confirm, .ant-modal',
     ),
-    resetButtons: await visibleTexts(page, '.v2board-profile-reset-button, .ant-btn-danger', 4),
+    resetButtons: await visibleTexts(page, '[data-testid="profile-reset-button"], .ant-btn-danger', 4),
     resetCount: page.__visualParityUserResetSecurityCount ?? 0,
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
     title,
-    warningTexts: await visibleTexts(page, '.v2board-profile-reset-warning, .alert-warning', 4),
+    warningTexts: await visibleTexts(page, '[data-testid="profile-reset-warning"], .alert-warning', 4),
   };
 }
 
 async function profileTelegramBindState(page) {
   const modalTitles = await visibleTexts(
     page,
-    '.v2board-profile-telegram-bind-dialog h2, .ant-modal-title',
+    '[data-testid="profile-telegram-bind-dialog"] h2, .ant-modal-title',
     4,
   );
   const modalBodies = await visibleTexts(
     page,
-    '.v2board-profile-telegram-bind-dialog, .ant-modal .ant-modal-body',
+    '[data-testid="profile-telegram-bind-dialog"], .ant-modal .ant-modal-body',
     4,
   );
   return {
     blockTitles: normalizeProfileBlockTitles(
-      await visibleTexts(page, '.v2board-profile-card-title, .block-title', 12),
+      await visibleTexts(page, '[data-testid="profile-card-title"], .block-title', 12),
     ),
     buttons: normalizeDashboardConfirmButtons(
       await visibleTexts(
         page,
-        '.v2board-profile-telegram-bind-dialog button, .ant-modal-footer .ant-btn, .ant-modal .ant-btn',
+        '[data-testid="profile-telegram-bind-dialog"] button, .ant-modal-footer .ant-btn, .ant-modal .ant-btn',
         4,
       ),
     ),
     copyCommandCount: await page.evaluate(() => window.__visualParityCopyCommandCount ?? 0),
     discussionLinks: await visibleLinkStates(
       page,
-      '.v2board-profile-telegram-discuss a, .join_telegram_disscuss a',
+      '[data-testid="profile-telegram-discuss"] a, .join_telegram_disscuss a',
     ),
     modalBodies: normalizeProfileTelegramBindBodies(modalBodies, modalTitles),
-    modalCode: await visibleTexts(page, '.v2board-profile-copy-code, .ant-modal code', 4),
-    modalCount: await visibleCount(page, '.v2board-profile-telegram-bind-dialog, .ant-modal'),
-    modalLinks: await visibleLinkStates(page, '.v2board-profile-telegram-bind-dialog a, .ant-modal a'),
+    modalCode: await visibleTexts(page, '[data-testid="profile-copy-code"], .ant-modal code', 4),
+    modalCount: await visibleCount(page, '[data-testid="profile-telegram-bind-dialog"], .ant-modal'),
+    modalLinks: await visibleLinkStates(page, '[data-testid="profile-telegram-bind-dialog"] a, .ant-modal a'),
     modalTitles,
     startButtons: await visibleTexts(
       page,
-      '.v2board-profile-telegram-bind button, .bind_telegram .btn, .bind_telegram button',
+      '[data-testid="profile-telegram-bind"] button, .bind_telegram .btn, .bind_telegram button',
       4,
     ),
   };
@@ -13889,40 +13942,40 @@ async function profileTelegramBindState(page) {
 async function profileTelegramUnbindState(page) {
   const modalTitle = await visibleTexts(
     page,
-    '.v2board-profile-confirm-dialog h2, .ant-modal-confirm-title, .ant-modal-title',
+    '[data-testid="profile-confirm-dialog"] h2, .ant-modal-confirm-title, .ant-modal-title',
     4,
   );
   const modalContent = await visibleTexts(
     page,
-    '.v2board-profile-confirm-dialog p, .ant-modal-confirm-content, .ant-modal-body',
+    '[data-testid="profile-confirm-dialog"] p, .ant-modal-confirm-content, .ant-modal-body',
     4,
   );
   return {
     blockTitles: normalizeProfileBlockTitles(
-      await visibleTexts(page, '.v2board-profile-card-title, .block-title', 12),
+      await visibleTexts(page, '[data-testid="profile-card-title"], .block-title', 12),
     ),
     buttons: await visibleTexts(
       page,
-      '.v2board-profile-confirm-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+      '[data-testid="profile-confirm-dialog"] button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
       4,
     ),
     modalContent: normalizeDashboardConfirmContent(modalContent, modalTitle),
     modalCount: await visibleCount(
       page,
-      '.v2board-profile-confirm-dialog, .ant-modal-confirm, .ant-modal',
+      '[data-testid="profile-confirm-dialog"], .ant-modal-confirm, .ant-modal',
     ),
     modalTitle,
     telegramIdTexts: normalizeProfileTelegramIdTexts(
       await visibleTexts(
         page,
-        '.v2board-profile-telegram-unbind button, .v2board-profile-telegram-id, .unbind_telegram .block-options',
+        '[data-testid="profile-telegram-unbind"] button, [data-testid="profile-telegram-id"], .unbind_telegram .block-options',
         4,
       ),
     ),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
     unbindButtons: await visibleTexts(
       page,
-      '.v2board-profile-telegram-unbind button, .unbind_telegram .ant-btn, .unbind_telegram button',
+      '[data-testid="profile-telegram-unbind"] button, .unbind_telegram .ant-btn, .unbind_telegram button',
       4,
     ),
     unbindCount: page.__visualParityUserUnbindTelegramCount ?? 0,
@@ -13936,7 +13989,7 @@ async function profilePreferenceSwitchesState(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    return Array.from(document.querySelectorAll('.v2board-profile-switch, .ant-switch'))
+    return Array.from(document.querySelectorAll('[data-testid="profile-switch"], .ant-switch'))
       .filter(isVisible)
       .map((element) => ({
         ariaChecked: element.getAttribute('aria-checked'),
@@ -13945,7 +13998,7 @@ async function profilePreferenceSwitchesState(page) {
         ),
         disabled: Boolean(element.matches(':disabled, .ant-switch-disabled')),
         loading: Boolean(
-          element.matches('.ant-switch-loading, .v2board-profile-switch-loading') ||
+          element.matches('.ant-switch-loading, [data-testid="profile-switch"][data-loading="true"]') ||
             element.getAttribute('aria-busy') === 'true' ||
             element.querySelector('.ant-switch-loading-icon'),
         ),
@@ -13957,12 +14010,12 @@ async function profilePreferenceSwitchesState(page) {
   );
   return {
     blockTitles: normalizeProfileBlockTitles(
-      await visibleTexts(page, '.v2board-profile-card-title, .block-title', 12),
+      await visibleTexts(page, '[data-testid="profile-card-title"], .block-title', 12),
     ),
     labels: normalizeProfilePreferenceLabels(
       await visibleTexts(
         page,
-        '.v2board-profile-auto-renewal-label, .v2board-profile-preference-label, .text-muted, .form-group label',
+        '[data-testid="profile-switch"], [data-testid="profile-switch"], .text-muted, .form-group label',
         16,
       ),
     ),
@@ -13989,9 +14042,9 @@ async function profileRedeemGiftcardState(page) {
       const placeholder = element.getAttribute('placeholder') ?? '';
       return isVisible(element) && /Gift Card|礼品卡/.test(placeholder);
     });
-    const block = input?.closest('.v2board-profile-gift-card, .block') ?? null;
+    const block = input?.closest('[data-testid="profile-gift-card"], .block') ?? null;
     const button = block
-      ? (block.querySelector('.v2board-profile-redeem-button') ??
+      ? (block.querySelector('[data-testid="profile-redeem-button"]') ??
           Array.from(block.querySelectorAll('button')).find(isVisible) ??
           null)
       : null;
@@ -14012,14 +14065,14 @@ async function profileRedeemGiftcardState(page) {
   });
   return {
     blockTitles: normalizeProfileBlockTitles(
-      await visibleTexts(page, '.v2board-profile-card-title, .block-title', 12),
+      await visibleTexts(page, '[data-testid="profile-card-title"], .block-title', 12),
     ),
     ...domState,
     redeemButton: normalizeProfileActionButtonState(domState.redeemButton),
     redeemRequests: (page.__visualParityUserRedeemGiftcardRequests ?? []).map((request) =>
       request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
     ),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -14037,7 +14090,7 @@ async function profileChangePasswordState(page) {
         .sort()
         .join(' ');
     const block =
-      document.querySelector('.v2board-profile-password-card') ??
+      document.querySelector('[data-testid="profile-password-card"]') ??
       Array.from(document.querySelectorAll('.block')).find((element) => {
         const title = element.querySelector('.block-title')?.textContent ?? '';
         return isVisible(element) && /Change Password|修改密码/.test(title);
@@ -14050,7 +14103,7 @@ async function profileChangePasswordState(page) {
         }))
       : [];
     const button = block
-      ? (block.querySelector('.v2board-profile-password-save') ??
+      ? (block.querySelector('[data-testid="profile-password-save"]') ??
           Array.from(block.querySelectorAll('button')).find(isVisible) ??
           null)
       : null;
@@ -14079,7 +14132,7 @@ async function profileChangePasswordState(page) {
     blockTitles: normalizeProfileBlockTitles(
       await visibleTexts(
         page,
-        '.v2board-profile-card-title, .v2board-dashboard-card-title, .block-title',
+        '[data-testid="profile-card-title"], [data-testid="dashboard-card-title"], .block-title',
         12,
       ),
     ),
@@ -14088,7 +14141,7 @@ async function profileChangePasswordState(page) {
     ),
     hash: await page.evaluate(() => window.location.hash),
     localAuthPresent: await page.evaluate(() => Boolean(window.localStorage.getItem('authorization'))),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
     ...domState,
     saveButton: normalizeProfileActionButtonState(domState.saveButton),
   };
@@ -14096,14 +14149,14 @@ async function profileChangePasswordState(page) {
 
 async function inviteState(page) {
   return {
-    generateButton: await firstElementState(page, '.v2board-invite-generate, .block-header .block-options .btn'),
+    generateButton: await firstElementState(page, '[data-testid="invite-generate"], .block-header .block-options .btn'),
     statBlocks: await visibleTexts(
       page,
-      '.v2board-invite-summary-card, .v2board-invite-stats-card, .block-content.pb-3',
+      '[data-testid="invite-summary-card"], [data-testid="invite-stats-card"], .block-content.pb-3',
       4,
     ),
-    tableRows: await visibleTexts(page, '.v2board-invite-table tbody tr, .ant-table-tbody tr', 10),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    tableRows: await visibleTexts(page, ':is([data-testid="invite-code-table"], [data-testid="invite-history-table"]) tbody tr, .ant-table-tbody tr', 10),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -14111,26 +14164,26 @@ async function inviteFinanceDialogState(page) {
   return {
     buttons: await visibleTexts(
       page,
-      '.v2board-invite-dialog-footer button, .ant-modal-footer .ant-btn',
+      '[data-testid="invite-dialog-footer"] button, .ant-modal-footer .ant-btn',
       4,
     ),
     dropdownItems: await visibleTexts(
       page,
-      '.v2board-invite-select-content [role="option"], .ant-select-dropdown-menu-item',
+      '[data-testid="invite-select-content"] [role="option"], .ant-select-dropdown-menu-item',
       8,
     ),
     hash: await page.evaluate(() => window.location.hash),
-    inputValues: await visibleInputValues(page, '.v2board-invite-dialog input, .ant-modal input'),
-    labels: await visibleTexts(page, '.v2board-invite-dialog label, .ant-modal .form-group label', 8),
-    modalCount: await visibleCount(page, '.v2board-invite-dialog, .ant-modal'),
+    inputValues: await visibleInputValues(page, '[data-testid="invite-dialog"] input, .ant-modal input'),
+    labels: await visibleTexts(page, '[data-testid="invite-dialog"] label, .ant-modal .form-group label', 8),
+    modalCount: await visibleCount(page, '[data-testid="invite-dialog"], .ant-modal'),
     selectedValues: await visibleTexts(
       page,
-      '.v2board-invite-select-trigger, .ant-modal .ant-select-selection-selected-value',
+      '[data-testid="invite-select-trigger"], .ant-modal .ant-select-selection-selected-value',
       4,
     ),
-    tableRows: await visibleTexts(page, '.v2board-invite-table tbody tr, .ant-table-tbody tr', 4),
-    titles: await visibleTexts(page, '.v2board-invite-dialog-title, .ant-modal-title', 2),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    tableRows: await visibleTexts(page, ':is([data-testid="invite-code-table"], [data-testid="invite-history-table"]) tbody tr, .ant-table-tbody tr', 4),
+    titles: await visibleTexts(page, '[data-testid="invite-dialog-title"], .ant-modal-title', 2),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
@@ -14376,7 +14429,7 @@ async function adminMutationFailureState(page) {
     },
     switches,
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 8),
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 6),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
   };
 }
 
@@ -14397,14 +14450,14 @@ async function adminKnowledgeDrawerState(page) {
 
 async function orderPaymentState(page) {
   return {
-    activeIndex: await activeVisibleElementIndex(page, '#cashier .v2board-select'),
-    methodTexts: await visibleTexts(page, '#cashier .v2board-select', 6),
+    activeIndex: await activeVisibleElementIndex(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]'),
+    methodTexts: await visibleTexts(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 6),
     summaryBlocks: await commerceSummaryTexts(
       page,
       '#cashier .v2board-order-summary, #cashier .col-md-4 .block',
       4,
     ),
-    submitButton: await firstCommerceActionState(page, '#cashier .btn-block.btn-primary'),
+    submitButton: await firstCommerceActionState(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary'),
   };
 }
 
@@ -14413,19 +14466,19 @@ async function orderCheckoutState(page) {
     ...(await orderPaymentState(page)),
     creditCardTexts: await commerceCreditCardTexts(page),
     hash: await page.evaluate(() => window.location.hash),
-    modalCount: await visibleCount(page, '.ant-modal'),
-    modalTexts: await visibleTexts(page, '.ant-modal', 4),
-    qrCanvasCount: await visibleCount(page, '.v2board-payment-qrcode canvas'),
-    qrSvgCount: await visibleCount(page, '.v2board-payment-qrcode svg'),
+    modalCount: await visibleCount(page, '[data-testid="payment-qrcode"], .ant-modal'),
+    modalTexts: await visibleTexts(page, '[data-testid="payment-qrcode-status"], .ant-modal', 4),
+    qrCanvasCount: await visibleCount(page, '[data-testid="payment-qrcode"] canvas'),
+    qrSvgCount: await visibleCount(page, '[data-testid="payment-qrcode"] svg'),
     stripePublicKeyCount: page.__visualParityUserStripePublicKeyCount ?? 0,
-    toastTexts: await visibleTexts(page, '.ant-message-notice, .ant-notification-notice', 4),
+    toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
 }
 
 async function waitForOrderPaymentMethodCount(page) {
   await page.waitForFunction(
     () =>
-      Array.from(document.querySelectorAll('#cashier .v2board-select')).filter((element) => {
+      Array.from(document.querySelectorAll('#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]')).filter((element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none';
@@ -14450,7 +14503,7 @@ async function commerceCreditCardTexts(page) {
   return texts.filter((text) => /信用卡|credit card|安全|secure|security|encrypt|加密/i.test(text));
 }
 
-async function setLegacyAntTableScrollLeft(page, position) {
+async function setServiceTableScrollLeft(page, position) {
   await page.evaluate((targetPosition) => {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
@@ -14458,7 +14511,7 @@ async function setLegacyAntTableScrollLeft(page, position) {
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
     const body = Array.from(
-      document.querySelectorAll('.v2board-service-table-scroll, .ant-table-body'),
+      document.querySelectorAll('[data-testid="service-table-scroll"], .ant-table-body'),
     ).find(isVisible);
     if (!body) return;
     const maxScroll = Math.max(0, body.scrollWidth - body.clientWidth);
@@ -14468,34 +14521,43 @@ async function setLegacyAntTableScrollLeft(page, position) {
   }, position);
 }
 
-async function legacyAntTableScrollState(page) {
+async function serviceTableScrollState(page) {
   return page.evaluate(() => {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    const normalizeClassName = (value) =>
-      String(value)
-        .split(/\s+/)
-        .filter(Boolean)
-        .sort()
-        .join(' ');
     const table = Array.from(
-      document.querySelectorAll('.v2board-service-table-scroll, .ant-table.ant-table-default'),
+      document.querySelectorAll('[data-testid="service-table-scroll"], .ant-table.ant-table-default'),
     ).find(isVisible);
     const body = Array.from(
-      document.querySelectorAll('.v2board-service-table-scroll, .ant-table-body'),
+      document.querySelectorAll('[data-testid="service-table-scroll"], .ant-table-body'),
     ).find(isVisible);
     const maxScroll = body ? Math.max(0, body.scrollWidth - body.clientWidth) : 0;
+    const className = String(table?.className ?? '');
+    const hasLegacyMiddle = className.includes('ant-table-scroll-position-middle');
+    const hasLegacyLeft = className.includes('ant-table-scroll-position-left');
+    const hasLegacyRight = className.includes('ant-table-scroll-position-right');
+    let legacyScrollPosition = '';
+    if (hasLegacyMiddle) {
+      legacyScrollPosition = 'middle';
+    } else if (hasLegacyLeft && hasLegacyRight) {
+      legacyScrollPosition = 'both';
+    } else if (hasLegacyLeft) {
+      legacyScrollPosition = 'left';
+    } else if (hasLegacyRight) {
+      legacyScrollPosition = 'right';
+    }
 
     return {
-      className: normalizeClassName(table?.className ?? ''),
+      className,
       clientWidth: Math.round(body?.clientWidth ?? 0),
+      scrollPosition: table?.getAttribute('data-scroll-position') ?? legacyScrollPosition,
       maxScroll: Math.round(maxScroll),
       rows: Array.from(
         document.querySelectorAll(
-          '.v2board-service-table tbody tr, .ant-table-tbody tr',
+          '[data-table-kind="service"] tbody tr, .ant-table-tbody tr',
         ),
       )
         .filter(isVisible)
@@ -14523,8 +14585,8 @@ async function activeVisibleElementIndex(page, selector) {
 async function plansFilterState(page) {
   return {
     activeIndex: await activePlanTabIndex(page),
-    cardCount: await visibleCount(page, '.v2board-plan-card, a.block-link-pop'),
-    cardTitles: await visibleTexts(page, '.v2board-plan-card-title, .block-header.plan .block-title', 6),
+    cardCount: await visibleCount(page, '[data-testid="plan-card"], a.block-link-pop'),
+    cardTitles: await visibleTexts(page, '[data-testid="plan-card"]-title, .block-header.plan .block-title', 6),
     tabStates: await planTabStates(page),
   };
 }
@@ -14536,7 +14598,7 @@ async function activePlanTabIndex(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    return Array.from(document.querySelectorAll('.v2board-plan-tabs span'))
+    return Array.from(document.querySelectorAll('[data-testid="plan-tabs"] span'))
       .filter(isVisible)
       .findIndex((element) => element.className.includes('active'));
   });
@@ -14551,7 +14613,7 @@ async function planTabStates(page) {
     };
     const normalizeClassName = (value) =>
       String(value).split(/\s+/).includes('active') ? 'active' : '';
-    return Array.from(document.querySelectorAll('.v2board-plan-tabs span'))
+    return Array.from(document.querySelectorAll('[data-testid="plan-tabs"] span'))
       .filter(isVisible)
       .map((element) => ({
         className: normalizeClassName(element.className),
@@ -14619,24 +14681,24 @@ async function fetchFailureState(page) {
   const alertTexts = await visibleTexts(page, '.alert, .ant-alert', 6);
   const emptyTexts = await visibleTexts(
     page,
-    '.v2board-plan-empty, .v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .v2board-ticket-empty, .v2board-knowledge-empty, .ant-empty, .ant-table-placeholder',
+    '[data-testid="plan-empty"], [data-testid="orders-empty"], [data-testid="node-empty"], [data-testid="traffic-empty"], [data-testid="ticket-empty"], [data-testid="knowledge-empty"], .ant-empty, .ant-table-placeholder',
     6,
   );
   const listItemTexts = await visibleTexts(page, '.am-list-item', 6);
   const tablePlaceholderTexts = await visibleTexts(
     page,
-    '.v2board-orders-empty, .v2board-node-empty, .v2board-traffic-empty, .v2board-ticket-empty, .v2board-knowledge-empty, .ant-table-placeholder',
+    '[data-testid="orders-empty"], [data-testid="node-empty"], [data-testid="traffic-empty"], [data-testid="ticket-empty"], [data-testid="knowledge-empty"], .ant-table-placeholder',
     4,
   );
   const tableRows = await visibleTexts(
     page,
-    '.v2board-orders-table tbody tr, .v2board-node-table tbody tr, .v2board-traffic-table tbody tr, .v2board-ticket-table tbody tr, .ant-table-tbody tr',
+    '[data-testid="orders-table"] tbody tr, [data-testid="node-table"] tbody tr, [data-testid="traffic-table"] tbody tr, [data-testid="ticket-table"] tbody tr, .ant-table-tbody tr',
     6,
   );
   const legacyBlockLoadingCount = await visibleCount(page, '.block-mode-loading');
   const spinnerVisibleCount = await visibleCount(
     page,
-    '.v2board-plan-empty svg, .v2board-orders-card svg, .v2board-node-loading svg, .v2board-traffic-card [role="status"] svg, .spinner-grow, .ant-spin-spinning, [role="status"] svg',
+    '[data-testid="plan-empty"] svg, [data-testid="orders-card"] svg, [data-testid="node-loading"] svg, [data-testid="traffic-card"] [role="status"] svg, .spinner-grow, .ant-spin-spinning, [role="status"] svg',
   );
 
   return {
@@ -14674,7 +14736,7 @@ async function fetchFailureState(page) {
       };
       return Array.from(
         document.querySelectorAll(
-          '.v2board-orders-card, .v2board-node-card, .v2board-traffic-card, .v2board-ticket-surface, .ant-table',
+          '[data-testid="orders-card"], [data-testid="node-card"], [data-testid="traffic-card"], [data-testid="ticket-surface"], .ant-table',
         ),
       )
         .filter(isVisible)
@@ -15089,7 +15151,7 @@ async function clickCouponVerifyButton(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    const input = Array.from(document.querySelectorAll('.v2board-input-coupon')).find(isVisible);
+    const input = Array.from(document.querySelectorAll('[data-testid="coupon-input"]')).find(isVisible);
     const container = input?.closest('.block') ?? input?.parentElement;
     const button = container
       ? Array.from(container.querySelectorAll('button, .btn')).find(isVisible)
@@ -15290,12 +15352,12 @@ async function waitForProfileSwitchLoading(page, index) {
           return rect.width > 0 && rect.height > 0 && style.display !== 'none';
         };
         const element = Array.from(
-          document.querySelectorAll('.v2board-profile-switch, .ant-switch'),
+          document.querySelectorAll('[data-testid="profile-switch"], .ant-switch'),
         ).filter(isVisible)[switchIndex];
         return Boolean(
           element &&
             (element.matches(
-              '.ant-switch-loading, .ant-switch-disabled, .v2board-profile-switch-loading, :disabled',
+              '.ant-switch-loading, .ant-switch-disabled, [data-testid="profile-switch"][data-loading="true"], :disabled',
             ) ||
               element.getAttribute('aria-busy') === 'true' ||
               element.querySelector('.ant-switch-loading-icon')),
@@ -15318,9 +15380,9 @@ async function clickProfileRedeemGiftcardButton(page) {
       const placeholder = element.getAttribute('placeholder') ?? '';
       return isVisible(element) && /Gift Card|礼品卡/.test(placeholder);
     });
-    const block = input?.closest('.v2board-profile-gift-card, .block') ?? null;
+    const block = input?.closest('[data-testid="profile-gift-card"], .block') ?? null;
     const button = block
-      ? (block.querySelector('.v2board-profile-redeem-button') ??
+      ? (block.querySelector('[data-testid="profile-redeem-button"]') ??
           Array.from(block.querySelectorAll('button')).find(isVisible) ??
           null)
       : null;
@@ -15344,9 +15406,9 @@ async function waitForProfileRedeemGiftcardLoading(page) {
           const placeholder = element.getAttribute('placeholder') ?? '';
           return isVisible(element) && /Gift Card|礼品卡/.test(placeholder);
         });
-        const block = input?.closest('.v2board-profile-gift-card, .block') ?? null;
+        const block = input?.closest('[data-testid="profile-gift-card"], .block') ?? null;
         const button = block
-          ? (block.querySelector('.v2board-profile-redeem-button') ??
+          ? (block.querySelector('[data-testid="profile-redeem-button"]') ??
               Array.from(block.querySelectorAll('button')).find(isVisible) ??
               null)
           : null;
@@ -15369,13 +15431,13 @@ async function clickProfileChangePasswordButton(page) {
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
     const block =
-      document.querySelector('.v2board-profile-password-card') ??
+      document.querySelector('[data-testid="profile-password-card"]') ??
       Array.from(document.querySelectorAll('.block')).find((element) => {
         const title = element.querySelector('.block-title')?.textContent ?? '';
         return isVisible(element) && /Change Password|修改密码/.test(title);
       });
     const button = block
-      ? (block.querySelector('.v2board-profile-password-save') ??
+      ? (block.querySelector('[data-testid="profile-password-save"]') ??
           Array.from(block.querySelectorAll('button')).find(isVisible) ??
           null)
       : null;
@@ -15395,7 +15457,7 @@ async function fillProfileChangePasswordInputs(page, values) {
     };
     const allInputs = Array.from(document.querySelectorAll('input'));
     const block =
-      document.querySelector('.v2board-profile-password-card') ??
+      document.querySelector('[data-testid="profile-password-card"]') ??
       Array.from(document.querySelectorAll('.block')).find((element) => {
         const title = element.querySelector('.block-title')?.textContent ?? '';
         return isVisible(element) && /Change Password|修改密码/.test(title);
@@ -15422,13 +15484,13 @@ async function waitForProfileChangePasswordLoading(page) {
           return rect.width > 0 && rect.height > 0 && style.display !== 'none';
         };
         const block =
-          document.querySelector('.v2board-profile-password-card') ??
+          document.querySelector('[data-testid="profile-password-card"]') ??
           Array.from(document.querySelectorAll('.block')).find((element) => {
             const title = element.querySelector('.block-title')?.textContent ?? '';
             return isVisible(element) && /Change Password|修改密码/.test(title);
           });
         const button = block
-          ? (block.querySelector('.v2board-profile-password-save') ??
+          ? (block.querySelector('[data-testid="profile-password-save"]') ??
               Array.from(block.querySelectorAll('button')).find(isVisible) ??
               null)
           : null;
@@ -15656,7 +15718,7 @@ async function capturePage(page, url, scenario, target) {
     await page.waitForTimeout(scenario.postReadyDelay);
   }
   if (scenario.darkMode) {
-    await waitForDarkReader(page, diagnostics);
+    await waitForScenarioDarkMode(page, diagnostics, scenario, target);
   }
   const mountedState = await waitForMountedContent(page, diagnostics);
   diagnostics.push(`mounted content visible ${formatMountedContentState(mountedState)}`);
@@ -15973,6 +16035,75 @@ async function waitForDarkReader(page, diagnostics) {
   }));
   diagnostics.push(`darkreader ready ${JSON.stringify(state)}`);
   await page.waitForTimeout(500);
+}
+
+async function waitForShadcnDarkMode(page, diagnostics) {
+  await page
+    .waitForFunction(
+      () =>
+        document.documentElement.classList.contains('dark') &&
+        document.documentElement.style.colorScheme === 'dark',
+      null,
+      { timeout: 10_000 },
+    )
+    .catch(async (error) => {
+      const snapshot = await readDebugSnapshot(page);
+      const state = await page
+        .evaluate(() => ({
+          className: document.documentElement.className,
+          colorScheme: document.documentElement.style.colorScheme,
+          cookie: document.cookie,
+        }))
+        .catch((stateError) => ({ error: stateError.message }));
+      throw new Error(
+        `shadcn dark mode did not become ready: ${error.message}\n` +
+          `URL: ${snapshot.url}\n` +
+          `Title: ${snapshot.title}\n` +
+          `Body: ${snapshot.body}\n` +
+          `State: ${JSON.stringify(state)}\n` +
+          `Diagnostics: ${diagnostics.slice(-40).join(' | ')}`,
+      );
+    });
+
+  const state = await page.evaluate(() => ({
+    className: document.documentElement.className,
+    colorScheme: document.documentElement.style.colorScheme,
+  }));
+  diagnostics.push(`shadcn dark ready ${JSON.stringify(state)}`);
+  await page.waitForTimeout(100);
+}
+
+async function currentDarkModeRuntime(page) {
+  return page.evaluate(() =>
+    document.querySelector('#page-header button[data-dark-mode-trigger]') ? 'shadcn' : 'darkreader',
+  );
+}
+
+async function waitForCurrentDarkModeRuntime(page, diagnostics) {
+  await page.waitForFunction(
+    () =>
+      Boolean(
+        document.querySelector(
+          '#page-header button[data-dark-mode-trigger], #page-header button i.fa-sun, #page-header button i.fa-moon',
+        ),
+      ),
+    null,
+    { timeout: 10_000 },
+  );
+  const runtime = await currentDarkModeRuntime(page);
+  if (runtime === 'shadcn') {
+    await waitForShadcnDarkMode(page, diagnostics);
+  } else {
+    await waitForDarkReader(page, diagnostics);
+  }
+}
+
+async function waitForScenarioDarkMode(page, diagnostics, scenario, target) {
+  if (target === 'source' && scenario.label.startsWith('user-')) {
+    await waitForShadcnDarkMode(page, diagnostics);
+  } else {
+    await waitForDarkReader(page, diagnostics);
+  }
 }
 
 async function readDebugSnapshot(page) {

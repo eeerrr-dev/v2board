@@ -227,7 +227,7 @@ describe('ProfilePage shadcn account surface', () => {
     await act(async () => {
       giftCardInput!.value = 'CARD-123';
       giftCardInput!.dispatchEvent(new Event('input', { bubbles: true }));
-      container.querySelector<HTMLButtonElement>('.v2board-profile-redeem-button')!.click();
+      container.querySelector<HTMLButtonElement>('[data-testid="profile-redeem-button"]')!.click();
       await Promise.resolve();
     });
 
@@ -259,13 +259,13 @@ describe('ProfilePage shadcn account surface', () => {
     await act(async () => {
       giftCardInput!.value = 'CARD-FAIL';
       giftCardInput!.dispatchEvent(new Event('input', { bubbles: true }));
-      container.querySelector<HTMLButtonElement>('.v2board-profile-redeem-button')!.click();
+      container.querySelector<HTMLButtonElement>('[data-testid="profile-redeem-button"]')!.click();
       await Promise.resolve();
       await Promise.resolve();
     });
 
     const redeemButton = container.querySelector<HTMLButtonElement>(
-      '.v2board-profile-redeem-button',
+      '[data-testid="profile-redeem-button"]',
     );
     expect(mocks.redeem).toHaveBeenCalledWith('CARD-FAIL');
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
@@ -286,8 +286,8 @@ describe('ProfilePage shadcn account surface', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('.v2board-profile-page')).toBeTruthy();
-    expect(container.querySelectorAll('.v2board-profile-card-title').length).toBeGreaterThan(3);
+    expect(container.querySelector('[data-testid="profile-page"]')).toBeTruthy();
+    expect(container.querySelectorAll('[data-testid="profile-card-title"]').length).toBeGreaterThan(3);
     expect(container.textContent).toContain(
       '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
     );
@@ -295,7 +295,7 @@ describe('ProfilePage shadcn account surface', () => {
     expect(container.textContent).toContain('Telegram 讨论组');
 
     const startButton = container.querySelector<HTMLButtonElement>(
-      '.v2board-profile-telegram-start',
+      '[data-testid="profile-telegram-start"]',
     );
     expect(startButton).toBeTruthy();
 
@@ -339,7 +339,9 @@ describe('ProfilePage shadcn account surface', () => {
       await Promise.resolve();
     });
 
-    const switches = container.querySelectorAll<HTMLButtonElement>('.v2board-profile-switch');
+    const switches = container.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="profile-switch"]',
+    );
     expect(switches).toHaveLength(3);
     expect(switches[0]!.getAttribute('aria-checked')).toBe('false');
 
@@ -380,7 +382,9 @@ describe('ProfilePage shadcn account surface', () => {
       await Promise.resolve();
     });
 
-    const switches = container.querySelectorAll<HTMLButtonElement>('.v2board-profile-switch');
+    const switches = container.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="profile-switch"]',
+    );
     expect(switches).toHaveLength(3);
     expect(switches[0]!.getAttribute('aria-checked')).toBe('true');
     expect(switches[0]!.dataset.state).toBe('checked');
@@ -436,7 +440,7 @@ describe('ProfilePage shadcn account surface', () => {
         'new-password',
       );
       passwordInputs[2]!.dispatchEvent(new Event('input', { bubbles: true }));
-      container.querySelector<HTMLButtonElement>('.v2board-profile-password-save')!.click();
+      container.querySelector<HTMLButtonElement>('[data-testid="profile-password-save"]')!.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -467,7 +471,9 @@ describe('ProfilePage shadcn account surface', () => {
       await Promise.resolve();
     });
 
-    const rechargeButton = container.querySelector<HTMLButtonElement>('.v2board-profile-recharge');
+    const rechargeButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="profile-recharge"]',
+    );
     expect(rechargeButton).toBeTruthy();
 
     await act(async () => {
@@ -490,7 +496,7 @@ describe('ProfilePage shadcn account surface', () => {
     });
 
     const confirmButton = container.querySelector<HTMLButtonElement>(
-      '.v2board-profile-deposit-confirm',
+      '[data-testid="profile-deposit-confirm"]',
     );
     expect(confirmButton).toBeTruthy();
 
@@ -529,7 +535,9 @@ describe('ProfilePage shadcn account surface', () => {
       await Promise.resolve();
     });
 
-    const resetButton = container.querySelector<HTMLButtonElement>('.v2board-profile-reset-button');
+    const resetButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="profile-reset-button"]',
+    );
     expect(resetButton).toBeTruthy();
 
     await act(async () => {
@@ -543,7 +551,7 @@ describe('ProfilePage shadcn account surface', () => {
     );
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.v2board-profile-confirm-primary')!.click();
+      container.querySelector<HTMLButtonElement>('[data-testid="profile-confirm-primary"]')!.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -553,7 +561,7 @@ describe('ProfilePage shadcn account surface', () => {
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
 
     const unbindButton = container.querySelector<HTMLButtonElement>(
-      '.v2board-profile-telegram-unbind-button',
+      '[data-testid="profile-telegram-unbind-button"]',
     );
     expect(unbindButton).toBeTruthy();
 
@@ -568,7 +576,7 @@ describe('ProfilePage shadcn account surface', () => {
     );
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.v2board-profile-confirm-primary')!.click();
+      container.querySelector<HTMLButtonElement>('[data-testid="profile-confirm-primary"]')!.click();
       await Promise.resolve();
       await Promise.resolve();
     });

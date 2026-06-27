@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  type ReactNode,
   type HTMLAttributes,
   type TableHTMLAttributes,
   type TdHTMLAttributes,
@@ -7,7 +8,13 @@ import {
 } from 'react';
 import { cn } from '@/lib/cn';
 
-const TableScroll = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+type DataAttributes = {
+  [key: `data-${string}`]: string | number | boolean | undefined;
+};
+
+type TableScrollProps = HTMLAttributes<HTMLDivElement> & DataAttributes;
+
+const TableScroll = forwardRef<HTMLDivElement, TableScrollProps>(
   ({ className, ...props }, ref) => (
     <div ref={ref} className={cn('overflow-x-auto', className)} {...props} />
   ),
@@ -79,7 +86,80 @@ function TableEmpty({ children, className, colSpan, rowClassName, ...props }: Ta
 }
 TableEmpty.displayName = 'TableEmpty';
 
+interface DataTableHeader {
+  align?: 'left' | 'center' | 'right';
+  className?: string;
+  content: ReactNode;
+}
+
+interface DataTableProps extends Omit<TableHTMLAttributes<HTMLTableElement>, 'children'> {
+  bodyClassName?: string;
+  children: ReactNode;
+  empty?: ReactNode;
+  emptyClassName?: string;
+  emptyTestId?: string;
+  headerClassName?: string;
+  headers: DataTableHeader[];
+  scrollClassName?: string;
+  scrollProps?: TableScrollProps;
+}
+
+function DataTable({
+  bodyClassName,
+  children,
+  className,
+  empty,
+  emptyClassName,
+  emptyTestId,
+  headerClassName,
+  headers,
+  scrollClassName,
+  scrollProps,
+  ...props
+}: DataTableProps) {
+  return (
+    <TableScroll
+      {...scrollProps}
+      className={cn(scrollClassName, scrollProps?.className)}
+    >
+      <Table className={className} {...props}>
+        <TableHeader className={headerClassName}>
+          <tr>
+            {headers.map((header, index) => (
+              <TableHead
+                className={cn(
+                  header.align === 'center' && 'text-center',
+                  header.align === 'right' && 'text-right',
+                  header.className,
+                )}
+                key={index}
+              >
+                {header.content}
+              </TableHead>
+            ))}
+          </tr>
+        </TableHeader>
+        <TableBody className={bodyClassName}>
+          {empty ? (
+            <TableEmpty
+              className={emptyClassName}
+              colSpan={headers.length}
+              data-testid={emptyTestId}
+            >
+              {empty}
+            </TableEmpty>
+          ) : (
+            children
+          )}
+        </TableBody>
+      </Table>
+    </TableScroll>
+  );
+}
+DataTable.displayName = 'DataTable';
+
 export {
+  DataTable,
   Table,
   TableBody,
   TableCell,
@@ -89,3 +169,4 @@ export {
   TableRow,
   TableScroll,
 };
+export type { DataTableHeader, DataTableProps, TableScrollProps };

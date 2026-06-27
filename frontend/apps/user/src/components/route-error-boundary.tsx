@@ -1,5 +1,9 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { AlertCircle, RefreshCw } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 
 interface RouteErrorBoundaryProps {
   children: ReactNode;
@@ -38,15 +42,21 @@ export class RouteErrorBoundary extends Component<
 
 export function RouteErrorFallback() {
   return (
-    <div className="block block-rounded">
-      <div className="block-content text-center py-5">
-        <h3 className="font-w400 text-danger mb-2">页面加载失败</h3>
-        <p className="text-muted mb-4">请刷新页面后重试。</p>
-        <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>
+    <Card className="mx-auto max-w-lg">
+      <CardContent className="grid gap-4 p-6 text-center">
+        <Alert variant="destructive" className="text-left">
+          <AlertCircle className="size-4" />
+          <AlertDescription>
+            <span className="font-medium">页面加载失败</span>
+            <span className="text-muted-foreground">请刷新页面后重试。</span>
+          </AlertDescription>
+        </Alert>
+        <Button type="button" className="mx-auto" onClick={() => window.location.reload()}>
+          <RefreshCw className="size-4" />
           刷新页面
-        </button>
-      </div>
-    </div>
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

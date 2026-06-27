@@ -1,9 +1,0 @@
-/* Restored Ant Design v3 radio button hover and focus styles. */
-.ant-radio-button-wrapper:hover {
-  position: relative;
-  color: var(--legacy-ant-primary);
-}
-
-.ant-radio-button-wrapper:focus-within {
-  outline: 3px solid var(--legacy-ant-radio-button-focus-shadow);
-}

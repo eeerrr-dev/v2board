@@ -1,29 +1,18 @@
-import { disable as disableDarkReader, enable as enableDarkReader } from 'darkreader';
 import { getLegacyCookie, setLegacyCookie } from './legacy-cookie';
 
 const DARK_MODE_KEY = 'dark_mode';
-const LEGACY_DARK_READER_OPTIONS = {
-  brightness: 100,
-  contrast: 90,
-  sepia: 10,
-};
 
 export function isDarkModeEnabled(): boolean {
   return getLegacyCookie(DARK_MODE_KEY) === '1';
 }
 
 export function applyDarkMode(enabled = isDarkModeEnabled()): void {
-  if (enabled) {
-    enableDarkReader(LEGACY_DARK_READER_OPTIONS);
-  } else {
-    disableDarkReader();
-  }
+  document.documentElement.classList.toggle('dark', enabled);
+  document.documentElement.style.colorScheme = enabled ? 'dark' : 'light';
 }
 
 export function applyInitialDarkMode(): void {
-  if (isDarkModeEnabled()) {
-    applyDarkMode(true);
-  }
+  applyDarkMode(isDarkModeEnabled());
 }
 
 export function setDarkMode(enabled: boolean): void {

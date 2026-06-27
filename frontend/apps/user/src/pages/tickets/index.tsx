@@ -5,7 +5,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getLocaleAntdMessages } from '@v2board/i18n';
 import type { TicketLevel } from '@v2board/types';
 import { ExternalLink, Plus, XCircle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -23,6 +22,7 @@ import {
 } from '@/components/ui/shadcn-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageShell } from '@/components/ui/page';
 import {
   Select,
   SelectContent,
@@ -30,15 +30,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import {
-  Table,
-  TableBody,
+  DataTable,
   TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
   TableRow,
-  TableScroll,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
@@ -118,98 +114,100 @@ export default function TicketsPage() {
 
   return (
     <>
-      <Card className={cn('v2board-ticket-surface overflow-hidden', loading && 'opacity-80')}>
-        <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1.5">
-            <CardTitle>{t('ticket.history')}</CardTitle>
-          </div>
-          <Button
-            type="button"
-            className="v2board-ticket-new-trigger"
-            onClick={() => setOpen(true)}
-          >
-            <Plus className="size-4" />
-            {t('ticket.new')}
-          </Button>
-        </CardHeader>
-        <CardContent className="p-0">
-          <TableScroll className="v2board-ticket-table-scroll">
-            <Table className="v2board-ticket-table min-w-[900px]">
-              <TableHeader className="border-y">
-                <tr>
-                  <TicketHeader className="w-16">{t('ticket.col_id')}</TicketHeader>
-                  <TicketHeader>{t('ticket.subject')}</TicketHeader>
-                  <TicketHeader>{t('ticket.level')}</TicketHeader>
-                  <TicketHeader>{t('ticket.status')}</TicketHeader>
-                  <TicketHeader>{t('ticket.created_at_col')}</TicketHeader>
-                  <TicketHeader>{t('ticket.last_reply_col')}</TicketHeader>
-                  <TicketHeader className="text-right">{t('ticket.action')}</TicketHeader>
-                </tr>
-              </TableHeader>
-              <TableBody>
-                {tickets.length ? (
-                  tickets.map((ticket, index) => {
-                    const levelLabel = LEVELS[ticket.level]?.labelKey;
-                    return (
-                      <TableRow data-row-key={index} key={index}>
-                        <TicketCell className="font-medium text-foreground">{ticket.id}</TicketCell>
-                        <TicketCell className="max-w-[260px] truncate font-medium text-foreground">
-                          {ticket.subject}
-                        </TicketCell>
-                        <TicketCell>{levelLabel ? t(levelLabel) : ''}</TicketCell>
-                        <TicketCell>
-                          <TicketStatus
-                            closed={ticket.status === 1}
-                            replied={Boolean(parseInt(String(ticket.reply_status)))}
-                          />
-                        </TicketCell>
-                        <TicketCell>{formatUserLegacyDateMinuteSlash(ticket.created_at)}</TicketCell>
-                        <TicketCell>{formatUserLegacyDateMinuteSlash(ticket.updated_at)}</TicketCell>
-                        <TicketCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="v2board-ticket-view h-8 px-2"
-                              onClick={() => openTicket(ticket.id)}
-                            >
-                              <ExternalLink className="size-3.5" />
-                              {t('ticket.view')}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className={cn(
-                                'v2board-ticket-close h-8 px-2',
-                                ticket.status === 1 && 'text-muted-foreground',
-                              )}
-                              onClick={() => void closeTicket(ticket.id)}
-                            >
-                              <XCircle className="size-3.5" />
-                              {t('ticket.close_ticket')}
-                            </Button>
-                          </div>
-                        </TicketCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableEmpty colSpan={7} rowClassName="v2board-ticket-empty">
-                    {emptyDescription}
-                  </TableEmpty>
-                )}
-              </TableBody>
-            </Table>
-          </TableScroll>
-        </CardContent>
-      </Card>
+      <PageShell data-testid="ticket-page">
+        <Card
+          className={cn('overflow-hidden py-0', loading && 'opacity-80')}
+          data-testid="ticket-surface"
+        >
+          <CardHeader className="gap-3 py-6 sm:flex sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1.5">
+              <CardTitle>{t('ticket.history')}</CardTitle>
+            </div>
+            <Button
+              type="button"
+              data-testid="ticket-new-trigger"
+              onClick={() => setOpen(true)}
+            >
+              <Plus className="size-4" />
+              {t('ticket.new')}
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            <DataTable
+              className="min-w-[900px]"
+              data-testid="ticket-table"
+              empty={!tickets.length ? emptyDescription : undefined}
+              emptyTestId="ticket-empty"
+              headerClassName="border-y"
+              headers={[
+                { className: 'w-16', content: t('ticket.col_id') },
+                { content: t('ticket.subject') },
+                { content: t('ticket.level') },
+                { content: t('ticket.status') },
+                { content: t('ticket.created_at_col') },
+                { content: t('ticket.last_reply_col') },
+                { align: 'right', content: t('ticket.action') },
+              ]}
+              scrollProps={{ 'data-testid': 'ticket-table-scroll' }}
+            >
+              {tickets.map((ticket, index) => {
+                const levelLabel = LEVELS[ticket.level]?.labelKey;
+                return (
+                  <TableRow data-row-key={index} key={index}>
+                    <TicketCell className="font-medium text-foreground">{ticket.id}</TicketCell>
+                    <TicketCell className="max-w-[260px] truncate font-medium text-foreground">
+                      {ticket.subject}
+                    </TicketCell>
+                    <TicketCell>{levelLabel ? t(levelLabel) : ''}</TicketCell>
+                    <TicketCell>
+                      <TicketStatus
+                        closed={ticket.status === 1}
+                        replied={Boolean(parseInt(String(ticket.reply_status)))}
+                      />
+                    </TicketCell>
+                    <TicketCell>{formatUserLegacyDateMinuteSlash(ticket.created_at)}</TicketCell>
+                    <TicketCell>{formatUserLegacyDateMinuteSlash(ticket.updated_at)}</TicketCell>
+                    <TicketCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2"
+                          data-testid="ticket-view"
+                          onClick={() => openTicket(ticket.id)}
+                        >
+                          <ExternalLink className="size-3.5" />
+                          {t('ticket.view')}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className={cn(
+                            'h-8 px-2',
+                            ticket.status === 1 && 'text-muted-foreground',
+                          )}
+                          data-testid="ticket-close"
+                          onClick={() => void closeTicket(ticket.id)}
+                        >
+                          <XCircle className="size-3.5" />
+                          {t('ticket.close_ticket')}
+                        </Button>
+                      </div>
+                    </TicketCell>
+                  </TableRow>
+                );
+              })}
+            </DataTable>
+          </CardContent>
+        </Card>
+      </PageShell>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="v2board-ticket-dialog sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg" data-testid="ticket-dialog">
           <DialogHeader>
-            <DialogTitle className="v2board-ticket-dialog-title">{t('ticket.new')}</DialogTitle>
+            <DialogTitle data-testid="ticket-dialog-title">{t('ticket.new')}</DialogTitle>
             <DialogDescription>{t('ticket.message_placeholder')}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
@@ -228,10 +226,10 @@ export default function TicketsPage() {
                 value={level === undefined ? undefined : String(level)}
                 onValueChange={(nextLevel) => setLevel(Number(nextLevel) as TicketLevel)}
               >
-                <SelectTrigger id="ticket-level" className="v2board-ticket-select-trigger">
+                <SelectTrigger id="ticket-level" data-testid="ticket-select-trigger">
                   <SelectValue placeholder={t('ticket.level_placeholder')} />
                 </SelectTrigger>
-                <SelectContent className="v2board-ticket-select-content">
+                <SelectContent data-testid="ticket-select-content">
                   {LEVELS.map((item) => (
                     <SelectItem key={item.value} value={String(item.value)}>
                       {t(item.labelKey)}
@@ -251,7 +249,7 @@ export default function TicketsPage() {
               />
             </div>
           </div>
-          <DialogFooter className="v2board-ticket-dialog-footer">
+          <DialogFooter data-testid="ticket-dialog-footer">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               {t('common.cancel')}
             </Button>
@@ -266,39 +264,13 @@ export default function TicketsPage() {
 
   function TicketStatus({ closed, replied }: { closed: boolean; replied: boolean }) {
     const label = closed ? t('ticket.closed') : replied ? t('ticket.replied') : t('ticket.pending');
-    const tone = closed ? 'success' : replied ? 'processing' : 'error';
+    const tone: StatusTone = closed ? 'success' : replied ? 'info' : 'destructive';
     return (
-      <Badge
-        variant="outline"
-        className={cn(
-          'v2board-ticket-status',
-          tone === 'success' && 'border-emerald-200 text-emerald-700',
-          tone === 'processing' && 'border-sky-200 text-sky-700',
-          tone === 'error' && 'border-destructive/30 text-destructive',
-        )}
-      >
-        <span
-          className={cn(
-            'size-1.5 rounded-full',
-            tone === 'success' && 'bg-emerald-500',
-            tone === 'processing' && 'bg-sky-500',
-            tone === 'error' && 'bg-destructive',
-          )}
-        />
+      <StatusBadge data-testid="ticket-status" tone={tone} showDot>
         {label}
-      </Badge>
+      </StatusBadge>
     );
   }
-}
-
-function TicketHeader({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return <TableHead className={className}>{children}</TableHead>;
 }
 
 function TicketCell({

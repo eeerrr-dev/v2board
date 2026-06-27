@@ -1,8 +1,11 @@
-import { getLocaleAntdMessages } from '@v2board/i18n';
-import { getCurrentLocale } from './errors';
-import { ANT_ICONS, type AntIconName } from './ant-icons';
+import { createElement, type ComponentType } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import * as ToastPrimitive from '@radix-ui/react-toast';
+import { CheckCircle, Info, LoaderCircle, X, XCircle } from 'lucide-react';
+import { cn } from '@/lib/cn';
 
 type ToastType = 'success' | 'error' | 'info' | 'loading';
+type ToastKind = 'message' | 'notification';
 
 interface ToastOptions {
   description?: string;
@@ -10,17 +13,18 @@ interface ToastOptions {
 }
 
 interface ToastEntry {
-  node: HTMLElement;
-  timer?: number;
+  id: number;
+  type: ToastType;
+  kind: ToastKind;
+  message: string;
+  description?: string;
   duration: number;
-  // rc-notification transition prefix: "move-up" (ant-message) /
-  // "ant-notification-fade" (ant-notification), plus the leave duration.
-  transition: string;
-  leaveMs: number;
 }
 
+let root: Root | null = null;
+let container: HTMLDivElement | null = null;
 let nextToastId = 1;
-const entries = new Map<number, ToastEntry>();
+let entries: ToastEntry[] = [];
 
 export const toast = {
   success: (message: string, options?: ToastOptions) => openToast('success', message, options),
@@ -32,211 +36,150 @@ export const toast = {
 };
 
 function openToast(type: ToastType, message: string, options: ToastOptions = {}): number {
+  ensureToastRoot();
   const id = nextToastId++;
-  const isNotification = Boolean(options.description) && !isLegacyMobile();
-  // antd v3 defaults: ant-message uses the message module default h=3 (3000ms);
-  // ant-notification is opened by the original toast helper with an explicit
-  // duration:1.5 (1500ms). A loading toast carries no explicit duration in the
-  // original, so it falls back to ant-message's 3s as well.
-  const duration = options.duration ?? (isNotification ? 1500 : 3000);
-  const node = isNotification
-    ? createNotification(type, message, options.description ?? '', () => dismissToast(id))
-    : createMessage(type, options.description ?? message);
-  // ant-message enters/leaves via the "move-up" transition (0.3s); ant-notification
-  // via "ant-notification-fade" (0.2s). Reproduce rc-notification's class lifecycle.
-  const transition = isNotification ? 'ant-notification-fade' : 'move-up';
-  const leaveMs = isNotification ? 200 : 300;
-  playEnter(node, transition);
-  entries.set(id, { node, duration, transition, leaveMs });
-  if (duration > 0) {
-    const timer = window.setTimeout(() => dismissToast(id), duration);
-    entries.set(id, { node, timer, duration, transition, leaveMs });
-  }
-  // rc-notification clears the auto-dismiss timer on hover and restarts it on leave.
-  node.addEventListener('mouseenter', () => clearToastTimer(id));
-  node.addEventListener('mouseleave', () => startToastTimer(id));
+  const kind: ToastKind = options.description && !isLegacyMobile() ? 'notification' : 'message';
+  const duration = options.duration ?? (kind === 'notification' ? 1500 : 3000);
+  const entry: ToastEntry = {
+    id,
+    type,
+    kind,
+    message,
+    description: kind === 'notification' ? options.description : undefined,
+    duration,
+  };
+
+  entries = kind === 'message'
+    ? [...entries.filter((item) => item.kind !== 'message'), entry]
+    : [...entries, entry];
+  renderToasts();
   return id;
 }
 
 function dismissToast(id?: number | string): void {
-  if (id === undefined) {
-    for (const key of entries.keys()) dismissToast(key);
-    return;
-  }
-  const key = Number(id);
-  const entry = entries.get(key);
-  if (!entry) return;
-  if (entry.timer) window.clearTimeout(entry.timer);
-  entries.delete(key);
-  playLeave(entry.node, entry.transition, entry.leaveMs);
-}
-
-function clearToastTimer(id: number): void {
-  const entry = entries.get(id);
-  if (entry?.timer) {
-    window.clearTimeout(entry.timer);
-    entry.timer = undefined;
-  }
-}
-
-function startToastTimer(id: number): void {
-  const entry = entries.get(id);
-  if (entry && entry.duration > 0 && entry.timer === undefined) {
-    entry.timer = window.setTimeout(() => dismissToast(id), entry.duration);
-  }
-}
-
-function createMessage(type: ToastType, content: string): HTMLElement {
-  const root = ensureMessageRoot();
-  // The bundled app configures antd message with maxCount: 1 during startup.
-  // That cap applies to ant-message notices only; desktop notifications still stack.
-  removeMessageToastsImmediately();
-  const notice = document.createElement('div');
-  notice.className = 'ant-message-notice';
-  notice.innerHTML = `
-    <div class="ant-message-notice-content">
-      <div class="ant-message-custom-content ant-message-${type}">
-        ${messageIconHtml(type)}<span>${escapeHtml(content)}</span>
-      </div>
-    </div>
-  `;
-  root.appendChild(notice);
-  return notice;
-}
-
-function createNotification(
-  type: ToastType,
-  message: string,
-  description: string,
-  onClose: () => void,
-): HTMLElement {
-  const root = ensureNotificationRoot();
-  const notice = document.createElement('div');
-  notice.className = 'ant-notification-notice ant-notification-notice-closable';
-  notice.innerHTML = `
-    <div class="ant-notification-notice-content">
-      <div class="ant-notification-notice-with-icon">
-        ${notificationIconHtml(type)}<div class="ant-notification-notice-message">${escapeHtml(message)}</div><div class="ant-notification-notice-description">${escapeHtml(description)}</div>
-      </div>
-    </div>
-    <a tabindex="0" class="ant-notification-notice-close">${notificationCloseHtml()}</a>
-  `;
-  notice.querySelector('.ant-notification-notice-close')?.addEventListener('click', onClose);
-  root.appendChild(notice);
-  return notice;
-}
-
-function ensureMessageRoot(): HTMLElement {
-  let root = document.querySelector<HTMLElement>('.ant-message');
-  if (!root) {
-    root = document.createElement('div');
-    root.className = 'ant-message';
-    document.body.appendChild(root);
-  }
-  return root;
+  entries = id === undefined
+    ? []
+    : entries.filter((entry) => entry.id !== Number(id));
+  renderToasts();
 }
 
 function destroyMessageToasts(): void {
-  removeMessageToastsImmediately();
+  entries = entries.filter((entry) => entry.kind !== 'message');
+  renderToasts();
 }
 
-function removeMessageToastsImmediately(): void {
-  for (const [id, entry] of [...entries]) {
-    if (entry.node.classList.contains('ant-message-notice')) {
-      if (entry.timer) window.clearTimeout(entry.timer);
-      entry.node.remove();
-      entries.delete(id);
-    }
+function ensureToastRoot() {
+  if (root && container?.isConnected) return;
+  if (root && !container?.isConnected) {
+    root.unmount();
+    root = null;
+    container = null;
   }
+  container = document.createElement('div');
+  container.className = 'v2board-toast-host';
+  document.body.appendChild(container);
+  root = createRoot(container);
 }
 
-function ensureNotificationRoot(): HTMLElement {
-  let root = document.querySelector<HTMLElement>('.ant-notification.ant-notification-topRight');
-  if (!root) {
-    root = document.createElement('div');
-    root.className = 'ant-notification ant-notification-topRight';
-    root.style.top = '24px';
-    root.style.right = '0px';
-    document.body.appendChild(root);
-  }
-  return root;
+function renderToasts() {
+  root?.render(createElement(ToastHost, { entries, onDismiss: dismissToast }));
 }
 
-// rc-notification toggles "<transition>-enter" then "<transition>-enter-active"
-// across two animation frames (the enter state must paint before -active is added
-// so the keyframe actually runs); leave mirrors it and removes the node afterwards.
-function playEnter(node: HTMLElement, transition: string): void {
-  node.classList.add(`${transition}-enter`);
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => node.classList.add(`${transition}-enter-active`));
-  });
-}
-
-function playLeave(node: HTMLElement, transition: string, leaveMs: number): void {
-  node.classList.remove(`${transition}-enter`, `${transition}-enter-active`);
-  node.classList.add(`${transition}-leave`);
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => node.classList.add(`${transition}-leave-active`));
-  });
-  window.setTimeout(() => node.remove(), leaveMs);
-}
-
-// antd FILLED status icons for ant-message (createElement(Icon,{type,theme:"filled"})).
-const MESSAGE_ICONS: Record<ToastType, AntIconName> = {
-  success: 'check-circle',
-  error: 'close-circle',
-  info: 'info-circle',
-  loading: 'loading',
-};
-
-// antd renders NOTIFICATION status icons as the OUTLINED `-o` types (a hollow
-// ring) with no theme — unlike the FILLED ant-message icons. loading has no
-// notification status icon and falls back to the message-style spinner.
-const NOTIFICATION_ICONS: Record<Exclude<ToastType, 'loading'>, AntIconName> = {
-  success: 'check-circle-o',
-  error: 'close-circle-o',
-  info: 'info-circle-o',
-};
-
-// antd v3 Icon DOM as an HTML string (the toast layer builds markup, not React
-// nodes): <i aria-label="<word>: <name>" class="anticon anticon-<name> [extra]">
-// <svg ...><path/>…</svg></i>. Mirrors components/ant-icon.tsx.
-function antIconHtml(name: AntIconName, extraClass = ''): string {
-  const { viewBox, paths } = ANT_ICONS[name];
-  // Sourced from the shared registry, exactly as components/ant-icon.tsx.
-  const word = getLocaleAntdMessages(getCurrentLocale()).iconWord;
-  const className = `anticon anticon-${name}${extraClass ? ` ${extraClass}` : ''}`;
-  const svgClass = name === 'loading' ? ' class="anticon-spin"' : '';
-  const svgPaths = paths.map((d) => `<path d="${d}" />`).join('');
-  return `<i aria-label="${word}: ${name}" class="${className}"><svg${svgClass} viewBox="${viewBox}" focusable="false" data-icon="${name}" width="1em" height="1em" fill="currentColor" aria-hidden="true">${svgPaths}</svg></i>`;
-}
-
-function messageIconHtml(type: ToastType): string {
-  return antIconHtml(MESSAGE_ICONS[type]);
-}
-
-function notificationIconHtml(type: ToastType): string {
-  if (type === 'loading') return antIconHtml('loading', 'ant-notification-notice-icon');
-  return antIconHtml(
-    NOTIFICATION_ICONS[type],
-    `ant-notification-notice-icon ant-notification-notice-icon-${type}`,
+function ToastHost({
+  entries: toastEntries,
+  onDismiss,
+}: {
+  entries: ToastEntry[];
+  onDismiss: (id: number) => void;
+}) {
+  return createElement(
+    ToastPrimitive.Provider,
+    { swipeDirection: 'right' },
+    toastEntries.map((entry) =>
+      createElement(ToastNotice, { key: entry.id, entry, onDismiss }),
+    ),
+    createElement(ToastPrimitive.Viewport, {
+      className:
+        'v2board-toast-viewport fixed top-4 right-4 z-[1200] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3 outline-none',
+    }),
   );
 }
 
-// antd wraps the notice close icon in a `-close-x` span; the icon carries the
-// `ant-notification-close-icon` class.
-function notificationCloseHtml(): string {
-  return `<span class="ant-notification-close-x">${antIconHtml('close', 'ant-notification-close-icon')}</span>`;
+function ToastNotice({
+  entry,
+  onDismiss,
+}: {
+  entry: ToastEntry;
+  onDismiss: (id: number) => void;
+}) {
+  const Icon = TOAST_ICON[entry.type];
+  const toneClass = TOAST_TONE[entry.type];
+
+  return createElement(
+    ToastPrimitive.Root,
+    {
+      defaultOpen: true,
+      duration: entry.duration,
+      onOpenChange: (open: boolean) => {
+        if (!open) onDismiss(entry.id);
+      },
+      className: cn(
+        'v2board-toast-root grid grid-cols-[auto_1fr_auto] items-start gap-3 rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)]',
+        entry.kind === 'message' && 'v2board-toast-message',
+        entry.kind === 'notification' && 'v2board-toast-notification',
+      ),
+    },
+    createElement(
+      'span',
+      {
+        'aria-hidden': 'true',
+        className: cn('flex size-9 items-center justify-center rounded-md border', toneClass),
+      },
+      createElement(Icon, {
+        className: cn('size-5', entry.type === 'loading' && 'animate-spin'),
+      }),
+    ),
+    createElement(
+      'div',
+      { className: 'min-w-0' },
+      createElement(
+        ToastPrimitive.Title,
+        { className: 'text-sm leading-5 font-semibold' },
+        entry.message,
+      ),
+      entry.description
+        ? createElement(
+            ToastPrimitive.Description,
+            { className: 'mt-1 text-sm leading-5 text-muted-foreground' },
+            entry.description,
+          )
+        : null,
+    ),
+    createElement(
+      ToastPrimitive.Close,
+      {
+        'aria-label': 'Close',
+        className:
+          '-mt-1 -mr-1 flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+      },
+      createElement(X, { 'aria-hidden': 'true', className: 'size-4' }),
+    ),
+  );
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+const TOAST_ICON: Record<ToastType, ComponentType<{ className?: string }>> = {
+  success: CheckCircle,
+  error: XCircle,
+  info: Info,
+  loading: LoaderCircle,
+};
+
+const TOAST_TONE: Record<ToastType, string> = {
+  success: 'border-green-200 bg-green-50 text-green-700',
+  error: 'border-destructive/30 bg-destructive/10 text-destructive',
+  info: 'border-blue-200 bg-blue-50 text-blue-700',
+  loading: 'border-blue-200 bg-blue-50 text-blue-700',
+};
 
 function isLegacyMobile(): boolean {
   return window.navigator.userAgent.toLowerCase().includes('mobile');

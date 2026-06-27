@@ -1,4 +1,0 @@
-/* Restored packaged primary border utility shared by checkout and plan tabs. */
-.border-primary {
-  border-color: var(--color-brand-500) !important;
-}

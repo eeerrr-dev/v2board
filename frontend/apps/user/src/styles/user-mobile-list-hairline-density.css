@@ -1,9 +1,0 @@
-/* Restored Ant Design Mobile 3x retina hairline scale. */
-@media (-webkit-min-device-pixel-ratio: 2) and (-webkit-min-device-pixel-ratio: 3),
-  (min-resolution: 2dppx) and (min-resolution: 3dppx) {
-  html:not([data-scale]) .am-list-body::before,
-  html:not([data-scale]) .am-list-body::after,
-  html:not([data-scale]) .am-list-body div:not(:last-child) .am-list-line::after {
-    transform: scaleY(0.33);
-  }
-}

@@ -1,8 +1,0 @@
-/* Restored Bootstrap dropdown item interaction states. */
-.dropdown-item:focus,
-.dropdown-item:hover {
-  color: #495057;
-  text-decoration: none;
-  background-color: var(--color-page);
-  outline: 0;
-}

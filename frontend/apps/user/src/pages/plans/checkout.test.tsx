@@ -134,10 +134,6 @@ vi.mock('@/components/legacy-confirm', () => ({
   legacyConfirm: mocks.legacyConfirm,
 }));
 
-vi.mock('@/components/legacy-loading-icon', () => ({
-  LegacyLoadingIcon: () => <span>loading</span>,
-}));
-
 vi.mock('@/lib/queries', () => ({
   userKeys: {
     orderDetail: (tradeNo: string) => ['user', 'orders', 'detail', tradeNo],
@@ -183,17 +179,19 @@ describe('PlanCheckoutPage shadcn commerce markup', () => {
     const html = renderToStaticMarkup(<PlanCheckoutPage />);
 
     expect(html).toContain('id="cashier"');
-    expect(html).toContain('v2board-plan-content');
+    expect(html).toContain('plan-content');
     expect(html).toContain('lucide-check');
     expect(html).toContain('付款周期');
-    expect(html).toContain('v2board-select flex');
-    expect(html).toContain('active border-primary bg-accent text-accent-foreground');
+    expect(html).toContain('data-testid="checkout-period-option"');
+    expect(html).toContain('data-state="checked"');
     expect(html).toContain('Legacy Plan x 月付');
     expect(html).toContain('¥10.00');
     expect(html).toContain('¥ 10.00 CNY');
-    expect(html).toContain('v2board-checkout-summary');
-    expect(html).toContain('v2board-input-coupon');
+    expect(html).toContain('data-testid="checkout-summary"');
+    expect(html).toContain('data-testid="commerce-submit"');
+    expect(html).toContain('data-testid="coupon-input"');
     expect(html).toContain('placeholder="有优惠券？"');
+    expect(checkoutSource).not.toContain('btn-block btn-primary');
     expect(html).not.toContain('block block-link-pop');
   });
 
@@ -203,7 +201,7 @@ describe('PlanCheckoutPage shadcn commerce markup', () => {
 
     const html = renderToStaticMarkup(<PlanCheckoutPage />);
 
-    expect(html).toContain('v2board-plan-non-renewable');
+    expect(html).toContain('data-testid="plan-non-renewable"');
     expect(html).toContain('该订阅无法续费，仅允许新用户购买');
     expect(html).toContain('选择其它订阅');
   });
@@ -220,7 +218,7 @@ describe('PlanCheckoutPage shadcn commerce markup', () => {
     expect(html).toContain('Legacy Plan x 流量重置包');
     expect(html).toContain('¥3.00');
     expect(html).toContain('¥ 3.00 CNY');
-    expect(html).not.toContain('v2board-select flex');
+    expect(html).not.toContain('data-testid="checkout-period-option"');
   });
 
   it('uses stable period select keys without random remounts', () => {
@@ -344,7 +342,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    const couponInput = container.querySelector<HTMLInputElement>('.v2board-input-coupon')!;
+    const couponInput = container.querySelector<HTMLInputElement>('[data-testid="coupon-input"]')!;
     couponInput.value = 'SAVE';
     const verifyButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('验证'),

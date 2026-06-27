@@ -1,9 +1,0 @@
-/* antd autoInsertSpaceInButton kerning for two-CJK-character labels */
-.ant-btn-two-chinese-chars:first-letter {
-  letter-spacing: 0.34em;
-}
-
-.ant-btn-two-chinese-chars > :not(.anticon) {
-  margin-right: -0.34em;
-  letter-spacing: 0.34em;
-}

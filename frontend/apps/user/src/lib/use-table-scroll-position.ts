@@ -7,10 +7,6 @@ interface TableScrollPositionOptions {
   syncOnResize?: boolean;
 }
 
-// Mirrors antd v3 Table.setScrollPositionClassName: derive the horizontal
-// scroll-position class from the body's scrollLeft and the inner table width.
-// Fixed-column tables recompute after every render plus resize; plain scroll-x
-// tables only change this class after a real scroll event.
 export function useTableScrollPosition(
   rowCount: number,
   { syncOnMount = true, syncOnResize = true }: TableScrollPositionOptions = {},
@@ -54,10 +50,5 @@ export function useTableScrollPosition(
     };
   }, [compute, rowCount, syncOnResize]);
 
-  const scrollPositionClassName =
-    position === 'both'
-      ? 'ant-table-scroll-position-left ant-table-scroll-position-right'
-      : `ant-table-scroll-position-${position}`;
-
-  return { bodyRef, onScroll: compute, scrollPositionClassName };
+  return { bodyRef, onScroll: compute, scrollPosition: position };
 }

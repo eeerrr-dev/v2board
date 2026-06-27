@@ -116,18 +116,21 @@ describe('TicketDetailPage shadcn chat surface', () => {
   it('renders the shadcn subject header, message bubbles, dates, and reply form', () => {
     const html = renderToStaticMarkup(<TicketDetailPage />);
 
-    expect(html).toContain('v2board-ticket-detail');
-    expect(html).toContain('v2board-ticket-detail-header');
+    expect(html).toContain('data-testid="ticket-detail"');
+    expect(html).toContain('data-testid="ticket-detail-header"');
     expect(html).toContain('#7');
     expect(html).toContain('Need help');
-    expect(html).toContain('js-chat-messages v2board-ticket-chat');
+    expect(html).toContain('js-chat-messages');
+    expect(html).toContain('data-testid="ticket-chat"');
     expect(html).toContain('My message');
     expect(html).toContain('Support reply');
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
     expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_060));
-    expect(html).toContain('js-chat-form v2board-ticket-reply-form');
-    expect(html).toContain('js-chat-input v2board-ticket-reply-input');
-    expect(html).toContain('v2board-ticket-reply-send');
+    expect(html).toContain('js-chat-form');
+    expect(html).toContain('data-testid="ticket-reply-form"');
+    expect(html).toContain('js-chat-input');
+    expect(html).toContain('data-testid="ticket-reply-input"');
+    expect(html).toContain('data-testid="ticket-reply-send"');
     expect(html).toContain('placeholder="输入内容回复工单..."');
     expect(html).not.toContain('content___DW5w1');
     expect(html).not.toContain('input___1j_ND');
@@ -141,8 +144,8 @@ describe('TicketDetailPage shadcn chat surface', () => {
     const html = renderToStaticMarkup(<TicketDetailPage />);
 
     expect(html).toContain('工单不存在');
-    expect(html).toContain('v2board-ticket-chat');
-    expect(html).toContain('v2board-ticket-reply-form');
+    expect(html).toContain('data-testid="ticket-chat"');
+    expect(html).toContain('data-testid="ticket-reply-form"');
     expect(html).toContain('placeholder="输入内容回复工单..."');
     expect(html).not.toContain('页面加载失败');
     expect(html).not.toContain('刷新页面');
@@ -156,7 +159,7 @@ describe('TicketDetailPage shadcn chat surface', () => {
     const html = renderToStaticMarkup(<TicketDetailPage />);
 
     expect(html).toContain('加载中...');
-    expect(html).toContain('v2board-ticket-detail-header');
+    expect(html).toContain('data-testid="ticket-detail-header"');
     expect(html).toContain('text-center text-sm text-muted-foreground');
   });
 });

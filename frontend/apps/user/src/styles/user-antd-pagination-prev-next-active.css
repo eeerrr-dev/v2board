@@ -1,8 +1,0 @@
-/* Restored Ant Design v3 pagination prev/next hover and focus states. */
-.ant-pagination-prev:focus .ant-pagination-item-link,
-.ant-pagination-prev:hover .ant-pagination-item-link,
-.ant-pagination-next:focus .ant-pagination-item-link,
-.ant-pagination-next:hover .ant-pagination-item-link {
-  color: var(--legacy-ant-primary);
-  border-color: var(--legacy-ant-primary);
-}

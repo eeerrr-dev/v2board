@@ -1,8 +1,0 @@
-/* Restored Ant Design v3 carousel next arrow. */
-.ant-carousel .slick-next {
-  right: -25px;
-}
-
-.ant-carousel .slick-next::before {
-  content: '\2192';
-}

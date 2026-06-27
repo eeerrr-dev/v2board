@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Languages } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,11 +29,12 @@ export function ShadcnLanguageMenu({ className }: ShadcnLanguageMenuProps) {
           type="button"
           aria-label={currentLabel ? `Language: ${currentLabel}` : 'Language'}
           className={cn(
-            'v2board-app-language-trigger inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground',
+            'inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground',
             className,
           )}
+          data-testid="app-language-trigger"
         >
-          <i className="far fa fa-language" aria-hidden="true" />
+          <Languages className="size-4" aria-hidden="true" />
           <span className="hidden sm:inline">{currentLabel}</span>
           <ChevronDown
             aria-hidden="true"

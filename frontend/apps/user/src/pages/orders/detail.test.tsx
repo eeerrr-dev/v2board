@@ -234,8 +234,8 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
 
     const html = renderToStaticMarkup(<OrderDetailPage />);
 
-    expect(html).toContain('v2board-select flex');
-    expect(html).toContain('active border-primary bg-accent text-accent-foreground');
+    expect(html).toContain('data-testid="payment-option"');
+    expect(html).toContain('data-state="checked"');
     expect(html).toContain('Fee Pay');
     expect(html).toContain('order.handling_fee');
     expect(html).toContain('2.50');
@@ -267,9 +267,9 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(document.body.textContent).toContain('order.handling_fee');
     expect(document.body.textContent).toContain('¥ 12.50 CNY');
 
-    const backupMethod = [...document.querySelectorAll('.v2board-select')].find((item) =>
-      item.textContent?.includes('Backup Pay'),
-    );
+    const backupMethod = [
+      ...document.querySelectorAll('[data-testid="payment-option"]'),
+    ].find((item) => item.textContent?.includes('Backup Pay'));
     expect(backupMethod).toBeDefined();
 
     await act(async () => {
@@ -302,8 +302,8 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     );
 
     expect(paymentMethodSource).toContain('paymentMethods?.map((method) => (');
-    expect(paymentMethodSource).toContain("'v2board-select flex");
-    expect(paymentMethodSource).toContain("effectiveMethodId === method.id && 'active border-primary");
+    expect(paymentMethodSource).toContain('data-testid="payment-option"');
+    expect(paymentMethodSource).toContain("data-state={effectiveMethodId === method.id ? 'checked' : 'unchecked'}");
     expect(paymentMethodSource).not.toContain("'false'");
     expect(paymentMethodSource).not.toContain('key={index}');
     expect(paymentMethodSource).toContain('key={method.id}');
@@ -333,12 +333,21 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       orderDetailSource.indexOf('/>', orderDetailSource.indexOf('<QRCode')) + 2,
     );
 
-    expect(modalSource).toContain('className="v2board-payment-qrcode"');
-    expect(modalSource).toContain('closable={false}');
-    expect(modalSource).toContain('maskClosable');
-    expect(modalSource).toContain('width={300}');
-    expect(modalSource).toContain('centered');
-    expect(modalSource).toContain("footer={<div style={{ textAlign: 'center' }}>{t('order.waiting_pay')}</div>}");
+    expect(orderDetailSource).toContain("from '@/components/ui/shadcn-dialog'");
+    expect(orderDetailSource).not.toContain("from '@/components/ui/dialog'");
+    expect(modalSource).toContain('className="w-[min(calc(100vw-2rem),20rem)]"');
+    expect(modalSource).toContain('data-testid="payment-qrcode"');
+    expect(modalSource).toContain('showCloseButton={false}');
+    expect(modalSource).toContain('<DialogHeader className="sr-only">');
+    expect(modalSource).toContain('<DialogTitle>{t(\'order.checkout\')}</DialogTitle>');
+    expect(modalSource).toContain('<DialogDescription>{t(\'order.waiting_pay\')}</DialogDescription>');
+    expect(modalSource).toContain('<DialogFooter className="justify-center sm:justify-center">');
+    expect(modalSource).toContain('data-testid="payment-qrcode-status"');
+    expect(modalSource).not.toContain('closable=');
+    expect(modalSource).not.toContain('maskClosable');
+    expect(modalSource).not.toContain('width={300}');
+    expect(modalSource).not.toContain('centered');
+    expect(modalSource).not.toContain('footer=');
     expect(qrSource).toContain('value={payUrl}');
     expect(qrSource).toContain('renderAs="svg"');
     expect(qrSource).toContain('size="250"');
@@ -348,7 +357,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(qrSource).not.toContain('includeMargin=');
   });
 
-  it('hides the QR modal after paid polling without clearing the generated QR content', async () => {
+  it('hides the QR dialog after paid polling', async () => {
     checkoutOrder.mockResolvedValue({ type: 0, data: 'https://pay.example.test/order' });
     checkOrder.mockResolvedValue(1);
 
@@ -367,7 +376,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(document.querySelector('.v2board-payment-qrcode svg')).not.toBeNull();
+    expect(document.querySelector('[data-testid="payment-qrcode"] svg')).not.toBeNull();
 
     await act(async () => {
       vi.advanceTimersByTime(3000);
@@ -377,7 +386,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
 
     expect(checkOrder).toHaveBeenCalledWith(expect.anything(), 'ORDER123');
     expect(orderRefetch).toHaveBeenCalledTimes(1);
-    expect(document.querySelector('.v2board-payment-qrcode svg')).not.toBeNull();
+    expect(document.querySelector('[data-testid="payment-qrcode"] svg')).toBeNull();
   });
 
   it('keeps checkout stuck in the legacy loading state after a status-0 transport failure', async () => {
@@ -563,5 +572,14 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(html).toContain('order.cancel');
     expect(orderDetailSource).toContain('loading={cancel.isPending}');
     expect(orderDetailSource).not.toContain('<LegacyLoadingIcon />');
+  });
+
+  it('does not keep Bootstrap or OneUI presentation classes on redesigned commerce controls', () => {
+    const html = renderToStaticMarkup(<OrderDetailPage />);
+
+    expect(html).toContain('data-testid="commerce-submit"');
+    expect(html).toContain('data-testid="order-info-title"');
+    expect(orderDetailSource).not.toContain('btn-block btn-primary');
+    expect(orderDetailSource).not.toContain('block-title');
   });
 });

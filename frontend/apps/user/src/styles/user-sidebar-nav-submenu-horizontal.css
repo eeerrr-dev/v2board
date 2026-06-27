@@ -1,5 +1,0 @@
-/* Restored OneUI horizontal sidebar submenu hover state. */
-.nav-main-horizontal.nav-main-hover .nav-main-item:hover > .nav-main-link-submenu {
-  color: #000;
-  background-color: var(--legacy-active-bg);
-}

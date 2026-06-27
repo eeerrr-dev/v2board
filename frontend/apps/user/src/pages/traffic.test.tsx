@@ -66,7 +66,7 @@ describe('TrafficPage shadcn loading timing', () => {
     const html = renderToStaticMarkup(<TrafficPage />);
 
     expect(html).toContain('流量明细仅保留近一个月数据以供查询。');
-    expect(html).toContain('v2board-traffic-empty');
+    expect(html).toContain('data-testid="traffic-empty"');
     expect(html).not.toContain('Loading...');
   });
 
@@ -106,15 +106,17 @@ describe('TrafficPage shadcn service table', () => {
   it('renders the service table shell, headers, tooltip trigger, and row formatting', () => {
     const html = renderToStaticMarkup(<TrafficPage />);
 
-    expect(html).toContain('v2board-traffic-card');
-    expect(html).toContain('v2board-service-table-scroll');
-    expect(html).toContain('v2board-service-table v2board-traffic-table');
+    expect(html).toContain('data-testid="traffic-card"');
+    expect(html).toContain('data-testid="service-table-scroll"');
+    expect(html).toContain('data-scroll-position="left"');
+    expect(html).toContain('data-table-kind="service"');
+    expect(html).toContain('data-testid="traffic-table"');
     expect(html).toContain('记录时间');
     expect(html).toContain('实际上行');
     expect(html).toContain('实际下行');
     expect(html).toContain('扣费倍率');
     expect(html).toContain('合计');
-    expect(html).toContain('v2board-service-tooltip-trigger');
+    expect(html).toContain('cursor-help');
     expect(html).toContain('2024/01/15');
     expect(html).toContain('2.00 KB');
     expect(html).toContain('1024.00 B');
@@ -126,6 +128,7 @@ describe('TrafficPage shadcn service table', () => {
     expect(html).toContain('0.00 B');
     expect(html.match(/data-row-key="0"/g)).toHaveLength(1);
     expect(html.match(/data-row-key="1"/g)).toHaveLength(1);
+    expect(html).not.toContain('ant-table-scroll-position');
   });
 
   it('uses the shared scroll-position hook without fixed-column row height shims', () => {

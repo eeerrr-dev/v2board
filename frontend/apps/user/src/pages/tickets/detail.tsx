@@ -75,8 +75,11 @@ export default function TicketDetailPage() {
       : t('common.loading');
 
   return (
-    <div className="v2board-ticket-detail flex min-h-screen flex-col bg-background text-foreground">
-      <header className="v2board-ticket-detail-header border-b border-border px-4 py-3">
+    <div
+      className="flex min-h-screen flex-col bg-background text-foreground"
+      data-testid="ticket-detail"
+    >
+      <header className="border-b border-border px-4 py-3" data-testid="ticket-detail-header">
         <div className="flex min-w-0 items-center gap-3">
           <Badge variant="secondary" className="shrink-0">
             #{ticketId}
@@ -88,7 +91,8 @@ export default function TicketDetailPage() {
       </header>
 
       <div
-        className="js-chat-messages v2board-ticket-chat flex-1 overflow-y-auto px-4 py-4"
+        className="js-chat-messages flex-1 overflow-y-auto px-4 py-4"
+        data-testid="ticket-chat"
         ref={chatRef}
       >
         <div className="space-y-4">
@@ -118,7 +122,10 @@ export default function TicketDetailPage() {
         </div>
       </div>
 
-      <div className="js-chat-form v2board-ticket-reply-form border-t border-border bg-background p-3">
+      <div
+        className="js-chat-form border-t border-border bg-background p-3"
+        data-testid="ticket-reply-form"
+      >
         <div className="flex items-center gap-2">
           <Input
             ref={inputRef}
@@ -129,13 +136,14 @@ export default function TicketDetailPage() {
               if (event.keyCode === 13) void submitReply();
             }}
             type="text"
-            className="js-chat-input v2board-ticket-reply-input"
+            className="js-chat-input"
+            data-testid="ticket-reply-input"
             placeholder={t('ticket.reply_placeholder')}
           />
           <Button
             type="button"
             size="icon"
-            className="v2board-ticket-reply-send"
+            data-testid="ticket-reply-send"
             loading={reply.isPending}
             aria-label={t('ticket.reply_placeholder')}
             onClick={() => void submitReply()}

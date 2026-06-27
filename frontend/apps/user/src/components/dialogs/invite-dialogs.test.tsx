@@ -86,7 +86,7 @@ vi.mock('@/components/ui/select', () => ({
     value?: string;
   }) => (
     <select
-      className="v2board-invite-select-trigger"
+      data-testid="invite-select-trigger"
       value={value ?? ''}
       onChange={(event) => onValueChange(event.target.value)}
     >
@@ -159,12 +159,12 @@ describe('invite commission dialogs shadcn behavior', () => {
       await Promise.resolve();
     });
 
-    expect(document.body.innerHTML).toContain('v2board-invite-dialog');
+    expect(document.body.innerHTML).toContain('data-testid="invite-dialog"');
     expect(document.body.innerHTML).toContain('划转后的余额仅用于V2Board消费使用');
     expect(document.body.innerHTML).toContain('当前推广佣金余额');
     expect(
       document.body.querySelector<HTMLButtonElement>(
-        '.v2board-invite-dialog-footer button:last-child',
+        '[data-testid="invite-dialog-footer"] button:last-child',
       )
         ?.textContent?.replace(/\s/g, ''),
     ).toBe('确认');
@@ -181,7 +181,7 @@ describe('invite commission dialogs shadcn behavior', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:last-child')!
+        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -222,7 +222,7 @@ describe('invite commission dialogs shadcn behavior', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:first-child')!
+        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:first-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -239,7 +239,7 @@ describe('invite commission dialogs shadcn behavior', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:last-child')!
+        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -267,7 +267,7 @@ describe('invite commission dialogs shadcn behavior', () => {
     expect(document.body.innerHTML).toContain('提现账号');
     expect(
       document.body.querySelector<HTMLButtonElement>(
-        '.v2board-invite-dialog-footer button:last-child',
+        '[data-testid="invite-dialog-footer"] button:last-child',
       )
         ?.textContent?.replace(/\s/g, ''),
     ).toBe('确认');
@@ -290,7 +290,7 @@ describe('invite commission dialogs shadcn behavior', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:last-child')!
+        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -334,7 +334,7 @@ describe('invite commission dialogs shadcn behavior', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:first-child')!
+        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:first-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
@@ -351,7 +351,7 @@ describe('invite commission dialogs shadcn behavior', () => {
 
     await act(async () => {
       document.body
-        .querySelector<HTMLButtonElement>('.v2board-invite-dialog-footer button:last-child')!
+        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });

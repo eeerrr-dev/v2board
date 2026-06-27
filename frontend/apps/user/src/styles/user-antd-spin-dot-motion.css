@@ -1,5 +1,0 @@
-/* Restored Ant Design v3 Spin dot rotation state. */
-.ant-spin-dot-spin {
-  transform: rotate(45deg);
-  animation: antRotate 1.2s linear infinite;
-}

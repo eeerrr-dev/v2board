@@ -1,7 +1,0 @@
-/* Restored Ant Design Mobile list ripple animation keyframes. */
-@keyframes ripple {
-  to {
-    opacity: 0;
-    transform: scale(2.5);
-  }
-}

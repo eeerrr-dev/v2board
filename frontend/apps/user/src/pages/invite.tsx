@@ -2,10 +2,6 @@ import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   CircleHelp,
   Copy,
   Plus,
@@ -25,24 +21,15 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { PaginationControl, getPaginationMaxCurrent } from '@/components/ui/pagination';
+import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import {
-  Table,
-  TableBody,
+  DataTable,
   TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
   TableRow,
-  TableScroll,
 } from '@/components/ui/table';
+import type { DataTableHeader } from '@/components/ui/table';
 import {
   Tooltip,
   TooltipContent,
@@ -108,7 +95,7 @@ export default function InvitePage() {
   const detailRows = details.data?.data ?? [];
   const detailPaginationTotal = details.data?.total ?? detailRows.length;
   const detailPaginationItemTotal = detailPaginationTotal || detailRows.length;
-  const detailPaginationCurrent = getLegacyMaxCurrent(
+  const detailPaginationCurrent = getPaginationMaxCurrent(
     detailPaginationItemTotal,
     page ?? 1,
     pageSize ?? 10,
@@ -132,8 +119,8 @@ export default function InvitePage() {
 
   return (
     <TooltipProvider delayDuration={100}>
-      <div className="v2board-invite-surface space-y-4">
-        <Card className="v2board-invite-summary-card overflow-hidden">
+      <PageShell className="max-w-6xl gap-4" data-testid="invite-surface">
+        <Card className="overflow-hidden" data-testid="invite-summary-card">
           <CardContent className="grid gap-5 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <div className="min-w-0 space-y-3">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -152,7 +139,7 @@ export default function InvitePage() {
             </div>
             <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
               <TransferDialog max={available}>
-                <Button type="button" className="v2board-invite-transfer-trigger">
+                <Button type="button" data-testid="invite-transfer-trigger">
                   <Send className="size-4" />
                   {t('invite.transfer')}
                 </Button>
@@ -162,7 +149,7 @@ export default function InvitePage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="v2board-invite-withdraw-trigger"
+                    data-testid="invite-withdraw-trigger"
                   >
                     <WalletCards className="size-4" />
                     {t('invite.withdraw_button')}
@@ -173,7 +160,7 @@ export default function InvitePage() {
           </CardContent>
         </Card>
 
-        <Card className={cn('v2board-invite-stats-card', loading && 'opacity-80')}>
+        <Card className={cn(loading && 'opacity-80')} data-testid="invite-stats-card">
           <CardContent className="grid gap-0 p-0 sm:grid-cols-2 xl:grid-cols-4">
             <StatTile
               icon={<Users className="size-4" />}
@@ -222,7 +209,7 @@ export default function InvitePage() {
           </CardContent>
         </Card>
 
-        <Card className="v2board-invite-code-card overflow-hidden">
+        <Card className="overflow-hidden" data-testid="invite-code-card">
           <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1.5">
               <CardTitle>{t('invite.manage')}</CardTitle>
@@ -230,7 +217,7 @@ export default function InvitePage() {
             </div>
             <Button
               type="button"
-              className="v2board-invite-generate"
+              data-testid="invite-generate"
               loading={generate.isPending}
               onClick={() => void generateInvite()}
             >
@@ -240,13 +227,11 @@ export default function InvitePage() {
           </CardHeader>
           <CardContent className="p-0">
             <ServiceTable
-              className="v2board-invite-code-table"
+              testId="invite-code-table"
               empty={codes.length === 0 ? emptyDescription : undefined}
               headers={[
-                <span key="code">{t('invite.code_col')}</span>,
-                <span key="created" className="inline-block text-right">
-                  {t('invite.created_at_col')}
-                </span>,
+                { content: t('invite.code_col') },
+                { align: 'right', content: t('invite.created_at_col') },
               ]}
             >
               {codes.map((code, index) => (
@@ -257,7 +242,8 @@ export default function InvitePage() {
                       <Button
                         type="button"
                         variant="link"
-                        className="v2board-invite-copy-link h-auto p-0 text-sm"
+                        className="h-auto p-0 text-sm"
+                        data-testid="invite-copy-link"
                         onClick={() => void copyInviteLink(code.code)}
                       >
                         <Copy className="size-3.5" />
@@ -274,7 +260,7 @@ export default function InvitePage() {
           </CardContent>
         </Card>
 
-        <Card className="v2board-invite-history-card overflow-hidden">
+        <Card className="overflow-hidden" data-testid="invite-history-card">
           <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1.5">
               <CardTitle>{t('invite.history')}</CardTitle>
@@ -292,13 +278,11 @@ export default function InvitePage() {
           </CardHeader>
           <CardContent className="p-0">
             <ServiceTable
-              className="v2board-invite-history-table"
+              testId="invite-history-table"
               empty={!detailRows.length ? emptyDescription : undefined}
               headers={[
-                <span key="issued">{t('invite.issued_at')}</span>,
-                <span key="commission" className="inline-block text-right">
-                  {t('invite.commission_col')}
-                </span>,
+                { content: t('invite.issued_at') },
+                { align: 'right', content: t('invite.commission_col') },
               ]}
             >
               {detailRows.map((row, index) => (
@@ -313,10 +297,22 @@ export default function InvitePage() {
               ))}
             </ServiceTable>
             {detailPaginationItemTotal > 0 && (
-              <InvitePagination
+              <PaginationControl
+                data-testid="invite-pagination"
                 current={detailPaginationCurrent}
+                labels={{
+                  itemsPerPage: t('common.items_per_page'),
+                  nextPage: t('common.next_page'),
+                  nextWindow: t('common.next_5'),
+                  previousPage: t('common.prev_page'),
+                  previousWindow: t('common.prev_5'),
+                }}
                 pageSize={pageSize ?? 10}
                 total={detailPaginationItemTotal}
+                testIds={{
+                  page: 'invite-page',
+                  pageSize: 'invite-page-size',
+                }}
                 onChange={(nextPage, nextPageSize) => {
                   setPage(nextPage);
                   setPageSize(nextPageSize);
@@ -325,7 +321,7 @@ export default function InvitePage() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     </TooltipProvider>
   );
 }
@@ -370,178 +366,30 @@ function HeaderTooltip({ children, title }: { children: ReactNode; title: string
 
 function ServiceTable({
   children,
-  className,
   empty,
   headers,
+  testId,
 }: {
   children: ReactNode;
-  className: string;
   empty?: string;
-  headers: ReactNode[];
+  headers: DataTableHeader[];
+  testId: string;
 }) {
   return (
-    <TableScroll className="v2board-invite-table-scroll">
-      <Table className={cn('v2board-invite-table min-w-[620px]', className)}>
-        <TableHeader className="border-y">
-          <tr>
-            {headers.map((header, index) => (
-              <TableHead
-                className={index === 0 ? 'text-left' : 'text-right'}
-                key={index}
-              >
-                {header}
-              </TableHead>
-            ))}
-          </tr>
-        </TableHeader>
-        <TableBody>
-          {empty ? (
-            <TableEmpty colSpan={2} rowClassName="v2board-invite-empty">
-              {empty}
-            </TableEmpty>
-          ) : (
-            children
-          )}
-        </TableBody>
-      </Table>
-    </TableScroll>
+    <DataTable
+      className="min-w-[620px]"
+      data-testid={testId}
+      empty={empty}
+      emptyTestId="invite-empty"
+      headerClassName="border-y"
+      headers={headers}
+      scrollProps={{ 'data-testid': 'invite-table-scroll' }}
+    >
+      {children}
+    </DataTable>
   );
 }
 
 function formatCentsPlain(cents: number) {
   return (parseInt(String(cents)) / 100).toFixed(2);
-}
-
-function getLegacyMaxCurrent(total: number, current: number, pageSize: number) {
-  return (current - 1) * pageSize >= total ? Math.floor((total - 1) / pageSize) + 1 : current;
-}
-
-function InvitePagination({
-  current,
-  pageSize,
-  total,
-  onChange,
-}: {
-  current: number;
-  pageSize: number;
-  total: number;
-  onChange: (page: number, pageSize: number) => void;
-}) {
-  const { t } = useTranslation();
-  // rc-pagination's page count is Math.floor((total - 1) / pageSize) + 1,
-  // so total=0 renders its disabled "0" pager instead of an active page 1.
-  const totalPages = Math.floor((total - 1) / pageSize) + 1;
-  const items = getPaginationItems(current, totalPages);
-  const jumpPage = (item: 'jump-prev' | 'jump-next') =>
-    item === 'jump-prev' ? Math.max(1, current - 5) : Math.min(totalPages, current + 5);
-  const changePage = (targetPage: number) => {
-    let nextPage = targetPage;
-    if (nextPage > totalPages) nextPage = totalPages;
-    if (nextPage < 1) nextPage = 1;
-    onChange(nextPage, pageSize);
-  };
-  const goPrev = () => {
-    if (current > 1) onChange(current - 1, pageSize);
-  };
-  const goNext = () => {
-    if (current < totalPages) onChange(current + 1, pageSize);
-  };
-
-  return (
-    <div className="v2board-invite-pagination flex flex-col gap-3 border-t border-border p-4 sm:flex-row sm:items-center sm:justify-end">
-      <div className="flex flex-wrap items-center gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={t('common.prev_page')}
-          disabled={current <= 1}
-          onClick={goPrev}
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
-        {items.map((item) =>
-          typeof item === 'number' ? (
-            <Button
-              type="button"
-              variant={item === current ? 'default' : 'ghost'}
-              size="sm"
-              className={cn('v2board-invite-page', `v2board-invite-page-${item}`)}
-              aria-current={item === current ? 'page' : undefined}
-              disabled={item === 0}
-              key={item}
-              onClick={() => changePage(item)}
-            >
-              {item}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={item === 'jump-prev' ? t('common.prev_5') : t('common.next_5')}
-              key={item}
-              onClick={() => onChange(jumpPage(item), pageSize)}
-            >
-              {item === 'jump-prev' ? (
-                <ChevronsLeft className="size-4" />
-              ) : (
-                <ChevronsRight className="size-4" />
-              )}
-            </Button>
-          ),
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={t('common.next_page')}
-          disabled={current >= totalPages}
-          onClick={goNext}
-        >
-          <ChevronRight className="size-4" />
-        </Button>
-      </div>
-      <Select
-        value={String(pageSize)}
-        onValueChange={(value) => {
-          const ps = Number.parseInt(value, 10);
-          const nextTotalPages = Math.floor((total - 1) / ps) + 1;
-          onChange(nextTotalPages === 0 ? current : Math.min(current, nextTotalPages), ps);
-        }}
-      >
-        <SelectTrigger className="v2board-invite-page-size h-9 w-full sm:w-36">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent align="end">
-          {[10, 50, 100, 150].map((size) => (
-            <SelectItem key={size} value={String(size)}>
-              {size} {t('common.items_per_page')}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-function getPaginationItems(
-  current: number,
-  totalPages: number,
-): Array<number | 'jump-prev' | 'jump-next'> {
-  if (totalPages === 0) return [0];
-  if (totalPages <= 9) return Array.from({ length: totalPages }, (_, index) => index + 1);
-
-  let left = Math.max(2, current - 2);
-  let right = Math.min(totalPages - 1, current + 2);
-  if (current - 1 <= 2) right = 5;
-  if (totalPages - current <= 2) left = totalPages - 4;
-  const items: Array<number | 'jump-prev' | 'jump-next'> = [1];
-
-  if (left > 2) items.push('jump-prev');
-  for (let page = left; page <= right; page += 1) items.push(page);
-  if (right < totalPages - 1) items.push('jump-next');
-  items.push(totalPages);
-
-  return items;
 }

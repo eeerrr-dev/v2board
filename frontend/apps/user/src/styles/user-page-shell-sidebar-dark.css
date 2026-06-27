@@ -1,6 +1,0 @@
-/* Restored dark sidebar shell colors. */
-#page-container.sidebar-dark #sidebar {
-  color: var(--legacy-sidebar-dark-color);
-  background-color: var(--legacy-sidebar-dark-bg);
-  box-shadow: none;
-}

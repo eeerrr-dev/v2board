@@ -1,5 +1,0 @@
-/* Restored Ant Design v3 switch active handle width. */
-.ant-switch:not(.ant-switch-disabled):active::after,
-.ant-switch:not(.ant-switch-disabled):active::before {
-  width: 24px;
-}

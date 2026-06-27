@@ -1,9 +1,0 @@
-/* Authored V2Board user shell table and header polish (source-owned; not vendored). */
-.ant-table-thead > tr > th {
-  background: #fff !important;
-}
-
-.v2board-container-title {
-  flex: 1 1;
-  color: #fff;
-}

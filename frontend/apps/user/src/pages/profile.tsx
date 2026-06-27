@@ -34,9 +34,9 @@ import {
 } from '@/components/ui/shadcn-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import { cn } from '@/lib/cn';
 import {
   useChangePasswordMutation,
   useCommConfig,
@@ -211,14 +211,17 @@ export default function ProfilePage() {
 
   return (
     <>
-      <div className="v2board-profile-page mx-auto flex w-full max-w-6xl flex-col gap-6">
+      <PageShell data-testid="profile-page">
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-          <Card className="v2board-profile-wallet-card overflow-hidden">
+          <Card className="overflow-hidden" data-testid="profile-wallet-card">
             <CardHeader className="gap-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-2">
                   <CardDescription>{t('profile.wallet')}</CardDescription>
-                  <CardTitle className="v2board-profile-card-title text-4xl font-semibold tracking-normal text-foreground sm:text-5xl">
+                  <CardTitle
+                    className="text-4xl font-semibold tracking-normal text-foreground sm:text-5xl"
+                    data-testid="profile-card-title"
+                  >
                     {data?.balance !== undefined ? formatCentsPlain(data.balance) : '--.--'}
                     <span className="ml-3 align-baseline text-base font-medium text-muted-foreground">
                       {currency}
@@ -233,7 +236,7 @@ export default function ProfilePage() {
             <CardContent className="flex flex-col gap-5">
               <div className="flex flex-col gap-4 rounded-lg border border-border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
-                  <div className="v2board-profile-auto-renewal-label text-sm font-medium leading-5">
+                  <div className="text-sm font-medium leading-5">
                     {t('profile.auto_renewal')}
                   </div>
                 </div>
@@ -244,7 +247,8 @@ export default function ProfilePage() {
                 />
               </div>
               <Button
-                className="v2board-profile-recharge w-full sm:w-fit"
+                className="w-full sm:w-fit"
+                data-testid="profile-recharge"
                 size="lg"
                 onClick={openDeposit}
               >
@@ -253,13 +257,13 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          <Card className="v2board-profile-gift-card">
+          <Card data-testid="profile-gift-card">
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
                   <Gift className="size-4" />
                 </div>
-                <CardTitle className="v2board-profile-card-title text-lg">
+                <CardTitle className="text-lg" data-testid="profile-card-title">
                   {t('profile.redeem_giftcard')}
                 </CardTitle>
               </div>
@@ -269,14 +273,15 @@ export default function ProfilePage() {
                 <Label htmlFor="profile-gift-card">{t('profile.redeem_giftcard')}</Label>
                 <Input
                   id="profile-gift-card"
-                  className="v2board-profile-giftcard-input"
+                  data-testid="profile-giftcard-input"
                   placeholder={t('profile.redeem_placeholder')}
                   autoComplete="one-time-code"
                   ref={giftCardRef}
                 />
               </div>
               <Button
-                className="v2board-profile-redeem-button w-full sm:w-fit"
+                className="w-full sm:w-fit"
+                data-testid="profile-redeem-button"
                 loading={redeemLoading}
                 onClick={() => {
                   if (!redeemLoading) void onRedeem();
@@ -289,13 +294,13 @@ export default function ProfilePage() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="v2board-profile-password-card">
+          <Card data-testid="profile-password-card">
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
                   <KeyRound className="size-4" />
                 </div>
-                <CardTitle className="v2board-profile-card-title text-lg">
+                <CardTitle className="text-lg" data-testid="profile-card-title">
                   {t('profile.change_password')}
                 </CardTitle>
               </div>
@@ -322,7 +327,8 @@ export default function ProfilePage() {
                 />
               </div>
               <Button
-                className="v2board-profile-password-save w-full sm:w-fit"
+                className="w-full sm:w-fit"
+                data-testid="profile-password-save"
                 loading={changePassword.isPending}
                 onClick={() => {
                   if (!changePassword.isPending) void onChangePwd();
@@ -333,13 +339,13 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          <Card className="v2board-profile-notifications-card">
+          <Card data-testid="profile-notifications-card">
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
                   <Bell className="size-4" />
                 </div>
-                <CardTitle className="v2board-profile-card-title text-lg">
+                <CardTitle className="text-lg" data-testid="profile-card-title">
                   {t('profile.notifications')}
                 </CardTitle>
               </div>
@@ -364,19 +370,19 @@ export default function ProfilePage() {
         <div className="grid gap-6 lg:grid-cols-2">
           {comm?.is_telegram ? (
             !data?.telegram_id ? (
-              <Card className="v2board-profile-telegram-bind">
+              <Card data-testid="profile-telegram-bind">
                 <CardHeader>
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                       <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
                         <Send className="size-4" />
                       </div>
-                      <CardTitle className="v2board-profile-card-title text-lg">
+                      <CardTitle className="text-lg" data-testid="profile-card-title">
                         {t('profile.telegram_bind')}
                       </CardTitle>
                     </div>
                     <Button
-                      className="v2board-profile-telegram-start"
+                      data-testid="profile-telegram-start"
                       size="sm"
                       onClick={() => setTelegramOpen(true)}
                     >
@@ -386,19 +392,19 @@ export default function ProfilePage() {
                 </CardHeader>
               </Card>
             ) : (
-              <Card className="v2board-profile-telegram-unbind">
+              <Card data-testid="profile-telegram-unbind">
                 <CardHeader>
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-1.5">
-                      <CardTitle className="v2board-profile-card-title text-lg">
+                      <CardTitle className="text-lg" data-testid="profile-card-title">
                         {t('profile.telegram_bind')}
                       </CardTitle>
-                      <CardDescription className="v2board-profile-telegram-id">
+                      <CardDescription data-testid="profile-telegram-id">
                         Telegram ID: {String(data.telegram_id)}
                       </CardDescription>
                     </div>
                     <Button
-                      className="v2board-profile-telegram-unbind-button"
+                      data-testid="profile-telegram-unbind-button"
                       variant="destructive"
                       size="sm"
                       onClick={onUnbindTelegram}
@@ -412,14 +418,14 @@ export default function ProfilePage() {
           ) : null}
 
           {comm?.telegram_discuss_link ? (
-            <Card className="v2board-profile-telegram-discuss">
+            <Card data-testid="profile-telegram-discuss">
               <CardHeader>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
                       <MessageCircle className="size-4" />
                     </div>
-                    <CardTitle className="v2board-profile-card-title text-lg">
+                    <CardTitle className="text-lg" data-testid="profile-card-title">
                       {t('profile.telegram_discuss')}
                     </CardTitle>
                   </div>
@@ -433,24 +439,25 @@ export default function ProfilePage() {
             </Card>
           ) : null}
 
-          <Card className="v2board-profile-reset-card lg:col-span-2">
+          <Card className="lg:col-span-2" data-testid="profile-reset-card">
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
                   <RefreshCcw className="size-4" />
                 </div>
-                <CardTitle className="v2board-profile-card-title text-lg">
+                <CardTitle className="text-lg" data-testid="profile-card-title">
                   {t('profile.reset_subscribe')}
                 </CardTitle>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Alert className="v2board-profile-reset-warning">
+              <Alert data-testid="profile-reset-warning">
                 <AlertCircle className="size-4" />
                 <AlertDescription>{t('profile.reset_subscribe_warning')}</AlertDescription>
               </Alert>
               <Button
-                className="v2board-profile-reset-button w-full sm:w-fit"
+                className="w-full sm:w-fit"
+                data-testid="profile-reset-button"
                 variant="destructive"
                 onClick={onReset}
               >
@@ -459,11 +466,12 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </PageShell>
 
       <Dialog open={depositOpen} onOpenChange={(open) => (open ? setDepositOpen(true) : closeDeposit())}>
         <DialogContent
-          className="v2board-profile-dialog v2board-profile-deposit-dialog sm:max-w-md"
+          className="sm:max-w-md"
+          data-testid="profile-deposit-dialog"
           showCloseButton={false}
         >
           <DialogHeader>
@@ -471,7 +479,7 @@ export default function ProfilePage() {
             <DialogDescription>{depositPlaceholder}</DialogDescription>
           </DialogHeader>
           <Input
-            className="v2board-profile-deposit-input"
+            data-testid="profile-deposit-input"
             autoComplete="one-time-code"
             placeholder={depositPlaceholder}
             ref={depositInputRef}
@@ -483,7 +491,7 @@ export default function ProfilePage() {
             <Button variant="outline" onClick={closeDeposit}>
               {t('common.cancel')}
             </Button>
-            <Button className="v2board-profile-deposit-confirm" onClick={() => onDeposit()}>
+            <Button data-testid="profile-deposit-confirm" onClick={() => onDeposit()}>
               {t('profile.confirm')}
             </Button>
           </DialogFooter>
@@ -491,7 +499,7 @@ export default function ProfilePage() {
       </Dialog>
 
       <Dialog open={telegramOpen} onOpenChange={setTelegramOpen}>
-        <DialogContent className="v2board-profile-dialog v2board-profile-telegram-bind-dialog">
+        <DialogContent data-testid="profile-telegram-bind-dialog">
           <DialogHeader>
             <DialogTitle>{t('profile.telegram_bind')}</DialogTitle>
           </DialogHeader>
@@ -519,7 +527,8 @@ export default function ProfilePage() {
                 </div>
                 <div className="text-sm text-muted-foreground">{t('profile.telegram_send')}</div>
                 <code
-                  className="v2board-profile-copy-code flex cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+                  className="flex cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+                  data-testid="profile-copy-code"
                   onClick={() => copyBindCommand()}
                 >
                   /bind {subscribe?.subscribe_url}
@@ -533,7 +542,7 @@ export default function ProfilePage() {
           )}
           <DialogFooter>
             <Button
-              className="v2board-profile-telegram-bind-confirm"
+              data-testid="profile-telegram-bind-confirm"
               onClick={() => setTelegramOpen(false)}
             >
               {t('profile.i_know')}
@@ -544,7 +553,8 @@ export default function ProfilePage() {
 
       <Dialog open={confirmAction !== null} onOpenChange={(open) => !open && setConfirmAction(null)}>
         <DialogContent
-          className="v2board-profile-dialog v2board-profile-confirm-dialog sm:max-w-md"
+          className="sm:max-w-md"
+          data-testid="profile-confirm-dialog"
           showCloseButton={false}
         >
           <DialogHeader>
@@ -555,7 +565,7 @@ export default function ProfilePage() {
             <Button variant="outline" onClick={() => setConfirmAction(null)}>
               {t('common.cancel')}
             </Button>
-            <Button className="v2board-profile-confirm-primary" onClick={onConfirmAction}>
+            <Button data-testid="profile-confirm-primary" onClick={onConfirmAction}>
               {t('profile.confirm')}
             </Button>
           </DialogFooter>
@@ -595,9 +605,7 @@ function PreferenceRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
-      <div className="v2board-profile-preference-label text-sm font-medium leading-5">
-        {label}
-      </div>
+      <div className="text-sm font-medium leading-5">{label}</div>
       <ProfileSwitch checked={checked} loading={loading} onChange={onChange} />
     </div>
   );
@@ -615,9 +623,10 @@ function ProfileSwitch({
   const normalizedChecked = !!checked;
   return (
     <Switch
-      className={cn('v2board-profile-switch', loading && 'v2board-profile-switch-loading')}
       checked={normalizedChecked}
       disabled={loading}
+      data-loading={loading ? 'true' : undefined}
+      data-testid="profile-switch"
       aria-busy={!!loading}
       onCheckedChange={(nextChecked) => onChange(nextChecked)}
       onKeyDown={(event) => {

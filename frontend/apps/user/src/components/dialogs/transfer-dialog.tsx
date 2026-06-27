@@ -68,9 +68,9 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
     <>
       {trigger}
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="v2board-invite-dialog sm:max-w-md">
+        <DialogContent className="sm:max-w-md" data-testid="invite-dialog">
           <DialogHeader>
-            <DialogTitle className="v2board-invite-dialog-title">
+            <DialogTitle data-testid="invite-dialog-title">
               {t('dashboard.transfer_to_balance')}
             </DialogTitle>
             <DialogDescription>
@@ -102,7 +102,7 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
             </div>
           </div>
 
-          <DialogFooter className="v2board-invite-dialog-footer">
+          <DialogFooter data-testid="invite-dialog-footer">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('common.cancel')}
             </Button>

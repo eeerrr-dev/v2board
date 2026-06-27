@@ -11,7 +11,7 @@
 .v2board-auth-toast-root,
 .v2board-auth-language-menu-content,
 .v2board-app-shell-menu-content,
-.v2board-dashboard-dialog {
+.v2board-radix-dialog-content {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -38,22 +38,10 @@
 .v2board-auth-toast-root,
 .v2board-auth-language-menu-content,
 .v2board-app-shell-menu-content,
-.v2board-dashboard-dialog {
+.v2board-radix-dialog-content {
   box-sizing: border-box;
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
-    Arial,
-    'Noto Sans',
-    'Liberation Sans',
-    sans-serif,
-    'Apple Color Emoji',
-    'Segoe UI Emoji',
-    'Segoe UI Symbol',
-    'Noto Color Emoji';
+  color-scheme: light;
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   font-variant-numeric: normal;
   letter-spacing: 0;
@@ -76,9 +64,9 @@
 .v2board-app-shell-menu-content *,
 .v2board-app-shell-menu-content *::before,
 .v2board-app-shell-menu-content *::after,
-.v2board-dashboard-dialog *,
-.v2board-dashboard-dialog *::before,
-.v2board-dashboard-dialog *::after {
+.v2board-radix-dialog-content *,
+.v2board-radix-dialog-content *::before,
+.v2board-radix-dialog-content *::after {
   box-sizing: inherit;
   letter-spacing: 0;
 }
@@ -98,8 +86,8 @@
 .v2board-auth-language-menu-content ::selection,
 .v2board-app-shell-menu-content::selection,
 .v2board-app-shell-menu-content ::selection,
-.v2board-dashboard-dialog::selection,
-.v2board-dashboard-dialog ::selection {
+.v2board-radix-dialog-content::selection,
+.v2board-radix-dialog-content ::selection {
   color: var(--primary-foreground);
   background: var(--primary);
 }
@@ -108,7 +96,7 @@
 .v2board-app-shell :where(button, input, select, textarea),
 .v2board-auth-language-menu-content :where(button),
 .v2board-app-shell-menu-content :where(button),
-.v2board-dashboard-dialog :where(button, input, select, textarea) {
+.v2board-radix-dialog-content :where(button, input, select, textarea) {
   font-family: inherit;
 }
 
@@ -122,6 +110,10 @@
   color: var(--foreground);
 }
 
+.v2board-app-shell #sidebar {
+  transform: none;
+}
+
 .v2board-app-shell .v2board-container-title {
   flex: initial;
   color: var(--foreground);
@@ -133,36 +125,35 @@
   color: oklch(0.448 0.119 151.328);
 }
 
-@media (prefers-color-scheme: dark) {
-  html:not([data-darkreader-scheme]) .v2board-auth-surface,
-  html:not([data-darkreader-scheme]) .v2board-app-shell,
-  html:not([data-darkreader-scheme]) .v2board-auth-toast-root,
-  html:not([data-darkreader-scheme]) .v2board-auth-language-menu-content,
-  html:not([data-darkreader-scheme]) .v2board-app-shell-menu-content,
-  html:not([data-darkreader-scheme]) .v2board-dashboard-dialog {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-  }
+.dark .v2board-auth-surface,
+.dark .v2board-app-shell,
+.dark .v2board-auth-toast-root,
+.dark .v2board-auth-language-menu-content,
+.dark .v2board-app-shell-menu-content,
+.dark .v2board-radix-dialog-content {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+}
 
-  html:not([data-darkreader-scheme]) .v2board-auth-toast-icon-success {
-    border-color: color-mix(in oklch, oklch(0.765 0.177 163.223) 30%, transparent);
-    background: color-mix(in oklch, oklch(0.262 0.051 172.552) 70%, transparent);
-    color: oklch(0.765 0.177 163.223);
-  }
+.dark .v2board-auth-toast-icon-success {
+  border-color: color-mix(in oklch, oklch(0.765 0.177 163.223) 30%, transparent);
+  background: color-mix(in oklch, oklch(0.262 0.051 172.552) 70%, transparent);
+  color: oklch(0.765 0.177 163.223);
 }

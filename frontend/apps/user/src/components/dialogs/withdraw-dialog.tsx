@@ -78,9 +78,9 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
     <>
       {trigger}
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="v2board-invite-dialog sm:max-w-md">
+        <DialogContent className="sm:max-w-md" data-testid="invite-dialog">
           <DialogHeader>
-            <DialogTitle className="v2board-invite-dialog-title">
+            <DialogTitle data-testid="invite-dialog-title">
               {t('invite.withdraw')}
             </DialogTitle>
             <DialogDescription>{t('invite.withdraw_button')}</DialogDescription>
@@ -92,11 +92,11 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
               <Select value={method} onValueChange={setMethod}>
                 <SelectTrigger
                   id="invite-withdraw-method"
-                  className="v2board-invite-select-trigger"
+                  data-testid="invite-select-trigger"
                 >
                   <SelectValue placeholder={t('invite.withdraw_method_placeholder')} />
                 </SelectTrigger>
-                <SelectContent className="v2board-invite-select-content">
+                <SelectContent data-testid="invite-select-content">
                   {methods.map((item) => (
                     <SelectItem key={item} value={item}>
                       {item}
@@ -116,7 +116,7 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
             </div>
           </div>
 
-          <DialogFooter className="v2board-invite-dialog-footer">
+          <DialogFooter data-testid="invite-dialog-footer">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('common.cancel')}
             </Button>

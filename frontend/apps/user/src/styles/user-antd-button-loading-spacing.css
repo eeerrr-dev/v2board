@@ -1,9 +1,0 @@
-/* Restored Ant Design v3 default button loading spacing. */
-.ant-btn.ant-btn-loading:not(.ant-btn-circle):not(.ant-btn-circle-outline):not(.ant-btn-icon-only) {
-  padding-left: 29px;
-}
-
-.ant-btn.ant-btn-loading:not(.ant-btn-circle):not(.ant-btn-circle-outline):not(.ant-btn-icon-only)
-  .anticon:not(:last-child) {
-  margin-left: -14px;
-}

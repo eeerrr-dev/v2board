@@ -1,22 +1,12 @@
-import { disable as disableDarkReader, enable as enableDarkReader } from 'darkreader';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { applyInitialDarkMode, isDarkModeEnabled, setDarkMode } from './dark-mode';
 
-vi.mock('darkreader', () => ({
-  disable: vi.fn(),
-  enable: vi.fn(),
-}));
-
-const disableDarkReaderMock = vi.mocked(disableDarkReader);
-const enableDarkReaderMock = vi.mocked(enableDarkReader);
-
-describe('dark mode legacy storage', () => {
+describe('dark mode shadcn class storage', () => {
   beforeEach(() => {
     document.cookie = 'dark_mode=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     document.documentElement.className = '';
+    document.documentElement.style.colorScheme = '';
     window.localStorage.clear();
-    disableDarkReaderMock.mockClear();
-    enableDarkReaderMock.mockClear();
   });
 
   it('reads dark mode from the legacy cookie', () => {
@@ -26,43 +16,51 @@ describe('dark mode legacy storage', () => {
     expect(isDarkModeEnabled()).toBe(true);
   });
 
-  it('ignores malformed legacy dark mode cookie encoding during startup', () => {
+  it('ignores malformed legacy dark mode cookie encoding during startup and keeps light tokens', () => {
     document.cookie = 'dark_mode=%E0%A4%A;path=/';
 
     expect(isDarkModeEnabled()).toBe(false);
     expect(() => applyInitialDarkMode()).not.toThrow();
-    expect(document.documentElement.classList.contains('v2board-dark-mode')).toBe(false);
-    expect(enableDarkReaderMock).not.toHaveBeenCalled();
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe('light');
   });
 
-  it('enables DarkReader with the original options and writes the legacy cookie', () => {
+  it('enables the shadcn class dark theme and writes the legacy cookie', () => {
     setDarkMode(true);
 
     expect(document.cookie).toContain('dark_mode=1');
     expect(window.localStorage.getItem('dark_mode')).toBeNull();
-    expect(enableDarkReaderMock).toHaveBeenCalledWith({ brightness: 100, contrast: 90, sepia: 10 });
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.style.colorScheme).toBe('dark');
   });
 
-  it('disables DarkReader and keeps the original cookie key', () => {
+  it('disables the shadcn class dark theme and keeps the original cookie key', () => {
+    document.documentElement.classList.add('dark');
+    document.documentElement.style.colorScheme = 'dark';
+
     setDarkMode(false);
 
     expect(document.cookie).toContain('dark_mode=0');
-    expect(disableDarkReaderMock).toHaveBeenCalledOnce();
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe('light');
   });
 
-  it('matches legacy startup by not disabling DarkReader when the cookie is absent', () => {
+  it('syncs startup to light shadcn tokens when the cookie is absent', () => {
+    document.documentElement.classList.add('dark');
+    document.documentElement.style.colorScheme = 'dark';
+
     applyInitialDarkMode();
 
-    expect(enableDarkReaderMock).not.toHaveBeenCalled();
-    expect(disableDarkReaderMock).not.toHaveBeenCalled();
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe('light');
   });
 
-  it('enables DarkReader on startup when the cookie is set', () => {
+  it('enables shadcn class dark tokens on startup when the cookie is set', () => {
     document.cookie = 'dark_mode=1;path=/';
 
     applyInitialDarkMode();
 
-    expect(enableDarkReaderMock).toHaveBeenCalledWith({ brightness: 100, contrast: 90, sepia: 10 });
-    expect(disableDarkReaderMock).not.toHaveBeenCalled();
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.style.colorScheme).toBe('dark');
   });
 });

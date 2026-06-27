@@ -1,9 +1,0 @@
-/* Restored Ant Design v3 message notice spacing. */
-.ant-message-notice {
-  padding: 8px;
-  text-align: center;
-}
-
-.ant-message-notice:first-child {
-  margin-top: -8px;
-}
