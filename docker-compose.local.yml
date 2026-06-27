@@ -117,7 +117,7 @@ services:
             -C /src/frontend -cf - . | tar -C /app/frontend -xf -
         fi
         corepack enable
-        corepack prepare pnpm@11.0.0 --activate
+        corepack prepare pnpm@11.9.0 --activate
         pnpm config set store-dir /app/frontend/.pnpm-store
         HUSKY=0 pnpm install --frozen-lockfile
         pnpm --filter @v2board/user --filter @v2board/admin --parallel run dev

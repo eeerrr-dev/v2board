@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { act } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Toaster } from '@/components/ui/toaster';
 import { authToast } from './auth-toast';
 
 const source = readFileSync(`${process.cwd()}/src/lib/auth-toast.tsx`, 'utf8');
@@ -9,11 +11,26 @@ const source = readFileSync(`${process.cwd()}/src/lib/auth-toast.tsx`, 'utf8');
   true;
 
 describe('authToast', () => {
-  afterEach(() => {
+  let root: Root;
+
+  beforeEach(() => {
     act(() => {
       authToast.dismiss();
     });
     document.body.innerHTML = '';
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => {
+      root.render(createElement(Toaster));
+    });
+  });
+
+  afterEach(() => {
+    act(() => {
+      authToast.dismiss();
+      root.unmount();
+    });
   });
 
   it('renders modern auth feedback without legacy ant message or notification DOM', async () => {
@@ -22,17 +39,21 @@ describe('authToast', () => {
       await Promise.resolve();
     });
 
-    const toast = document.body.querySelector('.v2board-auth-toast-root') as HTMLElement;
+    const toast = document.body.querySelector('.v2board-toast-notification') as HTMLElement;
     expect(toast).not.toBeNull();
     expect(toast.textContent).toContain('发送成功');
     expect(toast.textContent).toContain('如果没有收到验证码请检查垃圾箱。');
+    expect(document.body.querySelector('.v2board-auth-toast-root')).toBeNull();
+    expect(document.body.querySelector('.v2board-auth-toast-host')).toBeNull();
     expect(document.body.querySelector('.ant-message')).toBeNull();
     expect(document.body.querySelector('.ant-notification')).toBeNull();
   });
 
-  it('uses Radix Toast and lucide icons instead of hand-built ant markup', () => {
-    expect(source).toContain("@radix-ui/react-toast");
-    expect(source).toContain("from 'lucide-react'");
+  it('delegates to the unified Radix Toaster instead of owning a second React root', () => {
+    expect(source).toContain("from './toast'");
+    expect(source).not.toContain('createRoot');
+    expect(source).not.toContain("@radix-ui/react-toast");
+    expect(source).not.toContain("from 'lucide-react'");
     expect(source).not.toContain('ant-message');
     expect(source).not.toContain('ant-notification');
     expect(source).not.toContain('innerHTML');

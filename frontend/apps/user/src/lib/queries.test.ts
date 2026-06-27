@@ -12,6 +12,7 @@ const useQuery = vi.hoisted(() => vi.fn((options: UseQueryOptions) => options));
 const invalidateQueries = vi.hoisted(() => vi.fn());
 
 vi.mock('@tanstack/react-query', () => ({
+  queryOptions: (options: unknown) => options,
   useMutation,
   useQuery,
   useQueryClient: () => ({
@@ -31,6 +32,13 @@ vi.mock('@v2board/api-client', () => ({
 }));
 
 describe('legacy query state behavior', () => {
+  it('centralizes query definitions behind TanStack Query queryOptions', () => {
+    expect(queriesSource).toContain(
+      'queryOptions({ queryKey: userKeys.info, queryFn: fetchUserInfo })',
+    );
+    expect(queriesSource).toContain('export const userQueryOptions = {');
+  });
+
   it('keeps the previous knowledge list while a new search request is pending', async () => {
     const { useKnowledge } = await import('./queries');
 

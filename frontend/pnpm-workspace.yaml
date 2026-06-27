@@ -5,6 +5,9 @@ packages:
 onlyBuiltDependencies:
   - esbuild
 
+minimumReleaseAgeExclude:
+  - eslint@10.6.0
+
 catalog:
   '@tanstack/react-query': ^5.101.1
   '@types/react': ^19.2.17

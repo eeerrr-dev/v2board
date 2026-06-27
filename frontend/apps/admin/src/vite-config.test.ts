@@ -62,6 +62,13 @@ describe('admin Vite dev optimizer', () => {
   it('does not copy or concatenate old packaged admin assets into deploy output', () => {
     expect(deployViteConfigSource).toContain('assetsInlineLimit: 0');
     expect(deployViteConfigSource).toContain('emptyOutDir: false');
+    expect(deployViteConfigSource).toContain('chunkSizeWarningLimit: 3200');
+    expect(deployViteConfigSource).toContain('rolldownOptions: {');
+    expect(deployViteConfigSource).toContain('transform: {');
+    expect(deployViteConfigSource).toContain("'import.meta': '{}'");
+    expect(deployViteConfigSource).toContain('codeSplitting: false');
+    expect(deployViteConfigSource).not.toContain('rollupOptions: {');
+    expect(deployViteConfigSource).not.toContain('inlineDynamicImports');
     expect(deployViteConfigSource).not.toContain('copyLegacyAdminAssets');
     expect(deployViteConfigSource).not.toContain('cpSync');
     expect(deployViteConfigSource).not.toContain('readFileSync');

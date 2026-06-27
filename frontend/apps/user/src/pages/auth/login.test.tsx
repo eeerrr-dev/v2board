@@ -97,9 +97,11 @@ vi.mock('@/lib/legacy-settings', () => ({
 }));
 
 vi.mock('@/lib/queries', () => ({
-  fetchUserInfo: mocks.fetchUserInfo,
-  userKeys: {
-    info: ['user', 'info'],
+  userQueryOptions: {
+    info: () => ({
+      queryFn: mocks.fetchUserInfo,
+      queryKey: ['user', 'info'],
+    }),
   },
 }));
 

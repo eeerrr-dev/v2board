@@ -6,7 +6,7 @@ import { apiClient } from '@/lib/api';
 import { getAuthData, setAuthData } from '@/lib/auth';
 import { i18nGet } from '@/lib/errors';
 import { useLoginMutation, useTokenLoginMutation } from '@/lib/guest';
-import { fetchUserInfo, userKeys } from '@/lib/queries';
+import { userQueryOptions } from '@/lib/queries';
 
 function normalizeRedirectTarget(target: string | null): string {
   if (!target) return '/dashboard';
@@ -54,7 +54,7 @@ export function useLoginController(): LoginController {
         // The saga dispatched user/getUserInfo with `put`, then immediately pushed — it never
         // waited for the user-info request to settle.
         void queryClient
-          .fetchQuery({ queryKey: userKeys.info, queryFn: fetchUserInfo })
+          .fetchQuery(userQueryOptions.info())
           .catch(() => undefined);
         navigate(redirect);
       } catch (err) {
@@ -93,7 +93,7 @@ export function useLoginController(): LoginController {
         .then((result) => {
           if (active && result.is_login) {
             void queryClient
-              .fetchQuery({ queryKey: userKeys.info, queryFn: fetchUserInfo })
+              .fetchQuery(userQueryOptions.info())
               .catch(() => undefined);
             navigate(redirect);
           }

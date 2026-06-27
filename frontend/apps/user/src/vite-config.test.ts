@@ -71,6 +71,13 @@ describe('user Vite dev optimizer', () => {
     expect(deployViteConfigSource).not.toContain('writeFileSync');
     expect(deployViteConfigSource).toContain('assetsInlineLimit: 0');
     expect(deployViteConfigSource).toContain('emptyOutDir: false');
+    expect(deployViteConfigSource).toContain('chunkSizeWarningLimit: 1400');
+    expect(deployViteConfigSource).toContain('rolldownOptions: {');
+    expect(deployViteConfigSource).toContain('transform: {');
+    expect(deployViteConfigSource).toContain("'import.meta': '{}'");
+    expect(deployViteConfigSource).toContain('codeSplitting: false');
+    expect(deployViteConfigSource).not.toContain('rollupOptions: {');
+    expect(deployViteConfigSource).not.toContain('inlineDynamicImports');
     expect(deployViteConfigSource).toContain('process.env.V2BOARD_DEPLOY_OUT_DIR');
     expect(deployViteConfigSource).not.toContain("'i18n'");
     expect(deployViteConfigSource).not.toContain("'static'");

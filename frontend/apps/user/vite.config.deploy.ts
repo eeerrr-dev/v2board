@@ -17,13 +17,24 @@ export default defineConfig({
     cssCodeSplit: false,
     assetsInlineLimit: 0,
     reportCompressedSize: false,
+    // The Laravel drop-in deploy is intentionally a single classic script.
+    // Keep the limit near the current bundle so real growth still warns.
+    chunkSizeWarningLimit: 1400,
     outDir: deployOutDir,
     emptyOutDir: false,
     modulePreload: false,
-    rollupOptions: {
+    rolldownOptions: {
+      transform: {
+        define: {
+          // Deploy bundles are classic scripts, so make Rolldown's IIFE import.meta
+          // replacement explicit instead of relying on its warning-time fallback.
+          'import.meta': '{}',
+        },
+      },
       input: path.resolve(__dirname, 'src/main.tsx'),
       output: {
         format: 'iife',
+        codeSplitting: false,
         entryFileNames: 'umi.js',
         chunkFileNames: 'chunks/[name].[hash].js',
         assetFileNames: (info) => {
@@ -32,7 +43,6 @@ export default defineConfig({
           return 'static/[name].[hash][extname]';
         },
         manualChunks: undefined,
-        inlineDynamicImports: true,
       },
     },
   },

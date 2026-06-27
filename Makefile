@@ -12,7 +12,7 @@ DCF := $(DC) -p $(COMPOSE_PROJECT) -f $(COMPOSE_FILE)
 FRONTEND_RUN := $(DCF) run --rm -T --no-deps --entrypoint sh
 FRONTEND_SERVE_RUN = $(DCF) run --rm -T --no-deps --entrypoint sh -p $(LEGACY_ORACLE_PORT):$(LEGACY_ORACLE_PORT)
 FRONTEND_WORKSPACE_BOOTSTRAP := if [ ! -f /app/frontend/package.json ]; then mkdir -p /app/frontend && tar --exclude=node_modules --exclude=.pnpm-store --exclude=dist --exclude=dist-deploy -C /src/frontend -cf - . | tar -C /app/frontend -xf -; fi
-FRONTEND_SETUP := $(FRONTEND_WORKSPACE_BOOTSTRAP) && corepack enable && corepack prepare pnpm@11.0.0 --activate >/dev/null && pnpm config set store-dir /app/frontend/.pnpm-store >/dev/null
+FRONTEND_SETUP := $(FRONTEND_WORKSPACE_BOOTSTRAP) && corepack enable && corepack prepare pnpm@11.9.0 --activate >/dev/null && pnpm config set store-dir /app/frontend/.pnpm-store >/dev/null
 FRONTEND_INSTALL := HUSKY=0 pnpm install --frozen-lockfile
 FRONTEND_FAST_INSTALL := if [ ! -x /app/frontend/node_modules/.bin/playwright ]; then HUSKY=0 pnpm install --frozen-lockfile; fi
 FRONTEND_BOOTSTRAP := $(FRONTEND_SETUP) && $(FRONTEND_INSTALL)
@@ -26,7 +26,7 @@ LEGACY_ORACLE_VOLUME ?= $(COMPOSE_PROJECT)_legacy-oracle
 LEGACY_ORACLE_PORT ?= 8001
 LEGACY_ORACLE_NODE_OPTIONS ?= --max-old-space-size=128
 LEGACY_ORACLE_PAUSE_SERVICES ?= frontend horizon scheduler mailpit mysql redis
-LEGACY_ORACLE_RESUME_SERVICES ?= mysql redis mailpit app
+LEGACY_ORACLE_RESUME_SERVICES ?= mysql redis mailpit app frontend horizon scheduler
 LEGACY_ORACLE_REQUIRED_PATHS := \
 	public/theme/default/dashboard.blade.php \
 	public/theme/default/config.json \
@@ -86,7 +86,7 @@ INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-per
 INTERACTION_PARITY_RETRIES ?= 4
 INTERACTION_PARITY_SHARD_DELAY ?= 20
 INTERACTION_PARITY_PAUSE_SERVICES ?= frontend horizon scheduler
-INTERACTION_PARITY_RESUME_SERVICES ?= mysql redis mailpit app
+INTERACTION_PARITY_RESUME_SERVICES ?= mysql redis mailpit app frontend horizon scheduler
 VISUAL_PARITY_RESTART_SERVICES ?= 1
 VISUAL_PARITY_SHARD_DELAY ?= 30
 VISUAL_PARITY_RETRIES ?= 2
@@ -136,21 +136,23 @@ BROWSER_PARITY_VIEWPORTS ?= desktop mobile
 BROWSER_PARITY_BATCH_SIZE ?= 8
 VISUAL_PARITY_CHECK_EACH_SHARD ?= 0
 DEPLOY_BUILD_PAUSE_SERVICES ?= app frontend horizon scheduler mysql redis mailpit
-DEPLOY_RESUME_SERVICES ?= mysql redis mailpit app
-DEPLOY_FINAL_RESUME_SERVICES ?= mysql redis mailpit app
+DEPLOY_RESUME_SERVICES ?= mysql redis mailpit app frontend horizon scheduler
+DEPLOY_FINAL_RESUME_SERVICES ?= mysql redis mailpit app frontend horizon scheduler
 DEPLOY_NODE_OPTIONS ?= --max-old-space-size=256
 DEPLOY_PUBLIC_ENSURE_RETRIES ?= 3
 DEPLOY_PUBLIC_ENSURE_RETRY_DELAY ?= 20
 VISUAL_PARITY_NODE_OPTIONS ?= --max-old-space-size=256
 VISUAL_PARITY_FRESH_BROWSER ?= auto
 VISUAL_PARITY_PAUSE_SERVICES ?= frontend horizon scheduler
-VISUAL_PARITY_RESUME_SERVICES ?= mysql redis mailpit app
+VISUAL_PARITY_RESUME_SERVICES ?= mysql redis mailpit app frontend horizon scheduler
 
 ifeq ($(DC),)
 $(error docker compose not found; run 'brew install docker-compose' or add cliPluginsExtraDirs to ~/.docker/config.json)
 endif
 
 up:
+	$(DCF) up -d --build
+	$(MAKE) --no-print-directory deploy-public-ensure
 	$(DCF) up -d --build
 	@echo ""
 	@echo "  user      http://localhost:5173            (new frontend)"
@@ -179,6 +181,7 @@ ps:
 reset:
 	@docker rm -f $(LEGACY_ORACLE_CONTAINER) >/dev/null 2>&1 || true
 	$(DCF) down -v
+	$(MAKE) --no-print-directory deploy-smoke
 	$(DCF) up -d --build
 
 sync:
@@ -191,17 +194,19 @@ sync:
 		fi; \
 		sleep 1; \
 	done
-	@docker volume rm $(COMPOSE_PROJECT)_app-workspace $(COMPOSE_PROJECT)_frontend-workspace $(COMPOSE_PROJECT)_frontend-deploy >/dev/null 2>&1 || true
-	@for volume in $(COMPOSE_PROJECT)_app-workspace $(COMPOSE_PROJECT)_frontend-workspace $(COMPOSE_PROJECT)_frontend-deploy; do \
+	@docker volume rm $(COMPOSE_PROJECT)_app-workspace $(COMPOSE_PROJECT)_frontend-workspace >/dev/null 2>&1 || true
+	@for volume in $(COMPOSE_PROJECT)_app-workspace $(COMPOSE_PROJECT)_frontend-workspace; do \
 		if docker volume inspect $$volume >/dev/null 2>&1; then \
 			echo "Failed to remove Docker volume $$volume; stop/remove containers that still use it."; \
 			exit 1; \
 		fi; \
 	done
-	$(DCF) up -d --build mysql redis mailpit app
+	$(MAKE) --no-print-directory deploy-smoke
+	$(DCF) up -d --build
 
 doctor:
 	@$(DCF) config >/dev/null
+	@docker buildx version >/dev/null 2>&1 || (echo "Docker buildx plugin missing; install Docker Buildx and make sure the Docker CLI can discover it."; echo "Homebrew: brew install docker-buildx, then add /opt/homebrew/lib/docker/cli-plugins to ~/.docker/config.json cliPluginsExtraDirs."; exit 1)
 	@! $(DCF) config | grep -q '/app/public' || (echo "Unexpected /app/public mount; local frontend must not read packaged public assets." && exit 1)
 	@$(MAKE) --no-print-directory public-bundle-audit
 	@$(MAKE) --no-print-directory parity-config-audit
@@ -330,6 +335,7 @@ clean-frontend-runs:
 	fi
 
 deploy-smoke:
+	$(DCF) build app frontend
 	@$(DCF) stop $(DEPLOY_BUILD_PAUSE_SERVICES) >/dev/null 2>&1 || true
 	$(MAKE) --no-print-directory clean-frontend-runs
 	@status=0; \
@@ -344,8 +350,14 @@ deploy-smoke:
 		$(DCF) up -d $(DEPLOY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
 	fi; \
 	exit $$status
-	$(MAKE) --no-print-directory deploy-public-sync
-	@$(DCF) exec -T app sh -lc 'set -eu; \
+	@status=0; \
+	$(MAKE) --no-print-directory deploy-public-sync || status=$$?; \
+	if [ "$$status" -ne 0 ]; then \
+		$(DCF) up -d $(DEPLOY_FINAL_RESUME_SERVICES) >/dev/null 2>&1 || true; \
+		exit $$status; \
+	fi
+	@status=0; \
+	$(DCF) exec -T app sh -lc 'set -eu; \
 		for attempt in 1 2 3 4 5 6 7 8 9 10; do \
 			code=$$(curl -sS -o /tmp/deploy-smoke-ready.out -w "%{http_code}" http://127.0.0.1:8000/ 2>/dev/null || true); \
 			[ "$$code" = "200" ] && break; \
@@ -430,8 +442,9 @@ deploy-smoke:
 		check 404 /assets/admin/custom.css; \
 		check 404 /assets/admin/custom.js; \
 		check 404 /assets/admin/theme/default.css; \
-		echo "Deploy smoke OK: Laravel serves source-built user/admin assets and rejects old bundle paths."'
-	@$(DCF) up -d $(DEPLOY_FINAL_RESUME_SERVICES) >/dev/null 2>&1 || true
+		echo "Deploy smoke OK: Laravel serves source-built user/admin assets and rejects old bundle paths."' || status=$$?; \
+	$(DCF) up -d $(DEPLOY_FINAL_RESUME_SERVICES) >/dev/null 2>&1 || true; \
+	exit $$status
 
 deploy-public-sync:
 	$(DCF) up -d mysql redis mailpit app

@@ -3,10 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "packageManager": "pnpm@11.0.0",
+  "packageManager": "pnpm@11.9.0",
   "engines": {
-    "node": ">=20.18.0",
-    "pnpm": ">=11.0.0"
+    "node": ">=22.13.0",
+    "pnpm": ">=11.9.0"
   },
   "scripts": {
     "dev:admin": "pnpm --filter @v2board/admin dev",

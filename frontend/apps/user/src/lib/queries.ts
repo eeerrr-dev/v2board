@@ -1,5 +1,5 @@
 import { user } from '@v2board/api-client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SubscribeInfo, UserInfo } from '@v2board/types';
 import { formatBytes } from '@v2board/config/format';
 import { apiClient } from './api';
@@ -86,87 +86,167 @@ export async function fetchUserInfo() {
   return info;
 }
 
+async function fetchSubscribe() {
+  const data = await user.getSubscribe(apiClient);
+  reportSubscribeToChat(data);
+  return data;
+}
+
+export const userQueryOptions = {
+  info: () => queryOptions({ queryKey: userKeys.info, queryFn: fetchUserInfo }),
+  stat: () => queryOptions({ queryKey: userKeys.stat, queryFn: () => user.getStat(apiClient) }),
+  subscribe: () =>
+    queryOptions({
+      queryKey: userKeys.subscribe,
+      queryFn: fetchSubscribe,
+    }),
+  orders: (status?: number) =>
+    queryOptions({
+      queryKey: userKeys.orders(status),
+      queryFn: () => user.fetchOrders(apiClient, status),
+    }),
+  orderDetail: (tradeNo: string | undefined) =>
+    queryOptions({
+      queryKey: userKeys.orderDetail(tradeNo as string),
+      queryFn: () => user.orderDetail(apiClient, tradeNo as string),
+    }),
+  orderStatus: (tradeNo: string | undefined) =>
+    queryOptions({
+      queryKey: userKeys.orderStatus(tradeNo as string),
+      queryFn: () => user.checkOrder(apiClient, tradeNo as string),
+    }),
+  plans: () =>
+    queryOptions({
+      queryKey: userKeys.plans,
+      queryFn: () => user.fetchPlans(apiClient),
+    }),
+  plan: (id: number | string | undefined) =>
+    queryOptions({
+      queryKey: userKeys.plan(id as number | string),
+      queryFn: () => user.fetchPlan(apiClient, id as number | string),
+    }),
+  payments: () =>
+    queryOptions({ queryKey: userKeys.payments, queryFn: () => user.getPaymentMethod(apiClient) }),
+  notices: () =>
+    queryOptions({
+      queryKey: userKeys.notices,
+      queryFn: () => user.fetchNotices(apiClient),
+    }),
+  tickets: () =>
+    queryOptions({
+      queryKey: userKeys.tickets,
+      queryFn: () => user.fetchTickets(apiClient),
+    }),
+  ticketDetail: (id: number | string | undefined) =>
+    queryOptions({
+      queryKey: userKeys.ticketDetail(id as number | string),
+      queryFn: () => user.ticketDetail(apiClient, id as number | string),
+    }),
+  invite: () =>
+    queryOptions({
+      queryKey: userKeys.invite,
+      queryFn: () => user.fetchInvite(apiClient),
+    }),
+  inviteDetails: (current?: number, pageSize?: number) =>
+    queryOptions({
+      queryKey: userKeys.inviteDetails(current, pageSize),
+      queryFn: () => user.inviteDetails(apiClient, current, pageSize),
+    }),
+  knowledge: (language: string, keyword?: string) =>
+    queryOptions({
+      queryKey: userKeys.knowledge(language, keyword),
+      queryFn: () => user.fetchKnowledge(apiClient, language, keyword),
+    }),
+  knowledgeDetail: (id: number | string | undefined, language: string) =>
+    queryOptions({
+      queryKey: userKeys.knowledgeDetail(id as number | string, language),
+      queryFn: () => user.knowledgeDetail(apiClient, id as number | string, language),
+    }),
+  trafficLog: () =>
+    queryOptions({ queryKey: userKeys.trafficLog, queryFn: () => user.getTrafficLog(apiClient) }),
+  commConfig: () =>
+    queryOptions({
+      queryKey: userKeys.commConfig,
+      queryFn: () => user.commConfig(apiClient),
+    }),
+  servers: () =>
+    queryOptions({
+      queryKey: userKeys.servers,
+      queryFn: () => user.fetchServers(apiClient),
+    }),
+  telegramBot: () =>
+    queryOptions({
+      queryKey: userKeys.telegramBot,
+      queryFn: () => user.getTelegramBotInfo(apiClient),
+    }),
+};
+
 export const useUserInfo = (options?: QueryFreshnessOptions) =>
   useQuery({
-    queryKey: userKeys.info,
-    queryFn: fetchUserInfo,
+    ...userQueryOptions.info(),
     ...options,
   });
 
 export const useUserStat = () =>
-  useQuery({ queryKey: userKeys.stat, queryFn: () => user.getStat(apiClient) });
+  useQuery(userQueryOptions.stat());
 
 export const useSubscribe = (options?: QueryFreshnessOptions & { enabled?: boolean }) =>
   useQuery({
-    queryKey: userKeys.subscribe,
-    queryFn: async () => {
-      const data = await user.getSubscribe(apiClient);
-      reportSubscribeToChat(data);
-      return data;
-    },
+    ...userQueryOptions.subscribe(),
     ...options,
   });
 
 export const useOrders = (status?: number) =>
-  useQuery({ queryKey: userKeys.orders(status), queryFn: () => user.fetchOrders(apiClient, status) });
+  useQuery(userQueryOptions.orders(status));
 
 export const useOrder = (tradeNo: string | undefined) =>
   useQuery({
-    queryKey: userKeys.orderDetail(tradeNo as string),
-    queryFn: () => user.orderDetail(apiClient, tradeNo as string),
+    ...userQueryOptions.orderDetail(tradeNo),
     enabled: Boolean(tradeNo),
   });
 
 export const useOrderStatus = (tradeNo: string | undefined, options?: QueryFreshnessOptions) =>
   useQuery({
-    queryKey: userKeys.orderStatus(tradeNo as string),
-    queryFn: () => user.checkOrder(apiClient, tradeNo as string),
+    ...userQueryOptions.orderStatus(tradeNo),
     enabled: Boolean(tradeNo),
     gcTime: 0,
     ...options,
   });
 
 export const usePlans = () =>
-  useQuery({ queryKey: userKeys.plans, queryFn: () => user.fetchPlans(apiClient) });
+  useQuery(userQueryOptions.plans());
 
 export const usePlan = (id: number | string | undefined) =>
   useQuery({
-    queryKey: userKeys.plan(id as number | string),
-    queryFn: () => user.fetchPlan(apiClient, id as number | string),
+    ...userQueryOptions.plan(id),
     enabled: Boolean(id),
   });
 
 export const usePaymentMethods = (options?: QueryFreshnessOptions & { enabled?: boolean }) =>
   useQuery({
-    queryKey: userKeys.payments,
-    queryFn: () => user.getPaymentMethod(apiClient),
+    ...userQueryOptions.payments(),
     ...options,
   });
 
 export const useNotices = () =>
-  useQuery({
-    queryKey: userKeys.notices,
-    queryFn: () => user.fetchNotices(apiClient),
-  });
+  useQuery(userQueryOptions.notices());
 
 export const useTickets = () =>
-  useQuery({ queryKey: userKeys.tickets, queryFn: () => user.fetchTickets(apiClient) });
+  useQuery(userQueryOptions.tickets());
 
 export const useTicket = (id: number | string | undefined, options?: QueryFreshnessOptions) =>
   useQuery({
-    queryKey: userKeys.ticketDetail(id as number | string),
-    queryFn: () => user.ticketDetail(apiClient, id as number | string),
+    ...userQueryOptions.ticketDetail(id),
     enabled: Boolean(id),
     ...options,
   });
 
 export const useInvite = () =>
-  useQuery({ queryKey: userKeys.invite, queryFn: () => user.fetchInvite(apiClient) });
+  useQuery(userQueryOptions.invite());
 
 export const useInviteDetails = (current?: number, pageSize?: number) =>
   useQuery({
-    queryKey: userKeys.inviteDetails(current, pageSize),
-    queryFn: () => user.inviteDetails(apiClient, current, pageSize),
+    ...userQueryOptions.inviteDetails(current, pageSize),
     // Old dva state keeps the previous `invites` array while detailsLoading flips
     // to true for pagination requests; Table then blurs the existing rows.
     placeholderData: (previousData) => previousData,
@@ -174,8 +254,7 @@ export const useInviteDetails = (current?: number, pageSize?: number) =>
 
 export const useKnowledge = (language: string, keyword?: string) =>
   useQuery({
-    queryKey: userKeys.knowledge(language, keyword),
-    queryFn: () => user.fetchKnowledge(apiClient, language, keyword),
+    ...userQueryOptions.knowledge(language, keyword),
     // The original knowledge model has one `knowledges` field; a search request flips
     // fetchLoading but keeps the previous list until a 200 response replaces it.
     placeholderData: (previousData) => previousData,
@@ -183,8 +262,7 @@ export const useKnowledge = (language: string, keyword?: string) =>
 
 export const useKnowledgeDetail = (id: number | string | undefined, language: string) =>
   useQuery({
-    queryKey: userKeys.knowledgeDetail(id as number | string, language),
-    queryFn: () => user.knowledgeDetail(apiClient, id as number | string, language),
+    ...userQueryOptions.knowledgeDetail(id, language),
     enabled: id !== undefined,
     // The legacy dva model has a single `knowledge` object and hide() clears it;
     // there is no per-article cache to fall back to on a later open/jump.
@@ -192,26 +270,23 @@ export const useKnowledgeDetail = (id: number | string | undefined, language: st
   });
 
 export const useTrafficLog = () =>
-  useQuery({ queryKey: userKeys.trafficLog, queryFn: () => user.getTrafficLog(apiClient) });
+  useQuery(userQueryOptions.trafficLog());
 
 export const useCommConfig = (options?: QueryFreshnessOptions) =>
   useQuery({
-    queryKey: userKeys.commConfig,
-    queryFn: () => user.commConfig(apiClient),
+    ...userQueryOptions.commConfig(),
     ...options,
   });
 
 export const useServers = (options?: QueryFreshnessOptions) =>
   useQuery({
-    queryKey: userKeys.servers,
-    queryFn: () => user.fetchServers(apiClient),
+    ...userQueryOptions.servers(),
     ...options,
   });
 
 export const useTelegramBotInfo = (enabled: boolean) =>
   useQuery({
-    queryKey: userKeys.telegramBot,
-    queryFn: () => user.getTelegramBotInfo(apiClient),
+    ...userQueryOptions.telegramBot(),
     enabled,
     staleTime: 0,
   });
