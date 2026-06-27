@@ -50,7 +50,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => labels[key] ?? key, i18n: { language: 'zh-CN' } }),
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => queryState.navigate,
 }));
 

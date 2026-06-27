@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   pathname: '/coupon',
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useLocation: () => ({ pathname: mocks.pathname }),
 }));
 

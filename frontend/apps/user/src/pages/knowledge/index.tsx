@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { getLocaleAntdMessages } from '@v2board/i18n';
 import type { Knowledge, KnowledgeSummary } from '@v2board/types';

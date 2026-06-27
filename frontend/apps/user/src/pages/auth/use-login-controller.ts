@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type SyntheticEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router';
 import { ApiError, user } from '@v2board/api-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';

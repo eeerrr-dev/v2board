@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
   searchParams: new URLSearchParams(),
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => mocks.navigate,
   useSearchParams: () => [mocks.searchParams],
 }));

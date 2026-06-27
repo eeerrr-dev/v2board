@@ -1,5 +1,5 @@
 import { Fragment, type ComponentType, type SVGProps, useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { getLegacyLocaleClassName } from '@v2board/i18n';
 import {

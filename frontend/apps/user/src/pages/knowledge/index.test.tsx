@@ -83,7 +83,7 @@ const labels: Record<string, string> = {
   'nav.knowledge': '使用文档',
 };
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useSearchParams: () => [mocks.searchParams],
 }));
 

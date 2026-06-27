@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router';
 import { getAuthData, subscribeAuth } from '@/lib/auth';
 
 export function RequireAuth({ children }: { children: ReactNode }) {

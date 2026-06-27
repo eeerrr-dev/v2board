@@ -83,7 +83,7 @@ vi.mock('antd', () => {
   };
 });
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useParams: () => mocks.params,
 }));
 

@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useForgetMutation, useGuestConfig, useSendEmailVerifyMutation } from '@/lib/guest';
 import { authToast } from '@/lib/auth-toast';

@@ -9,7 +9,7 @@ import type {
 import { createPortal } from 'react-dom';
 import { App, Form } from 'antd';
 import type { FormInstance } from 'antd';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 import {
   useCopyServerMutation,
   useDropServerGroupMutation,

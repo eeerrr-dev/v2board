@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { App as AntdApp } from 'antd';
-import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router';
 import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AdminLayout } from '@/components/layout/admin-layout';
 import { bindNotificationApi } from '@/lib/api';

@@ -129,7 +129,7 @@ function resetPlans() {
   ];
 }
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => mocks.navigate,
 }));
 

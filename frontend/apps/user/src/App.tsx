@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { Navigate, Route, Routes, matchPath, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, matchPath, useLocation } from 'react-router';
 import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';

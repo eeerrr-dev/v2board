@@ -103,7 +103,7 @@ function resetPlan() {
   mocks.planFetching = false;
 }
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useParams: () => ({ plan_id: mocks.planId }),
   useNavigate: () => mocks.navigate,
 }));

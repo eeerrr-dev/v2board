@@ -30,7 +30,7 @@ const mocks = vi.hoisted(() => ({
   pathname: '/server/group',
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useLocation: () => ({ pathname: mocks.pathname }),
 }));
 

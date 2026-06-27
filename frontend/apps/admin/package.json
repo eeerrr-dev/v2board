@@ -29,7 +29,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-i18next": "catalog:",
-    "react-router-dom": "catalog:",
+    "react-router": "catalog:",
     "zustand": "catalog:"
   },
   "devDependencies": {

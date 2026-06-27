@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { App } from 'antd';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 import type { AdminConfig, AdminConfigFlat, AdminConfigGroups, Plan } from '@v2board/types';
 import type { AdminThemeField, AdminThemeInfo } from '@v2board/api-client';
 import { LegacyButton } from '@/components/legacy-button';

@@ -69,7 +69,7 @@ const orderStatusState = vi.hoisted(() => ({
   calls: [] as Array<{ tradeNo: string | undefined; options?: { enabled?: boolean } }>,
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useParams: () => ({ trade_no: 'ORDER123' }),
   useNavigate: () => vi.fn(),
 }));

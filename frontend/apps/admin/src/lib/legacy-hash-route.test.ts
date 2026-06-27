@@ -759,19 +759,19 @@ describe('normalizeLegacyHashRoute', () => {
     window.dispatchEvent(
       new ErrorEvent('error', {
         message: 'Outdated Optimize Dep',
-        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-router-dom.js?v=old',
+        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-router.js?v=old',
       }),
     );
     window.dispatchEvent(
       new ErrorEvent('error', {
         message: 'Outdated Optimize Dep',
-        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-router-dom.js?v=old',
+        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-router.js?v=old',
       }),
     );
     window.dispatchEvent(
       new ErrorEvent('error', {
         message: 'Outdated Optimize Dep',
-        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-router-dom.js?v=old',
+        filename: 'http://127.0.0.1:5174/node_modules/.vite/deps/react-router.js?v=old',
       }),
     );
 

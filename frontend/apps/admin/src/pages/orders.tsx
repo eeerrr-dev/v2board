@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminFilter } from '@v2board/api-client';
 import type { AdminOrderRow, Plan, PlanPeriod } from '@v2board/types';

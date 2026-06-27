@@ -33,7 +33,7 @@ export default defineConfig({
       'react/jsx-dev-runtime',
       'react/jsx-runtime',
       'react-i18next',
-      'react-router-dom',
+      'react-router',
       'tailwind-merge',
     ],
     holdUntilCrawlEnd: true,

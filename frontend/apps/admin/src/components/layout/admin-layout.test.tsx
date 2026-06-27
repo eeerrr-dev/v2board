@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   Outlet: () => <div data-outlet="true" />,
   useLocation: () => mocks.location,
   useNavigate: () => mocks.navigate,

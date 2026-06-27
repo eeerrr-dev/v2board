@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { legacyConfirm } from '@/components/legacy-confirm';

@@ -4,7 +4,7 @@ import { App } from 'antd';
 import type { FilterValue } from 'antd/es/table/interface';
 import dayjs from 'dayjs';
 import type { Ticket } from '@v2board/types';
-import { useParams } from 'react-router-dom';
+import { useParams } from 'react-router';
 import {
   useAdminTicket,
   useAdminTickets,

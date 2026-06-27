@@ -56,7 +56,7 @@ const labels: Record<string, string> = {
   'ticket.reply_success': '发送成功',
 };
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useParams: () => ({ ticket_id: '7' }),
 }));
 

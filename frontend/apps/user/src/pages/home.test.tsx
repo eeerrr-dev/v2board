@@ -6,7 +6,7 @@ import HomePage from './home';
 
 const navigate = vi.hoisted(() => vi.fn());
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => navigate,
 }));
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import * as echarts from 'echarts';
 import 'echarts/theme/vintage';
 import type { ECharts, EChartsOption } from 'echarts';

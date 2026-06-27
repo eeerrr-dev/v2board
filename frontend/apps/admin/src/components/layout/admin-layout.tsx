@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 import { user } from '@v2board/api-client';
 import { getLegacyLocaleClassName, legacyGetLocale } from '@v2board/i18n';
 import { apiClient } from '@/lib/api';

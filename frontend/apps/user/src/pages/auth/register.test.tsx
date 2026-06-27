@@ -53,7 +53,7 @@ const mocks = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => mocks.navigate,
   useSearchParams: () => [mocks.params],
 }));

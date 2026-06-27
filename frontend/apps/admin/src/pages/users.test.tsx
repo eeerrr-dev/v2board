@@ -40,7 +40,7 @@ const legacyDatePickerSource = readFileSync(
   'utf8',
 );
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => vi.fn(),
 }));
 

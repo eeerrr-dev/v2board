@@ -34,7 +34,7 @@ const mocks = vi.hoisted(() => ({
   user: { email: 'user@example.com' },
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   Outlet: () => <div data-outlet="true">Outlet content</div>,
   useLocation: () => mocks.location,
   useNavigate: () => mocks.navigate,

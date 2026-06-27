@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SorterResult } from 'antd/es/table/interface';
 import dayjs, { type Dayjs } from 'dayjs';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 import type { Coupon, Giftcard, Plan } from '@v2board/types';
 import {
   useAdminCoupons,

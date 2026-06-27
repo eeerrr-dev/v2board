@@ -58,7 +58,7 @@ const mocks = vi.hoisted(() => ({
   } as MockThemeData,
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useLocation: () => ({ pathname: mocks.pathname }),
 }));
 

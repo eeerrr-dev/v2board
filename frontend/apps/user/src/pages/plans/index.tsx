@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useCommConfig, usePlans } from '@/lib/queries';
 import { PlanContent } from '@/components/plan-content';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

@@ -92,7 +92,7 @@ const labels: Record<string, string> = {
   'profile.deposit_placeholder': '请输入充值金额{{currency}}',
 };
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => mocks.navigate,
 }));
 

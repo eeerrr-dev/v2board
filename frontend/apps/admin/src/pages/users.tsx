@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type AnchorHTMLAttributes } from 'react';
 import { App } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminFilter } from '@v2board/api-client';
 import type { AdminUserRow, PlanPeriod } from '@v2board/types';

@@ -13,7 +13,7 @@ import {
   installLegacyWhiteScreenRecovery,
   normalizeLegacyHashRoute,
 } from '@v2board/config';
-import { HashRouter, Navigate, useLocation } from 'react-router-dom';
+import { HashRouter, Navigate, useLocation } from 'react-router';
 import App, { ADMIN_LEGACY_ROUTE_PATHS } from './App';
 import { RouteBoundaryElement } from './components/route-error-boundary';
 import { LegacyConfirmProvider } from './components/legacy-confirm';
