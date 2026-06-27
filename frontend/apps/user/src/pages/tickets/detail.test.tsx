@@ -37,6 +37,7 @@ const state = vi.hoisted(() => {
     replyMutateAsync: vi.fn(),
     replyPending: false,
     ticket: makeTicket() as ReturnType<typeof makeTicket> | undefined,
+    ticketCalls: [] as Array<{ id: number | string | undefined; options?: unknown }>,
     ticketError: false,
   };
 });
@@ -67,12 +68,15 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/lib/queries', () => ({
-  useTicket: () => ({
-    data: state.ticket,
-    isError: state.ticketError,
-    isFetching: false,
-    refetch: state.refetch,
-  }),
+  useTicket: (id: number | string | undefined, options?: unknown) => {
+    state.ticketCalls.push({ id, options });
+    return {
+      data: state.ticket,
+      isError: state.ticketError,
+      isFetching: false,
+      refetch: state.refetch,
+    };
+  },
   useReplyTicketMutation: () => ({
     isPending: state.replyPending,
     mutateAsync: state.replyMutateAsync,
@@ -166,7 +170,7 @@ describe('TicketDetailPage shadcn chat surface', () => {
   });
 });
 
-describe('TicketDetailPage legacy polling and reply behavior', () => {
+describe('TicketDetailPage query polling and reply behavior', () => {
   let container: HTMLDivElement;
   let root: Root | null;
   let scrollTo: ReturnType<typeof vi.fn>;
@@ -174,6 +178,7 @@ describe('TicketDetailPage legacy polling and reply behavior', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     state.refetch.mockReset();
+    state.ticketCalls = [];
     state.replyMutateAsync.mockReset();
     state.replyMutateAsync.mockResolvedValue(undefined);
     state.replyPending = false;
@@ -204,25 +209,21 @@ describe('TicketDetailPage legacy polling and reply behavior', () => {
     vi.useRealTimers();
   });
 
-  it('scrolls chat to bottom on mount and leaves one scheduled fetch after unmount', () => {
+  it('uses React Query polling and scrolls chat to bottom on mount', () => {
+    const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
+
+    expect(source).toContain('useTicket(ticketId, { refetchInterval: 5000 })');
+    expect(source).not.toContain('window.setTimeout');
+
     act(() => {
       root!.render(<TicketDetailPage />);
     });
 
     expect(scrollTo).toHaveBeenCalledWith(0, 480);
-
-    act(() => root?.unmount());
-    root = null;
-
-    act(() => {
-      vi.advanceTimersByTime(5000);
+    expect(state.ticketCalls.at(-1)).toEqual({
+      id: '7',
+      options: { refetchInterval: 5000 },
     });
-    expect(state.refetch).toHaveBeenCalledTimes(1);
-
-    act(() => {
-      vi.advanceTimersByTime(5000);
-    });
-    expect(state.refetch).toHaveBeenCalledTimes(1);
   });
 
   it('sends a reply on Enter with the legacy toast sequence and clears the input', async () => {

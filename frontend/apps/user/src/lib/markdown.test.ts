@@ -35,7 +35,7 @@ describe('legacy markdown rendering', () => {
   it('translates legacy copy and jump inline handlers into safe React action hooks', () => {
     expect(
       renderLegacyMarkdown(
-        `<button onclick="copy('token')">Copy</button><span onclick="jump(2)">Jump</span>`,
+        '<button onclick="copy(`token`)">Copy</button><span onclick="jump(2)">Jump</span>',
       ),
     ).toBe(
       '<p><button data-v2board-markdown-action="copy" data-v2board-markdown-value="token">Copy</button><span data-v2board-markdown-action="jump" data-v2board-markdown-value="2" tabindex="0" role="button">Jump</span></p>\n',

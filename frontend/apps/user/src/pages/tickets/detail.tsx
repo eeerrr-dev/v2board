@@ -22,29 +22,11 @@ export default function TicketDetailPage() {
   const { ticket_id } = useParams();
   const { t } = useTranslation();
   const ticketId = ticket_id;
-  const ticket = useTicket(ticketId);
+  const ticket = useTicket(ticketId, { refetchInterval: 5000 });
   const reply = useReplyTicketMutation();
   const [message, setMessage] = useState<string | undefined>();
   const chatRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const pollRef = useRef<(() => void) | undefined>(undefined);
-
-  useEffect(() => {
-    // The bundled component stores a module-level `r = () => setTimeout(...)` and
-    // componentWillUnmount only sets `r = undefined`; it does not clear the pending
-    // timeout. That leaves exactly one already-scheduled fetch after the chat popup
-    // closes, then the loop stops because `typeof r` is no longer "function".
-    pollRef.current = () => {
-      window.setTimeout(() => {
-        void ticket.refetch();
-        if (typeof pollRef.current === 'function') pollRef.current();
-      }, 5000);
-    };
-    pollRef.current();
-    return () => {
-      pollRef.current = undefined;
-    };
-  }, [ticket.refetch]);
 
   useEffect(() => {
     const chat = chatRef.current;

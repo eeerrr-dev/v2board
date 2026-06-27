@@ -46,7 +46,7 @@ import {
   userKeys,
 } from '@/lib/queries';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
-import { legacyCopyText } from '@/lib/legacy-settings';
+import { copyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
@@ -103,9 +103,9 @@ export default function InvitePage() {
   const detailsLoading = useLegacyFetchLoading(details.isFetching);
   const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
 
-  const copyInviteLink = (code: string) => {
-    legacyCopyText(`${window.location.origin}${window.location.pathname}#/register?code=${code}`);
-    toast.success(t('dashboard.copy_success'));
+  const copyInviteLink = async (code: string) => {
+    const url = `${window.location.origin}${window.location.pathname}#/register?code=${code}`;
+    if (await copyText(url)) toast.success(t('dashboard.copy_success'));
   };
 
   const generateInvite = async () => {

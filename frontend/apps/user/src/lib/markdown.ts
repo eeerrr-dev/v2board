@@ -49,7 +49,7 @@ function parseLegacyMarkdownAction(expression: string): LegacyMarkdownAction | n
 
 function parseLegacyMarkdownActionValue(value: string) {
   const trimmed = value.trim();
-  const quoted = /^(['"])(.*)\1$/.exec(trimmed);
+  const quoted = /^(['"`])(.*)\1$/.exec(trimmed);
   if (!quoted) return trimmed;
   return (quoted[2] ?? '')
     .replace(/\\n/g, '\n')

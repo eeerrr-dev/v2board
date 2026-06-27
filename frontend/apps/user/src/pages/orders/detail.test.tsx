@@ -63,6 +63,11 @@ const orderState = vi.hoisted(() => ({
     | undefined,
   isFetching: false,
 }));
+const orderStatusState = vi.hoisted(() => ({
+  data: undefined as number | undefined,
+  isError: false,
+  calls: [] as Array<{ tradeNo: string | undefined; options?: { enabled?: boolean } }>,
+}));
 
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ trade_no: 'ORDER123' }),
@@ -111,9 +116,14 @@ vi.mock('@/lib/queries', () => ({
     isPending: cancelState.isPending,
     mutateAsync: cancelMutateAsync,
   }),
-  useCheckOrderMutation: () => ({
-    mutateAsync: checkOrder,
-  }),
+  useOrderStatus: (tradeNo: string | undefined, options?: { enabled?: boolean }) => {
+    orderStatusState.calls.push({ tradeNo, options });
+    if (options?.enabled) checkOrder(tradeNo);
+    return {
+      data: options?.enabled ? orderStatusState.data : undefined,
+      isError: Boolean(options?.enabled && orderStatusState.isError),
+    };
+  },
   useCheckoutOrderMutation: () => ({
     mutateAsync: checkoutOrder,
   }),
@@ -135,6 +145,9 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     orderRefetch.mockReset();
     checkoutOrder.mockReset();
     checkOrder.mockReset();
+    orderStatusState.data = undefined;
+    orderStatusState.isError = false;
+    orderStatusState.calls = [];
     getStripePublicKey.mockReset();
     legacyConfirm.mockReset();
     cancelMutateAsync.mockReset();
@@ -365,7 +378,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
 
   it('hides the QR dialog after paid polling', async () => {
     checkoutOrder.mockResolvedValue({ type: 0, data: 'https://pay.example.test/order' });
-    checkOrder.mockResolvedValue(1);
+    orderStatusState.data = 1;
 
     await act(async () => {
       root.render(<OrderDetailPage />);
@@ -475,7 +488,10 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
   });
 
   it('keeps polling after the pending order detail object refreshes', async () => {
-    checkOrder.mockResolvedValue(0);
+    orderStatusState.data = 0;
+
+    expect(orderDetailSource).toContain('useOrderStatus(tradeNo');
+    expect(orderDetailSource).toContain('refetchInterval: pollOrderStatus ? 3000 : false');
 
     await act(async () => {
       root.render(<OrderDetailPage />);
@@ -487,6 +503,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       await Promise.resolve();
     });
     expect(checkOrder).toHaveBeenCalledTimes(1);
+    expect(orderStatusState.calls.some((call) => call.options?.enabled)).toBe(true);
 
     orderState.data = {
       ...orderState.data!,
@@ -494,12 +511,6 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     };
     await act(async () => {
       root.render(<OrderDetailPage />);
-    });
-
-    await act(async () => {
-      vi.advanceTimersByTime(3000);
-      await Promise.resolve();
-      await Promise.resolve();
     });
 
     expect(checkOrder).toHaveBeenCalledTimes(2);

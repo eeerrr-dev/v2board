@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyLegacySettings, legacyCopyText } from './legacy-settings';
+import { applyLegacySettings, copyText } from './legacy-settings';
 
 describe('legacy settings bootstrap', () => {
   let appendedThemeLink: HTMLLinkElement | null;
@@ -81,99 +81,36 @@ describe('legacy settings bootstrap', () => {
     expect(document.title).toBe('undefined');
   });
 
-  it('uses the legacy copy marker selection styles', () => {
-    const execCommand = vi.fn(() => {
-      const mark = document.body.querySelector('span') as HTMLSpanElement | null;
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-      expect(mark?.style.webkitUserSelect).toBe('text');
-      expect((mark?.style as CSSStyleDeclaration & { MozUserSelect?: string }).MozUserSelect).toBe(
-        'text',
-      );
-      expect((mark?.style as CSSStyleDeclaration & { msUserSelect?: string }).msUserSelect).toBe(
-        'text',
-      );
-      expect(mark?.style.userSelect).toBe('text');
-      return true;
-    });
-    Object.defineProperty(document, 'execCommand', {
-      configurable: true,
-      value: execCommand,
-    });
-
-    expect(legacyCopyText('legacy text')).toBe(true);
-
-    expect(execCommand).toHaveBeenCalledWith('copy');
-    expect(document.querySelector('span')).toBeNull();
-  });
-
-  it('uses the modern Clipboard API when the page has a secure clipboard context', async () => {
+  it('uses the modern Clipboard API', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
-    const execCommand = vi.fn(() => true);
-    Object.defineProperty(window, 'isSecureContext', {
-      configurable: true,
-      value: true,
-    });
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
     });
-    Object.defineProperty(document, 'execCommand', {
-      configurable: true,
-      value: execCommand,
-    });
 
-    expect(legacyCopyText('modern text')).toBe(true);
-    await Promise.resolve();
+    await expect(copyText('modern text')).resolves.toBe(true);
 
     expect(writeText).toHaveBeenCalledWith('modern text');
-    expect(execCommand).not.toHaveBeenCalled();
-    expect(document.querySelector('span')).toBeNull();
   });
 
-  it('falls back to the old clipboardData copy path when execCommand fails', () => {
-    const execCommand = vi.fn(() => false);
-    const setData = vi.fn();
-    const prompt = vi.fn();
-    Object.defineProperty(document, 'execCommand', {
-      configurable: true,
-      value: execCommand,
-    });
-    Object.defineProperty(window, 'clipboardData', {
-      configurable: true,
-      value: { setData },
-    });
-    Object.defineProperty(window, 'prompt', {
-      configurable: true,
-      value: prompt,
-    });
-
-    expect(legacyCopyText('fallback text')).toBe(true);
-
-    expect(execCommand).toHaveBeenCalledWith('copy');
-    expect(setData).toHaveBeenCalledWith('text', 'fallback text');
-    expect(prompt).not.toHaveBeenCalled();
-    expect(document.querySelector('span')).toBeNull();
-  });
-
-  it('falls back to the original copy prompt when clipboardData is unavailable', () => {
-    const execCommand = vi.fn(() => false);
-    const prompt = vi.fn();
-    Object.defineProperty(document, 'execCommand', {
-      configurable: true,
-      value: execCommand,
-    });
-    Object.defineProperty(window, 'clipboardData', {
+  it('returns false when the Clipboard API is unavailable', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: undefined,
     });
-    Object.defineProperty(window, 'prompt', {
+
+    await expect(copyText('no clipboard')).resolves.toBe(false);
+  });
+
+  it('returns false when Clipboard API write fails', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('blocked'));
+    Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
-      value: prompt,
+      value: { writeText },
     });
 
-    expect(legacyCopyText('manual text')).toBe(false);
+    await expect(copyText('blocked text')).resolves.toBe(false);
 
-    expect(prompt).toHaveBeenCalledWith(expect.stringContaining('Copy to clipboard:'), 'manual text');
-    expect(document.querySelector('span')).toBeNull();
+    expect(writeText).toHaveBeenCalledWith('blocked text');
   });
 });

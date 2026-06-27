@@ -16,10 +16,10 @@ import {
 } from '@/components/ui/shadcn-dialog';
 import {
   userKeys,
-  useCheckOrderMutation,
   useCheckoutOrderMutation,
   useCommConfig,
   useOrder,
+  useOrderStatus,
   usePaymentMethods,
   useCancelOrderMutation,
   useStripePublicKeyMutation,
@@ -59,57 +59,54 @@ export default function OrderDetailPage() {
   useUserInfo({ refetchOnMount: 'always' });
   const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
   const cancel = useCancelOrderMutation();
-  const { mutateAsync: checkOrder } = useCheckOrderMutation();
   const { mutateAsync: checkoutOrder } = useCheckoutOrderMutation();
   const { mutateAsync: fetchStripePublicKey } = useStripePublicKeyMutation();
   const [methodId, setMethodId] = useState<number | undefined>();
   const [qrcodeVisible, setQrcodeVisible] = useState(false);
   const [payUrl, setPayUrl] = useState<string | undefined>();
   const [paying, setPaying] = useState(false);
+  const [pollOrderStatus, setPollOrderStatus] = useState(false);
   const [stripePk, setStripePk] = useState<string | null>(null);
   const [stripeToken, setStripeToken] = useState<{ id: string } | null>(null);
   const [preHandlingAmount, setPreHandlingAmount] = useState<number | undefined>();
+  const orderStatusQuery = useOrderStatus(tradeNo, {
+    enabled: pollOrderStatus,
+    refetchInterval: pollOrderStatus ? 3000 : false,
+  });
   const symbol = comm?.currency_symbol;
   const currency = comm?.currency;
   const paymentMethods = orderQuery.data ? paymentsQuery.data : undefined;
   const hasLoadedOrder = Boolean(orderQuery.data);
   const loading = useLegacyFetchLoading(orderQuery.isFetching);
 
-  // The original calls check() once from the order/detail fetch callback, regardless of the
-  // loaded status: it polls /user/order/check every 3s while pending, and on a non-pending
-  // result clears the timer, hides the QR modal and refetches the detail. A ref keeps this to
-  // one start per trade_no so the refetch (which re-runs this effect) cannot restart the poll.
+  // The original waits 3s before starting /user/order/check and only starts once per trade_no.
+  // After that first delay, TanStack Query owns the 3s refetch cadence.
   const checkedRef = useRef<string | null>(null);
   const previousOrderStatusRef = useRef<{ tradeNo?: string; status?: number }>({});
   useEffect(() => {
     if (!tradeNo || !hasLoadedOrder) return;
     if (checkedRef.current === tradeNo) return;
     checkedRef.current = tradeNo;
-    let cancelled = false;
-    let timer = 0;
-    const check = () => {
-      timer = window.setTimeout(() => {
-        checkOrder(tradeNo)
-          .then((status) => {
-            if (cancelled) return;
-            if (status !== 0) {
-              setQrcodeVisible(false);
-              // The original poll success only hides the QR modal; it leaves
-              // payUrl in state. Manual modal cancel is the path that clears it.
-              orderQuery.refetch();
-            } else {
-              check();
-            }
-          })
-          .catch(() => {});
-      }, 3000);
-    };
-    check();
+    const timer = window.setTimeout(() => setPollOrderStatus(true), 3000);
     return () => {
-      cancelled = true;
       window.clearTimeout(timer);
+      setPollOrderStatus(false);
     };
-  }, [checkOrder, tradeNo, hasLoadedOrder]);
+  }, [tradeNo, hasLoadedOrder]);
+
+  useEffect(() => {
+    if (orderStatusQuery.isError) setPollOrderStatus(false);
+  }, [orderStatusQuery.isError]);
+
+  useEffect(() => {
+    const status = orderStatusQuery.data;
+    if (status === undefined || status === 0) return;
+    setPollOrderStatus(false);
+    setQrcodeVisible(false);
+    // The original poll success only hides the QR modal; it leaves payUrl in state.
+    // Manual modal cancel is the path that clears it.
+    orderQuery.refetch();
+  }, [orderQuery.refetch, orderStatusQuery.data]);
 
   useEffect(() => {
     const first = paymentMethods?.[0];

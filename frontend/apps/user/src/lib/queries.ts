@@ -8,6 +8,8 @@ export type SaveOrderPayload = Parameters<typeof user.saveOrder>[1];
 export type CheckoutOrderPayload = Parameters<typeof user.checkoutOrder>[1];
 
 interface QueryFreshnessOptions {
+  enabled?: boolean;
+  refetchInterval?: number | false;
   refetchOnMount?: boolean | 'always';
 }
 
@@ -59,6 +61,7 @@ export const userKeys = {
   subscribe: ['user', 'subscribe'] as const,
   orders: (status?: number) => ['user', 'orders', status ?? 'all'] as const,
   orderDetail: (tradeNo: string) => ['user', 'orders', 'detail', tradeNo] as const,
+  orderStatus: (tradeNo: string) => ['user', 'orders', 'status', tradeNo] as const,
   plans: ['user', 'plans'] as const,
   plan: (id: number | string) => ['user', 'plan', id] as const,
   payments: ['user', 'payments'] as const,
@@ -114,6 +117,15 @@ export const useOrder = (tradeNo: string | undefined) =>
     enabled: Boolean(tradeNo),
   });
 
+export const useOrderStatus = (tradeNo: string | undefined, options?: QueryFreshnessOptions) =>
+  useQuery({
+    queryKey: userKeys.orderStatus(tradeNo as string),
+    queryFn: () => user.checkOrder(apiClient, tradeNo as string),
+    enabled: Boolean(tradeNo),
+    gcTime: 0,
+    ...options,
+  });
+
 export const usePlans = () =>
   useQuery({ queryKey: userKeys.plans, queryFn: () => user.fetchPlans(apiClient) });
 
@@ -140,11 +152,12 @@ export const useNotices = () =>
 export const useTickets = () =>
   useQuery({ queryKey: userKeys.tickets, queryFn: () => user.fetchTickets(apiClient) });
 
-export const useTicket = (id: number | string | undefined) =>
+export const useTicket = (id: number | string | undefined, options?: QueryFreshnessOptions) =>
   useQuery({
     queryKey: userKeys.ticketDetail(id as number | string),
     queryFn: () => user.ticketDetail(apiClient, id as number | string),
     enabled: Boolean(id),
+    ...options,
   });
 
 export const useInvite = () =>
@@ -251,12 +264,6 @@ export function useCheckCouponMutation() {
 export function useSaveOrderMutation() {
   return useMutation({
     mutationFn: (payload: SaveOrderPayload) => user.saveOrder(apiClient, payload),
-  });
-}
-
-export function useCheckOrderMutation() {
-  return useMutation({
-    mutationFn: (tradeNo: string) => user.checkOrder(apiClient, tradeNo),
   });
 }
 

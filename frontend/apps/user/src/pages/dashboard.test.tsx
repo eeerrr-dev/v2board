@@ -141,7 +141,7 @@ vi.mock('@/lib/queries', () => ({
 }));
 
 vi.mock('@/lib/legacy-settings', () => ({
-  legacyCopyText: mocks.copyText,
+  copyText: mocks.copyText,
 }));
 
 vi.mock('@/lib/toast', () => ({
@@ -177,6 +177,7 @@ function baseSubscribe(overrides: Record<string, unknown> = {}) {
 
 function resetMocks() {
   mocks.copyText.mockReset();
+  mocks.copyText.mockResolvedValue(true);
   mocks.navigate.mockReset();
   mocks.newPeriodMutateAsync.mockReset();
   mocks.newPeriodMutateAsync.mockResolvedValue(true);

@@ -162,7 +162,7 @@ vi.mock('@/lib/queries', () => ({
 }));
 
 vi.mock('@/lib/legacy-settings', () => ({
-  legacyCopyText: mocks.copyText,
+  copyText: mocks.copyText,
 }));
 
 vi.mock('@/lib/toast', () => ({
@@ -192,6 +192,7 @@ describe('ProfilePage shadcn account surface', () => {
     mocks.unbindTelegram.mockReset();
     mocks.saveOrder.mockReset();
     mocks.copyText.mockClear();
+    mocks.copyText.mockResolvedValue(true);
     mocks.userInfo = {
       balance: 0,
       auto_renewal: 0,

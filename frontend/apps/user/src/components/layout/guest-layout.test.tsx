@@ -10,6 +10,10 @@ const guestLayoutSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'guest-layout.tsx'),
   'utf8',
 );
+const authLayoutSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../../pages/auth/auth-layout.tsx'),
+  'utf8',
+);
 
 const mocks = vi.hoisted(() => ({
   backgroundUrl: 'https://cdn.example.test/bg.jpg',
@@ -42,11 +46,13 @@ function renderGuest(path: string) {
 }
 
 describe('GuestLayout auth shell', () => {
-  it('derives the bundled background_url image from a typed ternary (no unsound cast)', () => {
-    expect(guestLayoutSource).toContain(
-      'const legacyBackgroundImage = backgroundUrl ? `url(${backgroundUrl})` : undefined;',
-    );
-    expect(guestLayoutSource).not.toContain('`url(${backgroundUrl})`) as string');
+  it('delegates the background-free auth shell to AuthLayout', () => {
+    expect(guestLayoutSource).toContain("import { AuthLayout } from '@/pages/auth/auth-layout';");
+    expect(guestLayoutSource).toContain('return <AuthLayout />;');
+    expect(guestLayoutSource).not.toContain('backgroundUrl');
+    expect(guestLayoutSource).not.toContain('background_url');
+    expect(authLayoutSource).not.toContain('backgroundUrl');
+    expect(authLayoutSource).not.toContain('background_url');
   });
 
   describe('redesigned auth chrome (route-isolated 2026 reskin)', () => {

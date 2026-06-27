@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Copy, QrCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { legacyCopyText } from '@/lib/legacy-settings';
+import { copyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
 import clashForAndroidIcon from '../assets/images/icon/Clash For Android.png';
 import clashForWindowsIcon from '../assets/images/icon/Clash For Windows.png';
@@ -53,9 +53,8 @@ export function DashboardSubscribeMenu({
     [subscribeUrl],
   );
 
-  const copyUrl = () => {
-    legacyCopyText(subscribeUrl);
-    toast.success(t('dashboard.copy_success'));
+  const copyUrl = async () => {
+    if (await copyText(subscribeUrl)) toast.success(t('dashboard.copy_success'));
   };
 
   return (

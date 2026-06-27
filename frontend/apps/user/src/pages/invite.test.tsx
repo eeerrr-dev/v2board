@@ -121,7 +121,7 @@ vi.mock('@/lib/queries', () => ({
 }));
 
 vi.mock('@/lib/legacy-settings', () => ({
-  legacyCopyText: mocks.copyText,
+  copyText: mocks.copyText,
 }));
 
 vi.mock('@/lib/toast', () => ({
@@ -145,6 +145,7 @@ function resetMocks() {
     withdraw_methods: [],
   };
   mocks.copyText.mockReset();
+  mocks.copyText.mockResolvedValue(true);
   mocks.detailQueryCalls = [];
   mocks.detailRows = [];
   mocks.detailsFetching = false;

@@ -35,8 +35,33 @@ const mocks = vi.hoisted(() => {
     ],
   };
 
+  const defaultDetailById = {
+    1: {
+      id: 1,
+      title: 'Copy Article',
+      body: '<button onclick="copy(`token`)">copy</button>',
+      category: 'General',
+      updated_at: 1_700_000_000,
+      language: 'zh-CN',
+      sort: null,
+      show: 1,
+      created_at: 1_700_000_000,
+    },
+    2: {
+      id: 2,
+      title: 'Router Guide',
+      body: '<a onclick="jump(1)">jump</a>',
+      category: 'Router',
+      updated_at: 1_700_086_400,
+      language: 'zh-CN',
+      sort: null,
+      show: 1,
+      created_at: 1_700_086_400,
+    },
+  } as Record<string, unknown>;
+
   return {
-    legacyCopyText: vi.fn(),
+    copyText: vi.fn(),
     toastSuccess: vi.fn(),
     detailRefetch: vi.fn(),
     knowledgeArgs: [] as Array<{ language: string; keyword?: string }>,
@@ -45,31 +70,9 @@ const mocks = vi.hoisted(() => {
     detailFetching: false,
     searchParams: new URLSearchParams(),
     defaultGroups,
+    defaultDetailById,
     groups: defaultGroups,
-    detailById: {
-      1: {
-        id: 1,
-        title: 'Copy Article',
-        body: '<button onclick="copy(`token`)">copy</button>',
-        category: 'General',
-        updated_at: 1_700_000_000,
-        language: 'zh-CN',
-        sort: null,
-        show: 1,
-        created_at: 1_700_000_000,
-      },
-      2: {
-        id: 2,
-        title: 'Router Guide',
-        body: '<a onclick="jump(1)">jump</a>',
-        category: 'Router',
-        updated_at: 1_700_086_400,
-        language: 'zh-CN',
-        sort: null,
-        show: 1,
-        created_at: 1_700_086_400,
-      },
-    } as Record<string, unknown>,
+    detailById: { ...defaultDetailById },
   };
 });
 
@@ -117,23 +120,8 @@ vi.mock('@/lib/queries', () => ({
   },
 }));
 
-vi.mock('@/lib/markdown', () => ({
-  LEGACY_MARKDOWN_ACTION_ATTRIBUTE: 'data-v2board-markdown-action',
-  LEGACY_MARKDOWN_VALUE_ATTRIBUTE: 'data-v2board-markdown-value',
-  renderLegacyMarkdown: (value: string) =>
-    value
-      .replace(
-        'onclick="copy(`token`)"',
-        'data-v2board-markdown-action="copy" data-v2board-markdown-value="token"',
-      )
-      .replace(
-        'onclick="jump(1)"',
-        'data-v2board-markdown-action="jump" data-v2board-markdown-value="1"',
-      ),
-}));
-
 vi.mock('@/lib/legacy-settings', () => ({
-  legacyCopyText: mocks.legacyCopyText,
+  copyText: mocks.copyText,
 }));
 
 vi.mock('@/lib/toast', () => ({
@@ -148,14 +136,13 @@ describe('KnowledgePage shadcn library surface', () => {
     mocks.detailFetching = false;
     mocks.searchParams = new URLSearchParams();
     mocks.groups = mocks.defaultGroups;
+    mocks.detailById = { ...mocks.defaultDetailById };
     mocks.knowledgeArgs = [];
     mocks.detailArgs = [];
   });
 
   afterEach(() => {
     document.body.innerHTML = '';
-    window.copy = undefined;
-    window.jump = undefined;
   });
 
   it('renders the shadcn search card, category groups, article rows, and dates', () => {
@@ -243,9 +230,11 @@ describe('KnowledgePage redesigned interactions', () => {
     mocks.detailFetching = false;
     mocks.searchParams = new URLSearchParams();
     mocks.groups = mocks.defaultGroups;
+    mocks.detailById = { ...mocks.defaultDetailById };
     mocks.knowledgeArgs = [];
     mocks.detailArgs = [];
-    mocks.legacyCopyText.mockClear();
+    mocks.copyText.mockClear();
+    mocks.copyText.mockResolvedValue(true);
     mocks.toastSuccess.mockClear();
     mocks.detailRefetch.mockClear();
   });
@@ -257,8 +246,6 @@ describe('KnowledgePage redesigned interactions', () => {
     }
     container.remove();
     document.body.innerHTML = '';
-    window.copy = undefined;
-    window.jump = undefined;
     vi.useRealTimers();
   });
 
@@ -321,7 +308,7 @@ describe('KnowledgePage redesigned interactions', () => {
     expect(document.body.innerHTML).not.toContain('onclick=');
   });
 
-  it('shows sheet loading content while fetching an article and clears hooks on close', async () => {
+  it('shows sheet loading content while fetching an article without installing global hooks', async () => {
     mocks.detailFetching = true;
 
     await act(async () => {
@@ -337,8 +324,8 @@ describe('KnowledgePage redesigned interactions', () => {
 
     expect(document.body.innerHTML).toContain('data-testid="knowledge-sheet"');
     expect(document.body.innerHTML).toContain('Loading...');
-    expect(window.copy).toBeTypeOf('function');
-    expect(window.jump).toBeTypeOf('function');
+    expect(knowledgeSource).not.toContain('window.copy');
+    expect(knowledgeSource).not.toContain('window.jump');
 
     const closeButton = document.body.querySelector(
       '[data-testid="knowledge-sheet"] button',
@@ -349,11 +336,9 @@ describe('KnowledgePage redesigned interactions', () => {
     });
 
     expect(document.body.innerHTML).not.toContain('data-testid="knowledge-sheet"');
-    expect(window.copy).toBeUndefined();
-    expect(window.jump).toBeUndefined();
   });
 
-  it('copies once and shows the success message once', async () => {
+  it('copies from sanitized markdown actions and shows the success message once', async () => {
     await act(async () => {
       root!.render(<KnowledgePage />);
       await Promise.resolve();
@@ -365,10 +350,18 @@ describe('KnowledgePage redesigned interactions', () => {
       await Promise.resolve();
     });
 
-    expect(window.copy).toBeTypeOf('function');
-    window.copy?.('token');
+    const copyAction = document.body.querySelector(
+      '[data-v2board-markdown-action="copy"]',
+    ) as HTMLElement;
+    expect(copyAction).not.toBeNull();
 
-    expect(mocks.legacyCopyText).toHaveBeenCalledWith('token');
+    await act(async () => {
+      copyAction.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.copyText).toHaveBeenCalledWith('token');
     expect(mocks.toastSuccess).toHaveBeenCalledTimes(1);
     expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功');
   });
@@ -395,15 +388,16 @@ describe('KnowledgePage redesigned interactions', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.legacyCopyText).toHaveBeenCalledWith('token');
+    expect(mocks.copyText).toHaveBeenCalledWith('token');
     expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功');
 
-    mocks.detailFetching = false;
+    const routerItem = Array.from(container.querySelectorAll('[data-testid="knowledge-item"]')).find(
+      (element) => element.textContent?.includes('Router Guide'),
+    ) as HTMLElement;
     await act(async () => {
-      window.jump?.(2);
+      routerItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
-
     const jumpAction = document.body.querySelector(
       '[data-v2board-markdown-action="jump"]',
     ) as HTMLElement;
@@ -418,6 +412,17 @@ describe('KnowledgePage redesigned interactions', () => {
   });
 
   it('jumps between articles and refetches when jumping to the currently visible one', async () => {
+    mocks.detailById = {
+      ...mocks.detailById,
+      1: {
+        ...(mocks.detailById[1] as Record<string, unknown>),
+        body: '<a onclick="jump(2)">jump</a>',
+      },
+      2: {
+        ...(mocks.detailById[2] as Record<string, unknown>),
+        body: '<a onclick="jump(2)">refresh</a>',
+      },
+    };
     await act(async () => {
       root!.render(<KnowledgePage />);
       await Promise.resolve();
@@ -429,16 +434,22 @@ describe('KnowledgePage redesigned interactions', () => {
       await Promise.resolve();
     });
 
+    const jumpToRouter = document.body.querySelector(
+      '[data-v2board-markdown-action="jump"]',
+    ) as HTMLElement;
     await act(async () => {
-      window.jump?.(2);
+      jumpToRouter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(mocks.detailArgs).toContainEqual({ id: 2, language: 'zh-CN' });
+    expect(mocks.detailArgs).toContainEqual({ id: '2', language: 'zh-CN' });
     expect(document.body.innerHTML).toContain('Router Guide');
 
+    const refreshRouter = document.body.querySelector(
+      '[data-v2board-markdown-action="jump"]',
+    ) as HTMLElement;
     await act(async () => {
-      window.jump?.(2);
+      refreshRouter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
@@ -446,6 +457,13 @@ describe('KnowledgePage redesigned interactions', () => {
   });
 
   it('keeps the previous article title while a jump fetch is loading', async () => {
+    mocks.detailById = {
+      ...mocks.detailById,
+      1: {
+        ...(mocks.detailById[1] as Record<string, unknown>),
+        body: '<a onclick="jump(2)">jump</a>',
+      },
+    };
     await act(async () => {
       root!.render(<KnowledgePage />);
       await Promise.resolve();
@@ -460,8 +478,11 @@ describe('KnowledgePage redesigned interactions', () => {
     expect(document.body.innerHTML).toContain('Copy Article');
 
     mocks.detailFetching = true;
+    const jumpToRouter = document.body.querySelector(
+      '[data-v2board-markdown-action="jump"]',
+    ) as HTMLElement;
     await act(async () => {
-      window.jump?.(2);
+      jumpToRouter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       root!.render(<KnowledgePage />);
       await Promise.resolve();
     });

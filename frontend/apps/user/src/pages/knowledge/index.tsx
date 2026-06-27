@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -19,7 +19,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { getRequestLocale } from '@/lib/api';
 import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
-import { legacyCopyText } from '@/lib/legacy-settings';
+import { copyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
 import {
   LEGACY_MARKDOWN_ACTION_ATTRIBUTE,
@@ -28,13 +28,6 @@ import {
 } from '@/lib/markdown';
 import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
-
-declare global {
-  interface Window {
-    copy?: (text: string) => void;
-    jump?: (id: number | string) => void;
-  }
-}
 
 export default function KnowledgePage() {
   const { t, i18n } = useTranslation();
@@ -101,30 +94,29 @@ export default function KnowledgePage() {
   }, [searchValue]);
 
   useEffect(() => {
-    if (selectedId === undefined) return;
-    window.copy = (text: string) => {
-      legacyCopyText(text);
-      toast.success(t('dashboard.copy_success'));
-    };
-    window.jump = (id: number | string) => {
-      if (Object.is(id, selectedId)) void refetchDetail();
-      else setSelectedId(id);
-    };
-    return () => {
-      window.copy = undefined;
-      window.jump = undefined;
-    };
-  }, [refetchDetail, selectedId, t]);
-
-  useEffect(() => {
     if (detail.data && !detail.isFetching) setVisibleDetail(detail.data);
   }, [detail.data, detail.isFetching]);
+
+  const copyMarkdownText = useCallback(
+    async (text: string) => {
+      if (await copyText(text)) toast.success(t('dashboard.copy_success'));
+    },
+    [t],
+  );
+
+  const jumpToArticle = useCallback(
+    (id: number | string) => {
+      if (selectedId !== undefined && String(id) === String(selectedId)) void refetchDetail();
+      else setSelectedId(id);
+    },
+    [refetchDetail, selectedId],
+  );
 
   const runMarkdownAction = (element: HTMLElement) => {
     const action = element.getAttribute(LEGACY_MARKDOWN_ACTION_ATTRIBUTE);
     const value = element.getAttribute(LEGACY_MARKDOWN_VALUE_ATTRIBUTE) ?? '';
-    if (action === 'copy') window.copy?.(value);
-    if (action === 'jump') window.jump?.(value);
+    if (action === 'copy') void copyMarkdownText(value);
+    if (action === 'jump') jumpToArticle(value);
   };
 
   const handleMarkdownAction = (event: MouseEvent<HTMLDivElement>) => {

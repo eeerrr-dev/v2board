@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import { legacyCopyText } from '@/lib/legacy-settings';
+import { copyText } from '@/lib/legacy-settings';
 
 export type ProfilePreferenceKey = 'auto_renewal' | 'remind_expire' | 'remind_traffic';
 export type ProfileConfirmAction = 'reset-subscribe' | 'unbind-telegram' | null;
@@ -186,7 +186,7 @@ export function ProfileTelegramBindDialog({
               <code
                 className="flex cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
                 data-testid="profile-copy-code"
-                onClick={() => legacyCopyText(bindCommand)}
+                onClick={() => void copyText(bindCommand)}
               >
                 {bindCommand}
               </code>
