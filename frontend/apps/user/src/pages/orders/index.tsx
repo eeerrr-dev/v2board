@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { legacyConfirm } from '@/components/legacy-confirm';
-import { legacyHref } from '@/lib/legacy-href';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -94,13 +93,13 @@ export default function OrdersPage() {
                 return (
                   <TableRow key={order.trade_no}>
                     <TableCell>
-                      <a
-                        ref={legacyHref()}
-                        className="font-medium text-foreground underline-offset-4 hover:underline"
+                      <button
+                        type="button"
+                        className="text-left font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                         onClick={() => navigate(`/order/${order.trade_no}`)}
                       >
                         {order.trade_no}
-                      </a>
+                      </button>
                     </TableCell>
                     <TableCell>
                       <StatusBadge>{periodLabel}</StatusBadge>
@@ -116,28 +115,22 @@ export default function OrdersPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button asChild variant="ghost" size="sm">
-                          <a
-                            ref={legacyHref()}
-                            onClick={() => navigate(`/order/${order.trade_no}`)}
-                          >
-                            {t('order.return')}
-                          </a>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => navigate(`/order/${order.trade_no}`)}
+                        >
+                          {t('order.return')}
                         </Button>
-                        <Button asChild variant="ghost" size="sm" disabled={order.status !== 0}>
-                          <a
-                            ref={legacyHref()}
-                            aria-disabled={order.status !== 0}
-                            onClick={(event) => {
-                              if (order.status !== 0) {
-                                event.preventDefault();
-                                return;
-                              }
-                              void onCancelOrder(order.trade_no);
-                            }}
-                          >
-                            {t('common.cancel')}
-                          </a>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={order.status !== 0}
+                          onClick={() => void onCancelOrder(order.trade_no)}
+                        >
+                          {t('common.cancel')}
                         </Button>
                       </div>
                     </TableCell>

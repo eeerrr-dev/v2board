@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useServers, useSubscribe } from '@/lib/queries';
-import { legacyHref } from '@/lib/legacy-href';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
@@ -58,14 +57,13 @@ export default function NodePage() {
           <AlertDescription>
             <span className="flex flex-wrap items-center gap-1">
               <span>{t('node.no_available')}</span>
-              <Button asChild variant="link" className="h-auto p-0 text-sm">
-                <a
-                  data-testid="node-empty-action"
-                  ref={legacyHref()}
-                  onClick={() => navigate(to)}
-                >
-                  {subscribe.data?.plan_id ? t('node.renew') : t('node.subscribe')}
-                </a>
+              <Button
+                data-testid="node-empty-action"
+                variant="link"
+                className="h-auto p-0 text-sm"
+                onClick={() => navigate(to)}
+              >
+                {subscribe.data?.plan_id ? t('node.renew') : t('node.subscribe')}
               </Button>
             </span>
           </AlertDescription>

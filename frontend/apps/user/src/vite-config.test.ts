@@ -32,10 +32,12 @@ describe('user Vite dev optimizer', () => {
     expect(viteConfigSource).not.toContain('themeRuntimeAssetsPlugin()');
     expect(viteConfigSource).not.toContain('legacyThemePlugin()');
     expect(viteConfigSource).toContain('stripViteClientPlugin()');
+    expect(viteConfigSource).toContain("'@v2board/api-client > axios'");
+    expect(viteConfigSource).not.toContain("'axios'");
     expect(viteConfigSource).toContain("'react-dom'");
     expect(viteConfigSource).toContain("'react/jsx-dev-runtime'");
     expect(viteConfigSource).toContain("'react/jsx-runtime'");
-    expect(viteConfigSource).toContain('holdUntilCrawlEnd: true');
+    expect(viteConfigSource).toContain('holdUntilCrawlEnd: false');
     expect(viteConfigSource).toContain('noDiscovery: true');
   });
 

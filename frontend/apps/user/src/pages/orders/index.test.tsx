@@ -206,20 +206,20 @@ describe('OrdersPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    const tradeLink = [...container.querySelectorAll<HTMLAnchorElement>('a')].find(
-      (link) => link.textContent === 'ORDER123',
+    const tradeButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'ORDER123',
     )!;
     await act(async () => {
-      tradeLink.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      tradeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
 
-    const detailLink = [...container.querySelectorAll<HTMLAnchorElement>('a')].find(
-      (link) => link.textContent === '查看详情',
+    const detailButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === '查看详情',
     )!;
     await act(async () => {
-      detailLink.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      detailButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
@@ -231,14 +231,14 @@ describe('OrdersPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    const cancelLinks = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).filter(
-      (link) => link.textContent === '取消',
+    const cancelButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(
+      (button) => button.textContent === '取消',
     );
-    expect(cancelLinks).toHaveLength(2);
-    expect(cancelLinks[0]!.getAttribute('aria-disabled')).toBe('false');
+    expect(cancelButtons).toHaveLength(2);
+    expect(cancelButtons[0]!.disabled).toBe(false);
 
     await act(async () => {
-      cancelLinks[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      cancelButtons[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
@@ -270,22 +270,22 @@ describe('OrdersPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    const detailLinks = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).filter(
-      (link) => link.textContent === '查看详情',
+    const detailButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(
+      (button) => button.textContent === '查看详情',
     );
     await act(async () => {
-      detailLinks[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      detailButtons[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER456');
 
-    const cancelLinks = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).filter(
-      (link) => link.textContent === '取消',
+    const cancelButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(
+      (button) => button.textContent === '取消',
     );
-    expect(cancelLinks[1]!.getAttribute('aria-disabled')).toBe('true');
+    expect(cancelButtons[1]!.disabled).toBe(true);
 
     await act(async () => {
-      cancelLinks[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      cancelButtons[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 

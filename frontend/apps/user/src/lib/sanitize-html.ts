@@ -11,78 +11,78 @@ type DOMPurifyFactory = {
 };
 
 const LEGACY_HTML_ALLOWED_ATTRS = [
-    'align',
-    'alt',
-    'aria-label',
-    'aria-hidden',
-    'class',
-    'colspan',
-    'data-v2board-markdown-action',
-    'data-v2board-markdown-value',
-    'height',
-    'href',
-    'id',
-    'rel',
-    'role',
-    'rowspan',
-    'src',
-    'style',
-    'tabindex',
-    'target',
-    'title',
-    'width',
+  'align',
+  'alt',
+  'aria-label',
+  'aria-hidden',
+  'class',
+  'colspan',
+  'data-v2board-markdown-action',
+  'data-v2board-markdown-value',
+  'height',
+  'href',
+  'id',
+  'rel',
+  'role',
+  'rowspan',
+  'src',
+  'style',
+  'tabindex',
+  'target',
+  'title',
+  'width',
 ] as const;
 
 const LEGACY_HTML_ALLOWED_TAGS = [
-    'a',
-    'abbr',
-    'article',
-    'b',
-    'blockquote',
-    'br',
-    'button',
-    'caption',
-    'code',
-    'del',
-    'div',
-    'em',
-    'figcaption',
-    'figure',
-    'footer',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'header',
-    'hr',
-    'i',
-    'img',
-    'ins',
-    'li',
-    'main',
-    'mark',
-    'nav',
-    'ol',
-    'p',
-    'pre',
-    's',
-    'section',
-    'small',
-    'span',
-    'strong',
-    'sub',
-    'sup',
-    'table',
-    'tbody',
-    'td',
-    'tfoot',
-    'th',
-    'thead',
-    'tr',
-    'u',
-    'ul',
+  'a',
+  'abbr',
+  'article',
+  'b',
+  'blockquote',
+  'br',
+  'button',
+  'caption',
+  'code',
+  'del',
+  'div',
+  'em',
+  'figcaption',
+  'figure',
+  'footer',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'header',
+  'hr',
+  'i',
+  'img',
+  'ins',
+  'li',
+  'main',
+  'mark',
+  'nav',
+  'ol',
+  'p',
+  'pre',
+  's',
+  'section',
+  'small',
+  'span',
+  'strong',
+  'sub',
+  'sup',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'u',
+  'ul',
 ] as const;
 
 const LEGACY_HTML_SANITIZE_CONFIG = {
@@ -100,7 +100,7 @@ const LEGACY_HTML_SANITIZE_CONFIG = {
 
 export function sanitizeLegacyHtml(html: string) {
   const purify = getDOMPurify();
-  if (!isDOMPurifyUsable(purify)) return sanitizeLegacyHtmlFallback(html);
+  if (!isDOMPurifyReliable(purify)) return sanitizeLegacyHtmlWithDomApi(html);
   return purify.sanitize(html, LEGACY_HTML_SANITIZE_CONFIG);
 }
 
@@ -112,16 +112,24 @@ function getDOMPurify() {
   return purify(window);
 }
 
-function isDOMPurifyUsable(purify: DOMPurifyInstance | null): purify is DOMPurifyInstance {
+function isDOMPurifyReliable(purify: DOMPurifyInstance | null): purify is DOMPurifyInstance {
   if (!purify || purify.isSupported === false) return false;
-  return purify.sanitize('<p>x</p>', LEGACY_HTML_SANITIZE_CONFIG) === '<p>x</p>';
+  if (typeof purify.sanitize !== 'function') return false;
+  const probe = purify.sanitize(
+    '<section class="hero"><a href="https://example.com" onclick="alert(1)">Go</a><script>alert(1)</script></section>',
+    LEGACY_HTML_SANITIZE_CONFIG,
+  );
+  return (
+    probe === '<section class="hero"><a href="https://example.com">Go</a></section>' ||
+    probe === '<section class="hero"><a href="https://example.com">Go</a></section>\n'
+  );
 }
 
 const allowedTags = new Set<string>(LEGACY_HTML_ALLOWED_TAGS);
 const allowedAttrs = new Set<string>(LEGACY_HTML_ALLOWED_ATTRS);
 const removedWithContent = new Set(['iframe', 'object', 'script', 'style']);
 
-function sanitizeLegacyHtmlFallback(html: string) {
+function sanitizeLegacyHtmlWithDomApi(html: string) {
   if (typeof document === 'undefined') return '';
   const template = document.createElement('template');
   template.innerHTML = html;
@@ -155,7 +163,12 @@ function sanitizeChildNodes(parent: ParentNode) {
 function sanitizeAttributes(element: HTMLElement) {
   for (const attr of Array.from(element.attributes)) {
     const name = attr.name.toLowerCase();
-    if (name.startsWith('on') || !allowedAttrs.has(name) || !isSafeAttributeValue(element, name, attr.value)) {
+    if (
+      name === 'style' ||
+      name.startsWith('on') ||
+      !allowedAttrs.has(name) ||
+      !isSafeAttributeValue(element, name, attr.value)
+    ) {
       element.removeAttribute(attr.name);
     }
   }

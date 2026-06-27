@@ -22,7 +22,7 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       '@tanstack/react-query',
-      'axios',
+      '@v2board/api-client > axios',
       'clsx',
       'i18next',
       'markdown-it',
@@ -36,7 +36,7 @@ export default defineConfig({
       'react-router',
       'tailwind-merge',
     ],
-    holdUntilCrawlEnd: true,
+    holdUntilCrawlEnd: false,
     noDiscovery: true,
   },
   resolve: {

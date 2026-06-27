@@ -183,7 +183,7 @@ describe('NodePage shadcn table and empty state', () => {
     expect(nodeSource).not.toContain('data-row-key={s.id}');
   });
 
-  it('keeps javascript href anchors and routes empty-state actions like the original', async () => {
+  it('routes empty-state actions through the shadcn button instead of javascript href anchors', async () => {
     queryState.servers = [];
     queryState.subscribe = { plan_id: 7 };
 
@@ -192,13 +192,13 @@ describe('NodePage shadcn table and empty state', () => {
       await Promise.resolve();
     });
 
-    const link = container.querySelector<HTMLAnchorElement>('a[data-testid="node-empty-action"]');
-    expect(link).toBeTruthy();
-    expect(link!.getAttribute('href')).toBe('javascript:void(0);');
-    expect(link!.textContent).toBe('续费');
+    const button = container.querySelector<HTMLButtonElement>('button[data-testid="node-empty-action"]');
+    expect(button).toBeTruthy();
+    expect(container.querySelector('a[data-testid="node-empty-action"]')).toBeNull();
+    expect(button!.textContent).toBe('续费');
 
     await act(async () => {
-      link!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
@@ -211,14 +211,13 @@ describe('NodePage shadcn table and empty state', () => {
       await Promise.resolve();
     });
 
-    const subscribeLink = container.querySelector<HTMLAnchorElement>(
-      'a[data-testid="node-empty-action"]',
+    const subscribeButton = container.querySelector<HTMLButtonElement>(
+      'button[data-testid="node-empty-action"]',
     );
-    expect(subscribeLink!.getAttribute('href')).toBe('javascript:void(0);');
-    expect(subscribeLink!.textContent).toBe('订阅');
+    expect(subscribeButton!.textContent).toBe('订阅');
 
     await act(async () => {
-      subscribeLink!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      subscribeButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
