@@ -137,6 +137,7 @@ export default function NodePage() {
                 tabIndex: -1,
                 onScroll,
               }}
+              virtualizer={{ enabled: servers.length > 30 }}
             />
           </CardContent>
         </Card>

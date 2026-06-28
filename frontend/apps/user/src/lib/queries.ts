@@ -305,13 +305,6 @@ export const useTelegramBotInfo = (enabled: boolean) =>
     staleTime: 0,
   });
 
-export const useInvalidateUser = () => {
-  const queryClient = useQueryClient();
-  return () => {
-    queryClient.invalidateQueries({ queryKey: ['user'] });
-  };
-};
-
 export function useChangePasswordMutation() {
   return useMutation({
     mutationFn: ({ oldPassword, newPassword }: { oldPassword: string; newPassword: string }) =>

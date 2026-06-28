@@ -107,6 +107,7 @@ export default function TrafficPage() {
                 'data-testid': 'service-table-scroll',
                 onScroll,
               }}
+              virtualizer={{ enabled: rows.length > 30 }}
             />
           </CardContent>
         </Card>
