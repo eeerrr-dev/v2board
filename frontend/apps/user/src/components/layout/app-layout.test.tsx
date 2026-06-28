@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
   navigate: vi.fn(),
   setDarkMode: vi.fn(),
+  darkListeners: new Set<() => void>(),
   title: 'V2Board',
   user: { email: 'user@example.com' },
 }));
@@ -71,10 +72,27 @@ vi.mock('@/lib/auth', () => ({
   logout: mocks.logout,
 }));
 
-vi.mock('@/lib/dark-mode', () => ({
-  isDarkModeEnabled: () => mocks.darkMode,
-  setDarkMode: mocks.setDarkMode,
-}));
+vi.mock('@/lib/dark-mode', async () => {
+  const { useEffect, useState } = await import('react');
+  return {
+    setDarkMode: (enabled: boolean) => {
+      mocks.setDarkMode(enabled);
+      mocks.darkMode = enabled;
+      mocks.darkListeners.forEach((listener) => listener());
+    },
+    useDarkMode: () => {
+      const [enabled, setEnabled] = useState(mocks.darkMode);
+      useEffect(() => {
+        const listener = () => setEnabled(mocks.darkMode);
+        mocks.darkListeners.add(listener);
+        return () => {
+          mocks.darkListeners.delete(listener);
+        };
+      }, []);
+      return enabled;
+    },
+  };
+});
 
 vi.mock('@/lib/legacy-settings', () => ({
   getLegacyTitle: () => mocks.title,
@@ -90,6 +108,7 @@ function resetMocks() {
   mocks.logout.mockReset();
   mocks.navigate.mockReset();
   mocks.setDarkMode.mockReset();
+  mocks.darkListeners.clear();
   mocks.title = 'V2Board';
   mocks.user = { email: 'user@example.com' };
 }

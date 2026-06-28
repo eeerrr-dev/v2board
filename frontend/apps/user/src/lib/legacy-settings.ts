@@ -21,7 +21,6 @@ declare global {
   interface Window {
     settings?: LegacySettings;
     g_lang?: string;
-    g_langSeparator?: string;
   }
 }
 

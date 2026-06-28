@@ -2,6 +2,25 @@
 <html>
 
 <head>
+    <script>
+        (function () {
+            try {
+                var mode = document.cookie.split('; ').reduce(function (value, item) {
+                    var parts = item.split('=');
+                    if (parts[0] !== 'dark_mode' || parts[1] === undefined) return value;
+                    try {
+                        return decodeURIComponent(parts[1]);
+                    } catch (error) {
+                        return value;
+                    }
+                }, '');
+                if (mode === '1') {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.style.colorScheme = 'dark';
+                }
+            } catch (error) {}
+        })();
+    </script>
     @php
         $assetVersion = function ($path) use ($version) {
             $assetPath = public_path($path);

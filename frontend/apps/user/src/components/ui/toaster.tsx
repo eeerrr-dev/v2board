@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
 import { Toaster as SonnerToaster, toast as sonnerToast } from 'sonner';
-import { isDarkModeEnabled } from '@/lib/dark-mode';
+import { useDarkMode } from '@/lib/dark-mode';
 
 type ToastType = 'success' | 'error' | 'info' | 'loading';
 type ToastId = string | number;
@@ -47,23 +46,8 @@ function destroyMessageToast(): void {
   activeMessageId = undefined;
 }
 
-function useDarkModeTheme(): 'dark' | 'light' {
-  const [isDark, setIsDark] = useState(() => isDarkModeEnabled());
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const sync = () => setIsDark(root.classList.contains('dark'));
-    sync();
-    const observer = new MutationObserver(sync);
-    observer.observe(root, { attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
-
-  return isDark ? 'dark' : 'light';
-}
-
 export function Toaster() {
-  const theme = useDarkModeTheme();
+  const theme = useDarkMode() ? 'dark' : 'light';
 
   return (
     <SonnerToaster

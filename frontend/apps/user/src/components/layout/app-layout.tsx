@@ -31,7 +31,7 @@ import { ShadcnLanguageMenu } from './shadcn-language-menu';
 import { userQueryOptions } from '@/lib/queries';
 import { logout } from '@/lib/auth';
 import { cn } from '@/lib/cn';
-import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
+import { setDarkMode, useDarkMode } from '@/lib/dark-mode';
 import { getLegacyTitle } from '@/lib/legacy-settings';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 import { Button } from '@/components/ui/button';
@@ -134,7 +134,7 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
-  const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
+  const darkMode = useDarkMode();
   const activeLabel = findActiveLabel(location.pathname);
   const siteTitle = getLegacyTitle();
   const title = titleProp ?? (activeLabel ? t(activeLabel) : '');
@@ -269,11 +269,7 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
               size="icon"
               data-dark-mode-trigger
               aria-label={darkMode ? 'Disable dark mode' : 'Enable dark mode'}
-              onClick={() => {
-                const next = !darkMode;
-                setDarkMode(next);
-                setDarkModeState(next);
-              }}
+              onClick={() => setDarkMode(!darkMode)}
             >
               {darkMode ? <Moon className="size-4" /> : <Sun className="size-4" />}
             </Button>

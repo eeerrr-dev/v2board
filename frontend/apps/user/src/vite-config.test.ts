@@ -103,4 +103,17 @@ describe('user Vite dev optimizer', () => {
     expect(userDeployTemplateSource).not.toContain('/assets/umi.css?v={{$version}}');
     expect(userDeployTemplateSource).not.toContain('/assets/umi.js?v={{$version}}');
   });
+
+  it('applies the dark mode cookie before first paint to avoid a theme flash', () => {
+    expect(userDeployTemplateSource).toContain(
+      "if (parts[0] !== 'dark_mode' || parts[1] === undefined) return value;",
+    );
+    expect(userDeployTemplateSource).toContain("document.documentElement.classList.add('dark');");
+    expect(userDeployTemplateSource).toContain(
+      "document.documentElement.style.colorScheme = 'dark';",
+    );
+    expect(userDeployTemplateSource.indexOf("if (mode === '1') {")).toBeLessThan(
+      userDeployTemplateSource.indexOf('/assets/umi.css?v='),
+    );
+  });
 });

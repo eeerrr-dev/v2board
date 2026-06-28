@@ -5,8 +5,6 @@ import {
   padLegacyDatePart,
 } from '@v2board/config/format';
 
-export { legacyEpochDate, padLegacyDatePart };
-
 export function formatUserLegacyDate(
   timestamp: number | string | null | undefined,
 ): string {

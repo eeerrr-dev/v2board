@@ -244,13 +244,4 @@ function PaginationControl({
   );
 }
 
-export {
-  Pagination,
-  PaginationButton,
-  PaginationContent,
-  PaginationControl,
-  PaginationItem,
-  getPaginationItems,
-  getPaginationMaxCurrent,
-  getPaginationPageCount,
-};
+export { PaginationControl, getPaginationMaxCurrent };
