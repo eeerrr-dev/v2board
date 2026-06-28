@@ -133,6 +133,7 @@ interface AuthPasswordConfirmationFieldsProps {
   confirmId: string;
   confirmInputProps?: AuthInputProps;
   confirmLabel: ReactNode;
+  confirmError?: ReactNode;
 }
 
 export function AuthPasswordConfirmationFields({
@@ -142,13 +143,14 @@ export function AuthPasswordConfirmationFields({
   confirmId,
   confirmInputProps,
   confirmLabel,
+  confirmError,
 }: AuthPasswordConfirmationFieldsProps) {
   return (
     <>
       <FormField id={passwordId} label={passwordLabel}>
         <PasswordField autoComplete="new-password" {...passwordInputProps} />
       </FormField>
-      <FormField id={confirmId} label={confirmLabel}>
+      <FormField id={confirmId} label={confirmLabel} error={confirmError}>
         <PasswordField autoComplete="new-password" {...confirmInputProps} />
       </FormField>
     </>

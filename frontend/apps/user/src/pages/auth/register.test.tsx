@@ -11,6 +11,10 @@ const controllerSource = readFileSync(
   `${process.cwd()}/src/pages/auth/use-register-controller.ts`,
   'utf8',
 );
+const countdownSource = readFileSync(
+  `${process.cwd()}/src/pages/auth/use-countdown.ts`,
+  'utf8',
+);
 
 const mocks = vi.hoisted(() => ({
   config: undefined as Record<string, unknown> | undefined,
@@ -84,8 +88,6 @@ vi.mock('@/lib/guest', () => ({
 }));
 
 vi.mock('@/lib/legacy-settings', () => ({
-  getLegacyDescription: () => mocks.settings.description,
-  getLegacyLogo: () => mocks.settings.logo,
   getLegacyTitle: () => mocks.settings.title,
 }));
 
@@ -455,7 +457,9 @@ describe('RegisterPage behavior', () => {
     expect(controllerSource).toContain('if (!mountedRef.current) return;');
     expect(controllerSource).toContain("if (mountedRef.current) navigate('/login');");
     expect(controllerSource).toContain('useEffect(() => {');
-    expect(controllerSource).toContain('return () => window.clearTimeout(timer);');
+    // The cooldown now lives in the shared useCountdown hook, which owns the timer cleanup.
+    expect(controllerSource).toContain('const cooldown = useCountdown(60);');
+    expect(countdownSource).toContain('return () => window.clearTimeout(timer);');
     expect(controllerSource).toContain('const startSendEmailVerifyCountdown = useCallback(() => {');
     expect(controllerSource).not.toContain('cooldownRef');
   });

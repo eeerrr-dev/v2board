@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { ComponentPropsWithRef } from 'react';
+import type { ComponentPropsWithRef, ReactNode } from 'react';
 import { Copy, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,8 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/shadcn-dialog';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { copyText } from '@/lib/legacy-settings';
@@ -24,6 +24,7 @@ interface ProfileFieldProps {
   inputProps?: ComponentPropsWithRef<typeof Input>;
   label: string;
   placeholder: string;
+  error?: ReactNode;
 }
 
 export function ProfileField({
@@ -31,17 +32,12 @@ export function ProfileField({
   inputProps,
   label,
   placeholder,
+  error,
 }: ProfileFieldProps) {
   return (
-    <div className="space-y-2.5">
-      <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        type="password"
-        placeholder={placeholder}
-        {...inputProps}
-      />
-    </div>
+    <FormField id={id} label={label} error={error} className="gap-2.5">
+      <Input type="password" placeholder={placeholder} {...inputProps} />
+    </FormField>
   );
 }
 

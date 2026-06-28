@@ -10,7 +10,7 @@ const orderDetailSource = readFileSync(`${process.cwd()}/src/pages/orders/detail
 const orderRefetch = vi.hoisted(() => vi.fn());
 const checkoutOrder = vi.hoisted(() => vi.fn());
 const checkOrder = vi.hoisted(() => vi.fn());
-const getStripePublicKey = vi.hoisted(() => vi.fn());
+const stripePublicKey = vi.hoisted(() => ({ value: undefined as string | undefined }));
 const confirmDialog = vi.hoisted(() => vi.fn());
 const cancelMutateAsync = vi.hoisted(() => vi.fn());
 const cancelState = vi.hoisted(() => ({ isPending: false }));
@@ -124,9 +124,10 @@ vi.mock('@/lib/queries', () => ({
   },
   useCheckoutOrderMutation: () => ({
     mutateAsync: checkoutOrder,
+    isPending: false,
   }),
-  useStripePublicKeyMutation: () => ({
-    mutateAsync: getStripePublicKey,
+  useStripePublicKey: () => ({
+    data: stripePublicKey.value,
   }),
   useUserInfo: () => ({}),
 }));
@@ -146,7 +147,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     orderStatusState.data = undefined;
     orderStatusState.isError = false;
     orderStatusState.calls = [];
-    getStripePublicKey.mockReset();
+    stripePublicKey.value = undefined;
     confirmDialog.mockReset();
     cancelMutateAsync.mockReset();
     cancelMutateAsync.mockResolvedValue(true);
@@ -294,10 +295,9 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
   });
 
   it('renders payment fees through the pre_handling_amount path', () => {
-    expect(orderDetailSource).toContain('preHandlingAmount');
-    expect(orderDetailSource).toContain('order.pre_handling_amount');
-    expect(orderDetailSource).toContain('calculatePreHandlingAmount(orderQuery.data, first)');
-    expect(orderDetailSource).toContain('calculatePreHandlingAmount(order, nextPayment)');
+    expect(orderDetailSource).toContain('effectivePreHandlingAmount');
+    expect(orderDetailSource).toContain('pre_handling_amount');
+    expect(orderDetailSource).toContain('calculatePreHandlingAmount(currentOrder, selectedPayment)');
     expect(orderDetailSource).toContain(
       'order.total_amount * ((method.handling_fee_percent as number) / 100) +',
     );
@@ -480,8 +480,9 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     });
 
     expect(document.body.textContent).not.toContain('order.handling_fee');
-    expect(orderDetailSource).toContain('previous === 0 && status !== 0');
-    expect(orderDetailSource).toContain('setPreHandlingAmount(undefined);');
+    expect(orderDetailSource).toContain('currentOrder.status === 0 ? calculatePreHandlingAmount');
+    expect(orderDetailSource).not.toContain('setPreHandlingAmount');
+    expect(orderDetailSource).not.toContain('previousOrderStatusRef');
   });
 
   it('keeps polling after the pending order detail object refreshes', async () => {

@@ -30,13 +30,13 @@ export default function NodePage() {
   const serviceColumns = [
     {
       id: 'name',
-      className: 'font-medium text-foreground',
+      meta: { className: 'font-medium text-foreground' },
       header: () => <span>{t('node.simple_name')}</span>,
       cell: ({ row }) => row.original.name,
     },
     {
       id: 'status',
-      align: 'center',
+      meta: { align: 'center' },
       header: () => (
         <HeaderTooltip title={t('node.status_tip')}>{t('node.status')}</HeaderTooltip>
       ),
@@ -55,7 +55,7 @@ export default function NodePage() {
     },
     {
       id: 'rate',
-      align: 'center',
+      meta: { align: 'center' },
       header: () => (
         <HeaderTooltip title={t('node.rate_tip')}>{t('node.rate')}</HeaderTooltip>
       ),

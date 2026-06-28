@@ -1,17 +1,6 @@
-import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/cn';
-import {
-  getCurrentLocaleLabel,
-  getEnabledLocales,
-  selectLocale,
-} from '@/lib/locale-menu';
+import { LanguageMenu } from '@/components/layout/language-menu';
 
 interface AuthLanguageMenuProps {
   align?: 'center' | 'end';
@@ -24,14 +13,15 @@ export function AuthLanguageMenu({
   className,
   placement = 'topCenter',
 }: AuthLanguageMenuProps) {
-  const [open, setOpen] = useState(false);
   const side = placement === 'bottomCenter' ? 'bottom' : 'top';
-  const locales = getEnabledLocales();
-  const currentLabel = getCurrentLocaleLabel();
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
-      <DropdownMenuTrigger asChild>
+    <LanguageMenu
+      align={align}
+      side={side}
+      contentClassName="v2board-auth-language-menu-content z-[1050] min-w-24"
+      itemClassName="v2board-auth-language-menu-item whitespace-nowrap"
+      trigger={(currentLabel) => (
         <button
           type="button"
           aria-label={currentLabel ? `Language: ${currentLabel}` : 'Language'}
@@ -44,26 +34,7 @@ export function AuthLanguageMenu({
           <span>{currentLabel}</span>
           <ChevronDown aria-hidden="true" className="size-3.5 opacity-70 transition-transform group-data-[state=open]:rotate-180" />
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align={align}
-        side={side}
-        sideOffset={4}
-        className="v2board-auth-language-menu-content z-[1050] min-w-24"
-      >
-        {locales.map((locale) => (
-          <DropdownMenuItem
-            key={locale.code}
-            className="v2board-auth-language-menu-item whitespace-nowrap"
-            onSelect={(event) => {
-              event.preventDefault();
-              selectLocale(locale.code);
-            }}
-          >
-            {locale.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      )}
+    />
   );
 }

@@ -1,5 +1,6 @@
 import { user } from '@v2board/api-client';
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { UseQueryResult } from '@tanstack/react-query';
 import type { SubscribeInfo, UserInfo } from '@v2board/types';
 import { formatBytes } from '@v2board/config/format';
 import { apiClient } from './api';
@@ -76,6 +77,7 @@ export const userKeys = {
     ['user', 'knowledge', 'detail', id, lang] as const,
   trafficLog: ['user', 'trafficLog'] as const,
   commConfig: ['user', 'comm'] as const,
+  stripePublicKey: (methodId: string) => ['user', 'stripePublicKey', methodId] as const,
   servers: ['user', 'servers'] as const,
   telegramBot: ['user', 'telegram', 'bot'] as const,
 };
@@ -168,6 +170,11 @@ export const userQueryOptions = {
     queryOptions({
       queryKey: userKeys.commConfig,
       queryFn: () => user.commConfig(apiClient),
+    }),
+  stripePublicKey: (methodId: string | undefined) =>
+    queryOptions({
+      queryKey: userKeys.stripePublicKey(methodId as string),
+      queryFn: () => user.getStripePublicKey(apiClient, Number(methodId)),
     }),
   servers: () =>
     queryOptions({
@@ -272,6 +279,19 @@ export const useCommConfig = (options?: QueryFreshnessOptions) =>
     ...options,
   });
 
+export function useStripePublicKey(
+  methodId: string | undefined,
+  options?: { enabled?: boolean },
+): UseQueryResult<string> {
+  return useQuery({
+    ...userQueryOptions.stripePublicKey(methodId),
+    // The original only fetches the Stripe public key once per method and never
+    // refetches or clears it, so cache it forever and gate on a present method.
+    enabled: Boolean(methodId) && options?.enabled !== false,
+    staleTime: Infinity,
+  });
+}
+
 export const useServers = (options?: QueryFreshnessOptions) =>
   useQuery({
     ...userQueryOptions.servers(),
@@ -333,12 +353,6 @@ export function useCheckCouponMutation() {
 export function useSaveOrderMutation() {
   return useMutation({
     mutationFn: (payload: SaveOrderPayload) => user.saveOrder(apiClient, payload),
-  });
-}
-
-export function useStripePublicKeyMutation() {
-  return useMutation({
-    mutationFn: (methodId: number) => user.getStripePublicKey(apiClient, methodId),
   });
 }
 

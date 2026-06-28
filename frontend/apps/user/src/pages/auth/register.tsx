@@ -21,9 +21,11 @@ export default function RegisterPage() {
     registerInput,
     submit,
     sendCode,
+    passwordMismatch,
     isPending,
     isSendingCode,
-    cooldown,
+    cooldownActive,
+    cooldownRemaining,
     hasEmailWhitelist,
     emailSuffixes,
     selectedEmailSuffix,
@@ -75,8 +77,8 @@ export default function RegisterPage() {
               <AuthEmailCodeField
                 id="register-email-code"
                 label={t('auth.email_code')}
-                buttonLabel={cooldown === 60 ? t('auth.send_code') : cooldown}
-                disabled={cooldown !== 60 || isSendingCode}
+                buttonLabel={cooldownActive ? cooldownRemaining : t('auth.send_code')}
+                disabled={cooldownActive || isSendingCode}
                 loading={isSendingCode}
                 onSendCode={sendCode}
                 inputProps={registerInput('email_code')}
@@ -90,6 +92,7 @@ export default function RegisterPage() {
               confirmId="register-confirm-password"
               confirmLabel={t('auth.confirm_password')}
               confirmInputProps={registerInput('confirm_password')}
+              confirmError={passwordMismatch ? t('auth.password_mismatch') : undefined}
             />
             <FormField
               id="register-invite-code"

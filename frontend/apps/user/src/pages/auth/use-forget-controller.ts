@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useRef,
-  useState,
   type BaseSyntheticEvent,
   type ReactNode,
 } from 'react';
@@ -16,6 +15,7 @@ import { authToast } from '@/lib/auth-toast';
 import { i18nGet } from '@/lib/errors';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { useAuthRecaptcha } from './auth-recaptcha';
+import { useCountdown } from './use-countdown';
 
 const forgetSchema = z
   .object({
@@ -42,9 +42,12 @@ export interface ForgetController {
   submit: (event?: BaseSyntheticEvent) => Promise<void>;
   /** Send-code button handler — runs recaptcha then the email-verify flow. */
   sendCode: () => void;
+  /** True once the confirm-password superRefine flags a mismatch (drives the inline field error). */
+  passwordMismatch: boolean;
   isPending: boolean;
   isSendingCode: boolean;
-  cooldown: number;
+  cooldownActive: boolean;
+  cooldownRemaining: number;
   recaptchaModal: ReactNode;
 }
 
@@ -77,7 +80,7 @@ export function useForgetController(): ForgetController {
   });
 
   const mountedRef = useRef(true);
-  const [cooldown, setCooldown] = useState(60);
+  const cooldown = useCountdown(60);
 
   useEffect(() => {
     return () => {
@@ -85,20 +88,10 @@ export function useForgetController(): ForgetController {
     };
   }, []);
 
-  useEffect(() => {
-    if (cooldown === 60) return undefined;
-
-    const timer = window.setTimeout(() => {
-      setCooldown((value) => (value <= 1 ? 60 : value - 1));
-    }, 1000);
-
-    return () => window.clearTimeout(timer);
-  }, [cooldown]);
-
   const startSendEmailVerifyCountdown = useCallback(() => {
     if (!mountedRef.current) return;
-    setCooldown(59);
-  }, []);
+    cooldown.start();
+  }, [cooldown]);
 
   const onSendCode = async (recaptchaData?: string) => {
     try {
@@ -133,14 +126,20 @@ export function useForgetController(): ForgetController {
 
   const sendCode = () => runRecaptcha(onSendCode);
 
+  // Read the proxied error here so the controller re-renders when the confirm-password
+  // superRefine toggles; the inline field error mirrors the existing mismatch toast.
+  const passwordMismatch = Boolean(form.formState.errors.confirm_password);
+
   return {
     configLoading,
     registerInput: form.register,
     submit,
     sendCode,
+    passwordMismatch,
     isPending,
     isSendingCode,
-    cooldown,
+    cooldownActive: cooldown.isActive,
+    cooldownRemaining: cooldown.remaining,
     recaptchaModal,
   };
 }

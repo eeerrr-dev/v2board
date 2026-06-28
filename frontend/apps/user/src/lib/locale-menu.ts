@@ -7,8 +7,8 @@ export function getEnabledLocales() {
   // The enabled list comes from the operator backend (window.settings.i18n); drop any
   // locale the frontend no longer bundles a label/translation for instead of rendering
   // a blank menu item.
-  return window
-    .settings!.i18n!.sort()
+  return [...window.settings!.i18n!]
+    .sort()
     .filter((code) => code in I18N_TEXT)
     .map((code) => ({ code, label: I18N_TEXT[code] }));
 }

@@ -68,9 +68,9 @@ describe('Table', () => {
         columns={[
           { header: 'Name', cell: ({ row }) => row.original.name },
           {
-            align: 'right',
             header: 'Amount',
             cell: ({ row }) => row.original.amount.toFixed(2),
+            meta: { align: 'right' },
           },
         ]}
         data={[{ name: 'Alpha', amount: 12 }]}

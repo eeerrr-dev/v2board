@@ -30,7 +30,7 @@ export default function TrafficPage() {
         row.original.record_at ? formatUserLegacyDateSlash(row.original.record_at) : '-',
     },
     {
-      align: 'right',
+      meta: { align: 'right' },
       header: t('traffic.actual_upload'),
       cell: ({ row }) => {
         const upload = parseInt(String(row.original.u));
@@ -38,7 +38,7 @@ export default function TrafficPage() {
       },
     },
     {
-      align: 'right',
+      meta: { align: 'right' },
       header: t('traffic.actual_download'),
       cell: ({ row }) => {
         const download = parseInt(String(row.original.d));
@@ -46,7 +46,7 @@ export default function TrafficPage() {
       },
     },
     {
-      align: 'center',
+      meta: { align: 'center' },
       header: t('traffic.deduct_rate'),
       cell: ({ row }) => {
         const rate = Number.parseFloat(row.original.server_rate);
@@ -55,8 +55,7 @@ export default function TrafficPage() {
     },
     {
       id: 'total-charged',
-      align: 'right',
-      className: 'font-medium',
+      meta: { align: 'right', className: 'font-medium' },
       header: () => (
         <HeaderTooltip title={t('traffic.total_formula')} placement="topRight">
           {t('traffic.total_charged')}

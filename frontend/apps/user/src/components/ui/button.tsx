@@ -1,6 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Slot } from '@radix-ui/react-slot';
-import { forwardRef, type ButtonHTMLAttributes } from 'react';
+import { type ButtonHTMLAttributes, type Ref } from 'react';
 import { cn } from '@/lib/cn';
 import { Spinner } from './spinner';
 
@@ -34,70 +34,67 @@ export interface ButtonProps
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
   loading?: boolean;
+  ref?: Ref<HTMLButtonElement>;
 }
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  (
-    {
-      asChild,
-      className,
-      variant,
-      size,
-      block,
-      loading,
-      disabled,
-      type,
-      children,
-      onClick,
-      tabIndex,
-      ...props
-    },
+export function Button({
+  asChild,
+  className,
+  variant,
+  size,
+  block,
+  loading,
+  disabled,
+  type,
+  children,
+  onClick,
+  tabIndex,
+  ref,
+  ...props
+}: ButtonProps) {
+  const Comp = asChild ? Slot : 'button';
+  const isDisabled = disabled || loading;
+  const sharedProps = {
     ref,
-  ) => {
-    const Comp = asChild ? Slot : 'button';
-    const isDisabled = disabled || loading;
-    const sharedProps = {
-      ref,
-      className: cn(buttonVariants({ variant, size, block }), className),
-      'aria-busy': !!loading,
-      ...props,
-    };
+    'data-slot': 'button',
+    className: cn(buttonVariants({ variant, size, block }), className),
+    'aria-busy': !!loading,
+    ...props,
+  };
 
-    if (asChild) {
-      return (
-        <Comp
-          {...sharedProps}
-          aria-disabled={isDisabled || props['aria-disabled']}
-          data-disabled={isDisabled ? '' : undefined}
-          tabIndex={isDisabled ? -1 : tabIndex}
-          onClick={(event) => {
-            if (isDisabled) {
-              event.preventDefault();
-              event.stopPropagation();
-              return;
-            }
-            onClick?.(event);
-          }}
-        >
-          {children}
-        </Comp>
-      );
-    }
-
+  if (asChild) {
     return (
       <Comp
         {...sharedProps}
-        disabled={isDisabled}
-        type={type ?? 'button'}
-        onClick={onClick}
-        tabIndex={tabIndex}
+        aria-disabled={isDisabled || props['aria-disabled']}
+        data-disabled={isDisabled ? '' : undefined}
+        tabIndex={isDisabled ? -1 : tabIndex}
+        onClick={(event) => {
+          if (isDisabled) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          onClick?.(event);
+        }}
       >
-        {loading ? <Spinner /> : null}
         {children}
       </Comp>
     );
-  },
-);
-Button.displayName = 'Button';
+  }
+
+  return (
+    <Comp
+      {...sharedProps}
+      disabled={isDisabled}
+      type={type ?? 'button'}
+      onClick={onClick}
+      tabIndex={tabIndex}
+    >
+      {loading ? <Spinner /> : null}
+      {children}
+    </Comp>
+  );
+}
 
 export { buttonVariants };

@@ -1,30 +1,19 @@
-import { useState } from 'react';
 import { ChevronDown, Languages } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/cn';
-import {
-  getCurrentLocaleLabel,
-  getEnabledLocales,
-  selectLocale,
-} from '@/lib/locale-menu';
+import { LanguageMenu } from './language-menu';
 
 interface ShadcnLanguageMenuProps {
   className?: string;
 }
 
 export function ShadcnLanguageMenu({ className }: ShadcnLanguageMenuProps) {
-  const [open, setOpen] = useState(false);
-  const locales = getEnabledLocales();
-  const currentLabel = getCurrentLocaleLabel();
-
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
-      <DropdownMenuTrigger asChild>
+    <LanguageMenu
+      align="center"
+      side="bottom"
+      contentClassName="v2board-app-shell-menu-content min-w-28"
+      itemClassName="whitespace-nowrap"
+      trigger={(currentLabel) => (
         <button
           type="button"
           aria-label={currentLabel ? `Language: ${currentLabel}` : 'Language'}
@@ -41,26 +30,7 @@ export function ShadcnLanguageMenu({ className }: ShadcnLanguageMenuProps) {
             className="size-3.5 opacity-70 transition-transform data-[state=open]:rotate-180"
           />
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="center"
-        side="bottom"
-        sideOffset={4}
-        className="v2board-app-shell-menu-content min-w-28"
-      >
-        {locales.map((locale) => (
-          <DropdownMenuItem
-            key={locale.code}
-            className="whitespace-nowrap"
-            onSelect={(event) => {
-              event.preventDefault();
-              selectLocale(locale.code);
-            }}
-          >
-            {locale.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      )}
+    />
   );
 }

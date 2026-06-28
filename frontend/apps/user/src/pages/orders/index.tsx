@@ -60,8 +60,7 @@ export default function OrdersPage() {
       },
     },
     {
-      align: 'right',
-      className: 'font-medium',
+      meta: { align: 'right', className: 'font-medium' },
       header: t('order.amount'),
       cell: ({ row }) => (row.original.total_amount / 100).toFixed(2),
     },
@@ -73,12 +72,12 @@ export default function OrdersPage() {
       },
     },
     {
-      className: 'text-muted-foreground',
+      meta: { className: 'text-muted-foreground' },
       header: t('order.created_at'),
       cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
     },
     {
-      align: 'right',
+      meta: { align: 'right' },
       header: t('order.action_col'),
       cell: ({ row }) => (
         <div className="flex justify-end gap-2">

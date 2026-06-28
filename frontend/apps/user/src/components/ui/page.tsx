@@ -1,16 +1,20 @@
-import { forwardRef, type HTMLAttributes, type ReactNode } from 'react';
+import { type HTMLAttributes, type ReactNode, type Ref } from 'react';
 import { cn } from '@/lib/cn';
 
-export const PageShell = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+export function PageShell({
+  className,
+  ref,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement> }) {
+  return (
     <div
       ref={ref}
+      data-slot="page-shell"
       className={cn('v2board-page-shell mx-auto flex w-full max-w-6xl flex-col gap-6', className)}
       {...props}
     />
-  ),
-);
-PageShell.displayName = 'PageShell';
+  );
+}
 
 interface PageHeaderProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
   actions?: ReactNode;

@@ -258,11 +258,11 @@ describe('PlansPage shadcn commerce list behavior', () => {
       await Promise.resolve();
     });
 
-    const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="plan-tabs"] [role="tab"]'));
+    const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="plan-tabs"] [role="radio"]'));
     expect(container.querySelectorAll('[data-testid="plan-card"]')).toHaveLength(2);
 
     await act(async () => {
-      tabs[1]!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+      tabs[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
       await Promise.resolve();
     });
 
@@ -271,7 +271,7 @@ describe('PlansPage shadcn commerce list behavior', () => {
     expect(container.textContent).not.toContain('Legacy Traffic');
 
     await act(async () => {
-      tabs[2]!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+      tabs[2]!.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
       await Promise.resolve();
     });
 

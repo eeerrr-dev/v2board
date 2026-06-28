@@ -288,19 +288,6 @@ export function getLegacyTitle(): string {
   return getLegacySettings().title || 'V2Board';
 }
 
-export function getLegacyLogo(): string | null {
-  return getLegacySettings().logo || null;
-}
-
-export function getLegacyDescription(): string | null {
-  return getLegacySettings().description || null;
-}
-
-export function isLegacyMobile(): boolean {
-  const userAgent = window.navigator.userAgent.toLowerCase();
-  return userAgent.includes('mobile');
-}
-
 export async function copyText(text: string | number | null | undefined): Promise<boolean> {
   const value = String(text);
   if (!navigator.clipboard?.writeText) return copyTextWithExecCommand(value);

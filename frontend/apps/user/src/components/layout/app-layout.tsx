@@ -1,5 +1,13 @@
-import { Fragment, type ComponentType, type SVGProps, useEffect, useState } from 'react';
+import {
+  Fragment,
+  Suspense,
+  type ComponentType,
+  type SVGProps,
+  useEffect,
+  useState,
+} from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getLegacyLocaleClassName } from '@v2board/i18n';
 import {
@@ -20,7 +28,7 @@ import {
   X,
 } from 'lucide-react';
 import { ShadcnLanguageMenu } from './shadcn-language-menu';
-import { useUserInfo } from '@/lib/queries';
+import { userQueryOptions } from '@/lib/queries';
 import { logout } from '@/lib/auth';
 import { cn } from '@/lib/cn';
 import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
@@ -113,11 +121,17 @@ function findActiveLabel(pathname: string): string | undefined {
   return undefined;
 }
 
-export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps = {}) {
+function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps = {}) {
   const { i18n, t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { data: user } = useUserInfo({ refetchOnMount: false });
+  // The require-user route loader has already awaited ensureQueryData for the
+  // user info, so this read is guaranteed to be satisfied: useSuspenseQuery
+  // makes the value non-nullable and lets the old `Loading...` branches go.
+  const { data: user } = useSuspenseQuery({
+    ...userQueryOptions.info(),
+    refetchOnMount: false,
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
@@ -276,7 +290,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
                 >
                   <CircleUserRound className="size-4" />
                   <span className="hidden truncate text-sm font-medium lg:inline">
-                    {user?.email || 'Loading...'}
+                    {user.email}
                   </span>
                 </Button>
               </DropdownMenuTrigger>
@@ -287,7 +301,7 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
                 data-testid="app-avatar-menu"
               >
                 <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
-                  {user?.email || 'Loading...'}
+                  {user.email}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => navigate('/profile')}>
@@ -343,5 +357,26 @@ export function AppLayout({ loading, search, title: titleProp }: AppLayoutProps 
         )}
       </div>
     </div>
+  );
+}
+
+function AppLayoutFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-muted/40">
+      <Spinner className="size-6" />
+    </div>
+  );
+}
+
+export function AppLayout(props: AppLayoutProps = {}) {
+  // useSuspenseQuery inside AppLayoutContent suspends until the user info is
+  // ready and re-throws on failure. The require-user loader preloads the data,
+  // so the fallback is only a defensive boundary; the route errorElement above
+  // turns a suspense re-throw into the existing error UI rather than a white
+  // screen.
+  return (
+    <Suspense fallback={<AppLayoutFallback />}>
+      <AppLayoutContent {...props} />
+    </Suspense>
   );
 }

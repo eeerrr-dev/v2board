@@ -55,10 +55,16 @@ vi.mock('./shadcn-language-menu', () => ({
   ),
 }));
 
-vi.mock('@/lib/queries', () => ({
-  useUserInfo: () => ({
+vi.mock('@tanstack/react-query', () => ({
+  useSuspenseQuery: () => ({
     data: mocks.user,
   }),
+}));
+
+vi.mock('@/lib/queries', () => ({
+  userQueryOptions: {
+    info: () => ({ queryKey: ['user', 'info'] }),
+  },
 }));
 
 vi.mock('@/lib/auth', () => ({

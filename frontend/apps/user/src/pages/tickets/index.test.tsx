@@ -473,7 +473,7 @@ describe('TicketsPage shadcn interactions', () => {
 
   it('keeps the ticket level select value as the direct numeric payload value', () => {
     expect(source).toContain('const levelLabel = LEVELS[row.original.level]?.labelKey;');
-    expect(source).toContain("form.setValue('level', Number(nextLevel) as TicketLevel)");
+    expect(source).toContain('field.onChange(Number(nextLevel) as TicketLevel)');
     expect(source).not.toContain('LEVELS[Number(ticket.level)]');
   });
 

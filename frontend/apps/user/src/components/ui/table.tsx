@@ -1,5 +1,4 @@
 import {
-  forwardRef,
   useRef,
   type ReactNode,
   type HTMLAttributes,
@@ -13,9 +12,20 @@ import {
   getCoreRowModel,
   useReactTable,
   type ColumnDef,
+  type RowData,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/lib/cn';
+
+declare module '@tanstack/react-table' {
+  // Type params must match @tanstack's ColumnMeta signature exactly for declaration merging.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData extends RowData, TValue> {
+    align?: 'left' | 'right' | 'center';
+    className?: string;
+    headerClassName?: string;
+  }
+}
 
 type DataAttributes = {
   [key: `data-${string}`]: string | number | boolean | undefined;
@@ -23,58 +33,75 @@ type DataAttributes = {
 
 type TableScrollProps = HTMLAttributes<HTMLDivElement> & DataAttributes;
 
-const TableScroll = forwardRef<HTMLDivElement, TableScrollProps>(
-  ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('overflow-x-auto', className)} {...props} />
-  ),
-);
-TableScroll.displayName = 'TableScroll';
+function TableScroll({ className, ref, ...props }: TableScrollProps & { ref?: Ref<HTMLDivElement> }) {
+  return <div ref={ref} data-slot="table-scroll" className={cn('overflow-x-auto', className)} {...props} />;
+}
 
-const Table = forwardRef<HTMLTableElement, TableHTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <table ref={ref} className={cn('w-full text-sm', className)} {...props} />
-  ),
-);
-Table.displayName = 'Table';
+function Table({
+  className,
+  ref,
+  ...props
+}: TableHTMLAttributes<HTMLTableElement> & { ref?: Ref<HTMLTableElement> }) {
+  return <table ref={ref} data-slot="table" className={cn('w-full text-sm', className)} {...props} />;
+}
 
-const TableHeader = forwardRef<HTMLTableSectionElement, HTMLAttributes<HTMLTableSectionElement>>(
-  ({ className, ...props }, ref) => (
+function TableHeader({
+  className,
+  ref,
+  ...props
+}: HTMLAttributes<HTMLTableSectionElement> & { ref?: Ref<HTMLTableSectionElement> }) {
+  return (
     <thead
       ref={ref}
+      data-slot="table-header"
       className={cn('border-b border-border bg-muted/50 text-muted-foreground', className)}
       {...props}
     />
-  ),
-);
-TableHeader.displayName = 'TableHeader';
+  );
+}
 
-const TableBody = forwardRef<HTMLTableSectionElement, HTMLAttributes<HTMLTableSectionElement>>(
-  ({ className, ...props }, ref) => (
-    <tbody ref={ref} className={cn('divide-y divide-border', className)} {...props} />
-  ),
-);
-TableBody.displayName = 'TableBody';
+function TableBody({
+  className,
+  ref,
+  ...props
+}: HTMLAttributes<HTMLTableSectionElement> & { ref?: Ref<HTMLTableSectionElement> }) {
+  return (
+    <tbody ref={ref} data-slot="table-body" className={cn('divide-y divide-border', className)} {...props} />
+  );
+}
 
-const TableRow = forwardRef<HTMLTableRowElement, HTMLAttributes<HTMLTableRowElement>>(
-  ({ className, ...props }, ref) => (
-    <tr ref={ref} className={cn('transition-colors hover:bg-muted/50', className)} {...props} />
-  ),
-);
-TableRow.displayName = 'TableRow';
+function TableRow({
+  className,
+  ref,
+  ...props
+}: HTMLAttributes<HTMLTableRowElement> & { ref?: Ref<HTMLTableRowElement> }) {
+  return (
+    <tr
+      ref={ref}
+      data-slot="table-row"
+      className={cn('transition-colors hover:bg-muted/50', className)}
+      {...props}
+    />
+  );
+}
 
-const TableHead = forwardRef<HTMLTableCellElement, ThHTMLAttributes<HTMLTableCellElement>>(
-  ({ className, ...props }, ref) => (
-    <th ref={ref} className={cn('px-4 py-3 text-left font-medium', className)} {...props} />
-  ),
-);
-TableHead.displayName = 'TableHead';
+function TableHead({
+  className,
+  ref,
+  ...props
+}: ThHTMLAttributes<HTMLTableCellElement> & { ref?: Ref<HTMLTableCellElement> }) {
+  return (
+    <th ref={ref} data-slot="table-head" className={cn('px-4 py-3 text-left font-medium', className)} {...props} />
+  );
+}
 
-const TableCell = forwardRef<HTMLTableCellElement, TdHTMLAttributes<HTMLTableCellElement>>(
-  ({ className, ...props }, ref) => (
-    <td ref={ref} className={cn('px-4 py-4', className)} {...props} />
-  ),
-);
-TableCell.displayName = 'TableCell';
+function TableCell({
+  className,
+  ref,
+  ...props
+}: TdHTMLAttributes<HTMLTableCellElement> & { ref?: Ref<HTMLTableCellElement> }) {
+  return <td ref={ref} data-slot="table-cell" className={cn('px-4 py-4', className)} {...props} />;
+}
 
 interface TableEmptyProps extends TdHTMLAttributes<HTMLTableCellElement> {
   rowClassName?: string;
@@ -93,15 +120,8 @@ function TableEmpty({ children, className, colSpan, rowClassName, ...props }: Ta
     </TableRow>
   );
 }
-TableEmpty.displayName = 'TableEmpty';
 
-interface DataTableColumnMeta {
-  align?: 'left' | 'center' | 'right';
-  className?: string;
-  headerClassName?: string;
-}
-
-type DataTableColumn<TData> = ColumnDef<TData> & DataTableColumnMeta;
+type DataTableColumn<TData> = ColumnDef<TData>;
 
 interface DataTableVirtualizerOptions {
   enabled?: boolean;
@@ -194,13 +214,13 @@ function DataTable<TData>({
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
               {headerGroup.headers.map((header) => {
-                const column = header.column.columnDef as DataTableColumn<TData>;
+                const meta = header.column.columnDef.meta;
                 return (
                   <TableHead
                     className={cn(
-                      column.align === 'center' && 'text-center',
-                      column.align === 'right' && 'text-right',
-                      column.headerClassName,
+                      meta?.align === 'center' && 'text-center',
+                      meta?.align === 'right' && 'text-right',
+                      meta?.headerClassName,
                     )}
                     colSpan={header.colSpan}
                     key={header.id}
@@ -236,13 +256,13 @@ function DataTable<TData>({
                 return (
                   <TableRow data-row-key={rowKey} key={row.id}>
                     {row.getVisibleCells().map((cell) => {
-                      const column = cell.column.columnDef as DataTableColumn<TData>;
+                      const meta = cell.column.columnDef.meta;
                       return (
                         <TableCell
                           className={cn(
-                            column.align === 'center' && 'text-center',
-                            column.align === 'right' && 'text-right',
-                            column.className,
+                            meta?.align === 'center' && 'text-center',
+                            meta?.align === 'right' && 'text-right',
+                            meta?.className,
                           )}
                           key={cell.id}
                         >
@@ -265,7 +285,6 @@ function DataTable<TData>({
     </TableScroll>
   );
 }
-DataTable.displayName = 'DataTable';
 
 export {
   DataTable,

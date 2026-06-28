@@ -1,8 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { QRCodeCanvas } from 'qrcode.react';
-import type { Notice } from '@v2board/types';
 import {
   AlertCircle,
   Bell,
@@ -16,14 +14,6 @@ import {
   ShoppingBag,
   Smartphone,
 } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/shadcn-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,20 +21,17 @@ import { PageShell } from '@/components/ui/page';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { DashboardSubscribeMenu } from './dashboard-subscribe-menu';
+import { DashboardNoticeCarousel } from './dashboard-notice-carousel';
 import {
-  useCommConfig,
-  useNewPeriodMutation,
-  useNotices,
-  useSaveOrderMutation,
-  useSubscribe,
-  useUserStat,
-} from '@/lib/queries';
+  DashboardConfirmDialog,
+  DashboardSubscribeDialog,
+  type DashboardConfirmDialogHandle,
+  type DashboardSubscribeDialogHandle,
+} from './dashboard-dialogs';
+import { useDashboardSubscription } from './dashboard-subscription';
+import { useCommConfig, useNotices, useSubscribe, useUserStat } from '@/lib/queries';
 import { formatBytes } from '@v2board/config/format';
-import { toast } from '@/lib/toast';
-import { formatUserLegacyDate, formatUserLegacyDateSlash } from '@/lib/legacy-date';
-import { sanitizeLegacyHtml } from '@/lib/sanitize-html';
+import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
 import { cn } from '@/lib/cn';
 
 interface Shortcut {
@@ -55,8 +42,6 @@ interface Shortcut {
   onClick?: () => void;
 }
 
-type ConfirmAction = 'reset-package' | 'new-period' | null;
-
 export default function DashboardPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -64,105 +49,21 @@ export default function DashboardPage() {
   const stat = useUserStat();
   const notices = useNotices();
   useCommConfig();
-  const newPeriod = useNewPeriodMutation();
-  const saveOrder = useSaveOrderMutation();
-  const [activeNotice, setActiveNotice] = useState<Notice | null>(null);
-  const [noticeOpen, setNoticeOpen] = useState(false);
-  const [activeNoticeIndex, setActiveNoticeIndex] = useState(0);
-  const [subscribeOpen, setSubscribeOpen] = useState(false);
-  const [qrOpen, setQrOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
-  const [savingResetPackage, setSavingResetPackage] = useState(false);
-  const [savingNewPeriod, setSavingNewPeriod] = useState(false);
+  const confirmDialog = useRef<DashboardConfirmDialogHandle>(null);
+  const subscribeDialog = useRef<DashboardSubscribeDialogHandle>(null);
 
   const pendingOrderCount = stat.data?.pending_orders ?? 0;
   const openTicketCount = stat.data?.pending_tickets ?? 0;
   const sub = subscribe.data;
   const hasSubscribeData = Boolean(sub?.email);
   const hasPlan = Boolean(sub?.plan_id);
-  const used = sub ? sub.u + sub.d : 0;
-  const usedPct = sub?.transfer_enable ? (used / sub.transfer_enable) * 100 : 0;
-  const usedPctRounded = Math.round(usedPct * 100) / 100;
-  const usedPctClamped = Math.max(0, Math.min(100, usedPct));
-  const trafficTone = getTrafficTone(usedPctRounded);
-  const daysLeft = legacyDaysUntil(sub?.expired_at);
-  const expired = isLegacyExpired(sub?.expired_at ?? null);
-  const canRenew = isLegacyRenewable(sub);
-  const resetAvailable = Boolean(
-    hasPlan && sub?.plan?.reset_price && usedPctRounded >= 80 && !expired,
-  );
-  const shouldShowTrafficAlert = Boolean(usedPctRounded >= 80 && usedPctRounded < 100 && !expired);
-  const trafficAlertResetAvailable = Boolean(sub?.plan?.reset_price);
-  const canNewPeriod = Boolean(
-    hasPlan && sub?.allow_new_period && usedPctRounded >= 100 && !expired,
-  );
+  const vm = useDashboardSubscription(sub);
   const noticeList = notices.data ?? [];
-  const activeNoticeCard = noticeList[activeNoticeIndex] ?? noticeList[0];
   const subscribeUrl = typeof sub?.subscribe_url === 'string' ? sub.subscribe_url : '';
   const legacySub = sub!;
 
-  useEffect(() => {
-    setActiveNoticeIndex(0);
-  }, [noticeList.length]);
-
-  useEffect(() => {
-    const list = notices.data;
-    if (!list?.length) return;
-    const popup = list.find((notice) => notice.tags?.includes('弹窗'));
-    if (popup) {
-      setActiveNotice(popup);
-      setNoticeOpen(true);
-    }
-  }, [notices.data]);
-
-  const requestResetPackage = () => {
-    if (!sub) return;
-    setConfirmAction('reset-package');
-  };
-
-  const requestNewPeriod = () => {
-    setConfirmAction('new-period');
-  };
-
-  const confirmResetPackage = async () => {
-    if (!sub) return;
-    setSavingResetPackage(true);
-    try {
-      const tradeNo = await saveOrder.mutateAsync({
-        period: 'reset_price',
-        plan_id: sub.plan_id as number,
-      });
-      setConfirmAction(null);
-      navigate(`/order/${tradeNo}`);
-    } catch {
-    } finally {
-      setSavingResetPackage(false);
-    }
-  };
-
-  const confirmNewPeriod = async () => {
-    setSavingNewPeriod(true);
-    try {
-      await newPeriod.mutateAsync();
-      await subscribe.refetch();
-      toast.success(t('dashboard.new_period_success'));
-      setConfirmAction(null);
-      navigate('/dashboard');
-    } catch {
-    } finally {
-      setSavingNewPeriod(false);
-    }
-  };
-
-  const confirmLoading = savingResetPackage || savingNewPeriod;
-  const confirmTitle =
-    confirmAction === 'reset-package'
-      ? t('dashboard.reset_package_confirm_title')
-      : t('dashboard.new_period_confirm_title');
-  const confirmContent =
-    confirmAction === 'reset-package'
-      ? t('dashboard.reset_package_confirm_content')
-      : t('dashboard.new_period_confirm_content');
+  const requestResetPackage = () => confirmDialog.current?.openReset();
+  const requestNewPeriod = () => confirmDialog.current?.openNewPeriod();
 
   const shortcuts: Shortcut[] = [
     {
@@ -176,13 +77,13 @@ export default function DashboardPage() {
       icon: LinkIcon,
       titleKey: 'dashboard.shortcut_one_click',
       descKey: 'dashboard.shortcut_one_click_desc',
-      onClick: () => setSubscribeOpen(true),
+      onClick: () => subscribeDialog.current?.open(),
     },
     {
-      to: canRenew ? `/plan/${sub?.plan_id}` : '/plan',
-      icon: canRenew ? RefreshCcw : ShoppingBag,
-      titleKey: canRenew ? 'dashboard.renew_subscribe' : 'dashboard.shortcut_buy',
-      descKey: canRenew ? 'dashboard.shortcut_renew_desc' : 'dashboard.shortcut_buy_desc',
+      to: vm.canRenew ? `/plan/${sub?.plan_id}` : '/plan',
+      icon: vm.canRenew ? RefreshCcw : ShoppingBag,
+      titleKey: vm.canRenew ? 'dashboard.renew_subscribe' : 'dashboard.shortcut_buy',
+      descKey: vm.canRenew ? 'dashboard.shortcut_renew_desc' : 'dashboard.shortcut_buy_desc',
     },
     {
       to: '/ticket',
@@ -191,46 +92,6 @@ export default function DashboardPage() {
       descKey: 'dashboard.shortcut_problem_desc',
     },
   ];
-
-  const openNotice = (notice: Notice) => {
-    setActiveNotice(notice);
-    setNoticeOpen(true);
-  };
-
-  const renderNoticeCard = (notice: Notice) => (
-    <button
-      type="button"
-      data-testid="dashboard-notice-card"
-      className="flex w-full flex-col overflow-hidden rounded-xl border border-border bg-card text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      onClick={() => openNotice(notice)}
-    >
-      <div
-        className={cn(
-          'min-h-36 p-5 sm:min-h-40',
-          !notice.img_url && 'bg-muted/30',
-        )}
-        style={
-          notice.img_url
-            ? {
-                backgroundImage: `linear-gradient(rgba(0,0,0,.52), rgba(0,0,0,.52)), url(${notice.img_url})`,
-                backgroundPosition: 'center',
-                backgroundSize: 'cover',
-              }
-            : undefined
-        }
-      >
-        <span className="inline-flex rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground">
-          {t('notice.title')}
-        </span>
-        <div className={cn('mt-10 space-y-1', notice.img_url && 'text-white')}>
-          <div className="line-clamp-2 text-lg font-semibold">{notice.title}</div>
-          <div className={cn('text-sm text-muted-foreground', notice.img_url && 'text-white/75')}>
-            {formatUserLegacyDate(notice.created_at)}
-          </div>
-        </div>
-      </div>
-    </button>
-  );
 
   return (
     <PageShell data-testid="dashboard-page">
@@ -279,7 +140,7 @@ export default function DashboardPage() {
             </AlertDescription>
           </Alert>
         )}
-        {shouldShowTrafficAlert && (
+        {vm.shouldShowTrafficAlert && (
           <Alert
             data-testid="dashboard-alert"
             data-alert-kind="info"
@@ -288,8 +149,8 @@ export default function DashboardPage() {
           >
             <AlertCircle className="size-4 text-sky-600" />
             <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
-              <span>{t('dashboard.alert_traffic_rate', { rate: usedPctRounded })}</span>
-              {trafficAlertResetAvailable ? (
+              <span>{t('dashboard.alert_traffic_rate', { rate: vm.usedPctRounded })}</span>
+              {vm.trafficAlertResetAvailable ? (
                 <button
                   type="button"
                   data-testid="dashboard-alert-link"
@@ -304,47 +165,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {noticeList.length > 0 && activeNoticeCard ? (
-        <section data-testid="dashboard-notices" className="space-y-3">
-          <Tabs
-            data-testid="dashboard-notice-carousel"
-            value={String(activeNoticeIndex)}
-            onValueChange={(value) => setActiveNoticeIndex(Number(value))}
-          >
-            {noticeList.map((notice, index) => (
-              <TabsContent
-                key={notice.id}
-                value={String(index)}
-                data-testid="dashboard-notice-slide"
-                data-active={index === activeNoticeIndex ? 'true' : 'false'}
-                className="mt-0 data-[state=inactive]:hidden"
-              >
-                {renderNoticeCard(notice)}
-              </TabsContent>
-            ))}
-            {noticeList.length > 1 ? (
-              <TabsList
-                data-testid="dashboard-notice-dots"
-                aria-label={t('notice.title')}
-                className="mt-3 flex h-auto justify-center gap-1 border-0 bg-transparent p-0 shadow-none"
-              >
-                {noticeList.map((notice, index) => (
-                  <TabsTrigger
-                    key={notice.id}
-                    value={String(index)}
-                    onClick={() => setActiveNoticeIndex(index)}
-                    className="h-1.5 w-6 rounded-full bg-border p-0 text-[0px] shadow-none transition-colors hover:bg-muted-foreground/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=active]:bg-primary data-[state=active]:shadow-none dark:data-[state=active]:bg-primary"
-                    data-testid="dashboard-notice-dot"
-                    aria-label={`${t('notice.title')} ${index + 1}`}
-                  >
-                    {index + 1}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            ) : null}
-          </Tabs>
-        </section>
-      ) : null}
+      <DashboardNoticeCarousel notices={noticeList} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
         <Card data-testid="dashboard-card" className="overflow-hidden">
@@ -373,7 +194,7 @@ export default function DashboardPage() {
                     <h2 className="text-2xl font-semibold tracking-normal">
                       {legacySub.plan!.name}
                     </h2>
-                    {expired ? (
+                    {vm.expired ? (
                       <StatusBadge
                         data-testid="dashboard-status-expired"
                         tone="destructive"
@@ -392,13 +213,13 @@ export default function DashboardPage() {
                   </div>
                   {legacySub.expired_at === null ? (
                     <p className="text-sm text-muted-foreground">{t('dashboard.long_term')}</p>
-                  ) : expired ? (
+                  ) : vm.expired ? (
                     <p className="text-sm text-muted-foreground">{t('dashboard.expired_label')}</p>
                   ) : (
                     <p className="text-sm leading-6 text-muted-foreground">
                       {t('dashboard.expires_in', {
                         date: formatUserLegacyDateSlash(legacySub.expired_at),
-                        day: daysLeft,
+                        day: vm.daysLeft,
                       })}
                       {legacySub.reset_day !== null
                         ? legacySub.reset_day === 0
@@ -412,22 +233,22 @@ export default function DashboardPage() {
                 <div className="space-y-3">
                   <Progress
                     data-testid="dashboard-progress"
-                    value={usedPctClamped}
+                    value={vm.usedPctClamped}
                     indicatorClassName={cn(
-                      trafficTone === 'danger' && 'bg-destructive',
-                      trafficTone === 'warning' && 'bg-amber-500',
-                      trafficTone === 'success' && 'bg-emerald-500',
+                      vm.trafficTone === 'danger' && 'bg-destructive',
+                      vm.trafficTone === 'warning' && 'bg-amber-500',
+                      vm.trafficTone === 'success' && 'bg-emerald-500',
                     )}
                     indicatorProps={{
                       'data-testid': 'dashboard-progress-bar',
-                      'data-status': trafficTone,
+                      'data-status': vm.trafficTone,
                     }}
                   />
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-lg border border-border bg-muted/30 p-3">
                       <p className="text-sm font-medium">
                         {t('dashboard.used_traffic', {
-                          used: formatBytes(used),
+                          used: formatBytes(vm.used),
                           total: formatBytes(legacySub.transfer_enable),
                         })}
                       </p>
@@ -444,7 +265,7 @@ export default function DashboardPage() {
                   <div className="sr-only">
                     <span>
                       {t('dashboard.used_traffic', {
-                        used: formatBytes(used),
+                        used: formatBytes(vm.used),
                         total: formatBytes(legacySub.transfer_enable),
                       })}
                     </span>
@@ -458,22 +279,22 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {resetAvailable ? (
+                  {vm.resetAvailable ? (
                     <Button type="button" onClick={requestResetPackage}>
                       {t('dashboard.buy_reset_package')}
                     </Button>
                   ) : null}
-                  {canNewPeriod ? (
+                  {vm.canNewPeriod ? (
                     <Button type="button" onClick={requestNewPeriod}>
                       {t('dashboard.new_period')}
                     </Button>
                   ) : null}
-                  {expired ? (
+                  {vm.expired ? (
                     <Button
                       type="button"
-                      onClick={() => navigate(canRenew ? `/plan/${legacySub.plan_id}` : '/plan')}
+                      onClick={() => navigate(vm.canRenew ? `/plan/${legacySub.plan_id}` : '/plan')}
                     >
-                      {canRenew ? t('dashboard.renew_subscribe') : t('dashboard.buy_subscribe')}
+                      {vm.canRenew ? t('dashboard.renew_subscribe') : t('dashboard.buy_subscribe')}
                     </Button>
                   ) : null}
                 </div>
@@ -531,104 +352,8 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <Dialog
-        open={noticeOpen}
-        onOpenChange={(open) => {
-          setNoticeOpen(open);
-          if (!open) setActiveNotice(null);
-        }}
-      >
-        <DialogContent data-testid="dashboard-dialog">
-          <DialogHeader>
-            <DialogTitle>{activeNotice?.title}</DialogTitle>
-          </DialogHeader>
-          {activeNotice?.content ? (
-            <div
-              className="notice-content max-h-[60vh] overflow-auto text-sm leading-6"
-              dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(activeNotice.content) }}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={subscribeOpen} onOpenChange={setSubscribeOpen}>
-        <DialogContent data-testid="dashboard-dialog" className="p-0 sm:max-w-sm">
-          <DialogHeader className="px-5 pt-5">
-            <DialogTitle>{t('dashboard.shortcut_one_click')}</DialogTitle>
-          </DialogHeader>
-          <DashboardSubscribeMenu
-            subscribeUrl={subscribeUrl}
-            onOpenQr={() => setQrOpen(true)}
-          />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={qrOpen} onOpenChange={setQrOpen}>
-        <DialogContent data-testid="dashboard-dialog" className="sm:max-w-xs">
-          <DialogHeader>
-            <DialogTitle>{t('dashboard.scan_qrcode_subscribe')}</DialogTitle>
-            <DialogDescription>{t('dashboard.qrcode_client_tip')}</DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-center">
-            <QRCodeCanvas value={subscribeUrl} />
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={confirmAction !== null}
-        onOpenChange={(open) => {
-          if (!open && !confirmLoading) setConfirmAction(null);
-        }}
-      >
-        <DialogContent data-testid="dashboard-dialog" className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{confirmTitle}</DialogTitle>
-            <DialogDescription>{confirmContent}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={confirmLoading}
-              onClick={() => setConfirmAction(null)}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              type="button"
-              data-testid="dashboard-confirm-primary"
-              loading={confirmLoading}
-              onClick={() => {
-                void (confirmAction === 'reset-package'
-                  ? confirmResetPackage()
-                  : confirmNewPeriod());
-              }}
-            >
-              {t('common.confirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DashboardSubscribeDialog ref={subscribeDialog} subscribeUrl={subscribeUrl} />
+      <DashboardConfirmDialog ref={confirmDialog} />
     </PageShell>
   );
-}
-
-function isLegacyExpired(expiredAt: number | null | undefined) {
-  return expiredAt !== null && expiredAt !== undefined && expiredAt < Date.now() / 1000;
-}
-
-function getTrafficTone(usedPctRounded: number) {
-  if (usedPctRounded >= 100) return 'danger';
-  if (usedPctRounded >= 80) return 'warning';
-  return 'success';
-}
-
-function legacyDaysUntil(timestamp: number | string | null | undefined) {
-  return ((Number(timestamp) - Math.floor(Date.now() / 1000)) / 86400).toFixed(0);
-}
-
-function isLegacyRenewable(subscribe: ReturnType<typeof useSubscribe>['data']) {
-  if (!subscribe?.plan?.renew) return false;
-  return Boolean(subscribe.plan.show || !isLegacyExpired(subscribe.expired_at));
 }

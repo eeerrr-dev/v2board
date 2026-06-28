@@ -28,6 +28,7 @@ vi.mock('@v2board/api-client', () => ({
   user: {
     fetchKnowledge: vi.fn(),
     knowledgeDetail: vi.fn(),
+    getStripePublicKey: vi.fn(),
   },
 }));
 
@@ -77,6 +78,24 @@ describe('user query state behavior', () => {
     const options = useKnowledgeDetail(1, 'zh-CN') as unknown as UseQueryOptions;
 
     expect(options.gcTime).toBeUndefined();
+  });
+
+  it('fetches the Stripe public key as a forever-cached query gated on the selected method', async () => {
+    const { useStripePublicKey } = await import('./queries');
+
+    const disabled = useStripePublicKey(undefined) as unknown as UseQueryOptions;
+    expect(disabled.enabled).toBe(false);
+    expect(disabled.staleTime).toBe(Infinity);
+
+    const enabled = useStripePublicKey('9') as unknown as UseQueryOptions;
+    expect(enabled.enabled).toBe(true);
+    expect(enabled.queryKey).toEqual(['user', 'stripePublicKey', '9']);
+    expect(enabled.staleTime).toBe(Infinity);
+
+    const optedOut = useStripePublicKey('9', { enabled: false }) as unknown as UseQueryOptions;
+    expect(optedOut.enabled).toBe(false);
+
+    expect(queriesSource).not.toContain('useStripePublicKeyMutation');
   });
 
   it('does not expose active-session query state absent from the original user bundle', async () => {

@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getLocaleAntdMessages } from '@v2board/i18n';
 import type { TicketLevel } from '@v2board/types';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ExternalLink, Plus, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -52,21 +52,20 @@ const LEVELS: { value: TicketLevel; labelKey: string }[] = [
 ];
 
 const ticketLevelSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
-const ticketFormSchema = z.object({
-  subject: z.string().optional(),
-  level: ticketLevelSchema.optional(),
-  message: z.string().optional(),
-});
-
-type TicketFormValues = z.infer<typeof ticketFormSchema>;
-
-function normalizeTicketPayload(values: TicketFormValues): TicketFormValues {
-  return {
+const ticketFormSchema = z
+  .object({
+    subject: z.string().optional(),
+    level: ticketLevelSchema.optional(),
+    message: z.string().optional(),
+  })
+  .transform((values) => ({
     level: values.level,
     message: values.message || undefined,
     subject: values.subject || undefined,
-  };
-}
+  }));
+
+type TicketFormValues = z.input<typeof ticketFormSchema>;
+type TicketPayload = z.output<typeof ticketFormSchema>;
 
 export default function TicketsPage() {
   const { t, i18n } = useTranslation();
@@ -77,27 +76,25 @@ export default function TicketsPage() {
   const save = useSaveTicketMutation();
   const close = useCloseTicketMutation();
   const [open, setOpen] = useState(false);
-  const form = useForm<TicketFormValues>({
+  const form = useForm<TicketFormValues, unknown, TicketPayload>({
     resolver: zodResolver(ticketFormSchema),
     defaultValues: { subject: '', level: undefined, message: '' },
   });
-  const selectedLevel = form.watch('level');
   const tickets = data ?? [];
   const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
   const ticketColumns = [
     {
-      className: 'font-medium text-foreground',
-      headerClassName: 'w-16',
+      meta: { className: 'font-medium text-foreground', headerClassName: 'w-16' },
       header: t('ticket.col_id'),
       cell: ({ row }) => row.original.id,
     },
     {
-      className: 'max-w-[260px] truncate font-medium text-foreground',
+      meta: { className: 'max-w-[260px] truncate font-medium text-foreground' },
       header: t('ticket.subject'),
       cell: ({ row }) => row.original.subject,
     },
     {
-      className: 'text-muted-foreground',
+      meta: { className: 'text-muted-foreground' },
       header: t('ticket.level'),
       cell: ({ row }) => {
         const levelLabel = LEVELS[row.original.level]?.labelKey;
@@ -105,7 +102,7 @@ export default function TicketsPage() {
       },
     },
     {
-      className: 'text-muted-foreground',
+      meta: { className: 'text-muted-foreground' },
       header: t('ticket.status'),
       cell: ({ row }) => (
         <TicketStatus
@@ -115,18 +112,17 @@ export default function TicketsPage() {
       ),
     },
     {
-      className: 'text-muted-foreground',
+      meta: { className: 'text-muted-foreground' },
       header: t('ticket.created_at_col'),
       cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
     },
     {
-      className: 'text-muted-foreground',
+      meta: { className: 'text-muted-foreground' },
       header: t('ticket.last_reply_col'),
       cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.updated_at),
     },
     {
-      align: 'right',
-      className: 'text-muted-foreground',
+      meta: { align: 'right', className: 'text-muted-foreground' },
       header: t('ticket.action'),
       cell: ({ row }) => (
         <div className="flex justify-end gap-1">
@@ -163,7 +159,7 @@ export default function TicketsPage() {
 
   const saveTicket = form.handleSubmit(async (values) => {
     try {
-      await save.mutateAsync(normalizeTicketPayload(values));
+      await save.mutateAsync(values);
       setOpen(false);
       resetForm();
       void queryClient.invalidateQueries({ queryKey: userKeys.tickets });
@@ -244,23 +240,27 @@ export default function TicketsPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="ticket-level">{t('ticket.level_form')}</Label>
-              <Select
-                value={selectedLevel === undefined ? undefined : String(selectedLevel)}
-                onValueChange={(nextLevel) =>
-                  form.setValue('level', Number(nextLevel) as TicketLevel)
-                }
-              >
-                <SelectTrigger id="ticket-level" data-testid="ticket-select-trigger">
-                  <SelectValue placeholder={t('ticket.level_placeholder')} />
-                </SelectTrigger>
-                <SelectContent data-testid="ticket-select-content">
-                  {LEVELS.map((item) => (
-                    <SelectItem key={item.value} value={String(item.value)}>
-                      {t(item.labelKey)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                control={form.control}
+                name="level"
+                render={({ field }) => (
+                  <Select
+                    value={field.value === undefined ? undefined : String(field.value)}
+                    onValueChange={(nextLevel) => field.onChange(Number(nextLevel) as TicketLevel)}
+                  >
+                    <SelectTrigger id="ticket-level" data-testid="ticket-select-trigger">
+                      <SelectValue placeholder={t('ticket.level_placeholder')} />
+                    </SelectTrigger>
+                    <SelectContent data-testid="ticket-select-content">
+                      {LEVELS.map((item) => (
+                        <SelectItem key={item.value} value={String(item.value)}>
+                          {t(item.labelKey)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="ticket-message">{t('ticket.message')}</Label>

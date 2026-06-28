@@ -32,10 +32,19 @@ export function formatDateTime(timestamp: number | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+export function legacyEpochDate(timestamp: number | string | null | undefined): Date | null {
+  const date = new Date(Number(timestamp) * 1000);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function padLegacyDatePart(value: number): string {
+  return `${value}`.padStart(2, '0');
+}
+
 export function formatLegacyDateTime(timestamp: number | string | null | undefined): string {
-  const d = new Date(Number(timestamp) * 1000);
-  if (Number.isNaN(d.getTime())) return 'Invalid date';
-  const pad = (n: number) => `${n}`.padStart(2, '0');
+  const d = legacyEpochDate(timestamp);
+  if (!d) return 'Invalid date';
+  const pad = padLegacyDatePart;
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
@@ -47,9 +56,9 @@ export function formatDateMinuteSlash(timestamp: number | null | undefined): str
 }
 
 export function formatLegacyDateMinuteSlash(timestamp: number | string | null | undefined): string {
-  const d = new Date(Number(timestamp) * 1000);
-  if (Number.isNaN(d.getTime())) return 'Invalid date';
-  const pad = (n: number) => `${n}`.padStart(2, '0');
+  const d = legacyEpochDate(timestamp);
+  if (!d) return 'Invalid date';
+  const pad = padLegacyDatePart;
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 

@@ -5,9 +5,9 @@ import {
   ChevronsRight,
 } from 'lucide-react';
 import {
-  forwardRef,
   type HTMLAttributes,
   type LiHTMLAttributes,
+  type Ref,
 } from 'react';
 import { Button, type ButtonProps } from './button';
 import {
@@ -47,47 +47,63 @@ interface PaginationButtonProps extends ButtonProps {
   isActive?: boolean;
 }
 
-const Pagination = forwardRef<HTMLElement, HTMLAttributes<HTMLElement>>(
-  ({ className, ...props }, ref) => (
+function Pagination({
+  className,
+  ref,
+  ...props
+}: HTMLAttributes<HTMLElement> & { ref?: Ref<HTMLElement> }) {
+  return (
     <nav
       ref={ref}
+      data-slot="pagination"
       aria-label="pagination"
       className={cn('mx-auto flex w-full justify-center', className)}
       {...props}
     />
-  ),
-);
-Pagination.displayName = 'Pagination';
+  );
+}
 
-const PaginationContent = forwardRef<HTMLUListElement, HTMLAttributes<HTMLUListElement>>(
-  ({ className, ...props }, ref) => (
-    <ul ref={ref} className={cn('flex flex-row items-center gap-1', className)} {...props} />
-  ),
-);
-PaginationContent.displayName = 'PaginationContent';
+function PaginationContent({
+  className,
+  ref,
+  ...props
+}: HTMLAttributes<HTMLUListElement> & { ref?: Ref<HTMLUListElement> }) {
+  return (
+    <ul
+      ref={ref}
+      data-slot="pagination-content"
+      className={cn('flex flex-row items-center gap-1', className)}
+      {...props}
+    />
+  );
+}
 
-const PaginationItem = forwardRef<HTMLLIElement, LiHTMLAttributes<HTMLLIElement>>(
-  ({ className, ...props }, ref) => (
-    <li ref={ref} className={cn('inline-flex', className)} {...props} />
-  ),
-);
-PaginationItem.displayName = 'PaginationItem';
+function PaginationItem({
+  className,
+  ref,
+  ...props
+}: LiHTMLAttributes<HTMLLIElement> & { ref?: Ref<HTMLLIElement> }) {
+  return <li ref={ref} data-slot="pagination-item" className={cn('inline-flex', className)} {...props} />;
+}
 
-const PaginationButton = forwardRef<HTMLButtonElement, PaginationButtonProps>(
-  ({ className, isActive, variant, ...props }, ref) => {
-    const ariaCurrent = isActive ? 'page' : props['aria-current'];
-    return (
-      <Button
-        ref={ref}
-        {...props}
-        aria-current={ariaCurrent}
-        className={className}
-        variant={variant ?? (isActive ? 'default' : 'ghost')}
-      />
-    );
-  },
-);
-PaginationButton.displayName = 'PaginationButton';
+function PaginationButton({
+  className,
+  isActive,
+  variant,
+  ref,
+  ...props
+}: PaginationButtonProps & { ref?: Ref<HTMLButtonElement> }) {
+  const ariaCurrent = isActive ? 'page' : props['aria-current'];
+  return (
+    <Button
+      ref={ref}
+      {...props}
+      aria-current={ariaCurrent}
+      className={className}
+      variant={variant ?? (isActive ? 'default' : 'ghost')}
+    />
+  );
+}
 
 function getPaginationPageCount(total: number, pageSize: number) {
   if (pageSize <= 0) return 0;

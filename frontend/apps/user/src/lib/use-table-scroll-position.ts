@@ -32,7 +32,7 @@ export function useTableScrollPosition(
 
   useLayoutEffect(() => {
     if (syncOnMount) compute();
-  });
+  }, [compute, rowCount, syncOnMount]);
 
   useEffect(() => {
     if (!syncOnResize) return undefined;

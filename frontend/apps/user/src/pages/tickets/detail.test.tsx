@@ -115,8 +115,8 @@ describe('TicketDetailPage shadcn chat surface', () => {
     expect(messageSource).toContain('{data?.message.map((item, index) =>');
     expect(messageSource).toContain('key={index}');
     expect(messageSource).not.toContain('key={item.id}');
-    expect(source).not.toContain('const messages = data?.message ?? []');
-    expect(source).not.toContain('data?.message?.length');
+    expect(source).toContain('const messages = ticket.data?.message ?? [];');
+    expect(source).toContain('}, [messages.length]);');
   });
 
   it('renders the shadcn subject header, message bubbles, dates, and reply form', () => {

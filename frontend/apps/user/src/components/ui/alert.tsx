@@ -1,5 +1,5 @@
 import { cva, type VariantProps } from 'class-variance-authority';
-import { forwardRef, type HTMLAttributes } from 'react';
+import { type HTMLAttributes, type Ref } from 'react';
 import { cn } from '@/lib/cn';
 
 const alertVariants = cva(
@@ -19,22 +19,33 @@ const alertVariants = cva(
 
 export interface AlertProps
   extends HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof alertVariants> {}
+    VariantProps<typeof alertVariants> {
+  ref?: Ref<HTMLDivElement>;
+}
 
-export const Alert = forwardRef<HTMLDivElement, AlertProps>(
-  ({ className, variant, ...props }, ref) => (
-    <div ref={ref} role="alert" className={cn(alertVariants({ variant }), className)} {...props} />
-  ),
-);
-Alert.displayName = 'Alert';
-
-export const AlertDescription = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+export function Alert({ className, variant, ref, ...props }: AlertProps) {
+  return (
     <div
       ref={ref}
+      data-slot="alert"
+      role="alert"
+      className={cn(alertVariants({ variant }), className)}
+      {...props}
+    />
+  );
+}
+
+export function AlertDescription({
+  className,
+  ref,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement> }) {
+  return (
+    <div
+      ref={ref}
+      data-slot="alert-description"
       className={cn('col-start-2 grid justify-items-start gap-1 text-sm', className)}
       {...props}
     />
-  ),
-);
-AlertDescription.displayName = 'AlertDescription';
+  );
+}

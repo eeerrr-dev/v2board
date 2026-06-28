@@ -18,9 +18,11 @@ export default function ForgetPage() {
     registerInput,
     submit,
     sendCode,
+    passwordMismatch,
     isPending,
     isSendingCode,
-    cooldown,
+    cooldownActive,
+    cooldownRemaining,
     recaptchaModal,
   } = useForgetController();
 
@@ -48,8 +50,8 @@ export default function ForgetPage() {
             <AuthEmailCodeField
               id="forget-email-code"
               label={t('auth.email_code')}
-              buttonLabel={cooldown === 60 ? t('auth.send_code') : cooldown}
-              disabled={cooldown !== 60 || isSendingCode}
+              buttonLabel={cooldownActive ? cooldownRemaining : t('auth.send_code')}
+              disabled={cooldownActive || isSendingCode}
               loading={isSendingCode}
               onSendCode={sendCode}
               inputProps={registerInput('email_code')}
@@ -62,6 +64,7 @@ export default function ForgetPage() {
               confirmId="forget-confirm-password"
               confirmLabel={t('auth.confirm_password')}
               confirmInputProps={registerInput('confirm_password')}
+              confirmError={passwordMismatch ? t('auth.password_mismatch') : undefined}
             />
 
             <AuthSubmitButton loading={isPending} disabled={isPending}>

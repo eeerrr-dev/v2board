@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -20,7 +20,7 @@ import {
   useOrderStatus,
   usePaymentMethods,
   useCancelOrderMutation,
-  useStripePublicKeyMutation,
+  useStripePublicKey,
   useUserInfo,
 } from '@/lib/queries';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
@@ -56,16 +56,13 @@ export default function OrderDetailPage() {
   useUserInfo({ refetchOnMount: 'always' });
   const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
   const cancel = useCancelOrderMutation();
-  const { mutateAsync: checkoutOrder } = useCheckoutOrderMutation();
-  const { mutateAsync: fetchStripePublicKey } = useStripePublicKeyMutation();
+  const checkout = useCheckoutOrderMutation();
+  const { mutateAsync: checkoutOrder } = checkout;
   const [methodId, setMethodId] = useState<number | undefined>();
   const [qrcodeVisible, setQrcodeVisible] = useState(false);
   const [payUrl, setPayUrl] = useState<string | undefined>();
-  const [paying, setPaying] = useState(false);
   const [pollOrderStatus, setPollOrderStatus] = useState(false);
-  const [stripePk, setStripePk] = useState<string | null>(null);
   const [stripeToken, setStripeToken] = useState<{ id: string } | null>(null);
-  const [preHandlingAmount, setPreHandlingAmount] = useState<number | undefined>();
   const orderStatusQuery = useOrderStatus(tradeNo, {
     enabled: pollOrderStatus,
     refetchInterval: pollOrderStatus ? 3000 : false,
@@ -79,7 +76,6 @@ export default function OrderDetailPage() {
   // The original waits 3s before starting /user/order/check and only starts once per trade_no.
   // After that first delay, TanStack Query owns the 3s refetch cadence.
   const checkedRef = useRef<string | null>(null);
-  const previousOrderStatusRef = useRef<{ tradeNo?: string; status?: number }>({});
   useEffect(() => {
     if (!tradeNo || !hasLoadedOrder) return;
     if (checkedRef.current === tradeNo) return;
@@ -106,52 +102,34 @@ export default function OrderDetailPage() {
   }, [orderQuery.refetch, orderStatusQuery.data]);
 
   useEffect(() => {
-    const first = paymentMethods?.[0];
-    if (methodId !== undefined || !first || !orderQuery.data) return;
-    setMethodId(first.id);
-    setPreHandlingAmount(calculatePreHandlingAmount(orderQuery.data, first));
-  }, [methodId, orderQuery.data, paymentMethods]);
-
-  useEffect(() => {
-    const status = orderQuery.data?.status;
-    const previous =
-      previousOrderStatusRef.current.tradeNo === tradeNo
-        ? previousOrderStatusRef.current.status
-        : undefined;
-
-    if (status !== 0) {
-      setQrcodeVisible(false);
-    }
-    if (previous === 0 && status !== 0) {
-      // The bundled poll success refetches order/detail without re-running
-      // getPaymentMethod/changePaymentMethod, so the locally injected
-      // pre_handling_amount disappears unless the fresh detail includes it.
-      setPreHandlingAmount(undefined);
-    }
-
-    previousOrderStatusRef.current = { tradeNo, status };
-  }, [orderQuery.data?.status, tradeNo]);
+    // The bundled poll success only hides the QR modal once the order leaves the
+    // pending (status 0) state.
+    if (orderQuery.data?.status !== 0) setQrcodeVisible(false);
+  }, [orderQuery.data?.status]);
 
   const effectiveMethodId = methodId ?? paymentMethods?.[0]?.id;
   const selectedPayment = paymentMethods?.find((p) => p.id === effectiveMethodId);
   const isStripePayment = selectedPayment?.payment === 'StripeCredit';
 
-  useEffect(() => {
-    // The original only fetches the Stripe public key the first time a Stripe method is
-    // selected (it guards on the existing key) and never resets it or the card token when
-    // switching methods. So once a pk/token is captured it persists across method changes
-    // — match that by fetching once and never clearing either piece of state.
-    if (!isStripePayment || effectiveMethodId === undefined || stripePk) return;
-    let cancelled = false;
-    fetchStripePublicKey(effectiveMethodId)
-      .then((pk) => {
-        if (!cancelled) setStripePk(pk);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [effectiveMethodId, fetchStripePublicKey, isStripePayment, stripePk]);
+  // The original only fetches the Stripe public key once a Stripe method is selected and
+  // never refetches it, so cache it forever behind the selected method.
+  const stripeQuery = useStripePublicKey(
+    effectiveMethodId === undefined ? undefined : String(effectiveMethodId),
+    { enabled: isStripePayment },
+  );
+  const stripePk = stripeQuery.data ?? null;
+
+  // pre_handling_amount from the server wins; otherwise derive the fee from the selected
+  // method. The bundled poll-success refetch replaces the order detail without re-running
+  // getPaymentMethod, so a paid (non-pending) order has no locally injected fee.
+  const effectivePreHandlingAmount = useMemo(() => {
+    const currentOrder = orderQuery.data;
+    if (!currentOrder) return 0;
+    return (
+      currentOrder.pre_handling_amount ??
+      (currentOrder.status === 0 ? calculatePreHandlingAmount(currentOrder, selectedPayment) : 0)
+    );
+  }, [orderQuery.data, selectedPayment]);
 
   const handleStripeToken = useCallback((token: { id: string } | null) => {
     setStripeToken(token);
@@ -169,10 +147,6 @@ export default function OrderDetailPage() {
   const isDeposit = order.plan?.id == 0;
   const periodLabelKey = order.period ? PERIOD_LABEL_KEY[order.period] : undefined;
   const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
-  const effectivePreHandlingAmount =
-    preHandlingAmount ??
-    order.pre_handling_amount ??
-    (methodId === undefined ? calculatePreHandlingAmount(order, selectedPayment) : 0);
   const grandTotal = order.total_amount + (effectivePreHandlingAmount || 0);
 
   const onPay = async () => {
@@ -181,7 +155,6 @@ export default function OrderDetailPage() {
       toast.error(t('order.credit_card_check'));
       return;
     }
-    setPaying(true);
     try {
       const result = await checkoutOrder({
         trade_no: tradeNo,
@@ -200,8 +173,8 @@ export default function OrderDetailPage() {
         toast.info(t('order.redirecting_checkout'));
       }
     } catch {
-    } finally {
-      setPaying(false);
+      // The mutation tracks its own error/pending state; swallow here to keep
+      // the checkout button restored after a failed /payment request.
     }
   };
 
@@ -303,10 +276,7 @@ export default function OrderDetailPage() {
                   <RadioGroup
                     value={effectiveMethodId === undefined ? undefined : String(effectiveMethodId)}
                     onValueChange={(nextMethodId) => {
-                      const nextId = Number(nextMethodId);
-                      const nextPayment = paymentMethods?.find((method) => method.id === nextId);
-                      setMethodId(nextId);
-                      setPreHandlingAmount(calculatePreHandlingAmount(order, nextPayment));
+                      setMethodId(Number(nextMethodId));
                     }}
                   >
                     {paymentMethods?.map((method) => (
@@ -413,7 +383,7 @@ export default function OrderDetailPage() {
                   type="button"
                   block
                   data-testid="commerce-submit"
-                  loading={paying}
+                  loading={checkout.isPending}
                   disabled={isStripePayment && !stripeToken}
                   onClick={onPay}
                 >

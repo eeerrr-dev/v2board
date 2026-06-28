@@ -115,23 +115,21 @@ export default function InvitePage() {
       ),
     },
     {
-      align: 'right',
-      className: 'text-muted-foreground',
       header: t('invite.created_at_col'),
       cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
+      meta: { align: 'right', className: 'text-muted-foreground' },
     },
   ] satisfies DataTableColumn<(typeof codes)[number]>[];
   const detailColumns = [
     {
-      className: 'text-muted-foreground',
       header: t('invite.issued_at'),
       cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
+      meta: { className: 'text-muted-foreground' },
     },
     {
-      align: 'right',
-      className: 'font-medium text-foreground',
       header: t('invite.commission_col'),
       cell: ({ row }) => (row.original.get_amount / 100).toFixed(2),
+      meta: { align: 'right', className: 'font-medium text-foreground' },
     },
   ] satisfies DataTableColumn<(typeof detailRows)[number]>[];
 

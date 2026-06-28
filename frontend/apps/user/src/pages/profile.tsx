@@ -70,6 +70,8 @@ const giftCardSchema = z.object({
   code: z.string().min(1),
 });
 
+const depositAmountSchema = z.coerce.number().positive();
+
 type PasswordFormValues = z.infer<typeof passwordSchema>;
 type GiftCardFormValues = z.infer<typeof giftCardSchema>;
 
@@ -199,11 +201,16 @@ export default function ProfilePage() {
   };
 
   const onDeposit = () => {
+    const parsed = depositAmountSchema.safeParse(depositInput);
+    if (!parsed.success) {
+      closeDeposit();
+      return;
+    }
     void saveOrder
       .mutateAsync({
         plan_id: 0,
         period: 'deposit',
-        deposit_amount: Number(depositInput) * 100,
+        deposit_amount: parsed.data * 100,
       })
       .then((tradeNo) => navigate(`/order/${tradeNo}`))
       .catch(() => {});
@@ -270,27 +277,28 @@ export default function ProfilePage() {
                 </CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2.5">
-                <Label htmlFor="profile-gift-card">{t('profile.redeem_giftcard')}</Label>
-                <Input
-                  id="profile-gift-card"
-                  data-testid="profile-giftcard-input"
-                  placeholder={t('profile.redeem_placeholder')}
-                  autoComplete="one-time-code"
-                  {...giftCardForm.register('code')}
-                />
-              </div>
-              <Button
-                className="w-full sm:w-fit"
-                data-testid="profile-redeem-button"
-                loading={redeemLoading}
-                onClick={() => {
-                  if (!redeemLoading) void onRedeem();
-                }}
-              >
-                {t('profile.redeem_submit')}
-              </Button>
+            <CardContent>
+              <form className="space-y-4" onSubmit={onRedeem} noValidate>
+                <div className="space-y-2.5">
+                  <Label htmlFor="profile-gift-card">{t('profile.redeem_giftcard')}</Label>
+                  <Input
+                    id="profile-gift-card"
+                    data-testid="profile-giftcard-input"
+                    placeholder={t('profile.redeem_placeholder')}
+                    autoComplete="one-time-code"
+                    invalid={giftCardForm.formState.errors.code ? true : undefined}
+                    {...giftCardForm.register('code')}
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full sm:w-fit"
+                  data-testid="profile-redeem-button"
+                  loading={redeemLoading}
+                >
+                  {t('profile.redeem_submit')}
+                </Button>
+              </form>
             </CardContent>
           </Card>
         </div>
@@ -307,37 +315,42 @@ export default function ProfilePage() {
                 </CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid gap-4">
-                <ProfileField
-                  id="profile-old-password"
-                  label={t('profile.old_password')}
-                  placeholder={t('profile.old_password_placeholder')}
-                  inputProps={passwordForm.register('oldPassword')}
-                />
-                <ProfileField
-                  id="profile-new-password"
-                  label={t('profile.new_password')}
-                  placeholder={t('profile.new_password_placeholder')}
-                  inputProps={passwordForm.register('newPassword')}
-                />
-                <ProfileField
-                  id="profile-confirm-password"
-                  label={t('profile.new_password')}
-                  placeholder={t('profile.new_password_placeholder')}
-                  inputProps={passwordForm.register('confirmPassword')}
-                />
-              </div>
-              <Button
-                className="w-full sm:w-fit"
-                data-testid="profile-password-save"
-                loading={changePassword.isPending}
-                onClick={() => {
-                  if (!changePassword.isPending) void onChangePwd();
-                }}
-              >
-                {t('profile.save')}
-              </Button>
+            <CardContent>
+              <form className="space-y-5" onSubmit={onChangePwd} noValidate>
+                <div className="grid gap-4">
+                  <ProfileField
+                    id="profile-old-password"
+                    label={t('profile.old_password')}
+                    placeholder={t('profile.old_password_placeholder')}
+                    inputProps={passwordForm.register('oldPassword')}
+                  />
+                  <ProfileField
+                    id="profile-new-password"
+                    label={t('profile.new_password')}
+                    placeholder={t('profile.new_password_placeholder')}
+                    inputProps={passwordForm.register('newPassword')}
+                  />
+                  <ProfileField
+                    id="profile-confirm-password"
+                    label={t('profile.new_password')}
+                    placeholder={t('profile.new_password_placeholder')}
+                    inputProps={passwordForm.register('confirmPassword')}
+                    error={
+                      passwordForm.formState.errors.confirmPassword
+                        ? t('profile.password_mismatch')
+                        : undefined
+                    }
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full sm:w-fit"
+                  data-testid="profile-password-save"
+                  loading={changePassword.isPending}
+                >
+                  {t('profile.save')}
+                </Button>
+              </form>
             </CardContent>
           </Card>
 

@@ -122,9 +122,11 @@ vi.mock('@/components/ui/shadcn-dialog', () => ({
 vi.mock('@/lib/queries', () => ({
   useCommConfig: () => ({}),
   useNewPeriodMutation: () => ({
+    isPending: false,
     mutateAsync: mocks.newPeriodMutateAsync,
   }),
   useSaveOrderMutation: () => ({
+    isPending: false,
     mutateAsync: mocks.saveOrder,
   }),
   useNotices: () => ({

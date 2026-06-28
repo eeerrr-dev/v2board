@@ -27,7 +27,7 @@ import type {
   UserUpdatePayload,
   UserStat,
 } from '@v2board/types';
-import type { ApiClient } from '../client';
+import type { ApiClient, BackendEnvelope } from '../client';
 
 export const info = (client: ApiClient) =>
   client.request<UserInfo>({ url: '/user/info', method: 'GET' });
@@ -79,13 +79,12 @@ export const redeemGiftCard = async (
   client: ApiClient,
   giftcard: string,
 ): Promise<RedeemGiftCardResult> => {
-  const env = await client.requestEnvelope<true>({
+  const env = (await client.requestEnvelope<true>({
     url: '/user/redeemgiftcard',
     method: 'POST',
     data: { giftcard },
-  });
-  const raw = env as unknown as { type: number; value: number };
-  return { type: raw.type, value: raw.value };
+  })) as BackendEnvelope<true> & RedeemGiftCardResult;
+  return { type: env.type, value: env.value };
 };
 
 export const unbindTelegram = (client: ApiClient) =>

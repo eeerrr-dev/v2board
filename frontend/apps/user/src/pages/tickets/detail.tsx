@@ -10,14 +10,6 @@ import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { toast } from '@/lib/toast';
 import { useReplyTicketMutation, useTicket } from '@/lib/queries';
 
-function legacyTicketMessageLength(data?: { message?: unknown[] }) {
-  return data?.message!.length;
-}
-
-function assumeLegacyTicketMessages<T extends { message?: unknown }>(
-  _data: T | undefined,
-): asserts _data is T & { message: NonNullable<T['message']> } {}
-
 export default function TicketDetailPage() {
   const { ticket_id } = useParams();
   const { t } = useTranslation();
@@ -27,12 +19,13 @@ export default function TicketDetailPage() {
   const [message, setMessage] = useState<string | undefined>();
   const chatRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const messages = ticket.data?.message ?? [];
 
   useEffect(() => {
     const chat = chatRef.current;
     if (!chat) return;
     chat.scrollTo(0, chat.scrollHeight);
-  }, [legacyTicketMessageLength(ticket.data)]);
+  }, [messages.length]);
 
   const submitReply = async () => {
     if (reply.isPending) return;
@@ -48,8 +41,7 @@ export default function TicketDetailPage() {
     }
   };
 
-  const data = ticket.data ?? ({ message: [] } as NonNullable<typeof ticket.data>);
-  assumeLegacyTicketMessages(data);
+  const data = { ...ticket.data, message: messages };
   const emptyNotice = ticket.data
     ? undefined
     : ticket.isError

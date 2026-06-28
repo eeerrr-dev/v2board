@@ -1,15 +1,17 @@
-import { cloneElement, isValidElement, useState } from 'react';
-import type { MouseEvent, ReactElement, ReactNode } from 'react';
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from '@/components/ui/shadcn-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,12 +43,6 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
     setAccount('');
   };
 
-  const show = () => {
-    setOpen((currentOpen) => !currentOpen);
-    setMethod(undefined);
-    setAccount('');
-  };
-
   const onSubmit = async () => {
     try {
       await withdraw.mutateAsync({
@@ -54,78 +50,68 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
         withdraw_account: account,
       });
       navigate('/ticket');
-      show();
+      onOpenChange(false);
     } catch {}
   };
 
-  const child = isValidElement(children)
-    ? (children as ReactElement<{ onClick?: (event: MouseEvent) => void }>)
-    : null;
-  const trigger = child ? (
-    cloneElement(child, {
-      onClick: (event: MouseEvent) => {
-        child.props.onClick?.(event);
-        show();
-      },
-    })
-  ) : (
-    <Button type="button" variant="outline" onClick={() => show()}>
-      {t('invite.withdraw_button')}
-    </Button>
-  );
-
   return (
-    <>
-      {trigger}
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md" data-testid="invite-dialog">
-          <DialogHeader>
-            <DialogTitle data-testid="invite-dialog-title">
-              {t('invite.withdraw')}
-            </DialogTitle>
-            <DialogDescription>{t('invite.withdraw_button')}</DialogDescription>
-          </DialogHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        {children ?? (
+          <Button type="button" variant="outline">
+            {t('invite.withdraw_button')}
+          </Button>
+        )}
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md" data-testid="invite-dialog">
+        <DialogHeader>
+          <DialogTitle data-testid="invite-dialog-title">
+            {t('invite.withdraw')}
+          </DialogTitle>
+          <DialogDescription>{t('invite.withdraw_button')}</DialogDescription>
+        </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="invite-withdraw-method">{t('invite.withdraw_method')}</Label>
-              <Select value={method} onValueChange={setMethod}>
-                <SelectTrigger
-                  id="invite-withdraw-method"
-                  data-testid="invite-select-trigger"
-                >
-                  <SelectValue placeholder={t('invite.withdraw_method_placeholder')} />
-                </SelectTrigger>
-                <SelectContent data-testid="invite-select-content">
-                  {methods.map((item) => (
-                    <SelectItem key={item} value={item}>
-                      {item}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invite-withdraw-account">{t('invite.withdraw_account')}</Label>
-              <Input
-                id="invite-withdraw-account"
-                placeholder={t('invite.withdraw_account_placeholder')}
-                value={account}
-                onChange={(event) => setAccount(event.target.value)}
-              />
-            </div>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="invite-withdraw-method">{t('invite.withdraw_method')}</Label>
+            <Select value={method} onValueChange={setMethod}>
+              <SelectTrigger
+                id="invite-withdraw-method"
+                data-testid="invite-select-trigger"
+              >
+                <SelectValue placeholder={t('invite.withdraw_method_placeholder')} />
+              </SelectTrigger>
+              <SelectContent data-testid="invite-select-content">
+                {methods.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="invite-withdraw-account">{t('invite.withdraw_account')}</Label>
+            <Input
+              id="invite-withdraw-account"
+              placeholder={t('invite.withdraw_account_placeholder')}
+              value={account}
+              onChange={(event) => setAccount(event.target.value)}
+            />
+          </div>
+        </div>
 
-          <DialogFooter data-testid="invite-dialog-footer">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter data-testid="invite-dialog-footer">
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
               {t('common.cancel')}
             </Button>
-            <Button type="button" loading={withdraw.isPending} onClick={() => void onSubmit()}>
-              {t('profile.confirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          </DialogClose>
+          <Button type="button" loading={withdraw.isPending} onClick={() => void onSubmit()}>
+            {t('profile.confirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

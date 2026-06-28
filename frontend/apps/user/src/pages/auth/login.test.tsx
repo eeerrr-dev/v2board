@@ -91,8 +91,6 @@ vi.mock('@/lib/guest', () => ({
 }));
 
 vi.mock('@/lib/legacy-settings', () => ({
-  getLegacyDescription: () => mocks.settings.description,
-  getLegacyLogo: () => mocks.settings.logo,
   getLegacyTitle: () => mocks.settings.title,
 }));
 

@@ -1,15 +1,17 @@
-import { forwardRef, type InputHTMLAttributes } from 'react';
+import { type InputHTMLAttributes, type Ref } from 'react';
 import { cn } from '@/lib/cn';
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   /** Renders the error treatment (destructive border/ring) and sets aria-invalid. */
   invalid?: boolean;
+  ref?: Ref<HTMLInputElement>;
 }
 
-export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type = 'text', invalid, ...props }, ref) => (
+export function Input({ className, type = 'text', invalid, ref, ...props }: InputProps) {
+  return (
     <input
       ref={ref}
+      data-slot="input"
       type={type}
       aria-invalid={invalid || undefined}
       className={cn(
@@ -21,6 +23,5 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       )}
       {...props}
     />
-  ),
-);
-Input.displayName = 'Input';
+  );
+}
