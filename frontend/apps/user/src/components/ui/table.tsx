@@ -169,6 +169,9 @@ function DataTable<TData>({
     data,
     columns: tableColumns,
     getCoreRowModel: getCoreRowModel(),
+    getRowId: getRowKey
+      ? (row, index) => String(getRowKey(row, index))
+      : undefined,
   });
   const rows = table.getRowModel().rows;
   const columnCount = table.getAllLeafColumns().length;
@@ -252,7 +255,7 @@ function DataTable<TData>({
               ) : null}
               {visibleRows.map(({ item, row }) => {
                 const index = item.index;
-                const rowKey = getRowKey?.(row.original, index) ?? index;
+                const rowKey = getRowKey ? row.id : index;
                 return (
                   <TableRow data-row-key={rowKey} key={row.id}>
                     {row.getVisibleCells().map((cell) => {

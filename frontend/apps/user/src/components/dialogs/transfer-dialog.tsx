@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -15,6 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/shadcn-dialog';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { userKeys, useTransferMutation } from '@/lib/queries';
@@ -25,32 +28,39 @@ interface TransferDialogProps {
   children?: ReactNode;
 }
 
+const transferSchema = z.object({
+  yuan: z.string().trim().min(1, 'invite.transfer_placeholder'),
+});
+
+type TransferFormValues = z.infer<typeof transferSchema>;
+
 export function TransferDialog({ max, children }: TransferDialogProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const transfer = useTransferMutation();
-  const [yuan, setYuan] = useState<string | undefined>();
   const [open, setOpen] = useState(false);
+  const form = useForm<TransferFormValues>({
+    resolver: zodResolver(transferSchema),
+    defaultValues: { yuan: '' },
+  });
 
   const onOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
-    setYuan(undefined);
+    form.reset({ yuan: '' });
   };
 
-  const onSubmit = async () => {
+  const onSubmit = form.handleSubmit(async ({ yuan }) => {
     try {
       await transfer.mutateAsync(yuan);
       onOpenChange(false);
       void queryClient.invalidateQueries({ queryKey: userKeys.info });
     } catch {}
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
-        {children ?? (
-          <Button type="button">{t('invite.transfer')}</Button>
-        )}
+        {children ?? <Button type="button">{t('invite.transfer')}</Button>}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md" data-testid="invite-dialog">
         <DialogHeader>
@@ -75,27 +85,33 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
             </Label>
             <Input id="invite-transfer-current" disabled value={Number(max) / 100} readOnly />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="invite-transfer-amount">{t('invite.transfer_amount')}</Label>
-            <Input
+          <form className="space-y-4" onSubmit={onSubmit} noValidate>
+            <FormField
               id="invite-transfer-amount"
-              placeholder={t('invite.transfer_placeholder')}
-              value={yuan ?? ''}
-              onChange={(event) => setYuan(event.target.value)}
-            />
-          </div>
+              label={t('invite.transfer_amount')}
+              error={
+                form.formState.errors.yuan?.message
+                  ? t(form.formState.errors.yuan.message)
+                  : undefined
+              }
+            >
+              <Input
+                placeholder={t('invite.transfer_placeholder')}
+                {...form.register('yuan')}
+              />
+            </FormField>
+            <DialogFooter data-testid="invite-dialog-footer">
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  {t('common.cancel')}
+                </Button>
+              </DialogClose>
+              <Button type="submit" loading={transfer.isPending}>
+                {t('profile.confirm')}
+              </Button>
+            </DialogFooter>
+          </form>
         </div>
-
-        <DialogFooter data-testid="invite-dialog-footer">
-          <DialogClose asChild>
-            <Button type="button" variant="outline">
-              {t('common.cancel')}
-            </Button>
-          </DialogClose>
-          <Button type="button" loading={transfer.isPending} onClick={() => void onSubmit()}>
-            {t('profile.confirm')}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

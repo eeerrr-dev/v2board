@@ -226,23 +226,21 @@ describe('TicketDetailPage query polling and reply behavior', () => {
     });
   });
 
-  it('sends a reply on Enter with the legacy toast sequence and clears the input', async () => {
+  it('sends a reply through the native form with the toast sequence and clears the input', async () => {
     const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
     const submitSource = source.slice(
-      source.indexOf('const submitReply = async () => {'),
-      source.indexOf('const data = ticket.data ??'),
+      source.indexOf('const submitReply = async (event?: FormEvent<HTMLFormElement>) => {'),
+      source.indexOf('const data = {'),
     );
 
     expect(submitSource).toContain("toast.success(t('ticket.reply_success'));");
-    expect(submitSource).toContain('setMessage(undefined);');
-    expect(submitSource).toContain("if (inputRef.current) inputRef.current.value = '';");
+    expect(submitSource).toContain("setMessage('');");
     expect(submitSource.indexOf("toast.success(t('ticket.reply_success'));")).toBeLessThan(
-      submitSource.indexOf('setMessage(undefined);'),
-    );
-    expect(submitSource.indexOf('setMessage(undefined);')).toBeLessThan(
-      submitSource.indexOf("if (inputRef.current) inputRef.current.value = '';"),
+      submitSource.indexOf("setMessage('');"),
     );
     expect(submitSource).not.toContain('ticket.refetch');
+    expect(source).not.toContain('keyCode');
+    expect(source).not.toContain('inputRef');
 
     await act(async () => {
       root!.render(<TicketDetailPage />);
@@ -257,9 +255,9 @@ describe('TicketDetailPage query polling and reply behavior', () => {
         'Please help me',
       );
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      const event = new KeyboardEvent('keydown', { bubbles: true });
-      Object.defineProperty(event, 'keyCode', { value: 13 });
-      input.dispatchEvent(event);
+      container
+        .querySelector<HTMLFormElement>('[data-testid="ticket-reply-form"]')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -291,9 +289,9 @@ describe('TicketDetailPage query polling and reply behavior', () => {
         'Please keep this',
       );
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      const event = new KeyboardEvent('keydown', { bubbles: true });
-      Object.defineProperty(event, 'keyCode', { value: 13 });
-      input.dispatchEvent(event);
+      container
+        .querySelector<HTMLFormElement>('[data-testid="ticket-reply-form"]')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -320,9 +318,9 @@ describe('TicketDetailPage query polling and reply behavior', () => {
     const input = container.querySelector('.js-chat-input') as HTMLInputElement;
 
     await act(async () => {
-      const event = new KeyboardEvent('keydown', { bubbles: true });
-      Object.defineProperty(event, 'keyCode', { value: 13 });
-      input.dispatchEvent(event);
+      input
+        .closest('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
 

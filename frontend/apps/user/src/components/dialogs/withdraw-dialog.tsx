@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Controller, useForm } from 'react-hook-form';
+import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,8 +15,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/shadcn-dialog';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -29,21 +31,29 @@ interface WithdrawDialogProps {
   children?: ReactNode;
 }
 
+const withdrawSchema = z.object({
+  method: z.string().min(1, 'invite.withdraw_method_placeholder'),
+  account: z.string().trim().min(1, 'invite.withdraw_account_placeholder'),
+});
+
+type WithdrawFormValues = z.infer<typeof withdrawSchema>;
+
 export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const withdraw = useWithdrawCommissionMutation();
   const [open, setOpen] = useState(false);
-  const [method, setMethod] = useState<string | undefined>();
-  const [account, setAccount] = useState('');
+  const form = useForm<WithdrawFormValues>({
+    resolver: zodResolver(withdrawSchema),
+    defaultValues: { method: '', account: '' },
+  });
 
   const onOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
-    setMethod(undefined);
-    setAccount('');
+    form.reset({ method: '', account: '' });
   };
 
-  const onSubmit = async () => {
+  const onSubmit = form.handleSubmit(async ({ account, method }) => {
     try {
       await withdraw.mutateAsync({
         withdraw_method: method,
@@ -52,7 +62,7 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
       navigate('/ticket');
       onOpenChange(false);
     } catch {}
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -71,46 +81,61 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
           <DialogDescription>{t('invite.withdraw_button')}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="invite-withdraw-method">{t('invite.withdraw_method')}</Label>
-            <Select value={method} onValueChange={setMethod}>
-              <SelectTrigger
-                id="invite-withdraw-method"
-                data-testid="invite-select-trigger"
-              >
-                <SelectValue placeholder={t('invite.withdraw_method_placeholder')} />
-              </SelectTrigger>
-              <SelectContent data-testid="invite-select-content">
-                {methods.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {item}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="invite-withdraw-account">{t('invite.withdraw_account')}</Label>
+        <form className="space-y-4" onSubmit={onSubmit} noValidate>
+          <Controller
+            control={form.control}
+            name="method"
+            render={({ field }) => (
+              <Select value={field.value || undefined} onValueChange={field.onChange}>
+                <FormField
+                  id="invite-withdraw-method"
+                  label={t('invite.withdraw_method')}
+                  error={
+                    form.formState.errors.method?.message
+                      ? t(form.formState.errors.method.message)
+                      : undefined
+                  }
+                >
+                  <SelectTrigger data-testid="invite-select-trigger">
+                    <SelectValue placeholder={t('invite.withdraw_method_placeholder')} />
+                  </SelectTrigger>
+                </FormField>
+                <SelectContent data-testid="invite-select-content">
+                  {methods.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+          <FormField
+            id="invite-withdraw-account"
+            label={t('invite.withdraw_account')}
+            error={
+              form.formState.errors.account?.message
+                ? t(form.formState.errors.account.message)
+                : undefined
+            }
+          >
             <Input
-              id="invite-withdraw-account"
               placeholder={t('invite.withdraw_account_placeholder')}
-              value={account}
-              onChange={(event) => setAccount(event.target.value)}
+              {...form.register('account')}
             />
-          </div>
-        </div>
+          </FormField>
 
-        <DialogFooter data-testid="invite-dialog-footer">
-          <DialogClose asChild>
-            <Button type="button" variant="outline">
-              {t('common.cancel')}
+          <DialogFooter data-testid="invite-dialog-footer">
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                {t('common.cancel')}
+              </Button>
+            </DialogClose>
+            <Button type="submit" loading={withdraw.isPending}>
+              {t('profile.confirm')}
             </Button>
-          </DialogClose>
-          <Button type="button" loading={withdraw.isPending} onClick={() => void onSubmit()}>
-            {t('profile.confirm')}
-          </Button>
-        </DialogFooter>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

@@ -19,16 +19,20 @@ describe('custom HTML content CSS', () => {
 });
 
 describe('remaining legacy utility CSS boundary', () => {
-  it('keeps only the generic typography/bootstrap/oneui layer needed by legacy HTML content', () => {
+  it('keeps rich-content compatibility without Bootstrap or OneUI UI foundations', () => {
     const globals = css();
 
     expect(globals).toContain('--color-brand-500: #0665d0;');
     expect(globals).toContain('--color-page: #f0f3f8;');
-    expect(globals).toContain('.btn {\n  display: inline-block;');
-    expect(globals).toContain('.form-control {\n  display: block;');
-    expect(globals).toContain('.block {\n  margin-bottom: 1.75rem;');
-    expect(globals).toContain('.bg-white {\n  background-color: #fff !important;\n}');
+    expect(globals).toContain('.custom-html-style table th {');
+    expect(globals).toContain('::selection {');
 
+    expect(globals).not.toContain('.btn {');
+    expect(globals).not.toContain('.form-control {');
+    expect(globals).not.toContain('.block {');
+    expect(globals).not.toContain('.row {');
+    expect(globals).not.toContain('.col-md-');
+    expect(globals).not.toContain('.bg-white {');
     expect(globals).not.toContain('.ant-btn {');
     expect(globals).not.toContain('.ant-table {');
     expect(globals).not.toContain('.ant-select {');

@@ -86,6 +86,36 @@ describe('normalizeLegacyHashRoute', () => {
     expect(window.location.hash).toBe('#/dashboard');
   });
 
+  it('lets configured public routes stay public even when a local auth token exists', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const authOptions = {
+      ...options,
+      authenticatedPublicFallbackRoutes: ['/', '/login'],
+      publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
+      routes: ['/', '/dashboard', '/forgetpassword', '/login', '/register'],
+    } as const;
+
+    expect(getNormalizedLegacyHashPath('/login', authOptions)).toBe('/dashboard');
+    expect(getNormalizedLegacyHashPath('/', authOptions)).toBe('/dashboard');
+    expect(getNormalizedLegacyHashPath('/register', authOptions)).toBe('/register');
+    expect(getNormalizedLegacyHashPath('/forgetpassword', authOptions)).toBe('/forgetpassword');
+  });
+
+  it('keeps every public route public when authenticated public fallback routes are empty', () => {
+    window.localStorage.setItem('authorization', 'jwt');
+    const authOptions = {
+      ...options,
+      authenticatedPublicFallbackRoutes: [],
+      publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
+      routes: ['/', '/dashboard', '/forgetpassword', '/login', '/register'],
+    } as const;
+
+    expect(getNormalizedLegacyHashPath('/', authOptions)).toBe('/');
+    expect(getNormalizedLegacyHashPath('/login', authOptions)).toBe('/login');
+    expect(getNormalizedLegacyHashPath('/register', authOptions)).toBe('/register');
+    expect(getNormalizedLegacyHashPath('/forgetpassword', authOptions)).toBe('/forgetpassword');
+  });
+
   it('normalizes authenticated root entries before rendering the empty root shell', () => {
     window.localStorage.setItem('authorization', 'jwt');
     setUrl('/');

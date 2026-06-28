@@ -49,6 +49,7 @@ describe('user legacy route table', () => {
     expect(source).toContain("path: '*'");
     expect(source).toContain('export function normalizeUserRouteLoader');
     expect(source).toContain('export function unknownUserRouteLoader');
+    expect(source).toContain('authenticatedPublicFallbackRoutes: []');
     expect(source).toContain('nestedPrefixes: USER_LEGACY_ROUTE_PATHS');
     expect(source).toContain('getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS)');
     expect(source).toContain('if (normalized !== current) throw redirect(normalized);');

@@ -119,7 +119,7 @@ describe('user query state behavior', () => {
     expect(queriesSource).not.toContain("userKeys.knowledgeDetail(id ?? '', language)");
   });
 
-  it('keeps order cancel refresh scoped to list queries like the bundled typo path', async () => {
+  it('invalidates all order queries after cancel so detail state is not kept stale', async () => {
     const { useCancelOrderMutation } = await import('./queries');
     const mutation = useCancelOrderMutation() as unknown as {
       onSuccess: () => void;
@@ -130,14 +130,11 @@ describe('user query state behavior', () => {
 
     expect(invalidateQueries).toHaveBeenCalledTimes(1);
     const options = invalidateQueries.mock.calls[0]![0] as {
-      predicate: (query: { queryKey: readonly unknown[] }) => boolean;
       queryKey: readonly unknown[];
     };
     expect(options.queryKey).toEqual(['user', 'orders']);
-    expect(options.predicate({ queryKey: ['user', 'orders', 'all'] })).toBe(true);
-    expect(options.predicate({ queryKey: ['user', 'orders', 'detail', 'TRADE123'] })).toBe(false);
-    expect(queriesSource).toContain('void queryClient.invalidateQueries({');
+    expect(queriesSource).toContain("void queryClient.invalidateQueries({ queryKey: ['user', 'orders'] });");
     expect(queriesSource).toContain("queryKey: ['user', 'orders']");
-    expect(queriesSource).toContain("query.queryKey[2] !== 'detail'");
+    expect(queriesSource).not.toContain("query.queryKey[2] !== 'detail'");
   });
 });

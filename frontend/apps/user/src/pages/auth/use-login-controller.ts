@@ -105,6 +105,8 @@ export function useLoginController(): LoginController {
               .fetchQuery(userQueryOptions.info())
               .catch(() => undefined);
             navigate(redirect);
+          } else if (active) {
+            setAuthData(null);
           }
         })
         .catch(() => undefined);

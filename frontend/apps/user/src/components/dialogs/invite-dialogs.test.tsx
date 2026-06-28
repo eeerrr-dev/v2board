@@ -90,16 +90,41 @@ vi.mock('@/components/ui/select', () => ({
       value={value ?? ''}
       onChange={(event) => onValueChange(event.target.value)}
     >
-      {children}
+      <option value="">{findSelectPlaceholder(children)}</option>
+      {collectSelectOptions(children).map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
     </select>
   ),
   SelectContent: ({ children }: { children: ReactNode }) => children,
-  SelectItem: ({ children, value }: { children: ReactNode; value: string }) => (
-    <option value={value}>{children}</option>
-  ),
+  SelectItem: ({ children }: { children: ReactNode; value: string }) => children,
   SelectTrigger: ({ children }: { children: ReactNode }) => children,
-  SelectValue: ({ placeholder }: { placeholder?: string }) => <option value="">{placeholder}</option>,
+  SelectValue: ({ placeholder }: { placeholder?: string }) => placeholder,
 }));
+
+function collectSelectOptions(children: ReactNode): Array<{ label: ReactNode; value: string }> {
+  const options: Array<{ label: ReactNode; value: string }> = [];
+  for (const child of Array.isArray(children) ? children : [children]) {
+    if (!child || typeof child !== 'object' || !('props' in child)) continue;
+    const props = child.props as { children?: ReactNode; value?: string };
+    if (typeof props.value === 'string') options.push({ label: props.children, value: props.value });
+    options.push(...collectSelectOptions(props.children));
+  }
+  return options;
+}
+
+function findSelectPlaceholder(children: ReactNode): ReactNode {
+  for (const child of Array.isArray(children) ? children : [children]) {
+    if (!child || typeof child !== 'object' || !('props' in child)) continue;
+    const props = child.props as { children?: ReactNode; placeholder?: string };
+    if (typeof props.placeholder === 'string') return props.placeholder;
+    const nested = findSelectPlaceholder(props.children);
+    if (nested) return nested;
+  }
+  return '';
+}
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -191,9 +216,12 @@ describe('invite commission dialogs shadcn behavior', () => {
     expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['user', 'info'] });
   });
 
-  it('keeps transfer amount conversion out of the dialog like the old component', () => {
+  it('validates transfer with react-hook-form and keeps amount conversion out of the dialog', () => {
     const source = readFileSync(join(testDir, 'transfer-dialog.tsx'), 'utf8');
 
+    expect(source).toContain("from 'react-hook-form'");
+    expect(source).toContain('zodResolver(transferSchema)');
+    expect(source).toContain('form.handleSubmit');
     expect(source).toContain('await transfer.mutateAsync(yuan);');
     expect(source).not.toContain('Number(yuan) * 100');
   });
@@ -245,7 +273,8 @@ describe('invite commission dialogs shadcn behavior', () => {
     });
     await flushPromises();
 
-    expect(mocks.transferMutateAsync).toHaveBeenCalledWith(undefined);
+    expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('请输入需要划转到余额的金额');
   });
 
   it('renders the shadcn withdraw dialog and submits the ticket-withdraw payload', async () => {
@@ -357,10 +386,9 @@ describe('invite commission dialogs shadcn behavior', () => {
     });
     await flushPromises();
 
-    expect(mocks.withdrawMutateAsync).toHaveBeenCalledWith({
-      withdraw_account: '',
-      withdraw_method: undefined,
-    });
-    expect(mocks.navigate).toHaveBeenCalledWith('/ticket');
+    expect(mocks.withdrawMutateAsync).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('请选择提现方式');
+    expect(document.body.textContent).toContain('请输入提现账号');
   });
 });

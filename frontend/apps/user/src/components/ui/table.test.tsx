@@ -85,6 +85,7 @@ describe('Table', () => {
     expect(source).toContain("from '@tanstack/react-table'");
     expect(source).toContain("from '@tanstack/react-virtual'");
     expect(source).toContain('useReactTable');
+    expect(source).toContain('getRowId: getRowKey');
     expect(source).toContain('useVirtualizer');
   });
 });

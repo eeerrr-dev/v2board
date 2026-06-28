@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Send } from 'lucide-react';
@@ -16,9 +16,8 @@ export default function TicketDetailPage() {
   const ticketId = ticket_id;
   const ticket = useTicket(ticketId, { refetchInterval: 5000 });
   const reply = useReplyTicketMutation();
-  const [message, setMessage] = useState<string | undefined>();
+  const [message, setMessage] = useState('');
   const chatRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const messages = ticket.data?.message ?? [];
 
   useEffect(() => {
@@ -27,15 +26,15 @@ export default function TicketDetailPage() {
     chat.scrollTo(0, chat.scrollHeight);
   }, [messages.length]);
 
-  const submitReply = async () => {
+  const submitReply = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     if (reply.isPending) return;
     toast.loading(t('ticket.reply_sending'));
     try {
-      await reply.mutateAsync({ id: ticketId as string, message });
+      await reply.mutateAsync({ id: ticketId as string, message: message || undefined });
       toast.destroy();
       toast.success(t('ticket.reply_success'));
-      setMessage(undefined);
-      if (inputRef.current) inputRef.current.value = '';
+      setMessage('');
     } catch {
       toast.destroy();
     }
@@ -96,36 +95,31 @@ export default function TicketDetailPage() {
         </div>
       </div>
 
-      <div
+      <form
         className="js-chat-form border-t border-border bg-background p-3"
         data-testid="ticket-reply-form"
+        onSubmit={(event) => void submitReply(event)}
       >
         <div className="flex items-center gap-2">
           <Input
-            ref={inputRef}
-            value={message ?? ''}
+            value={message}
             onChange={(event) => setMessage(event.target.value)}
-            onKeyDown={(event) => {
-              // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-              if (event.keyCode === 13) void submitReply();
-            }}
             type="text"
             className="js-chat-input"
             data-testid="ticket-reply-input"
             placeholder={t('ticket.reply_placeholder')}
           />
           <Button
-            type="button"
+            type="submit"
             size="icon"
             data-testid="ticket-reply-send"
             loading={reply.isPending}
             aria-label={t('ticket.reply_placeholder')}
-            onClick={() => void submitReply()}
           >
             <Send className="size-4" />
           </Button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

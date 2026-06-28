@@ -23,6 +23,7 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('installLocaleDocumentEnvironment');
     expect(mainSource).toContain('const legacyHashRouteOptions = {');
     expect(mainSource).toContain("authenticatedFallback: '/dashboard'");
+    expect(mainSource).toContain('authenticatedPublicFallbackRoutes: []');
     expect(mainSource).toContain("canonicalPath: '/'");
     expect(mainSource).toContain("guestFallback: '/login'");
     expect(mainSource).toContain('nestedPrefixes: USER_LEGACY_ROUTE_PATHS');
@@ -32,7 +33,7 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('installLegacyHashRouteNormalizer(legacyHashRouteOptions);');
     expect(mainSource).toContain('installLocaleDocumentEnvironment(i18n);');
     expect(mainSource).toContain('if (import.meta.env.DEV) {');
-    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-37';");
+    expect(mainSource).toContain("const legacyRecoveryVersion = 'white-screen-recovery-38';");
     expect(mainSource).toContain(
       'storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`',
     );
@@ -85,7 +86,7 @@ describe('user legacy entrypoint', () => {
   });
 
   it('installs dev entry recovery before the Vite module graph loads', () => {
-    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-37';");
+    expect(indexSource).toContain("var recoveryVersion = 'white-screen-recovery-38';");
     expect(indexSource).toContain(
       "var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;",
     );
@@ -100,6 +101,9 @@ describe('user legacy entrypoint', () => {
     expect(indexSource).toContain('var legacyRoutes = [');
     expect(indexSource).toContain(
       "var legacyPublicRoutes = ['/', '/login', '/register', '/forgetpassword'];",
+    );
+    expect(indexSource).toContain(
+      'var legacyAuthenticatedPublicFallbackRoutes = [];',
     );
     expect(indexSource).toContain('function normalizeBootUrl(url)');
     expect(indexSource).toContain("var nextHash = '#' + normalizedLegacyPath(routeSource);");
@@ -137,7 +141,7 @@ describe('user legacy entrypoint', () => {
       indexSource.indexOf("var storageKey = 'v2board:dev-entry-recovery:' + recoveryVersion;"),
     ).toBeLessThan(
       indexSource.indexOf(
-        '<script type="module" src="/src/main.tsx?v=20260607-white-screen-recovery-37"',
+        '<script type="module" src="/src/main.tsx?v=20260607-white-screen-recovery-38"',
       ),
     );
   });

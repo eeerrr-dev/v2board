@@ -1,5 +1,6 @@
 export interface LegacyHashRouteOptions {
   authenticatedFallback: string;
+  authenticatedPublicFallbackRoutes?: readonly string[];
   canonicalPath?: string;
   guestFallback: string;
   publicRoutes: readonly string[];
@@ -100,7 +101,10 @@ export function getNormalizedLegacyHashPath(
 
   if (!isKnownRoute(path, options.routes)) {
     path = hasAuth ? options.authenticatedFallback : options.guestFallback;
-  } else if (hasAuth && options.publicRoutes.includes(path)) {
+  } else if (
+    hasAuth &&
+    (options.authenticatedPublicFallbackRoutes ?? options.publicRoutes).includes(path)
+  ) {
     path = options.authenticatedFallback;
   } else if (!hasAuth && !options.publicRoutes.includes(path)) {
     path = options.guestFallback;
@@ -275,12 +279,10 @@ function renderLegacyWhiteScreenFallback(root: HTMLElement | null): void {
     root.querySelector<HTMLElement>('#main-container') ??
     root;
   target.innerHTML = [
-    '<div class="block block-rounded" data-v2board-white-screen-fallback="1">',
-    '<div class="block-content text-center py-5">',
-    '<h3 class="font-w400 text-danger mb-2">页面加载失败</h3>',
-    '<p class="text-muted mb-4">请刷新页面后重试。</p>',
-    '<button type="button" class="btn btn-primary" onclick="window.location.reload()">刷新页面</button>',
-    '</div>',
+    '<div data-v2board-white-screen-fallback="1" style="margin:24px auto;max-width:420px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:32px;text-align:center;box-shadow:0 12px 30px rgba(15,23,42,.08)">',
+    '<h3 style="margin:0 0 8px;color:#dc2626;font-size:20px;font-weight:600">页面加载失败</h3>',
+    '<p style="margin:0 0 24px;color:#64748b;font-size:14px">请刷新页面后重试。</p>',
+    '<button type="button" style="height:40px;border:0;border-radius:6px;background:#111827;color:#fff;padding:0 16px;font-size:14px;font-weight:500;cursor:pointer" onclick="window.location.reload()">刷新页面</button>',
     '</div>',
   ].join('');
 }

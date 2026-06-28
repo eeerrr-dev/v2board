@@ -1,9 +1,8 @@
 /*
  * Legacy replica compatibility styles.
  *
- * Redesigned user surfaces should avoid depending on these bare Bootstrap/OneUI
- * selectors. Keep imports here while replica-era routes and operator HTML still
- * need them, then shrink this file as those contracts retire.
+ * This file now carries only document and rich-content compatibility. Redesigned
+ * user routes must not depend on Bootstrap/OneUI UI framework selectors.
  */
 @import './user-theme-colors.css';
 @import './user-theme-legacy-tokens.css';
@@ -29,71 +28,3 @@
 @import './user-custom-html-table-header-cells.css';
 @import './user-custom-html-table-body-cells.css';
 @import './user-browser-modes.css';
-@import './user-oneui-display-utilities.css';
-@import './user-oneui-spacing-utilities.css';
-@import './user-oneui-size-utilities.css';
-@import './user-oneui-text-color-utilities.css';
-@import './user-oneui-text-layout-utilities.css';
-@import './user-oneui-border-overflow-utilities.css';
-@import './user-oneui-font-flex-utilities.css';
-@import './user-oneui-mobile-type.css';
-@import './user-oneui-hero.css';
-@import './user-oneui-responsive-lg.css';
-@import './user-oneui-responsive-md.css';
-@import './user-oneui-responsive-sm.css';
-@import './user-oneui-responsive-xl.css';
-@import './user-bootstrap-button-base.css';
-@import './user-bootstrap-button-primary.css';
-@import './user-bootstrap-button-dark.css';
-@import './user-bootstrap-button-danger.css';
-@import './user-bootstrap-button-alt-primary.css';
-@import './user-bootstrap-button-size-sm.css';
-@import './user-bootstrap-button-size-lg.css';
-@import './user-bootstrap-button-rounded.css';
-@import './user-bootstrap-button-block-disabled.css';
-@import './user-bootstrap-grid-rows-base.css';
-@import './user-bootstrap-grid-rows-no-gutters.css';
-@import './user-bootstrap-grid-rows-tiny-gutters.css';
-@import './user-bootstrap-grid-rows-mobile-gutters.css';
-@import './user-bootstrap-grid-deck-form.css';
-@import './user-bootstrap-grid-columns-fixed.css';
-@import './user-bootstrap-grid-columns-full.css';
-@import './user-bootstrap-grid-columns-sm.css';
-@import './user-bootstrap-grid-columns-md.css';
-@import './user-bootstrap-grid-columns-xl.css';
-@import './user-bootstrap-alert-shell.css';
-@import './user-bootstrap-alert-variants.css';
-@import './user-bootstrap-alert-links.css';
-@import './user-bootstrap-form-control-base.css';
-@import './user-bootstrap-form-control-focus.css';
-@import './user-bootstrap-form-control-alt.css';
-@import './user-bootstrap-form-control-placeholder.css';
-@import './user-bootstrap-form-control-disabled.css';
-@import './user-bootstrap-input-group-shell.css';
-@import './user-bootstrap-input-group-control.css';
-@import './user-bootstrap-input-group-prepend.css';
-@import './user-bootstrap-custom-control-base.css';
-@import './user-bootstrap-custom-control-indicators.css';
-@import './user-bootstrap-custom-control-states.css';
-@import './user-bootstrap-custom-control-primary.css';
-@import './user-bootstrap-custom-control-active-alignment.css';
-@import './user-bootstrap-progress-shell.css';
-@import './user-bootstrap-progress-bar.css';
-@import './user-bootstrap-progress-striped.css';
-@import './user-bootstrap-progress-animated.css';
-@import './user-bootstrap-background-utilities.css';
-@import './user-bootstrap-badges.css';
-@import './user-oneui-block-base.css';
-@import './user-oneui-block-rounded.css';
-@import './user-oneui-block-variants.css';
-@import './user-oneui-block-header.css';
-@import './user-oneui-block-links.css';
-@import './user-oneui-block-content-base.css';
-@import './user-oneui-block-content-pull.css';
-@import './user-oneui-block-content-sizing.css';
-@import './user-oneui-content-heading.css';
-@import './user-bootstrap-color-utilities.css';
-@import './user-bootstrap-spinner-grow.css';
-@import './user-bootstrap-screen-reader.css';
-@import './user-bootstrap-spinner-grow-keyframes.css';
-@import './user-background-utilities.css';

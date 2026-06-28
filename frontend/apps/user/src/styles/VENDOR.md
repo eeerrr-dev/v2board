@@ -7,10 +7,12 @@ hook; they are not the target design system for redesigned user surfaces.
 
 ## 1. Vendored third-party CSS (compatibility only)
 
-These files are the upstream framework stylesheets the original packaged V2Board
-user theme shipped, restored from the frozen oracle bundle. They are NOT authored
-source and should not be hand-edited rule-by-rule. For redesigned user surfaces,
-prefer removing the dependency on these files rather than extending them.
+Some files in this directory are upstream framework stylesheets the original
+packaged V2Board user theme shipped, restored from the frozen oracle bundle.
+They are NOT authored source and should not be hand-edited rule-by-rule. The
+redesigned user runtime no longer imports the Bootstrap/OneUI UI framework
+selectors; only document and rich-content compatibility remains in
+`user-legacy-replica.css`.
 
 The user app's runtime is modern React and has **no antd runtime dependency**.
 The redesigned user app no longer loads Ant Design, antd-mobile, Ant modal/drawer,
@@ -27,8 +29,8 @@ Font Awesome and Simple Line Icons are retired from the user bundle. New or
 redesigned user UI should use `lucide-react` icons when an icon is appropriate.
 
 Versions are intentionally **not** upgraded casually: changing them would be a
-redesign decision. Redesigned shadcn islands should instead move off the old
-framework CSS and verify behavior/interaction contracts.
+redesign decision. Redesigned shadcn islands should stay off the old framework
+CSS and verify behavior/interaction contracts.
 
 ## 2. Authored V2Board source styles (source-owned)
 

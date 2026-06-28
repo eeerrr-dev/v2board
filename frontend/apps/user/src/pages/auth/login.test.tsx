@@ -443,6 +443,8 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(controllerSource).toContain('navigate(redirect);');
     expect(controllerSource).toContain('user.checkLogin(apiClient)');
     expect(controllerSource).toContain('if (active && result.is_login)');
+    expect(controllerSource).toContain('} else if (active) {');
+    expect(controllerSource).toContain('setAuthData(null);');
     expect(controllerSource).toContain('active = false;');
   });
 
@@ -470,5 +472,17 @@ describe('LoginPage bundled-theme behavior', () => {
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
     expect(mocks.navigate).not.toHaveBeenCalledWith('dashboard');
+  });
+
+  it('clears existing auth when checkLogin says the session is not logged in', async () => {
+    mocks.getAuthData.mockReturnValue('STALE_AUTH');
+    mocks.checkLogin.mockResolvedValue({ is_login: false });
+
+    await renderLogin();
+    await flushPromises();
+
+    expect(mocks.checkLogin).toHaveBeenCalledWith(mocks.apiClient);
+    expect(mocks.setAuthData).toHaveBeenCalledWith(null);
+    expect(mocks.navigate).not.toHaveBeenCalledWith('/dashboard');
   });
 });

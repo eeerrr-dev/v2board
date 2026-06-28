@@ -392,15 +392,8 @@ export function useCancelOrderMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (tradeNo: string) => user.cancelOrder(apiClient, tradeNo),
-    // The original cancel saga dispatches `fetch` (refresh the order LIST) then a
-    // mistyped `details` action (the effect is named `detail`), so the order DETAIL is
-    // intentionally never refreshed — it keeps rendering as pending. Match: invalidate
-    // the list queries only, leaving the detail stale.
     onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ['user', 'orders'],
-        predicate: (query) => query.queryKey[2] !== 'detail',
-      });
+      void queryClient.invalidateQueries({ queryKey: ['user', 'orders'] });
     },
   });
 }

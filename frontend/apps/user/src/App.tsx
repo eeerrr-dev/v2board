@@ -54,6 +54,7 @@ export const USER_APP_LAYOUT_ROUTE_PATHS = [
 
 export const USER_LEGACY_ROUTE_OPTIONS = {
   authenticatedFallback: '/dashboard',
+  authenticatedPublicFallbackRoutes: [],
   guestFallback: '/login',
   nestedPrefixes: USER_LEGACY_ROUTE_PATHS,
   publicRoutes: ['/', '/login', '/register', '/forgetpassword'],

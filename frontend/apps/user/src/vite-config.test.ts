@@ -23,7 +23,7 @@ const userDeployTemplateSource = readFileSync(
 describe('user Vite dev optimizer', () => {
   it('keeps user optimized deps isolated and fully declared for stable page clicks', () => {
     expect(viteConfigSource).toContain(
-      "cacheDir: '../../node_modules/.vite/user-white-screen-recovery-37'",
+      "cacheDir: '../../node_modules/.vite/user-white-screen-recovery-38'",
     );
     expect(viteConfigSource).toContain('optimizeDeps: {');
     expect(viteConfigSource).toContain('legacyNavigationRedirectPlugin()');

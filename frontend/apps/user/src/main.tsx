@@ -22,13 +22,14 @@ import './styles/user-redesigned-surfaces.css';
 
 const legacyHashRouteOptions = {
   authenticatedFallback: '/dashboard',
+  authenticatedPublicFallbackRoutes: [],
   canonicalPath: '/',
   guestFallback: '/login',
   nestedPrefixes: USER_LEGACY_ROUTE_PATHS,
   publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
   routes: USER_LEGACY_ROUTE_PATHS,
 } as const;
-const legacyRecoveryVersion = 'white-screen-recovery-37';
+const legacyRecoveryVersion = 'white-screen-recovery-38';
 const legacyWhiteScreenRecoveryConfig = {
   storageKey: `v2board:white-screen-recovery:${legacyRecoveryVersion}`,
 } as const;
