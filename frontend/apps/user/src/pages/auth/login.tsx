@@ -17,7 +17,7 @@ import { useLoginController } from './use-login-controller';
 
 export default function LoginPage() {
   const { t } = useTranslation();
-  const { submit, clearError, isPending, error } = useLoginController();
+  const { registerInput, submit, clearError, isPending, error } = useLoginController();
 
   return (
     <AuthPanel
@@ -38,11 +38,11 @@ export default function LoginPage() {
         <FormField id="login-email" label={t('auth.email')}>
           <Input
             type="email"
-            name="email"
             autoComplete="username"
             placeholder="m@example.com"
             invalid={!!error}
             aria-describedby={error ? 'login-error' : undefined}
+            {...registerInput('email')}
           />
         </FormField>
         <div className="grid gap-3">
@@ -57,10 +57,10 @@ export default function LoginPage() {
           </div>
           <PasswordField
             id="login-password"
-            name="password"
             autoComplete="current-password"
             invalid={!!error}
             aria-describedby={error ? 'login-error' : undefined}
+            {...registerInput('password')}
           />
         </div>
 

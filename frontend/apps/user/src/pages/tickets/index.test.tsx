@@ -51,7 +51,6 @@ const mocks = vi.hoisted(() => {
     invalidateQueries: vi.fn(),
     makeTickets,
     openWindow: vi.fn(),
-    removeQueries: vi.fn(),
     saveMutateAsync: vi.fn(),
     savePending: false,
     tickets: makeTickets(),
@@ -95,7 +94,6 @@ vi.mock('react-i18next', () => ({
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     invalidateQueries: mocks.invalidateQueries,
-    removeQueries: mocks.removeQueries,
   }),
 }));
 
@@ -152,6 +150,7 @@ function resetMocks() {
 function setNativeInputValue(input: HTMLInputElement, value: string) {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
   input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function setNativeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
@@ -160,6 +159,7 @@ function setNativeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
     value,
   );
   textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  textarea.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 describe('TicketsPage shadcn surface', () => {
@@ -198,9 +198,11 @@ describe('TicketsPage shadcn surface', () => {
     expect(html).not.toContain('ant-table-fixed-right');
   });
 
-  it('keeps ticket table row keys as index DOM attributes', () => {
-    expect(source).toContain('data-row-key={index}');
+  it('renders ticket rows through shared TanStack DataTable columns', () => {
+    expect(source).toContain('satisfies DataTableColumn<(typeof tickets)[number]>[]');
+    expect(source).toContain('virtualizer={{ enabled: tickets.length > 30 }}');
     expect(source).not.toContain('data-row-key={ticket.id}');
+    expect(source).not.toContain('<TableRow');
   });
 
   it('keeps the new-ticket trigger text stable while ticket save is pending', () => {
@@ -260,7 +262,6 @@ describe('TicketsPage shadcn interactions', () => {
     window.open = mocks.openWindow as unknown as typeof window.open;
     mocks.fetching = false;
     mocks.invalidateQueries.mockClear();
-    mocks.removeQueries.mockClear();
     mocks.saveMutateAsync.mockReset();
     mocks.saveMutateAsync.mockResolvedValue(undefined);
     mocks.closeMutateAsync.mockReset();
@@ -471,8 +472,8 @@ describe('TicketsPage shadcn interactions', () => {
   });
 
   it('keeps the ticket level select value as the direct numeric payload value', () => {
-    expect(source).toContain('const levelLabel = LEVELS[ticket.level]?.labelKey;');
-    expect(source).toContain('setLevel(Number(nextLevel) as TicketLevel)');
+    expect(source).toContain('const levelLabel = LEVELS[row.original.level]?.labelKey;');
+    expect(source).toContain("form.setValue('level', Number(nextLevel) as TicketLevel)");
     expect(source).not.toContain('LEVELS[Number(ticket.level)]');
   });
 
@@ -492,11 +493,7 @@ describe('TicketsPage shadcn interactions', () => {
     expect(mocks.closeMutateAsync).toHaveBeenCalledWith(7);
     expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['user', 'tickets'] });
 
-    act(() => root?.unmount());
-    root = null;
-
-    expect(mocks.removeQueries).toHaveBeenCalledWith({ queryKey: ['user', 'tickets'] });
-    expect(mocks.removeQueries).toHaveBeenCalledWith({ queryKey: ['user', 'ticket'] });
+    expect(source).not.toContain('removeQueries');
   });
 
   it('keeps closed-ticket close action clickable for legacy API parity', async () => {

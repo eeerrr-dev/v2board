@@ -1,14 +1,16 @@
 import {
   useCallback,
   useEffect,
-  useRef,
   useState,
-  type SyntheticEvent,
+  useRef,
+  type BaseSyntheticEvent,
   type ReactNode,
-  type RefObject,
 } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm, type UseFormRegister } from 'react-hook-form';
+import { z } from 'zod';
 import {
   useGuestConfig,
   useRegisterMutation,
@@ -19,17 +21,31 @@ import { i18nGet } from '@/lib/errors';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { useAuthRecaptcha } from './auth-recaptcha';
 
-function readFormValue(form: HTMLFormElement | null, name: string) {
-  if (!form) return '';
-  return String(new FormData(form).get(name) ?? '');
-}
+const registerSchema = z
+  .object({
+    email: z.string(),
+    email_code: z.string().optional(),
+    password: z.string(),
+    confirm_password: z.string(),
+    invite_code: z.string().optional(),
+  })
+  .superRefine((values, context) => {
+    if (values.password !== values.confirm_password) {
+      context.addIssue({
+        code: 'custom',
+        path: ['confirm_password'],
+        message: 'password_mismatch',
+      });
+    }
+  });
+
+type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export interface RegisterController {
   config: ReturnType<typeof useGuestConfig>['data'];
   configLoading: boolean;
-  formRef: RefObject<HTMLFormElement | null>;
-  /** Form submit handler — runs recaptcha then the register flow. */
-  submit: (event: SyntheticEvent<HTMLFormElement>) => void;
+  registerInput: UseFormRegister<RegisterFormValues>;
+  submit: (event?: BaseSyntheticEvent) => Promise<void>;
   /** Send-code button handler — runs recaptcha then the email-verify flow. */
   sendCode: () => void;
   isPending: boolean;
@@ -62,9 +78,18 @@ export function useRegisterController(): RegisterController {
     Boolean(config?.is_recaptcha),
     config?.recaptcha_site_key,
   );
-
   const initialInviteCode = params.get('code');
-  const formRef = useRef<HTMLFormElement | null>(null);
+  const form = useForm<RegisterFormValues>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      email: '',
+      email_code: '',
+      password: '',
+      confirm_password: '',
+      invite_code: initialInviteCode ?? '',
+    },
+  });
+
   const mountedRef = useRef(true);
   const [emailSuffix, setEmailSuffix] = useState<string | undefined>(undefined);
   const [tosChecked, setTosChecked] = useState(false);
@@ -77,8 +102,7 @@ export function useRegisterController(): RegisterController {
       ? emailSuffix
       : (emailSuffixes[0] ?? '')
     : '';
-  const getEmail = () => {
-    const email = readFormValue(formRef.current, 'email');
+  const getEmail = (email: string) => {
     return hasEmailWhitelist ? `${email}@${selectedEmailSuffix}` : email;
   };
 
@@ -106,7 +130,7 @@ export function useRegisterController(): RegisterController {
   const onSendCode = async (recaptchaData?: string) => {
     try {
       const sent = await sendCodeMutation({
-        email: getEmail(),
+        email: getEmail(form.getValues('email')),
         isforget: 0,
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
@@ -118,40 +142,35 @@ export function useRegisterController(): RegisterController {
     } catch {}
   };
 
-  const onRegister = async (recaptchaData?: string) => {
+  const onRegister = async (values: RegisterFormValues, recaptchaData?: string) => {
     if (config?.tos_url && !tosChecked) {
       authToast.error(i18nGet('请求失败'), { description: t('auth.tos_required') });
       return;
     }
-    const password = readFormValue(formRef.current, 'password');
-    if (password !== readFormValue(formRef.current, 'confirm_password')) {
-      authToast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') });
-      return;
-    }
     try {
       await register({
-        email: getEmail(),
-        password,
+        email: getEmail(values.email),
+        password: values.password,
         invite_code:
-          readFormValue(formRef.current, 'invite_code') || initialInviteCode || '',
-        email_code: config?.is_email_verify ? readFormValue(formRef.current, 'email_code') : '',
+          values.invite_code || initialInviteCode || '',
+        email_code: config?.is_email_verify ? values.email_code ?? '' : '',
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
       if (mountedRef.current) navigate('/login');
     } catch {}
   };
 
-  const submit = (event: SyntheticEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    runRecaptcha(onRegister);
-  };
+  const submit = form.handleSubmit(
+    (values) => runRecaptcha((recaptchaData) => onRegister(values, recaptchaData)),
+    () => authToast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') }),
+  );
 
   const sendCode = () => runRecaptcha(onSendCode);
 
   return {
     config,
     configLoading,
-    formRef,
+    registerInput: form.register,
     submit,
     sendCode,
     isPending,

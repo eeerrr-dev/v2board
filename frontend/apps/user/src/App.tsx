@@ -1,27 +1,19 @@
-import { type ReactNode } from 'react';
-import { Navigate, Route, Routes, matchPath, useLocation } from 'react-router';
+import { type QueryClient } from '@tanstack/react-query';
+import { type ComponentType } from 'react';
+import {
+  createHashRouter,
+  matchPath,
+  redirect,
+  type LoaderFunctionArgs,
+  type RouteObject,
+} from 'react-router';
 import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
 import { RequireAuth } from '@/components/layout/require-auth';
-import LoginPage from '@/pages/auth/login';
-import RegisterPage from '@/pages/auth/register';
-import ForgetPage from '@/pages/auth/forget';
-import HomePage from '@/pages/home';
-import DashboardPage from '@/pages/dashboard';
-import PlansPage from '@/pages/plans';
-import PlanCheckoutPage from '@/pages/plans/checkout';
-import OrdersPage from '@/pages/orders';
-import OrderDetailPage from '@/pages/orders/detail';
-import ProfilePage from '@/pages/profile';
-import InvitePage from '@/pages/invite';
-import TicketsPage from '@/pages/tickets';
-import TicketDetailPage from '@/pages/tickets/detail';
-import KnowledgePage from '@/pages/knowledge';
-import NodePage from '@/pages/node';
-import TrafficPage from '@/pages/traffic';
-import { RouteBoundaryElement } from '@/components/route-error-boundary';
+import { RouteBoundaryOutlet, RouteErrorFallback } from '@/components/route-error-boundary';
 import { getAuthData } from '@/lib/auth';
+import { userQueryOptions } from '@/lib/queries';
 
 export const USER_LEGACY_ROUTE_PATHS = [
   '/dashboard',
@@ -44,44 +36,7 @@ export const USER_LEGACY_ROUTE_PATHS = [
 
 type UserLegacyRoutePath = (typeof USER_LEGACY_ROUTE_PATHS)[number];
 
-const USER_ROUTE_ELEMENTS: Record<UserLegacyRoutePath, ReactNode> = {
-  '/dashboard': <DashboardPage />,
-  '/forgetpassword': <ForgetPage />,
-  '/': <HomePage />,
-  '/invite': <InvitePage />,
-  '/knowledge': <KnowledgePage />,
-  '/login': <LoginPage />,
-  '/node': <NodePage />,
-  '/order/:trade_no': <OrderDetailPage />,
-  '/order': <OrdersPage />,
-  '/plan/:plan_id': <PlanCheckoutPage />,
-  '/plan': <PlansPage />,
-  '/profile': <ProfilePage />,
-  '/register': <RegisterPage />,
-  '/ticket/:ticket_id': <TicketDetailPage />,
-  '/ticket': <TicketsPage />,
-  '/traffic': <TrafficPage />,
-};
-
-const USER_GUEST_ROUTE_PATHS = ['/login', '/register', '/forgetpassword'] as const;
-
-const USER_LEGACY_ROUTE_OPTIONS = {
-  authenticatedFallback: '/dashboard',
-  guestFallback: '/login',
-  nestedPrefixes: USER_LEGACY_ROUTE_PATHS,
-  publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
-  routes: USER_LEGACY_ROUTE_PATHS,
-} as const;
-
-function matchesUserLegacyRoute(pathname: string): boolean {
-  return USER_LEGACY_ROUTE_PATHS.some((path) => matchPath({ path, end: true }, pathname));
-}
-
-function getUserRouteFallback(): string {
-  return getAuthData()
-    ? USER_LEGACY_ROUTE_OPTIONS.authenticatedFallback
-    : USER_LEGACY_ROUTE_OPTIONS.guestFallback;
-}
+export const USER_GUEST_ROUTE_PATHS = ['/login', '/register', '/forgetpassword'] as const;
 
 export const USER_APP_LAYOUT_ROUTE_PATHS = [
   '/dashboard',
@@ -97,62 +52,149 @@ export const USER_APP_LAYOUT_ROUTE_PATHS = [
   '/traffic',
 ] as const;
 
-function LegacyUnknownRouteRedirect() {
-  const location = useLocation();
-  const current = `${location.pathname}${location.search}`;
-  const normalized = getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS);
+export const USER_LEGACY_ROUTE_OPTIONS = {
+  authenticatedFallback: '/dashboard',
+  guestFallback: '/login',
+  nestedPrefixes: USER_LEGACY_ROUTE_PATHS,
+  publicRoutes: ['/', '/login', '/register', '/forgetpassword'],
+  routes: USER_LEGACY_ROUTE_PATHS,
+} as const;
 
-  return <Navigate to={normalized} replace />;
+type LazyRouteModule = Promise<{ default: ComponentType }>;
+
+const USER_ROUTE_MODULES: Record<UserLegacyRoutePath, () => LazyRouteModule> = {
+  '/dashboard': () => import('@/pages/dashboard'),
+  '/forgetpassword': () => import('@/pages/auth/forget'),
+  '/': () => import('@/pages/home'),
+  '/invite': () => import('@/pages/invite'),
+  '/knowledge': () => import('@/pages/knowledge'),
+  '/login': () => import('@/pages/auth/login'),
+  '/node': () => import('@/pages/node'),
+  '/order/:trade_no': () => import('@/pages/orders/detail'),
+  '/order': () => import('@/pages/orders'),
+  '/plan/:plan_id': () => import('@/pages/plans/checkout'),
+  '/plan': () => import('@/pages/plans'),
+  '/profile': () => import('@/pages/profile'),
+  '/register': () => import('@/pages/auth/register'),
+  '/ticket/:ticket_id': () => import('@/pages/tickets/detail'),
+  '/ticket': () => import('@/pages/tickets'),
+  '/traffic': () => import('@/pages/traffic'),
+};
+
+function lazyPage(path: UserLegacyRoutePath): RouteObject['lazy'] {
+  return async () => {
+    const module = await USER_ROUTE_MODULES[path]();
+    return { Component: module.default };
+  };
 }
 
-export default function App() {
-  const location = useLocation();
-  const current = `${location.pathname}${location.search}`;
+function getRequestRoutePath(request: Request): string {
+  const url = new URL(request.url);
+  if (url.hash.startsWith('#/')) return url.hash.slice(1);
+  return `${url.pathname}${url.search}`;
+}
+
+function matchesUserLegacyRoute(pathname: string): boolean {
+  return USER_LEGACY_ROUTE_PATHS.some((path) => matchPath({ path, end: true }, pathname));
+}
+
+function getUserRouteFallback(): string {
+  return getAuthData()
+    ? USER_LEGACY_ROUTE_OPTIONS.authenticatedFallback
+    : USER_LEGACY_ROUTE_OPTIONS.guestFallback;
+}
+
+export function normalizeUserRouteLoader({ request }: LoaderFunctionArgs) {
+  const current = getRequestRoutePath(request);
   const normalized = getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS);
 
-  if (normalized !== current) return <Navigate to={normalized} replace />;
-  if (!matchesUserLegacyRoute(location.pathname)) {
-    return <Navigate to={getUserRouteFallback()} replace />;
-  }
+  if (normalized !== current) throw redirect(normalized);
+  return null;
+}
 
-  return (
-    <Routes>
-      <Route
-        path="/"
-        element={<RouteBoundaryElement>{USER_ROUTE_ELEMENTS['/']}</RouteBoundaryElement>}
-      />
-      <Route element={<GuestLayout />}>
-        {USER_GUEST_ROUTE_PATHS.map((path) => (
-          <Route key={path} path={path} element={USER_ROUTE_ELEMENTS[path]} />
-        ))}
-      </Route>
-      <Route
-        element={
-          <RequireAuth>
-            <AppLayout />
-          </RequireAuth>
-        }
-      >
-        {USER_APP_LAYOUT_ROUTE_PATHS.map((path) => (
-          <Route key={path} path={path} element={USER_ROUTE_ELEMENTS[path]} />
-        ))}
-      </Route>
-      <Route
-        path="/ticket/:ticket_id"
-        element={
-          <RouteBoundaryElement>
-            <RequireAuth>{USER_ROUTE_ELEMENTS['/ticket/:ticket_id']}</RequireAuth>
-          </RouteBoundaryElement>
-        }
-      />
-      <Route
-        path="*"
-        element={
-          <RouteBoundaryElement>
-            <LegacyUnknownRouteRedirect />
-          </RouteBoundaryElement>
-        }
-      />
-    </Routes>
-  );
+export function unknownUserRouteLoader({ request }: LoaderFunctionArgs) {
+  const current = getRequestRoutePath(request);
+  const normalized = getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS);
+  const url = new URL(`https://v2board.local${normalized}`);
+
+  if (normalized !== current && matchesUserLegacyRoute(url.pathname)) throw redirect(normalized);
+  throw redirect(getUserRouteFallback());
+}
+
+export function createRequireUserLoader(queryClient: QueryClient) {
+  return async ({ request }: LoaderFunctionArgs) => {
+    const current = getRequestRoutePath(request);
+
+    if (!getAuthData()) {
+      throw redirect(`/login?redirect=${encodeURIComponent(current)}`);
+    }
+
+    await queryClient.ensureQueryData(userQueryOptions.info()).catch(() => null);
+    return null;
+  };
+}
+
+function pageRoute(path: UserLegacyRoutePath): RouteObject {
+  return {
+    path,
+    lazy: lazyPage(path),
+    errorElement: <RouteErrorFallback />,
+  };
+}
+
+export function createUserRoutes(queryClient: QueryClient): RouteObject[] {
+  const requireUser = createRequireUserLoader(queryClient);
+
+  return [
+    {
+      id: 'user-root',
+      loader: normalizeUserRouteLoader,
+      element: <RouteBoundaryOutlet />,
+      errorElement: <RouteErrorFallback />,
+      children: [
+        pageRoute('/'),
+        {
+          element: <GuestLayout />,
+          errorElement: <RouteErrorFallback />,
+          children: USER_GUEST_ROUTE_PATHS.map(pageRoute),
+        },
+        {
+          loader: requireUser,
+          element: (
+            <RequireAuth>
+              <AppLayout />
+            </RequireAuth>
+          ),
+          errorElement: <RouteErrorFallback />,
+          children: USER_APP_LAYOUT_ROUTE_PATHS.map(pageRoute),
+        },
+        {
+          path: '/ticket/:ticket_id',
+          loader: requireUser,
+          element: (
+            <RequireAuth>
+              <RouteBoundaryOutlet />
+            </RequireAuth>
+          ),
+          errorElement: <RouteErrorFallback />,
+          children: [
+            {
+              index: true,
+              lazy: lazyPage('/ticket/:ticket_id'),
+              errorElement: <RouteErrorFallback />,
+            },
+          ],
+        },
+        {
+          path: '*',
+          loader: unknownUserRouteLoader,
+          errorElement: <RouteErrorFallback />,
+        },
+      ],
+    },
+  ];
+}
+
+export function createUserRouter(queryClient: QueryClient) {
+  return createHashRouter(createUserRoutes(queryClient));
 }

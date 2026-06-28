@@ -302,12 +302,38 @@ export function isLegacyMobile(): boolean {
 }
 
 export async function copyText(text: string | number | null | undefined): Promise<boolean> {
-  if (!navigator.clipboard?.writeText) return false;
+  const value = String(text);
+  if (!navigator.clipboard?.writeText) return copyTextWithExecCommand(value);
+
   try {
-    await navigator.clipboard.writeText(String(text));
+    await navigator.clipboard.writeText(value);
     return true;
   } catch {
+    return copyTextWithExecCommand(value);
+  }
+}
+
+function copyTextWithExecCommand(text: string): boolean {
+  if (typeof document.execCommand !== 'function') return false;
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+
+  try {
+    return document.execCommand('copy');
+  } catch {
     return false;
+  } finally {
+    textarea.remove();
   }
 }
 

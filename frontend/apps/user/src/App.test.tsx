@@ -39,39 +39,42 @@ describe('user legacy route table', () => {
 
   it('keeps ticket details as the original standalone chat route', () => {
     expect(USER_APP_LAYOUT_ROUTE_PATHS).not.toContain('/ticket/:ticket_id');
-    expect(source).toContain('path="/ticket/:ticket_id"');
-    expect(source).toContain("USER_ROUTE_ELEMENTS['/ticket/:ticket_id']");
-    expect(source).toContain("<RequireAuth>{USER_ROUTE_ELEMENTS['/ticket/:ticket_id']}</RequireAuth>");
+    expect(source).toContain("path: '/ticket/:ticket_id'");
+    expect(source).toContain("lazy: lazyPage('/ticket/:ticket_id')");
+    expect(source).toContain('<RouteBoundaryOutlet />');
+    expect(source).toContain('<RequireAuth>');
   });
 
-  it('normalizes unmatched legacy hashes without rendering the bundled home route first', () => {
-    expect(source).toContain('path="*"');
-    expect(source).toContain('function LegacyUnknownRouteRedirect()');
+  it('normalizes unmatched legacy hashes in route loaders before rendering pages', () => {
+    expect(source).toContain("path: '*'");
+    expect(source).toContain('export function normalizeUserRouteLoader');
+    expect(source).toContain('export function unknownUserRouteLoader');
     expect(source).toContain('nestedPrefixes: USER_LEGACY_ROUTE_PATHS');
     expect(source).toContain('getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS)');
-    expect(source).toContain('return <Navigate to={normalized} replace />;');
-    expect(source.indexOf('if (normalized !== current) return <Navigate to={normalized} replace />;')).toBeLessThan(
-      source.indexOf('<Routes>'),
-    );
+    expect(source).toContain('if (normalized !== current) throw redirect(normalized);');
     expect(source).toContain("import { getAuthData } from '@/lib/auth';");
     expect(source).toContain('function matchesUserLegacyRoute(pathname: string): boolean');
     expect(source).toContain('matchPath({ path, end: true }, pathname)');
     expect(source).toContain('function getUserRouteFallback(): string');
-    expect(source.indexOf('if (!matchesUserLegacyRoute(location.pathname))')).toBeLessThan(
-      source.indexOf('<Routes>'),
-    );
-    expect(source).toContain('<LegacyUnknownRouteRedirect />');
+    expect(source).toContain('throw redirect(getUserRouteFallback())');
+    expect(source).not.toContain('<Routes>');
+    expect(source).not.toContain('LegacyUnknownRouteRedirect');
   });
 
-  it('keeps the route table stable while wrapping standalone routes with the white-screen guard', () => {
-    expect(source).toContain("import { RouteBoundaryElement } from '@/components/route-error-boundary';");
-    expect(source).toContain('<RouteBoundaryElement>{USER_ROUTE_ELEMENTS');
-    expect(source).not.toContain('lazy(() => import(');
+  it('uses React Router data APIs with lazy route modules and route error boundaries', () => {
+    expect(source).toContain('createHashRouter');
+    expect(source).toContain('export function createUserRoutes(queryClient: QueryClient)');
+    expect(source).toContain('export function createRequireUserLoader(queryClient: QueryClient)');
+    expect(source).toContain('await queryClient.ensureQueryData(userQueryOptions.info())');
+    expect(source).toContain('function lazyPage(path: UserLegacyRoutePath)');
+    expect(source).toContain('lazy: lazyPage(path)');
+    expect(source).toContain('errorElement: <RouteErrorFallback />');
+    expect(source).not.toContain('USER_ROUTE_ELEMENTS');
     expect(source).not.toContain('<Suspense');
   });
 
   it('keeps the shared layout mounted while switching routes', () => {
-    expect(source).toContain('<Route element={<GuestLayout />}>');
+    expect(source).toContain('element: <GuestLayout />');
     expect(source).toContain('<RequireAuth>');
     expect(source).toContain('<AppLayout />');
     expect(source).not.toContain('key={routeComponentKey');

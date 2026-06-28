@@ -24,12 +24,7 @@ import {
 import { PaginationControl, getPaginationMaxCurrent } from '@/components/ui/pagination';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
-import {
-  DataTable,
-  TableCell,
-  TableRow,
-} from '@/components/ui/table';
-import type { DataTableHeader } from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import {
   Tooltip,
   TooltipContent,
@@ -76,18 +71,16 @@ export default function InvitePage() {
       : '--.--';
   const codes = invite.data?.codes ?? [];
   const isDistribution = Boolean(comm?.commission_distribution_enable);
-  // Faithful to the original: the distribution branch computes the rate
-  // unconditionally (l1 * (rate/100), …), so during the load window where comm config
-  // has arrived but invite stats have not, rate is undefined → "NaN%,NaN%,NaN%".
-  // Only the non-distribution branch guards (rate !== undefined ? `${rate}%` : loading).
   const commissionRate = isDistribution
-    ? [
-        comm?.commission_distribution_l1,
-        comm?.commission_distribution_l2,
-        comm?.commission_distribution_l3,
-      ]
-        .map((level) => `${Number(level) * (Number(rate) / 100)}%`)
-        .join(',')
+    ? rate === undefined
+      ? undefined
+      : [
+          comm?.commission_distribution_l1,
+          comm?.commission_distribution_l2,
+          comm?.commission_distribution_l3,
+        ]
+          .map((level) => `${Number(level ?? 0) * (rate / 100)}%`)
+          .join(',')
     : rate === undefined
       ? undefined
       : `${rate}%`;
@@ -102,6 +95,45 @@ export default function InvitePage() {
   );
   const detailsLoading = useLegacyFetchLoading(details.isFetching);
   const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
+  const codeColumns = [
+    {
+      header: t('invite.code_col'),
+      cell: ({ row }) => (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-foreground">{row.original.code}</span>
+          <Button
+            type="button"
+            variant="link"
+            className="h-auto p-0 text-sm"
+            data-testid="invite-copy-link"
+            onClick={() => void copyInviteLink(row.original.code)}
+          >
+            <Copy className="size-3.5" />
+            {t('invite.invite_link')}
+          </Button>
+        </div>
+      ),
+    },
+    {
+      align: 'right',
+      className: 'text-muted-foreground',
+      header: t('invite.created_at_col'),
+      cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
+    },
+  ] satisfies DataTableColumn<(typeof codes)[number]>[];
+  const detailColumns = [
+    {
+      className: 'text-muted-foreground',
+      header: t('invite.issued_at'),
+      cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
+    },
+    {
+      align: 'right',
+      className: 'font-medium text-foreground',
+      header: t('invite.commission_col'),
+      cell: ({ row }) => (row.original.get_amount / 100).toFixed(2),
+    },
+  ] satisfies DataTableColumn<(typeof detailRows)[number]>[];
 
   const copyInviteLink = async (code: string) => {
     const url = `${window.location.origin}${window.location.pathname}#/register?code=${code}`;
@@ -226,35 +258,10 @@ export default function InvitePage() {
           <CardContent className="p-0">
             <ServiceTable
               testId="invite-code-table"
+              columns={codeColumns}
+              data={codes}
               empty={codes.length === 0 ? emptyDescription : undefined}
-              headers={[
-                { content: t('invite.code_col') },
-                { align: 'right', content: t('invite.created_at_col') },
-              ]}
-            >
-              {codes.map((code, index) => (
-                <TableRow data-row-key={index} key={index}>
-                  <TableCell>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-foreground">{code.code}</span>
-                      <Button
-                        type="button"
-                        variant="link"
-                        className="h-auto p-0 text-sm"
-                        data-testid="invite-copy-link"
-                        onClick={() => void copyInviteLink(code.code)}
-                      >
-                        <Copy className="size-3.5" />
-                        {t('invite.invite_link')}
-                      </Button>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {formatUserLegacyDateMinuteSlash(code.created_at)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </ServiceTable>
+            />
           </CardContent>
         </Card>
 
@@ -277,23 +284,10 @@ export default function InvitePage() {
           <CardContent className="p-0">
             <ServiceTable
               testId="invite-history-table"
+              columns={detailColumns}
+              data={detailRows}
               empty={!detailRows.length ? emptyDescription : undefined}
-              headers={[
-                { content: t('invite.issued_at') },
-                { align: 'right', content: t('invite.commission_col') },
-              ]}
-            >
-              {detailRows.map((row, index) => (
-                <TableRow data-row-key={index} key={index}>
-                  <TableCell className="text-muted-foreground">
-                    {formatUserLegacyDateMinuteSlash(row.created_at)}
-                  </TableCell>
-                  <TableCell className="text-right font-medium text-foreground">
-                    {(row.get_amount / 100).toFixed(2)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </ServiceTable>
+            />
             {detailPaginationItemTotal > 0 && (
               <PaginationControl
                 data-testid="invite-pagination"
@@ -362,29 +356,28 @@ function HeaderTooltip({ children, title }: { children: ReactNode; title: string
   );
 }
 
-function ServiceTable({
-  children,
+function ServiceTable<TData>({
+  columns,
+  data,
   empty,
-  headers,
   testId,
 }: {
-  children: ReactNode;
+  columns: DataTableColumn<TData>[];
+  data: TData[];
   empty?: string;
-  headers: DataTableHeader[];
   testId: string;
 }) {
   return (
     <DataTable
       className="min-w-[620px]"
+      columns={columns}
+      data={data}
       data-testid={testId}
       empty={empty}
       emptyTestId="invite-empty"
       headerClassName="border-y"
-      headers={headers}
       scrollProps={{ 'data-testid': 'invite-table-scroll' }}
-    >
-      {children}
-    </DataTable>
+    />
   );
 }
 

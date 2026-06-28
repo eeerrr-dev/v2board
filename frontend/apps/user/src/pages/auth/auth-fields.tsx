@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ComponentPropsWithRef, ReactNode } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button, type ButtonProps } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { PasswordField } from './password-field';
+
+type AuthInputProps = ComponentPropsWithRef<typeof Input>;
 
 export function AuthFormStack({ children }: { children: ReactNode }) {
   return <div className="grid gap-6">{children}</div>;
@@ -36,6 +38,7 @@ export function AuthInlineError({ id, children }: { id: string; children: ReactN
 
 interface AuthEmailWithSuffixFieldProps {
   id: string;
+  inputProps?: AuthInputProps;
   label: ReactNode;
   suffixes: string[];
   value: string | undefined;
@@ -44,6 +47,7 @@ interface AuthEmailWithSuffixFieldProps {
 
 export function AuthEmailWithSuffixField({
   id,
+  inputProps,
   label,
   suffixes,
   value,
@@ -56,10 +60,10 @@ export function AuthEmailWithSuffixField({
         <Input
           id={id}
           type="text"
-          name="email"
           autoComplete="username"
           placeholder="name"
           className="min-w-0"
+          {...inputProps}
         />
         <Select
           value={value}
@@ -86,6 +90,7 @@ export function AuthEmailWithSuffixField({
 
 interface AuthEmailCodeFieldProps {
   id: string;
+  inputProps?: AuthInputProps;
   label: ReactNode;
   buttonLabel: ReactNode;
   disabled?: boolean;
@@ -95,6 +100,7 @@ interface AuthEmailCodeFieldProps {
 
 export function AuthEmailCodeField({
   id,
+  inputProps,
   label,
   buttonLabel,
   disabled,
@@ -104,7 +110,7 @@ export function AuthEmailCodeField({
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
       <FormField id={id} label={label} className="min-w-0">
-        <Input type="text" name="email_code" inputMode="numeric" />
+        <Input type="text" inputMode="numeric" {...inputProps} />
       </FormField>
       <Button
         type="button"
@@ -122,24 +128,28 @@ export function AuthEmailCodeField({
 
 interface AuthPasswordConfirmationFieldsProps {
   passwordId: string;
+  passwordInputProps?: AuthInputProps;
   passwordLabel: ReactNode;
   confirmId: string;
+  confirmInputProps?: AuthInputProps;
   confirmLabel: ReactNode;
 }
 
 export function AuthPasswordConfirmationFields({
   passwordId,
+  passwordInputProps,
   passwordLabel,
   confirmId,
+  confirmInputProps,
   confirmLabel,
 }: AuthPasswordConfirmationFieldsProps) {
   return (
     <>
       <FormField id={passwordId} label={passwordLabel}>
-        <PasswordField name="password" autoComplete="new-password" />
+        <PasswordField autoComplete="new-password" {...passwordInputProps} />
       </FormField>
       <FormField id={confirmId} label={confirmLabel}>
-        <PasswordField name="confirm_password" autoComplete="new-password" />
+        <PasswordField autoComplete="new-password" {...confirmInputProps} />
       </FormField>
     </>
   );

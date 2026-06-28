@@ -2,18 +2,14 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
-import { legacyConfirm } from '@/components/legacy-confirm';
+import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
-import {
-  DataTable,
-  TableCell,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/ui/table';
 
 const STATUS_LABEL: Record<number, { key: string; status: string }> = {
   0: { key: 'order.status_unpaid', status: 'error' },
@@ -42,16 +38,79 @@ export default function OrdersPage() {
   const loading = useLegacyFetchLoading(isFetching, ordersQuery.error);
   const cancel = useCancelOrderMutation();
   const orders = data ?? [];
+  const orderColumns = [
+    {
+      header: t('order.trade_no_col'),
+      cell: ({ row }) => (
+        <button
+          type="button"
+          className="text-left font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          onClick={() => navigate(`/order/${row.original.trade_no}`)}
+        >
+          {row.original.trade_no}
+        </button>
+      ),
+    },
+    {
+      header: t('order.period'),
+      cell: ({ row }) => {
+        const periodLabelKey = row.original.period ? PERIOD_LABEL[row.original.period] : undefined;
+        const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
+        return <StatusBadge>{periodLabel}</StatusBadge>;
+      },
+    },
+    {
+      align: 'right',
+      className: 'font-medium',
+      header: t('order.amount'),
+      cell: ({ row }) => (row.original.total_amount / 100).toFixed(2),
+    },
+    {
+      header: t('order.status'),
+      cell: ({ row }) => {
+        const status = STATUS_LABEL[row.original.status];
+        return <StatusPill status={status?.status}>{status ? t(status.key) : ''}</StatusPill>;
+      },
+    },
+    {
+      className: 'text-muted-foreground',
+      header: t('order.created_at'),
+      cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
+    },
+    {
+      align: 'right',
+      header: t('order.action_col'),
+      cell: ({ row }) => (
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate(`/order/${row.original.trade_no}`)}
+          >
+            {t('order.return')}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={row.original.status !== 0}
+            onClick={() => void onCancelOrder(row.original.trade_no)}
+          >
+            {t('common.cancel')}
+          </Button>
+        </div>
+      ),
+    },
+  ] satisfies DataTableColumn<(typeof orders)[number]>[];
 
   const onCancelOrder = (tradeNo: string) => {
-    void legacyConfirm({
+    void confirmDialog({
       title: t('common.attention'),
-      content: t('order.cancel_confirm'),
-      okText: t('order.cancel'),
-      okButtonProps: { loading: cancel.isPending },
-      onOk: () => {
-        void cancel.mutateAsync(tradeNo).catch(() => {});
-      },
+      description: t('order.cancel_confirm'),
+      confirmText: t('order.cancel'),
+      confirmButtonProps: { loading: cancel.isPending },
+      onConfirm: () => cancel.mutateAsync(tradeNo),
     });
   };
 
@@ -76,68 +135,12 @@ export default function OrdersPage() {
           ) : (
             <DataTable
               className="min-w-[760px]"
+              columns={orderColumns}
+              data={orders}
               data-testid="orders-table"
-              headers={[
-                { content: t('order.trade_no_col') },
-                { content: t('order.period') },
-                { align: 'right', content: t('order.amount') },
-                { content: t('order.status') },
-                { content: t('order.created_at') },
-                { align: 'right', content: t('order.action_col') },
-              ]}
-            >
-              {orders.map((order) => {
-                const status = STATUS_LABEL[order.status];
-                const periodLabelKey = order.period ? PERIOD_LABEL[order.period] : undefined;
-                const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
-                return (
-                  <TableRow key={order.trade_no}>
-                    <TableCell>
-                      <button
-                        type="button"
-                        className="text-left font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                        onClick={() => navigate(`/order/${order.trade_no}`)}
-                      >
-                        {order.trade_no}
-                      </button>
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge>{periodLabel}</StatusBadge>
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {(order.total_amount / 100).toFixed(2)}
-                    </TableCell>
-                    <TableCell>
-                      <StatusPill status={status?.status}>{status ? t(status.key) : ''}</StatusPill>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatUserLegacyDateMinuteSlash(order.created_at)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => navigate(`/order/${order.trade_no}`)}
-                        >
-                          {t('order.return')}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={order.status !== 0}
-                          onClick={() => void onCancelOrder(order.trade_no)}
-                        >
-                          {t('common.cancel')}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </DataTable>
+              getRowKey={(order) => order.trade_no}
+              virtualizer={{ enabled: orders.length > 30 }}
+            />
           )}
         </CardContent>
       </Card>

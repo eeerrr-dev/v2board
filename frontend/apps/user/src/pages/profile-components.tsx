@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import type { ComponentPropsWithRef } from 'react';
 import { Copy, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,18 +21,16 @@ export type ProfileConfirmAction = 'reset-subscribe' | 'unbind-telegram' | null;
 
 interface ProfileFieldProps {
   id: string;
+  inputProps?: ComponentPropsWithRef<typeof Input>;
   label: string;
-  onChange: (value: string) => void;
   placeholder: string;
-  value: string;
 }
 
 export function ProfileField({
   id,
+  inputProps,
   label,
-  onChange,
   placeholder,
-  value,
 }: ProfileFieldProps) {
   return (
     <div className="space-y-2.5">
@@ -40,8 +39,7 @@ export function ProfileField({
         id={id}
         type="password"
         placeholder={placeholder}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        {...inputProps}
       />
     </div>
   );
@@ -61,16 +59,23 @@ export function PreferenceRow({
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
       <div className="text-sm font-medium leading-5">{label}</div>
-      <ProfileSwitch checked={checked} loading={loading} onChange={onChange} />
+      <ProfileSwitch
+        ariaLabel={label}
+        checked={checked}
+        loading={loading}
+        onChange={onChange}
+      />
     </div>
   );
 }
 
 export function ProfileSwitch({
+  ariaLabel,
   checked,
   loading,
   onChange,
 }: {
+  ariaLabel?: string;
   checked?: unknown;
   loading?: boolean;
   onChange: (checked: boolean) => void;
@@ -82,6 +87,7 @@ export function ProfileSwitch({
       disabled={loading}
       data-loading={loading ? 'true' : undefined}
       data-testid="profile-switch"
+      aria-label={ariaLabel}
       aria-busy={!!loading}
       onCheckedChange={(nextChecked) => onChange(nextChecked)}
       onKeyDown={(event) => {
@@ -152,7 +158,7 @@ export function ProfileTelegramBindDialog({
   subscribeUrl?: string;
 }) {
   const { t } = useTranslation();
-  const bindCommand = `/bind ${subscribeUrl}`;
+  const bindCommand = subscribeUrl ? `/bind ${subscribeUrl}` : '/bind';
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>

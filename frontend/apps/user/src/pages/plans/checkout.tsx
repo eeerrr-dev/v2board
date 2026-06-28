@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
 import {
-  userKeys,
   type SaveOrderPayload,
   useCancelOrderMutation,
   useCheckCouponMutation,
@@ -16,7 +14,7 @@ import {
 } from '@/lib/queries';
 import type { Coupon, Plan, PlanPeriod } from '@v2board/types';
 import { PlanContent } from '@/components/plan-content';
-import { legacyConfirm } from '@/components/legacy-confirm';
+import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -53,7 +51,6 @@ export default function PlanCheckoutPage() {
   const planId = plan_id;
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const planQuery = usePlan(planId);
   const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
   const orders = useOrders();
@@ -85,14 +82,6 @@ export default function PlanCheckoutPage() {
   useEffect(() => {
     if (planQuery.error) navigate('/plan');
   }, [navigate, planQuery.error]);
-
-  useEffect(
-    () => () => {
-      queryClient.removeQueries({ queryKey: userKeys.plans });
-      queryClient.removeQueries({ queryKey: userKeys.plan(planId as string) });
-    },
-    [planId, queryClient],
-  );
 
   const onApplyCoupon = async () => {
     try {
@@ -127,12 +116,10 @@ export default function PlanCheckoutPage() {
       info.plan_id !== plan.id &&
       !isLegacyExpired(subscribe?.expired_at)
     ) {
-      void legacyConfirm({
+      void confirmDialog({
         title: t('common.attention'),
-        content: t('plan.change_warning'),
-        onOk: () => {
-          void saveOrder();
-        },
+        description: t('plan.change_warning'),
+        onConfirm: saveOrder,
       });
       return;
     }
@@ -141,21 +128,15 @@ export default function PlanCheckoutPage() {
     const unfinishedOrder =
       firstOrder && (firstOrder.status === 0 || firstOrder.status === 1) ? firstOrder : undefined;
     if (unfinishedOrder) {
-      void legacyConfirm({
+      void confirmDialog({
         title: t('common.attention'),
-        content: t('plan.unfinished_order_confirm'),
-        okText: t('plan.confirm_cancel_previous'),
+        description: t('plan.unfinished_order_confirm'),
+        confirmText: t('plan.confirm_cancel_previous'),
         cancelText: t('plan.return_orders'),
-        okButtonProps: { loading: cancelOrder.isPending },
-        onOk: () => {
-          void cancelOrder
-            .mutateAsync(unfinishedOrder.trade_no)
-            .then(() => {
-              // Legacy order/cancel owns the list refresh, then dispatches `details`
-              // (plural), which has no effect; this callback only continues ordering.
-              void saveOrder();
-            })
-            .catch(() => {});
+        confirmButtonProps: { loading: cancelOrder.isPending },
+        onConfirm: async () => {
+          await cancelOrder.mutateAsync(unfinishedOrder.trade_no);
+          await saveOrder();
         },
         onCancel: () => navigate('/order'),
       });

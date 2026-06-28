@@ -13,9 +13,8 @@ const checkoutSource = readFileSync(`${process.cwd()}/src/pages/plans/checkout.t
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
-  removeQueries: vi.fn(),
   invalidateQueries: vi.fn(),
-  legacyConfirm: vi.fn(),
+  confirmDialog: vi.fn(),
   checkCoupon: vi.fn(),
   saveOrder: vi.fn(),
   cancelOrder: vi.fn(),
@@ -115,12 +114,11 @@ vi.mock('react-i18next', () => ({
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     invalidateQueries: mocks.invalidateQueries,
-    removeQueries: mocks.removeQueries,
   }),
 }));
 
-vi.mock('@/components/legacy-confirm', () => ({
-  legacyConfirm: mocks.legacyConfirm,
+vi.mock('@/components/ui/confirm-dialog', () => ({
+  confirmDialog: mocks.confirmDialog,
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -236,10 +234,10 @@ describe('PlanCheckoutPage shadcn commerce markup', () => {
 
   it('keeps the route plan id as the checkout API input', () => {
     expect(checkoutSource).toContain('const planId = plan_id;');
-    expect(checkoutSource).toContain('userKeys.plan(planId as string)');
+    expect(checkoutSource).toContain('usePlan(planId)');
     expect(checkoutSource).toContain('planId as string');
     expect(checkoutSource).not.toContain("const planId = plan_id ?? ''");
-    expect(checkoutSource).not.toContain("userKeys.plan(planId ?? '')");
+    expect(checkoutSource).not.toContain("usePlan(planId ?? '')");
   });
 
   it('keeps the direct selected period in the order payload', () => {
@@ -262,27 +260,9 @@ describe('PlanCheckoutPage shadcn commerce markup', () => {
     expect(checkoutSource).not.toContain("couponRef.current?.value ?? ''");
   });
 
-  it('clears both plan list and detail query state on unmount like plan/empty', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    try {
-      await act(async () => {
-        root.render(<PlanCheckoutPage />);
-        await Promise.resolve();
-      });
-
-      act(() => root.unmount());
-
-      expect(mocks.removeQueries).toHaveBeenCalledWith({ queryKey: ['user', 'plans'] });
-      expect(mocks.removeQueries).toHaveBeenCalledWith({ queryKey: ['user', 'plan', '1'] });
-      expect(checkoutSource).toContain('queryClient.removeQueries({ queryKey: userKeys.plans });');
-    } finally {
-      container.remove();
-      document.body.innerHTML = '';
-      mocks.removeQueries.mockClear();
-    }
+  it('lets TanStack Query retain checkout cache instead of clearing it on unmount', () => {
+    expect(checkoutSource).not.toContain('removeQueries');
+    expect(checkoutSource).not.toContain('useQueryClient');
   });
 });
 
@@ -293,9 +273,8 @@ describe('PlanCheckoutPage commerce behavior', () => {
   beforeEach(() => {
     resetPlan();
     mocks.navigate.mockClear();
-    mocks.removeQueries.mockClear();
     mocks.invalidateQueries.mockClear();
-    mocks.legacyConfirm.mockClear();
+    mocks.confirmDialog.mockClear();
     mocks.checkCoupon.mockReset();
     mocks.saveOrder.mockReset();
     mocks.cancelOrder.mockReset();
@@ -436,23 +415,23 @@ describe('PlanCheckoutPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.legacyConfirm).toHaveBeenCalledTimes(1);
-    const options = mocks.legacyConfirm.mock.calls[0]![0] as {
-      content: string;
-      okText: string;
+    expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
+    const options = mocks.confirmDialog.mock.calls[0]![0] as {
+      description: string;
+      confirmText: string;
       cancelText: string;
-      onOk: () => void;
+      onConfirm: () => Promise<void>;
       onCancel: () => void;
     };
-    expect(options.content).toBe('您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？');
-    expect(options.okText).toBe('确定取消');
+    expect(options.description).toBe('您还有未完成的订单，购买前需要先取消，确定要取消之前的订单吗？');
+    expect(options.confirmText).toBe('确定取消');
     expect(options.cancelText).toBe('返回我的订单');
 
     options.onCancel();
     expect(mocks.navigate).toHaveBeenCalledWith('/order');
 
     await act(async () => {
-      options.onOk();
+      await options.onConfirm();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -460,7 +439,6 @@ describe('PlanCheckoutPage commerce behavior', () => {
     expect(mocks.cancelOrder).toHaveBeenCalledWith('PENDING123');
     expect(mocks.refetchOrders).not.toHaveBeenCalled();
     expect(mocks.invalidateQueries).not.toHaveBeenCalled();
-    expect(checkoutSource).toContain('Legacy order/cancel owns the list refresh');
     expect(checkoutSource).not.toContain('userKeys.orderDetail(unfinishedOrder.trade_no)');
     expect(checkoutSource).not.toContain('orders.refetch()');
     expect(mocks.saveOrder).toHaveBeenCalledWith({
@@ -489,15 +467,15 @@ describe('PlanCheckoutPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.legacyConfirm).toHaveBeenCalledTimes(1);
-    const options = mocks.legacyConfirm.mock.calls[0]![0] as {
-      content: string;
-      onOk: () => void;
+    expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
+    const options = mocks.confirmDialog.mock.calls[0]![0] as {
+      description: string;
+      onConfirm: () => Promise<void>;
     };
-    expect(options.content).toBe('请注意，变更订阅会导致当前订阅被新订阅覆盖。');
+    expect(options.description).toBe('请注意，变更订阅会导致当前订阅被新订阅覆盖。');
 
     await act(async () => {
-      options.onOk();
+      await options.onConfirm();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -529,7 +507,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.legacyConfirm).not.toHaveBeenCalled();
+    expect(mocks.confirmDialog).not.toHaveBeenCalled();
     expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
       period: 'month_price',

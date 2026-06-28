@@ -8,11 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
-import {
-  DataTable,
-  TableCell,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTrafficLog } from '@/lib/queries';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
@@ -27,6 +23,53 @@ export default function TrafficPage() {
   const rows = data ?? [];
   const { bodyRef, onScroll, scrollPosition } = useTableScrollPosition(rows.length);
   const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
+  const trafficColumns = [
+    {
+      header: t('traffic.record_at'),
+      cell: ({ row }) =>
+        row.original.record_at ? formatUserLegacyDateSlash(row.original.record_at) : '-',
+    },
+    {
+      align: 'right',
+      header: t('traffic.actual_upload'),
+      cell: ({ row }) => {
+        const upload = parseInt(String(row.original.u));
+        return row.original.server_rate ? formatBytes(upload) : 0;
+      },
+    },
+    {
+      align: 'right',
+      header: t('traffic.actual_download'),
+      cell: ({ row }) => {
+        const download = parseInt(String(row.original.d));
+        return row.original.server_rate ? formatBytes(download) : 0;
+      },
+    },
+    {
+      align: 'center',
+      header: t('traffic.deduct_rate'),
+      cell: ({ row }) => {
+        const rate = Number.parseFloat(row.original.server_rate);
+        return <StatusBadge>{rate ? `${rate.toFixed(2)} x` : '-'}</StatusBadge>;
+      },
+    },
+    {
+      id: 'total-charged',
+      align: 'right',
+      className: 'font-medium',
+      header: () => (
+        <HeaderTooltip title={t('traffic.total_formula')} placement="topRight">
+          {t('traffic.total_charged')}
+        </HeaderTooltip>
+      ),
+      cell: ({ row }) => {
+        const upload = parseInt(String(row.original.u));
+        const download = parseInt(String(row.original.d));
+        const charged = (upload + download) * (row.original.server_rate as unknown as number);
+        return formatBytes(charged);
+      },
+    },
+  ] satisfies DataTableColumn<(typeof rows)[number]>[];
 
   return (
     <TooltipProvider delayDuration={100}>
@@ -51,25 +94,13 @@ export default function TrafficPage() {
 
             <DataTable
               className="min-w-[800px]"
+              columns={trafficColumns}
+              data={rows}
               data-table-kind="service"
               data-testid="traffic-table"
               empty={!rows.length ? emptyDescription : undefined}
               emptyClassName="py-16"
               emptyTestId="traffic-empty"
-              headers={[
-                { content: t('traffic.record_at') },
-                { align: 'right', content: t('traffic.actual_upload') },
-                { align: 'right', content: t('traffic.actual_download') },
-                { align: 'center', content: t('traffic.deduct_rate') },
-                {
-                  align: 'right',
-                  content: (
-                    <HeaderTooltip title={t('traffic.total_formula')} placement="topRight">
-                      {t('traffic.total_charged')}
-                    </HeaderTooltip>
-                  ),
-                },
-              ]}
               scrollRef={bodyRef}
               scrollProps={{
                 tabIndex: -1,
@@ -77,33 +108,7 @@ export default function TrafficPage() {
                 'data-testid': 'service-table-scroll',
                 onScroll,
               }}
-            >
-              {rows.map((row, index) => {
-                const rate = Number.parseFloat(row.server_rate);
-                const upload = parseInt(String(row.u));
-                const download = parseInt(String(row.d));
-                const charged = (upload + download) * (row.server_rate as unknown as number);
-                return (
-                  <TableRow data-row-key={index} key={index}>
-                    <TableCell>
-                      {row.record_at ? formatUserLegacyDateSlash(row.record_at) : '-'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {row.server_rate ? formatBytes(upload) : 0}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {row.server_rate ? formatBytes(download) : 0}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <StatusBadge>{rate ? `${rate.toFixed(2)} x` : '-'}</StatusBadge>
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatBytes(charged)}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </DataTable>
+            />
           </CardContent>
         </Card>
       </PageShell>

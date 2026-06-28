@@ -2,7 +2,6 @@ import type {
   AnchorHTMLAttributes,
   FormHTMLAttributes,
   ReactNode,
-  Ref,
 } from 'react';
 import {
   Card,
@@ -18,7 +17,6 @@ interface AuthPanelProps
   footer: ReactNode;
   description?: ReactNode;
   formClassName?: string;
-  formRef?: Ref<HTMLFormElement>;
   title: ReactNode;
 }
 
@@ -27,7 +25,6 @@ export function AuthPanel({
   footer,
   description,
   formClassName,
-  formRef,
   title,
   ...formProps
 }: AuthPanelProps) {
@@ -45,7 +42,7 @@ export function AuthPanel({
           ) : null}
         </CardHeader>
         <CardContent className="px-7 sm:px-8">
-          <form ref={formRef} noValidate className={formClassName} {...formProps}>
+          <form noValidate className={formClassName} {...formProps}>
             <div className="grid gap-6">
               {children}
               <div className="text-balance text-center text-sm leading-6 text-muted-foreground">

@@ -21,7 +21,6 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('installLegacyDevWhiteScreenFallback');
     expect(mainSource).toContain('normalizeLegacyHashRoute');
     expect(mainSource).toContain('installLocaleDocumentEnvironment');
-    expect(mainSource).toContain('getNormalizedLegacyHashPath');
     expect(mainSource).toContain('const legacyHashRouteOptions = {');
     expect(mainSource).toContain("authenticatedFallback: '/dashboard'");
     expect(mainSource).toContain("canonicalPath: '/'");
@@ -63,31 +62,20 @@ describe('user legacy entrypoint', () => {
         'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {\n    ...legacyWhiteScreenRecoveryConfig,\n    delay: 3000,\n  });',
       ),
     ).toBeLessThan(mainSource.indexOf('installLegacyDevWhiteScreenFallback({ delay: 5000 });'));
-    expect(mainSource).toContain("import { useEffect, type ReactNode } from 'react';");
-    expect(mainSource).toContain('function LegacyRouteGate({ children }: { children: ReactNode })');
-    expect(mainSource).toContain(
-      'const normalized = getNormalizedLegacyHashPath(current, legacyHashRouteOptions);',
-    );
-    expect(mainSource).toContain('useEffect(() => {');
-    expect(mainSource).toContain('normalizeLegacyHashRoute(legacyHashRouteOptions);');
-    expect(mainSource).toContain('}, [location.hash, location.pathname, location.search]);');
-    expect(mainSource).toContain(
-      'return normalized !== current ? <Navigate to={normalized} replace /> : <>{children}</>;',
-    );
+    expect(mainSource).toContain('const router = createUserRouter(queryClient);');
+    expect(mainSource).not.toContain('function LegacyRouteGate');
+    expect(mainSource).not.toContain('getNormalizedLegacyHashPath');
   });
 
-  it('keeps the app on HashRouter like the bundled theme', () => {
-    expect(mainSource).toContain('HashRouter');
-    expect(mainSource).toContain('useLocation');
-    expect(mainSource).toContain('Navigate');
-    expect(mainSource).toContain(
-      "import { RouteBoundaryElement } from './components/route-error-boundary';",
-    );
-    expect(mainSource).toContain('<HashRouter>');
-    expect(mainSource).toContain('<LegacyRouteGate>');
-    expect(mainSource).toContain('</LegacyRouteGate>');
-    expect(mainSource).toContain('<RouteBoundaryElement>');
-    expect(mainSource).toContain('<App />');
+  it('renders through the React Router data router', () => {
+    expect(mainSource).toContain("import { RouterProvider } from 'react-router';");
+    expect(mainSource).toContain("import { createUserRouter, USER_LEGACY_ROUTE_PATHS } from './App';");
+    expect(mainSource).toContain('<RouterProvider router={router} />');
+    expect(mainSource).toContain('<ConfirmDialogProvider />');
+    expect(mainSource).toContain('<Toaster />');
+    expect(mainSource).not.toContain('HashRouter');
+    expect(mainSource).not.toContain('useLocation');
+    expect(mainSource).not.toContain('Navigate');
   });
 
   it('keeps the browser-facing config barrel free of Vite-only helpers', () => {

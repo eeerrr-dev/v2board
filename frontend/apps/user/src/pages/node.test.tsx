@@ -178,9 +178,10 @@ describe('NodePage shadcn table and empty state', () => {
     expect(html).not.toContain('ant-table-scroll-position');
   });
 
-  it('keeps the durable row key as an index DOM attribute', () => {
-    expect(nodeSource).toContain('data-row-key={index}');
+  it('renders service rows through shared TanStack DataTable columns', () => {
+    expect(nodeSource).toContain('satisfies DataTableColumn<(typeof servers)[number]>[]');
     expect(nodeSource).not.toContain('data-row-key={s.id}');
+    expect(nodeSource).not.toContain('<TableRow');
   });
 
   it('routes empty-state actions through the shadcn button instead of javascript href anchors', async () => {

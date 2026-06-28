@@ -31,7 +31,7 @@ vi.mock('@v2board/api-client', () => ({
   },
 }));
 
-describe('legacy query state behavior', () => {
+describe('user query state behavior', () => {
   it('centralizes query definitions behind TanStack Query queryOptions', () => {
     expect(queriesSource).toContain(
       'queryOptions({ queryKey: userKeys.info, queryFn: fetchUserInfo })',
@@ -71,12 +71,12 @@ describe('legacy query state behavior', () => {
     expect(placeholderData(previous, undefined)).toBe(previous);
   });
 
-  it('does not keep per-article knowledge detail cache after the drawer closes or jumps', async () => {
+  it('lets knowledge detail use the normal TanStack cache lifecycle', async () => {
     const { useKnowledgeDetail } = await import('./queries');
 
     const options = useKnowledgeDetail(1, 'zh-CN') as unknown as UseQueryOptions;
 
-    expect(options.gcTime).toBe(0);
+    expect(options.gcTime).toBeUndefined();
   });
 
   it('does not expose active-session query state absent from the original user bundle', async () => {

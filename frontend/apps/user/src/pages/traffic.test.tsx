@@ -142,17 +142,20 @@ describe('TrafficPage shadcn service table', () => {
     expect(trafficSource).toContain(
       "import { formatUserLegacyDateSlash } from '@/lib/legacy-date';",
     );
-    expect(trafficSource).toContain('formatUserLegacyDateSlash(row.record_at)');
+    expect(trafficSource).toContain('formatUserLegacyDateSlash(row.original.record_at)');
     expect(trafficSource).not.toContain('formatDate(row.record_at).replaceAll');
   });
 
   it('keeps the legacy charged total coercion expression', () => {
-    expect(trafficSource).toContain('(upload + download) * (row.server_rate as unknown as number)');
+    expect(trafficSource).toContain(
+      '(upload + download) * (row.original.server_rate as unknown as number)',
+    );
     expect(trafficSource).not.toContain('Number(row.server_rate)');
   });
 
-  it('keeps bundled antd fallback row keys as index DOM attributes', () => {
-    expect(trafficSource).toContain('data-row-key={index}');
+  it('renders traffic rows through shared TanStack DataTable columns', () => {
+    expect(trafficSource).toContain('satisfies DataTableColumn<(typeof rows)[number]>[]');
     expect(trafficSource).not.toContain('data-row-key={row.record_at}');
+    expect(trafficSource).not.toContain('<TableRow');
   });
 });

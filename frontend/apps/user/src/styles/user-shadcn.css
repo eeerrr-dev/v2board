@@ -52,10 +52,8 @@
 @source '../components/plan-content.tsx';
 @source '../components/layout/app-layout.tsx';
 @source '../components/layout/shadcn-language-menu.tsx';
-@source '../components/legacy-confirm.tsx';
 @source '../components/ui/**/*.tsx';
 @source '../lib/auth-toast.tsx';
-@source '../components/ui/toaster.tsx';
 
 @media important {
   @tailwind utilities source(none);

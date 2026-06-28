@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
+  DataTable,
   Table,
   TableBody,
   TableCell,
@@ -10,6 +11,9 @@ import {
   TableRow,
   TableScroll,
 } from './table';
+import { readFileSync } from 'node:fs';
+
+const source = readFileSync(`${process.cwd()}/src/components/ui/table.tsx`, 'utf8');
 
 describe('Table', () => {
   it('renders shadcn-style table primitives with local hooks preserved', () => {
@@ -56,5 +60,31 @@ describe('Table', () => {
     expect(html).toContain('colSpan="3"');
     expect(html).toContain('Empty');
     expect(html).not.toContain('ant-empty');
+  });
+
+  it('renders DataTable through TanStack row and column models', () => {
+    const html = renderToStaticMarkup(
+      <DataTable
+        columns={[
+          { header: 'Name', cell: ({ row }) => row.original.name },
+          {
+            align: 'right',
+            header: 'Amount',
+            cell: ({ row }) => row.original.amount.toFixed(2),
+          },
+        ]}
+        data={[{ name: 'Alpha', amount: 12 }]}
+        getRowKey={(row) => row.name}
+      />,
+    );
+
+    expect(html).toContain('Name');
+    expect(html).toContain('Alpha');
+    expect(html).toContain('12.00');
+    expect(html).toContain('data-row-key="Alpha"');
+    expect(source).toContain("from '@tanstack/react-table'");
+    expect(source).toContain("from '@tanstack/react-virtual'");
+    expect(source).toContain('useReactTable');
+    expect(source).toContain('useVirtualizer');
   });
 });

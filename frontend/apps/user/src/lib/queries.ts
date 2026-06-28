@@ -209,7 +209,6 @@ export const useOrderStatus = (tradeNo: string | undefined, options?: QueryFresh
   useQuery({
     ...userQueryOptions.orderStatus(tradeNo),
     enabled: Boolean(tradeNo),
-    gcTime: 0,
     ...options,
   });
 
@@ -247,16 +246,14 @@ export const useInvite = () =>
 export const useInviteDetails = (current?: number, pageSize?: number) =>
   useQuery({
     ...userQueryOptions.inviteDetails(current, pageSize),
-    // Old dva state keeps the previous `invites` array while detailsLoading flips
-    // to true for pagination requests; Table then blurs the existing rows.
+    // Keep the current page visible while the next page request is in flight.
     placeholderData: (previousData) => previousData,
   });
 
 export const useKnowledge = (language: string, keyword?: string) =>
   useQuery({
     ...userQueryOptions.knowledge(language, keyword),
-    // The original knowledge model has one `knowledges` field; a search request flips
-    // fetchLoading but keeps the previous list until a 200 response replaces it.
+    // Keep the current result list visible while debounced searches resolve.
     placeholderData: (previousData) => previousData,
   });
 
@@ -264,9 +261,6 @@ export const useKnowledgeDetail = (id: number | string | undefined, language: st
   useQuery({
     ...userQueryOptions.knowledgeDetail(id, language),
     enabled: id !== undefined,
-    // The legacy dva model has a single `knowledge` object and hide() clears it;
-    // there is no per-article cache to fall back to on a later open/jump.
-    gcTime: 0,
   });
 
 export const useTrafficLog = () =>

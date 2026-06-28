@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   invalidateQueries: vi.fn(),
   inviteCodes: [] as Array<{ code: string; created_at: number }>,
   inviteFetching: false,
+  inviteStat: [7, 2345, 678, 12] as Array<number | undefined> | undefined,
   labels: {
     'common.items_per_page': '条/页',
     'common.next_5': '向后 5 页',
@@ -104,7 +105,7 @@ vi.mock('@/lib/queries', () => ({
   useInvite: () => ({
     data: {
       codes: mocks.inviteCodes,
-      stat: [7, 2345, 678, 12],
+      stat: mocks.inviteStat,
     },
     isFetching: mocks.inviteFetching,
   }),
@@ -156,6 +157,7 @@ function resetMocks() {
   mocks.invalidateQueries.mockReset();
   mocks.inviteCodes = [];
   mocks.inviteFetching = false;
+  mocks.inviteStat = [7, 2345, 678, 12];
   mocks.toastSuccess.mockReset();
   mocks.userInfo = { commission_balance: 12345 };
 }
@@ -206,8 +208,12 @@ describe('InvitePage shadcn surface', () => {
     expect(html).not.toContain('ant-table-wrapper');
   });
 
-  it('keeps invite table row keys as index DOM attributes', () => {
-    expect(inviteSource).toContain('data-row-key={index}');
+  it('renders invite tables through shared TanStack DataTable columns', () => {
+    expect(inviteSource).toContain('satisfies DataTableColumn<(typeof codes)[number]>[]');
+    expect(inviteSource).toContain('satisfies DataTableColumn<(typeof detailRows)[number]>[]');
+    expect(inviteSource).toContain('function ServiceTable<TData>');
+    expect(inviteSource).not.toContain('<TableRow');
+    expect(inviteSource).not.toContain('<TableCell');
     expect(inviteSource).not.toContain('data-row-key={code.code}');
     expect(inviteSource).not.toContain('data-row-key={row.created_at}');
   });
@@ -225,6 +231,19 @@ describe('InvitePage shadcn surface', () => {
     expect(html).toContain('6%,3.5999999999999996%,2.4%');
     expect(html).toContain('推广佣金提现');
     expect(html).toContain('data-testid="invite-withdraw-trigger"');
+  });
+
+  it('does not render NaN distribution rates while invite stats are loading', () => {
+    mocks.comm = {
+      ...mocks.comm,
+      commission_distribution_enable: 1,
+    };
+    mocks.inviteStat = undefined;
+
+    const html = renderToStaticMarkup(<InvitePage />);
+
+    expect(html).toContain('三级分销比例');
+    expect(html).not.toContain('NaN');
   });
 
   it('keeps loading state in the shadcn cards while invite/fetch is pending', () => {

@@ -10,7 +10,21 @@ const source = readFileSync(`${process.cwd()}/src/components/ui/toaster.tsx`, 'u
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-describe('legacy toast behavior', () => {
+async function flushToasts(duration = 16) {
+  await Promise.resolve();
+  vi.advanceTimersByTime(duration);
+  await Promise.resolve();
+}
+
+function activeToasts(selector: string) {
+  return Array.from(document.querySelectorAll(selector)).filter(
+    (toastElement) =>
+      toastElement.getAttribute('data-removed') !== 'true' &&
+      toastElement.getAttribute('data-visible') !== 'false',
+  );
+}
+
+describe('toast', () => {
   let root: Root;
 
   beforeEach(() => {
@@ -39,10 +53,10 @@ describe('legacy toast behavior', () => {
     await act(async () => {
       toast.success('first');
       toast.error('second');
-      await Promise.resolve();
+      await flushToasts();
     });
 
-    const notices = document.querySelectorAll('.v2board-toast-message');
+    const notices = activeToasts('.v2board-toast-message');
     expect(notices).toHaveLength(1);
     expect(notices[0]?.textContent).toContain('second');
     expect(document.body.querySelector('.ant-message')).toBeNull();
@@ -52,46 +66,46 @@ describe('legacy toast behavior', () => {
     await act(async () => {
       toast.loading('loading');
       toast.error('error', { description: 'details' });
-      await Promise.resolve();
+      await flushToasts();
     });
 
     await act(async () => {
       toast.destroy();
-      await Promise.resolve();
+      await flushToasts(250);
     });
 
-    expect(document.querySelectorAll('.v2board-toast-message')).toHaveLength(0);
-    expect(document.querySelectorAll('.v2board-toast-notification')).toHaveLength(1);
+    expect(activeToasts('.v2board-toast-message')).toHaveLength(0);
+    expect(activeToasts('.v2board-toast-notification')).toHaveLength(1);
   });
 
   it('allows desktop notifications to stack', async () => {
     await act(async () => {
       toast.error('error', { description: 'first' });
       toast.info('info', { description: 'second' });
-      await Promise.resolve();
+      await flushToasts();
     });
 
-    expect(document.querySelectorAll('.v2board-toast-notification')).toHaveLength(2);
+    expect(activeToasts('.v2board-toast-notification')).toHaveLength(2);
   });
 
-  it('keeps notification message and description text adjacent', async () => {
+  it('keeps notification message and description visible together', async () => {
     await act(async () => {
       toast.error('Request failed', { description: 'Server Error' });
-      await Promise.resolve();
+      await flushToasts();
     });
 
-    expect(document.querySelector('.v2board-toast-notification')?.textContent).toContain(
-      'Request failedServer Error',
-    );
+    const notificationText = document.querySelector('.v2board-toast-notification')?.textContent;
+    expect(notificationText).toContain('Request failed');
+    expect(notificationText).toContain('Server Error');
   });
 
-  it('uses Radix Toast and lucide icons instead of hand-built ant markup', () => {
-    expect(source).toContain("@radix-ui/react-toast");
-    expect(source).toContain("from 'lucide-react'");
+  it('uses Sonner instead of a self-owned Radix toast store', () => {
+    expect(source).toContain("from 'sonner'");
     expect(source).toContain('v2board-toast-root');
+    expect(source).not.toContain("@radix-ui/react-toast");
+    expect(source).not.toContain('useSyncExternalStore');
     expect(source).not.toContain('ant-message');
     expect(source).not.toContain('ant-notification');
-    expect(source).not.toContain('ANT_ICONS');
     expect(source).not.toContain('innerHTML');
   });
 });

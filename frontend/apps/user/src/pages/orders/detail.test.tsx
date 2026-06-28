@@ -11,11 +11,10 @@ const orderRefetch = vi.hoisted(() => vi.fn());
 const checkoutOrder = vi.hoisted(() => vi.fn());
 const checkOrder = vi.hoisted(() => vi.fn());
 const getStripePublicKey = vi.hoisted(() => vi.fn());
-const legacyConfirm = vi.hoisted(() => vi.fn());
+const confirmDialog = vi.hoisted(() => vi.fn());
 const cancelMutateAsync = vi.hoisted(() => vi.fn());
 const cancelState = vi.hoisted(() => ({ isPending: false }));
 const invalidateQueries = vi.hoisted(() => vi.fn());
-const removeQueries = vi.hoisted(() => vi.fn());
 const labels = vi.hoisted(() => ({
   'order.deposit': '充值',
 }));
@@ -84,12 +83,11 @@ vi.mock('react-i18next', () => ({
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     invalidateQueries,
-    removeQueries,
   }),
 }));
 
-vi.mock('@/components/legacy-confirm', () => ({
-  legacyConfirm,
+vi.mock('@/components/ui/confirm-dialog', () => ({
+  confirmDialog,
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -149,12 +147,11 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     orderStatusState.isError = false;
     orderStatusState.calls = [];
     getStripePublicKey.mockReset();
-    legacyConfirm.mockReset();
+    confirmDialog.mockReset();
     cancelMutateAsync.mockReset();
     cancelMutateAsync.mockResolvedValue(true);
     cancelState.isPending = false;
     invalidateQueries.mockReset();
-    removeQueries.mockReset();
     paymentState.data = [{ id: 1, name: 'Legacy Pay', payment: 'LegacyPay' }];
     orderState.isFetching = false;
     orderState.data = {
@@ -408,7 +405,7 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(document.querySelector('[data-testid="payment-qrcode"] svg')).toBeNull();
   });
 
-  it('keeps checkout stuck in the legacy loading state after a status-0 transport failure', async () => {
+  it('restores the checkout button after a status-0 transport failure', async () => {
     checkoutOrder.mockRejectedValue({ status: 0, message: 'Network Error' });
 
     await act(async () => {
@@ -426,10 +423,10 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(checkoutButton?.disabled).toBe(true);
+    expect(checkoutButton?.disabled).toBe(false);
     expect(checkoutButton?.textContent).toContain('order.checkout');
-    expect(orderDetailSource).toContain('isLegacyCheckoutNetworkError(error)');
-    expect(orderDetailSource).toContain('(error as { status?: unknown }).status === 0');
+    expect(orderDetailSource).not.toContain('isLegacyCheckoutNetworkError');
+    expect(orderDetailSource).not.toContain('keepLegacyLoading');
   });
 
   it('restores the checkout button after a non-transport checkout failure', async () => {
@@ -535,9 +532,9 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       cancelButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(legacyConfirm).toHaveBeenCalledTimes(1);
-    const confirmOptions = legacyConfirm.mock.calls[0]?.[0] as { onOk?: () => void };
-    expect(confirmOptions.onOk?.()).toBeUndefined();
+    expect(confirmDialog).toHaveBeenCalledTimes(1);
+    const confirmOptions = confirmDialog.mock.calls[0]?.[0] as { onConfirm?: () => Promise<void> };
+    await confirmOptions.onConfirm?.();
 
     await act(async () => {
       await Promise.resolve();
@@ -547,37 +544,13 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(cancelMutateAsync).toHaveBeenCalledWith('DETAIL123');
     expect(invalidateQueries).not.toHaveBeenCalled();
     expect(orderRefetch).not.toHaveBeenCalled();
-    expect(orderDetailSource).toContain("Legacy order/cancel dispatches `fetch`, then `details` (plural).");
-    expect(orderDetailSource).toContain('void cancel.mutateAsync(cancelTradeNo).catch(() => {});');
     expect(orderDetailSource).not.toContain('queryClient.invalidateQueries({ queryKey: userKeys.orders() })');
     expect(orderDetailSource).not.toContain('void orderQuery.refetch();');
   });
 
-  it('clears the order model state on unmount like the bundled order/empty reducer', async () => {
-    const localContainer = document.createElement('div');
-    document.body.appendChild(localContainer);
-    const localRoot = createRoot(localContainer);
-
-    removeQueries.mockClear();
-    try {
-      await act(async () => {
-        localRoot.render(<OrderDetailPage />);
-        await Promise.resolve();
-      });
-
-      act(() => localRoot.unmount());
-
-      expect(removeQueries).toHaveBeenCalledWith({ queryKey: ['user', 'orders'] });
-      expect(removeQueries).toHaveBeenCalledWith({
-        queryKey: ['user', 'orders', 'detail', 'ORDER123'],
-      });
-      expect(removeQueries).toHaveBeenCalledWith({ queryKey: ['user', 'payments'] });
-      expect(orderDetailSource).toContain(
-        'queryClient.removeQueries({ queryKey: userKeys.orderDetail(tradeNo) });',
-      );
-    } finally {
-      localContainer.remove();
-    }
+  it('lets TanStack Query retain order detail cache on unmount', () => {
+    expect(orderDetailSource).not.toContain('removeQueries');
+    expect(orderDetailSource).not.toContain('useQueryClient');
   });
 
   it('renders cancel loading through the shadcn Button busy state', () => {

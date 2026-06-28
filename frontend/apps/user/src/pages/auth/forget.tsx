@@ -15,7 +15,7 @@ export default function ForgetPage() {
   const { t } = useTranslation();
   const {
     configLoading,
-    formRef,
+    registerInput,
     submit,
     sendCode,
     isPending,
@@ -29,7 +29,6 @@ export default function ForgetPage() {
       <AuthPanel
         title={t('auth.reset_title')}
         description={t('auth.reset_description')}
-        formRef={formRef}
         onSubmit={submit}
         footer={<AuthFooterLink href="#/login">{t('auth.return_to_login')}</AuthFooterLink>}
       >
@@ -40,9 +39,9 @@ export default function ForgetPage() {
             <FormField id="forget-email" label={t('auth.email')}>
               <Input
                 type="email"
-                name="email"
                 autoComplete="username"
                 placeholder="m@example.com"
+                {...registerInput('email')}
               />
             </FormField>
 
@@ -53,13 +52,16 @@ export default function ForgetPage() {
               disabled={cooldown !== 60 || isSendingCode}
               loading={isSendingCode}
               onSendCode={sendCode}
+              inputProps={registerInput('email_code')}
             />
 
             <AuthPasswordConfirmationFields
               passwordId="forget-password"
               passwordLabel={t('auth.password')}
+              passwordInputProps={registerInput('password')}
               confirmId="forget-confirm-password"
               confirmLabel={t('auth.confirm_password')}
+              confirmInputProps={registerInput('confirm_password')}
             />
 
             <AuthSubmitButton loading={isPending} disabled={isPending}>

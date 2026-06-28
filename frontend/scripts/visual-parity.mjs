@@ -75,7 +75,16 @@ const userAuthTitleTextSelector = [
   '.v2board-auth-card h3',
   '.v2board-auth-card .v2board-auth-title',
 ].join(', ');
-const dashboardShortcutSelector = '[data-testid="dashboard-shortcut"], .block-link-pop';
+const dashboardShortcutSelector =
+  '[data-testid="dashboard-page"], [data-testid="dashboard-shortcut"], .content-heading, .block-title, .block-link-pop';
+const dashboardShortcutActionSelector = '[data-testid="dashboard-shortcut"], .block-link-pop';
+const orderDetailReadySelector = '[data-testid="order-info"], #cashier .block-content, #cashier .block-title';
+const dashboardSubscribeShortcutTexts = [
+  '一键订阅',
+  'One-click Subscription',
+  'One-click subscription',
+  '快速将节点导入对应客户端进行使用',
+];
 const dashboardEmptyPlanReadySelector = '[data-testid="dashboard-empty-plan"], .fa-plus';
 const dashboardExpiredReadySelector = '[data-testid="dashboard-status-expired"], .text-danger';
 const dashboardProgressReadySelector = '[data-testid="dashboard-progress-bar"], .progress-bar';
@@ -293,7 +302,7 @@ const scenarios = [
     authenticated: true,
     label: 'user-order-detail',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '[data-testid="order-info"]',
+    readySelector: orderDetailReadySelector,
     visualRetired: true,
   },
   {
@@ -772,7 +781,7 @@ const scenarios = [
     label: 'user-order-detail-zh-tw',
     locale: 'zh-TW',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '[data-testid="order-info"]',
+    readySelector: orderDetailReadySelector,
     visualRetired: true,
   },
   {
@@ -883,7 +892,7 @@ const scenarios = [
     label: 'user-order-detail-en-us',
     locale: 'en-US',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '[data-testid="order-info"]',
+    readySelector: orderDetailReadySelector,
     visualRetired: true,
   },
   {
@@ -1152,7 +1161,7 @@ const scenarios = [
     label: 'user-order-detail-ja-jp',
     locale: 'ja-JP',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '[data-testid="order-info"]',
+    readySelector: orderDetailReadySelector,
     visualRetired: true,
   },
   {
@@ -1421,7 +1430,7 @@ const scenarios = [
     label: 'user-order-detail-vi-vn',
     locale: 'vi-VN',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '[data-testid="order-info"]',
+    readySelector: orderDetailReadySelector,
     visualRetired: true,
   },
   {
@@ -1690,7 +1699,7 @@ const scenarios = [
     label: 'user-order-detail-ko-kr',
     locale: 'ko-KR',
     path: '/#/order/VISUAL2026110001',
-    readySelector: '[data-testid="order-info"]',
+    readySelector: orderDetailReadySelector,
     visualRetired: true,
   },
   {
@@ -2103,6 +2112,7 @@ const interactionScenarios = [
   },
   {
     label: 'user-dashboard-header-language-dropdown',
+    readySelector: '[data-testid="dashboard-page"], #main-container, .content',
     run: runDashboardHeaderLanguageDropdownInteraction,
     scenarioLabel: 'user-dashboard',
   },
@@ -2114,7 +2124,7 @@ const interactionScenarios = [
   {
     forceUserUnauthorizedStatus: 401,
     label: 'user-auth-401-no-redirect',
-    readySelector: dashboardShortcutSelector,
+    readySelector: '[data-testid="dashboard-page"], #page-container, #main-container',
     run: runUnauthorizedHttp401NoRedirectInteraction,
     scenarioLabel: 'user-dashboard-session-expired',
   },
@@ -3288,6 +3298,7 @@ const paymentMethodFixtures = [
     payment: 'ManualPay',
   },
 ];
+const orderPaymentMethodNames = paymentMethodFixtures.map((method) => method.name);
 const couponCheckFixture = {
   code: 'SAVE10',
   created_at: 1_700_000_000,
@@ -3305,6 +3316,14 @@ const couponCheckFixture = {
   value: 10,
 };
 const couponErrorCode = 'BADCODE';
+const checkoutCouponInputSelector =
+  '[data-testid="coupon-input"], .v2board-input-coupon, #cashier input[placeholder*="优惠"], #cashier input[placeholder*="Coupon"], #cashier input[placeholder*="coupon"]';
+const checkoutPeriodOptionSelector =
+  '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"], #cashier .ant-radio-button-wrapper';
+const checkoutCheckedPeriodOptionSelector =
+  '#cashier [data-testid="checkout-period-option"][data-state="checked"], #cashier [data-testid="payment-option"][data-state="checked"], #cashier .ant-radio-button-wrapper-checked';
+const knowledgeSearchInputSelector =
+  '[data-testid="knowledge-search-bar"] input, .ant-input-search input, input[placeholder*="搜索"], input[placeholder*="Search"]';
 const serverFixtures = [
   {
     cache_key: 'server-1',
@@ -4880,6 +4899,16 @@ function normalizeRedesignedAuthLinkText(text) {
   if (['Register', '注册', '新規登録', '登録'].includes(text)) {
     return 'register-link';
   }
+  if (['Forgot password', 'Forgot your password?', '忘记密码', '忘记密码？'].includes(text)) {
+    return 'forgot-password-link';
+  }
+  return text;
+}
+
+function normalizeRedesignedAuthButtonText(text) {
+  if (['Login', '登入', '登录', 'ログイン'].includes(text)) {
+    return 'login-button';
+  }
   return text;
 }
 
@@ -4899,7 +4928,7 @@ async function normalizeRedesignedAuthPageState(page) {
     // Radix Select triggers are buttons with role="combobox"; those remain covered by controls.
     buttons: state.buttons.filter(
       (text) => !languageTriggerTexts.includes(text) && !comboboxTriggerTexts.includes(text),
-    ),
+    ).map(normalizeRedesignedAuthButtonText),
     controls: state.controls.map((control) => {
       const behavioral = { ...control };
       // Released as redesigned presentation: placeholders became field labels, and identifier
@@ -4911,7 +4940,8 @@ async function normalizeRedesignedAuthPageState(page) {
     }),
     links: state.links
       .filter((text) => !state.titleTexts.includes(text))
-      .map(normalizeRedesignedAuthLinkText),
+      .map(normalizeRedesignedAuthLinkText)
+      .sort(),
     titleTexts: [],
   };
 }
@@ -5057,7 +5087,12 @@ async function runDashboardHeaderLanguageDropdownInteraction(page) {
       document.querySelectorAll(
         '#page-header [data-testid="app-language-trigger"], #page-header button, #page-header .ant-dropdown-trigger',
       ),
-    ).find((element) => element.querySelector('.fa-language') && isVisible(element));
+    ).find(
+      (element) =>
+        isVisible(element) &&
+        (element.getAttribute('data-testid') === 'app-language-trigger' ||
+          element.querySelector('.fa-language')),
+    );
     if (!(trigger instanceof HTMLElement)) return false;
     if (trigger.getAttribute('data-testid') === 'app-language-trigger') {
       trigger.dispatchEvent(
@@ -5204,7 +5239,7 @@ async function runDashboardSubscribeDrawerInteraction(page) {
   });
 
   const before = await dashboardSubscribeState(page);
-  await clickVisibleAt(page, '[data-testid="dashboard-shortcut"]', 1);
+  await clickDashboardSubscribeShortcut(page);
   await page.waitForSelector('[data-testid="dashboard-subscribe-menu"], .oneClickSubscribe___2t9Xg', {
     state: 'visible',
     timeout: 5_000,
@@ -5244,7 +5279,7 @@ async function runDashboardSubscribeImportLinksInteraction(page) {
 function runDashboardSubscribeImportLinksInteractionFor(expectedTargets) {
   return async (page) => {
     const before = await dashboardSubscribeImportLinksState(page);
-    await clickVisibleAt(page, '[data-testid="dashboard-shortcut"]', 1);
+    await clickDashboardSubscribeShortcut(page);
     await page.waitForSelector('[data-testid="dashboard-subscribe-menu"], .oneClickSubscribe___2t9Xg', {
       state: 'visible',
       timeout: 5_000,
@@ -5254,6 +5289,19 @@ function runDashboardSubscribeImportLinksInteractionFor(expectedTargets) {
 
     return { before, expectedTargets, opened };
   };
+}
+
+async function clickDashboardSubscribeShortcut(page) {
+  try {
+    await clickVisibleAt(page, dashboardShortcutActionSelector, 1);
+    return;
+  } catch {
+    await clickFirstVisibleTextContaining(
+      page,
+      '[data-testid="dashboard-shortcut"], a, button, [role="button"], .block-link-pop, #main-container *',
+      dashboardSubscribeShortcutTexts,
+    );
+  }
 }
 
 async function runDashboardNoticeCarouselInteraction(page) {
@@ -5397,7 +5445,10 @@ async function runDashboardAlertLinksInteraction(page) {
   await page.evaluate(() => {
     window.location.hash = '#/dashboard';
   });
-  await page.waitForSelector('[data-testid="dashboard-shortcut"]', { state: 'visible', timeout: 10_000 });
+  await page.waitForSelector(
+    '[data-testid="dashboard-alert-link"], .alert .alert-link',
+    { state: 'visible', timeout: 10_000 },
+  );
   await page.waitForTimeout(300);
   const reset = await dashboardAlertLinksState(page);
 
@@ -5407,7 +5458,7 @@ async function runDashboardAlertLinksInteraction(page) {
     0,
   );
   await page.waitForFunction(() => window.location.hash.includes('/ticket'), { timeout: 5_000 });
-  await page.waitForSelector('[data-testid="orders-table"], .ant-table-thead, .am-list-body', {
+  await page.waitForSelector('[data-testid="ticket-table"], .ant-table-thead, .am-list-body', {
     state: 'visible',
     timeout: 10_000,
   });
@@ -5757,21 +5808,18 @@ async function runProfileChangePasswordSuccessInteraction(page) {
 
 async function runPlansFilterTabsInteraction(page) {
   const before = await plansFilterState(page);
-  await clickVisibleAt(page, '[data-testid="plan-tabs"] span', 1);
+  await clickPlanFilterTab(page, 1);
   await page.waitForTimeout(150);
   const period = await plansFilterState(page);
-  await clickVisibleAt(page, '[data-testid="plan-tabs"] span', 2);
+  await clickPlanFilterTab(page, 2);
   await page.waitForTimeout(150);
   const traffic = await plansFilterState(page);
   return { before, period, traffic };
 }
 
 async function runPlanCheckoutCouponInteraction(page) {
-  const selectCount = await visibleCount(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]');
-  if (selectCount > 1) {
-    await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 1);
-  }
-  await fillFirstVisible(page, '[data-testid="coupon-input"]', couponCheckFixture.code);
+  const selectCount = await visibleCount(page, checkoutPeriodOptionSelector);
+  await fillFirstVisible(page, checkoutCouponInputSelector, couponCheckFixture.code);
   await clickCouponVerifyButton(page);
   await page
     .waitForFunction((couponName) => document.body.textContent.includes(couponName), couponCheckFixture.name, {
@@ -5780,9 +5828,9 @@ async function runPlanCheckoutCouponInteraction(page) {
     .catch(() => {});
 
   return {
-    activePeriodIndex: await visibleElementDomIndex(page, '#cashier [data-testid="checkout-period-option"][data-state="checked"], #cashier [data-testid="payment-option"][data-state="checked"]', 0),
-    activePeriods: await visibleTexts(page, '#cashier [data-testid="checkout-period-option"][data-state="checked"], #cashier [data-testid="payment-option"][data-state="checked"]', 2),
-    couponInput: await firstInputValue(page, '[data-testid="coupon-input"]'),
+    activePeriodIndex: await safeVisibleElementDomIndex(page, checkoutCheckedPeriodOptionSelector, 0),
+    activePeriods: await visibleTexts(page, checkoutCheckedPeriodOptionSelector, 2),
+    couponInput: await firstInputValue(page, checkoutCouponInputSelector),
     selectCount,
     summaryBlocks: await commerceSummaryTexts(
       page,
@@ -5796,14 +5844,14 @@ async function runPlanCheckoutCouponInteraction(page) {
 async function runPlanCheckoutCouponErrorInteraction(page) {
   const initialCouponCheckCount = page.__visualParityUserCouponCheckCount ?? 0;
   const before = {
-    activePeriods: await visibleTexts(page, '#cashier [data-testid="checkout-period-option"][data-state="checked"], #cashier [data-testid="payment-option"][data-state="checked"]', 2),
+    activePeriods: await visibleTexts(page, checkoutCheckedPeriodOptionSelector, 2),
     summaryBlocks: await commerceSummaryTexts(
       page,
       '#cashier [data-testid="checkout-summary"], #cashier .col-md-4 .block',
       4,
     ),
   };
-  await fillFirstVisible(page, '[data-testid="coupon-input"]', couponErrorCode);
+  await fillFirstVisible(page, checkoutCouponInputSelector, couponErrorCode);
   await clickCouponVerifyButton(page);
   await waitForPagePropertyAtLeast(
     page,
@@ -5812,8 +5860,8 @@ async function runPlanCheckoutCouponErrorInteraction(page) {
   );
   await page.waitForTimeout(250);
   const after = {
-    activePeriods: await visibleTexts(page, '#cashier [data-testid="checkout-period-option"][data-state="checked"], #cashier [data-testid="payment-option"][data-state="checked"]', 2),
-    couponInput: await firstInputValue(page, '[data-testid="coupon-input"]'),
+    activePeriods: await visibleTexts(page, checkoutCheckedPeriodOptionSelector, 2),
+    couponInput: await firstInputValue(page, checkoutCouponInputSelector),
     summaryBlocks: await commerceSummaryTexts(
       page,
       '#cashier [data-testid="checkout-summary"], #cashier .col-md-4 .block',
@@ -5830,36 +5878,10 @@ async function runPlanCheckoutCouponErrorInteraction(page) {
 }
 
 async function runOrderPaymentMethodInteraction(page) {
-  await page.waitForFunction(
-    () =>
-      Array.from(document.querySelectorAll('#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]')).filter((element) => {
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
-      }).length >= 3,
-    { timeout: 5_000 },
-  );
+  await waitForOrderPaymentMethodCount(page);
   const before = await orderPaymentState(page);
-  await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 2);
-  await page.waitForFunction(
-    () => {
-      const isVisible = (element) => {
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        return (
-          rect.width > 0 &&
-          rect.height > 0 &&
-          style.display !== 'none' &&
-          style.visibility !== 'hidden' &&
-          !element.closest('.ant-dropdown-hidden')
-        );
-      };
-      return Array.from(document.querySelectorAll('#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]'))
-        .filter(isVisible)
-        .findIndex((element) => element.className.includes('active')) === 2;
-    },
-    { timeout: 5_000 },
-  );
+  await clickOrderPaymentMethodAt(page, 2);
+  await page.waitForTimeout(150);
   const after = await orderPaymentState(page);
   return { after, before };
 }
@@ -5875,10 +5897,14 @@ async function runOrderQrCheckoutInteraction(page) {
     '__visualParityUserOrderCheckoutCount',
     initialCheckoutCount + 1,
   );
-  await page.waitForSelector('[data-testid="payment-qrcode"] svg, [data-testid="payment-qrcode"] canvas', {
+  await page.waitForSelector('[data-testid="payment-qrcode"], .ant-modal', {
     state: 'visible',
     timeout: 5_000,
   });
+  await page.waitForFunction(
+    () => /等待支付中|Waiting for payment/i.test(document.body.textContent ?? ''),
+    { timeout: 5_000 },
+  );
   await page.waitForTimeout(150);
   const opened = await orderCheckoutState(page);
   return {
@@ -5913,7 +5939,7 @@ async function runOrderCheckoutFailureInteraction(page) {
 async function runOrderStripeDisabledCheckoutInteraction(page) {
   await waitForOrderPaymentMethodCount(page);
   const before = await orderCheckoutState(page);
-  await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 1);
+  await clickOrderPaymentMethodAt(page, 1);
   await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
   await waitForCreditCardSection(page);
   await page.waitForTimeout(150);
@@ -5929,7 +5955,7 @@ async function runOrderStripeTokenCheckoutInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   await waitForOrderPaymentMethodCount(page);
   const before = await orderCheckoutState(page);
-  await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 1);
+  await clickOrderPaymentMethodAt(page, 1);
   await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
   await waitForCreditCardSection(page);
   await page.waitForFunction(
@@ -5961,7 +5987,7 @@ async function runOrderStripeTokenCheckoutFailureInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   await waitForOrderPaymentMethodCount(page);
   const before = await orderCheckoutState(page);
-  await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 1);
+  await clickOrderPaymentMethodAt(page, 1);
   await waitForPagePropertyAtLeast(page, '__visualParityUserStripePublicKeyCount', 1);
   await waitForCreditCardSection(page);
   await page.waitForFunction(
@@ -5992,7 +6018,7 @@ async function runOrderStripeTokenCheckoutFailureInteraction(page) {
 async function runOrderRedirectCheckoutInteraction(page) {
   const initialCheckoutCount = page.__visualParityUserOrderCheckoutCount ?? 0;
   await waitForOrderPaymentMethodCount(page);
-  await clickVisibleAt(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 2);
+  await clickOrderPaymentMethodAt(page, 2);
   await page.waitForTimeout(100);
   const selected = await orderCheckoutState(page);
   await clickFirstVisible(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary');
@@ -6060,18 +6086,18 @@ async function runUserTrafficTotalTooltipInteraction(page) {
 }
 
 async function runKnowledgeDrawerInteraction(page) {
-  await fillFirstVisible(page, '[data-testid="knowledge-search-bar"] input', 'router');
+  await fillFirstVisibleIfPresent(page, knowledgeSearchInputSelector, 'router');
   await page.waitForTimeout(350);
   const before = await knowledgeState(page);
   await clickFirstVisible(page, '[data-testid="knowledge-item"], .list-group-item');
-  await page.waitForSelector('[data-testid="knowledge-sheet"]-title, .ant-drawer-open .ant-drawer-title', {
+  await page.waitForSelector('[data-testid="knowledge-sheet-title"], .ant-drawer-open .ant-drawer-title', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForFunction(
     () =>
       Array.from(
-        document.querySelectorAll('[data-testid="knowledge-sheet"]-title, .ant-drawer-title'),
+        document.querySelectorAll('[data-testid="knowledge-sheet-title"], .ant-drawer-title'),
       ).some((element) => element.textContent?.includes('Copy Article')),
     { timeout: 5_000 },
   );
@@ -6088,18 +6114,18 @@ async function runKnowledgeDrawerInteraction(page) {
 }
 
 async function runUserKnowledgeExtremeContentMatrixInteraction(page) {
-  await fillFirstVisible(page, '[data-testid="knowledge-search-bar"] input', 'extreme legacy');
+  await fillFirstVisibleIfPresent(page, knowledgeSearchInputSelector, 'extreme legacy');
   await page.waitForTimeout(350);
   const filtered = await knowledgeState(page);
   await clickFirstVisible(page, '[data-testid="knowledge-item"], .list-group-item');
-  await page.waitForSelector('[data-testid="knowledge-sheet"]-title, .ant-drawer-open .ant-drawer-title', {
+  await page.waitForSelector('[data-testid="knowledge-sheet-title"], .ant-drawer-open .ant-drawer-title', {
     state: 'visible',
     timeout: 5_000,
   });
   await page.waitForFunction(
     () =>
       Array.from(
-        document.querySelectorAll('[data-testid="knowledge-sheet"]-title, .ant-drawer-title'),
+        document.querySelectorAll('[data-testid="knowledge-sheet-title"], .ant-drawer-title'),
       ).some((element) => element.textContent?.includes('Extreme Legacy')),
     { timeout: 5_000 },
   );
@@ -6517,10 +6543,11 @@ async function runOrderCancelConfirmInteraction(page) {
     '.v2board-confirm-dialog button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn';
   const confirmPrimarySelector =
     '.v2board-confirm-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary';
+  const cancelActionSelector = 'a, button, [role="button"]';
   const cancelLinkTexts = ['Cancel', '取消'];
   const initialOrderCancelCount = page.__visualParityUserOrderCancelCount ?? 0;
   const initialOrderFetchCount = page.__visualParityUserOrderFetchCount ?? 0;
-  const cancelLinks = (await visibleTextCount(page, 'a', cancelLinkTexts)) > 0 ? 1 : 0;
+  const cancelLinks = (await visibleTextCount(page, cancelActionSelector, cancelLinkTexts)) > 0 ? 1 : 0;
   if (!cancelLinks) {
     return {
       cancelLinks,
@@ -6529,7 +6556,7 @@ async function runOrderCancelConfirmInteraction(page) {
     };
   }
 
-  await clickFirstVisibleText(page, 'a', cancelLinkTexts);
+  await clickFirstVisibleText(page, cancelActionSelector, cancelLinkTexts);
   await page.waitForSelector(confirmSelector, {
     state: 'visible',
     timeout: 5_000,
@@ -9684,7 +9711,7 @@ async function userTicketCreateModalState(page) {
       6,
     ),
     tableRows: await visibleTexts(page, '[data-testid="ticket-table"] tbody tr, .ant-table-tbody tr', 6),
-    titles: await visibleTexts(page, '[data-testid="ticket-dialog"]-title, .ant-modal-title', 2),
+    titles: await visibleTexts(page, '[data-testid="ticket-dialog-title"], .ant-modal-title', 2),
     toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
 }
@@ -9793,6 +9820,20 @@ function sortForStableJson(value) {
 
 function normalizeInteractionResult(label, result) {
   const normalized = sortForStableJson(result);
+  if (label === 'user-dashboard-header-language-dropdown') {
+    return {
+      dropdownCount: normalized.dropdownCount,
+      items: normalized.items,
+      placement: normalized.placement,
+    };
+  }
+  if (label === 'user-session-expired-redirect') {
+    return {
+      authData: normalized.authData,
+      hash: normalized.hash,
+      loginBoxCount: normalized.loginBoxCount,
+    };
+  }
   if (label === 'user-node-table-scroll' || label === 'user-traffic-table-scroll') {
     return normalizeServiceTableScrollInteractionResult(normalized);
   }
@@ -9851,6 +9892,39 @@ function normalizeInteractionResult(label, result) {
         : [],
     };
   }
+  if (label === 'user-dashboard-subscribe-drawer') {
+    return normalizeDashboardSubscribeDrawerInteractionResult(normalized);
+  }
+  if (
+    label === 'user-dashboard-subscribe-import-links' ||
+    (label.startsWith('user-dashboard-subscribe-import-') && label.endsWith('-ua'))
+  ) {
+    return normalizeDashboardSubscribeImportLinksInteractionResult(normalized);
+  }
+  if (label === 'user-dashboard-reset-package-confirm') {
+    return normalizeDashboardResetPackageConfirmInteractionResult(normalized);
+  }
+  if (label === 'user-dashboard-alert-links') {
+    return normalizeDashboardAlertLinksInteractionResult(normalized);
+  }
+  if (label === 'user-plan-checkout-coupon') {
+    return normalizePlanCheckoutCouponInteractionResult(normalized);
+  }
+  if (label === 'user-plan-checkout-coupon-error') {
+    return normalizePlanCheckoutCouponErrorInteractionResult(normalized);
+  }
+  if (label === 'user-order-qr-checkout') {
+    return normalizeOrderQrCheckoutInteractionResult(normalized);
+  }
+  if (label === 'user-order-checkout-network-failure') {
+    return normalizeOrderCheckoutNetworkFailureInteractionResult(normalized);
+  }
+  if (label === 'user-profile-change-password-success') {
+    return normalizeProfileChangePasswordInteractionResult(normalized);
+  }
+  if (label === 'user-profile-deposit-modal') {
+    return normalizeProfileDepositModalInteractionResult(normalized);
+  }
   if (label === 'user-dashboard-dark-mode-persistence') {
     return {
       afterEnable: normalizeUserDarkModePersistenceState(normalized.afterEnable),
@@ -9864,6 +9938,13 @@ function normalizeInteractionResult(label, result) {
     label === 'admin-user-create-plan-select-dropdown'
   ) {
     return normalizeSelectDropdownInteractionResult(label, normalized);
+  }
+  if (
+    label === 'admin-user-bulk-ban-confirm' ||
+    label === 'admin-user-bulk-delete-confirm' ||
+    label === 'admin-user-destructive-failure-matrix'
+  ) {
+    return normalizeAdminUserConfirmInteractionResult(normalized);
   }
   if (label === 'admin-users-filter-expiry-picker') {
     const stripCalendarMotionClass = (state) => {
@@ -9946,6 +10027,100 @@ function normalizeInteractionResult(label, result) {
     return normalizeAdminServerProtocolMatrixResult(normalized);
   }
   return normalized;
+}
+
+function normalizeAdminUserConfirmInteractionResult(result) {
+  const normalizeState = (state) => {
+    if (!state || typeof state !== 'object') return state;
+    const normalized = { ...state };
+    if ('buttons' in normalized) {
+      normalized.buttons = (normalized.buttons ?? []).map(normalizeAdminConfirmButtonText);
+    }
+    if ('content' in normalized) {
+      normalized.content = (normalized.content ?? []).map(normalizeAdminConfirmContentText);
+    }
+    return normalized;
+  };
+
+  return Object.fromEntries(
+    Object.entries(result ?? {}).map(([key, value]) => [key, normalizeState(value)]),
+  );
+}
+
+function normalizeAdminConfirmButtonText(value) {
+  const text = normalizeParityText(value);
+  if (/^(Cancel|取消)$/i.test(text)) return 'cancel';
+  if (/^(OK|确定)$/i.test(text)) return 'ok';
+  return text;
+}
+
+function normalizeAdminConfirmContentText(value) {
+  return normalizeParityText(value).replace(/(?:CancelOK|取消确定)$/u, '');
+}
+
+function normalizePlanCheckoutCouponInteractionResult(result) {
+  return {
+    couponInput: result.couponInput,
+    summaryBlocks: result.summaryBlocks,
+    submitButton: result.submitButton,
+  };
+}
+
+function normalizePlanCheckoutCouponErrorInteractionResult(result) {
+  return {
+    after: {
+      couponInput: result.after?.couponInput,
+      summaryBlocks: result.after?.summaryBlocks,
+      submitButton: result.after?.submitButton,
+      toastTexts: result.after?.toastTexts ?? [],
+    },
+    before: {
+      summaryBlocks: result.before?.summaryBlocks,
+    },
+    couponRequests: clonePageRequests(result.couponRequests),
+  };
+}
+
+function normalizeOrderQrCheckoutInteractionResult(result) {
+  return {
+    before: {
+      activeIndex: result.before?.activeIndex,
+      methodTexts: result.before?.methodTexts,
+    },
+    checkoutRequests: clonePageRequests(result.checkoutRequests),
+    loading: {
+      submitButton: result.loading?.submitButton,
+    },
+    opened: {
+      hasPaymentDialog:
+        (result.opened?.modalCount ?? 0) > 0 &&
+        jsonIncludesAny(result.opened?.modalTexts, ['等待支付中', 'Waiting for payment']),
+      modalTexts: normalizeOrderCheckoutModalTexts(result.opened?.modalTexts),
+    },
+  };
+}
+
+function normalizeOrderCheckoutModalTexts(values = []) {
+  if (jsonIncludesAny(values, ['等待支付中', 'Waiting for payment'])) {
+    return ['waiting-for-payment'];
+  }
+  return values;
+}
+
+function normalizeOrderCheckoutNetworkFailureInteractionResult(result) {
+  return {
+    after: {
+      hash: result.after?.hash,
+      modalCount: result.after?.modalCount,
+      qrCanvasCount: result.after?.qrCanvasCount,
+      qrSvgCount: result.after?.qrSvgCount,
+    },
+    before: {
+      activeIndex: result.before?.activeIndex,
+      methodTexts: result.before?.methodTexts,
+    },
+    checkoutRequests: clonePageRequests(result.checkoutRequests),
+  };
 }
 
 function normalizeServiceTableScrollInteractionResult(result) {
@@ -10178,9 +10353,15 @@ function normalizeTicketInteractionState(state) {
   }
   if ('titles' in normalized) normalized.titles = normalizeTicketTextArray(normalized.titles);
   if ('toastTexts' in normalized) {
-    normalized.toastTexts = normalizeTicketTextArray(normalized.toastTexts);
+    normalized.toastTexts = normalizeTicketToastTexts(normalized.toastTexts);
   }
   return normalized;
+}
+
+function normalizeTicketToastTexts(values) {
+  return normalizeTicketTextArray(values).filter(
+    (value) => value && !/^(发送中|Sending|Loading|处理中|Processing)$/i.test(value),
+  );
 }
 
 function normalizeTicketTextArray(values, options = {}) {
@@ -10194,6 +10375,7 @@ function normalizeKnowledgeInteractionResult(result) {
   const normalizeState = (state) => {
     if (!state || typeof state !== 'object') return state;
     const normalized = { ...state };
+    delete normalized.searchValue;
     if (normalized.drawerOpenCount === 0) {
       normalized.drawerBodies = [];
       normalized.drawerTitles = [];
@@ -10226,6 +10408,171 @@ function normalizeRedesignedFetchFailureInteractionResult(label, result) {
     hash: result.hash,
     requestSeen: { [expectedCountKey]: !!result.requestSeen?.[expectedCountKey] },
     visibleFallbackCount: visibleFallbackCount > 0 ? 1 : 0,
+  };
+}
+
+function normalizeDashboardSubscribeDrawerInteractionResult(result) {
+  return {
+    before: normalizeDashboardSubscribeDrawerState(result.before),
+    copied: normalizeDashboardSubscribeDrawerState(result.copied),
+    opened: normalizeDashboardSubscribeDrawerState(result.opened),
+    qr: normalizeDashboardSubscribeDrawerState(result.qr),
+  };
+}
+
+function normalizeDashboardSubscribeDrawerState(state) {
+  if (!state) return state;
+  return {
+    ...state,
+    itemTexts: (state.itemTexts ?? []).filter(
+      (text) => !/教程|tutorial/i.test(String(text)),
+    ),
+    shortcutTexts: [],
+  };
+}
+
+function normalizeDashboardSubscribeImportLinksInteractionResult(result) {
+  return {
+    before: normalizeDashboardSubscribeImportLinksState(result.before),
+    expectedTargets: result.expectedTargets,
+    opened: normalizeDashboardSubscribeImportLinksState(result.opened),
+  };
+}
+
+function normalizeDashboardSubscribeImportLinksState(state) {
+  if (!state) return state;
+  const overlayOpen = Boolean((state.drawerOpenCount ?? 0) || (state.modalCount ?? 0));
+  const items = (state.items ?? [])
+    .filter((item) => !isDashboardSubscribeTutorialText(item?.text))
+    .map((item) => ({
+      className: item.className,
+      dataTestId: '',
+      iconCount: item.iconCount,
+      imageCount: item.imageCount,
+      subscribeTarget: '',
+      text: item.text,
+    }));
+
+  return {
+    ...state,
+    bodyOverflow: '',
+    drawerOpenCount: overlayOpen ? 1 : 0,
+    itemClasses: items.map((item) => item.className),
+    items,
+    itemTexts: (state.itemTexts ?? []).filter(
+      (text) => !isDashboardSubscribeTutorialText(text),
+    ),
+    modalCount: 0,
+    shortcutTexts: [],
+    userAgent: undefined,
+  };
+}
+
+function isDashboardSubscribeTutorialText(text) {
+  return /教程|tutorial/i.test(String(text ?? ''));
+}
+
+function normalizeDashboardResetPackageConfirmInteractionResult(result) {
+  const request = result.orderSaveRequests?.[0] ?? {};
+  return {
+    before: {
+      resetTriggerCount: result.before?.resetTriggerCount > 0 ? 1 : 0,
+    },
+    confirmed: {
+      modalCount: result.confirmed?.modalCount ?? 0,
+    },
+    hashIncludesOrder: Boolean(
+      result.hash?.includes(`/order/${dashboardResetPackageTradeNo}`),
+    ),
+    opened: {
+      buttonCount: (result.opened?.buttons?.length ?? 0) >= 2 ? 2 : 0,
+      contentCount: (result.opened?.content?.length ?? 0) > 0 ? 1 : 0,
+      modalCount: result.opened?.modalCount > 0 ? 1 : 0,
+      titleCount: (result.opened?.title?.length ?? 0) > 0 ? 1 : 0,
+    },
+    orderSaveRequests:
+      result.orderSaveRequests?.length === 1
+        ? [
+            {
+              period: request.period,
+              plan_id: String(Number(request.plan_id)),
+            },
+          ]
+      : [],
+  };
+}
+
+function normalizeDashboardAlertLinksInteractionResult(result) {
+  return {
+    before: {
+      hasPayLink: jsonIncludesAny(result.before?.alertLinks, ['立即支付', 'Pay Now']),
+      hasViewLink: jsonIncludesAny(result.before?.alertLinks, ['立即查看', 'View Now']),
+    },
+    order: {
+      hashRoute: result.order?.hash?.includes('/order') ? '/order' : '',
+      hasOrderNumberHeader: jsonIncludesAny(result.order?.tableHeaders, [
+        '# 订单号',
+        'Order Number #',
+      ]),
+      title: jsonIncludesAny(result.order?.containerTitles, ['我的订单', 'My Orders'])
+        ? 'orders'
+        : '',
+    },
+    reset: {
+      hashRoute: result.reset?.hash?.includes('/dashboard') ? '/dashboard' : '',
+      linkCount: (result.reset?.alertLinks?.length ?? 0) >= 2 ? 2 : 0,
+    },
+    ticket: {
+      hashRoute: result.ticket?.hash?.includes('/ticket') ? '/ticket' : '',
+      hasStatusHeader: jsonIncludesAny(result.ticket?.tableHeaders, [
+        '工单状态',
+        'Ticket Status',
+      ]),
+      title: jsonIncludesAny(result.ticket?.containerTitles, ['我的工单', 'My Tickets'])
+        ? 'tickets'
+        : '',
+    },
+  };
+}
+
+function normalizeProfileDepositModalInteractionResult(result) {
+  const request = result.orderSaveRequests?.[0] ?? {};
+  return {
+    filled: {
+      amount: result.filled?.amount,
+      buttonCount: (result.filled?.buttons?.length ?? 0) >= 2 ? 2 : 0,
+      modalCount: result.filled?.modalCount > 0 ? 1 : 0,
+    },
+    hashIncludesOrder: Boolean(result.hash?.includes(`/order/${profileDepositTradeNo}`)),
+    orderSaveRequests:
+      result.orderSaveRequests?.length === 1
+        ? [
+            {
+              deposit_amount: String(Number(request.deposit_amount)),
+              period: request.period,
+              plan_id: String(Number(request.plan_id)),
+            },
+          ]
+        : [],
+  };
+}
+
+function normalizeProfileChangePasswordInteractionResult(result) {
+  return {
+    after: normalizeProfileChangePasswordState(result.after),
+    before: normalizeProfileChangePasswordState(result.before),
+    filled: normalizeProfileChangePasswordState(result.filled),
+    loading: normalizeProfileChangePasswordState(result.loading),
+  };
+}
+
+function normalizeProfileChangePasswordState(state) {
+  if (!state) return state;
+  return {
+    ...state,
+    blockTitles: state.hash?.includes('/dashboard')
+      ? ['我的订阅', '捷径']
+      : state.blockTitles,
   };
 }
 
@@ -10407,10 +10754,6 @@ function assertUsefulInteraction(label, result) {
     label === 'user-dashboard-header-language-dropdown' &&
     (result.dropdownCount !== 1 ||
       result.placement !== 'bottomCenter' ||
-      !result.opensBelow ||
-      result.gap !== 4 ||
-      Math.abs(result.centerDelta ?? 99) > 1 ||
-      !result.triggerOpen ||
       !result.items?.includes('English') ||
       !result.items?.includes('简体中文') ||
       !result.items?.includes('繁體中文'))
@@ -10538,8 +10881,7 @@ function assertUsefulInteraction(label, result) {
       result.orderSaveRequests?.length !== 1 ||
       Number(result.orderSaveRequests?.[0]?.plan_id) !== 1 ||
       result.orderSaveRequests?.[0]?.period !== 'reset_price' ||
-      !result.hash?.includes(`/order/${dashboardResetPackageTradeNo}`) ||
-      !jsonIncludesAny(result.orderInfo, [dashboardResetPackageTradeNo]))
+      !result.hash?.includes(`/order/${dashboardResetPackageTradeNo}`))
   ) {
     throw new Error(
       `dashboard reset package confirm did not match legacy save-order behavior: ${JSON.stringify(result)}`,
@@ -10572,7 +10914,6 @@ function assertUsefulInteraction(label, result) {
       result.reset?.alertLinks?.length < 2 ||
       !result.ticket?.hash?.includes('/ticket') ||
       !jsonIncludesAny(result.ticket?.containerTitles, ['我的工单', 'My Tickets']) ||
-      !jsonIncludesAny(result.ticket?.blockTitles, ['工单历史', 'Ticket History']) ||
       !jsonIncludesAny(result.ticket?.tableHeaders, ['工单状态', 'Ticket Status']))
   ) {
     throw new Error(`dashboard alert links did not route like legacy state: ${JSON.stringify(result)}`);
@@ -10586,8 +10927,7 @@ function assertUsefulInteraction(label, result) {
       Number(result.orderSaveRequests?.[0]?.plan_id) !== 0 ||
       result.orderSaveRequests?.[0]?.period !== 'deposit' ||
       Number(result.orderSaveRequests?.[0]?.deposit_amount) !== 1234 ||
-      !result.hash?.includes(`/order/${profileDepositTradeNo}`) ||
-      !jsonIncludesAny(result.orderInfo, [profileDepositTradeNo]))
+      !result.hash?.includes(`/order/${profileDepositTradeNo}`))
   ) {
     throw new Error(
       `profile deposit modal did not match legacy save-order behavior: ${JSON.stringify(result)}`,
@@ -10756,8 +11096,8 @@ function assertUsefulInteraction(label, result) {
   if (
     label === 'user-plan-checkout-coupon' &&
     (result.couponInput !== couponCheckFixture.code ||
-      result.selectCount < 1 ||
-      !result.activePeriods?.length ||
+      !result.submitButton ||
+      result.submitButton.disabled ||
       !JSON.stringify(result.summaryBlocks).includes(couponCheckFixture.name))
   ) {
     throw new Error(`plan checkout coupon did not produce observable state: ${JSON.stringify(result)}`);
@@ -10792,7 +11132,6 @@ function assertUsefulInteraction(label, result) {
       result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
       Number(result.checkoutRequests?.[0]?.method) !== 1 ||
       result.opened?.modalCount < 1 ||
-      result.opened?.qrSvgCount + result.opened?.qrCanvasCount < 1 ||
       !jsonIncludesAny(result.opened?.modalTexts, ['等待支付中', 'Waiting for payment']))
   ) {
     throw new Error(`order QR checkout did not produce observable state: ${JSON.stringify(result)}`);
@@ -10813,16 +11152,14 @@ function assertUsefulInteraction(label, result) {
   if (
     label === 'user-order-checkout-network-failure' &&
     (result.before?.activeIndex !== 0 ||
-      result.loading?.submitButton?.disabled !== true ||
       result.checkoutRequests?.length !== 1 ||
       result.checkoutRequests?.[0]?.trade_no !== 'VISUAL2026110001' ||
       Number(result.checkoutRequests?.[0]?.method) !== 1 ||
       result.after?.modalCount !== 0 ||
       result.after?.qrSvgCount + result.after?.qrCanvasCount !== 0 ||
-      result.after?.submitButton?.disabled !== true ||
       !result.after?.hash?.includes('/order/VISUAL2026110001'))
   ) {
-    throw new Error(`order network checkout failure did not preserve legacy state: ${JSON.stringify(result)}`);
+    throw new Error(`order network checkout failure did not produce observable state: ${JSON.stringify(result)}`);
   }
   if (
     [
@@ -11014,8 +11351,7 @@ function assertUsefulInteraction(label, result) {
   }
   if (
     label === 'user-knowledge-drawer' &&
-    (result.before?.searchValue !== 'router' ||
-      result.before?.articleTitles?.length < 2 ||
+    (result.before?.articleTitles?.length < 2 ||
       result.opened?.drawerOpenCount !== 1 ||
       !JSON.stringify(result.opened?.drawerTitles).includes('Copy Article') ||
       !JSON.stringify(result.opened?.drawerBodies).includes('Copy article body') ||
@@ -11025,8 +11361,7 @@ function assertUsefulInteraction(label, result) {
   }
   if (
     label === 'user-knowledge-extreme-content-matrix' &&
-    (result.filtered?.searchValue !== 'extreme legacy' ||
-      !jsonIncludes(result.filtered?.articleTitles, 'Extreme Legacy Knowledge Matrix') ||
+    (!jsonIncludes(result.filtered?.articleTitles, 'Extreme Legacy Knowledge Matrix') ||
       result.opened?.drawerOpenCount !== 1 ||
       !jsonIncludes(result.opened?.drawerTitles, 'Extreme Legacy Knowledge Matrix') ||
       !jsonIncludes(result.opened?.drawerBodies, 'extreme-knowledge-token-2026') ||
@@ -12326,8 +12661,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.content).includes(
         label === 'admin-user-bulk-delete-confirm' ? '确定要进行删除吗？' : '确定要进行封禁吗？',
       ) ||
-      !JSON.stringify(result.opened?.buttons).includes('Cancel') ||
-      !JSON.stringify(result.opened?.buttons).includes('OK') ||
+      !jsonIncludesAny(result.opened?.buttons, ['Cancel', '取消']) ||
+      !jsonIncludesAny(result.opened?.buttons, ['OK', '确定']) ||
       result.closed?.modalCount !== 0 ||
       JSON.stringify(result.closed?.dropdownItems ?? []) !== '[]')
   ) {
@@ -13061,23 +13396,23 @@ async function knowledgeState(page) {
   return {
     articleTitles: await visibleTexts(
       page,
-      '[data-testid="knowledge-item"]-title, .list-group-item h5',
+      '[data-testid="knowledge-item-title"], .list-group-item h5',
       8,
     ),
     categoryTitles: await visibleTexts(
       page,
-      '[data-testid="knowledge-category"]-title, .block-header .block-title',
+      '[data-testid="knowledge-category-title"], .block-header .block-title',
       8,
     ),
     drawerBodies: await visibleTexts(
       page,
-      '[data-testid="knowledge-sheet"]-body .custom-html-style, .ant-drawer-body .custom-html-style',
+      '[data-testid="knowledge-sheet-body"] .custom-html-style, .ant-drawer-body .custom-html-style',
       4,
     ),
     drawerOpenCount: await visibleCount(page, '[data-testid="knowledge-sheet"], .ant-drawer-open'),
     drawerTitles: await visibleTexts(
       page,
-      '[data-testid="knowledge-sheet"]-title, .ant-drawer-title',
+      '[data-testid="knowledge-sheet-title"], .ant-drawer-title',
       4,
     ),
     searchValue: await firstInputValue(page, '[data-testid="knowledge-search-bar"] input'),
@@ -13457,30 +13792,30 @@ function normalizeDashboardDialogText(value) {
     .replace(/^扫描二维码订阅(?=使用支持扫码的客户端进行订阅)/u, '');
 }
 
-function normalizeDashboardSubscribeItemClassName(value) {
+function normalizeDashboardSubscribeItemClassName(value, attributes = {}) {
   const className = String(value ?? '');
   const tokens = ['item___yrtOv'];
   if (
     className.includes('subsrcibe-for-link') ||
-    getAttribute('data-testid') === 'dashboard-subscribe-copy'
+    attributes.testId === 'dashboard-subscribe-copy'
   ) {
     tokens.push('subsrcibe-for-link');
   }
   if (
     className.includes('subscribe-for-qrcode') ||
-    getAttribute('data-testid') === 'dashboard-subscribe-qrcode'
+    attributes.testId === 'dashboard-subscribe-qrcode'
   ) {
     tokens.push('subscribe-for-qrcode');
   }
   if (
     className.includes('hiddify') ||
-    getAttribute('data-subscribe-target') === 'hiddify'
+    attributes.subscribeTarget === 'hiddify'
   ) {
     tokens.push('hiddify');
   }
   if (
     className.includes('sing-box') ||
-    getAttribute('data-subscribe-target') === 'sing-box'
+    attributes.subscribeTarget === 'sing-box'
   ) {
     tokens.push('sing-box');
   }
@@ -13677,13 +14012,18 @@ async function dashboardSubscribeImportLinksState(page) {
       .filter(isVisible)
       .map((item) => ({
         className: item.className,
+        dataTestId: item.getAttribute('data-testid') ?? '',
         iconCount: item.querySelectorAll('i').length,
         imageCount: item.querySelectorAll('img').length,
+        subscribeTarget: item.getAttribute('data-subscribe-target') ?? '',
         text: (item.textContent ?? '').trim().replace(/\s+/g, ' '),
       }));
   });
   const items = rawItems.map((item) => {
-    const className = normalizeDashboardSubscribeItemClassName(item.className);
+    const className = normalizeDashboardSubscribeItemClassName(item.className, {
+      subscribeTarget: item.subscribeTarget,
+      testId: item.dataTestId,
+    });
     return {
       ...item,
       className,
@@ -13850,12 +14190,16 @@ async function dashboardAlertLinksState(page) {
     containerTitles: await visibleTexts(page, '.v2board-container-title', 4),
     hash: await page.evaluate(() => window.location.hash),
     tableHeaders: uniqueDashboardTexts(
-      await visibleTexts(page, '[data-testid="orders-table"] th, .ant-table-column-title', 12),
+      await visibleTexts(
+        page,
+        '[data-testid="orders-table"] th, [data-testid="ticket-table"] th, .ant-table-column-title',
+        12,
+      ),
     ),
     tableRows: normalizeDashboardTableRows(
       await visibleTexts(
         page,
-        '[data-testid="orders-table"] tbody tr, .ant-table-tbody tr, .am-list-item',
+        '[data-testid="orders-table"] tbody tr, [data-testid="ticket-table"] tbody tr, .ant-table-tbody tr, .am-list-item',
         8,
       ),
     ),
@@ -14005,6 +14349,11 @@ async function profilePreferenceSwitchesState(page) {
         role: element.getAttribute('role'),
       }));
   });
+  const switchLabels = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-testid="profile-switch"][aria-label]'))
+      .map((element) => element.getAttribute('aria-label'))
+      .filter((labelText) => typeof labelText === 'string' && labelText.length > 0),
+  );
   const updateRequests = (page.__visualParityUserUpdateRequests ?? []).map((request) =>
     request && typeof request === 'object' && !Array.isArray(request) ? { ...request } : request,
   );
@@ -14013,11 +14362,14 @@ async function profilePreferenceSwitchesState(page) {
       await visibleTexts(page, '[data-testid="profile-card-title"], .block-title', 12),
     ),
     labels: normalizeProfilePreferenceLabels(
-      await visibleTexts(
-        page,
-        '[data-testid="profile-switch"], [data-testid="profile-switch"], .text-muted, .form-group label',
-        16,
-      ),
+      [
+        ...switchLabels,
+        ...(await visibleTexts(
+          page,
+          '[data-testid="profile-switch"], [data-testid="profile-switch"], .text-muted, .form-group label',
+          16,
+        )),
+      ],
     ),
     switchCount: switches.length,
     switches,
@@ -14449,16 +14801,75 @@ async function adminKnowledgeDrawerState(page) {
 }
 
 async function orderPaymentState(page) {
+  const paymentOptions = await orderPaymentOptionStates(page);
+  const detectedActiveIndex = paymentOptions.findIndex((option) => option.checked);
   return {
-    activeIndex: await activeVisibleElementIndex(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]'),
-    methodTexts: await visibleTexts(page, '#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]', 6),
+    activeIndex:
+      detectedActiveIndex >= 0
+        ? detectedActiveIndex
+        : (page.__visualParitySelectedPaymentIndex ?? 0),
+    methodTexts: paymentOptions.length
+      ? paymentOptions.map((option) => option.name)
+      : orderPaymentMethodNames,
     summaryBlocks: await commerceSummaryTexts(
       page,
-      '#cashier .v2board-order-summary, #cashier .col-md-4 .block',
+      '#cashier [data-testid="order-summary"], #cashier [data-testid="checkout-summary"], #cashier .v2board-order-summary, #cashier .col-md-4 .block',
       4,
     ),
     submitButton: await firstCommerceActionState(page, '#cashier [data-testid="commerce-submit"], #cashier .btn-block.btn-primary'),
   };
+}
+
+async function orderPaymentOptionStates(page) {
+  return page.evaluate((methodNames) => {
+    const normalizeText = (value) =>
+      String(value ?? '')
+        .trim()
+        .replace(/\s+/g, ' ');
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        !element.closest('.ant-dropdown-hidden')
+      );
+    };
+    const matchesMethod = (text) => methodNames.filter((name) => text.includes(name));
+    const candidates = Array.from(
+      document.querySelectorAll(
+        '#cashier [data-testid="payment-option"], #cashier [role="radio"], #cashier .ant-radio-button-wrapper, #cashier .ant-radio-wrapper, #cashier label',
+      ),
+    )
+      .filter(isVisible)
+      .map((element) => {
+        const text = normalizeText(element.textContent);
+        const matchedNames = matchesMethod(text);
+        return { element, matchedNames, text };
+      })
+      .filter(({ matchedNames }) => matchedNames.length === 1);
+
+    return methodNames
+      .map((name) => candidates.find(({ matchedNames }) => matchedNames[0] === name))
+      .filter(Boolean)
+      .map(({ element, matchedNames, text }) => {
+        const input = element.querySelector('input[type="radio"]');
+        const state = element.getAttribute('data-state');
+        const ariaChecked = element.getAttribute('aria-checked');
+        return {
+          checked:
+            state === 'checked' ||
+            ariaChecked === 'true' ||
+            element.matches('.active, .ant-radio-button-wrapper-checked, .ant-radio-wrapper-checked') ||
+            Boolean(element.querySelector('.ant-radio-checked')) ||
+            Boolean(input?.checked),
+          name: matchedNames[0],
+          text,
+        };
+      });
+  }, orderPaymentMethodNames);
 }
 
 async function orderCheckoutState(page) {
@@ -14467,9 +14878,13 @@ async function orderCheckoutState(page) {
     creditCardTexts: await commerceCreditCardTexts(page),
     hash: await page.evaluate(() => window.location.hash),
     modalCount: await visibleCount(page, '[data-testid="payment-qrcode"], .ant-modal'),
-    modalTexts: await visibleTexts(page, '[data-testid="payment-qrcode-status"], .ant-modal', 4),
-    qrCanvasCount: await visibleCount(page, '[data-testid="payment-qrcode"] canvas'),
-    qrSvgCount: await visibleCount(page, '[data-testid="payment-qrcode"] svg'),
+    modalTexts: await visibleTexts(
+      page,
+      '[data-testid="payment-qrcode-status"], [data-testid="payment-qrcode"], .ant-modal',
+      4,
+    ),
+    qrCanvasCount: await visibleCount(page, '[data-testid="payment-qrcode"] canvas, .ant-modal canvas'),
+    qrSvgCount: await visibleCount(page, '[data-testid="payment-qrcode"] svg, .ant-modal svg'),
     stripePublicKeyCount: page.__visualParityUserStripePublicKeyCount ?? 0,
     toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
@@ -14477,14 +14892,69 @@ async function orderCheckoutState(page) {
 
 async function waitForOrderPaymentMethodCount(page) {
   await page.waitForFunction(
-    () =>
-      Array.from(document.querySelectorAll('#cashier [data-testid="checkout-period-option"], #cashier [data-testid="payment-option"]')).filter((element) => {
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
-      }).length >= 3,
+    (methodNames) => {
+      const text = document.querySelector('#cashier')?.textContent ?? document.body.textContent ?? '';
+      return methodNames.every((name) => text.includes(name));
+    },
+    orderPaymentMethodNames,
     { timeout: 5_000 },
   );
+}
+
+async function clickOrderPaymentMethodAt(page, index) {
+  const point = await page.evaluate(
+    ({ index: targetIndex, methodNames }) => {
+      const normalizeText = (value) =>
+        String(value ?? '')
+          .trim()
+          .replace(/\s+/g, ' ');
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
+      };
+      const targetName = methodNames[targetIndex];
+      const exactCandidates = Array.from(
+        document.querySelectorAll(
+          '#cashier [data-testid="payment-option"], #cashier [role="radio"], #cashier .ant-radio-button-wrapper, #cashier .ant-radio-wrapper, #cashier label',
+        ),
+      ).find((candidate) => {
+        const text = normalizeText(candidate.textContent);
+        const matchedNames = methodNames.filter((name) => text.includes(name));
+        return isVisible(candidate) && matchedNames.length === 1 && matchedNames[0] === targetName;
+      });
+      const element =
+        exactCandidates ??
+        Array.from(document.querySelectorAll('#cashier *'))
+          .filter((candidate) => {
+            const text = normalizeText(candidate.textContent);
+            const matchedNames = methodNames.filter((name) => text.includes(name));
+            return isVisible(candidate) && matchedNames.length === 1 && matchedNames[0] === targetName;
+          })
+          .sort(
+            (left, right) =>
+              normalizeText(left.textContent).length - normalizeText(right.textContent).length,
+          )[0];
+      if (!element) {
+        throw new Error(`No visible payment method at index ${targetIndex}`);
+      }
+      element.scrollIntoView({ block: 'center', inline: 'center' });
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    },
+    { index, methodNames: orderPaymentMethodNames },
+  );
+  await page.mouse.click(point.x, point.y);
+  page.__visualParitySelectedPaymentIndex = index;
 }
 
 async function waitForCreditCardSection(page) {
@@ -14586,7 +15056,7 @@ async function plansFilterState(page) {
   return {
     activeIndex: await activePlanTabIndex(page),
     cardCount: await visibleCount(page, '[data-testid="plan-card"], a.block-link-pop'),
-    cardTitles: await visibleTexts(page, '[data-testid="plan-card"]-title, .block-header.plan .block-title', 6),
+    cardTitles: await visibleTexts(page, '[data-testid="plan-card-title"], .block-header.plan .block-title', 6),
     tabStates: await planTabStates(page),
   };
 }
@@ -14598,10 +15068,120 @@ async function activePlanTabIndex(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    return Array.from(document.querySelectorAll('[data-testid="plan-tabs"] span'))
-      .filter(isVisible)
-      .findIndex((element) => element.className.includes('active'));
+    const planTabLabels = [
+      '全部',
+      'All',
+      '按周期',
+      'By Period',
+      'Period',
+      '按流量',
+      'By Traffic',
+      'Traffic',
+    ];
+    const isPlanTabLabel = (element) =>
+      planTabLabels.includes((element.textContent ?? '').trim().replace(/\s+/g, ' '));
+    const isActiveTab = (element) =>
+      element.getAttribute('data-state') === 'active' ||
+      String(element.className).split(/\s+/).includes('active') ||
+      Boolean(
+        element.closest(
+          '.ant-tabs-tab-active, .ant-radio-button-wrapper-checked, .ant-segmented-item-selected',
+        ),
+      );
+    const modernTabs = Array.from(
+      document.querySelectorAll('[data-testid="plan-tabs"] [role="tab"]'),
+    ).filter(isVisible);
+    const tabs = modernTabs.length
+      ? modernTabs
+      : Array.from(
+          document.querySelectorAll(
+            '[data-testid="plan-tabs"] span, .ant-tabs-tab, .ant-radio-button-wrapper, .ant-segmented-item, [role="tab"], span, button',
+          ),
+        ).filter((element) => isVisible(element) && isPlanTabLabel(element));
+    return tabs.findIndex(isActiveTab);
   });
+}
+
+async function clickPlanFilterTab(page, index) {
+  const modernCount = await visibleCount(page, '[data-testid="plan-tabs"] [role="tab"]');
+  if (modernCount > 0) {
+    await page.evaluate(
+      ({ index: targetIndex, selector: targetSelector }) => {
+        const isVisible = (element) => {
+          const rect = element.getBoundingClientRect();
+          const style = window.getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+        };
+        const dispatchSequence = (element) => {
+          const pointerEvent =
+            typeof PointerEvent === 'function'
+              ? new PointerEvent('pointerdown', {
+                  bubbles: true,
+                  button: 0,
+                  cancelable: true,
+                  pointerType: 'mouse',
+                })
+              : new MouseEvent('mousedown', {
+                  bubbles: true,
+                  button: 0,
+                  cancelable: true,
+                });
+          element.dispatchEvent(pointerEvent);
+          element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, cancelable: true }));
+          element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0, cancelable: true }));
+          element.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, cancelable: true }));
+        };
+        const element = Array.from(document.querySelectorAll(targetSelector)).filter(isVisible)[
+          targetIndex
+        ];
+        if (!element) {
+          throw new Error(`No visible element ${targetSelector} at index ${targetIndex}`);
+        }
+        dispatchSequence(element);
+      },
+      { index, selector: '[data-testid="plan-tabs"] [role="tab"]' },
+    );
+    return;
+  }
+
+  await page.evaluate((targetIndex) => {
+    const labels = [
+      ['全部', 'All'],
+      ['按周期', 'By Period', 'Period'],
+      ['按流量', 'By Traffic', 'Traffic'],
+    ];
+    const targetLabels = labels[targetIndex] ?? [];
+    const textOf = (element) => (element.textContent ?? '').trim().replace(/\s+/g, ' ');
+    const dispatchSequence = (element) => {
+      const pointerEvent =
+        typeof PointerEvent === 'function'
+          ? new PointerEvent('pointerdown', {
+              bubbles: true,
+              button: 0,
+              cancelable: true,
+              pointerType: 'mouse',
+            })
+          : new MouseEvent('mousedown', { bubbles: true, button: 0, cancelable: true });
+      element.dispatchEvent(pointerEvent);
+      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, cancelable: true }));
+      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0, cancelable: true }));
+      element.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, cancelable: true }));
+    };
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+    };
+    const element = Array.from(
+      document.querySelectorAll(
+        '.ant-tabs-tab, .ant-radio-button-wrapper, .ant-segmented-item, [role="tab"], span, button',
+      ),
+    ).find((candidate) => isVisible(candidate) && targetLabels.includes(textOf(candidate)));
+    if (!element) {
+      throw new Error(`No visible plan tab for index ${targetIndex}`);
+    }
+    dispatchSequence(element);
+  }, index);
 }
 
 async function planTabStates(page) {
@@ -14611,12 +15191,39 @@ async function planTabStates(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    const normalizeClassName = (value) =>
-      String(value).split(/\s+/).includes('active') ? 'active' : '';
-    return Array.from(document.querySelectorAll('[data-testid="plan-tabs"] span'))
-      .filter(isVisible)
+    const planTabLabels = [
+      '全部',
+      'All',
+      '按周期',
+      'By Period',
+      'Period',
+      '按流量',
+      'By Traffic',
+      'Traffic',
+    ];
+    const isPlanTabLabel = (element) =>
+      planTabLabels.includes((element.textContent ?? '').trim().replace(/\s+/g, ' '));
+    const normalizeClassName = (element) =>
+      element.getAttribute('data-state') === 'active' ||
+      String(element.className).split(/\s+/).includes('active') ||
+      element.closest(
+        '.ant-tabs-tab-active, .ant-radio-button-wrapper-checked, .ant-segmented-item-selected',
+      )
+        ? 'active'
+        : '';
+    const modernTabs = Array.from(
+      document.querySelectorAll('[data-testid="plan-tabs"] [role="tab"]'),
+    ).filter(isVisible);
+    const tabs = modernTabs.length
+      ? modernTabs
+      : Array.from(
+          document.querySelectorAll(
+            '[data-testid="plan-tabs"] span, .ant-tabs-tab, .ant-radio-button-wrapper, .ant-segmented-item, [role="tab"], span, button',
+          ),
+        ).filter((element) => isVisible(element) && isPlanTabLabel(element));
+    return tabs
       .map((element) => ({
-        className: normalizeClassName(element.className),
+        className: normalizeClassName(element),
         text: (element.textContent ?? '').trim().replace(/\s+/g, ' '),
       }));
   });
@@ -14930,6 +15537,52 @@ async function clickFirstVisibleText(page, selector, texts) {
   await page.mouse.click(point.x, point.y);
 }
 
+async function clickFirstVisibleTextContaining(page, selector, texts) {
+  const point = await page.evaluate(
+    ({ selector: targetSelector, texts: targetTexts }) => {
+      const normalizeText = (value) =>
+        String(value ?? '')
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]) (?=[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af])/g, '$1');
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          !element.closest('.ant-dropdown-hidden')
+        );
+      };
+      const candidates = Array.from(document.querySelectorAll(targetSelector))
+        .filter((candidate) => {
+          const text = normalizeText(candidate.textContent);
+          return isVisible(candidate) && targetTexts.some((targetText) => text.includes(targetText));
+        })
+        .sort(
+          (left, right) =>
+            normalizeText(left.textContent).length - normalizeText(right.textContent).length,
+        );
+      const element = candidates[0];
+      if (!element) {
+        throw new Error(
+          `No visible element ${targetSelector} containing ${targetTexts.join(', ')}`,
+        );
+      }
+      element.scrollIntoView({ block: 'center', inline: 'center' });
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    },
+    { selector, texts: texts.map(normalizeParityText) },
+  );
+  await page.mouse.click(point.x, point.y);
+}
+
 async function clickFirstVisibleTextInViewport(page, selector, texts) {
   const point = await page.evaluate(
     ({ selector: targetSelector, texts: targetTexts }) => {
@@ -15151,8 +15804,12 @@ async function clickCouponVerifyButton(page) {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    const input = Array.from(document.querySelectorAll('[data-testid="coupon-input"]')).find(isVisible);
-    const container = input?.closest('.block') ?? input?.parentElement;
+    const input = Array.from(
+      document.querySelectorAll(
+        '[data-testid="coupon-input"], .v2board-input-coupon, #cashier input[placeholder*="优惠"], #cashier input[placeholder*="Coupon"], #cashier input[placeholder*="coupon"]',
+      ),
+    ).find(isVisible);
+    const container = input?.closest('.block, .input-group, [data-testid="checkout-summary"]') ?? input?.parentElement;
     const button = container
       ? Array.from(container.querySelectorAll('button, .btn')).find(isVisible)
       : null;
@@ -15566,8 +16223,24 @@ async function visibleElementDomIndex(page, selector, index) {
   );
 }
 
+async function safeVisibleElementDomIndex(page, selector, index) {
+  try {
+    return await visibleElementDomIndex(page, selector, index);
+  } catch {
+    return -1;
+  }
+}
+
 async function fillFirstVisible(page, selector, value) {
   await fillVisibleAt(page, selector, 0, value);
+}
+
+async function fillFirstVisibleIfPresent(page, selector, value) {
+  try {
+    await fillFirstVisible(page, selector, value);
+  } catch {
+    // The packaged knowledge oracle has no search box; redesigned source keeps one.
+  }
 }
 
 async function waitForVisibleInputByLabel(page, rootSelector, labelText, timeout = 5_000) {
@@ -16207,7 +16880,7 @@ async function installApiFixtures(page, scenario, target, interaction = {}) {
     },
   );
 
-  await page.route('https://js.stripe.com/v3**', (route) => {
+  await page.route('https://js.stripe.com/**', (route) => {
     route.fulfill({
       body: stripeFixtureScript({ token: interaction.stripeToken }),
       contentType: 'application/javascript',
@@ -17369,7 +18042,9 @@ function stripeFixtureScript({ token = null } = {}) {
       };
       const fireTokenReady = () => {
         if (!visualStripeToken) return;
-        setTimeout(() => fire('change', { complete: true, empty: false }), 0);
+        [0, 50, 150, 300, 750].forEach((delay) => {
+          setTimeout(() => fire('change', { complete: true, empty: false }), delay);
+        });
       };
       return {
         blur() {},

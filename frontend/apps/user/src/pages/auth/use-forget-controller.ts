@@ -3,28 +3,43 @@ import {
   useEffect,
   useRef,
   useState,
-  type SyntheticEvent,
+  type BaseSyntheticEvent,
   type ReactNode,
-  type RefObject,
 } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm, type UseFormRegister } from 'react-hook-form';
+import { z } from 'zod';
 import { useForgetMutation, useGuestConfig, useSendEmailVerifyMutation } from '@/lib/guest';
 import { authToast } from '@/lib/auth-toast';
 import { i18nGet } from '@/lib/errors';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { useAuthRecaptcha } from './auth-recaptcha';
 
-function readFormValue(form: HTMLFormElement | null, name: string) {
-  if (!form) return '';
-  return String(new FormData(form).get(name) ?? '');
-}
+const forgetSchema = z
+  .object({
+    email: z.string(),
+    email_code: z.string(),
+    password: z.string(),
+    confirm_password: z.string(),
+  })
+  .superRefine((values, context) => {
+    if (values.password !== values.confirm_password) {
+      context.addIssue({
+        code: 'custom',
+        path: ['confirm_password'],
+        message: 'password_mismatch',
+      });
+    }
+  });
+
+type ForgetFormValues = z.infer<typeof forgetSchema>;
 
 export interface ForgetController {
   configLoading: boolean;
-  formRef: RefObject<HTMLFormElement | null>;
-  /** Form submit handler — runs the reset flow. */
-  submit: (event: SyntheticEvent<HTMLFormElement>) => void;
+  registerInput: UseFormRegister<ForgetFormValues>;
+  submit: (event?: BaseSyntheticEvent) => Promise<void>;
   /** Send-code button handler — runs recaptcha then the email-verify flow. */
   sendCode: () => void;
   isPending: boolean;
@@ -51,8 +66,16 @@ export function useForgetController(): ForgetController {
     Boolean(config?.is_recaptcha),
     config?.recaptcha_site_key,
   );
+  const form = useForm<ForgetFormValues>({
+    resolver: zodResolver(forgetSchema),
+    defaultValues: {
+      email: '',
+      email_code: '',
+      password: '',
+      confirm_password: '',
+    },
+  });
 
-  const formRef = useRef<HTMLFormElement | null>(null);
   const mountedRef = useRef(true);
   const [cooldown, setCooldown] = useState(60);
 
@@ -80,7 +103,7 @@ export function useForgetController(): ForgetController {
   const onSendCode = async (recaptchaData?: string) => {
     try {
       const sent = await sendCodeMutation({
-        email: readFormValue(formRef.current, 'email'),
+        email: form.getValues('email'),
         isforget: 1,
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
@@ -92,32 +115,27 @@ export function useForgetController(): ForgetController {
     } catch {}
   };
 
-  const onForget = async () => {
-    const password = readFormValue(formRef.current, 'password');
-    if (password !== readFormValue(formRef.current, 'confirm_password')) {
-      authToast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') });
-      return;
-    }
+  const onForget = async (values: ForgetFormValues) => {
     try {
       await forget({
-        email: readFormValue(formRef.current, 'email'),
-        password,
-        email_code: readFormValue(formRef.current, 'email_code'),
+        email: values.email,
+        password: values.password,
+        email_code: values.email_code,
       });
       if (mountedRef.current) navigate('/login');
     } catch {}
   };
 
-  const submit = (event: SyntheticEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    void onForget();
-  };
+  const submit = form.handleSubmit(
+    onForget,
+    () => authToast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') }),
+  );
 
   const sendCode = () => runRecaptcha(onSendCode);
 
   return {
     configLoading,
-    formRef,
+    registerInput: form.register,
     submit,
     sendCode,
     isPending,

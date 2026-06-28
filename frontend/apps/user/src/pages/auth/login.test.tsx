@@ -146,6 +146,13 @@ async function flushPromises() {
   });
 }
 
+function setInputValue(input: HTMLInputElement | undefined, value: string) {
+  if (!input) throw new Error('Expected input to exist');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 describe('LoginPage modern markup', () => {
   beforeEach(resetMocks);
 
@@ -262,8 +269,8 @@ describe('LoginPage bundled-theme behavior', () => {
     await renderLogin();
 
     const [email, password] = Array.from(container.querySelectorAll('input'));
-    email!.value = 'user@example.com';
-    password!.value = 'secret';
+    setInputValue(email, 'user@example.com');
+    setInputValue(password, 'secret');
 
     await act(async () => {
       container
@@ -291,8 +298,8 @@ describe('LoginPage bundled-theme behavior', () => {
     await renderLogin();
 
     const [email, password] = Array.from(container.querySelectorAll('input'));
-    email!.value = 'user@example.com';
-    password!.value = 'secret';
+    setInputValue(email, 'user@example.com');
+    setInputValue(password, 'secret');
 
     await act(async () => {
       container
@@ -311,8 +318,8 @@ describe('LoginPage bundled-theme behavior', () => {
     await renderLogin();
 
     const [email, password] = Array.from(container.querySelectorAll('input'));
-    email!.value = 'user@example.com';
-    password!.value = 'wrong';
+    setInputValue(email, 'user@example.com');
+    setInputValue(password, 'wrong');
     await act(async () => {
       container
         .querySelector('form')!
@@ -346,12 +353,14 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(mocks.loginMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('reads the submitted values from the native form, never via the retired refs', () => {
-    expect(controllerSource).toContain('new FormData(event.currentTarget)');
-    expect(controllerSource).toContain("form.get('email')");
-    expect(controllerSource).toContain("form.get('password')");
+  it('submits values through react-hook-form and zod, never via retired refs', () => {
+    expect(controllerSource).toContain("from 'react-hook-form'");
+    expect(controllerSource).toContain("from 'zod'");
+    expect(controllerSource).toContain('zodResolver(loginSchema)');
+    expect(controllerSource).toContain('form.handleSubmit(login)');
     // The request payload shape is unchanged — still exactly { email, password }.
     expect(controllerSource).toContain('mutateAsync({ email, password })');
+    expect(controllerSource).not.toContain('new FormData');
     expect(controllerSource).not.toContain('emailRef');
     expect(controllerSource).not.toContain('passwordRef');
   });
@@ -367,14 +376,14 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(controllerSource).not.toContain('keyCode');
   });
 
-  it('navigates register and forgetpassword via real HashRouter anchors (no javascript: hrefs)', async () => {
+  it('navigates register and forgetpassword via real hash anchors (no javascript: hrefs)', async () => {
     await renderLogin();
 
     const links = Array.from(container.querySelectorAll('a'));
     const register = links.find((link) => link.textContent === '注册')!;
     const forget = links.find((link) => link.textContent === '忘记密码？')!;
 
-    // Real hash anchors — HashRouter navigates natively, with no JS click handler or
+    // Real hash anchors — the data router navigates natively, with no JS click handler or
     // `javascript:` href. The behavior contract (lands on register/forgetpassword) is preserved.
     expect(register.getAttribute('href')).toBe('#/register');
     expect(forget.getAttribute('href')).toBe('#/forgetpassword');

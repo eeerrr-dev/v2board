@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Order, PaymentMethod } from '@v2board/types';
 import { BookOpen, CheckCircle2, Info, TriangleAlert } from 'lucide-react';
@@ -15,7 +14,6 @@ import {
   DialogTitle,
 } from '@/components/ui/shadcn-dialog';
 import {
-  userKeys,
   useCheckoutOrderMutation,
   useCommConfig,
   useOrder,
@@ -25,7 +23,7 @@ import {
   useStripePublicKeyMutation,
   useUserInfo,
 } from '@/lib/queries';
-import { legacyConfirm } from '@/components/legacy-confirm';
+import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { StripeCardForm } from '@/components/stripe-card-form';
 import { toast } from '@/lib/toast';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
@@ -52,7 +50,6 @@ export default function OrderDetailPage() {
   const { t } = useTranslation();
   const { trade_no } = useParams();
   const tradeNo = trade_no;
-  const queryClient = useQueryClient();
   const orderQuery = useOrder(tradeNo);
   const paymentsQuery = usePaymentMethods({ enabled: Boolean(orderQuery.data) });
   // Old componentDidMount dispatches order/detail, then user/getUserInfo, then comm/config.
@@ -135,15 +132,6 @@ export default function OrderDetailPage() {
     previousOrderStatusRef.current = { tradeNo, status };
   }, [orderQuery.data?.status, tradeNo]);
 
-  useEffect(
-    () => () => {
-      queryClient.removeQueries({ queryKey: ['user', 'orders'] });
-      if (tradeNo) queryClient.removeQueries({ queryKey: userKeys.orderDetail(tradeNo) });
-      queryClient.removeQueries({ queryKey: userKeys.payments });
-    },
-    [queryClient, tradeNo],
-  );
-
   const effectiveMethodId = methodId ?? paymentMethods?.[0]?.id;
   const selectedPayment = paymentMethods?.find((p) => p.id === effectiveMethodId);
   const isStripePayment = selectedPayment?.payment === 'StripeCredit';
@@ -181,11 +169,11 @@ export default function OrderDetailPage() {
   const isDeposit = order.plan?.id == 0;
   const periodLabelKey = order.period ? PERIOD_LABEL_KEY[order.period] : undefined;
   const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
-  const legacyPreHandlingAmount =
+  const effectivePreHandlingAmount =
     preHandlingAmount ??
     order.pre_handling_amount ??
     (methodId === undefined ? calculatePreHandlingAmount(order, selectedPayment) : 0);
-  const grandTotal = order.total_amount + (legacyPreHandlingAmount || 0);
+  const grandTotal = order.total_amount + (effectivePreHandlingAmount || 0);
 
   const onPay = async () => {
     if (!tradeNo) return;
@@ -194,7 +182,6 @@ export default function OrderDetailPage() {
       return;
     }
     setPaying(true);
-    let keepLegacyLoading = false;
     try {
       const result = await checkoutOrder({
         trade_no: tradeNo,
@@ -212,12 +199,9 @@ export default function OrderDetailPage() {
         window.location.href = result.data;
         toast.info(t('order.redirecting_checkout'));
       }
-    } catch (error) {
-      if (isLegacyCheckoutNetworkError(error)) {
-        keepLegacyLoading = true;
-      }
+    } catch {
     } finally {
-      if (!keepLegacyLoading) setPaying(false);
+      setPaying(false);
     }
   };
 
@@ -229,17 +213,12 @@ export default function OrderDetailPage() {
   const handleCancel = () => {
     const cancelTradeNo = order.trade_no;
     if (!cancelTradeNo) return;
-    void legacyConfirm({
+    void confirmDialog({
       title: t('common.attention'),
-      content: t('order.cancel_confirm'),
-      okText: t('order.cancel'),
-      okButtonProps: { loading: cancel.isPending },
-      onOk: () => {
-        // Legacy order/cancel dispatches `fetch`, then `details` (plural). The
-        // mutation starts the list refresh; the model has no `details` effect, so
-        // the detail view is not refreshed here.
-        void cancel.mutateAsync(cancelTradeNo).catch(() => {});
-      },
+      description: t('order.cancel_confirm'),
+      confirmText: t('order.cancel'),
+      confirmButtonProps: { loading: cancel.isPending },
+      onConfirm: () => cancel.mutateAsync(cancelTradeNo),
     });
   };
 
@@ -303,9 +282,9 @@ export default function OrderDetailPage() {
               {order.balance_amount ? (
                 <InfoRow label={t('order.balance_used')}>{amountText(order.balance_amount)}</InfoRow>
               ) : null}
-              {legacyPreHandlingAmount ? (
+              {effectivePreHandlingAmount ? (
                 <InfoRow label={t('order.handling_fee')}>
-                  {amountText(legacyPreHandlingAmount)}
+                  {amountText(effectivePreHandlingAmount)}
                 </InfoRow>
               ) : null}
               <InfoRow label={t('order.created_at')}>
@@ -418,9 +397,9 @@ export default function OrderDetailPage() {
                     - {moneyText(order.refund_amount, symbol)}
                   </AmountBlock>
                 ) : null}
-                {legacyPreHandlingAmount ? (
+                {effectivePreHandlingAmount ? (
                   <AmountBlock label={t('order.handling_fee')}>
-                    + {(legacyPreHandlingAmount / 100).toFixed(2)}
+                    + {(effectivePreHandlingAmount / 100).toFixed(2)}
                   </AmountBlock>
                 ) : null}
 
@@ -549,15 +528,6 @@ function calculatePreHandlingAmount(order: Order, method?: PaymentMethod) {
     ? order.total_amount * ((method.handling_fee_percent as number) / 100) +
         (method.handling_fee_fixed as number)
     : 0;
-}
-
-function isLegacyCheckoutNetworkError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'status' in error &&
-    (error as { status?: unknown }).status === 0
-  );
 }
 
 function OrderResult({ status }: { status?: number }) {

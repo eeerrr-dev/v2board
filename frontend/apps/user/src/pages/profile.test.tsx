@@ -338,15 +338,45 @@ describe('ProfilePage shadcn account surface', () => {
     expect(mocks.copyText).toHaveBeenCalledWith('/bind https://example.test/sub');
   });
 
-  it('keeps direct source values for profile switches and Telegram bind command', () => {
+  it('uses the legacy bare Telegram bind command when no subscribe url is cached', async () => {
+    mocks.comm = {
+      currency: 'USD',
+      is_telegram: true,
+      telegram_discuss_link: '',
+    };
+    mocks.botInfo = { username: 'legacy_bot' };
+    mocks.subscribe = undefined;
+
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    const startButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="profile-telegram-start"]',
+    );
+    expect(startButton).toBeTruthy();
+
+    await act(async () => {
+      startButton!.click();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('code')?.textContent).toBe('/bind');
+    expect(container.textContent).not.toContain('undefined');
+  });
+
+  it('keeps direct source values for profile switches and omits empty Telegram bind urls', () => {
     expect(source).toContain('checked={data?.auto_renewal}');
     expect(source).toContain('checked={data?.remind_expire}');
     expect(source).toContain('checked={data?.remind_traffic}');
-    expect(componentSource).toContain('const bindCommand = `/bind ${subscribeUrl}`;');
+    expect(componentSource).toContain(
+      "const bindCommand = subscribeUrl ? `/bind ${subscribeUrl}` : '/bind';",
+    );
     expect(source).not.toContain('checked={Boolean(data?.auto_renewal)}');
     expect(source).not.toContain('checked={Boolean(data?.remind_expire)}');
     expect(source).not.toContain('checked={Boolean(data?.remind_traffic)}');
-    expect(componentSource).not.toContain("`/bind ${subscribeUrl ?? ''}`");
+    expect(componentSource).not.toContain('/bind undefined');
   });
 
   it('updates profile switches with the original 0/1 payload and refetches after success', async () => {
@@ -362,6 +392,9 @@ describe('ProfilePage shadcn account surface', () => {
     );
     expect(switches).toHaveLength(3);
     expect(switches[0]!.getAttribute('aria-checked')).toBe('false');
+    expect(switches[0]!.getAttribute('aria-label')).toBe('自动续费');
+    expect(switches[1]!.getAttribute('aria-label')).toBe('到期邮件提醒');
+    expect(switches[2]!.getAttribute('aria-label')).toBe('流量邮件提醒');
 
     await act(async () => {
       switches[0]!.click();
@@ -420,11 +453,15 @@ describe('ProfilePage shadcn account surface', () => {
     expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: 0 });
   });
 
-  it('keeps profile form values in controlled state instead of imperative refs', () => {
-    expect(source).toContain("const [giftCard, setGiftCard] = useState('');");
-    expect(source).toContain('const [passwordForm, setPasswordForm] = useState({');
-    expect(source).toContain("oldPassword: passwordForm.oldPassword");
-    expect(source).toContain("newPassword: passwordForm.newPassword");
+  it('keeps profile form values in react-hook-form schemas instead of imperative refs', () => {
+    expect(source).toContain("from 'react-hook-form'");
+    expect(source).toContain("from 'zod'");
+    expect(source).toContain('zodResolver(passwordSchema)');
+    expect(source).toContain('zodResolver(giftCardSchema)');
+    expect(source).toContain("passwordForm.register('oldPassword')");
+    expect(source).toContain("giftCardForm.register('code')");
+    expect(source).not.toContain('setPasswordForm');
+    expect(source).not.toContain('setGiftCard');
     expect(source).not.toContain('oldPasswordRef.current!.value');
     expect(source).not.toContain('newPasswordRef.current!.value');
     expect(source).not.toContain('confirmPasswordRef.current!.value');
@@ -476,7 +513,7 @@ describe('ProfilePage shadcn account surface', () => {
     expect(source).not.toContain('logout();');
   });
 
-  it('submits the legacy deposit order payload from the shadcn recharge dialog', async () => {
+  it('submits the deposit order payload from the shadcn recharge dialog', async () => {
     mocks.comm = {
       currency: 'CNY',
       is_telegram: false,

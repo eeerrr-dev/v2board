@@ -10,6 +10,11 @@ const source = readFileSync(`${process.cwd()}/src/lib/auth-toast.tsx`, 'utf8');
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
+async function flushToasts() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await Promise.resolve();
+}
+
 describe('authToast', () => {
   let root: Root;
 
@@ -36,7 +41,7 @@ describe('authToast', () => {
   it('renders modern auth feedback without legacy ant message or notification DOM', async () => {
     await act(async () => {
       authToast.success('发送成功', { description: '如果没有收到验证码请检查垃圾箱。' });
-      await Promise.resolve();
+      await flushToasts();
     });
 
     const toast = document.body.querySelector('.v2board-toast-notification') as HTMLElement;
@@ -49,10 +54,11 @@ describe('authToast', () => {
     expect(document.body.querySelector('.ant-notification')).toBeNull();
   });
 
-  it('delegates to the unified Radix Toaster instead of owning a second React root', () => {
+  it('delegates to the unified Sonner Toaster instead of owning a second React root', () => {
     expect(source).toContain("from './toast'");
     expect(source).not.toContain('createRoot');
     expect(source).not.toContain("@radix-ui/react-toast");
+    expect(source).not.toContain("from 'sonner'");
     expect(source).not.toContain("from 'lucide-react'");
     expect(source).not.toContain('ant-message');
     expect(source).not.toContain('ant-notification');

@@ -14,7 +14,7 @@ const ordersSource = readFileSync(`${process.cwd()}/src/pages/orders/index.tsx`,
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   cancelMutateAsync: vi.fn(),
-  legacyConfirm: vi.fn(),
+  confirmDialog: vi.fn(),
   refetchOrders: vi.fn(),
   orderError: undefined as unknown,
   fetching: false,
@@ -100,8 +100,8 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-vi.mock('@/components/legacy-confirm', () => ({
-  legacyConfirm: mocks.legacyConfirm,
+vi.mock('@/components/ui/confirm-dialog', () => ({
+  confirmDialog: mocks.confirmDialog,
 }));
 
 describe('OrdersPage shadcn commerce table', () => {
@@ -152,15 +152,16 @@ describe('OrdersPage shadcn commerce table', () => {
   });
 
   it('keeps the order-period short-circuit without an empty-key fallback', () => {
-    expect(ordersSource).toContain('PERIOD_LABEL[order.period]');
+    expect(ordersSource).toContain('PERIOD_LABEL[row.original.period]');
     expect(ordersSource).toContain('periodLabelKey ? t(periodLabelKey) : undefined');
     expect(ordersSource).not.toContain("periodKey ? t(periodKey) : ''");
-    expect(ordersSource).not.toContain("PERIOD_LABEL[order.period] ?? ''");
+    expect(ordersSource).not.toContain("PERIOD_LABEL[row.original.period] ?? ''");
     expect(ordersSource).not.toContain('<span className="ant-tag">{periodLabel}</span>');
   });
 
   it('keys table rows by trade number now that the shadcn table owns the DOM', () => {
-    expect(ordersSource).toContain('<TableRow key={order.trade_no}');
+    expect(ordersSource).toContain('satisfies DataTableColumn<(typeof orders)[number]>[]');
+    expect(ordersSource).toContain('virtualizer={{ enabled: orders.length > 30 }}');
     expect(ordersSource).not.toContain('data-row-key={index}');
     expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
   });
@@ -187,7 +188,7 @@ describe('OrdersPage commerce behavior', () => {
     mocks.navigate.mockClear();
     mocks.cancelMutateAsync.mockReset();
     mocks.cancelMutateAsync.mockResolvedValue(true);
-    mocks.legacyConfirm.mockClear();
+    mocks.confirmDialog.mockClear();
     mocks.refetchOrders.mockClear();
     mocks.orderError = undefined;
     mocks.fetching = false;
@@ -225,7 +226,7 @@ describe('OrdersPage commerce behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
   });
 
-  it('fires cancel through a non-thenable confirm onOk for unpaid orders', async () => {
+  it('fires cancel through the confirm dialog action for unpaid orders', async () => {
     await act(async () => {
       root.render(<OrdersPage />);
       await Promise.resolve();
@@ -242,17 +243,17 @@ describe('OrdersPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.legacyConfirm).toHaveBeenCalledTimes(1);
-    const options = mocks.legacyConfirm.mock.calls[0]![0] as {
+    expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
+    const options = mocks.confirmDialog.mock.calls[0]![0] as {
       title: string;
-      content: string;
-      okText: string;
-      onOk: () => unknown;
+      description: string;
+      confirmText: string;
+      onConfirm: () => unknown;
     };
     expect(options.title).toBe('注意');
-    expect(options.content).toBe('如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？');
-    expect(options.okText).toBe('关闭订单');
-    expect(options.onOk()).toBeUndefined();
+    expect(options.description).toBe('如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？');
+    expect(options.confirmText).toBe('关闭订单');
+    await options.onConfirm();
 
     await act(async () => {
       await Promise.resolve();
@@ -289,7 +290,7 @@ describe('OrdersPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.legacyConfirm).not.toHaveBeenCalled();
+    expect(mocks.confirmDialog).not.toHaveBeenCalled();
     expect(mocks.cancelMutateAsync).not.toHaveBeenCalled();
   });
 

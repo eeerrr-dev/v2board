@@ -129,6 +129,13 @@ async function flushPromises() {
   });
 }
 
+function setInputValue(input: HTMLInputElement | null, value: string) {
+  if (!input) throw new Error('Expected input to exist');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 describe('ForgetPage modern markup', () => {
   beforeEach(resetMocks);
 
@@ -212,7 +219,10 @@ describe('ForgetPage behavior', () => {
     mocks.config = { is_recaptcha: true };
     await renderForget();
 
-    container.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'reset@example.com';
+    setInputValue(
+      container.querySelector<HTMLInputElement>('input[name="email"]'),
+      'reset@example.com',
+    );
     const sendButton = Array.from(container.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('发送'),
     )!;
@@ -247,8 +257,8 @@ describe('ForgetPage behavior', () => {
   it('shows the password mismatch toast without resetting', async () => {
     await renderForget();
 
-    container.querySelector<HTMLInputElement>('input[name="password"]')!.value = 'one';
-    container.querySelector<HTMLInputElement>('input[name="confirm_password"]')!.value = 'two';
+    setInputValue(container.querySelector<HTMLInputElement>('input[name="password"]'), 'one');
+    setInputValue(container.querySelector<HTMLInputElement>('input[name="confirm_password"]'), 'two');
 
     await act(async () => {
       container.querySelector('form')!.dispatchEvent(
@@ -267,10 +277,16 @@ describe('ForgetPage behavior', () => {
   it('resets with the exact payload and returns to login after success', async () => {
     await renderForget();
 
-    container.querySelector<HTMLInputElement>('input[name="email"]')!.value = 'reset@example.com';
-    container.querySelector<HTMLInputElement>('input[name="email_code"]')!.value = '123456';
-    container.querySelector<HTMLInputElement>('input[name="password"]')!.value = 'secret';
-    container.querySelector<HTMLInputElement>('input[name="confirm_password"]')!.value = 'secret';
+    setInputValue(
+      container.querySelector<HTMLInputElement>('input[name="email"]'),
+      'reset@example.com',
+    );
+    setInputValue(container.querySelector<HTMLInputElement>('input[name="email_code"]'), '123456');
+    setInputValue(container.querySelector<HTMLInputElement>('input[name="password"]'), 'secret');
+    setInputValue(
+      container.querySelector<HTMLInputElement>('input[name="confirm_password"]'),
+      'secret',
+    );
 
     await act(async () => {
       container.querySelector('form')!.dispatchEvent(
@@ -289,13 +305,15 @@ describe('ForgetPage behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 
-  it('reads submitted values from FormData instead of retired field refs', () => {
-    // Behavior moved into the controller (mirroring login); the FormData-not-refs contract holds there.
-    expect(controllerSource).toContain('new FormData(form)');
-    expect(controllerSource).toContain("readFormValue(formRef.current, 'email')");
-    expect(controllerSource).toContain("readFormValue(formRef.current, 'password')");
-    expect(controllerSource).toContain("readFormValue(formRef.current, 'confirm_password')");
-    expect(controllerSource).toContain("readFormValue(formRef.current, 'email_code')");
+  it('uses react-hook-form and zod instead of retired refs or FormData readers', () => {
+    expect(controllerSource).toContain("from 'react-hook-form'");
+    expect(controllerSource).toContain("from 'zod'");
+    expect(controllerSource).toContain('zodResolver(forgetSchema)');
+    expect(controllerSource).toContain('form.handleSubmit(');
+    expect(controllerSource).toContain("registerInput: form.register");
+    expect(controllerSource).not.toContain('new FormData');
+    expect(controllerSource).not.toContain('readFormValue');
+    expect(controllerSource).not.toContain('formRef');
     expect(controllerSource).not.toContain('emailRef');
     expect(controllerSource).not.toContain('passwordRef');
     expect(controllerSource).not.toContain('confirmPasswordRef');

@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { getLocaleAntdMessages } from '@v2board/i18n';
 import type { TicketLevel } from '@v2board/types';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 import { ExternalLink, Plus, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,11 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
-import {
-  DataTable,
-  TableCell,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable, type DataTableColumn } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
@@ -53,6 +51,23 @@ const LEVELS: { value: TicketLevel; labelKey: string }[] = [
   { value: 2, labelKey: 'ticket.level_high' },
 ];
 
+const ticketLevelSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
+const ticketFormSchema = z.object({
+  subject: z.string().optional(),
+  level: ticketLevelSchema.optional(),
+  message: z.string().optional(),
+});
+
+type TicketFormValues = z.infer<typeof ticketFormSchema>;
+
+function normalizeTicketPayload(values: TicketFormValues): TicketFormValues {
+  return {
+    level: values.level,
+    message: values.message || undefined,
+    subject: values.subject || undefined,
+  };
+}
+
 export default function TicketsPage() {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
@@ -62,34 +77,98 @@ export default function TicketsPage() {
   const save = useSaveTicketMutation();
   const close = useCloseTicketMutation();
   const [open, setOpen] = useState(false);
-  const [subject, setSubject] = useState<string | undefined>();
-  const [level, setLevel] = useState<TicketLevel | undefined>();
-  const [message, setMessage] = useState<string | undefined>();
+  const form = useForm<TicketFormValues>({
+    resolver: zodResolver(ticketFormSchema),
+    defaultValues: { subject: '', level: undefined, message: '' },
+  });
+  const selectedLevel = form.watch('level');
   const tickets = data ?? [];
   const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
-
-  useEffect(
-    () => () => {
-      queryClient.removeQueries({ queryKey: userKeys.tickets });
-      queryClient.removeQueries({ queryKey: ['user', 'ticket'] });
+  const ticketColumns = [
+    {
+      className: 'font-medium text-foreground',
+      headerClassName: 'w-16',
+      header: t('ticket.col_id'),
+      cell: ({ row }) => row.original.id,
     },
-    [queryClient],
-  );
+    {
+      className: 'max-w-[260px] truncate font-medium text-foreground',
+      header: t('ticket.subject'),
+      cell: ({ row }) => row.original.subject,
+    },
+    {
+      className: 'text-muted-foreground',
+      header: t('ticket.level'),
+      cell: ({ row }) => {
+        const levelLabel = LEVELS[row.original.level]?.labelKey;
+        return levelLabel ? t(levelLabel) : '';
+      },
+    },
+    {
+      className: 'text-muted-foreground',
+      header: t('ticket.status'),
+      cell: ({ row }) => (
+        <TicketStatus
+          closed={row.original.status === 1}
+          replied={Boolean(parseInt(String(row.original.reply_status)))}
+        />
+      ),
+    },
+    {
+      className: 'text-muted-foreground',
+      header: t('ticket.created_at_col'),
+      cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
+    },
+    {
+      className: 'text-muted-foreground',
+      header: t('ticket.last_reply_col'),
+      cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.updated_at),
+    },
+    {
+      align: 'right',
+      className: 'text-muted-foreground',
+      header: t('ticket.action'),
+      cell: ({ row }) => (
+        <div className="flex justify-end gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2"
+            data-testid="ticket-view"
+            onClick={() => openTicket(row.original.id)}
+          >
+            <ExternalLink className="size-3.5" />
+            {t('ticket.view')}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={cn('h-8 px-2', row.original.status === 1 && 'text-muted-foreground')}
+            data-testid="ticket-close"
+            onClick={() => void closeTicket(row.original.id)}
+          >
+            <XCircle className="size-3.5" />
+            {t('ticket.close_ticket')}
+          </Button>
+        </div>
+      ),
+    },
+  ] satisfies DataTableColumn<(typeof tickets)[number]>[];
 
   const resetForm = () => {
-    setSubject(undefined);
-    setLevel(undefined);
-    setMessage(undefined);
+    form.reset({ subject: '', level: undefined, message: '' });
   };
 
-  const saveTicket = async () => {
+  const saveTicket = form.handleSubmit(async (values) => {
     try {
-      await save.mutateAsync({ subject, level, message });
+      await save.mutateAsync(normalizeTicketPayload(values));
       setOpen(false);
       resetForm();
       void queryClient.invalidateQueries({ queryKey: userKeys.tickets });
     } catch {}
-  };
+  });
 
   const closeTicket = async (id: number) => {
     try {
@@ -135,71 +214,15 @@ export default function TicketsPage() {
           <CardContent className="p-0">
             <DataTable
               className="min-w-[900px]"
+              columns={ticketColumns}
+              data={tickets}
               data-testid="ticket-table"
               empty={!tickets.length ? emptyDescription : undefined}
               emptyTestId="ticket-empty"
               headerClassName="border-y"
-              headers={[
-                { className: 'w-16', content: t('ticket.col_id') },
-                { content: t('ticket.subject') },
-                { content: t('ticket.level') },
-                { content: t('ticket.status') },
-                { content: t('ticket.created_at_col') },
-                { content: t('ticket.last_reply_col') },
-                { align: 'right', content: t('ticket.action') },
-              ]}
               scrollProps={{ 'data-testid': 'ticket-table-scroll' }}
-            >
-              {tickets.map((ticket, index) => {
-                const levelLabel = LEVELS[ticket.level]?.labelKey;
-                return (
-                  <TableRow data-row-key={index} key={index}>
-                    <TicketCell className="font-medium text-foreground">{ticket.id}</TicketCell>
-                    <TicketCell className="max-w-[260px] truncate font-medium text-foreground">
-                      {ticket.subject}
-                    </TicketCell>
-                    <TicketCell>{levelLabel ? t(levelLabel) : ''}</TicketCell>
-                    <TicketCell>
-                      <TicketStatus
-                        closed={ticket.status === 1}
-                        replied={Boolean(parseInt(String(ticket.reply_status)))}
-                      />
-                    </TicketCell>
-                    <TicketCell>{formatUserLegacyDateMinuteSlash(ticket.created_at)}</TicketCell>
-                    <TicketCell>{formatUserLegacyDateMinuteSlash(ticket.updated_at)}</TicketCell>
-                    <TicketCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 px-2"
-                          data-testid="ticket-view"
-                          onClick={() => openTicket(ticket.id)}
-                        >
-                          <ExternalLink className="size-3.5" />
-                          {t('ticket.view')}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className={cn(
-                            'h-8 px-2',
-                            ticket.status === 1 && 'text-muted-foreground',
-                          )}
-                          data-testid="ticket-close"
-                          onClick={() => void closeTicket(ticket.id)}
-                        >
-                          <XCircle className="size-3.5" />
-                          {t('ticket.close_ticket')}
-                        </Button>
-                      </div>
-                    </TicketCell>
-                  </TableRow>
-                );
-              })}
-            </DataTable>
+              virtualizer={{ enabled: tickets.length > 30 }}
+            />
           </CardContent>
         </Card>
       </PageShell>
@@ -216,15 +239,16 @@ export default function TicketsPage() {
               <Input
                 id="ticket-subject"
                 placeholder={t('ticket.subject_placeholder')}
-                value={subject ?? ''}
-                onChange={(event) => setSubject(event.target.value)}
+                {...form.register('subject')}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="ticket-level">{t('ticket.level_form')}</Label>
               <Select
-                value={level === undefined ? undefined : String(level)}
-                onValueChange={(nextLevel) => setLevel(Number(nextLevel) as TicketLevel)}
+                value={selectedLevel === undefined ? undefined : String(selectedLevel)}
+                onValueChange={(nextLevel) =>
+                  form.setValue('level', Number(nextLevel) as TicketLevel)
+                }
               >
                 <SelectTrigger id="ticket-level" data-testid="ticket-select-trigger">
                   <SelectValue placeholder={t('ticket.level_placeholder')} />
@@ -244,8 +268,7 @@ export default function TicketsPage() {
                 id="ticket-message"
                 rows={5}
                 placeholder={t('ticket.message_placeholder')}
-                value={message ?? ''}
-                onChange={(event) => setMessage(event.target.value)}
+                {...form.register('message')}
               />
             </div>
           </div>
@@ -271,14 +294,4 @@ export default function TicketsPage() {
       </StatusBadge>
     );
   }
-}
-
-function TicketCell({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return <TableCell className={cn('text-muted-foreground', className)}>{children}</TableCell>;
 }

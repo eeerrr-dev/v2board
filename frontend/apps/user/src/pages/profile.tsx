@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 import {
   AlertCircle,
   Bell,
@@ -47,6 +50,29 @@ import {
 } from '@/lib/queries';
 import { toast } from '@/lib/toast';
 
+const passwordSchema = z
+  .object({
+    oldPassword: z.string(),
+    newPassword: z.string(),
+    confirmPassword: z.string(),
+  })
+  .superRefine((values, context) => {
+    if (values.newPassword !== values.confirmPassword) {
+      context.addIssue({
+        code: 'custom',
+        path: ['confirmPassword'],
+        message: 'password_mismatch',
+      });
+    }
+  });
+
+const giftCardSchema = z.object({
+  code: z.string().min(1),
+});
+
+type PasswordFormValues = z.infer<typeof passwordSchema>;
+type GiftCardFormValues = z.infer<typeof giftCardSchema>;
+
 export default function ProfilePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -63,15 +89,16 @@ export default function ProfilePage() {
   const resetSub = useResetSubscribeMutation();
   const unbindTelegram = useUnbindTelegramMutation();
   const saveOrder = useSaveOrderMutation();
-
-  const [giftCard, setGiftCard] = useState('');
-  const [passwordForm, setPasswordForm] = useState({
-    oldPassword: '',
-    newPassword: '',
-    confirmPassword: '',
+  const passwordForm = useForm<PasswordFormValues>({
+    resolver: zodResolver(passwordSchema),
+    defaultValues: { oldPassword: '', newPassword: '', confirmPassword: '' },
   });
+  const giftCardForm = useForm<GiftCardFormValues>({
+    resolver: zodResolver(giftCardSchema),
+    defaultValues: { code: '' },
+  });
+
   const [depositInput, setDepositInput] = useState('');
-  const [depositAmount, setDepositAmount] = useState<number | undefined>(undefined);
   const [redeemTimeoutStuck, setRedeemTimeoutStuck] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [telegramOpen, setTelegramOpen] = useState(false);
@@ -103,29 +130,21 @@ export default function ProfilePage() {
     if (succeeded) void info.refetch();
   };
 
-  const onChangePwd = async () => {
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast.error(t('profile.password_mismatch'));
-      return;
-    }
+  const onChangePwd = passwordForm.handleSubmit(async (values) => {
     try {
       await changePassword.mutateAsync({
-        oldPassword: passwordForm.oldPassword,
-        newPassword: passwordForm.newPassword,
+        oldPassword: values.oldPassword,
+        newPassword: values.newPassword,
       });
       toast.success(t('profile.change_password_success'));
       navigate('/login');
     } catch {}
-  };
+  }, () => toast.error(t('profile.password_mismatch')));
 
-  const onRedeem = async () => {
-    if (giftCard.length === 0) {
-      toast.error(t('profile.redeem_placeholder'));
-      return;
-    }
+  const onRedeem = giftCardForm.handleSubmit(async ({ code }) => {
     setRedeemTimeoutStuck(false);
     try {
-      const result = await redeem.mutateAsync(giftCard);
+      const result = await redeem.mutateAsync(code);
       void info.refetch();
       toast.success(
         t('profile.redeem_success', {
@@ -135,7 +154,7 @@ export default function ProfilePage() {
     } catch (error) {
       if (isLegacyTimeoutError(error)) setRedeemTimeoutStuck(true);
     }
-  };
+  }, () => toast.error(t('profile.redeem_placeholder')));
 
   const onReset = () => {
     setConfirmAction('reset-subscribe');
@@ -180,13 +199,11 @@ export default function ProfilePage() {
   };
 
   const onDeposit = () => {
-    // The legacy page keeps the last typed amount on the page instance and only
-    // destroys the input DOM. Preserve that small behavior quirk.
     void saveOrder
       .mutateAsync({
         plan_id: 0,
         period: 'deposit',
-        deposit_amount: depositAmount,
+        deposit_amount: Number(depositInput) * 100,
       })
       .then((tradeNo) => navigate(`/order/${tradeNo}`))
       .catch(() => {});
@@ -225,6 +242,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
                 <ProfileSwitch
+                  ariaLabel={t('profile.auto_renewal')}
                   checked={data?.auto_renewal}
                   loading={updatingPref.auto_renewal}
                   onChange={(checked) => void togglePref('auto_renewal', checked ? 1 : 0)}
@@ -260,8 +278,7 @@ export default function ProfilePage() {
                   data-testid="profile-giftcard-input"
                   placeholder={t('profile.redeem_placeholder')}
                   autoComplete="one-time-code"
-                  value={giftCard}
-                  onChange={(event) => setGiftCard(event.target.value)}
+                  {...giftCardForm.register('code')}
                 />
               </div>
               <Button
@@ -296,28 +313,19 @@ export default function ProfilePage() {
                   id="profile-old-password"
                   label={t('profile.old_password')}
                   placeholder={t('profile.old_password_placeholder')}
-                  value={passwordForm.oldPassword}
-                  onChange={(value) =>
-                    setPasswordForm((current) => ({ ...current, oldPassword: value }))
-                  }
+                  inputProps={passwordForm.register('oldPassword')}
                 />
                 <ProfileField
                   id="profile-new-password"
                   label={t('profile.new_password')}
                   placeholder={t('profile.new_password_placeholder')}
-                  value={passwordForm.newPassword}
-                  onChange={(value) =>
-                    setPasswordForm((current) => ({ ...current, newPassword: value }))
-                  }
+                  inputProps={passwordForm.register('newPassword')}
                 />
                 <ProfileField
                   id="profile-confirm-password"
                   label={t('profile.new_password')}
                   placeholder={t('profile.new_password_placeholder')}
-                  value={passwordForm.confirmPassword}
-                  onChange={(value) =>
-                    setPasswordForm((current) => ({ ...current, confirmPassword: value }))
-                  }
+                  inputProps={passwordForm.register('confirmPassword')}
                 />
               </div>
               <Button
@@ -467,10 +475,7 @@ export default function ProfilePage() {
         input={depositInput}
         placeholder={depositPlaceholder}
         onClose={closeDeposit}
-        onInputChange={(value) => {
-          setDepositInput(value);
-          setDepositAmount(Number(value) * 100);
-        }}
+        onInputChange={setDepositInput}
         onConfirm={onDeposit}
       />
       <ProfileTelegramBindDialog

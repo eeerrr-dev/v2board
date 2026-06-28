@@ -18,7 +18,7 @@ export default function RegisterPage() {
   const {
     config,
     configLoading,
-    formRef,
+    registerInput,
     submit,
     sendCode,
     isPending,
@@ -39,7 +39,6 @@ export default function RegisterPage() {
       <AuthPanel
         title={t('auth.register_title')}
         description={t('auth.register_description')}
-        formRef={formRef}
         onSubmit={submit}
         footer={
           <>
@@ -59,14 +58,15 @@ export default function RegisterPage() {
                 suffixes={emailSuffixes}
                 value={selectedEmailSuffix}
                 onChange={setEmailSuffix}
+                inputProps={registerInput('email')}
               />
             ) : (
               <FormField id="register-email" label={t('auth.email')}>
                 <Input
                   type="email"
-                  name="email"
                   autoComplete="username"
                   placeholder="m@example.com"
+                  {...registerInput('email')}
                 />
               </FormField>
             )}
@@ -79,14 +79,17 @@ export default function RegisterPage() {
                 disabled={cooldown !== 60 || isSendingCode}
                 loading={isSendingCode}
                 onSendCode={sendCode}
+                inputProps={registerInput('email_code')}
               />
             ) : null}
 
             <AuthPasswordConfirmationFields
               passwordId="register-password"
               passwordLabel={t('auth.password')}
+              passwordInputProps={registerInput('password')}
               confirmId="register-confirm-password"
               confirmLabel={t('auth.confirm_password')}
+              confirmInputProps={registerInput('confirm_password')}
             />
             <FormField
               id="register-invite-code"
@@ -98,10 +101,10 @@ export default function RegisterPage() {
             >
               <Input
                 type="text"
-                name="invite_code"
                 disabled={Boolean(initialInviteCode)}
                 defaultValue={initialInviteCode ?? undefined}
                 autoComplete="off"
+                {...registerInput('invite_code')}
               />
             </FormField>
 

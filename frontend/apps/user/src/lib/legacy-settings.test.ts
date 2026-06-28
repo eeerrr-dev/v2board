@@ -36,6 +36,10 @@ describe('legacy settings bootstrap', () => {
       configurable: true,
       value: undefined,
     });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: undefined,
+    });
   });
 
   it('applies the selected theme from source variables without loading packaged css', () => {
@@ -102,6 +106,23 @@ describe('legacy settings bootstrap', () => {
     await expect(copyText('no clipboard')).resolves.toBe(false);
   });
 
+  it('falls back to execCommand copy when Clipboard API is unavailable', async () => {
+    const execCommand = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    await expect(copyText('fallback text')).resolves.toBe(true);
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('textarea')).toBeNull();
+  });
+
   it('returns false when Clipboard API write fails', async () => {
     const writeText = vi.fn().mockRejectedValue(new Error('blocked'));
     Object.defineProperty(navigator, 'clipboard', {
@@ -112,5 +133,23 @@ describe('legacy settings bootstrap', () => {
     await expect(copyText('blocked text')).resolves.toBe(false);
 
     expect(writeText).toHaveBeenCalledWith('blocked text');
+  });
+
+  it('falls back to execCommand copy when Clipboard API write fails', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('blocked'));
+    const execCommand = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    await expect(copyText('blocked fallback')).resolves.toBe(true);
+
+    expect(writeText).toHaveBeenCalledWith('blocked fallback');
+    expect(execCommand).toHaveBeenCalledWith('copy');
   });
 });

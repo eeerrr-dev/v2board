@@ -1,12 +1,22 @@
-import { useCallback, useEffect, useState, type SyntheticEvent } from 'react';
+import { useCallback, useEffect, useState, type BaseSyntheticEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { ApiError, user } from '@v2board/api-client';
 import { useQueryClient } from '@tanstack/react-query';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm, type UseFormRegister } from 'react-hook-form';
+import { z } from 'zod';
 import { apiClient } from '@/lib/api';
 import { getAuthData, setAuthData } from '@/lib/auth';
 import { i18nGet } from '@/lib/errors';
 import { useLoginMutation, useTokenLoginMutation } from '@/lib/guest';
 import { userQueryOptions } from '@/lib/queries';
+
+const loginSchema = z.object({
+  email: z.string(),
+  password: z.string(),
+});
+
+type LoginFormValues = z.infer<typeof loginSchema>;
 
 function normalizeRedirectTarget(target: string | null): string {
   if (!target) return '/dashboard';
@@ -15,8 +25,8 @@ function normalizeRedirectTarget(target: string | null): string {
 }
 
 export interface LoginController {
-  /** Form submit handler — reads the live submitted values and runs the login mutation. */
-  submit: (event: SyntheticEvent<HTMLFormElement>) => Promise<void>;
+  registerInput: UseFormRegister<LoginFormValues>;
+  submit: (event?: BaseSyntheticEvent) => Promise<void>;
   /** Dismisses the inline error (e.g. once the user edits the form). */
   clearError: () => void;
   isPending: boolean;
@@ -34,19 +44,17 @@ export function useLoginController(): LoginController {
   const { mutateAsync, isPending } = useLoginMutation();
   const { mutateAsync: tokenLogin } = useTokenLoginMutation();
   const [error, setError] = useState<string | null>(null);
+  const form = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: '', password: '' },
+  });
 
   const queryRedirect = params.get('redirect');
   const redirect = normalizeRedirectTarget(queryRedirect);
   const verify = params.get('verify');
 
-  const submit = useCallback(
-    async (event: SyntheticEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      // Uncontrolled form — read the live submitted values, matching the old component which read
-      // straight off the DOM at submit time rather than from controlled state.
-      const form = new FormData(event.currentTarget);
-      const email = String(form.get('email') ?? '');
-      const password = String(form.get('password') ?? '');
+  const login = useCallback(
+    async ({ email, password }: LoginFormValues) => {
       setError(null);
       try {
         const result = await mutateAsync({ email, password });
@@ -67,6 +75,7 @@ export function useLoginController(): LoginController {
     },
     [mutateAsync, navigate, queryClient, redirect],
   );
+  const submit = form.handleSubmit(login);
 
   useEffect(() => {
     let active = true;
@@ -108,5 +117,5 @@ export function useLoginController(): LoginController {
 
   const clearError = useCallback(() => setError(null), []);
 
-  return { submit, clearError, isPending, error };
+  return { registerInput: form.register, submit, clearError, isPending, error };
 }
