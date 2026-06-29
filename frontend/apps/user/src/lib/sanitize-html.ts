@@ -1,14 +1,4 @@
-import createDOMPurify from 'dompurify';
-
-type DOMPurifyInstance = {
-  isSupported?: boolean;
-  sanitize: (html: string, config?: Record<string, unknown>) => string;
-};
-
-type DOMPurifyFactory = {
-  (window: Window): DOMPurifyInstance;
-  sanitize?: DOMPurifyInstance['sanitize'];
-};
+import DOMPurify, { type Config } from 'dompurify';
 
 const LEGACY_HTML_ALLOWED_ATTRS = [
   'align',
@@ -85,23 +75,19 @@ const LEGACY_HTML_ALLOWED_TAGS = [
   'ul',
 ] as const;
 
+// `target`, `rel`, and the data-v2board-* hooks are already granted by ALLOWED_ATTR
+// (combined with ALLOW_DATA_ATTR), so no ADD_ATTR escape hatch is needed.
 const LEGACY_HTML_SANITIZE_CONFIG = {
   ALLOWED_ATTR: [...LEGACY_HTML_ALLOWED_ATTRS],
   ALLOWED_TAGS: [...LEGACY_HTML_ALLOWED_TAGS],
-  ADD_ATTR: [
-    'data-v2board-markdown-action',
-    'data-v2board-markdown-value',
-    'rel',
-    'target',
-  ],
   ADD_DATA_URI_TAGS: ['img'],
   ALLOW_DATA_ATTR: true,
-};
+} satisfies Config;
 
 // The capability probe runs a full extra sanitize pass, so cache the first
 // instance that passes it and reuse it for every later render instead of
 // re-probing on each call.
-let memoizedPurify: DOMPurifyInstance | null = null;
+let memoizedPurify: typeof DOMPurify | null = null;
 
 export function sanitizeLegacyHtml(html: string) {
   const purify = resolveSupportedDOMPurify();
@@ -109,7 +95,7 @@ export function sanitizeLegacyHtml(html: string) {
   return purify.sanitize(html, LEGACY_HTML_SANITIZE_CONFIG);
 }
 
-function resolveSupportedDOMPurify(): DOMPurifyInstance | null {
+function resolveSupportedDOMPurify(): typeof DOMPurify | null {
   if (memoizedPurify) return memoizedPurify;
   const purify = getDOMPurify();
   // A null/unverified result (window undefined at import time, or a DOMPurify
@@ -120,15 +106,15 @@ function resolveSupportedDOMPurify(): DOMPurifyInstance | null {
   return purify;
 }
 
-function getDOMPurify() {
-  const purify = createDOMPurify as unknown as DOMPurifyFactory;
-  if (typeof window !== 'undefined' && typeof purify === 'function') return purify(window);
-  if (typeof purify.sanitize === 'function') return purify as DOMPurifyInstance;
+function getDOMPurify(): typeof DOMPurify | null {
+  // The default export is a DOMPurify instance already bound to the ambient
+  // window at import (and carries .sanitize/.isSupported). Fail closed to null
+  // only when there is no DOM at all.
   if (typeof window === 'undefined') return null;
-  return purify(window);
+  return DOMPurify;
 }
 
-function canSanitizeWithDOMPurify(purify: DOMPurifyInstance | null): purify is DOMPurifyInstance {
+function canSanitizeWithDOMPurify(purify: typeof DOMPurify | null): purify is typeof DOMPurify {
   if (!purify || purify.isSupported === false || typeof purify.sanitize !== 'function') return false;
   const probe = purify.sanitize(
     '<section class="hero"><a href="https://example.com" onclick="alert(1)">Go</a><script>alert(1)</script></section>',

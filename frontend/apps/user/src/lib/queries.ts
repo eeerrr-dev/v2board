@@ -1,5 +1,11 @@
 import { user } from '@v2board/api-client';
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { SubscribeInfo, UserInfo } from '@v2board/types';
 import { formatBytes } from '@v2board/config/format';
@@ -257,14 +263,14 @@ export const useInviteDetails = (current?: number, pageSize?: number) =>
   useQuery({
     ...userQueryOptions.inviteDetails(current, pageSize),
     // Keep the current page visible while the next page request is in flight.
-    placeholderData: (previousData) => previousData,
+    placeholderData: keepPreviousData,
   });
 
 export const useKnowledge = (language: string, keyword?: string) =>
   useQuery({
     ...userQueryOptions.knowledge(language, keyword),
     // Keep the current result list visible while debounced searches resolve.
-    placeholderData: (previousData) => previousData,
+    placeholderData: keepPreviousData,
   });
 
 export const useKnowledgeDetail = (id: number | string | undefined, language: string) =>
