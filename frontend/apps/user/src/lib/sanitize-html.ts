@@ -84,44 +84,22 @@ const LEGACY_HTML_SANITIZE_CONFIG = {
   ALLOW_DATA_ATTR: true,
 } satisfies Config;
 
-// The capability probe runs a full extra sanitize pass, so cache the first
-// instance that passes it and reuse it for every later render instead of
-// re-probing on each call.
-let memoizedPurify: typeof DOMPurify | null = null;
+// DOMPurify's default export is an instance already bound to the ambient window
+// at import time, so there is nothing to verify beyond its own support flag:
+// with a real DOM it sanitizes per ALLOWED_TAGS/ALLOWED_ATTR, and with no DOM
+// (SSR, or import before a window exists) we fail closed to ''. The positive
+// support decision is memoized so later renders skip the re-check; a negative
+// result is never cached, so the check re-runs once a working DOM appears.
+let domPurifySupported = false;
 
 export function sanitizeLegacyHtml(html: string) {
-  const purify = resolveSupportedDOMPurify();
-  if (!purify) return '';
-  return purify.sanitize(html, LEGACY_HTML_SANITIZE_CONFIG);
+  if (!isDOMPurifySupported()) return '';
+  return DOMPurify.sanitize(html, LEGACY_HTML_SANITIZE_CONFIG);
 }
 
-function resolveSupportedDOMPurify(): typeof DOMPurify | null {
-  if (memoizedPurify) return memoizedPurify;
-  const purify = getDOMPurify();
-  // A null/unverified result (window undefined at import time, or a DOMPurify
-  // that fails the fail-closed probe) is intentionally NOT cached, so the check
-  // re-runs once a working DOM/instance becomes available.
-  if (!canSanitizeWithDOMPurify(purify)) return null;
-  memoizedPurify = purify;
-  return purify;
-}
-
-function getDOMPurify(): typeof DOMPurify | null {
-  // The default export is a DOMPurify instance already bound to the ambient
-  // window at import (and carries .sanitize/.isSupported). Fail closed to null
-  // only when there is no DOM at all.
-  if (typeof window === 'undefined') return null;
-  return DOMPurify;
-}
-
-function canSanitizeWithDOMPurify(purify: typeof DOMPurify | null): purify is typeof DOMPurify {
-  if (!purify || purify.isSupported === false || typeof purify.sanitize !== 'function') return false;
-  const probe = purify.sanitize(
-    '<section class="hero"><a href="https://example.com" onclick="alert(1)">Go</a><script>alert(1)</script></section>',
-    LEGACY_HTML_SANITIZE_CONFIG,
-  );
-  return (
-    probe === '<section class="hero"><a href="https://example.com">Go</a></section>' ||
-    probe === '<section class="hero"><a href="https://example.com">Go</a></section>\n'
-  );
+function isDOMPurifySupported(): boolean {
+  if (domPurifySupported) return true;
+  if (typeof window === 'undefined' || DOMPurify.isSupported === false) return false;
+  domPurifySupported = true;
+  return true;
 }

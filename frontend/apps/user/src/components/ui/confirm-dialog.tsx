@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getLocaleAntdMessages } from '@v2board/i18n';
 import {
@@ -37,49 +37,44 @@ let nextId = 1;
 let queue: ConfirmDialogRequest[] = [];
 const listeners = new Set<() => void>();
 
-function emit() {
+function notify() {
   listeners.forEach((listener) => listener());
 }
 
-function currentRequest() {
+// Exposes the queue as an external store the same way lib/auth.ts and
+// lib/dark-mode.ts do, so the provider can read the head request through
+// useSyncExternalStore instead of mirroring it into local state.
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function getSnapshot(): ConfirmDialogRequest | null {
+  // Stable reference between renders: queue[0] only changes when queue is
+  // reassigned (enqueue/close), so useSyncExternalStore never loops.
   return queue[0] ?? null;
 }
 
 export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
   return new Promise((resolve) => {
     queue = [...queue, { id: nextId++, options, resolve }];
-    emit();
+    notify();
   });
 }
 
 export function ConfirmDialogProvider() {
   const { i18n } = useTranslation();
-  const [request, setRequest] = useState<ConfirmDialogRequest | null>(() => currentRequest());
-  const [open, setOpen] = useState(() => Boolean(currentRequest()));
+  const request = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const open = request !== null;
   const [actionLoading, setActionLoading] = useState(false);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const closingRef = useRef(false);
 
   useEffect(() => {
-    const listener = () => {
-      const nextRequest = currentRequest();
-      if (nextRequest) {
-        setRequest(nextRequest);
-        setOpen(true);
-      } else {
-        setOpen(false);
-        setRequest(null);
-      }
-    };
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (request && open) confirmButtonRef.current?.focus();
-  }, [open, request]);
+    if (request) confirmButtonRef.current?.focus();
+  }, [request]);
 
   useEffect(() => {
     setActionLoading(false);
@@ -90,7 +85,7 @@ export function ConfirmDialogProvider() {
     closingRef.current = true;
     request.resolve(value);
     queue = queue.filter((item) => item.id !== request.id);
-    emit();
+    notify();
     queueMicrotask(() => {
       closingRef.current = false;
     });

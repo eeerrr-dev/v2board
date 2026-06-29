@@ -6,12 +6,13 @@ import { sanitizeLegacyHtml } from './sanitize-html';
 const source = readFileSync(`${process.cwd()}/src/lib/sanitize-html.ts`, 'utf8');
 
 describe('legacy HTML sanitization', () => {
-  it('uses DOMPurify directly with a reliability probe instead of maintaining a second sanitizer implementation', () => {
+  it('sanitizes through DOMPurify directly, gated only by its own support flag, with no second sanitizer or output-string probe', () => {
     expect(source).toContain("from 'dompurify'");
-    expect(source).toContain('function canSanitizeWithDOMPurify');
-    expect(source).toContain('purify.sanitize(html, LEGACY_HTML_SANITIZE_CONFIG)');
+    expect(source).toContain('DOMPurify.isSupported');
+    expect(source).toContain('DOMPurify.sanitize(html, LEGACY_HTML_SANITIZE_CONFIG)');
     expect(source).not.toContain('sanitizeLegacyHtmlWithDomApi');
     expect(source).not.toContain('function isDOMPurifyReliable');
+    expect(source).not.toContain('function canSanitizeWithDOMPurify');
   });
 
   it('preserves safe legacy markup when supported and never returns unsafe event/script content', () => {
