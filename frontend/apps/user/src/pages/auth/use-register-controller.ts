@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useState,
   useRef,
@@ -11,16 +10,13 @@ import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormRegister } from 'react-hook-form';
 import { z } from 'zod';
-import {
-  useGuestConfig,
-  useRegisterMutation,
-  useSendEmailVerifyMutation,
-} from '@/lib/guest';
-import { authToast } from '@/lib/auth-toast';
+import { useGuestConfig, useRegisterMutation } from '@/lib/guest';
+import { toast } from '@/lib/toast';
 import { i18nGet } from '@/lib/errors';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { useAuthRecaptcha } from './auth-recaptcha';
-import { useCountdown } from './use-countdown';
+import { refineConfirmPassword } from './refine-confirm-password';
+import { useSendEmailVerifyFlow } from './use-send-email-verify-flow';
 
 const registerSchema = z
   .object({
@@ -30,15 +26,7 @@ const registerSchema = z
     confirm_password: z.string(),
     invite_code: z.string().optional(),
   })
-  .superRefine((values, context) => {
-    if (values.password !== values.confirm_password) {
-      context.addIssue({
-        code: 'custom',
-        path: ['confirm_password'],
-        message: 'password_mismatch',
-      });
-    }
-  });
+  .superRefine(refineConfirmPassword);
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
@@ -65,10 +53,12 @@ export interface RegisterController {
   recaptchaModal: ReactNode;
 }
 
-// Authored V2Board — register behavior controller. Mirrors the login surface's controller/view split:
-// the page is a thin presentation layer, all mutations / recaptcha orchestration / countdown /
-// validation / navigation live here. The request payloads and toast contract remain legacy-compatible,
-// while the countdown is now a normal React side effect with unmount cleanup.
+// Authored V2Board — register behavior controller. The page is a thin presentation layer; all
+// mutations / recaptcha orchestration / validation / navigation live here. The recaptcha-gated
+// send-code + 60-second cooldown is shared with the forget surface via useSendEmailVerifyFlow, so
+// this controller only owns register-specific concerns (TOS gating, whitelist suffix, invite code).
+// The request payloads and toast contract remain legacy-compatible; the post-submit navigation is
+// guarded by a mountedRef so a completion after unmount cannot route a torn-down surface.
 export function useRegisterController(): RegisterController {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -77,7 +67,6 @@ export function useRegisterController(): RegisterController {
   const { data: config } = guestConfig;
   const configLoading = useLegacyFetchLoading(guestConfig.isFetching);
   const { mutateAsync: register, isPending } = useRegisterMutation();
-  const { mutateAsync: sendCodeMutation, isPending: isSendingCode } = useSendEmailVerifyMutation();
   const { run: runRecaptcha, recaptchaModal } = useAuthRecaptcha(
     Boolean(config?.is_recaptcha),
     config?.recaptcha_site_key,
@@ -97,7 +86,6 @@ export function useRegisterController(): RegisterController {
   const mountedRef = useRef(true);
   const [emailSuffix, setEmailSuffix] = useState<string | undefined>(undefined);
   const [tosChecked, setTosChecked] = useState(false);
-  const cooldown = useCountdown(60);
   const emailWhitelistSuffix = config?.email_whitelist_suffix;
   const emailSuffixes = Array.isArray(emailWhitelistSuffix) ? emailWhitelistSuffix : [];
   const hasEmailWhitelist = emailSuffixes.length > 0;
@@ -116,29 +104,15 @@ export function useRegisterController(): RegisterController {
     };
   }, []);
 
-  const startSendEmailVerifyCountdown = useCallback(() => {
-    if (!mountedRef.current) return;
-    cooldown.start();
-  }, [cooldown]);
-
-  const onSendCode = async (recaptchaData?: string) => {
-    try {
-      const sent = await sendCodeMutation({
-        email: getEmail(form.getValues('email')),
-        isforget: 0,
-        ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
-      });
-      if (!sent) return;
-      authToast.success(t('auth.email_code_sent_title'), {
-        description: t('auth.email_code_sent_description'),
-      });
-      startSendEmailVerifyCountdown();
-    } catch {}
-  };
+  const { sendCode, isSendingCode, cooldownActive, cooldownRemaining } = useSendEmailVerifyFlow({
+    isforget: 0,
+    getEmail: () => getEmail(form.getValues('email')),
+    runRecaptcha,
+  });
 
   const onRegister = async (values: RegisterFormValues, recaptchaData?: string) => {
     if (config?.tos_url && !tosChecked) {
-      authToast.error(i18nGet('请求失败'), { description: t('auth.tos_required') });
+      toast.error(i18nGet('请求失败'), { description: t('auth.tos_required') });
       return;
     }
     try {
@@ -156,10 +130,8 @@ export function useRegisterController(): RegisterController {
 
   const submit = form.handleSubmit(
     (values) => runRecaptcha((recaptchaData) => onRegister(values, recaptchaData)),
-    () => authToast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') }),
+    () => toast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') }),
   );
-
-  const sendCode = () => runRecaptcha(onSendCode);
 
   // Read the proxied error here so the controller re-renders when the confirm-password
   // superRefine toggles; the inline field error mirrors the existing mismatch toast.
@@ -174,8 +146,8 @@ export function useRegisterController(): RegisterController {
     passwordMismatch,
     isPending,
     isSendingCode,
-    cooldownActive: cooldown.isActive,
-    cooldownRemaining: cooldown.remaining,
+    cooldownActive,
+    cooldownRemaining,
     hasEmailWhitelist,
     emailSuffixes,
     selectedEmailSuffix,

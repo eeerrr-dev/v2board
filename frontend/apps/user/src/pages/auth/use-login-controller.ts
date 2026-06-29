@@ -20,8 +20,16 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 function normalizeRedirectTarget(target: string | null): string {
   if (!target) return '/dashboard';
-  if (target.startsWith('//')) return '/dashboard';
-  return target.startsWith('/') ? target : `/${target}`;
+  // Browsers strip tab/newline characters and resolve backslashes as forward
+  // slashes when parsing a URL, so "/\\evil.example" or "/\tevil" would slip past
+  // a literal "//" guard and resolve cross-origin. Normalize the same way before
+  // the protocol-relative check; bare relative targets keep their slash repair.
+  const normalized = target
+    .replace(/[\t\n\r]/g, '')
+    .trim()
+    .replace(/\\/g, '/');
+  if (normalized.startsWith('//')) return '/dashboard';
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
 }
 
 export interface LoginController {

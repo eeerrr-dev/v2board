@@ -12,7 +12,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { PasswordField } from './password-field';
 
 type AuthInputProps = ComponentPropsWithRef<typeof Input>;
 
@@ -24,6 +23,7 @@ export function AuthLoadingState() {
   return (
     <div className="flex min-h-64 items-center justify-center" role="status">
       <Spinner className="size-5 text-muted-foreground" />
+      <span className="sr-only">Loading...</span>
     </div>
   );
 }
@@ -40,6 +40,8 @@ interface AuthEmailWithSuffixFieldProps {
   id: string;
   inputProps?: AuthInputProps;
   label: ReactNode;
+  /** Always-present accessible name for the domain select (distinct from the email label). */
+  selectLabel: string;
   suffixes: string[];
   value: string | undefined;
   onChange: (value: string) => void;
@@ -49,6 +51,7 @@ export function AuthEmailWithSuffixField({
   id,
   inputProps,
   label,
+  selectLabel,
   suffixes,
   value,
   onChange,
@@ -70,7 +73,7 @@ export function AuthEmailWithSuffixField({
           onValueChange={onChange}
         >
           <SelectTrigger
-            aria-label={typeof label === 'string' ? label : undefined}
+            aria-label={selectLabel}
             className="max-w-40"
           >
             <SelectValue>{value ? `@${value}` : undefined}</SelectValue>
@@ -93,6 +96,8 @@ interface AuthEmailCodeFieldProps {
   inputProps?: AuthInputProps;
   label: ReactNode;
   buttonLabel: ReactNode;
+  /** Stable accessible name while counting down, so the button is not announced as a bare number. */
+  buttonAriaLabel?: string;
   disabled?: boolean;
   loading?: boolean;
   onSendCode: () => void;
@@ -103,6 +108,7 @@ export function AuthEmailCodeField({
   inputProps,
   label,
   buttonLabel,
+  buttonAriaLabel,
   disabled,
   loading,
   onSendCode,
@@ -115,6 +121,7 @@ export function AuthEmailCodeField({
       <Button
         type="button"
         size="lg"
+        aria-label={buttonAriaLabel}
         disabled={disabled}
         loading={loading}
         onClick={onSendCode}
@@ -148,10 +155,10 @@ export function AuthPasswordConfirmationFields({
   return (
     <>
       <FormField id={passwordId} label={passwordLabel}>
-        <PasswordField autoComplete="new-password" {...passwordInputProps} />
+        <Input type="password" autoComplete="new-password" {...passwordInputProps} />
       </FormField>
       <FormField id={confirmId} label={confirmLabel} error={confirmError}>
-        <PasswordField autoComplete="new-password" {...confirmInputProps} />
+        <Input type="password" autoComplete="new-password" {...confirmInputProps} />
       </FormField>
     </>
   );

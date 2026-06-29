@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 
 export function getSafeTosHref(rawUrl: string): string | null {
-  const url = rawUrl.trim();
-  if (!url || url.startsWith('//')) return null;
+  const url = rawUrl.trim().replace(/[\t\n\r]/g, '');
+  if (!url) return null;
 
   if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(url)) {
     try {
@@ -14,7 +14,10 @@ export function getSafeTosHref(rawUrl: string): string | null {
     }
   }
 
-  return url;
+  // Relative href — browsers resolve backslashes to forward slashes, so normalize
+  // before rejecting protocol-relative values that would otherwise resolve cross-origin.
+  const normalized = url.replace(/\\/g, '/');
+  return normalized.startsWith('//') ? null : normalized;
 }
 
 function renderTosSentence(template: string, url: string): ReactNode {

@@ -57,6 +57,7 @@ export default function RegisterPage() {
               <AuthEmailWithSuffixField
                 id="register-email"
                 label={t('auth.email')}
+                selectLabel={t('auth.email_domain')}
                 suffixes={emailSuffixes}
                 value={selectedEmailSuffix}
                 onChange={setEmailSuffix}
@@ -78,6 +79,9 @@ export default function RegisterPage() {
                 id="register-email-code"
                 label={t('auth.email_code')}
                 buttonLabel={cooldownActive ? cooldownRemaining : t('auth.send_code')}
+                buttonAriaLabel={
+                  cooldownActive ? t('auth.code_sent', { seconds: cooldownRemaining }) : undefined
+                }
                 disabled={cooldownActive || isSendingCode}
                 loading={isSendingCode}
                 onSendCode={sendCode}

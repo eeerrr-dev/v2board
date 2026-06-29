@@ -39,47 +39,70 @@ function loadRecaptcha() {
   if (window.grecaptcha?.render) return Promise.resolve(window.grecaptcha);
   if (recaptchaPromise) return recaptchaPromise;
 
-  recaptchaPromise = new Promise((resolve, reject) => {
+  const promise = new Promise<RecaptchaApi>((resolve, reject) => {
+    const fail = (script: HTMLScriptElement | null, message: string) => {
+      // Drop the failed <script> so a later attempt installs a fresh one instead of
+      // re-attaching to a tag that already errored (and will never fire `load`).
+      script?.remove();
+      delete window.onloadcallback;
+      reject(new Error(message));
+    };
     const existing = document.querySelector<HTMLScriptElement>(
       `script[src="${RECAPTCHA_SCRIPT_URL}"]`,
     );
     if (existing) {
       existing.addEventListener('load', () => {
         if (window.grecaptcha?.render) resolve(window.grecaptcha);
-        else reject(new Error('reCAPTCHA is unavailable'));
+        else fail(existing, 'reCAPTCHA is unavailable');
       });
-      existing.addEventListener('error', () => reject(new Error('reCAPTCHA failed to load')));
+      existing.addEventListener('error', () => fail(existing, 'reCAPTCHA failed to load'));
       return;
     }
 
+    const script = document.createElement('script');
     const resolveRecaptcha = () => {
       if (window.grecaptcha?.render) {
         delete window.onloadcallback;
         resolve(window.grecaptcha);
       } else {
-        reject(new Error('reCAPTCHA is unavailable'));
+        fail(script, 'reCAPTCHA is unavailable');
       }
     };
-    const script = document.createElement('script');
     window.onloadcallback = resolveRecaptcha;
     script.src = RECAPTCHA_SCRIPT_URL;
     script.async = true;
-    script.onerror = () => reject(new Error('reCAPTCHA failed to load'));
+    script.onerror = () => fail(script, 'reCAPTCHA failed to load');
     document.body.appendChild(script);
+  }).catch((error: unknown) => {
+    // A failed load must not poison the module singleton for the tab's lifetime —
+    // release it so the next gated action retries the load instead of reusing the
+    // cached rejection (which left the dialog blank with no recovery path).
+    recaptchaPromise = null;
+    throw error;
   });
 
-  return recaptchaPromise;
+  recaptchaPromise = promise;
+  return promise;
 }
 
 export function useAuthRecaptcha(enabled: boolean, siteKey?: string | null) {
   const [open, setOpen] = useState(false);
   const [widgetKey, setWidgetKey] = useState(0);
   const actionRef = useRef<ProtectedAction | null>(null);
+  const timeoutRef = useRef<number | null>(null);
+
+  const clearPendingToken = useCallback(() => {
+    if (timeoutRef.current !== null) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
 
   const cancel = useCallback(() => {
+    clearPendingToken();
     setOpen(false);
     actionRef.current = null;
-  }, []);
+  }, [clearPendingToken]);
 
   const run = useCallback(
     (action: ProtectedAction) => {
@@ -94,14 +117,24 @@ export function useAuthRecaptcha(enabled: boolean, siteKey?: string | null) {
     [enabled],
   );
 
-  const handleToken = useCallback((token: string | null) => {
-    window.setTimeout(() => {
-      const action = actionRef.current;
-      setOpen(false);
-      actionRef.current = null;
-      if (action) void action(token ?? undefined);
-    }, 500);
-  }, []);
+  const handleToken = useCallback(
+    (token: string | null) => {
+      // Keep the legacy 500ms hold so the solved badge shows before the dialog
+      // closes, but make it cancelable: an unmount/cancel mid-hold must not fire a
+      // stale mutation against a torn-down surface.
+      clearPendingToken();
+      timeoutRef.current = window.setTimeout(() => {
+        timeoutRef.current = null;
+        const action = actionRef.current;
+        setOpen(false);
+        actionRef.current = null;
+        if (action) void action(token ?? undefined);
+      }, 500);
+    },
+    [clearPendingToken],
+  );
+
+  useEffect(() => clearPendingToken, [clearPendingToken]);
 
   const recaptchaModal = (
     <Dialog

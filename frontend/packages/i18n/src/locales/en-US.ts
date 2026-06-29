@@ -92,6 +92,7 @@ const enUS: Translations = {
     reset_description: 'Verify your email and choose a new password.',
     email: 'Email',
     email_placeholder: 'Enter your email',
+    email_domain: 'Email domain',
     password: 'Password',
     password_placeholder: 'Enter your password',
     show_password: 'Show password',

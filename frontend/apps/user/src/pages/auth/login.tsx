@@ -12,7 +12,6 @@ import {
   AuthFooterLink,
   AuthPanel,
 } from './auth-panel';
-import { PasswordField } from './password-field';
 import { useLoginController } from './use-login-controller';
 
 export default function LoginPage() {
@@ -55,8 +54,9 @@ export default function LoginPage() {
               {t('auth.forget_password')}
             </AuthAuxiliaryLink>
           </div>
-          <PasswordField
+          <Input
             id="login-password"
+            type="password"
             autoComplete="current-password"
             invalid={!!error}
             aria-describedby={error ? 'login-error' : undefined}

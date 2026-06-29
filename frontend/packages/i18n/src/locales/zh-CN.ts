@@ -90,6 +90,7 @@ const zhCN = {
     reset_description: '验证邮箱并设置新密码',
     email: '邮箱',
     email_placeholder: '请输入邮箱',
+    email_domain: '邮箱后缀',
     password: '密码',
     password_placeholder: '请输入密码',
     show_password: '显示密码',

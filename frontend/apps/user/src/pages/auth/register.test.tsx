@@ -15,6 +15,10 @@ const countdownSource = readFileSync(
   `${process.cwd()}/src/pages/auth/use-countdown.ts`,
   'utf8',
 );
+const flowSource = readFileSync(
+  `${process.cwd()}/src/pages/auth/use-send-email-verify-flow.ts`,
+  'utf8',
+);
 
 const mocks = vi.hoisted(() => ({
   config: undefined as Record<string, unknown> | undefined,
@@ -27,7 +31,7 @@ const mocks = vi.hoisted(() => ({
     'auth.email_code': '邮箱验证码',
     'auth.email_code_sent_description': '如果没有收到验证码请检查垃圾箱。',
     'auth.email_code_sent_title': '发送成功',
-    'auth.hide_password': '隐藏密码',
+    'auth.email_domain': '邮箱后缀',
     'auth.invite_code': '邀请码',
     'auth.invite_code_optional': '邀请码(选填)',
     'auth.password': '密码',
@@ -37,7 +41,6 @@ const mocks = vi.hoisted(() => ({
     'auth.register_title': '创建账户',
     'auth.return_to_login': '返回登录',
     'auth.send_code': '发送',
-    'auth.show_password': '显示密码',
     'auth.sign_in': '登录',
     'auth.submit_register': '注册',
     'auth.tos_html': '我已阅读并同意 <a target="_blank" href="{url}">服务条款</a>',
@@ -91,8 +94,8 @@ vi.mock('@/lib/legacy-settings', () => ({
   getLegacyTitle: () => mocks.settings.title,
 }));
 
-vi.mock('@/lib/auth-toast', () => ({
-  authToast: {
+vi.mock('@/lib/toast', () => ({
+  toast: {
     error: mocks.toastError,
     success: mocks.toastSuccess,
   },
@@ -199,8 +202,8 @@ describe('RegisterPage modern markup', () => {
     expect(html).not.toContain('placeholder="请输入密码"');
     expect(source).toContain("from './auth-panel'");
     expect(source).toContain("from './auth-tos-field'");
-    // The behavior controller owns the modern auth-toast; the view stays free of legacy toast/menu.
-    expect(controllerSource).toContain("lib/auth-toast");
+    // The behavior controller owns the modern toast; the view stays free of legacy toast/menu.
+    expect(controllerSource).toContain("lib/toast");
     expect(controllerSource).toContain("from './auth-recaptcha'");
     expect(controllerSource).not.toContain('useLegacyRecaptcha');
     expect(source).not.toContain("components/layout/auth-language-menu");
@@ -399,6 +402,59 @@ describe('RegisterPage behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 
+  it('registers with a non-default selected email suffix', async () => {
+    mocks.config = {
+      email_whitelist_suffix: ['example.com', 'mail.test'],
+      is_email_verify: false,
+      is_invite_force: false,
+      is_recaptcha: true,
+      tos_url: undefined,
+    };
+
+    await renderRegister();
+
+    // Open the domain select and choose the second (non-default) suffix.
+    const trigger = container.querySelector<HTMLElement>('[role="combobox"]')!;
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+      trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const option = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    ).find((item) => item.textContent?.includes('mail.test'))!;
+    await act(async () => {
+      option.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+      option.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0 }));
+      option.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    setInputValue(container.querySelector<HTMLInputElement>('input[name="email"]'), 'new-user');
+    setInputValue(container.querySelector<HTMLInputElement>('input[name="password"]'), 'secret');
+    setInputValue(
+      container.querySelector<HTMLInputElement>('input[name="confirm_password"]'),
+      'secret',
+    );
+
+    await act(async () => {
+      container.querySelector('form')!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(mocks.registerMutateAsync).toHaveBeenCalledWith({
+      email: 'new-user@mail.test',
+      email_code: '',
+      invite_code: '',
+      password: 'secret',
+      recaptcha_data: 'recaptcha-token',
+    });
+  });
+
   it('treats an empty email whitelist as disabled and submits the raw email', async () => {
     mocks.config = {
       email_whitelist_suffix: [],
@@ -452,15 +508,19 @@ describe('RegisterPage behavior', () => {
     expect(controllerSource).not.toContain('confirmPasswordRef');
   });
 
-  it('runs the countdown as a cleanup-aware React effect', () => {
+  it('delegates the send-code countdown to the shared flow hook with cleanup', () => {
+    // The controller keeps only its own mount guard for post-submit navigation…
     expect(controllerSource).toContain('const mountedRef = useRef(true);');
-    expect(controllerSource).toContain('if (!mountedRef.current) return;');
     expect(controllerSource).toContain("if (mountedRef.current) navigate('/login');");
     expect(controllerSource).toContain('useEffect(() => {');
-    // The cooldown now lives in the shared useCountdown hook, which owns the timer cleanup.
-    expect(controllerSource).toContain('const cooldown = useCountdown(60);');
-    expect(countdownSource).toContain('return () => window.clearTimeout(timer);');
-    expect(controllerSource).toContain('const startSendEmailVerifyCountdown = useCallback(() => {');
+    // …and delegates the recaptcha-gated send + 60s cooldown to one shared hook.
+    expect(controllerSource).toContain('useSendEmailVerifyFlow(');
+    expect(controllerSource).not.toContain('useCountdown');
+    expect(controllerSource).not.toContain('startSendEmailVerifyCountdown');
     expect(controllerSource).not.toContain('cooldownRef');
+    // The shared hook owns the countdown, which owns its own timer cleanup.
+    expect(flowSource).toContain('const cooldown = useCountdown(60);');
+    expect(flowSource).toContain('cooldown.start()');
+    expect(countdownSource).toContain('return () => window.clearTimeout(timer);');
   });
 });

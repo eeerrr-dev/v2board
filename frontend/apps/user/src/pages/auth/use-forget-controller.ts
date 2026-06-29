@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useRef,
   type BaseSyntheticEvent,
@@ -10,12 +9,13 @@ import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormRegister } from 'react-hook-form';
 import { z } from 'zod';
-import { useForgetMutation, useGuestConfig, useSendEmailVerifyMutation } from '@/lib/guest';
-import { authToast } from '@/lib/auth-toast';
+import { useForgetMutation, useGuestConfig } from '@/lib/guest';
+import { toast } from '@/lib/toast';
 import { i18nGet } from '@/lib/errors';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { useAuthRecaptcha } from './auth-recaptcha';
-import { useCountdown } from './use-countdown';
+import { refineConfirmPassword } from './refine-confirm-password';
+import { useSendEmailVerifyFlow } from './use-send-email-verify-flow';
 
 const forgetSchema = z
   .object({
@@ -24,15 +24,7 @@ const forgetSchema = z
     password: z.string(),
     confirm_password: z.string(),
   })
-  .superRefine((values, context) => {
-    if (values.password !== values.confirm_password) {
-      context.addIssue({
-        code: 'custom',
-        path: ['confirm_password'],
-        message: 'password_mismatch',
-      });
-    }
-  });
+  .superRefine(refineConfirmPassword);
 
 type ForgetFormValues = z.infer<typeof forgetSchema>;
 
@@ -51,12 +43,11 @@ export interface ForgetController {
   recaptchaModal: ReactNode;
 }
 
-// Authored V2Board — forget-password behavior controller. Mirrors the login/register controller split
-// so all three auth surfaces share one architecture: the page is a thin view, mutations / recaptcha /
-// countdown / validation / navigation live here. Aligned with register on two points the forget page
-// previously diverged on: validation errors route through i18nGet/t (no raw Chinese literals), and a
-// guest-config loading guard gates the form so recaptcha is never treated as disabled mid-fetch. The
-// payload contract is unchanged; the countdown is now a normal React side effect with unmount cleanup.
+// Authored V2Board — forget-password behavior controller. Mirrors the register controller's split:
+// the page is a thin view; mutations / recaptcha / validation / navigation live here, and the
+// recaptcha-gated send-code + 60-second cooldown is shared with register via useSendEmailVerifyFlow.
+// The payload contract is unchanged; the post-submit navigation is guarded by a mountedRef so a
+// completion after unmount cannot route a torn-down surface.
 export function useForgetController(): ForgetController {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -64,7 +55,6 @@ export function useForgetController(): ForgetController {
   const { data: config } = guestConfig;
   const configLoading = useLegacyFetchLoading(guestConfig.isFetching);
   const { mutateAsync: forget, isPending } = useForgetMutation();
-  const { mutateAsync: sendCodeMutation, isPending: isSendingCode } = useSendEmailVerifyMutation();
   const { run: runRecaptcha, recaptchaModal } = useAuthRecaptcha(
     Boolean(config?.is_recaptcha),
     config?.recaptcha_site_key,
@@ -80,7 +70,6 @@ export function useForgetController(): ForgetController {
   });
 
   const mountedRef = useRef(true);
-  const cooldown = useCountdown(60);
 
   useEffect(() => {
     return () => {
@@ -88,25 +77,11 @@ export function useForgetController(): ForgetController {
     };
   }, []);
 
-  const startSendEmailVerifyCountdown = useCallback(() => {
-    if (!mountedRef.current) return;
-    cooldown.start();
-  }, [cooldown]);
-
-  const onSendCode = async (recaptchaData?: string) => {
-    try {
-      const sent = await sendCodeMutation({
-        email: form.getValues('email'),
-        isforget: 1,
-        ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
-      });
-      if (!sent) return;
-      authToast.success(t('auth.email_code_sent_title'), {
-        description: t('auth.email_code_sent_description'),
-      });
-      startSendEmailVerifyCountdown();
-    } catch {}
-  };
+  const { sendCode, isSendingCode, cooldownActive, cooldownRemaining } = useSendEmailVerifyFlow({
+    isforget: 1,
+    getEmail: () => form.getValues('email'),
+    runRecaptcha,
+  });
 
   const onForget = async (values: ForgetFormValues) => {
     try {
@@ -121,10 +96,8 @@ export function useForgetController(): ForgetController {
 
   const submit = form.handleSubmit(
     onForget,
-    () => authToast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') }),
+    () => toast.error(i18nGet('请求失败'), { description: t('auth.password_mismatch') }),
   );
-
-  const sendCode = () => runRecaptcha(onSendCode);
 
   // Read the proxied error here so the controller re-renders when the confirm-password
   // superRefine toggles; the inline field error mirrors the existing mismatch toast.
@@ -138,8 +111,8 @@ export function useForgetController(): ForgetController {
     passwordMismatch,
     isPending,
     isSendingCode,
-    cooldownActive: cooldown.isActive,
-    cooldownRemaining: cooldown.remaining,
+    cooldownActive,
+    cooldownRemaining,
     recaptchaModal,
   };
 }

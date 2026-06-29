@@ -51,6 +51,9 @@ export default function ForgetPage() {
               id="forget-email-code"
               label={t('auth.email_code')}
               buttonLabel={cooldownActive ? cooldownRemaining : t('auth.send_code')}
+              buttonAriaLabel={
+                cooldownActive ? t('auth.code_sent', { seconds: cooldownRemaining }) : undefined
+              }
               disabled={cooldownActive || isSendingCode}
               loading={isSendingCode}
               onSendCode={sendCode}

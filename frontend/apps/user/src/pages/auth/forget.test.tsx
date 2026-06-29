@@ -14,6 +14,10 @@ const countdownSource = readFileSync(
   `${process.cwd()}/src/pages/auth/use-countdown.ts`,
   'utf8',
 );
+const flowSource = readFileSync(
+  `${process.cwd()}/src/pages/auth/use-send-email-verify-flow.ts`,
+  'utf8',
+);
 
 const mocks = vi.hoisted(() => ({
   config: undefined as Record<string, unknown> | undefined,
@@ -28,14 +32,12 @@ const mocks = vi.hoisted(() => ({
     'auth.email_code_sent_description': '如果没有收到验证码请检查垃圾箱。',
     'auth.email_code_sent_title': '发送成功',
     'auth.forget_password': '忘记密码？',
-    'auth.hide_password': '隐藏密码',
     'auth.password': '密码',
     'auth.password_mismatch': '两次密码输入不同',
     'auth.reset_description': '验证邮箱并设置新密码',
     'auth.reset_title': '重置密码',
     'auth.return_to_login': '返回登录',
     'auth.send_code': '发送',
-    'auth.show_password': '显示密码',
     'auth.submit_reset': '重置密码',
   } as Record<string, string>,
   navigate: vi.fn(),
@@ -87,8 +89,8 @@ vi.mock('@/lib/legacy-settings', () => ({
   getLegacyTitle: () => mocks.settings.title,
 }));
 
-vi.mock('@/lib/auth-toast', () => ({
-  authToast: {
+vi.mock('@/lib/toast', () => ({
+  toast: {
     error: mocks.toastError,
     success: mocks.toastSuccess,
   },
@@ -168,8 +170,8 @@ describe('ForgetPage modern markup', () => {
     expect(html).toContain('placeholder="m@example.com"');
     expect(html).not.toContain('placeholder="请输入密码"');
     expect(source).toContain("from './auth-panel'");
-    // The behavior controller owns the modern auth-toast; the view stays free of legacy toast/menu.
-    expect(controllerSource).toContain("lib/auth-toast");
+    // The behavior controller owns the modern toast; the view stays free of legacy toast/menu.
+    expect(controllerSource).toContain("lib/toast");
     expect(controllerSource).toContain("from './auth-recaptcha'");
     expect(controllerSource).not.toContain('useLegacyRecaptcha');
     expect(source).not.toContain("components/layout/auth-language-menu");
@@ -322,15 +324,19 @@ describe('ForgetPage behavior', () => {
     expect(controllerSource).not.toContain('emailCodeRef');
   });
 
-  it('runs the countdown as a cleanup-aware React effect', () => {
+  it('delegates the send-code countdown to the shared flow hook with cleanup', () => {
+    // The controller keeps only its own mount guard for post-submit navigation…
     expect(controllerSource).toContain('const mountedRef = useRef(true);');
-    expect(controllerSource).toContain('if (!mountedRef.current) return;');
     expect(controllerSource).toContain("if (mountedRef.current) navigate('/login');");
     expect(controllerSource).toContain('useEffect(() => {');
-    // The cooldown now lives in the shared useCountdown hook, which owns the timer cleanup.
-    expect(controllerSource).toContain('const cooldown = useCountdown(60);');
-    expect(countdownSource).toContain('return () => window.clearTimeout(timer);');
-    expect(controllerSource).toContain('const startSendEmailVerifyCountdown = useCallback(() => {');
+    // …and delegates the recaptcha-gated send + 60s cooldown to one shared hook.
+    expect(controllerSource).toContain('useSendEmailVerifyFlow(');
+    expect(controllerSource).not.toContain('useCountdown');
+    expect(controllerSource).not.toContain('startSendEmailVerifyCountdown');
     expect(controllerSource).not.toContain('cooldownRef');
+    // The shared hook owns the countdown, which owns its own timer cleanup.
+    expect(flowSource).toContain('const cooldown = useCountdown(60);');
+    expect(flowSource).toContain('cooldown.start()');
+    expect(countdownSource).toContain('return () => window.clearTimeout(timer);');
   });
 });

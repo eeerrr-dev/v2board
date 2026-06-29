@@ -31,12 +31,10 @@ const mocks = vi.hoisted(() => ({
   labels: {
     'auth.email': '邮箱',
     'auth.forget_password': '忘记密码？',
-    'auth.hide_password': '隐藏密码',
     'auth.login_description': '输入邮箱和密码继续',
     'auth.login_title': '欢迎回来',
     'auth.no_account': '还没有账号？',
     'auth.password': '密码',
-    'auth.show_password': '显示密码',
     'auth.sign_up': '注册',
     'auth.submit_login': '登录',
   } as Record<string, string>,
@@ -311,6 +309,35 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(mocks.navigate).not.toHaveBeenCalledWith('//evil.example/path');
   });
 
+  it('falls back to dashboard for backslash and tab protocol-relative bypasses', async () => {
+    // Browsers normalize these to "//evil.example", so a literal "//" guard alone
+    // would let them through to navigate() and resolve cross-origin.
+    for (const evil of ['/\\evil.example/path', '/\u0009/evil.example']) {
+      mocks.navigate.mockClear();
+      mocks.params = new URLSearchParams();
+      mocks.params.set('redirect', evil);
+      await act(async () => {
+        root.render(<LoginPage />);
+        await Promise.resolve();
+      });
+
+      const [email, password] = Array.from(container.querySelectorAll('input'));
+      setInputValue(email, 'user@example.com');
+      setInputValue(password, 'secret');
+
+      await act(async () => {
+        container
+          .querySelector('form')!
+          .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        await Promise.resolve();
+      });
+      await flushPromises();
+
+      expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
+      expect(mocks.navigate).not.toHaveBeenCalledWith(evil);
+    }
+  });
+
   it('marks both fields invalid and ties them to the single alert when login fails', async () => {
     mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(422, '邮箱或密码错误'));
     await renderLogin();
@@ -337,6 +364,56 @@ describe('LoginPage bundled-theme behavior', () => {
       expect(input.getAttribute('aria-describedby')).toBe('login-error');
     }
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('suppresses the inline error for transport failures (status 0)', async () => {
+    mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(0, 'Network Error'));
+    await renderLogin();
+
+    const [email, password] = Array.from(container.querySelectorAll('input'));
+    setInputValue(email, 'user@example.com');
+    setInputValue(password, 'secret');
+    await act(async () => {
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    // Transport failures surfaced nothing in the oracle: no inline alert, no auth, no navigation.
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(mocks.setAuthData).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('clears the inline error once the user edits a field', async () => {
+    mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(422, '邮箱或密码错误'));
+    await renderLogin();
+
+    const [email, password] = Array.from(container.querySelectorAll('input'));
+    setInputValue(email, 'user@example.com');
+    setInputValue(password, 'wrong');
+    await act(async () => {
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+
+    // The form-level onInput is wired to clearError, so editing any field dismisses the alert.
+    await act(async () => {
+      setInputValue(password, 'wrong-again');
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    for (const input of Array.from(container.querySelectorAll('input'))) {
+      expect(input.getAttribute('aria-invalid')).not.toBe('true');
+    }
   });
 
   it('keeps the password field masked without rendering an icon reveal button', async () => {
