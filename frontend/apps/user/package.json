@@ -48,7 +48,6 @@
     "react-router": "catalog:",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
-    "tw-animate-css": "^1.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -57,7 +56,6 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
-    "autoprefixer": "^10.5.2",
     "happy-dom": "catalog:",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.15",

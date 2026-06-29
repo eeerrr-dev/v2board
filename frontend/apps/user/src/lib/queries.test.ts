@@ -13,6 +13,7 @@ const invalidateQueries = vi.hoisted(() => vi.fn());
 
 vi.mock('@tanstack/react-query', () => ({
   queryOptions: (options: unknown) => options,
+  keepPreviousData: (previous: unknown) => previous,
   useMutation,
   useQuery,
   useQueryClient: () => ({
