@@ -1,8 +1,5 @@
 # AGENTS.md
 
-Project instructions for agents working in this repository. Keep changes
-verified, intentional, and aligned with the current frontend migration.
-
 ## Local Workflow
 
 Use Docker for local setup, dependencies, builds, and tests. Do not run
@@ -30,7 +27,8 @@ or deploy output inside the repository.
 - Use `make legacy-oracle-up` / `make legacy-oracle-down` only for a persistent
   manual oracle on `http://localhost:8001`.
 - Use `make clean-host` to preview ignored host cleanup. Use
-  `make clean-host-apply` only intentionally.
+  `make clean-host-apply` only after reviewing the `make clean-host` preview and
+  confirming every listed path is disposable host output.
 
 If a direct package/test command is needed, run it inside the appropriate Docker
 service or one-off frontend container. Keep generated dependency, cache, build,
@@ -67,13 +65,45 @@ The project is now a surface-by-surface frontend migration: behavior stays
 strict, appearance may change decisively when a surface is explicitly
 redesigned.
 
-- Behavioral/contract parity is permanent. API calls and payloads, auth and
-  redirects, routing, persistence, i18n behavior, and edge cases must stay green
-  through `make behavior-parity` or a focused interaction parity shard.
-- Visual/pixel parity is retired only for redesigned surfaces. Mark redesigned
-  visual scenarios with `visualRetired: true` in
-  `frontend/scripts/visual-parity.mjs`, and keep a behavior/interaction scenario
-  for the same route.
+- Behavioral/contract parity is permanent, but the anchor is the shared backend
+  and external integrations, not the frozen frontend. The legacy oracle only
+  witnesses what those already expect; matching it is a proxy for matching the
+  real contract, never an end in itself. Two tiers follow:
+  - Tier 1 — non-negotiable (permanent): true external contracts — API endpoints
+    and request payloads, auth/session persistence keys, hash route paths (the
+    backend emails links into them, e.g. `?verify=`), and payloads sent to
+    external integrations (e.g. the Stripe card token and Crisp/Tawk session
+    data) — where changing one breaks a real external party; plus the security-
+    and session-critical behavioral OUTCOMES (auth redirects, i18n/language
+    persistence) and any edge case that maps to a backend or data contract (e.g.
+    which payload is sent for an empty coupon, sold-out handling), pinned as
+    behavior, not as bytes. All of this must stay green through
+    `make behavior-parity` or a focused interaction parity shard.
+  - Tier 2 — conservatively pinned, relaxable per redesigned surface: things no
+    external party consumes — display-only formatting (date/number rendering, or
+    exact rendered-HTML bytes such as a trailing newline or attribute order) and
+    pure-presentation edge-case choices (e.g. whether a transport/network error
+    surfaces a toast, spinner timing). These are pinned by tests as a low-risk
+    default, not because a contract requires them. On a redesigned surface the
+    owner may consciously change a Tier-2 detail — updating or retiring its
+    scenario, the same way visual parity is retired — provided Tier 1 stays
+    intact and a behavior/interaction scenario still covers the route. When
+    unsure whether an edge case is a data contract or pure presentation, treat it
+    as Tier 1. Do not treat a Tier-2 pin as an external contract, and do not
+    relax one on a surface still on the replica.
+- The per-surface "must remain covered" lists further down inherit this Tier
+  model; read them through it rather than as flat byte-pins. An item there is
+  Tier 1 only if a real external party consumes it — a request payload, an
+  externally-read URL, an auth/session key, a security/redirect outcome, or a
+  backend-field interpretation. Items that are display formatting,
+  spinner/toast/modal/poll/debounce/refetch timing, query/cache cleanup, scroll
+  observability, or popup-vs-mobile navigation are Tier 2 — relaxable on a
+  redesigned surface as long as a behavior/interaction scenario still covers the
+  route.
+- Visual/pixel parity is retired only for redesigned surfaces: mark their visual
+  scenarios `visualRetired: true` in `frontend/scripts/visual-parity.mjs` and
+  keep a behavior/interaction scenario for the route. This holds for every
+  redesigned surface below, so the per-surface sections do not restate it.
 - For surfaces not yet redesigned, the old strict oracle standard still holds.
   Do not downgrade an un-redesigned mismatch to acceptable drift.
 - Do not claim a redesigned surface is complete unless behavior parity is green,
@@ -110,7 +140,11 @@ frontend. New redesigned surfaces should use:
 
 For gradual-reskin code, keep using the `tw:` prefix. Vendored legacy CSS owns
 bare class names like `block`, `container`, `badge`, `.btn`, and
-`.form-control`; prefixed utilities avoid accidental collisions.
+`.form-control`; prefixed utilities avoid accidental collisions. No surface is
+currently gradual-reskin — the user surfaces are all pure shadcn islands (the
+user app even asserts `tw:` is absent) and admin is the strict replica — so this
+prefix rule and the `@v2board/tokens` / local `components/ui` gradual-reskin
+guidance above apply only if such a surface is reintroduced.
 
 For pure shadcn islands, unprefixed Tailwind utilities and shadcn token names are
 allowed intentionally. Keep those islands route- or component-scoped, avoid
@@ -121,146 +155,118 @@ leaking their assumptions into replica surfaces, and verify behavior with tests.
 The user auth surface (`/login`, `/register`, `/forgetpassword`) is a pure
 shadcn island.
 
-- Use shadcn registry-style composition for auth: `Button`, `Input`, `Card`,
-  `Label`, `Checkbox`, `Alert`, `DropdownMenu`, `Toast`, and related primitives
-  should look and read like mature shadcn code.
-- Use Radix for low-level accessible behavior and `lucide-react` for icons.
-- Unprefixed Tailwind utilities and shadcn canonical token names are allowed in
-  auth code.
-- Keep auth behavior strict: API payloads, hash routes, `token2Login`, redirect
-  safety, recaptcha, email verification, invite codes, TOS handling, language
-  persistence, auth storage, and i18n behavior must remain covered.
-- Retire legacy auth presentation code when the shadcn version replaces it; do
-  not keep compatibility CSS or DOM solely to resemble the packaged frontend.
-- Keep auth tests focused on behavior, accessibility, and shadcn structure
-  rather than old pixel-era class names.
+- Keep auth contracts strict: API payloads, hash routes, `token2Login`, redirect
+  safety, recaptcha, email verification, invite codes, language persistence,
+  auth storage, and i18n behavior must remain covered. The TOS gate (block submit
+  when `tos_url` is configured and unaccepted) is a UX behavior, not a payload
+  field — cover the gate, but its presentation is Tier 2.
 
 ### User App Shell Direction
 
 The logged-in user shell and dashboard (`/dashboard`) are redesigned shadcn
 surfaces.
 
-- Use shadcn/Radix composition for shell navigation, top chrome, menus, alerts,
-  cards, dialogs, and primary dashboard controls.
-- Keep logged-in behavior strict: auth redirects, language persistence, dark
-  mode persistence, subscription import links, QR subscribe, notice dialogs,
-  reset-package orders, new-period mutations, alert routing, and existing route
-  contracts must remain covered.
-- Retire old OneUI/Bootstrap visual parity for `/dashboard`; keep behavior and
-  interaction scenarios for the same route.
-- Preserve legacy page behavior for non-redesigned logged-in routes, but do not
-  keep old shell DOM/classes solely to resemble the packaged frontend.
+- Keep logged-in contracts strict: auth redirects, language persistence,
+  subscription import links, QR subscribe, the notice-dialog auto-popup (the
+  backend `弹窗` tag), reset-package orders, new-period mutations, and existing
+  route contracts must remain covered. Dark-mode persistence (a frontend-only
+  `dark_mode` cookie) and dashboard alert routing are Tier-2 presentation
+  defaults — relaxable on this redesigned surface.
 
 ### User Commerce Direction
 
 The user commerce flow (`/plan`, `/plan/:plan_id`, `/order`, and
 `/order/:trade_no`) is a redesigned shadcn surface.
 
-- Use shadcn/Radix composition for plan cards, filters, checkout summaries,
-  coupon inputs, order tables/lists, payment method selection, QR checkout, and
-  confirmation dialogs.
-- Keep commerce behavior strict: plan filtering, sold-out handling, coupon
-  checks, save-order payloads, unfinished-order cancellation, change-subscription
-  confirmation, order cancellation, payment method selection, handling-fee math,
-  Stripe token checkout, QR checkout, redirect checkout, polling, query cleanup,
-  routing, i18n, and failure states must remain covered.
-- Retire old OneUI/Bootstrap/Ant visual parity for these routes. Preserve stable
-  behavior hooks only where tests or interaction parity need them, such as
-  `.v2board-select`, `.v2board-input-coupon`, `.v2board-order-info`, and
-  `.v2board-payment-qrcode`.
+- Keep commerce contracts strict: plan filtering, sold-out handling
+  (`capacity_limit`), coupon checks, save-order payloads, unfinished-order and
+  order cancellation payloads (`{trade_no}`), change-subscription payload,
+  payment-method selection, Stripe-token / QR / redirect checkout, routing, and
+  i18n must remain covered. Handling-fee math (a display estimate; the server
+  value always wins), polling cadence, query/cache cleanup, confirmation-dialog
+  copy, and failure-state presentation are Tier-2 defaults — relaxable on these
+  redesigned routes.
+- Preserve stable commerce behavior hooks only where tests or interaction parity
+  need them — the live ones are the `#cashier` container and the `data-testid`
+  values `coupon-input`, `order-info`, `payment-qrcode`, `payment-option`, and
+  `commerce-submit`. (The `.v2board-*` class names are legacy oracle-side selector
+  fallbacks, not source hooks.)
 
 ### User Profile Direction
 
 The user profile/account surface (`/profile`) is a redesigned shadcn surface.
 
-- Use shadcn/Radix composition for wallet cards, gift-card redemption, password
-  forms, notification switches, Telegram binding, recharge dialogs, and reset
-  confirmations.
-- Use Radix-backed primitives for accessible dialogs and switches. Do not keep
-  Ant Design confirm modals, Bootstrap blocks, OneUI forms, or rc-switch clones
-  as the profile foundation.
-- Keep profile behavior strict: balance display, auto-renewal and email
-  reminder payloads, password-change redirect behavior, gift-card redeem loading
-  and timeout behavior, deposit order payloads, Telegram bind/unbind behavior,
-  reset-subscribe behavior, subscribe refetch timing, routing, and i18n behavior
-  must remain covered.
-- Retire old OneUI/Bootstrap/Ant visual parity for `/profile`; keep behavior and
-  interaction scenarios for the same route.
+- Keep profile contracts strict: auto-renewal and email-reminder payloads,
+  password-change redirect (security), gift-card redeem payload, deposit order
+  payloads, Telegram bind/unbind, the reset-subscribe token rotation
+  (`/user/resetSecurity`), routing, and i18n must remain covered. Balance-display
+  formatting, gift-card redeem loading/timeout UX, subscribe refetch timing, and
+  reset/confirm dialog copy are Tier-2 defaults — relaxable on this redesigned
+  surface.
 
 ### User Service Usage Direction
 
 The user service usage surfaces (`/node` and `/traffic`) are redesigned shadcn
 surfaces.
 
-- Use shadcn/Radix composition for service cards, horizontally scrollable data
-  tables, status indicators, tags, empty states, loading states, and tooltips.
-- Do not keep Ant Design table shells, fixed-column clones, Bootstrap blocks, or
-  legacy tooltip presentation as the foundation for these routes.
-- Keep service behavior strict: subscribe-first fetch ordering, loading timing,
-  empty-state subscribe/renew routing, node online/rate/tag rendering, traffic
-  date formatting, byte formatting, legacy traffic charge coercion, horizontal
-  scroll observability, tooltip text, timeout behavior, routing, and i18n
-  behavior must remain covered.
-- Retire old OneUI/Bootstrap/Ant visual parity for `/node` and `/traffic`; keep
-  behavior and interaction scenarios for the same routes.
+- Keep service contracts strict: subscribe-first fetch ordering, empty-state
+  subscribe/renew routing, node `is_online`/`server_rate` interpretation and
+  charged math `(u+d)*server_rate`, legacy traffic-charge coercion, routing, and
+  i18n must remain covered. Loading/timeout timing, the visual rendering of
+  online/rate/tag badges, traffic date and byte formatting, horizontal-scroll
+  observability, and tooltip copy are Tier-2 defaults — relaxable on these
+  redesigned routes.
 
 ### User Invite Direction
 
 The user invite/commission surface (`/invite`) is a redesigned shadcn surface.
 
-- Use shadcn/Radix composition for commission cards, invite-code and commission
-  history tables, pagination controls, tooltips, and transfer/withdraw dialogs.
-- Do not keep Ant Design table shells, fixed-column clones, Bootstrap blocks,
-  legacy select, or legacy modal presentation as the foundation for this route.
-- Keep invite behavior strict: fetch order, generated invite toast and refetch,
-  copy-link URL, commission math, distribution-rate formatting, history
-  pagination clamping, transfer payload conversion through the API layer,
-  failure modal persistence, withdraw method/account payload, successful
-  withdraw redirect, tooltip text, routing, and i18n behavior must remain
-  covered.
-- Retire old OneUI/Bootstrap/Ant visual parity for `/invite`; keep behavior and
-  interaction scenarios for the same route.
+- Keep invite contracts strict: copy-link URL, the `/user/invite/save` call,
+  transfer payload conversion (`100*amount`) through the API layer, withdraw
+  method/account payload, commission cents reading (`amount/100`), routing, and
+  i18n must remain covered. Fetch order, invite-success toast and refetch timing,
+  commission/`toFixed` and distribution-rate formatting, history pagination
+  clamping (display only — the raw page is sent unclamped), failure-modal
+  persistence, the post-withdraw in-app nav to `/ticket` (not a backend-emailed
+  link), and tooltip copy are Tier-2 defaults — relaxable on this redesigned
+  surface.
 
 ### User Ticket Direction
 
 The user ticket surfaces (`/ticket`, `/ticket/:ticket_id`) are redesigned shadcn
 surfaces.
 
-- Use shadcn/Radix composition for ticket list cards, status badges, action
-  controls, create-ticket dialogs, selects, textarea inputs, and the standalone
-  chat detail route.
-- Do not keep Ant Design table shells, fixed-column clones, Bootstrap blocks,
-  legacy select/modal presentation, or old chat CSS-module classes as the
-  foundation for these routes.
-- Keep ticket behavior strict: fetch cleanup on unmount, desktop popup versus
-  mobile same-window detail navigation, ticket id passthrough, reply polling,
-  reply payload/toast/input clearing, reply failure persistence, create-ticket
-  payloads, cancel draft persistence, successful-save reset and refetch, save
-  failure modal persistence, close-ticket payloads, close failure state, routing,
-  and i18n behavior must remain covered.
-- Retire old OneUI/Bootstrap/Ant visual parity for `/ticket` and
-  `/ticket/:ticket_id`; keep behavior and interaction scenarios for the same
-  routes.
+- Keep ticket contracts strict: ticket-id passthrough, reply / create-ticket /
+  close-ticket payloads, routing, and i18n must remain covered. Fetch cleanup on
+  unmount, desktop-popup-vs-mobile detail navigation, reply polling cadence,
+  reply toast/input clearing, reply / save / close failure persistence,
+  cancel-draft persistence, and successful-save reset/refetch timing are Tier-2
+  defaults — relaxable on these redesigned routes.
 
 ### User Knowledge Direction
 
 The user knowledge surface (`/knowledge`) is a redesigned shadcn surface.
 
-- Use shadcn/Radix composition for the searchable knowledge library, category
-  groups, article rows, loading and empty states, and the right-side article
-  reader sheet.
-- Do not keep Ant Design input/drawer shells, Bootstrap list groups, OneUI block
-  cards, or legacy body-scroll drawer wiring as the foundation for this route.
-- Keep knowledge behavior strict: fetch locale, debounced search, timeout
-  fallback, URL `id` opening, article detail fetches, copy and jump hooks inside
-  rendered markdown, current-article refetches, previous-article persistence
-  while jumping, routing, and i18n behavior must remain covered.
-- Retire old OneUI/Bootstrap/Ant visual parity for `/knowledge`; keep behavior
-  and interaction scenarios for the same route.
+- Keep knowledge contracts strict: fetch locale, URL `id` opening, article
+  detail fetches, the `copy()`/`jump()` hooks inside rendered markdown, current-
+  article refetches (the backend body is non-idempotent — re-substituted per
+  request), routing, and i18n must remain covered. Search debounce, timeout
+  fallback, and previous-article persistence while jumping are Tier-2 defaults —
+  relaxable on this redesigned surface.
 
 ### User Surface System Direction
 
-Shared redesigned user primitives should live in `frontend/apps/user/src/components/ui`.
+Every redesigned user surface composes with shadcn/Radix primitives and
+`lucide-react` icons, and owns its shared primitives in
+`frontend/apps/user/src/components/ui`. (A surface explicitly designated a pure
+shadcn island — see Auth — may use unprefixed Tailwind utilities and shadcn token
+names.) Do not rebuild any redesigned surface on a legacy foundation — e.g. Ant
+Design table shells, fixed-column clones, confirm modals, selects, or
+input/drawer shells; Bootstrap blocks or list groups; OneUI forms or block cards;
+rc-switch clones; old chat CSS-module classes; legacy tooltip presentation; or
+body-scroll drawer wiring. Retire legacy presentation code once its shadcn
+replacement lands, and keep tests focused on behavior, accessibility, and shadcn
+structure rather than pixel-era class names.
 
 - Use the local shadcn-style table primitives for redesigned user tables instead
   of page-local `thead`/`tbody`/`th`/`td` class systems.
@@ -278,8 +284,8 @@ For new redesigned surfaces, do not use:
 - Ant Design v3 components as new UI foundations.
 - Bootstrap or OneUI classes such as `.btn`, `.block`, `.form-control`, or
   `.bg-gray-lighter`.
-- Page-local hardcoded color, radius, or shadow systems on gradual-reskin
-  surfaces when tokens/primitives can express the design.
+- Page-local hardcoded color, radius, or shadow systems when tokens/primitives
+  can express the design.
 - Hidden runtime dependencies on packaged legacy bundles.
 - Copying the old packaged bundle DOM, CSS, or file structure as the foundation
   for a redesigned surface.
