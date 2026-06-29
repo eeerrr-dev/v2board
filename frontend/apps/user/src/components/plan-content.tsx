@@ -7,7 +7,6 @@ interface PlanContentProps {
   content?: string | null;
   className?: string;
   htmlClassName?: string;
-  guardNull?: boolean;
 }
 
 export function PlanContent({ content, className, htmlClassName }: PlanContentProps) {

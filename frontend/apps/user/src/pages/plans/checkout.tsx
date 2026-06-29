@@ -145,14 +145,7 @@ export default function PlanCheckoutPage() {
     await saveOrder();
   };
 
-  if (planQuery.isFetching) {
-    return (
-      <div className="flex min-h-44 items-center justify-center" role="status">
-        <Spinner className="size-5" />
-      </div>
-    );
-  }
-  if (planQuery.error || !planQuery.data) {
+  if (planQuery.isFetching || planQuery.error || !planQuery.data) {
     return (
       <div className="flex min-h-44 items-center justify-center" role="status">
         <Spinner className="size-5" />
@@ -211,7 +204,6 @@ export default function PlanCheckoutPage() {
               content={plan.content}
               className="plan-content"
               htmlClassName="plan-content"
-              guardNull
             />
           </CardContent>
         </Card>

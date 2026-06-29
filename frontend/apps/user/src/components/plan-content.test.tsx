@@ -61,7 +61,6 @@ describe('PlanContent shadcn feature rendering', () => {
         content="null"
         className="v2board-plan-content px-3"
         htmlClassName="v2board-plan-content"
-        guardNull
       />,
     );
 

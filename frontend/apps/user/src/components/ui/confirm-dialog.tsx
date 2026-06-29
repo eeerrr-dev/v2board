@@ -25,7 +25,7 @@ interface ConfirmDialogOptions {
   };
 }
 
-type ConfirmDialogAction = () => unknown | Promise<unknown>;
+type ConfirmDialogAction = () => unknown;
 
 interface ConfirmDialogRequest {
   id: number;

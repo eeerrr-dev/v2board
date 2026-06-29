@@ -25,7 +25,6 @@ interface PaginationLabels {
   itemsPerPage: string;
   nextPage: string;
   nextWindow: string;
-  pagination?: string;
   previousPage: string;
   previousWindow: string;
 }
@@ -157,7 +156,6 @@ function PaginationControl({
 
   return (
     <Pagination
-      aria-label={labels.pagination ?? 'pagination'}
       className={cn(
         'flex flex-col gap-3 border-t border-border p-4 sm:flex-row sm:items-center sm:justify-end',
         className,
