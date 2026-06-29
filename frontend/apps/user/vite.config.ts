@@ -4,20 +4,28 @@ import path from 'node:path';
 import {
   buildAppViteConfig,
   legacyNavigationRedirectPlugin,
-  legacyViteClientStubPlugin,
   rejectPackagedUserAssetsPlugin,
-  stripViteClientPlugin,
 } from '@v2board/config/vite';
 
+const baseConfig = buildAppViteConfig({ port: 5173 });
+
 export default defineConfig({
-  ...buildAppViteConfig({ port: 5173 }),
+  ...baseConfig,
+  server: {
+    ...baseConfig.server,
+    // The user app is a redesigned React island (admin still serves the legacy
+    // replica with the shared hmr:false default + @vite/client stub). Here we
+    // run Vite HMR + React Fast Refresh: noDiscovery below pins the dep graph,
+    // so hot updates patch modules in place instead of the full re-optimizing
+    // reloads the white-screen recovery net was built to guard against. The real
+    // /@vite/client is allowed to load, so the stub/strip plugins are dropped.
+    hmr: true,
+  },
   cacheDir: '../../node_modules/.vite/user-white-screen-recovery-38',
   plugins: [
     legacyNavigationRedirectPlugin(),
-    legacyViteClientStubPlugin(),
     rejectPackagedUserAssetsPlugin(),
     react(),
-    stripViteClientPlugin(),
   ],
   optimizeDeps: {
     // noDiscovery is intentional (see vite-config.test.ts): it stops Vite from

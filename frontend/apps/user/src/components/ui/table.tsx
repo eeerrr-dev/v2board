@@ -1,5 +1,6 @@
 import {
   useRef,
+  useState,
   type ReactNode,
   type HTMLAttributes,
   type Ref,
@@ -10,11 +11,15 @@ import {
 import {
   flexRender,
   getCoreRowModel,
+  getSortedRowModel,
   useReactTable,
   type ColumnDef,
   type RowData,
+  type SortDirection,
+  type SortingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 declare module '@tanstack/react-table' {
@@ -121,7 +126,23 @@ function TableEmpty({ children, className, colSpan, rowClassName, ...props }: Ta
   );
 }
 
+function ariaSort(sorted: false | SortDirection) {
+  return sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none';
+}
+
+function SortIndicator({ sorted }: { sorted: false | SortDirection }) {
+  const Icon = sorted === 'asc' ? ArrowUp : sorted === 'desc' ? ArrowDown : ChevronsUpDown;
+  return <Icon className={cn('size-3.5', !sorted && 'opacity-50')} aria-hidden="true" />;
+}
+
 type DataTableColumn<TData> = ColumnDef<TData>;
+
+// Row virtualization only pays for itself once the DOM row count is large enough
+// that the spacer math + measureElement reflows cost less than rendering every
+// row. Below a few hundred rows a plain scroll container is faster and simpler,
+// so callers gate `virtualizer.enabled` on this shared threshold instead of
+// virtualizing small tables.
+const VIRTUALIZE_MIN_ROWS = 150;
 
 interface DataTableVirtualizerOptions {
   enabled?: boolean;
@@ -161,6 +182,10 @@ function DataTable<TData>({
   ...props
 }: DataTableProps<TData>) {
   const scrollElementRef = useRef<HTMLDivElement | null>(null);
+  // Client-side sort. Sorting is opt-in per column: only columns that declare an
+  // accessor (accessorKey/accessorFn) report getCanSort(), so display-only columns
+  // stay inert and the default ([]) preserves the server's row order.
+  const [sorting, setSorting] = useState<SortingState>([]);
   const tableColumns = columns.map((column, index) => ({
     ...column,
     id: column.id ?? `column-${index}`,
@@ -168,7 +193,10 @@ function DataTable<TData>({
   const table = useReactTable({
     data,
     columns: tableColumns,
+    state: { sorting },
+    onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
     getRowId: getRowKey
       ? (row, index) => String(getRowKey(row, index))
       : undefined,
@@ -218,8 +246,14 @@ function DataTable<TData>({
             <tr key={headerGroup.id}>
               {headerGroup.headers.map((header) => {
                 const meta = header.column.columnDef.meta;
+                const canSort = header.column.getCanSort();
+                const sorted = header.column.getIsSorted();
+                const label = header.isPlaceholder
+                  ? null
+                  : flexRender(header.column.columnDef.header, header.getContext());
                 return (
                   <TableHead
+                    aria-sort={canSort ? ariaSort(sorted) : undefined}
                     className={cn(
                       meta?.align === 'center' && 'text-center',
                       meta?.align === 'right' && 'text-right',
@@ -228,9 +262,19 @@ function DataTable<TData>({
                     colSpan={header.colSpan}
                     key={header.id}
                   >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                    {canSort ? (
+                      <button
+                        type="button"
+                        data-slot="table-sort"
+                        className="inline-flex items-center gap-1.5 rounded-sm outline-none transition-colors select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        onClick={header.column.getToggleSortingHandler()}
+                      >
+                        {label}
+                        <SortIndicator sorted={sorted} />
+                      </button>
+                    ) : (
+                      label
+                    )}
                   </TableHead>
                 );
               })}
@@ -299,6 +343,7 @@ function DataTable<TData>({
 
 export {
   DataTable,
+  VIRTUALIZE_MIN_ROWS,
   Table,
   TableBody,
   TableCell,

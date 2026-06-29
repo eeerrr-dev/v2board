@@ -161,19 +161,15 @@ describe('OrdersPage shadcn commerce table', () => {
 
   it('keys table rows by trade number now that the shadcn table owns the DOM', () => {
     expect(ordersSource).toContain('satisfies DataTableColumn<(typeof orders)[number]>[]');
-    expect(ordersSource).toContain('virtualizer={{ enabled: orders.length > 30 }}');
+    expect(ordersSource).toContain('virtualizer={{ enabled: orders.length > VIRTUALIZE_MIN_ROWS }}');
     expect(ordersSource).not.toContain('data-row-key={index}');
     expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
   });
 
-  it('does not show the fetch loading strip before the mount fetch dispatch equivalent', () => {
-    mocks.fetching = true;
-
-    const html = renderToStaticMarkup(<OrdersPage />);
-
-    expect(html).toContain('data-testid="orders-card"');
-    expect(html).not.toContain('正在加载');
-    expect(html).not.toContain('block-mode-loading');
+  it('opts the amount and created-at columns into client-side sorting', () => {
+    expect(ordersSource).toContain("accessorKey: 'total_amount'");
+    expect(ordersSource).toContain("accessorKey: 'created_at'");
+    expect(ordersSource).toContain("sortingFn: 'basic'");
   });
 });
 
@@ -294,7 +290,7 @@ describe('OrdersPage commerce behavior', () => {
     expect(mocks.cancelMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('shows the loading strip after a mounted fetch or transport timeout but not an API 500', async () => {
+  it('shows the loading strip while fetching but not after a settled fetch error', async () => {
     mocks.fetching = true;
 
     await act(async () => {
@@ -304,6 +300,8 @@ describe('OrdersPage commerce behavior', () => {
 
     expect(container.textContent).toContain('正在加载');
 
+    // A settled transport failure (status 0) no longer pins a perpetual spinner —
+    // loading tracks the query's isFetching, so it clears like any other error.
     mocks.fetching = false;
     mocks.orderError = { status: 0, message: 'timeout of 30000ms exceeded' };
 
@@ -312,7 +310,7 @@ describe('OrdersPage commerce behavior', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('正在加载');
+    expect(container.textContent).not.toContain('正在加载');
 
     mocks.orderError = { status: 500, message: 'Server Error' };
 

@@ -224,14 +224,14 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(orderDetailSource).not.toContain("t(PERIOD_LABEL_KEY[order.period] ?? '')");
   });
 
-  it('does not show the detail spinner before the mount detail dispatch equivalent', () => {
+  it('shows the centered detail spinner while the order detail fetch is pending', () => {
     orderState.data = undefined;
     orderState.isFetching = true;
 
     const html = renderToStaticMarkup(<OrderDetailPage />);
 
-    expect(html).toContain('id="cashier"');
-    expect(html).not.toContain('role="status"');
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain('id="cashier"');
   });
 
   it('selects the first payment method and precomputes its pre-handling amount in the first rendered pass', () => {

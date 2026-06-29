@@ -43,7 +43,6 @@ import {
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { copyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
 export default function InvitePage() {
   const { t, i18n } = useTranslation();
@@ -93,7 +92,7 @@ export default function InvitePage() {
     page ?? 1,
     pageSize ?? 10,
   );
-  const detailsLoading = useLegacyFetchLoading(details.isFetching);
+  const detailsLoading = details.isFetching;
   const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
   const codeColumns = [
     {

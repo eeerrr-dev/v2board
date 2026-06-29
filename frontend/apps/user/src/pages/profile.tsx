@@ -65,10 +65,14 @@ const giftCardSchema = z.object({
   code: z.string().min(1),
 });
 
-const depositAmountSchema = z.coerce.number().positive();
+const depositSchema = z.object({
+  amount: z.coerce.number().positive(),
+});
 
 type PasswordFormValues = z.infer<typeof passwordSchema>;
 type GiftCardFormValues = z.infer<typeof giftCardSchema>;
+type DepositFormValues = z.input<typeof depositSchema>;
+type DepositPayload = z.output<typeof depositSchema>;
 
 export default function ProfilePage() {
   const { t } = useTranslation();
@@ -94,8 +98,11 @@ export default function ProfilePage() {
     resolver: zodResolver(giftCardSchema),
     defaultValues: { code: '' },
   });
+  const depositForm = useForm<DepositFormValues, unknown, DepositPayload>({
+    resolver: zodResolver(depositSchema),
+    defaultValues: { amount: '' },
+  });
 
-  const [depositInput, setDepositInput] = useState('');
   const [redeemTimeoutStuck, setRedeemTimeoutStuck] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [telegramOpen, setTelegramOpen] = useState(false);
@@ -186,31 +193,30 @@ export default function ProfilePage() {
   };
 
   const openDeposit = () => {
-    setDepositInput('');
+    depositForm.reset({ amount: '' });
     setDepositOpen(true);
   };
 
   const closeDeposit = () => {
     setDepositOpen(false);
-    setDepositInput('');
+    depositForm.reset({ amount: '' });
   };
 
-  const onDeposit = () => {
-    const parsed = depositAmountSchema.safeParse(depositInput);
-    if (!parsed.success) {
+  const onDeposit = depositForm.handleSubmit(
+    ({ amount }) => {
+      void saveOrder
+        .mutateAsync({
+          plan_id: 0,
+          period: 'deposit',
+          deposit_amount: amount * 100,
+        })
+        .then((tradeNo) => navigate(`/order/${tradeNo}`))
+        .catch(() => {});
       closeDeposit();
-      return;
-    }
-    void saveOrder
-      .mutateAsync({
-        plan_id: 0,
-        period: 'deposit',
-        deposit_amount: parsed.data * 100,
-      })
-      .then((tradeNo) => navigate(`/order/${tradeNo}`))
-      .catch(() => {});
-    closeDeposit();
-  };
+    },
+    // A non-positive or non-numeric amount mirrors the legacy silent close.
+    () => closeDeposit(),
+  );
 
   return (
     <>
@@ -480,10 +486,9 @@ export default function ProfilePage() {
 
       <ProfileDepositDialog
         open={depositOpen}
-        input={depositInput}
         placeholder={depositPlaceholder}
+        inputProps={depositForm.register('amount')}
         onClose={closeDeposit}
-        onInputChange={setDepositInput}
         onConfirm={onDeposit}
       />
       <ProfileTelegramBindDialog

@@ -12,7 +12,6 @@ import { z } from 'zod';
 import { useForgetMutation, useGuestConfig } from '@/lib/guest';
 import { toast } from '@/lib/toast';
 import { i18nGet } from '@/lib/errors';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { useAuthRecaptcha } from './auth-recaptcha';
 import { makeConfirmPasswordRefinement } from './refine-confirm-password';
 import { useSendEmailVerifyFlow } from './use-send-email-verify-flow';
@@ -53,7 +52,7 @@ export function useForgetController(): ForgetController {
   const navigate = useNavigate();
   const guestConfig = useGuestConfig();
   const { data: config } = guestConfig;
-  const configLoading = useLegacyFetchLoading(guestConfig.isFetching);
+  const configLoading = guestConfig.isFetching;
   const { mutateAsync: forget, isPending } = useForgetMutation();
   const { run: runRecaptcha, recaptchaModal } = useAuthRecaptcha(
     Boolean(config?.is_recaptcha),

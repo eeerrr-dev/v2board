@@ -8,23 +8,24 @@ import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTrafficLog } from '@/lib/queries';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
 
 export default function TrafficPage() {
   const { t, i18n } = useTranslation();
   const trafficQuery = useTrafficLog();
   const { data, isFetching } = trafficQuery;
-  const loading = useLegacyFetchLoading(isFetching, trafficQuery.error);
+  const loading = isFetching;
   const rows = data ?? [];
   const { bodyRef, onScroll, scrollPosition } = useTableScrollPosition(rows.length);
   const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
   const trafficColumns = [
     {
+      accessorKey: 'record_at',
+      sortingFn: 'basic',
       header: t('traffic.record_at'),
       cell: ({ row }) =>
         row.original.record_at ? formatUserLegacyDateSlash(row.original.record_at) : '-',
@@ -107,7 +108,7 @@ export default function TrafficPage() {
                 'data-testid': 'service-table-scroll',
                 onScroll,
               }}
-              virtualizer={{ enabled: rows.length > 30 }}
+              virtualizer={{ enabled: rows.length > VIRTUALIZE_MIN_ROWS }}
             />
           </CardContent>
         </Card>

@@ -59,7 +59,7 @@ vi.mock('@/lib/queries', () => ({
   useServers: () => ({ data: queryState.servers, isFetching: queryState.serversFetching }),
 }));
 
-describe('NodePage shadcn loading timing', () => {
+describe('NodePage shadcn loading state', () => {
   let container: HTMLDivElement;
   let root: Root | null;
 
@@ -80,16 +80,7 @@ describe('NodePage shadcn loading timing', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders the empty-node notice before the mount fetch flips loading on', () => {
-    const html = renderToStaticMarkup(<NodePage />);
-
-    expect(html).toContain('没有可用节点，如果您未订阅或已过期请');
-    expect(html).toContain('订阅');
-    expect(html).toContain('data-testid="node-empty"');
-    expect(html).not.toContain('data-testid="node-loading"');
-  });
-
-  it('shows only the centered shadcn loading state after the mount fetch dispatch equivalent', async () => {
+  it('shows only the centered shadcn loading state while the servers fetch is pending', async () => {
     await act(async () => {
       root!.render(<NodePage />);
       await Promise.resolve();

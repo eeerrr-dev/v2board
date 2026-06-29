@@ -27,11 +27,16 @@ describe('user Vite dev optimizer', () => {
     );
     expect(viteConfigSource).toContain('optimizeDeps: {');
     expect(viteConfigSource).toContain('legacyNavigationRedirectPlugin()');
-    expect(viteConfigSource).toContain('legacyViteClientStubPlugin()');
     expect(viteConfigSource).toContain('rejectPackagedUserAssetsPlugin()');
     expect(viteConfigSource).not.toContain('themeRuntimeAssetsPlugin()');
     expect(viteConfigSource).not.toContain('legacyThemePlugin()');
-    expect(viteConfigSource).toContain('stripViteClientPlugin()');
+    // The redesigned user island runs real Vite HMR + React Fast Refresh, so the
+    // @vite/client stub and strip plugins are dropped (admin still uses them via
+    // the shared hmr:false default). noDiscovery keeps the dep graph stable.
+    expect(viteConfigSource).toContain('react()');
+    expect(viteConfigSource).toContain('hmr: true');
+    expect(viteConfigSource).not.toContain('legacyViteClientStubPlugin');
+    expect(viteConfigSource).not.toContain('stripViteClientPlugin');
     expect(viteConfigSource).toContain("'@v2board/api-client > axios'");
     expect(viteConfigSource).not.toContain("'axios'");
     expect(viteConfigSource).toContain("'react-dom'");

@@ -26,7 +26,6 @@ import {
 import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { StripeCardForm } from '@/components/stripe-card-form';
 import { toast } from '@/lib/toast';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { formatUserLegacyDateTime } from '@/lib/legacy-date';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -71,7 +70,7 @@ export default function OrderDetailPage() {
   const currency = comm?.currency;
   const paymentMethods = orderQuery.data ? paymentsQuery.data : undefined;
   const hasLoadedOrder = Boolean(orderQuery.data);
-  const loading = useLegacyFetchLoading(orderQuery.isFetching);
+  const loading = orderQuery.isFetching;
 
   // The original waits 3s before starting /user/order/check and only starts once per trade_no.
   // After that first delay, TanStack Query owns the 3s refetch cadence.

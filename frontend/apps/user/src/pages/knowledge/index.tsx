@@ -27,7 +27,6 @@ import {
   renderLegacyMarkdown,
 } from '@/lib/markdown';
 import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
 export default function KnowledgePage() {
   const { t, i18n } = useTranslation();
@@ -39,7 +38,7 @@ export default function KnowledgePage() {
   const [visibleDetail, setVisibleDetail] = useState<Knowledge | undefined>();
   const knowledgeQuery = useKnowledge(language, keyword || undefined);
   const { data, isFetching } = knowledgeQuery;
-  const loading = useLegacyFetchLoading(isFetching, knowledgeQuery.error);
+  const loading = isFetching;
   const knowledgeGroups = data ?? {};
   const categories = Object.entries(knowledgeGroups).filter(
     ([, items]) => (items?.length ?? 0) > 0,

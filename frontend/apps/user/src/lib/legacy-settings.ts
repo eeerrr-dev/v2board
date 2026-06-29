@@ -114,21 +114,11 @@ function copyTextWithExecCommand(text: string): boolean {
   }
 }
 
-export function getLegacyTheme() {
-  const theme = getLegacySettings().theme ?? {};
-  const color = theme.color ?? 'default';
-  return {
-    sidebar: theme.sidebar ?? 'light',
-    header: theme.header ?? 'dark',
-    color,
-    palette: THEME_COLORS[color] ?? THEME_COLORS.default,
-  };
-}
-
 export function applyLegacySettings(): void {
   const root = document.documentElement;
   const settings = getLegacySettings();
-  const { palette } = getLegacyTheme();
+  const color = settings.theme?.color ?? 'default';
+  const palette = THEME_COLORS[color] ?? THEME_COLORS.default;
 
   // These match the static defaults declared in user-theme-colors.css and
   // user-theme-legacy-tokens.css, so the override is a no-op for the default

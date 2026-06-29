@@ -170,15 +170,6 @@ describe('KnowledgePage shadcn library surface', () => {
     expect(html).toContain('最后更新: 2023/11/15');
   });
 
-  it('does not show the list spinner before the mount fetch dispatch equivalent', () => {
-    mocks.fetching = true;
-
-    const html = renderToStaticMarkup(<KnowledgePage />);
-
-    expect(html).toContain('data-testid="knowledge-search-bar"');
-    expect(html).not.toContain('data-testid="knowledge-loading"');
-  });
-
   it('renders an explicit shadcn empty state for an empty knowledge payload', () => {
     mocks.groups = {};
 
@@ -277,7 +268,7 @@ describe('KnowledgePage redesigned interactions', () => {
     expect(mocks.knowledgeArgs).toContainEqual({ language: 'zh-CN', keyword: 'router' });
   });
 
-  it('shows the shadcn loading card only after the mount fetch dispatch equivalent', async () => {
+  it('shows the shadcn loading card while the list fetch is pending', async () => {
     mocks.fetching = true;
 
     await act(async () => {

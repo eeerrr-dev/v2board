@@ -200,7 +200,7 @@ describe('TicketsPage shadcn surface', () => {
 
   it('renders ticket rows through shared TanStack DataTable columns', () => {
     expect(source).toContain('satisfies DataTableColumn<(typeof tickets)[number]>[]');
-    expect(source).toContain('virtualizer={{ enabled: tickets.length > 30 }}');
+    expect(source).toContain('virtualizer={{ enabled: tickets.length > VIRTUALIZE_MIN_ROWS }}');
     expect(source).not.toContain('data-row-key={ticket.id}');
     expect(source).not.toContain('<TableRow');
   });

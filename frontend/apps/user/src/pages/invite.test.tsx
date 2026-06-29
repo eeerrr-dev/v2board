@@ -279,12 +279,12 @@ describe('InvitePage shadcn pagination', () => {
     expect(html).toContain('data-testid="invite-page-size"');
   });
 
-  it('does not blur the commission history table before the mount details dispatch equivalent', () => {
+  it('shows the commission history loading indicator while the details fetch is pending', () => {
     mocks.detailsFetching = true;
 
     const html = renderToStaticMarkup(<InvitePage />);
 
-    expect(html).not.toContain('Loading...');
+    expect(html).toContain('Loading...');
     expect(html).not.toContain('ant-spin-spinning');
     expect(html).not.toContain('ant-spin-blur');
   });

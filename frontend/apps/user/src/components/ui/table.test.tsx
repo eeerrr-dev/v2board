@@ -1,3 +1,5 @@
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
@@ -12,6 +14,9 @@ import {
   TableScroll,
 } from './table';
 import { readFileSync } from 'node:fs';
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+  true;
 
 const source = readFileSync(`${process.cwd()}/src/components/ui/table.tsx`, 'utf8');
 
@@ -87,5 +92,73 @@ describe('Table', () => {
     expect(source).toContain('useReactTable');
     expect(source).toContain('getRowId: getRowKey');
     expect(source).toContain('useVirtualizer');
+  });
+});
+
+describe('DataTable sorting', () => {
+  it('makes accessor columns sortable and leaves display-only columns inert', () => {
+    const html = renderToStaticMarkup(
+      <DataTable
+        columns={[
+          { accessorKey: 'name', header: 'Name', cell: ({ row }) => row.original.name },
+          { header: 'Action', cell: () => 'x' },
+        ]}
+        data={[{ name: 'Beta' }, { name: 'Alpha' }]}
+        getRowKey={(row) => row.name}
+      />,
+    );
+
+    // The accessor column exposes a sort toggle and an aria-sort affordance...
+    expect(html).toContain('data-slot="table-sort"');
+    expect(html).toContain('aria-sort="none"');
+    // ...while the display-only "Action" header stays a plain, non-interactive cell.
+    expect(html.match(/data-slot="table-sort"/g)).toHaveLength(1);
+    expect(source).toContain('getSortedRowModel');
+  });
+
+  it('reorders rows and updates aria-sort when a sortable header is toggled', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <DataTable
+          columns={[{ accessorKey: 'name', header: 'Name', cell: ({ row }) => row.original.name }]}
+          data={[{ name: 'Beta' }, { name: 'Alpha' }]}
+          getRowKey={(row) => row.name}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const rowKeys = () =>
+      [...container.querySelectorAll('[data-row-key]')].map((row) =>
+        row.getAttribute('data-row-key'),
+      );
+    const sortButton = container.querySelector<HTMLButtonElement>('[data-slot="table-sort"]')!;
+    const headerCell = sortButton.closest('th')!;
+
+    expect(rowKeys()).toEqual(['Beta', 'Alpha']);
+    expect(headerCell.getAttribute('aria-sort')).toBe('none');
+
+    // Strings sort ascending on the first toggle.
+    await act(async () => {
+      sortButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(rowKeys()).toEqual(['Alpha', 'Beta']);
+    expect(headerCell.getAttribute('aria-sort')).toBe('ascending');
+
+    // A second toggle flips to descending.
+    await act(async () => {
+      sortButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(rowKeys()).toEqual(['Beta', 'Alpha']);
+    expect(headerCell.getAttribute('aria-sort')).toBe('descending');
+
+    act(() => root.unmount());
+    container.remove();
   });
 });

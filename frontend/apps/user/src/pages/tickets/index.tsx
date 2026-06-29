@@ -33,7 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
@@ -43,7 +43,6 @@ import {
   useSaveTicketMutation,
   useTickets,
 } from '@/lib/queries';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
 const LEVELS: { value: TicketLevel; labelKey: string }[] = [
   { value: 0, labelKey: 'ticket.level_low' },
@@ -72,7 +71,7 @@ export default function TicketsPage() {
   const queryClient = useQueryClient();
   const ticketsQuery = useTickets();
   const { data, isFetching } = ticketsQuery;
-  const loading = useLegacyFetchLoading(isFetching, ticketsQuery.error);
+  const loading = isFetching;
   const save = useSaveTicketMutation();
   const close = useCloseTicketMutation();
   const [open, setOpen] = useState(false);
@@ -217,7 +216,7 @@ export default function TicketsPage() {
               emptyTestId="ticket-empty"
               headerClassName="border-y"
               scrollProps={{ 'data-testid': 'ticket-table-scroll' }}
-              virtualizer={{ enabled: tickets.length > 30 }}
+              virtualizer={{ enabled: tickets.length > VIRTUALIZE_MIN_ROWS }}
             />
           </CardContent>
         </Card>

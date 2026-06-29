@@ -95,17 +95,15 @@ export function ProfileSwitch({
 }
 
 export function ProfileDepositDialog({
-  input,
+  inputProps,
   onClose,
   onConfirm,
-  onInputChange,
   open,
   placeholder,
 }: {
-  input: string;
+  inputProps?: ComponentPropsWithRef<typeof Input>;
   onClose: () => void;
   onConfirm: () => void;
-  onInputChange: (value: string) => void;
   open: boolean;
   placeholder: string;
 }) {
@@ -126,8 +124,7 @@ export function ProfileDepositDialog({
           data-testid="profile-deposit-input"
           autoComplete="one-time-code"
           placeholder={placeholder}
-          value={input}
-          onChange={(event) => onInputChange(event.target.value)}
+          {...inputProps}
         />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

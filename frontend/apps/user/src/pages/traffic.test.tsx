@@ -43,7 +43,7 @@ vi.mock('@/lib/queries', () => ({
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-describe('TrafficPage shadcn loading timing', () => {
+describe('TrafficPage shadcn loading state', () => {
   let container: HTMLDivElement;
   let root: Root | null;
 
@@ -62,15 +62,7 @@ describe('TrafficPage shadcn loading timing', () => {
     document.body.innerHTML = '';
   });
 
-  it('does not show loading until after the mount fetch dispatch equivalent', () => {
-    const html = renderToStaticMarkup(<TrafficPage />);
-
-    expect(html).toContain('流量明细仅保留近一个月数据以供查询。');
-    expect(html).toContain('data-testid="traffic-empty"');
-    expect(html).not.toContain('Loading...');
-  });
-
-  it('uses only the shadcn inline loading state after the mount fetch dispatch equivalent', async () => {
+  it('uses only the shadcn inline loading state while the traffic fetch is pending', async () => {
     await act(async () => {
       root!.render(<TrafficPage />);
       await Promise.resolve();

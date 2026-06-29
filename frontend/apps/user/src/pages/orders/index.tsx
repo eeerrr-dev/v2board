@@ -3,13 +3,12 @@ import { useNavigate } from 'react-router';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
 import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 
 const STATUS_LABEL: Record<number, { key: string; status: string }> = {
   0: { key: 'order.status_unpaid', status: 'error' },
@@ -35,7 +34,7 @@ export default function OrdersPage() {
   const navigate = useNavigate();
   const ordersQuery = useOrders();
   const { data, isFetching } = ordersQuery;
-  const loading = useLegacyFetchLoading(isFetching, ordersQuery.error);
+  const loading = isFetching;
   const cancel = useCancelOrderMutation();
   const orders = data ?? [];
   const orderColumns = [
@@ -60,6 +59,8 @@ export default function OrdersPage() {
       },
     },
     {
+      accessorKey: 'total_amount',
+      sortingFn: 'basic',
       meta: { align: 'right', className: 'font-medium' },
       header: t('order.amount'),
       cell: ({ row }) => (row.original.total_amount / 100).toFixed(2),
@@ -72,6 +73,8 @@ export default function OrdersPage() {
       },
     },
     {
+      accessorKey: 'created_at',
+      sortingFn: 'basic',
       meta: { className: 'text-muted-foreground' },
       header: t('order.created_at'),
       cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
@@ -138,7 +141,7 @@ export default function OrdersPage() {
               data={orders}
               data-testid="orders-table"
               getRowKey={(order) => order.trade_no}
-              virtualizer={{ enabled: orders.length > 30 }}
+              virtualizer={{ enabled: orders.length > VIRTUALIZE_MIN_ROWS }}
             />
           )}
         </CardContent>

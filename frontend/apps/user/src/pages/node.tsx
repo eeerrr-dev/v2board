@@ -8,11 +8,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { DataTable, type DataTableColumn } from '@/components/ui/table';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useServers, useSubscribe } from '@/lib/queries';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
-import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 
 export default function NodePage() {
   const { t } = useTranslation();
@@ -21,7 +20,7 @@ export default function NodePage() {
   const subscribe = useSubscribe({ refetchOnMount: 'always' });
   const serversQuery = useServers({ refetchOnMount: 'always' });
   const { data, isFetching } = serversQuery;
-  const loading = useLegacyFetchLoading(isFetching, serversQuery.error);
+  const loading = isFetching;
   const servers = data ?? [];
   const { bodyRef, onScroll, scrollPosition } = useTableScrollPosition(servers.length, {
     syncOnMount: false,
@@ -30,6 +29,7 @@ export default function NodePage() {
   const serviceColumns = [
     {
       id: 'name',
+      accessorKey: 'name',
       meta: { className: 'font-medium text-foreground' },
       header: () => <span>{t('node.simple_name')}</span>,
       cell: ({ row }) => row.original.name,
@@ -137,7 +137,7 @@ export default function NodePage() {
                 tabIndex: -1,
                 onScroll,
               }}
-              virtualizer={{ enabled: servers.length > 30 }}
+              virtualizer={{ enabled: servers.length > VIRTUALIZE_MIN_ROWS }}
             />
           </CardContent>
         </Card>
