@@ -20,11 +20,20 @@ or old OneUI sidebar/page-shell presentation CSS. Stable behavior hooks may keep
 `v2board-*` names, but new visible UI should use local shadcn-style primitives
 and Radix behavior.
 
+The whole Bootstrap/OneUI **framework** layer (`user-bootstrap-*`,
+`user-oneui-*`, and the `user-background-utilities.css` helper) has been deleted:
+no surface imported it, no rendered markup carried its `btn`/`form-control`/
+`block`/`hero` class names, and Vite never bundled it. The frozen packaged
+frontend remains the parity oracle (`frontend/fixtures/legacy-oracle.ref`); these
+in-tree copies were redundant compatibility CSS, not the oracle. Only the
+document/rich-content compatibility files below survive, because server-rendered
+knowledge/notice HTML still relies on them. `styles-reachability.test.ts` walks
+the `@import` graph from `main.tsx` and fails if an orphaned stylesheet returns.
+
 | Filename prefix | Upstream library | Version |
 | --- | --- | --- |
-| `user-bootstrap-*` | Bootstrap | **4.x** (bundled via OneUI; exact patch not recovered from the bundle) |
-| `user-oneui-*` | OneUI dashboard template (pixelcave) — generic utilities and legacy content helpers | as shipped in the packaged frontend (release not precisely pinned) |
-| `user-custom-html-*`, `user-prose-*`, `user-markdown-*` | knowledge/markdown prose rendering (OneUI + Bootstrap typography) | as shipped |
+| `user-custom-html-*`, `user-prose-*`, `user-heading-*` | knowledge/markdown prose rendering (OneUI + Bootstrap typography), scoped under `.custom-html-style` | as shipped |
+| `user-document-root.css`, `user-link-elements.css`, `user-browser-modes.css` | restored document-level defaults (body/link/selection) | as shipped |
 Font Awesome and Simple Line Icons are retired from the user bundle. New or
 redesigned user UI should use `lucide-react` icons when an icon is appropriate.
 

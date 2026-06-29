@@ -1,8 +1,0 @@
-/* Restored Bootstrap full-width column aliases. */
-.col-12,
-.col-md-12,
-.col-lg-12,
-.col-xl-12 {
-  flex: 0 0 100%;
-  max-width: 100%;
-}

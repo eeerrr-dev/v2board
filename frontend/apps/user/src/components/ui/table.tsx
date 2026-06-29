@@ -257,7 +257,15 @@ function DataTable<TData>({
                 const index = item.index;
                 const rowKey = getRowKey ? row.id : index;
                 return (
-                  <TableRow data-row-key={rowKey} key={row.id}>
+                  <TableRow
+                    data-row-key={rowKey}
+                    // Let react-virtual measure real row heights (e.g. tag-heavy
+                    // node rows that wrap past estimateSize) so the spacer math
+                    // and visible window stay aligned instead of drifting.
+                    data-index={shouldVirtualize ? index : undefined}
+                    key={row.id}
+                    ref={shouldVirtualize ? rowVirtualizer.measureElement : undefined}
+                  >
                     {row.getVisibleCells().map((cell) => {
                       const meta = cell.column.columnDef.meta;
                       return (

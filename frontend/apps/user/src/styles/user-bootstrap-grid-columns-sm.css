@@ -1,7 +1,0 @@
-/* Restored Bootstrap small breakpoint column widths. */
-@media (min-width: 576px) {
-  .col-sm-12 {
-    flex: 0 0 100%;
-    max-width: 100%;
-  }
-}

@@ -49,6 +49,7 @@ import {
   useUserInfo,
 } from '@/lib/queries';
 import { toast } from '@/lib/toast';
+import { makeConfirmPasswordRefinement } from './auth/refine-confirm-password';
 
 const passwordSchema = z
   .object({
@@ -56,15 +57,9 @@ const passwordSchema = z
     newPassword: z.string(),
     confirmPassword: z.string(),
   })
-  .superRefine((values, context) => {
-    if (values.newPassword !== values.confirmPassword) {
-      context.addIssue({
-        code: 'custom',
-        path: ['confirmPassword'],
-        message: 'password_mismatch',
-      });
-    }
-  });
+  .superRefine(
+    makeConfirmPasswordRefinement({ passwordKey: 'newPassword', confirmKey: 'confirmPassword' }),
+  );
 
 const giftCardSchema = z.object({
   code: z.string().min(1),

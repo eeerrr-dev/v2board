@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react';
+
 const AUTH_STORAGE_KEY = 'authorization';
 const listeners = new Set<(value: string | null) => void>();
 
@@ -27,4 +29,10 @@ export function subscribeAuth(listener: (value: string | null) => void): () => v
 
 export function logout(): void {
   setAuthData(null);
+}
+
+// Subscribe React components to the auth token so a logout() (or token2Login)
+// elsewhere re-renders guarded routes. Mirrors the dark-mode store hook.
+export function useAuthData(): string | null {
+  return useSyncExternalStore(subscribeAuth, getAuthData, getAuthData);
 }

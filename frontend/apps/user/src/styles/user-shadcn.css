@@ -9,7 +9,6 @@
  * text-center inside those islands.
  */
 @import 'tailwindcss/theme.css';
-@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 

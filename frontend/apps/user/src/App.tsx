@@ -122,6 +122,17 @@ export function unknownUserRouteLoader({ request }: LoaderFunctionArgs) {
   throw redirect(getUserRouteFallback());
 }
 
+// Auth is guarded in two layers and BOTH are load-bearing:
+//   1. This route loader gates ENTRY. On navigation it redirects an
+//      unauthenticated request to /login before the page renders, and warms the
+//      user/info query for authenticated entries. Loaders only run on
+//      navigation, so this layer alone cannot react to a logout that happens
+//      while the user is already on a guarded page.
+//   2. <RequireAuth> (require-auth.tsx) gates the LIVE session. It subscribes to
+//      the auth store via useAuthData(), so a logout() (or token2Login) while a
+//      guarded page is mounted re-renders and <Navigate>s to /login.
+// Behavioral coverage: createRequireUserLoader tests in App.test.tsx (layer 1)
+// and require-auth.test.tsx (layer 2).
 export function createRequireUserLoader(queryClient: QueryClient) {
   return async ({ request }: LoaderFunctionArgs) => {
     const current = getRequestRoutePath(request);

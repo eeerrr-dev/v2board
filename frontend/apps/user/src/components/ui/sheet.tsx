@@ -14,7 +14,7 @@ function SheetOverlay({ className, ...props }: ComponentProps<typeof SheetPrimit
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        'v2board-radix-overlay fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+        'v2board-radix-overlay fixed inset-0 z-50 bg-black/50',
         className,
       )}
       {...props}
@@ -23,16 +23,16 @@ function SheetOverlay({ className, ...props }: ComponentProps<typeof SheetPrimit
 }
 
 const sheetVariants = cva(
-  'v2board-radix-sheet-content fixed z-50 flex flex-col gap-4 bg-background text-foreground shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=closed]:animate-out data-[state=open]:animate-in',
+  // Open/close motion (incl. side slides) lives in user-shadcn-motion.css under
+  // .v2board-radix-sheet-content[data-state][data-side]; no tw-animate utilities.
+  'v2board-radix-sheet-content fixed z-50 flex flex-col gap-4 bg-background text-foreground shadow-lg',
   {
     variants: {
       side: {
-        top: 'inset-x-0 top-0 border-b border-border data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top',
-        bottom:
-          'inset-x-0 bottom-0 border-t border-border data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
-        left: 'inset-y-0 left-0 h-full w-3/4 border-r border-border data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm',
-        right:
-          'inset-y-0 right-0 h-full w-3/4 border-l border-border data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm',
+        top: 'inset-x-0 top-0 border-b border-border',
+        bottom: 'inset-x-0 bottom-0 border-t border-border',
+        left: 'inset-y-0 left-0 h-full w-3/4 border-r border-border sm:max-w-sm',
+        right: 'inset-y-0 right-0 h-full w-3/4 border-l border-border sm:max-w-sm',
       },
     },
     defaultVariants: {

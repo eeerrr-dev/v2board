@@ -15,7 +15,7 @@ import { toast } from '@/lib/toast';
 import { i18nGet } from '@/lib/errors';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { useAuthRecaptcha } from './auth-recaptcha';
-import { refineConfirmPassword } from './refine-confirm-password';
+import { makeConfirmPasswordRefinement } from './refine-confirm-password';
 import { useSendEmailVerifyFlow } from './use-send-email-verify-flow';
 
 const registerSchema = z
@@ -26,7 +26,7 @@ const registerSchema = z
     confirm_password: z.string(),
     invite_code: z.string().optional(),
   })
-  .superRefine(refineConfirmPassword);
+  .superRefine(makeConfirmPasswordRefinement({ passwordKey: 'password', confirmKey: 'confirm_password' }));
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
 

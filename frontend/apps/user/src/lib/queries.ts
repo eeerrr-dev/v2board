@@ -157,12 +157,15 @@ export const userQueryOptions = {
   knowledge: (language: string, keyword?: string) =>
     queryOptions({
       queryKey: userKeys.knowledge(language, keyword),
-      queryFn: () => user.fetchKnowledge(apiClient, language, keyword),
+      // Pass the query's AbortSignal so a superseded debounced search GET is
+      // cancelled instead of running to completion.
+      queryFn: ({ signal }) => user.fetchKnowledge(apiClient, language, keyword, { signal }),
     }),
   knowledgeDetail: (id: number | string | undefined, language: string) =>
     queryOptions({
       queryKey: userKeys.knowledgeDetail(id as number | string, language),
-      queryFn: () => user.knowledgeDetail(apiClient, id as number | string, language),
+      queryFn: ({ signal }) =>
+        user.knowledgeDetail(apiClient, id as number | string, language, { signal }),
     }),
   trafficLog: () =>
     queryOptions({ queryKey: userKeys.trafficLog, queryFn: () => user.getTrafficLog(apiClient) }),

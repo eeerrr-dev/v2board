@@ -2,9 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { USER_APP_LAYOUT_ROUTE_PATHS, USER_LEGACY_ROUTE_PATHS } from './App';
+import { QueryClient } from '@tanstack/react-query';
+import type { LoaderFunctionArgs } from 'react-router';
+import {
+  USER_APP_LAYOUT_ROUTE_PATHS,
+  USER_LEGACY_ROUTE_PATHS,
+  createRequireUserLoader,
+} from './App';
+import { setAuthData } from '@/lib/auth';
+import { userQueryOptions } from '@/lib/queries';
 
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf8');
+
+function loaderArgs(routePath: string): LoaderFunctionArgs {
+  return {
+    request: new Request(`https://v2board.local${routePath}`),
+    params: {},
+    context: {},
+  } as unknown as LoaderFunctionArgs;
+}
 
 describe('user legacy route table', () => {
   it('matches the bundled user route list exactly', () => {
@@ -81,5 +97,39 @@ describe('user legacy route table', () => {
     expect(source).not.toContain('key={routeComponentKey');
     expect(source).not.toContain('function KeyedAppLayout');
     expect(source).not.toContain('function KeyedGuestLayout');
+  });
+});
+
+describe('user route auth entry gate (layer 1: route loader)', () => {
+  it('redirects an unauthenticated entry to /login with the return path encoded', async () => {
+    setAuthData(null);
+    const loader = createRequireUserLoader(new QueryClient());
+
+    let thrown: unknown;
+    try {
+      await loader(loaderArgs('/dashboard?tab=orders'));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Response);
+    const response = thrown as Response;
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe(
+      `/login?redirect=${encodeURIComponent('/dashboard?tab=orders')}`,
+    );
+  });
+
+  it('lets an authenticated entry through without redirecting', async () => {
+    setAuthData('token-xyz');
+    const queryClient = new QueryClient();
+    // Pre-seed so ensureQueryData resolves from cache instead of hitting the network.
+    queryClient.setQueryData(userQueryOptions.info().queryKey, {} as never);
+    const loader = createRequireUserLoader(queryClient);
+
+    const result = await loader(loaderArgs('/dashboard'));
+
+    expect(result).toBeNull();
+    setAuthData(null);
   });
 });

@@ -50,13 +50,17 @@ describe('legacy settings bootstrap', () => {
 
     applyLegacySettings();
 
+    const style = document.documentElement.style;
     expect(appendedThemeLink).toBeNull();
-    expect(document.documentElement.style.getPropertyValue('--legacy-ant-radio-focus-shadow')).toBe(
-      'rgba(49, 151, 149, 0.08)',
-    );
-    expect(
-      document.documentElement.style.getPropertyValue('--legacy-ant-radio-button-focus-shadow'),
-    ).toBe('rgba(49, 151, 149, 0.06)');
+    expect(style.getPropertyValue('--color-brand-500')).toBe('#319795');
+    expect(style.getPropertyValue('--color-page')).toBe('#f5f5f5');
+    expect(style.getPropertyValue('--legacy-link')).toBe('#319795');
+    expect(style.getPropertyValue('--legacy-link-hover')).toBe('#184a49');
+    expect(style.getPropertyValue('--legacy-link-active')).toBe('#1e6f70');
+    // Framework-only legacy variables are no longer written at runtime; they
+    // were read solely by the deleted Bootstrap/OneUI CSS.
+    expect(style.getPropertyValue('--legacy-ant-radio-focus-shadow')).toBe('');
+    expect(style.getPropertyValue('--legacy-nav-link')).toBe('');
     expect(document.title).toBe('Legacy Title');
   });
 
@@ -69,10 +73,11 @@ describe('legacy settings bootstrap', () => {
 
     applyLegacySettings();
 
+    const style = document.documentElement.style;
     expect(appendedThemeLink).toBeNull();
-    expect(document.documentElement.style.getPropertyValue('--legacy-ant-radio-focus-shadow')).toBe(
-      'rgba(52, 58, 64, 0.08)',
-    );
+    expect(style.getPropertyValue('--color-brand-500')).toBe('#343a40');
+    expect(style.getPropertyValue('--color-page')).toBe('#f5f5f5');
+    expect(style.getPropertyValue('--legacy-link-active')).toBe('#13161a');
   });
 
   it('matches the legacy title assignment for a missing title', () => {

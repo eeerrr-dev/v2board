@@ -212,15 +212,31 @@ export const getStripePublicKey = (client: ApiClient, id: number) =>
     data: { id },
   });
 
-export const fetchKnowledge = (client: ApiClient, language: string, keyword?: string) =>
+export const fetchKnowledge = (
+  client: ApiClient,
+  language: string,
+  keyword?: string,
+  config?: { signal?: AbortSignal },
+) =>
   client.request<KnowledgeCategory>({
     url: '/user/knowledge/fetch',
     method: 'GET',
     params: { language, keyword },
+    signal: config?.signal,
   });
 
-export const knowledgeDetail = (client: ApiClient, id: number | string, language: string) =>
-  client.request<Knowledge>({ url: '/user/knowledge/fetch', method: 'GET', params: { id, language } });
+export const knowledgeDetail = (
+  client: ApiClient,
+  id: number | string,
+  language: string,
+  config?: { signal?: AbortSignal },
+) =>
+  client.request<Knowledge>({
+    url: '/user/knowledge/fetch',
+    method: 'GET',
+    params: { id, language },
+    signal: config?.signal,
+  });
 
 export const getTrafficLog = (client: ApiClient) =>
   client.request<TrafficLogEntry[]>({ url: '/user/stat/getTrafficLog', method: 'GET' });

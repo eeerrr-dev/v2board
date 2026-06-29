@@ -1,8 +1,0 @@
-/* Restored packaged background utility classes used by the user shell. */
-.bg-header-dark {
-  background-color: var(--color-brand-500) !important;
-}
-
-.bg-white-10 {
-  background-color: rgba(255, 255, 255, 0.1) !important;
-}

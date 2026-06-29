@@ -1,18 +1,25 @@
 import type { z } from 'zod';
 
-// Authored V2Board — shared confirm-password check for the register and forget
-// schemas. Both surfaces flag a `confirm_password` mismatch identically; keeping the
-// refinement here means the message id (`password_mismatch`) and the issue shape stay
-// in one place instead of being copy-pasted into each schema's superRefine.
-export function refineConfirmPassword(
-  values: { password: string; confirm_password: string },
-  context: z.RefinementCtx,
-): void {
-  if (values.password !== values.confirm_password) {
-    context.addIssue({
-      code: 'custom',
-      path: ['confirm_password'],
-      message: 'password_mismatch',
-    });
-  }
+// Authored V2Board — shared confirm-password mismatch check. The register and
+// forget schemas key it on `password`/`confirm_password`; the profile
+// change-password schema keys it on `newPassword`/`confirmPassword`. The factory
+// keeps the issue shape identical across all three (custom code, message id
+// `password_mismatch`, path at the confirm field) instead of copy-pasting the
+// superRefine into each schema.
+export function makeConfirmPasswordRefinement<
+  PasswordKey extends string,
+  ConfirmKey extends string,
+>({ passwordKey, confirmKey }: { passwordKey: PasswordKey; confirmKey: ConfirmKey }) {
+  return (
+    values: Record<PasswordKey | ConfirmKey, string>,
+    context: z.RefinementCtx,
+  ): void => {
+    if (values[passwordKey] !== values[confirmKey]) {
+      context.addIssue({
+        code: 'custom',
+        path: [confirmKey],
+        message: 'password_mismatch',
+      });
+    }
+  };
 }

@@ -98,10 +98,26 @@ const LEGACY_HTML_SANITIZE_CONFIG = {
   ALLOW_DATA_ATTR: true,
 };
 
+// The capability probe runs a full extra sanitize pass, so cache the first
+// instance that passes it and reuse it for every later render instead of
+// re-probing on each call.
+let memoizedPurify: DOMPurifyInstance | null = null;
+
 export function sanitizeLegacyHtml(html: string) {
-  const purify = getDOMPurify();
-  if (!canSanitizeWithDOMPurify(purify)) return '';
+  const purify = resolveSupportedDOMPurify();
+  if (!purify) return '';
   return purify.sanitize(html, LEGACY_HTML_SANITIZE_CONFIG);
+}
+
+function resolveSupportedDOMPurify(): DOMPurifyInstance | null {
+  if (memoizedPurify) return memoizedPurify;
+  const purify = getDOMPurify();
+  // A null/unverified result (window undefined at import time, or a DOMPurify
+  // that fails the fail-closed probe) is intentionally NOT cached, so the check
+  // re-runs once a working DOM/instance becomes available.
+  if (!canSanitizeWithDOMPurify(purify)) return null;
+  memoizedPurify = purify;
+  return purify;
 }
 
 function getDOMPurify() {

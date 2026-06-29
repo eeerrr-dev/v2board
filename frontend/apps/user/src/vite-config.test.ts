@@ -37,6 +37,20 @@ describe('user Vite dev optimizer', () => {
     expect(viteConfigSource).toContain("'react-dom'");
     expect(viteConfigSource).toContain("'react/jsx-dev-runtime'");
     expect(viteConfigSource).toContain("'react/jsx-runtime'");
+    // The pre-bundle set must be exhaustive because noDiscovery is on: every
+    // direct third-party runtime dependency the source imports is declared.
+    expect(viteConfigSource).toContain("'@hookform/resolvers/zod'");
+    expect(viteConfigSource).toContain("'@radix-ui/react-dialog'");
+    expect(viteConfigSource).toContain("'@radix-ui/react-select'");
+    expect(viteConfigSource).toContain("'@stripe/react-stripe-js'");
+    expect(viteConfigSource).toContain("'@tanstack/react-table'");
+    expect(viteConfigSource).toContain("'@tanstack/react-virtual'");
+    expect(viteConfigSource).toContain("'class-variance-authority'");
+    expect(viteConfigSource).toContain("'dompurify'");
+    expect(viteConfigSource).toContain("'lucide-react'");
+    expect(viteConfigSource).toContain("'react-hook-form'");
+    expect(viteConfigSource).toContain("'sonner'");
+    expect(viteConfigSource).toContain("'zod'");
     expect(viteConfigSource).toContain('holdUntilCrawlEnd: false');
     expect(viteConfigSource).toContain('noDiscovery: true');
   });

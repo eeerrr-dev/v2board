@@ -14,7 +14,7 @@ import { toast } from '@/lib/toast';
 import { i18nGet } from '@/lib/errors';
 import { useLegacyFetchLoading } from '@/lib/use-legacy-fetch-loading';
 import { useAuthRecaptcha } from './auth-recaptcha';
-import { refineConfirmPassword } from './refine-confirm-password';
+import { makeConfirmPasswordRefinement } from './refine-confirm-password';
 import { useSendEmailVerifyFlow } from './use-send-email-verify-flow';
 
 const forgetSchema = z
@@ -24,7 +24,7 @@ const forgetSchema = z
     password: z.string(),
     confirm_password: z.string(),
   })
-  .superRefine(refineConfirmPassword);
+  .superRefine(makeConfirmPasswordRefinement({ passwordKey: 'password', confirmKey: 'confirm_password' }));
 
 type ForgetFormValues = z.infer<typeof forgetSchema>;
 

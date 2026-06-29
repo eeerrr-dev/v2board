@@ -227,7 +227,6 @@ export function buildAppViteConfig(options: AppViteOptions): UserConfig {
               if (id.includes('antd') || id.includes('@ant-design')) return 'antd';
               if (id.includes('react-dom')) return 'react-dom';
               if (id.includes('react')) return 'react';
-              if (id.includes('framer-motion')) return 'motion';
             }
             return undefined;
           },
