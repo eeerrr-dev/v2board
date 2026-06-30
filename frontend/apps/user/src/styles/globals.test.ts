@@ -66,9 +66,12 @@ describe('shadcn island presentation CSS', () => {
     // unique utilities (regression: dashboard-notice-carousel.tsx lost w-6/h-1.5).
     expect(globals).toContain("@source '../pages/**/*.tsx';");
     expect(globals).toContain("@source '../components/**/*.tsx';");
-    expect(globals).toContain('.v2board-auth-surface,');
-    expect(globals).toContain('.v2board-app-shell,');
-    expect(globals).toContain('.v2board-radix-dialog-content {\n  --radius: 0.625rem;');
+    // Every island root (surface + portaled menu/dialog/sheet/popover/tooltip/
+    // toast) carries the shared `.v2board-island` membership class; theming keys
+    // off that single selector instead of drift-prone parallel root lists, so a
+    // newly added portal surface cannot silently render untokened.
+    expect(globals).toContain('.v2board-island {\n  --radius: 0.625rem;');
+    expect(globals).not.toContain('.v2board-auth-surface,\n.v2board-app-shell,');
     expect(globals).toContain('--card: oklch(1 0 0);');
     expect(globals).toContain('--background: oklch(1 0 0);');
     expect(globals).toContain('--primary: oklch(0.205 0 0);');
@@ -81,8 +84,7 @@ describe('shadcn island presentation CSS', () => {
     expect(globals).toContain('color-mix(in oklch, var(--muted) 42%, transparent)');
     expect(globals).not.toContain('hsl(var(--background))');
     expect(globals).not.toContain('@media (prefers-color-scheme: dark)');
-    expect(globals).toContain('.dark .v2board-auth-surface,');
-    expect(globals).toContain('.dark .v2board-app-shell,');
+    expect(globals).toContain('.dark .v2board-island {');
     expect(globals).toContain('color-scheme: dark;');
     expect(globals).toContain('--background: oklch(0.145 0 0);');
     expect(globals).toContain('--card: oklch(0.205 0 0);');
@@ -92,11 +94,10 @@ describe('shadcn island presentation CSS', () => {
   it('themes portaled shadcn feedback without legacy login or Ant chrome', () => {
     const globals = css();
 
-    expect(globals).toContain('.v2board-auth-toast-icon-success {');
-    expect(globals).toContain('.dark .v2board-auth-toast-root,');
-    expect(globals).toContain('.dark .v2board-auth-language-menu-content,');
-    expect(globals).toContain('.dark .v2board-app-shell-menu-content,');
-    expect(globals).toContain('.dark .v2board-radix-dialog-content {');
+    // Portaled menus, dialogs, sheets, tooltips and toasts inherit the island
+    // theme purely through the shared `.v2board-island` class and its `.dark`
+    // flip (asserted above) — there is no per-feedback-surface CSS, and none of
+    // the legacy login or Ant feedback chrome remains.
     expect(globals).not.toContain('.v2board-login-i18n-btn {');
     expect(globals).not.toContain('.ant-modal {');
     expect(globals).not.toContain('.ant-message {');

@@ -7,7 +7,7 @@ export function AuthLayout() {
     <div id="page-container">
       <main
         id="main-container"
-        className="v2board-auth-surface relative min-h-svh overflow-hidden bg-muted text-foreground"
+        className="v2board-island v2board-auth-surface relative min-h-svh overflow-hidden bg-muted text-foreground"
       >
         <header className="absolute inset-x-0 top-0 z-10 flex h-16 items-center justify-between px-5 sm:h-20 sm:px-8 lg:px-10">
           <AuthPanelBrand />

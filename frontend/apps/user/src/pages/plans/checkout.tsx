@@ -199,7 +199,7 @@ export default function PlanCheckoutPage() {
             <PlanContent
               content={plan.content}
               className="plan-content"
-              htmlClassName="plan-content"
+              htmlClassName="custom-html-style plan-content"
             />
           </CardContent>
         </Card>

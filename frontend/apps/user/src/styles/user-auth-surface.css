@@ -1,18 +1,17 @@
 /*
  * Pure shadcn islands.
  *
- * Layout and component styling live in React components through unprefixed
- * Tailwind/shadcn classes. This file scopes shadcn design variables to explicit
- * redesigned islands and their body-portaled menu/dialog surfaces.
+ * Every redesigned surface and every body-portaled menu / dialog / sheet /
+ * popover / tooltip / toast root carries the shared `.v2board-island` class.
+ * Keying all island theming — design variables, box-sizing, text selection, the
+ * prose margin reset, and the `.dark` flip — off that single membership class
+ * (instead of re-listing each root in parallel selector lists that silently
+ * drift) is what guarantees a newly added portal surface renders tokened and
+ * dark-aware. Roots keep their specific `v2board-*` class for motion targets and
+ * parity hooks; `v2board-island` is purely the theming-membership marker.
  */
 
-.v2board-auth-surface,
-.v2board-app-shell,
-.v2board-auth-toast-root,
-.v2board-auth-language-menu-content,
-.v2board-app-shell-menu-content,
-.v2board-radix-sheet-content,
-.v2board-radix-dialog-content {
+.v2board-island {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -34,13 +33,7 @@
   --ring: oklch(0.708 0 0);
 }
 
-.v2board-auth-surface,
-.v2board-app-shell,
-.v2board-auth-toast-root,
-.v2board-auth-language-menu-content,
-.v2board-app-shell-menu-content,
-.v2board-radix-sheet-content,
-.v2board-radix-dialog-content {
+.v2board-island {
   box-sizing: border-box;
   color-scheme: light;
   font-family: var(--font-sans);
@@ -51,95 +44,38 @@
   text-rendering: optimizeLegibility;
 }
 
-.v2board-auth-surface *,
-.v2board-auth-surface *::before,
-.v2board-auth-surface *::after,
-.v2board-app-shell *,
-.v2board-app-shell *::before,
-.v2board-app-shell *::after,
-.v2board-auth-toast-root *,
-.v2board-auth-toast-root *::before,
-.v2board-auth-toast-root *::after,
-.v2board-auth-language-menu-content *,
-.v2board-auth-language-menu-content *::before,
-.v2board-auth-language-menu-content *::after,
-.v2board-app-shell-menu-content *,
-.v2board-app-shell-menu-content *::before,
-.v2board-app-shell-menu-content *::after,
-.v2board-radix-sheet-content *,
-.v2board-radix-sheet-content *::before,
-.v2board-radix-sheet-content *::after,
-.v2board-radix-dialog-content *,
-.v2board-radix-dialog-content *::before,
-.v2board-radix-dialog-content *::after {
+.v2board-island *,
+.v2board-island *::before,
+.v2board-island *::after {
   box-sizing: inherit;
   letter-spacing: 0;
 }
 
-.v2board-auth-surface :where(h1, h2, h3, h4, p),
-.v2board-app-shell :where(h1, h2, h3, h4, p) {
+/*
+ * Neutralize the legacy global heading/paragraph rhythm (h1-h6 / p margins and
+ * line-height from the replica's prose CSS) inside every island, so portaled
+ * Dialog/Sheet descriptions and titles follow the shadcn rhythm rather than the
+ * vendored 1rem margin.
+ */
+.v2board-island :where(h1, h2, h3, h4, h5, h6, p) {
   margin: 0;
 }
 
-.v2board-auth-surface::selection,
-.v2board-auth-surface ::selection,
-.v2board-app-shell::selection,
-.v2board-app-shell ::selection,
-.v2board-auth-toast-root::selection,
-.v2board-auth-toast-root ::selection,
-.v2board-auth-language-menu-content::selection,
-.v2board-auth-language-menu-content ::selection,
-.v2board-app-shell-menu-content::selection,
-.v2board-app-shell-menu-content ::selection,
-.v2board-radix-sheet-content::selection,
-.v2board-radix-sheet-content ::selection,
-.v2board-radix-dialog-content::selection,
-.v2board-radix-dialog-content ::selection {
+.v2board-island::selection,
+.v2board-island ::selection {
   color: var(--primary-foreground);
   background: var(--primary);
 }
 
-.v2board-auth-surface :where(button, input, select, textarea),
-.v2board-app-shell :where(button, input, select, textarea),
-.v2board-auth-language-menu-content :where(button),
-.v2board-app-shell-menu-content :where(button),
-.v2board-radix-sheet-content :where(button, input, select, textarea),
-.v2board-radix-dialog-content :where(button, input, select, textarea) {
+.v2board-island :where(button, input, select, textarea) {
   font-family: inherit;
-}
-
-#main-container.v2board-auth-surface {
-  background-color: var(--muted) !important;
-  color: var(--foreground);
-}
-
-#main-container.v2board-app-main {
-  background-color: var(--muted) !important;
-  color: var(--foreground);
-}
-
-.v2board-app-shell #sidebar {
-  transform: none;
 }
 
 .v2board-app-shell .v2board-container-title {
   flex: initial;
-  color: var(--foreground);
 }
 
-.v2board-auth-toast-icon-success {
-  border-color: color-mix(in oklch, oklch(0.627 0.194 149.214) 30%, transparent);
-  background: color-mix(in oklch, oklch(0.962 0.044 156.743) 70%, transparent);
-  color: oklch(0.448 0.119 151.328);
-}
-
-.dark .v2board-auth-surface,
-.dark .v2board-app-shell,
-.dark .v2board-auth-toast-root,
-.dark .v2board-auth-language-menu-content,
-.dark .v2board-app-shell-menu-content,
-.dark .v2board-radix-sheet-content,
-.dark .v2board-radix-dialog-content {
+.dark .v2board-island {
   color-scheme: dark;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
@@ -159,12 +95,6 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
-}
-
-.dark .v2board-auth-toast-icon-success {
-  border-color: color-mix(in oklch, oklch(0.765 0.177 163.223) 30%, transparent);
-  background: color-mix(in oklch, oklch(0.262 0.051 172.552) 70%, transparent);
-  color: oklch(0.765 0.177 163.223);
 }
 
 /*

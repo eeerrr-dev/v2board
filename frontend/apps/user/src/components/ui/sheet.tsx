@@ -25,7 +25,7 @@ function SheetOverlay({ className, ...props }: ComponentProps<typeof SheetPrimit
 const sheetVariants = cva(
   // Open/close motion (incl. side slides) lives in user-shadcn-motion.css under
   // .v2board-radix-sheet-content[data-state][data-side]; no tw-animate utilities.
-  'v2board-radix-sheet-content fixed z-50 flex flex-col gap-4 bg-background text-foreground shadow-lg',
+  'v2board-island v2board-radix-sheet-content fixed z-50 flex flex-col gap-4 bg-background text-foreground shadow-lg',
   {
     variants: {
       side: {

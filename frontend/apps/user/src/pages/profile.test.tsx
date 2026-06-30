@@ -331,10 +331,10 @@ describe('ProfilePage shadcn account surface', () => {
       '@legacy_bot',
     );
     expect(container.textContent).toContain('向机器人发送您的');
-    expect(container.querySelector('code')?.textContent).toBe('/bind https://example.test/sub');
+    expect(container.querySelector('[data-testid="profile-copy-code"]')?.textContent).toBe('/bind https://example.test/sub');
 
     await act(async () => {
-      container.querySelector('code')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.querySelector('[data-testid="profile-copy-code"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
@@ -365,7 +365,7 @@ describe('ProfilePage shadcn account surface', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('code')?.textContent).toBe('/bind');
+    expect(container.querySelector('[data-testid="profile-copy-code"]')?.textContent).toBe('/bind');
     expect(container.textContent).not.toContain('undefined');
   });
 

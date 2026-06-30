@@ -185,6 +185,7 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
                   <button
                     type="button"
                     key={item.to}
+                    aria-current={active ? 'page' : undefined}
                     className={cn(
                       'flex h-9 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm font-medium text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                       active && 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 hover:text-primary-foreground',
@@ -208,7 +209,10 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
   );
 
   return (
-    <div id="page-container" className={cn('v2board-app-shell min-h-screen', localeClass)}>
+    <div
+      id="page-container"
+      className={cn('v2board-island v2board-app-shell min-h-screen text-foreground', localeClass)}
+    >
       {navPending ? (
         <div
           data-testid="route-pending-bar"
@@ -301,7 +305,7 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
               <DropdownMenuContent
                 align="end"
                 sideOffset={8}
-                className="v2board-app-shell-menu-content w-56"
+                className="v2board-island v2board-app-shell-menu-content w-56"
                 data-testid="app-avatar-menu"
               >
                 <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
@@ -347,13 +351,13 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
         </header>
 
         {loading ? (
-          <main id="main-container" className="v2board-app-main">
+          <main id="main-container" className="v2board-app-main bg-muted">
             <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-7xl items-center justify-center px-4 py-10 sm:px-6 lg:px-8">
               <Spinner className="size-6" />
             </div>
           </main>
         ) : (
-          <main id="main-container" className="v2board-app-main">
+          <main id="main-container" className="v2board-app-main bg-muted">
             <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
               <RouteBoundaryOutlet />
             </div>

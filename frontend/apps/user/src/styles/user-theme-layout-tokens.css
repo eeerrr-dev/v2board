@@ -1,24 +1,12 @@
+/*
+ * The island font stack, consumed via `font-family: var(--font-sans)` on every
+ * `.v2board-island` root (user-auth-surface.css). The former `--radius-card`,
+ * `--radius-input`, and `--shadow-block` tokens (and the parallel `@theme`
+ * duplicate) are removed: no source renders their generated utilities
+ * (`rounded-card` is asserted absent) and nothing reads them via var().
+ */
 :root,
 :host {
-  --radius-card: 2px;
-  --radius-input: 4px;
-
-  --shadow-block: 0 1px 3px rgba(219, 226, 239, 0.5), 0 1px 2px rgba(219, 226, 239, 0.5);
-
-  --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
-    'Noto Sans CJK SC', 'Noto Sans SC', 'WenQuanYi Micro Hei', 'Noto Sans',
-    'Liberation Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-    'Noto Color Emoji';
-}
-
-@theme {
-  --radius-card: 2px;
-  --radius-input: 4px;
-
-  --shadow-block: 0 1px 3px rgba(219, 226, 239, 0.5), 0 1px 2px rgba(219, 226, 239, 0.5);
-
   --font-sans:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',

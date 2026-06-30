@@ -2,7 +2,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
   Card,
-  CardBody,
   CardContent,
   CardDescription,
   CardFooter,
@@ -20,7 +19,7 @@ describe('Card', () => {
     expect(html).toContain('shadow-sm');
   });
 
-  it('composes header, content, body alias, and footer primitives', () => {
+  it('composes header, content, and footer primitives', () => {
     const html = renderToStaticMarkup(
       <Card>
         <CardHeader>
@@ -28,14 +27,12 @@ describe('Card', () => {
           <CardDescription>description</CardDescription>
         </CardHeader>
         <CardContent>content</CardContent>
-        <CardBody>body</CardBody>
         <CardFooter>footer</CardFooter>
       </Card>,
     );
     expect(html).toContain('title');
     expect(html).toContain('description');
     expect(html).toContain('content');
-    expect(html).toContain('body');
     expect(html).toContain('footer');
     expect(html).toContain('px-6');
     expect(html).toContain('text-muted-foreground');

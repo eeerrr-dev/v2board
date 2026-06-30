@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { copyText } from '@/lib/legacy-settings';
+import { toast } from '@/lib/toast';
 
 export type ProfilePreferenceKey = 'auto_renewal' | 'remind_expire' | 'remind_traffic';
 export type ProfileConfirmAction = 'reset-subscribe' | 'unbind-telegram' | null;
@@ -123,6 +124,7 @@ export function ProfileDepositDialog({
         <Input
           data-testid="profile-deposit-input"
           autoComplete="one-time-code"
+          aria-label={placeholder}
           placeholder={placeholder}
           {...inputProps}
         />
@@ -182,13 +184,16 @@ export function ProfileTelegramBindDialog({
                 {t('profile.telegram_step2')}
               </div>
               <div className="text-sm text-muted-foreground">{t('profile.telegram_send')}</div>
-              <code
-                className="flex cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+              <button
+                type="button"
+                className="flex w-full cursor-pointer rounded-md border border-border bg-muted px-3 py-2 text-left font-mono text-sm text-foreground"
                 data-testid="profile-copy-code"
-                onClick={() => void copyText(bindCommand)}
+                onClick={async () => {
+                  if (await copyText(bindCommand)) toast.success(t('dashboard.copy_success'));
+                }}
               >
                 {bindCommand}
-              </code>
+              </button>
             </div>
           </div>
         ) : (

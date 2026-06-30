@@ -94,7 +94,7 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
           </DialogHeader>
           {activeNotice?.content ? (
             <div
-              className="notice-content max-h-[60vh] overflow-auto text-sm leading-6"
+              className="custom-html-style max-h-[60vh] overflow-auto text-sm leading-6"
               dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(activeNotice.content) }}
             />
           ) : null}

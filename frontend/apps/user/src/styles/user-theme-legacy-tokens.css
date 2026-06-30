@@ -1,98 +1,13 @@
+/*
+ * The only `--legacy-*` tokens still live are the link colors, repainted at
+ * runtime by applyLegacySettings (lib/legacy-settings.ts) and consumed by
+ * user-link-elements.css. Every other `--legacy-*` token was read solely by the
+ * retired Bootstrap/OneUI/Ant framework CSS and is no longer written at runtime,
+ * so the ~45 dead tokens and their parallel `@theme` duplicate are removed.
+ */
 :root,
 :host {
   --legacy-link: #0665d0;
   --legacy-link-hover: #2a84de;
   --legacy-link-active: #004aab;
-  --legacy-block-header-bg: #f8f9fc;
-  --legacy-block-pop-shadow: #d4dcec;
-  --legacy-block-pop-active-shadow: #edf0f7;
-  --legacy-block-shadow-hover: #d4dcec;
-  --legacy-block-shadow-active: #e2e8f2;
-  --legacy-header-dark-color: #c8d2e6;
-  --legacy-sidebar-dark-color: #e4e9f3;
-  --legacy-sidebar-dark-bg: #343a40;
-  --legacy-active-bg: #e1effe;
-  --legacy-nav-heading: #949da5;
-  --legacy-nav-link: #555d65;
-  --legacy-nav-icon: rgba(6, 101, 208, 0.7);
-  --legacy-nav-submenu-bg: #f5faff;
-  --legacy-nav-submenu-link: #78838e;
-  --legacy-nav-submenu-link-hover: #383d42;
-  --legacy-nav-dark-heading: #7a8793;
-  --legacy-nav-dark-link: #c0c6cc;
-  --legacy-nav-icon-dark: #626d78;
-  --legacy-nav-dark-active-bg: #2a2f33;
-  --legacy-nav-dark-submenu-bg: #2d3238;
-  --legacy-nav-dark-submenu-link: #a4adb5;
-  --legacy-nav-dark-horizontal-bg: #0559b7;
-  --legacy-primary-hover: #0553ab;
-  --legacy-primary-hover-border: #054d9e;
-  --legacy-primary-active: #054d9e;
-  --legacy-primary-active-border: #044792;
-  --legacy-primary-focus-shadow: rgba(43, 124, 215, 0.5);
-  --legacy-form-focus-border: #5ba6fa;
-  --legacy-form-focus-shadow: rgba(6, 101, 208, 0.25);
-  --legacy-ant-primary: #0665d0;
-  --legacy-ant-hover: #2a84de;
-  --legacy-ant-active: #004aab;
-  --legacy-ant-focus-shadow: rgba(6, 101, 208, 0.2);
-  --legacy-ant-radio-focus-shadow: rgba(6, 101, 208, 0.08);
-  --legacy-ant-radio-button-focus-shadow: rgba(6, 101, 208, 0.06);
-  --legacy-alt-primary-text: #054d9e;
-  --legacy-alt-primary-bg: #cde4fe;
-  --legacy-alt-primary-hover-bg: #a8d0fc;
-  --legacy-alt-primary-focus-shadow: rgba(146, 196, 252, 0.25);
-  --legacy-alt-primary-disabled-text: #212529;
-  --legacy-alt-primary-active-text: #022954;
-  --legacy-alt-primary-active-bg: #92c4fc;
-  --legacy-custom-control-active-bg: #4299fa;
-}
-
-@theme {
-  --legacy-link: #0665d0;
-  --legacy-link-hover: #2a84de;
-  --legacy-link-active: #004aab;
-  --legacy-block-header-bg: #f8f9fc;
-  --legacy-block-pop-shadow: #d4dcec;
-  --legacy-block-pop-active-shadow: #edf0f7;
-  --legacy-block-shadow-hover: #d4dcec;
-  --legacy-block-shadow-active: #e2e8f2;
-  --legacy-header-dark-color: #c8d2e6;
-  --legacy-sidebar-dark-color: #e4e9f3;
-  --legacy-sidebar-dark-bg: #343a40;
-  --legacy-active-bg: #e1effe;
-  --legacy-nav-heading: #949da5;
-  --legacy-nav-link: #555d65;
-  --legacy-nav-icon: rgba(6, 101, 208, 0.7);
-  --legacy-nav-submenu-bg: #f5faff;
-  --legacy-nav-submenu-link: #78838e;
-  --legacy-nav-submenu-link-hover: #383d42;
-  --legacy-nav-dark-heading: #7a8793;
-  --legacy-nav-dark-link: #c0c6cc;
-  --legacy-nav-icon-dark: #626d78;
-  --legacy-nav-dark-active-bg: #2a2f33;
-  --legacy-nav-dark-submenu-bg: #2d3238;
-  --legacy-nav-dark-submenu-link: #a4adb5;
-  --legacy-nav-dark-horizontal-bg: #0559b7;
-  --legacy-primary-hover: #0553ab;
-  --legacy-primary-hover-border: #054d9e;
-  --legacy-primary-active: #054d9e;
-  --legacy-primary-active-border: #044792;
-  --legacy-primary-focus-shadow: rgba(43, 124, 215, 0.5);
-  --legacy-form-focus-border: #5ba6fa;
-  --legacy-form-focus-shadow: rgba(6, 101, 208, 0.25);
-  --legacy-ant-primary: #0665d0;
-  --legacy-ant-hover: #2a84de;
-  --legacy-ant-active: #004aab;
-  --legacy-ant-focus-shadow: rgba(6, 101, 208, 0.2);
-  --legacy-ant-radio-focus-shadow: rgba(6, 101, 208, 0.08);
-  --legacy-ant-radio-button-focus-shadow: rgba(6, 101, 208, 0.06);
-  --legacy-alt-primary-text: #054d9e;
-  --legacy-alt-primary-bg: #cde4fe;
-  --legacy-alt-primary-hover-bg: #a8d0fc;
-  --legacy-alt-primary-focus-shadow: rgba(146, 196, 252, 0.25);
-  --legacy-alt-primary-disabled-text: #212529;
-  --legacy-alt-primary-active-text: #022954;
-  --legacy-alt-primary-active-bg: #92c4fc;
-  --legacy-custom-control-active-bg: #4299fa;
 }

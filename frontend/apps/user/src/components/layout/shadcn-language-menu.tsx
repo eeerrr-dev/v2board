@@ -11,7 +11,7 @@ export function ShadcnLanguageMenu({ className }: ShadcnLanguageMenuProps) {
     <LanguageMenu
       align="center"
       side="bottom"
-      contentClassName="v2board-app-shell-menu-content min-w-28"
+      contentClassName="v2board-island v2board-app-shell-menu-content min-w-28"
       itemClassName="whitespace-nowrap"
       trigger={(currentLabel) => (
         <button

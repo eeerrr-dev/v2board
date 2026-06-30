@@ -20,7 +20,7 @@ export default function HomePage() {
   }
 
   return (
-    <div style={{ textAlign: 'center', paddingTop: 50 }}>
+    <div className="text-center pt-[50px]">
       <a href="https://github.com/wyx2685/v2board">v2board</a> is best.
     </div>
   );

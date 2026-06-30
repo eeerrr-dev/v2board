@@ -57,7 +57,7 @@ export function Toaster() {
       position="top-right"
       toastOptions={{
         classNames: {
-          toast: 'v2board-toast-root',
+          toast: 'v2board-island v2board-toast-root',
           title: 'text-sm leading-5 font-semibold',
           description: 'text-sm leading-5 text-muted-foreground',
           closeButton: 'v2board-toast-close',

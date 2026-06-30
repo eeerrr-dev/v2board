@@ -1,56 +1,19 @@
+/*
+ * Legacy color tokens that still have a live consumer. The user surfaces are all
+ * pure shadcn islands themed through island variables (user-auth-surface.css) and
+ * the shadcn `@theme inline` map (user-shadcn.css), so only the few tokens read at
+ * runtime or by retained prose/body CSS survive:
+ *   --color-brand-500 / --color-page  -> repainted by applyLegacySettings (lib/legacy-settings.ts)
+ *                                        and consumed by user-browser-modes.css / user-document-root.css
+ *   --color-body / --color-heading    -> baseline text + heading color for .custom-html-style prose
+ * The former parallel `@theme` duplicate and the dead brand shades, surface,
+ * semantic, and border tokens are gone (they generated no utility and had no
+ * var() consumer; the border/muted utilities are owned by user-shadcn.css).
+ */
 :root,
 :host {
-  --color-brand-50: #e6f0fb;
-  --color-brand-100: #cfe2f7;
-  --color-brand-200: #9ec5ef;
-  --color-brand-300: #6ea8e7;
-  --color-brand-400: #0553ab;
   --color-brand-500: #0665d0;
-  --color-brand-600: #054d9e;
-  --color-brand-700: #003d8a;
-  --color-brand-800: #022853;
-  --color-brand-900: #01142a;
-
   --color-page: #f0f3f8;
-  --color-surface: #ffffff;
   --color-body: #495057;
   --color-heading: #171717;
-  --color-muted-foreground: rgba(0, 0, 0, 0.45);
-  --color-border: #e8e8e8;
-  --color-border-light: #f0f0f0;
-  --color-border-input: #d9d9d9;
-  --color-header-dark: #001529;
-
-  --color-success: #52c41a;
-  --color-warning: #faad14;
-  --color-danger: #f5222d;
-  --color-info: #1890ff;
-}
-
-@theme {
-  --color-brand-50: #e6f0fb;
-  --color-brand-100: #cfe2f7;
-  --color-brand-200: #9ec5ef;
-  --color-brand-300: #6ea8e7;
-  --color-brand-400: #0553ab;
-  --color-brand-500: #0665d0;
-  --color-brand-600: #054d9e;
-  --color-brand-700: #003d8a;
-  --color-brand-800: #022853;
-  --color-brand-900: #01142a;
-
-  --color-page: #f0f3f8;
-  --color-surface: #ffffff;
-  --color-body: #495057;
-  --color-heading: #171717;
-  --color-muted-foreground: rgba(0, 0, 0, 0.45);
-  --color-border: #e8e8e8;
-  --color-border-light: #f0f0f0;
-  --color-border-input: #d9d9d9;
-  --color-header-dark: #001529;
-
-  --color-success: #52c41a;
-  --color-warning: #faad14;
-  --color-danger: #f5222d;
-  --color-info: #1890ff;
 }

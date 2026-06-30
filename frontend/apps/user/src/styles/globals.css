@@ -1,15 +1,8 @@
 /*
- * Tailwind is pulled in here only for its Preflight reset, the default theme,
- * and to compile the design-token `@theme` below into :root. `source(none)`
- * means no utility classes are emitted at this layer — every user surface is a
- * pure shadcn island that owns its own unprefixed utilities via user-shadcn.css.
- * Nothing consumes tw:-prefixed utilities (the app asserts they are absent), so
- * that namespace is no longer reserved and none are generated.
+ * Tailwind is pulled in here only for its Preflight reset and default theme.
+ * `source(none)` means no utility classes are emitted at this layer — every user
+ * surface is a pure shadcn island that owns its own unprefixed utilities via
+ * user-shadcn.css. Nothing consumes tw:-prefixed utilities (the app asserts they
+ * are absent), so that namespace is no longer reserved and none are generated.
  */
 @import 'tailwindcss' source(none);
-
-/* Clean-modern design tokens (color/radius/elevation) — single source of truth in
- * @v2board/tokens, shared with the admin app's antd theme. The @theme block is
- * compiled into :root custom properties (--color-primary, --radius-card, …);
- * no utility classes are produced here. */
-@import '@v2board/tokens/tokens.css';
