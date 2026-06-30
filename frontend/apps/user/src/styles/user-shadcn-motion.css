@@ -215,8 +215,19 @@
   .v2board-radix-dialog-content,
   .v2board-radix-overlay,
   .v2board-radix-popover-content,
-  .v2board-radix-sheet-content {
+  .v2board-radix-sheet-content,
+  .v2board-island .animate-pulse {
     animation: none !important;
     transition-duration: 1ms !important;
+  }
+
+  /*
+   * The shared Spinner (animate-spin) is a status indicator, not decoration, so
+   * keep it turning as a liveness cue under reduced motion but slow it well down
+   * rather than freezing it. Scoped to .v2board-island so the admin replica is
+   * untouched; every user surface that renders a Spinner is itself an island.
+   */
+  .v2board-island .animate-spin {
+    animation-duration: 1.6s !important;
   }
 }

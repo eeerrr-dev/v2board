@@ -6,7 +6,7 @@ export function AuthLanguageMenu() {
     <LanguageMenu
       align="end"
       side="bottom"
-      contentClassName="v2board-island v2board-auth-language-menu-content z-[1050] min-w-24"
+      contentClassName="v2board-island v2board-auth-language-menu-content min-w-24"
       itemClassName="v2board-auth-language-menu-item whitespace-nowrap"
       trigger={(currentLabel) => (
         <button

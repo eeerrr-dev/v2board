@@ -143,6 +143,15 @@ describe('TicketDetailPage shadcn chat surface', () => {
     expect(html).not.toContain('tag___12_9H');
   });
 
+  it('marks the standalone route root as a v2board-island so its shadcn tokens resolve', () => {
+    // /ticket/:ticket_id renders OUTSIDE AppLayout (App.tsx), so the page root must
+    // carry .v2board-island itself — otherwise --background/--foreground/--primary are
+    // undefined, bg-background/bg-primary collapse, and dark mode cannot flip.
+    const html = renderToStaticMarkup(<TicketDetailPage />);
+
+    expect(html).toMatch(/<div class="v2board-island [^"]*" data-testid="ticket-detail"/);
+  });
+
   it('keeps the chat shell visible when the ticket fetch fails', () => {
     state.ticket = undefined;
     state.ticketError = true;

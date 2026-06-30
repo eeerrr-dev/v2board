@@ -52,7 +52,7 @@ export default function TicketDetailPage() {
 
   return (
     <div
-      className="flex min-h-screen flex-col bg-background text-foreground"
+      className="v2board-island v2board-page-shell flex min-h-svh flex-col bg-background text-foreground"
       data-testid="ticket-detail"
     >
       <header className="border-b border-border px-4 py-3" data-testid="ticket-detail-header">
