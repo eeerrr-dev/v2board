@@ -25,12 +25,20 @@
 
 .v2board-radix-popover-content[data-state='open'] {
   animation: v2board-popover-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  transform-origin: var(--radix-dropdown-menu-content-transform-origin, var(--radix-select-content-transform-origin, center));
+  /* Radix Popper sets --radix-popper-transform-origin for every popper-based
+     surface (dropdown, select, tooltip, popover); use it directly so the
+     scale-in grows from the trigger-anchored edge for all of them. The earlier
+     dropdown/select-only var chain left the Tooltip falling through to center. */
+  transform-origin: var(--radix-popper-transform-origin, center);
 }
 
 .v2board-radix-popover-content[data-state='closed'] {
   animation: v2board-popover-out 120ms ease-in both;
-  transform-origin: var(--radix-dropdown-menu-content-transform-origin, var(--radix-select-content-transform-origin, center));
+  /* Radix Popper sets --radix-popper-transform-origin for every popper-based
+     surface (dropdown, select, tooltip, popover); use it directly so the
+     scale-in grows from the trigger-anchored edge for all of them. The earlier
+     dropdown/select-only var chain left the Tooltip falling through to center. */
+  transform-origin: var(--radix-popper-transform-origin, center);
 }
 
 .v2board-radix-sheet-content[data-state='open'][data-side='right'] {
