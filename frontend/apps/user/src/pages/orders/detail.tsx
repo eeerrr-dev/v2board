@@ -300,7 +300,7 @@ export default function OrderDetailPage() {
 
               {isStripePayment && stripePk && (
                 <>
-                  <h3 className="text-base font-semibold leading-6">{t('order.credit_card_title')}</h3>
+                  <h3 className="text-base font-semibold leading-6 text-foreground">{t('order.credit_card_title')}</h3>
                   <StripeCardForm key={stripePk} publicKey={stripePk} onToken={handleStripeToken} />
                   <div className="mt-3 mb-5 text-sm text-muted-foreground">
                     {t('order.credit_card_security')}
@@ -376,7 +376,7 @@ export default function OrderDetailPage() {
                 <div className="pt-2 text-sm text-muted-foreground">
                   {t('order.grand_total')}
                 </div>
-                <h1 className="text-3xl font-semibold tracking-normal">
+                <h1 className="text-3xl font-semibold tracking-normal text-card-foreground">
                   {symbol} {(grandTotal / 100).toFixed(2)} {currency}
                 </h1>
                 <Button

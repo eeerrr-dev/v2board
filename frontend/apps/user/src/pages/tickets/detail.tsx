@@ -60,7 +60,7 @@ export default function TicketDetailPage() {
           <Badge variant="secondary" className="shrink-0">
             #{ticketId}
           </Badge>
-          <h1 className="min-w-0 truncate text-base font-semibold">
+          <h1 className="min-w-0 truncate text-base font-semibold text-foreground">
             {data?.subject ?? emptyNotice}
           </h1>
         </div>

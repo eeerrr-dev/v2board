@@ -121,7 +121,7 @@ export default function DashboardPage() {
           <Alert
             data-testid="dashboard-alert"
             data-alert-kind="warning"
-            className="border-amber-200 bg-amber-50 text-foreground"
+            className="border-amber-200 bg-amber-50 text-foreground dark:border-amber-900 dark:bg-amber-950"
             role="alert"
           >
             <Bell className="size-4 text-amber-600" />
@@ -144,7 +144,7 @@ export default function DashboardPage() {
           <Alert
             data-testid="dashboard-alert"
             data-alert-kind="info"
-            className="border-sky-200 bg-sky-50 text-foreground"
+            className="border-sky-200 bg-sky-50 text-foreground dark:border-sky-900 dark:bg-sky-950"
             role="alert"
           >
             <AlertCircle className="size-4 text-sky-600" />
@@ -191,7 +191,7 @@ export default function DashboardPage() {
               <div className="space-y-6">
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-2xl font-semibold tracking-normal">
+                    <h2 className="text-2xl font-semibold tracking-normal text-card-foreground">
                       {legacySub.plan!.name}
                     </h2>
                     {vm.expired ? (

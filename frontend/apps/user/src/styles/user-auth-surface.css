@@ -11,6 +11,7 @@
 .v2board-auth-toast-root,
 .v2board-auth-language-menu-content,
 .v2board-app-shell-menu-content,
+.v2board-radix-sheet-content,
 .v2board-radix-dialog-content {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
@@ -38,6 +39,7 @@
 .v2board-auth-toast-root,
 .v2board-auth-language-menu-content,
 .v2board-app-shell-menu-content,
+.v2board-radix-sheet-content,
 .v2board-radix-dialog-content {
   box-sizing: border-box;
   color-scheme: light;
@@ -64,6 +66,9 @@
 .v2board-app-shell-menu-content *,
 .v2board-app-shell-menu-content *::before,
 .v2board-app-shell-menu-content *::after,
+.v2board-radix-sheet-content *,
+.v2board-radix-sheet-content *::before,
+.v2board-radix-sheet-content *::after,
 .v2board-radix-dialog-content *,
 .v2board-radix-dialog-content *::before,
 .v2board-radix-dialog-content *::after {
@@ -86,6 +91,8 @@
 .v2board-auth-language-menu-content ::selection,
 .v2board-app-shell-menu-content::selection,
 .v2board-app-shell-menu-content ::selection,
+.v2board-radix-sheet-content::selection,
+.v2board-radix-sheet-content ::selection,
 .v2board-radix-dialog-content::selection,
 .v2board-radix-dialog-content ::selection {
   color: var(--primary-foreground);
@@ -96,6 +103,7 @@
 .v2board-app-shell :where(button, input, select, textarea),
 .v2board-auth-language-menu-content :where(button),
 .v2board-app-shell-menu-content :where(button),
+.v2board-radix-sheet-content :where(button, input, select, textarea),
 .v2board-radix-dialog-content :where(button, input, select, textarea) {
   font-family: inherit;
 }
@@ -130,6 +138,7 @@
 .dark .v2board-auth-toast-root,
 .dark .v2board-auth-language-menu-content,
 .dark .v2board-app-shell-menu-content,
+.dark .v2board-radix-sheet-content,
 .dark .v2board-radix-dialog-content {
   color-scheme: dark;
   --background: oklch(0.145 0 0);
@@ -156,4 +165,20 @@
   border-color: color-mix(in oklch, oklch(0.765 0.177 163.223) 30%, transparent);
   background: color-mix(in oklch, oklch(0.262 0.051 172.552) 70%, transparent);
   color: oklch(0.765 0.177 163.223);
+}
+
+/*
+ * Rich announcement / knowledge-article content (.custom-html-style) is portaled
+ * into the knowledge Sheet, whose island variables are scoped and dark-flipped
+ * above. The legacy replica pins this content to fixed light-mode colors
+ * (color: #333, plus the global h1-h6 #171717 rule), so in dark mode they render
+ * near-black on the dark drawer. Re-point body and heading text to the island
+ * foreground in dark mode only; light mode stays byte-identical to the replica.
+ */
+.dark .custom-html-style {
+  color: var(--foreground);
+}
+
+.dark .custom-html-style :where(h1, h2, h3, h4, h5, h6) {
+  color: inherit;
 }

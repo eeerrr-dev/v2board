@@ -177,7 +177,7 @@ export default function PlanCheckoutPage() {
       <Card data-testid="plan-non-renewable">
         <CardContent className="flex min-h-64 flex-col items-center justify-center gap-4 text-center">
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold leading-7">{t('plan.cannot_renew_current')}</h3>
+            <h3 className="text-lg font-semibold leading-7 text-card-foreground">{t('plan.cannot_renew_current')}</h3>
             <p className="text-sm text-muted-foreground">{t('plan.select_other')}</p>
           </div>
           <Button type="button" onClick={() => navigate('/plan')}>
@@ -281,7 +281,7 @@ export default function PlanCheckoutPage() {
               </div>
             ) : null}
             <div className="text-sm text-muted-foreground">{t('plan.grand_total')}</div>
-            <h1 className="text-3xl font-semibold tracking-normal">
+            <h1 className="text-3xl font-semibold tracking-normal text-card-foreground">
               {symbol} {(totalAmount / 100).toFixed(2)} {currency}
             </h1>
             {info?.plan_id && info.plan_id !== plan.id && !isLegacyExpired(subscribe?.expired_at) ? (
