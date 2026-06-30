@@ -57,24 +57,6 @@ export function PageHeader({
   );
 }
 
-interface SurfaceIconProps extends HTMLAttributes<HTMLDivElement> {
-  children: ReactNode;
-}
-
-export function SurfaceIcon({ children, className, ...props }: SurfaceIconProps) {
-  return (
-    <div
-      className={cn(
-        'flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground',
-        className,
-      )}
-      {...props}
-    >
-      {children}
-    </div>
-  );
-}
-
 interface EmptyStateProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
   action?: ReactNode;
   description?: ReactNode;

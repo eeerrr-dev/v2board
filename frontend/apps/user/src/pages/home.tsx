@@ -25,7 +25,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="text-center pt-[50px]">
+    <div className="pt-12 text-center">
       <a href="https://github.com/wyx2685/v2board">v2board</a> is best.
     </div>
   );

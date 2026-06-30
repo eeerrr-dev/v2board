@@ -120,6 +120,34 @@ vi.mock('@/components/ui/shadcn-dialog', () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
+vi.mock('@/components/ui/alert-dialog', () => ({
+  AlertDialog: ({
+    children,
+    open,
+  }: {
+    children: ReactNode;
+    onOpenChange?: (open: boolean) => void;
+    open?: boolean;
+  }) => (open ? <div data-dialog="open">{children}</div> : null),
+  AlertDialogContent: ({
+    children,
+    className,
+    ...props
+  }: {
+    children: ReactNode;
+    className?: string;
+    [key: string]: unknown;
+  }) => (
+    <div className={className} data-dialog-content="open" {...props}>
+      {children}
+    </div>
+  ),
+  AlertDialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+  AlertDialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  AlertDialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  AlertDialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+}));
+
 vi.mock('@/lib/queries', () => ({
   useCommConfig: () => ({}),
   useNewPeriodMutation: () => ({

@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/shadcn-dialog';
+import { Badge } from '@/components/ui/badge';
 import { formatUserLegacyDate } from '@/lib/legacy-date';
 import { sanitizeLegacyHtml } from '@/lib/sanitize-html';
 import { cn } from '@/lib/cn';
@@ -125,9 +126,7 @@ function NoticeCard({ notice, onOpen }: { notice: Notice; onOpen: (notice: Notic
             : undefined
         }
       >
-        <span className="inline-flex rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground">
-          {t('notice.title')}
-        </span>
+        <Badge>{t('notice.title')}</Badge>
         <div className={cn('mt-10 space-y-1', notice.img_url && 'text-white')}>
           <div className="line-clamp-2 text-lg font-semibold">{notice.title}</div>
           <div className={cn('text-sm text-muted-foreground', notice.img_url && 'text-white/75')}>

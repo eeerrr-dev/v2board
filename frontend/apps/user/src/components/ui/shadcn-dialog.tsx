@@ -13,7 +13,7 @@ function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrim
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        'v2board-radix-overlay fixed inset-0 z-50 bg-black/50 data-[state=closed]:opacity-0 data-[state=open]:opacity-100',
+        'v2board-radix-overlay fixed inset-0 z-50 bg-black/50',
         className,
       )}
       {...props}

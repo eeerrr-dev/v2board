@@ -39,7 +39,7 @@ describe('HomePage legacy root entry', () => {
   it('renders the bundled fallback shell before redirecting to login', async () => {
     const html = renderToStaticMarkup(<HomePage />);
 
-    expect(html).toContain('pt-[50px]');
+    expect(html).toContain('pt-12');
     expect(html).toContain('href="https://github.com/wyx2685/v2board"');
     expect(html).toContain('v2board');
     expect(html).toContain(' is best.');

@@ -10,6 +10,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/shadcn-dialog';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
@@ -228,25 +236,21 @@ export function ProfileConfirmDialog({
   const description = isTelegram ? t('profile.telegram_unbind_tip') : t('profile.reset_subscribe_tip');
 
   return (
-    <Dialog open={action !== null} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent
-        className="sm:max-w-md"
-        data-testid="profile-confirm-dialog"
-        showCloseButton={false}
-      >
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
+    <AlertDialog open={action !== null} onOpenChange={(open) => !open && onCancel()}>
+      <AlertDialogContent className="sm:max-w-md" data-testid="profile-confirm-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
           <Button variant="outline" onClick={onCancel}>
             {t('common.cancel')}
           </Button>
           <Button data-testid="profile-confirm-primary" onClick={onConfirm}>
             {t('profile.confirm')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

@@ -6,10 +6,17 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/shadcn-dialog';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { DashboardSubscribeMenu } from './dashboard-subscribe-menu';
 import {
@@ -63,18 +70,18 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
       : t('dashboard.new_period_confirm_content');
 
   return (
-    <Dialog
+    <AlertDialog
       open={action !== null}
       onOpenChange={(open) => {
         if (!open && !confirmLoading) onClose();
       }}
     >
-      <DialogContent data-testid="dashboard-dialog" className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{confirmTitle}</DialogTitle>
-          <DialogDescription>{confirmContent}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
+      <AlertDialogContent data-testid="dashboard-dialog" className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
+          <AlertDialogDescription>{confirmContent}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
           <Button
             type="button"
             variant="outline"
@@ -95,9 +102,9 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
           >
             {t('common.confirm')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
