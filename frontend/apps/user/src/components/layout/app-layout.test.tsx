@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   darkMode: false,
   labels: {
     'common.cancel': '取消',
+    'common.dark_mode_disable': 'Disable dark mode',
+    'common.dark_mode_enable': 'Enable dark mode',
     'common.logout': '登出',
     'common.search': '搜索',
     'nav.buy_subscribe': '购买订阅',
@@ -22,6 +24,8 @@ const mocks = vi.hoisted(() => ({
     'nav.profile': '个人中心',
     'nav.tickets': '我的工单',
     'nav.traffic': '流量明细',
+    'nav.open_nav': 'Open navigation',
+    'nav.primary_nav': 'Primary navigation',
     'order.detail': '订单详情',
     'plan.checkout_title': '确认订单',
   } as Record<string, string>,

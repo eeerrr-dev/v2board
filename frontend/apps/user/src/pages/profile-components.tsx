@@ -157,7 +157,7 @@ export function ProfileTelegramBindDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent data-testid="profile-telegram-bind-dialog">
+      <DialogContent data-testid="profile-telegram-bind-dialog" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{t('profile.telegram_bind')}</DialogTitle>
         </DialogHeader>

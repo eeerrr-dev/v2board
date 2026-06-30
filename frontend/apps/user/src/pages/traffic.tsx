@@ -103,7 +103,9 @@ export default function TrafficPage() {
               emptyTestId="traffic-empty"
               scrollRef={bodyRef}
               scrollProps={{
-                tabIndex: -1,
+                tabIndex: 0,
+                role: 'region',
+                'aria-label': t('nav.traffic'),
                 'data-scroll-position': scrollPosition,
                 'data-testid': 'service-table-scroll',
                 onScroll,

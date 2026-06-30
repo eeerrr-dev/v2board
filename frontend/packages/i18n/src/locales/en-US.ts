@@ -3,6 +3,9 @@ import type { Translations } from './zh-CN';
 const enUS: Translations = {
   common: {
     submit: 'Submit',
+    dark_mode_enable: 'Enable dark mode',
+    dark_mode_disable: 'Disable dark mode',
+    scan_qrcode: 'Scan QR code',
     cancel: 'Cancel',
     confirm: 'Confirm',
     save: 'Save',
@@ -79,6 +82,8 @@ const enUS: Translations = {
     tickets: 'My Tickets',
     traffic: 'Transfer Data Details',
     notices: 'Announcements',
+    open_nav: 'Open navigation',
+    primary_nav: 'Primary navigation',
   },
   auth: {
     sign_in: 'Login',

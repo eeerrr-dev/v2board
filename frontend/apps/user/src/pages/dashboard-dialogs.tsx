@@ -118,7 +118,11 @@ export function DashboardSubscribeDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent data-testid="dashboard-dialog" className="p-0 sm:max-w-sm">
+        <DialogContent
+          data-testid="dashboard-dialog"
+          className="p-0 sm:max-w-sm"
+          aria-describedby={undefined}
+        >
           <DialogHeader className="px-5 pt-5">
             <DialogTitle>{t('dashboard.shortcut_one_click')}</DialogTitle>
           </DialogHeader>
@@ -132,7 +136,12 @@ export function DashboardSubscribeDialog({
             <DialogTitle>{t('dashboard.scan_qrcode_subscribe')}</DialogTitle>
             <DialogDescription>{t('dashboard.qrcode_client_tip')}</DialogDescription>
           </DialogHeader>
-          <div className="flex justify-center" data-testid="dashboard-subscribe-qrcode-image">
+          <div
+            className="flex justify-center"
+            data-testid="dashboard-subscribe-qrcode-image"
+            role="img"
+            aria-label={t('dashboard.scan_qrcode_subscribe')}
+          >
             <QRCodeSVG value={subscribeUrl} />
           </div>
         </DialogContent>

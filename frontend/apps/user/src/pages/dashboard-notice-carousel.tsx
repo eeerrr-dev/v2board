@@ -88,7 +88,7 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
           if (!open) setActiveNotice(null);
         }}
       >
-        <DialogContent data-testid="dashboard-dialog">
+        <DialogContent data-testid="dashboard-dialog" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>{activeNotice?.title}</DialogTitle>
           </DialogHeader>

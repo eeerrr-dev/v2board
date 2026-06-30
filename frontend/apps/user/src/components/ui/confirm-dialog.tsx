@@ -115,7 +115,10 @@ export function ConfirmDialogProvider() {
         if (!nextOpen && !closingRef.current) cancel();
       }}
     >
-      <AlertDialogContent className="v2board-confirm-dialog sm:max-w-[26rem]">
+      <AlertDialogContent
+        className="v2board-confirm-dialog sm:max-w-[26rem]"
+        {...(options?.description ? {} : { 'aria-describedby': undefined })}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle className="v2board-confirm-title">
             {options?.title}

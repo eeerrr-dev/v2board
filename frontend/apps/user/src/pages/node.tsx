@@ -134,7 +134,9 @@ export default function NodePage() {
               scrollProps={{
                 'data-scroll-position': scrollPosition,
                 'data-testid': 'service-table-scroll',
-                tabIndex: -1,
+                tabIndex: 0,
+                role: 'region',
+                'aria-label': t('nav.node'),
                 onScroll,
               }}
               virtualizer={{ enabled: servers.length > VIRTUALIZE_MIN_ROWS }}

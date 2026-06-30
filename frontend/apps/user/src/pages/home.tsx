@@ -16,7 +16,12 @@ export default function HomePage() {
   }, [homepage, navigate]);
 
   if (homepage) {
-    return <div dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(decodeHomepage(homepage)) }} />;
+    return (
+      <div
+        className="custom-html-style"
+        dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(decodeHomepage(homepage)) }}
+      />
+    );
   }
 
   return (

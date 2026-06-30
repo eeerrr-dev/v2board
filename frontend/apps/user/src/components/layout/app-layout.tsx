@@ -167,7 +167,7 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Primary navigation">
+      <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label={t('nav.primary_nav')}>
         {NAV.map((group, groupIndex) => (
           <Fragment key={group.labelKey ?? `group-${groupIndex}`}>
             {group.labelKey ? (
@@ -253,15 +253,15 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
               size="icon"
               className="lg:hidden"
               onClick={() => setSidebarOpen(true)}
-              aria-label="Open navigation"
+              aria-label={t('nav.open_nav')}
             >
               <Menu className="size-4" />
             </Button>
 
             <div className="min-w-0 flex-1">
-              <div className="v2board-container-title truncate text-base font-semibold text-foreground">
+              <h1 className="v2board-container-title truncate text-base font-semibold text-foreground">
                 {title}
-              </div>
+              </h1>
             </div>
 
             {search ? (
@@ -280,7 +280,7 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
               variant="ghost"
               size="icon"
               data-dark-mode-trigger
-              aria-label={darkMode ? 'Disable dark mode' : 'Enable dark mode'}
+              aria-label={darkMode ? t('common.dark_mode_disable') : t('common.dark_mode_enable')}
               onClick={() => setDarkMode(!darkMode)}
             >
               {darkMode ? <Moon className="size-4" /> : <Sun className="size-4" />}

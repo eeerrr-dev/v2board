@@ -124,7 +124,7 @@ export default function DashboardPage() {
             className="border-amber-200 bg-amber-50 text-foreground dark:border-amber-900 dark:bg-amber-950"
             role="alert"
           >
-            <Bell className="size-4 text-amber-600" />
+            <Bell className="size-4 text-amber-600 dark:text-amber-300" />
             <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
               <span>
                 <strong>{openTicketCount}</strong> {t('dashboard.alert_open_ticket_suffix')}
@@ -147,7 +147,7 @@ export default function DashboardPage() {
             className="border-sky-200 bg-sky-50 text-foreground dark:border-sky-900 dark:bg-sky-950"
             role="alert"
           >
-            <AlertCircle className="size-4 text-sky-600" />
+            <AlertCircle className="size-4 text-sky-600 dark:text-sky-300" />
             <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
               <span>{t('dashboard.alert_traffic_rate', { rate: vm.usedPctRounded })}</span>
               {vm.trafficAlertResetAvailable ? (

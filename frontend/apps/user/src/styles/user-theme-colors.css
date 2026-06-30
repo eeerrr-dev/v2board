@@ -5,7 +5,8 @@
  * runtime or by retained prose/body CSS survive:
  *   --color-brand-500 / --color-page  -> repainted by applyLegacySettings (lib/legacy-settings.ts)
  *                                        and consumed by user-browser-modes.css / user-document-root.css
- *   --color-body / --color-heading    -> baseline text + heading color for .custom-html-style prose
+ *   --color-body                      -> global <body> text color (user-document-root.css)
+ *   --color-heading                   -> global h1-h6 color (user-heading-base.css)
  * The former parallel `@theme` duplicate and the dead brand shades, surface,
  * semantic, and border tokens are gone (they generated no utility and had no
  * var() consumer; the border/muted utilities are owned by user-shadcn.css).

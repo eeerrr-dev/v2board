@@ -1,6 +1,9 @@
 const zhCN = {
   common: {
     submit: '提交',
+    dark_mode_enable: '开启深色模式',
+    dark_mode_disable: '关闭深色模式',
+    scan_qrcode: '扫描二维码',
     cancel: '取消',
     confirm: '确定',
     save: '保存',
@@ -77,6 +80,8 @@ const zhCN = {
     tickets: '我的工单',
     traffic: '流量明细',
     notices: '公告',
+    open_nav: '打开导航',
+    primary_nav: '主导航',
   },
   auth: {
     sign_in: '登录',

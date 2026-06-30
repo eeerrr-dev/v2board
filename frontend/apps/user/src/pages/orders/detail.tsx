@@ -376,9 +376,9 @@ export default function OrderDetailPage() {
                 <div className="pt-2 text-sm text-muted-foreground">
                   {t('order.grand_total')}
                 </div>
-                <h1 className="text-3xl font-semibold tracking-normal text-card-foreground">
+                <div className="text-3xl font-semibold tracking-normal text-card-foreground">
                   {symbol} {(grandTotal / 100).toFixed(2)} {currency}
-                </h1>
+                </div>
                 <Button
                   type="button"
                   block
@@ -414,7 +414,7 @@ export default function OrderDetailPage() {
             <DialogDescription>{t('order.waiting_pay')}</DialogDescription>
           </DialogHeader>
           {payUrl && (
-            <div className="flex justify-center">
+            <div className="flex justify-center" role="img" aria-label={t('common.scan_qrcode')}>
               <QRCodeSVG
                 value={payUrl}
                 size={250}

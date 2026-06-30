@@ -240,9 +240,6 @@ importers:
       '@v2board/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
-      '@v2board/tokens':
-        specifier: workspace:*
-        version: link:../../packages/tokens
       '@v2board/types':
         specifier: workspace:*
         version: link:../../packages/types

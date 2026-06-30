@@ -281,9 +281,9 @@ export default function PlanCheckoutPage() {
               </div>
             ) : null}
             <div className="text-sm text-muted-foreground">{t('plan.grand_total')}</div>
-            <h1 className="text-3xl font-semibold tracking-normal text-card-foreground">
+            <div className="text-3xl font-semibold tracking-normal text-card-foreground">
               {symbol} {(totalAmount / 100).toFixed(2)} {currency}
-            </h1>
+            </div>
             {info?.plan_id && info.plan_id !== plan.id && !isLegacyExpired(subscribe?.expired_at) ? (
               <Alert>
                 <AlertDescription>{t('plan.change_warning')}</AlertDescription>

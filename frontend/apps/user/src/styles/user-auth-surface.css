@@ -52,13 +52,18 @@
 }
 
 /*
- * Neutralize the legacy global heading/paragraph rhythm (h1-h6 / p margins and
- * line-height from the replica's prose CSS) inside every island, so portaled
- * Dialog/Sheet descriptions and titles follow the shadcn rhythm rather than the
- * vendored 1rem margin.
+ * Neutralize the legacy global heading/paragraph rhythm AND color inside every
+ * island. The replica's prose CSS sets h1-h6 / p margins plus a document-wide
+ * heading color (#171717) and body color whose bare element selectors still
+ * match any heading inside an island. Resetting margin to 0 and color to
+ * `inherit` makes portaled Dialog/Sheet titles and any bare island heading
+ * follow the shadcn rhythm and the island `--foreground` instead of the vendored
+ * margin and near-black. The !important shadcn color utilities (text-foreground /
+ * text-card-foreground) still win wherever a surface sets one explicitly.
  */
 .v2board-island :where(h1, h2, h3, h4, h5, h6, p) {
   margin: 0;
+  color: inherit;
 }
 
 .v2board-island::selection,
