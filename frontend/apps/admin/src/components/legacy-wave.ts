@@ -18,6 +18,7 @@ export function triggerLegacyWave(node: HTMLElement) {
   node.removeAttribute('ant-click-animating-without-extra-node');
   void node.offsetWidth;
   node.setAttribute('ant-click-animating-without-extra-node', 'true');
+  // eslint-disable-next-line prefer-const -- forward reference: cleanup() below closes over cleanupTimer before it is assigned, so const would require restructuring this legacy replica wave effect
   let cleanupTimer: number | undefined;
   const cleanup = () => {
     node.removeAttribute('ant-click-animating-without-extra-node');
