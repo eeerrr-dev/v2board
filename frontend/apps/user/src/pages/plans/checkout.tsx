@@ -177,7 +177,7 @@ export default function PlanCheckoutPage() {
       <Card data-testid="plan-non-renewable">
         <CardContent className="flex min-h-64 flex-col items-center justify-center gap-4 text-center">
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold leading-7 text-card-foreground">{t('plan.cannot_renew_current')}</h3>
+            <h2 className="text-lg font-semibold leading-7 text-card-foreground">{t('plan.cannot_renew_current')}</h2>
             <p className="text-sm text-muted-foreground">{t('plan.select_other')}</p>
           </div>
           <Button type="button" onClick={() => navigate('/plan')}>

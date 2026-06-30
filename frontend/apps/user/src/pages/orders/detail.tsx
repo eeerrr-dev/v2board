@@ -300,7 +300,7 @@ export default function OrderDetailPage() {
 
               {isStripePayment && stripePk && (
                 <>
-                  <h3 className="text-base font-semibold leading-6 text-foreground">{t('order.credit_card_title')}</h3>
+                  <h2 className="text-base font-semibold leading-6 text-foreground">{t('order.credit_card_title')}</h2>
                   <StripeCardForm key={stripePk} publicKey={stripePk} onToken={handleStripeToken} />
                   <div className="mt-3 mb-5 text-sm text-muted-foreground">
                     {t('order.credit_card_security')}
