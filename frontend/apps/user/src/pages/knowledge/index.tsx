@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -31,12 +31,12 @@ import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
 export default function KnowledgePage() {
   const { t, i18n } = useTranslation();
   const [searchValue, setSearchValue] = useState('');
-  const [keyword, setKeyword] = useState('');
+  const deferredKeyword = useDeferredValue(searchValue);
   const [searchParams] = useSearchParams();
   const language = getRequestLocale();
   const [selectedId, setSelectedId] = useState<number | string | undefined>(undefined);
   const [visibleDetail, setVisibleDetail] = useState<Knowledge | undefined>();
-  const knowledgeQuery = useKnowledge(language, keyword || undefined);
+  const knowledgeQuery = useKnowledge(language, deferredKeyword || undefined);
   const { data, isFetching } = knowledgeQuery;
   const loading = isFetching;
   const knowledgeGroups = data ?? {};
@@ -86,11 +86,6 @@ export default function KnowledgePage() {
     setVisibleDetail(undefined);
     setSelectedId(item.id);
   };
-
-  useEffect(() => {
-    const id = window.setTimeout(() => setKeyword(searchValue || ''), 300);
-    return () => window.clearTimeout(id);
-  }, [searchValue]);
 
   useEffect(() => {
     if (detail.data && !detail.isFetching) setVisibleDetail(detail.data);

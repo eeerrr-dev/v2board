@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 
 const deployOutDir =
@@ -7,7 +9,10 @@ const deployOutDir =
 
 export default defineConfig({
   base: '/theme/default/assets/',
-  plugins: [react()],
+  // @tailwindcss/vite now owns the `@import 'tailwindcss'` compile for the deploy
+  // bundle's umi.css (postcss.config.cjs is retired); React Compiler runs via the
+  // @rolldown/plugin-babel preset, same as the dev config.
+  plugins: [tailwindcss(), react(), babel({ presets: [reactCompilerPreset()] })],
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },

@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { SubscribeInfo, UserInfo } from '@v2board/types';
+import dayjs from 'dayjs';
 import { formatBytes } from '@v2board/config/format';
 import { apiClient } from './api';
 
@@ -47,11 +48,10 @@ export function reportUserInfoToChat(info: UserInfo) {
 
 export function reportSubscribeToChat(data: SubscribeInfo) {
   if (!window.$crisp) return;
-  // Matches moment(1e3 * expired_at).format('YYYY-MM-DD'); a null expiry becomes
-  // the epoch date exactly as the original does (no '-' fallback here).
-  const expireDate = new Date((data.expired_at ?? 0) * 1000);
-  const pad = (value: number) => `${value}`.padStart(2, '0');
-  const expireTime = `${expireDate.getFullYear()}-${pad(expireDate.getMonth() + 1)}-${pad(expireDate.getDate())}`;
+  // Matches the legacy moment(1e3 * expired_at).format('YYYY-MM-DD'); a null
+  // expiry becomes the epoch date exactly as the original does (no '-' fallback
+  // here). dayjs formats in local time, byte-identical to the old manual pad.
+  const expireTime = dayjs((data.expired_at ?? 0) * 1000).format('YYYY-MM-DD');
   window.$crisp.push([
     'set',
     'session:data',
@@ -240,6 +240,10 @@ export const usePlan = (id: number | string | undefined) =>
 export const usePaymentMethods = (options?: QueryFreshnessOptions & { enabled?: boolean }) =>
   useQuery({
     ...userQueryOptions.payments(),
+    // Payment gateways are operator configuration that rarely changes, so avoid
+    // refetching them on every checkout mount. (Plans are deliberately NOT given
+    // a stale window: their capacity_limit/sold-out state is a live contract.)
+    staleTime: 5 * 60_000,
     ...options,
   });
 
@@ -322,8 +326,14 @@ export function useChangePasswordMutation() {
 }
 
 export function useUpdateProfileMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: Parameters<typeof user.update>[1]) => user.update(apiClient, payload),
+    // Profile edits change the cached user record; invalidate it here so every
+    // consumer refreshes instead of each call site wiring its own refetch.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: userKeys.info });
+    },
   });
 }
 
@@ -334,14 +344,24 @@ export function useResetSubscribeMutation() {
 }
 
 export function useTransferMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (amount: number | string | undefined) => user.transfer(apiClient, amount),
+    // Transfer moves commission into the balance shown by the user record.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: userKeys.info });
+    },
   });
 }
 
 export function useRedeemGiftCardMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (code: string) => user.redeemGiftCard(apiClient, code),
+    // A redeemed gift card credits the balance on the user record.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: userKeys.info });
+    },
   });
 }
 
@@ -414,7 +434,14 @@ export function useNewPeriodMutation() {
 }
 
 export function useUnbindTelegramMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => user.unbindTelegram(apiClient),
+    // Unbinding clears the telegram_id on the user record. The disabled
+    // subscribe query is still refetched imperatively at the call site, since
+    // invalidation does not refetch a query with enabled:false.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: userKeys.info });
+    },
   });
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import type { ParseKeys } from 'i18next';
 import { useParams, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { QRCodeSVG } from 'qrcode.react';
@@ -34,7 +35,7 @@ import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/cn';
 
-const PERIOD_LABEL_KEY: Record<string, string> = {
+const PERIOD_LABEL_KEY: Record<string, ParseKeys> = {
   month_price: 'plan.monthly',
   quarter_price: 'plan.quarterly',
   half_year_price: 'plan.half_year',

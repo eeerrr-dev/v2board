@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   } as Record<string, string>,
   locale: 'zh-CN',
   location: { pathname: '/dashboard', search: '' },
+  navigationState: 'idle' as 'idle' | 'loading' | 'submitting',
   logout: vi.fn(),
   navigate: vi.fn(),
   setDarkMode: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('react-router', () => ({
   Outlet: () => <div data-outlet="true">Outlet content</div>,
   useLocation: () => mocks.location,
   useNavigate: () => mocks.navigate,
+  useNavigation: () => ({ state: mocks.navigationState }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -105,6 +107,7 @@ function resetMocks() {
   mocks.darkMode = false;
   mocks.locale = 'zh-CN';
   mocks.location = { pathname: '/dashboard', search: '' };
+  mocks.navigationState = 'idle';
   mocks.logout.mockReset();
   mocks.navigate.mockReset();
   mocks.setDarkMode.mockReset();
@@ -157,6 +160,13 @@ describe('AppLayout shadcn app shell markup', () => {
     expect(html).toContain('v2board-app-main');
     expect(html).toContain('animate-spin');
     expect(html).not.toContain('data-outlet="true"');
+  });
+
+  it('shows the route pending bar only while the router navigation is in flight', () => {
+    expect(renderToStaticMarkup(<AppLayout />)).not.toContain('data-testid="route-pending-bar"');
+
+    mocks.navigationState = 'loading';
+    expect(renderToStaticMarkup(<AppLayout />)).toContain('data-testid="route-pending-bar"');
   });
 });
 

@@ -85,21 +85,10 @@ const LEGACY_HTML_SANITIZE_CONFIG = {
 } satisfies Config;
 
 // DOMPurify's default export is an instance already bound to the ambient window
-// at import time, so there is nothing to verify beyond its own support flag:
-// with a real DOM it sanitizes per ALLOWED_TAGS/ALLOWED_ATTR, and with no DOM
-// (SSR, or import before a window exists) we fail closed to ''. The positive
-// support decision is memoized so later renders skip the re-check; a negative
-// result is never cached, so the check re-runs once a working DOM appears.
-let domPurifySupported = false;
-
+// at import time. This app is CSR-only (createRoot, no SSR), so every caller runs
+// in a real browser or jsdom; the single node-safety guard below fails closed only
+// if the module is ever imported without a DOM.
 export function sanitizeLegacyHtml(html: string) {
-  if (!isDOMPurifySupported()) return '';
+  if (typeof window === 'undefined') return '';
   return DOMPurify.sanitize(html, LEGACY_HTML_SANITIZE_CONFIG);
-}
-
-function isDOMPurifySupported(): boolean {
-  if (domPurifySupported) return true;
-  if (typeof window === 'undefined' || DOMPurify.isSupported === false) return false;
-  domPurifySupported = true;
-  return true;
 }

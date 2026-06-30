@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { getLocaleAntdMessages } from '@v2board/i18n';
@@ -44,7 +45,7 @@ import {
   useTickets,
 } from '@/lib/queries';
 
-const LEVELS: { value: TicketLevel; labelKey: string }[] = [
+const LEVELS: { value: TicketLevel; labelKey: ParseKeys }[] = [
   { value: 0, labelKey: 'ticket.level_low' },
   { value: 1, labelKey: 'ticket.level_medium' },
   { value: 2, labelKey: 'ticket.level_high' },

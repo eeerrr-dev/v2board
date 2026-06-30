@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ParseKeys } from 'i18next';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -120,18 +121,17 @@ export default function ProfilePage() {
   const redeemLoading = redeem.isPending || redeemTimeoutStuck;
 
   const togglePref = async (key: ProfilePreferenceKey, value: 0 | 1) => {
-    let succeeded = false;
     setUpdatingPref((current) => ({ ...current, [key]: true }));
     try {
+      // The mutation invalidates the user record on success, so consumers
+      // refresh without a manual refetch here.
       await updateProfile.mutateAsync({ [key]: value } as Parameters<
         typeof updateProfile.mutateAsync
       >[0]);
-      succeeded = true;
     } catch {
     } finally {
       setUpdatingPref((current) => ({ ...current, [key]: false }));
     }
-    if (succeeded) void info.refetch();
   };
 
   const onChangePwd = passwordForm.handleSubmit(async (values) => {
@@ -149,7 +149,6 @@ export default function ProfilePage() {
     setRedeemTimeoutStuck(false);
     try {
       const result = await redeem.mutateAsync(code);
-      void info.refetch();
       toast.success(
         t('profile.redeem_success', {
           detail: redeemGiftcardText(result.type, result.value, t),
@@ -185,7 +184,8 @@ export default function ProfilePage() {
         .mutateAsync()
         .then(() => {
           toast.success(t('profile.reset_success'));
-          void info.refetch();
+          // The mutation invalidates the user record; the subscribe query is
+          // disabled, so it still needs an explicit refetch here.
           void subscribeQuery.refetch();
         })
         .catch(() => {});
@@ -509,7 +509,10 @@ export default function ProfilePage() {
 function redeemGiftcardText(
   type: number,
   value: number,
-  t: ReturnType<typeof useTranslation>['t'],
+  // A minimal callable instead of the full TFunction: passing the heavy i18next
+  // t type into this helper and calling it with interpolation overflows the TS
+  // instantiation depth (TS2589). Keys are still checked against ParseKeys.
+  t: (key: ParseKeys, options?: Record<string, string | number>) => string,
 ) {
   switch (type) {
     case 1:

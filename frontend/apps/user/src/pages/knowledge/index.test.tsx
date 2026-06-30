@@ -197,7 +197,7 @@ describe('KnowledgePage shadcn library surface', () => {
     expect(knowledgeSource).not.toContain("renderLegacyMarkdown(visibleDetail?.body ?? '')");
   });
 
-  it('uses a controlled shadcn input while debouncing onChange', () => {
+  it('uses a controlled shadcn input wired to setSearchValue', () => {
     const searchInputSource = knowledgeSource.slice(
       knowledgeSource.indexOf('<Input'),
       knowledgeSource.indexOf('/>', knowledgeSource.indexOf('<Input')),
@@ -241,11 +241,14 @@ describe('KnowledgePage redesigned interactions', () => {
     vi.useRealTimers();
   });
 
-  it('debounces searches for 300ms and keeps the request locale', async () => {
+  it('defers searches to the query and keeps the request locale', async () => {
     await act(async () => {
       root!.render(<KnowledgePage />);
       await Promise.resolve();
     });
+
+    expect(mocks.knowledgeArgs).toContainEqual({ language: 'zh-CN', keyword: undefined });
+    expect(mocks.knowledgeArgs.some((item) => item.keyword === 'router')).toBe(false);
 
     const input = container.querySelector('input[placeholder="搜索文档"]') as HTMLInputElement;
     await act(async () => {
@@ -254,14 +257,6 @@ describe('KnowledgePage redesigned interactions', () => {
         'router',
       );
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      vi.advanceTimersByTime(299);
-      await Promise.resolve();
-    });
-
-    expect(mocks.knowledgeArgs.some((item) => item.keyword === 'router')).toBe(false);
-
-    await act(async () => {
-      vi.advanceTimersByTime(1);
       await Promise.resolve();
     });
 

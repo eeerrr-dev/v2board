@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type BaseSyntheticEvent } from 'react';
+import { useCallback, useEffect, type BaseSyntheticEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { ApiError, user } from '@v2board/api-client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -51,11 +51,13 @@ export function useLoginController(): LoginController {
   const queryClient = useQueryClient();
   const { mutateAsync, isPending } = useLoginMutation();
   const { mutateAsync: tokenLogin } = useTokenLoginMutation();
-  const [error, setError] = useState<string | null>(null);
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: '', password: '' },
   });
+  // Server-side login failures live in react-hook-form's reserved `root` error namespace rather
+  // than a parallel useState, so the inline alert is the single source of truth for this surface.
+  const error = form.formState.errors.root?.serverError?.message ?? null;
 
   const queryRedirect = params.get('redirect');
   const redirect = normalizeRedirectTarget(queryRedirect);
@@ -63,7 +65,7 @@ export function useLoginController(): LoginController {
 
   const login = useCallback(
     async ({ email, password }: LoginFormValues) => {
-      setError(null);
+      form.clearErrors('root.serverError');
       try {
         const result = await mutateAsync({ email, password });
         setAuthData(result.auth_data);
@@ -78,10 +80,12 @@ export function useLoginController(): LoginController {
         // the oracle (the api-client toast model); everything else is shown inline beside the form
         // (the global toast also fires).
         if (err instanceof ApiError && err.status === 0) return;
-        setError((err instanceof Error && err.message) || i18nGet('请求失败'));
+        form.setError('root.serverError', {
+          message: (err instanceof Error && err.message) || i18nGet('请求失败'),
+        });
       }
     },
-    [mutateAsync, navigate, queryClient, redirect],
+    [form, mutateAsync, navigate, queryClient, redirect],
   );
   const submit = form.handleSubmit(login);
 
@@ -125,7 +129,9 @@ export function useLoginController(): LoginController {
     };
   }, [navigate, queryClient, queryRedirect, redirect, tokenLogin, verify]);
 
-  const clearError = useCallback(() => setError(null), []);
+  // RHF only auto-clears root errors on the next submit, so the form-level onInput keeps wiring here
+  // to dismiss the alert the moment the user edits a field without resubmitting.
+  const clearError = useCallback(() => form.clearErrors('root.serverError'), [form]);
 
   return { registerInput: form.register, submit, clearError, isPending, error };
 }

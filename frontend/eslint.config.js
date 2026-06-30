@@ -103,5 +103,31 @@ export default tseslint.config(
     },
     rules: { '@typescript-eslint/no-deprecated': 'error' },
   },
+  // The user app runs the React Compiler (1.0), so the compiler-correctness
+  // react-hooks rules are turned back on for its source (they stay off globally
+  // because the admin replica is still legacy DOM/hook patterns).
+  //
+  // Enforced: purity / refs / immutability / incompatible-library — these are the
+  // rules the compiler actually relies on to safely auto-memoize. They are clean
+  // across the user app, except TanStack Table's useReactTable (an inherently
+  // non-memoizable API), disabled inline at that one call site.
+  //
+  // Deliberately NOT enabled here: exhaustive-deps and set-state-in-effect. Both
+  // are advisory hygiene rules the compiler tolerates, and every current violation
+  // is an intentional, behavior-parity effect on a contract-covered surface — the
+  // backend `弹窗` auto-popup, the checkout payment-status polling state machine,
+  // the recaptcha cleanup, and the knowledge URL-id open. Under the repo's
+  // `--max-warnings 0` lint gate, turning them on would force ~10 inline-disables
+  // of legitimate Tier-1/Tier-2 code that catch no real bug. They remain off until
+  // a surface is refactored to not need the effect, rather than annotated en masse.
+  {
+    files: ['apps/user/src/**/*.{ts,tsx}'],
+    rules: {
+      'react-hooks/immutability': 'error',
+      'react-hooks/incompatible-library': 'error',
+      'react-hooks/purity': 'error',
+      'react-hooks/refs': 'error',
+    },
+  },
   prettier,
 );

@@ -53,16 +53,19 @@ describe('shadcn island presentation CSS', () => {
   it('declares the pure shadcn island theme variables and source boundaries', () => {
     const globals = css();
 
-    expect(globals).toContain("@import 'tailwindcss' prefix(tw);");
+    expect(globals).toContain("@import 'tailwindcss' source(none);");
     expect(globals).toContain("@import 'tailwindcss/theme.css';");
     expect(globals).toContain('@media important {\n  @tailwind utilities source(none);');
     expect(globals).not.toContain("@import 'tailwindcss';");
+    expect(globals).not.toContain('prefix(tw)');
     expect(globals).toContain('@theme inline {');
     expect(globals).toContain('--color-card: var(--card);');
     expect(globals).toContain('--color-muted-foreground: var(--muted-foreground);');
-    expect(globals).toContain("@source '../pages/auth/**/*.tsx';");
-    expect(globals).toContain("@source '../pages/dashboard.tsx';");
-    expect(globals).toContain("@source '../components/ui/**/*.tsx';");
+    // Naked utilities are scanned from every island page/component source (not a
+    // drift-prone per-file list), so a surface split into helper files keeps its
+    // unique utilities (regression: dashboard-notice-carousel.tsx lost w-6/h-1.5).
+    expect(globals).toContain("@source '../pages/**/*.tsx';");
+    expect(globals).toContain("@source '../components/**/*.tsx';");
     expect(globals).toContain('.v2board-auth-surface,');
     expect(globals).toContain('.v2board-app-shell,');
     expect(globals).toContain('.v2board-radix-dialog-content {\n  --radius: 0.625rem;');

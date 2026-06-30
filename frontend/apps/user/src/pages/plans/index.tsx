@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
+import type { ParseKeys } from 'i18next';
 import { useCommConfig, usePlans } from '@/lib/queries';
 import { PlanContent } from '@/components/plan-content';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +13,7 @@ import { cn } from '@/lib/cn';
 
 type PlanLike = NonNullable<ReturnType<typeof usePlans>['data']>[number];
 
-const PERIOD_PRICES: { key: keyof PlanLike; labelKey: string }[] = [
+const PERIOD_PRICES: { key: keyof PlanLike; labelKey: ParseKeys }[] = [
   { key: 'month_price', labelKey: 'plan.monthly' },
   { key: 'quarter_price', labelKey: 'plan.quarterly' },
   { key: 'half_year_price', labelKey: 'plan.half_year' },
@@ -26,7 +27,7 @@ const RENEWAL_PRICE_KEYS = PERIOD_PRICES.filter((p) => p.key !== 'onetime_price'
 type FilterKind = 'all' | 'period' | 'traffic';
 
 function getUnitPriceTag(plan: PlanLike) {
-  let unitPrice: { key: keyof PlanLike; labelKey: string } | undefined;
+  let unitPrice: { key: keyof PlanLike; labelKey: ParseKeys } | undefined;
   [...PERIOD_PRICES].reverse().forEach((period) => {
     if (plan[period.key] !== null) unitPrice = period;
   });

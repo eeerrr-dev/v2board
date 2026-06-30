@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SubscribeInfo, UserInfo } from '@v2board/types';
@@ -81,6 +82,17 @@ const queryClient = new QueryClient({
 applyInitialDarkMode();
 const router = createUserRouter(queryClient);
 
+// Dev-only TanStack Query devtools. The import lives inside an import.meta.env.DEV
+// branch so the production deploy build (where Vite statically resolves DEV to
+// false) dead-code-eliminates the dynamic import and never ships it in umi.js.
+const ReactQueryDevtools = import.meta.env.DEV
+  ? lazy(() =>
+      import('@tanstack/react-query-devtools').then((module) => ({
+        default: module.ReactQueryDevtools,
+      })),
+    )
+  : null;
+
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');
 
@@ -90,6 +102,11 @@ createRoot(root).render(
       <RouterProvider router={router} />
       <ConfirmDialogProvider />
       <Toaster />
+      {ReactQueryDevtools ? (
+        <Suspense fallback={null}>
+          <ReactQueryDevtools initialIsOpen={false} />
+        </Suspense>
+      ) : null}
     </QueryClientProvider>
   </I18nextProvider>,
 );

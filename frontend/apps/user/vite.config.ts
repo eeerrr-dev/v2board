@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import {
   buildAppViteConfig,
@@ -25,7 +27,13 @@ export default defineConfig({
   plugins: [
     legacyNavigationRedirectPlugin(),
     rejectPackagedUserAssetsPlugin(),
+    tailwindcss(),
     react(),
+    // React Compiler (1.0) auto-memoizes components/hooks so manual useMemo/
+    // useCallback referential-stability ceremony is no longer load-bearing.
+    // @vitejs/plugin-react@6 drives its transforms through oxc, so the compiler
+    // runs as a separate @rolldown/plugin-babel pass via the plugin's own preset.
+    babel({ presets: [reactCompilerPreset()] }),
   ],
   optimizeDeps: {
     // noDiscovery is intentional (see vite-config.test.ts): it stops Vite from
@@ -49,11 +57,13 @@ export default defineConfig({
       '@stripe/stripe-js',
       '@stripe/stripe-js/pure',
       '@tanstack/react-query',
+      '@tanstack/react-query-devtools',
       '@tanstack/react-table',
       '@tanstack/react-virtual',
       '@v2board/api-client > axios',
       'class-variance-authority',
       'clsx',
+      'dayjs',
       'dompurify',
       'i18next',
       'lucide-react',
@@ -62,6 +72,7 @@ export default defineConfig({
       'react',
       'react-dom',
       'react-dom/client',
+      'react/compiler-runtime',
       'react/jsx-dev-runtime',
       'react/jsx-runtime',
       'react-hook-form',

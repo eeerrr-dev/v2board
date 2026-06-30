@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
+import type { ParseKeys } from 'i18next';
 import { useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Send } from 'lucide-react';
@@ -44,7 +45,9 @@ export default function TicketDetailPage() {
   const emptyNotice = ticket.data
     ? undefined
     : ticket.isError
-      ? t('Ticket does not exist')
+      ? // Legacy flat-dictionary key resolved at runtime via the merged legacy
+        // i18n resources; it is not part of the structured key tree.
+        t('Ticket does not exist' as ParseKeys)
       : t('common.loading');
 
   return (

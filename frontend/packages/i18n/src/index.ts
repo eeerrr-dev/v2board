@@ -207,4 +207,5 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
 }
 
 export { zhCN, zhTW, enUS, jaJP, viVN, koKR };
+export type { Translations } from './locales/zh-CN';
 export * from './locale-registry';

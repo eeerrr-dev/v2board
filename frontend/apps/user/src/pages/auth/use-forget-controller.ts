@@ -1,6 +1,4 @@
 import {
-  useEffect,
-  useRef,
   type BaseSyntheticEvent,
   type ReactNode,
 } from 'react';
@@ -45,8 +43,7 @@ export interface ForgetController {
 // Authored V2Board — forget-password behavior controller. Mirrors the register controller's split:
 // the page is a thin view; mutations / recaptcha / validation / navigation live here, and the
 // recaptcha-gated send-code + 60-second cooldown is shared with register via useSendEmailVerifyFlow.
-// The payload contract is unchanged; the post-submit navigation is guarded by a mountedRef so a
-// completion after unmount cannot route a torn-down surface.
+// The payload contract is unchanged.
 export function useForgetController(): ForgetController {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -68,14 +65,6 @@ export function useForgetController(): ForgetController {
     },
   });
 
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
   const { sendCode, isSendingCode, cooldownActive, cooldownRemaining } = useSendEmailVerifyFlow({
     isforget: 1,
     getEmail: () => form.getValues('email'),
@@ -89,7 +78,7 @@ export function useForgetController(): ForgetController {
         password: values.password,
         email_code: values.email_code,
       });
-      if (mountedRef.current) navigate('/login');
+      navigate('/login');
     } catch {}
   };
 

@@ -1,3 +1,4 @@
+import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
@@ -10,7 +11,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 
-const STATUS_LABEL: Record<number, { key: string; status: string }> = {
+const STATUS_LABEL: Record<number, { key: ParseKeys; status: string }> = {
   0: { key: 'order.status_unpaid', status: 'error' },
   1: { key: 'order.status_processing', status: 'processing' },
   2: { key: 'order.status_cancelled', status: 'default' },
@@ -18,7 +19,7 @@ const STATUS_LABEL: Record<number, { key: string; status: string }> = {
   4: { key: 'order.status_credit', status: 'default' },
 };
 
-const PERIOD_LABEL: Record<string, string> = {
+const PERIOD_LABEL: Record<string, ParseKeys> = {
   month_price: 'plan.monthly',
   quarter_price: 'plan.quarterly',
   half_year_price: 'plan.half_year',

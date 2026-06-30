@@ -5262,10 +5262,16 @@ async function runDashboardSubscribeDrawerInteraction(page) {
     page,
     '[data-testid="dashboard-subscribe-qrcode"], .oneClickSubscribe___2t9Xg .subscribe-for-qrcode',
   );
-  await page.waitForSelector('[data-testid="dashboard-dialog"] canvas, .ant-modal canvas', {
-    state: 'visible',
-    timeout: 5_000,
-  });
+  // Redesigned source renders the QR as an <svg> (qrcode.react QRCodeSVG); the
+  // legacy oracle renders a <canvas>. Accept either, scoped to the QR wrapper so
+  // the dialog's lucide close-button <svg> is not mistaken for the QR.
+  await page.waitForSelector(
+    '[data-testid="dashboard-subscribe-qrcode-image"] svg, [data-testid="dashboard-subscribe-qrcode-image"] canvas, .ant-modal canvas',
+    {
+      state: 'visible',
+      timeout: 5_000,
+    },
+  );
   await page.waitForTimeout(100);
   const qr = await dashboardSubscribeState(page);
 
@@ -10821,7 +10827,7 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.opened?.itemTexts).includes('Hiddify') ||
       !JSON.stringify(result.opened?.itemTexts).includes('Sing-box') ||
       !jsonIncludesAny(result.copied?.messageTexts, ['复制成功', 'Copied successfully']) ||
-      result.qr?.qrCanvasCount < 1 ||
+      result.qr?.qrCount < 1 ||
       !jsonIncludesAny(result.qr?.qrTipTexts, [
         '使用支持扫码的客户端进行订阅',
         'Use a client app that supports scanning QR code to subscribe',
@@ -13986,7 +13992,10 @@ async function dashboardSubscribeState(page) {
     ),
     messageTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
     modalCount,
-    qrCanvasCount: await visibleCount(page, '[data-testid="dashboard-dialog"] canvas, .ant-modal canvas'),
+    qrCount: await visibleCount(
+      page,
+      '[data-testid="dashboard-subscribe-qrcode-image"] svg, [data-testid="dashboard-subscribe-qrcode-image"] canvas, .ant-modal canvas',
+    ),
     qrTipTexts: qrTipTexts.map(normalizeDashboardDialogText),
     shortcutTexts: await visibleTexts(page, '[data-testid="dashboard-shortcut"]', 4),
     tutorialButtons: await visibleTexts(
@@ -14068,7 +14077,13 @@ async function dashboardNoticeCarouselState(page) {
     return {
       activeDotIndex: dots.findIndex(
         (dot) =>
+          // Legacy slick oracle marks the active dot with .slick-active; the
+          // redesigned shadcn carousel marks it with data-active/aria-current on
+          // the dot button (the same data-active convention this scenario already
+          // uses to read the active slide).
           dot.classList.contains('slick-active') ||
+          dot.getAttribute('data-active') === 'true' ||
+          dot.getAttribute('aria-current') === 'true' ||
           dot.getAttribute('data-state') === 'active' ||
           dot.querySelector('[aria-selected="true"]'),
       ),

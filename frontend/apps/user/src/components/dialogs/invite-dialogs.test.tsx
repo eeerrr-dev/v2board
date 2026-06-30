@@ -213,7 +213,10 @@ describe('invite commission dialogs shadcn behavior', () => {
     await flushPromises();
 
     expect(mocks.transferMutateAsync).toHaveBeenCalledWith('12.34');
-    expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['user', 'info'] });
+    // The user-record invalidation now lives in the transfer mutation's
+    // onSuccess (covered in queries.test.ts), so the dialog no longer triggers
+    // it directly.
+    expect(mocks.invalidateQueries).not.toHaveBeenCalled();
   });
 
   it('validates transfer with react-hook-form and keeps amount conversion out of the dialog', () => {

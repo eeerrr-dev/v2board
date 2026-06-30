@@ -1,24 +1,23 @@
+import dayjs from 'dayjs';
 import {
   formatLegacyDateMinuteSlash as formatBaseLegacyDateMinuteSlash,
   formatLegacyDateTime as formatBaseLegacyDateTime,
-  legacyEpochDate,
-  padLegacyDatePart,
 } from '@v2board/config/format';
 
 export function formatUserLegacyDate(
   timestamp: number | string | null | undefined,
 ): string {
-  const date = legacyEpochDate(timestamp);
-  if (!date) return 'Invalid date';
-  return `${date.getFullYear()}-${padLegacyDatePart(date.getMonth() + 1)}-${padLegacyDatePart(date.getDate())}`;
+  const date = dayjs(Number(timestamp) * 1000);
+  if (!date.isValid()) return 'Invalid date';
+  return date.format('YYYY-MM-DD');
 }
 
 export function formatUserLegacyDateSlash(
   timestamp: number | string | null | undefined,
 ): string {
-  const date = legacyEpochDate(timestamp);
-  if (!date) return 'Invalid date';
-  return `${date.getFullYear()}/${padLegacyDatePart(date.getMonth() + 1)}/${padLegacyDatePart(date.getDate())}`;
+  const date = dayjs(Number(timestamp) * 1000);
+  if (!date.isValid()) return 'Invalid date';
+  return date.format('YYYY/MM/DD');
 }
 
 export function formatUserLegacyDateTime(

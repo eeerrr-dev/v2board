@@ -1,6 +1,7 @@
-import { useRef } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import type { ParseKeys } from 'i18next';
 import {
   AlertCircle,
   Bell,
@@ -25,8 +26,7 @@ import { DashboardNoticeCarousel } from './dashboard-notice-carousel';
 import {
   DashboardConfirmDialog,
   DashboardSubscribeDialog,
-  type DashboardConfirmDialogHandle,
-  type DashboardSubscribeDialogHandle,
+  type DashboardConfirmAction,
 } from './dashboard-dialogs';
 import { useDashboardSubscription } from './dashboard-subscription';
 import { useCommConfig, useNotices, useSubscribe, useUserStat } from '@/lib/queries';
@@ -37,8 +37,8 @@ import { cn } from '@/lib/cn';
 interface Shortcut {
   to: string;
   icon: typeof BookOpen;
-  titleKey: string;
-  descKey: string;
+  titleKey: ParseKeys;
+  descKey: ParseKeys;
   onClick?: () => void;
 }
 
@@ -49,8 +49,8 @@ export default function DashboardPage() {
   const stat = useUserStat();
   const notices = useNotices();
   useCommConfig();
-  const confirmDialog = useRef<DashboardConfirmDialogHandle>(null);
-  const subscribeDialog = useRef<DashboardSubscribeDialogHandle>(null);
+  const [confirmAction, setConfirmAction] = useState<DashboardConfirmAction>(null);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
 
   const pendingOrderCount = stat.data?.pending_orders ?? 0;
   const openTicketCount = stat.data?.pending_tickets ?? 0;
@@ -62,8 +62,8 @@ export default function DashboardPage() {
   const subscribeUrl = typeof sub?.subscribe_url === 'string' ? sub.subscribe_url : '';
   const legacySub = sub!;
 
-  const requestResetPackage = () => confirmDialog.current?.openReset();
-  const requestNewPeriod = () => confirmDialog.current?.openNewPeriod();
+  const requestResetPackage = () => setConfirmAction('reset-package');
+  const requestNewPeriod = () => setConfirmAction('new-period');
 
   const shortcuts: Shortcut[] = [
     {
@@ -77,7 +77,7 @@ export default function DashboardPage() {
       icon: LinkIcon,
       titleKey: 'dashboard.shortcut_one_click',
       descKey: 'dashboard.shortcut_one_click_desc',
-      onClick: () => subscribeDialog.current?.open(),
+      onClick: () => setSubscribeOpen(true),
     },
     {
       to: vm.canRenew ? `/plan/${sub?.plan_id}` : '/plan',
@@ -352,8 +352,12 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <DashboardSubscribeDialog ref={subscribeDialog} subscribeUrl={subscribeUrl} />
-      <DashboardConfirmDialog ref={confirmDialog} />
+      <DashboardSubscribeDialog
+        open={subscribeOpen}
+        onOpenChange={setSubscribeOpen}
+        subscribeUrl={subscribeUrl}
+      />
+      <DashboardConfirmDialog action={confirmAction} onClose={() => setConfirmAction(null)} />
     </PageShell>
   );
 }

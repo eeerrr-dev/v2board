@@ -1,7 +1,5 @@
 import {
-  useEffect,
   useState,
-  useRef,
   type BaseSyntheticEvent,
   type ReactNode,
 } from 'react';
@@ -56,8 +54,7 @@ export interface RegisterController {
 // mutations / recaptcha orchestration / validation / navigation live here. The recaptcha-gated
 // send-code + 60-second cooldown is shared with the forget surface via useSendEmailVerifyFlow, so
 // this controller only owns register-specific concerns (TOS gating, whitelist suffix, invite code).
-// The request payloads and toast contract remain legacy-compatible; the post-submit navigation is
-// guarded by a mountedRef so a completion after unmount cannot route a torn-down surface.
+// The request payloads and toast contract remain legacy-compatible.
 export function useRegisterController(): RegisterController {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -82,7 +79,6 @@ export function useRegisterController(): RegisterController {
     },
   });
 
-  const mountedRef = useRef(true);
   const [emailSuffix, setEmailSuffix] = useState<string | undefined>(undefined);
   const [tosChecked, setTosChecked] = useState(false);
   const emailWhitelistSuffix = config?.email_whitelist_suffix;
@@ -96,12 +92,6 @@ export function useRegisterController(): RegisterController {
   const getEmail = (email: string) => {
     return hasEmailWhitelist ? `${email}@${selectedEmailSuffix}` : email;
   };
-
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
 
   const { sendCode, isSendingCode, cooldownActive, cooldownRemaining } = useSendEmailVerifyFlow({
     isforget: 0,
@@ -123,7 +113,7 @@ export function useRegisterController(): RegisterController {
         email_code: config?.is_email_verify ? values.email_code ?? '' : '',
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });
-      if (mountedRef.current) navigate('/login');
+      navigate('/login');
     } catch {}
   };
 

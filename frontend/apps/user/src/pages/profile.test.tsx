@@ -216,7 +216,7 @@ describe('ProfilePage shadcn account surface', () => {
     document.body.innerHTML = '';
   });
 
-  it('refreshes user info after redeem success without waiting before the success toast', async () => {
+  it('shows the redeem success toast only after the mutation resolves, leaving the refresh to the mutation', async () => {
     let resolveRedeem!: () => void;
     mocks.redeem.mockImplementation(
       () =>
@@ -224,7 +224,6 @@ describe('ProfilePage shadcn account surface', () => {
           resolveRedeem = () => resolve({ type: 1, value: 1234 });
         }),
     );
-    mocks.refetchInfo.mockImplementation(() => new Promise(() => {}));
 
     await act(async () => {
       root!.render(<ProfilePage />);
@@ -247,6 +246,8 @@ describe('ProfilePage shadcn account surface', () => {
     });
 
     expect(mocks.redeem).toHaveBeenCalledWith('CARD-123');
+    // The success toast must wait for the mutation to resolve, not fire on submit.
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
 
     await act(async () => {
       resolveRedeem();
@@ -254,7 +255,9 @@ describe('ProfilePage shadcn account surface', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.refetchInfo).toHaveBeenCalledTimes(1);
+    // The user-record refresh is now the mutation's onSuccess job (see
+    // queries.test.ts), so the component no longer refetches here directly.
+    expect(mocks.refetchInfo).not.toHaveBeenCalled();
     expect(mocks.toastSuccess).toHaveBeenCalledWith('兑换成功: 账户余额 12.34');
   });
 
@@ -379,7 +382,7 @@ describe('ProfilePage shadcn account surface', () => {
     expect(componentSource).not.toContain('/bind undefined');
   });
 
-  it('updates profile switches with the original 0/1 payload and refetches after success', async () => {
+  it('updates profile switches with the original 0/1 payload and leaves the refresh to the mutation', async () => {
     mocks.updateProfile.mockResolvedValue(true);
 
     await act(async () => {
@@ -403,10 +406,9 @@ describe('ProfilePage shadcn account surface', () => {
     });
 
     expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: 1 });
-    expect(mocks.refetchInfo).toHaveBeenCalledTimes(1);
+    expect(mocks.refetchInfo).not.toHaveBeenCalled();
 
     mocks.updateProfile.mockRejectedValue(new Error('failed'));
-    mocks.refetchInfo.mockClear();
 
     await act(async () => {
       switches[1]!.click();
@@ -637,7 +639,9 @@ describe('ProfilePage shadcn account surface', () => {
     });
 
     expect(mocks.unbindTelegram).toHaveBeenCalledTimes(1);
-    expect(mocks.refetchInfo).toHaveBeenCalledTimes(1);
+    // Unbinding's user-record refresh now lives in the mutation's onSuccess; the
+    // disabled subscribe query still needs the explicit call-site refetch.
+    expect(mocks.refetchInfo).not.toHaveBeenCalled();
     expect(mocks.refetchSubscribe).toHaveBeenCalledTimes(1);
   });
 });

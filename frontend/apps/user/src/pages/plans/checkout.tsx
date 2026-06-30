@@ -12,6 +12,7 @@ import {
   useSubscribe,
   useUserInfo,
 } from '@/lib/queries';
+import type { ParseKeys } from 'i18next';
 import type { Coupon, Plan, PlanPeriod } from '@v2board/types';
 import { PlanContent } from '@/components/plan-content';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
@@ -23,7 +24,7 @@ import { PageShell } from '@/components/ui/page';
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group';
 import { Spinner } from '@/components/ui/spinner';
 
-const PERIOD_LABELS: Record<PlanPeriod, string> = {
+const PERIOD_LABELS: Record<PlanPeriod, ParseKeys> = {
   month_price: 'plan.monthly',
   quarter_price: 'plan.quarterly',
   half_year_price: 'plan.half_year',
@@ -36,7 +37,7 @@ const PERIOD_LABELS: Record<PlanPeriod, string> = {
 
 type PurchasablePlanPeriod = Exclude<PlanPeriod, 'reset_price'>;
 
-const PERIODS: { key: PurchasablePlanPeriod; period: PurchasablePlanPeriod; labelKey: string }[] = [
+const PERIODS: { key: PurchasablePlanPeriod; period: PurchasablePlanPeriod; labelKey: ParseKeys }[] = [
   { key: 'month_price', period: 'month_price', labelKey: 'plan.monthly' },
   { key: 'quarter_price', period: 'quarter_price', labelKey: 'plan.quarterly' },
   { key: 'half_year_price', period: 'half_year_price', labelKey: 'plan.half_year' },
@@ -73,11 +74,6 @@ export default function PlanCheckoutPage() {
         planQuery.data && planQuery.data[p.key] !== null,
     );
   }, [planQuery.data]);
-
-  useEffect(() => {
-    if (period || !planQuery.data) return;
-    setPeriod(getDefaultPeriod(planQuery.data));
-  }, [period, planQuery.data]);
 
   useEffect(() => {
     if (planQuery.error) navigate('/plan');

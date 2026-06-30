@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
+import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -20,7 +20,7 @@ import {
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { userKeys, useTransferMutation } from '@/lib/queries';
+import { useTransferMutation } from '@/lib/queries';
 import { getLegacySettings } from '@/lib/legacy-settings';
 
 interface TransferDialogProps {
@@ -36,7 +36,6 @@ type TransferFormValues = z.infer<typeof transferSchema>;
 
 export function TransferDialog({ max, children }: TransferDialogProps) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const transfer = useTransferMutation();
   const [open, setOpen] = useState(false);
   const form = useForm<TransferFormValues>({
@@ -51,9 +50,9 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
 
   const onSubmit = form.handleSubmit(async ({ yuan }) => {
     try {
+      // The transfer mutation invalidates the user record on success.
       await transfer.mutateAsync(yuan);
       onOpenChange(false);
-      void queryClient.invalidateQueries({ queryKey: userKeys.info });
     } catch {}
   });
 
@@ -91,7 +90,7 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
               label={t('invite.transfer_amount')}
               error={
                 form.formState.errors.yuan?.message
-                  ? t(form.formState.errors.yuan.message)
+                  ? t(form.formState.errors.yuan.message as ParseKeys)
                   : undefined
               }
             >

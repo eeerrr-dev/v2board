@@ -509,11 +509,7 @@ describe('RegisterPage behavior', () => {
   });
 
   it('delegates the send-code countdown to the shared flow hook with cleanup', () => {
-    // The controller keeps only its own mount guard for post-submit navigation…
-    expect(controllerSource).toContain('const mountedRef = useRef(true);');
-    expect(controllerSource).toContain("if (mountedRef.current) navigate('/login');");
-    expect(controllerSource).toContain('useEffect(() => {');
-    // …and delegates the recaptcha-gated send + 60s cooldown to one shared hook.
+    // The recaptcha-gated send + 60s cooldown is delegated to one shared hook.
     expect(controllerSource).toContain('useSendEmailVerifyFlow(');
     expect(controllerSource).not.toContain('useCountdown');
     expect(controllerSource).not.toContain('startSendEmailVerifyCountdown');

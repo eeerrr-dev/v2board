@@ -183,4 +183,36 @@ describe('user query state behavior', () => {
     expect(queriesSource).toContain("queryKey: ['user', 'orders']");
     expect(queriesSource).not.toContain("query.queryKey[2] !== 'detail'");
   });
+
+  it('invalidates the user record from every mutation that changes it, not the call sites', async () => {
+    const queries = await import('./queries');
+    const userInfoMutations = [
+      'useUpdateProfileMutation',
+      'useTransferMutation',
+      'useRedeemGiftCardMutation',
+      'useUnbindTelegramMutation',
+    ] as const;
+
+    for (const name of userInfoMutations) {
+      const factory = queries[name] as unknown as () => { onSuccess: () => void };
+      const mutation = factory();
+
+      invalidateQueries.mockReset();
+      expect(mutation.onSuccess()).toBeUndefined();
+
+      expect(invalidateQueries).toHaveBeenCalledTimes(1);
+      const options = invalidateQueries.mock.calls[0]![0] as { queryKey: readonly unknown[] };
+      expect(options.queryKey).toEqual(['user', 'info']);
+    }
+  });
+
+  it('keeps the payment-method query off the per-mount refetch path while leaving plans live', async () => {
+    const { usePaymentMethods, usePlans } = await import('./queries');
+
+    const payments = usePaymentMethods() as unknown as UseQueryOptions;
+    expect(payments.staleTime).toBe(5 * 60_000);
+
+    const plans = usePlans() as unknown as UseQueryOptions;
+    expect(plans.staleTime).toBeUndefined();
+  });
 });

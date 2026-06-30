@@ -6,8 +6,9 @@ import {
   useEffect,
   useState,
 } from 'react';
-import { useLocation, useNavigate } from 'react-router';
+import { useLocation, useNavigate, useNavigation } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
+import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { getLegacyLocaleClassName } from '@v2board/i18n';
 import {
@@ -50,12 +51,12 @@ type ShellIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
 interface NavItem {
   to: string;
-  labelKey: string;
+  labelKey: ParseKeys;
   icon: ShellIcon;
 }
 
 interface NavGroup {
-  labelKey?: string;
+  labelKey?: ParseKeys;
   items: NavItem[];
 }
 
@@ -102,12 +103,12 @@ const NAV: NavGroup[] = [
   },
 ];
 
-const DETAIL_LABELS: { match: RegExp; labelKey: string }[] = [
+const DETAIL_LABELS: { match: RegExp; labelKey: ParseKeys }[] = [
   { match: /^\/order\/[^/]+$/, labelKey: 'order.detail' },
   { match: /^\/plan\/[^/]+$/, labelKey: 'plan.checkout_title' },
 ];
 
-function findActiveLabel(pathname: string): string | undefined {
+function findActiveLabel(pathname: string): ParseKeys | undefined {
   for (const d of DETAIL_LABELS) {
     if (d.match.test(pathname)) return d.labelKey;
   }
@@ -125,6 +126,11 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
   const { i18n, t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  // The redesigned shell lazy-loads each route's chunk and runs its loader on
+  // navigation; surface that interstitial with the data router's own navigation
+  // state instead of leaving the previous page frozen (Tier-2 presentation).
+  const navigation = useNavigation();
+  const navPending = navigation.state !== 'idle';
   // The require-user route loader has already awaited ensureQueryData for the
   // user info, so this read is guaranteed to be satisfied: useSuspenseQuery
   // makes the value non-nullable and lets the old `Loading...` branches go.
@@ -219,6 +225,16 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
 
   return (
     <div id="page-container" className={cn('v2board-app-shell min-h-screen', localeClass)}>
+      {navPending ? (
+        <div
+          data-testid="route-pending-bar"
+          aria-hidden
+          className="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden"
+        >
+          <div className="h-full w-full animate-pulse bg-primary" />
+        </div>
+      ) : null}
+
       <div
         className={cn(
           'fixed inset-0 z-30 bg-black/40 transition-opacity lg:hidden',

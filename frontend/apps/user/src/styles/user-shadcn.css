@@ -3,8 +3,8 @@
  *
  * Keep this separate from globals.css so redesigned islands can use unprefixed
  * registry-style classes without injecting a second Tailwind preflight over the
- * legacy app. `source(none)` keeps the naked utility surface limited to the
- * files listed here, and `important` lets these utilities beat old
+ * legacy app. The `@source` globs below scope candidate scanning to the island
+ * page/component sources, and `important` lets these utilities beat old
  * Bootstrap/OneUI naked class collisions such as px-4, p-4, border-0, and
  * text-center inside those islands.
  */
@@ -37,21 +37,19 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-@source '../pages/auth/**/*.tsx';
-@source '../pages/dashboard.tsx';
-@source '../pages/profile.tsx';
-@source '../pages/node.tsx';
-@source '../pages/traffic.tsx';
-@source '../pages/invite.tsx';
-@source '../pages/tickets/**/*.tsx';
-@source '../pages/knowledge/**/*.tsx';
-@source '../pages/plans/**/*.tsx';
-@source '../pages/orders/**/*.tsx';
-@source '../components/dialogs/*.tsx';
-@source '../components/plan-content.tsx';
-@source '../components/layout/app-layout.tsx';
-@source '../components/layout/shadcn-language-menu.tsx';
-@source '../components/ui/**/*.tsx';
+/*
+ * Every user surface is a pure shadcn island (App.tsx/main.tsx carry no naked
+ * utilities), so scan all page and component sources. This was previously a
+ * hand-maintained per-file list, which silently dropped a surface's unique
+ * utilities the moment it was split into helper files — e.g. the dashboard's
+ * `dashboard-notice-carousel.tsx` lost `w-6`/`h-1.5`. The old
+ * `@tailwindcss/postcss` build masked the gap with whole-project candidate
+ * detection; `@tailwindcss/vite` honors these `@source` globs exactly, so the
+ * list must be authoritative. Two directory globs cannot drift as files are
+ * added or split.
+ */
+@source '../pages/**/*.tsx';
+@source '../components/**/*.tsx';
 
 @media important {
   @tailwind utilities source(none);

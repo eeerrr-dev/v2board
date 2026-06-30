@@ -190,6 +190,9 @@ function DataTable<TData>({
     ...column,
     id: column.id ?? `column-${index}`,
   }));
+  // TanStack Table returns non-memoizable functions, so the React Compiler skips
+  // memoizing this component by design — an accepted tradeoff for a sanctioned dep.
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table API
   const table = useReactTable({
     data,
     columns: tableColumns,

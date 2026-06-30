@@ -1,3 +1,5 @@
+import dayjs from 'dayjs';
+
 const BYTES_PER_GB = 1_073_741_824;
 const BYTES_PER_MB = 1_048_576;
 
@@ -20,46 +22,29 @@ export function formatMoney(cents: number, symbol = '¥', fractionDigits = 2): s
 
 export function formatDate(timestamp: number | null | undefined): string {
   if (!timestamp) return '-';
-  const d = new Date(timestamp * 1000);
-  const pad = (n: number) => `${n}`.padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return dayjs(timestamp * 1000).format('YYYY-MM-DD');
 }
 
 export function formatDateTime(timestamp: number | null | undefined): string {
   if (!timestamp) return '-';
-  const d = new Date(timestamp * 1000);
-  const pad = (n: number) => `${n}`.padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
-export function legacyEpochDate(timestamp: number | string | null | undefined): Date | null {
-  const date = new Date(Number(timestamp) * 1000);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-export function padLegacyDatePart(value: number): string {
-  return `${value}`.padStart(2, '0');
+  return dayjs(timestamp * 1000).format('YYYY-MM-DD HH:mm:ss');
 }
 
 export function formatLegacyDateTime(timestamp: number | string | null | undefined): string {
-  const d = legacyEpochDate(timestamp);
-  if (!d) return 'Invalid date';
-  const pad = padLegacyDatePart;
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const d = dayjs(Number(timestamp) * 1000);
+  if (!d.isValid()) return 'Invalid date';
+  return d.format('YYYY-MM-DD HH:mm:ss');
 }
 
 export function formatDateMinuteSlash(timestamp: number | null | undefined): string {
   if (!timestamp) return '-';
-  const d = new Date(timestamp * 1000);
-  const pad = (n: number) => `${n}`.padStart(2, '0');
-  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return dayjs(timestamp * 1000).format('YYYY/MM/DD HH:mm');
 }
 
 export function formatLegacyDateMinuteSlash(timestamp: number | string | null | undefined): string {
-  const d = legacyEpochDate(timestamp);
-  if (!d) return 'Invalid date';
-  const pad = padLegacyDatePart;
-  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const d = dayjs(Number(timestamp) * 1000);
+  if (!d.isValid()) return 'Invalid date';
+  return d.format('YYYY/MM/DD HH:mm');
 }
 
 export function daysUntil(timestamp: number | null | undefined): number | null {
