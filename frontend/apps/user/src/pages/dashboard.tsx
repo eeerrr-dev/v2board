@@ -30,8 +30,7 @@ import {
 } from './dashboard-dialogs';
 import { useDashboardSubscription } from './dashboard-subscription';
 import { useCommConfig, useNotices, useSubscribe, useUserStat } from '@/lib/queries';
-import { formatBytes } from '@v2board/config/format';
-import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
+import { formatBytes, formatLegacyDateSlash } from '@v2board/config/format';
 import { cn } from '@/lib/cn';
 
 interface Shortcut {
@@ -218,7 +217,7 @@ export default function DashboardPage() {
                   ) : (
                     <p className="text-sm leading-6 text-muted-foreground">
                       {t('dashboard.expires_in', {
-                        date: formatUserLegacyDateSlash(legacySub.expired_at),
+                        date: formatLegacyDateSlash(legacySub.expired_at),
                         day: vm.daysLeft,
                       })}
                       {legacySub.reset_day !== null

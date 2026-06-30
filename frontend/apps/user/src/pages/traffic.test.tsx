@@ -130,11 +130,9 @@ describe('TrafficPage shadcn service table', () => {
     expect(trafficSource).not.toContain('fixedBodyRowExtraPixel');
   });
 
-  it('keeps traffic dates behind the user legacy date formatter', () => {
-    expect(trafficSource).toContain(
-      "import { formatUserLegacyDateSlash } from '@/lib/legacy-date';",
-    );
-    expect(trafficSource).toContain('formatUserLegacyDateSlash(row.original.record_at)');
+  it('keeps traffic dates behind the shared legacy date formatter', () => {
+    expect(trafficSource).toContain("formatLegacyDateSlash } from '@v2board/config/format';");
+    expect(trafficSource).toContain('formatLegacyDateSlash(row.original.record_at)');
     expect(trafficSource).not.toContain('formatDate(row.record_at).replaceAll');
   });
 

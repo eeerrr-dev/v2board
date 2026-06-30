@@ -3,6 +3,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { X } from 'lucide-react';
 import { type ComponentProps, type HTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
+import { dialogOverlayClassName } from './dialog-surface';
 
 const Sheet = SheetPrimitive.Root;
 const SheetTrigger = SheetPrimitive.Trigger;
@@ -13,10 +14,7 @@ function SheetOverlay({ className, ...props }: ComponentProps<typeof SheetPrimit
   return (
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
-      className={cn(
-        'v2board-radix-overlay fixed inset-0 z-50 bg-black/50',
-        className,
-      )}
+      className={cn(dialogOverlayClassName, className)}
       {...props}
     />
   );

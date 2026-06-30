@@ -47,7 +47,13 @@ export interface BackendEnvelope<T> {
 export interface ApiClient {
   axios: AxiosInstance;
   request: <T>(config: ApiRequestConfig) => Promise<T>;
-  requestEnvelope: <T>(config: ApiRequestConfig) => Promise<BackendEnvelope<T>>;
+  // `Extra` types the extra top-level envelope fields some endpoints return
+  // alongside `data` (e.g. redeemgiftcard's `value`). It defaults to `unknown`,
+  // so `BackendEnvelope<T> & unknown` collapses to `BackendEnvelope<T>` and
+  // every single-arg caller is unchanged.
+  requestEnvelope: <T, Extra = unknown>(
+    config: ApiRequestConfig,
+  ) => Promise<BackendEnvelope<T> & Extra>;
   resolveAdminPath: (path: string) => string;
 }
 
@@ -109,9 +115,13 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const response = await instance.request<BackendEnvelope<T>>(config);
       return unwrapLegacyEnvelope(response.data, response.status, options).data;
     },
-    requestEnvelope: async <T,>(config: ApiRequestConfig) => {
+    requestEnvelope: async <T, Extra = unknown>(config: ApiRequestConfig) => {
       const response = await instance.request<BackendEnvelope<T>>(config);
-      return unwrapLegacyEnvelope(response.data, response.status, options);
+      // The unwrap is shape-agnostic; the single assertion that the payload also
+      // carries the caller-declared `Extra` fields lives here, at the dynamic
+      // boundary, instead of being re-cast at each endpoint.
+      return unwrapLegacyEnvelope(response.data, response.status, options) as BackendEnvelope<T> &
+        Extra;
     },
     resolveAdminPath: (path) => {
       const securePath = options.adminSecurePath?.();

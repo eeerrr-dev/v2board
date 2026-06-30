@@ -3,6 +3,7 @@ import { act } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@v2board/api-client';
 import ProfilePage from './profile';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -284,7 +285,9 @@ describe('ProfilePage shadcn account surface', () => {
   });
 
   it('keeps the stuck loading state when gift card redeem times out', async () => {
-    mocks.redeem.mockRejectedValue(new Error('timeout exceeded'));
+    // A timeout / network drop reaches the page as an ApiError with status 0
+    // (the api-client's transport-failure signal), not a plain Error.
+    mocks.redeem.mockRejectedValue(new ApiError(0, 'timeout exceeded'));
 
     await act(async () => {
       root!.render(<ProfilePage />);

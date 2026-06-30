@@ -184,6 +184,23 @@ describe('user query state behavior', () => {
     expect(queriesSource).not.toContain("query.queryKey[2] !== 'detail'");
   });
 
+  it('invalidates the ticket list from the ticket mutations, not the call sites', async () => {
+    const queries = await import('./queries');
+    const ticketListMutations = ['useSaveTicketMutation', 'useCloseTicketMutation'] as const;
+
+    for (const name of ticketListMutations) {
+      const factory = queries[name] as unknown as () => { onSuccess: () => void };
+      const mutation = factory();
+
+      invalidateQueries.mockReset();
+      expect(mutation.onSuccess()).toBeUndefined();
+
+      expect(invalidateQueries).toHaveBeenCalledTimes(1);
+      const options = invalidateQueries.mock.calls[0]![0] as { queryKey: readonly unknown[] };
+      expect(options.queryKey).toEqual(['user', 'tickets']);
+    }
+  });
+
   it('invalidates the user record from every mutation that changes it, not the call sites', async () => {
     const queries = await import('./queries');
     const userInfoMutations = [
@@ -214,5 +231,14 @@ describe('user query state behavior', () => {
 
     const plans = usePlans() as unknown as UseQueryOptions;
     expect(plans.staleTime).toBeUndefined();
+  });
+
+  it('owns the order-status 3s self-stopping poll cadence inside useOrderStatus', () => {
+    // The stop condition (leave pending status 0, or error) is intrinsic to the
+    // /user/order/check poll, so it lives on the hook and the page only toggles
+    // enabled. The callback is typed against the concrete number query here.
+    expect(queriesSource).toContain(
+      "query.state.status === 'error' || (query.state.data ?? 0) !== 0 ? false : 3000",
+    );
   });
 });

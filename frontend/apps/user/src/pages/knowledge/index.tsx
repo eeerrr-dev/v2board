@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { getRequestLocale } from '@/lib/api';
-import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
+import { formatLegacyDateSlash } from '@v2board/config/format';
 import { copyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
 import {
@@ -196,7 +196,7 @@ export default function KnowledgePage() {
                           data-testid="knowledge-item-date"
                         >
                           {t('knowledge.last_update', {
-                            date: formatUserLegacyDateSlash(item.updated_at),
+                            date: formatLegacyDateSlash(item.updated_at),
                           })}
                         </span>
                       </span>
@@ -237,7 +237,7 @@ export default function KnowledgePage() {
             <SheetDescription className={visibleDetail?.updated_at ? undefined : 'sr-only'}>
               {visibleDetail?.updated_at
                 ? t('knowledge.last_update', {
-                    date: formatUserLegacyDateSlash(visibleDetail.updated_at),
+                    date: formatLegacyDateSlash(visibleDetail.updated_at),
                   })
                 : 'Loading...'}
             </SheetDescription>

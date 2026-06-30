@@ -488,8 +488,12 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
   it('keeps polling after the pending order detail object refreshes', async () => {
     orderStatusState.data = 0;
 
-    expect(orderDetailSource).toContain('useOrderStatus(tradeNo');
-    expect(orderDetailSource).toContain('refetchInterval: pollOrderStatus ? 3000 : false');
+    // This page only decides whether to poll (enabled); the 3s self-stopping
+    // cadence is owned by useOrderStatus (queries.ts), so the call site carries
+    // no refetchInterval and no effect mirrors query state into the polling flag.
+    expect(orderDetailSource).toContain('useOrderStatus(tradeNo, { enabled: pollOrderStatus })');
+    expect(orderDetailSource).not.toContain('refetchInterval:');
+    expect(orderDetailSource).not.toContain('if (orderStatusQuery.isError) setPollOrderStatus(false)');
 
     await act(async () => {
       root.render(<OrderDetailPage />);

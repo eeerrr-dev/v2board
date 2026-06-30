@@ -225,6 +225,12 @@ export const useOrderStatus = (tradeNo: string | undefined, options?: QueryFresh
   useQuery({
     ...userQueryOptions.orderStatus(tradeNo),
     enabled: Boolean(tradeNo),
+    // The poll's stop condition is intrinsic to /user/order/check, not a caller
+    // choice: keep refetching every 3s while the order is still pending (status
+    // 0 or not yet fetched) and self-stop the moment it leaves pending or the
+    // check errors. The caller only decides whether to poll at all, via enabled.
+    refetchInterval: (query) =>
+      query.state.status === 'error' || (query.state.data ?? 0) !== 0 ? false : 3000,
     ...options,
   });
 
@@ -398,9 +404,15 @@ export function useWithdrawCommissionMutation() {
 }
 
 export function useSaveTicketMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: Parameters<typeof user.saveTicket>[1]) =>
       user.saveTicket(apiClient, payload),
+    // Creating a ticket adds it to the list; invalidate here so the mutation
+    // owns the refresh instead of each call site wiring its own.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: userKeys.tickets });
+    },
   });
 }
 
@@ -412,8 +424,14 @@ export function useReplyTicketMutation() {
 }
 
 export function useCloseTicketMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => user.closeTicket(apiClient, id),
+    // Closing a ticket changes its status in the list; invalidate from the
+    // mutation so the refresh is centralized like the other list mutations.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: userKeys.tickets });
+    },
   });
 }
 

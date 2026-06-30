@@ -16,6 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const motionCss = readFileSync(resolve(here, 'user-shadcn-motion.css'), 'utf8');
 const dialogTsx = readFileSync(resolve(here, '../components/ui/shadcn-dialog.tsx'), 'utf8');
 const alertTsx = readFileSync(resolve(here, '../components/ui/alert-dialog.tsx'), 'utf8');
+const surfaceTs = readFileSync(resolve(here, '../components/ui/dialog-surface.ts'), 'utf8');
 
 function keyframeBody(css: string, name: string): string {
   const match = css.match(new RegExp(`@keyframes\\s+${name}\\s*\\{([\\s\\S]*?)^\\}`, 'm'));
@@ -32,10 +33,13 @@ describe('dialog centering is owned by the translate: utility, not the keyframe'
     }
   });
 
-  it('the dialog content elements still center via the -translate-*-1/2 utilities', () => {
+  it('centers via the -translate-*-1/2 utilities on the shared dialog surface', () => {
+    // The centering geometry lives once in dialog-surface.ts; both Radix roots
+    // consume it through dialogContentClassName so they cannot drift apart.
+    expect(surfaceTs).toContain('-translate-x-1/2');
+    expect(surfaceTs).toContain('-translate-y-1/2');
     for (const source of [dialogTsx, alertTsx]) {
-      expect(source).toContain('-translate-x-1/2');
-      expect(source).toContain('-translate-y-1/2');
+      expect(source).toContain('dialogContentClassName');
     }
   });
 });

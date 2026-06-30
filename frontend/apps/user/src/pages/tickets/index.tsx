@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
 import { getLocaleAntdMessages } from '@v2board/i18n';
 import type { TicketLevel } from '@v2board/types';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -37,9 +36,8 @@ import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
-import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
+import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import {
-  userKeys,
   useCloseTicketMutation,
   useSaveTicketMutation,
   useTickets,
@@ -69,7 +67,6 @@ type TicketPayload = z.output<typeof ticketFormSchema>;
 
 export default function TicketsPage() {
   const { t, i18n } = useTranslation();
-  const queryClient = useQueryClient();
   const ticketsQuery = useTickets();
   const { data, isFetching } = ticketsQuery;
   const loading = isFetching;
@@ -114,12 +111,12 @@ export default function TicketsPage() {
     {
       meta: { className: 'text-muted-foreground' },
       header: t('ticket.created_at_col'),
-      cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
+      cell: ({ row }) => formatLegacyDateMinuteSlash(row.original.created_at),
     },
     {
       meta: { className: 'text-muted-foreground' },
       header: t('ticket.last_reply_col'),
-      cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.updated_at),
+      cell: ({ row }) => formatLegacyDateMinuteSlash(row.original.updated_at),
     },
     {
       meta: { align: 'right', className: 'text-muted-foreground' },
@@ -162,14 +159,12 @@ export default function TicketsPage() {
       await save.mutateAsync(values);
       setOpen(false);
       resetForm();
-      void queryClient.invalidateQueries({ queryKey: userKeys.tickets });
     } catch {}
   });
 
   const closeTicket = async (id: number) => {
     try {
       await close.mutateAsync(id);
-      void queryClient.invalidateQueries({ queryKey: userKeys.tickets });
     } catch {}
   };
 

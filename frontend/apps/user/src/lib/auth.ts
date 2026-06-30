@@ -31,6 +31,15 @@ export function logout(): void {
   setAuthData(null);
 }
 
+// Single source of truth for the auth gate's login redirect. The login page
+// reads the `redirect` query param to bounce the user back after sign-in, so
+// both gate layers — the entry loader (App.tsx) and the live-session guard
+// (require-auth.tsx) — must encode the return path identically. `current` is the
+// `pathname + search` the user should return to.
+export function buildLoginRedirect(current: string): string {
+  return `/login?redirect=${encodeURIComponent(current)}`;
+}
+
 // Subscribe React components to the auth token so a logout() (or token2Login)
 // elsewhere re-renders guarded routes. Mirrors the dark-mode store hook.
 export function useAuthData(): string | null {

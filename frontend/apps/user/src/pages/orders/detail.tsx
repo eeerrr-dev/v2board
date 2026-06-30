@@ -27,7 +27,7 @@ import {
 import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { StripeCardForm } from '@/components/stripe-card-form';
 import { toast } from '@/lib/toast';
-import { formatUserLegacyDateTime } from '@/lib/legacy-date';
+import { formatLegacyDateTime } from '@v2board/config/format';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page';
@@ -63,10 +63,10 @@ export default function OrderDetailPage() {
   const [payUrl, setPayUrl] = useState<string | undefined>();
   const [pollOrderStatus, setPollOrderStatus] = useState(false);
   const [stripeToken, setStripeToken] = useState<{ id: string } | null>(null);
-  const orderStatusQuery = useOrderStatus(tradeNo, {
-    enabled: pollOrderStatus,
-    refetchInterval: pollOrderStatus ? 3000 : false,
-  });
+  // useOrderStatus owns the 3s self-stopping poll cadence (it stops once the
+  // order leaves the pending state or the check errors); this page only decides
+  // whether to poll at all, via enabled.
+  const orderStatusQuery = useOrderStatus(tradeNo, { enabled: pollOrderStatus });
   const symbol = comm?.currency_symbol;
   const currency = comm?.currency;
   const paymentMethods = orderQuery.data ? paymentsQuery.data : undefined;
@@ -88,16 +88,12 @@ export default function OrderDetailPage() {
   }, [tradeNo, hasLoadedOrder]);
 
   useEffect(() => {
-    if (orderStatusQuery.isError) setPollOrderStatus(false);
-  }, [orderStatusQuery.isError]);
-
-  useEffect(() => {
     const status = orderStatusQuery.data;
     if (status === undefined || status === 0) return;
-    setPollOrderStatus(false);
     setQrcodeVisible(false);
     // The original poll success only hides the QR modal; it leaves payUrl in state.
-    // Manual modal cancel is the path that clears it.
+    // Manual modal cancel is the path that clears it. useOrderStatus owns stopping
+    // the poll once the order leaves the pending state.
     orderQuery.refetch();
   }, [orderQuery.refetch, orderStatusQuery.data]);
 
@@ -261,7 +257,7 @@ export default function OrderDetailPage() {
                 </InfoRow>
               ) : null}
               <InfoRow label={t('order.created_at')}>
-                {formatUserLegacyDateTime(order.created_at)}
+                {formatLegacyDateTime(order.created_at)}
               </InfoRow>
             </div>
           </OrderInfoCard>

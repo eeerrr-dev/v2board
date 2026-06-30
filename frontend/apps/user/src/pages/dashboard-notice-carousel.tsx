@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/shadcn-dialog';
 import { Badge } from '@/components/ui/badge';
-import { formatUserLegacyDate } from '@/lib/legacy-date';
+import { formatLegacyDate } from '@v2board/config/format';
 import { sanitizeLegacyHtml } from '@/lib/sanitize-html';
 import { cn } from '@/lib/cn';
 
@@ -130,7 +130,7 @@ function NoticeCard({ notice, onOpen }: { notice: Notice; onOpen: (notice: Notic
         <div className={cn('mt-10 space-y-1', notice.img_url && 'text-white')}>
           <div className="line-clamp-2 text-lg font-semibold">{notice.title}</div>
           <div className={cn('text-sm text-muted-foreground', notice.img_url && 'text-white/75')}>
-            {formatUserLegacyDate(notice.created_at)}
+            {formatLegacyDate(notice.created_at)}
           </div>
         </div>
       </div>

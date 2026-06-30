@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getLocaleAntdMessages } from '@v2board/i18n';
 import { CircleHelp } from 'lucide-react';
-import { formatBytes } from '@v2board/config/format';
+import { formatBytes, formatLegacyDateSlash } from '@v2board/config/format';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page';
@@ -12,7 +12,6 @@ import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/componen
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTrafficLog } from '@/lib/queries';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
-import { formatUserLegacyDateSlash } from '@/lib/legacy-date';
 
 export default function TrafficPage() {
   const { t, i18n } = useTranslation();
@@ -28,7 +27,7 @@ export default function TrafficPage() {
       sortingFn: 'basic',
       header: t('traffic.record_at'),
       cell: ({ row }) =>
-        row.original.record_at ? formatUserLegacyDateSlash(row.original.record_at) : '-',
+        row.original.record_at ? formatLegacyDateSlash(row.original.record_at) : '-',
     },
     {
       meta: { align: 'right' },

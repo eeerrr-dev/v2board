@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ParseKeys } from 'i18next';
+import { ApiError } from '@v2board/api-client';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -155,7 +156,7 @@ export default function ProfilePage() {
         }),
       );
     } catch (error) {
-      if (isLegacyTimeoutError(error)) setRedeemTimeoutStuck(true);
+      if (isTransportError(error)) setRedeemTimeoutStuck(true);
     }
   }, () => toast.error(t('profile.redeem_placeholder')));
 
@@ -530,8 +531,13 @@ function redeemGiftcardText(
   }
 }
 
-function isLegacyTimeoutError(error: unknown) {
-  return error instanceof Error && /timeout/i.test(error.message);
+// A gift-card redeem that never gets a backend response (timeout / network
+// drop) leaves the button in the legacy "stuck loading" state. The api-client
+// already models every transport-level failure as ApiError.status === 0, so key
+// off that structured signal instead of string-sniffing the message (the same
+// anti-pattern api.test.ts forbids in the api layer).
+function isTransportError(error: unknown) {
+  return error instanceof ApiError && error.status === 0;
 }
 
 function formatCentsPlain(cents: number) {

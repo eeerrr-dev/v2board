@@ -40,7 +40,7 @@ import {
   useUserInfo,
   userKeys,
 } from '@/lib/queries';
-import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
+import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { copyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
 
@@ -115,14 +115,14 @@ export default function InvitePage() {
     },
     {
       header: t('invite.created_at_col'),
-      cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
+      cell: ({ row }) => formatLegacyDateMinuteSlash(row.original.created_at),
       meta: { align: 'right', className: 'text-muted-foreground' },
     },
   ] satisfies DataTableColumn<(typeof codes)[number]>[];
   const detailColumns = [
     {
       header: t('invite.issued_at'),
-      cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
+      cell: ({ row }) => formatLegacyDateMinuteSlash(row.original.created_at),
       meta: { className: 'text-muted-foreground' },
     },
     {

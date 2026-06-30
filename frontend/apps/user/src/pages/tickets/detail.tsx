@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/cn';
-import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
+import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { toast } from '@/lib/toast';
 import { useReplyTicketMutation, useTicket } from '@/lib/queries';
 
@@ -78,7 +78,7 @@ export default function TicketDetailPage() {
               key={index}
             >
               <div className="text-xs text-muted-foreground">
-                {formatUserLegacyDateMinuteSlash(item.created_at)}
+                {formatLegacyDateMinuteSlash(item.created_at)}
               </div>
               <div
                 className={cn(

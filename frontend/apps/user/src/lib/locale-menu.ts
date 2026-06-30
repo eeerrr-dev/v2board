@@ -6,8 +6,9 @@ const I18N_TEXT = Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [locale.c
 export function getEnabledLocales() {
   // The enabled list comes from the operator backend (window.settings.i18n); drop any
   // locale the frontend no longer bundles a label/translation for instead of rendering
-  // a blank menu item.
-  return [...window.settings!.i18n!]
+  // a blank menu item. Degrade to an empty menu if the backend omits the list rather
+  // than throwing at render.
+  return [...(window.settings?.i18n ?? [])]
     .sort()
     .filter((code) => code in I18N_TEXT)
     .map((code) => ({ code, label: I18N_TEXT[code] }));

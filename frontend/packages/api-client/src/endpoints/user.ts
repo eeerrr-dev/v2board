@@ -27,7 +27,7 @@ import type {
   UserUpdatePayload,
   UserStat,
 } from '@v2board/types';
-import type { ApiClient, BackendEnvelope } from '../client';
+import type { ApiClient } from '../client';
 
 export const info = (client: ApiClient) =>
   client.request<UserInfo>({ url: '/user/info', method: 'GET' });
@@ -79,11 +79,11 @@ export const redeemGiftCard = async (
   client: ApiClient,
   giftcard: string,
 ): Promise<RedeemGiftCardResult> => {
-  const env = (await client.requestEnvelope<true>({
+  const env = await client.requestEnvelope<true, RedeemGiftCardResult>({
     url: '/user/redeemgiftcard',
     method: 'POST',
     data: { giftcard },
-  })) as BackendEnvelope<true> & RedeemGiftCardResult;
+  });
   return { type: env.type, value: env.value };
 };
 
@@ -113,13 +113,16 @@ export const checkoutOrder = async (
   client: ApiClient,
   payload: OrderCheckoutPayload,
 ): Promise<OrderCheckoutResult> => {
-  const env = await client.requestEnvelope<OrderCheckoutResult['data']>({
+  const env = await client.requestEnvelope<
+    OrderCheckoutResult['data'],
+    { type: OrderCheckoutResult['type'] }
+  >({
     url: '/user/order/checkout',
     method: 'POST',
     data: payload,
     skipLegacyGlobalError: true,
   });
-  return { type: env.type as OrderCheckoutResult['type'], data: env.data };
+  return { type: env.type, data: env.data };
 };
 
 export const checkOrder = (client: ApiClient, trade_no: string) =>

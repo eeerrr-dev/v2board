@@ -48,7 +48,6 @@ const mocks = vi.hoisted(() => {
   return {
     closeMutateAsync: vi.fn(),
     fetching: true,
-    invalidateQueries: vi.fn(),
     makeTickets,
     openWindow: vi.fn(),
     saveMutateAsync: vi.fn(),
@@ -91,16 +90,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({
-    invalidateQueries: mocks.invalidateQueries,
-  }),
-}));
-
 vi.mock('@/lib/queries', () => ({
-  userKeys: {
-    tickets: ['user', 'tickets'],
-  },
   useTickets: () => ({
     data: mocks.tickets,
     error: undefined,
@@ -261,7 +251,6 @@ describe('TicketsPage shadcn interactions', () => {
     originalOpen = window.open;
     window.open = mocks.openWindow as unknown as typeof window.open;
     mocks.fetching = false;
-    mocks.invalidateQueries.mockClear();
     mocks.saveMutateAsync.mockReset();
     mocks.saveMutateAsync.mockResolvedValue(undefined);
     mocks.closeMutateAsync.mockReset();
@@ -358,7 +347,8 @@ describe('TicketsPage shadcn interactions', () => {
       message: 'Please check my invoice',
       subject: 'Billing question',
     });
-    expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['user', 'tickets'] });
+    // The list refresh is now owned by useSaveTicketMutation's onSuccess (see
+    // queries.test.ts), so the page no longer invalidates at the call site.
   });
 
   it('keeps new-ticket form data after canceling because only a successful save clears state', async () => {
@@ -491,8 +481,7 @@ describe('TicketsPage shadcn interactions', () => {
     });
 
     expect(mocks.closeMutateAsync).toHaveBeenCalledWith(7);
-    expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['user', 'tickets'] });
-
+    // The list refresh is now owned by useCloseTicketMutation's onSuccess.
     expect(source).not.toContain('removeQueries');
   });
 

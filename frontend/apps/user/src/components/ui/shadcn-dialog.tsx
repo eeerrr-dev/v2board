@@ -2,6 +2,14 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { type ComponentProps } from 'react';
 import { cn } from '@/lib/cn';
+import {
+  dialogContentClassName,
+  dialogDescriptionClassName,
+  dialogFooterClassName,
+  dialogHeaderClassName,
+  dialogOverlayClassName,
+  dialogTitleClassName,
+} from './dialog-surface';
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -12,10 +20,7 @@ function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrim
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
-      className={cn(
-        'v2board-radix-overlay fixed inset-0 z-50 bg-black/50',
-        className,
-      )}
+      className={cn(dialogOverlayClassName, className)}
       {...props}
     />
   );
@@ -36,10 +41,7 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
-        className={cn(
-          'v2board-island v2board-radix-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-background p-6 text-foreground shadow-lg outline-none sm:max-w-lg',
-          className,
-        )}
+        className={cn(dialogContentClassName, className)}
         {...props}
       >
         {children}
@@ -58,7 +60,7 @@ function DialogHeader({ className, ...props }: ComponentProps<'div'>) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn('flex flex-col gap-2 text-center sm:text-left', className)}
+      className={cn(dialogHeaderClassName, className)}
       {...props}
     />
   );
@@ -68,7 +70,7 @@ function DialogFooter({ className, ...props }: ComponentProps<'div'>) {
   return (
     <div
       data-slot="dialog-footer"
-      className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
+      className={cn(dialogFooterClassName, className)}
       {...props}
     />
   );
@@ -78,7 +80,7 @@ function DialogTitle({ className, ...props }: ComponentProps<typeof DialogPrimit
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn('text-lg font-semibold leading-none text-foreground', className)}
+      className={cn(dialogTitleClassName, className)}
       {...props}
     />
   );
@@ -91,7 +93,7 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn('text-sm text-muted-foreground', className)}
+      className={cn(dialogDescriptionClassName, className)}
       {...props}
     />
   );

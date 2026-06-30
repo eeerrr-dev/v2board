@@ -30,6 +30,12 @@ export function formatDateTime(timestamp: number | null | undefined): string {
   return dayjs(timestamp * 1000).format('YYYY-MM-DD HH:mm:ss');
 }
 
+export function formatLegacyDate(timestamp: number | string | null | undefined): string {
+  const d = dayjs(Number(timestamp) * 1000);
+  if (!d.isValid()) return 'Invalid date';
+  return d.format('YYYY-MM-DD');
+}
+
 export function formatLegacyDateTime(timestamp: number | string | null | undefined): string {
   const d = dayjs(Number(timestamp) * 1000);
   if (!d.isValid()) return 'Invalid date';
@@ -39,6 +45,12 @@ export function formatLegacyDateTime(timestamp: number | string | null | undefin
 export function formatDateMinuteSlash(timestamp: number | null | undefined): string {
   if (!timestamp) return '-';
   return dayjs(timestamp * 1000).format('YYYY/MM/DD HH:mm');
+}
+
+export function formatLegacyDateSlash(timestamp: number | string | null | undefined): string {
+  const d = dayjs(Number(timestamp) * 1000);
+  if (!d.isValid()) return 'Invalid date';
+  return d.format('YYYY/MM/DD');
 }
 
 export function formatLegacyDateMinuteSlash(timestamp: number | string | null | undefined): string {

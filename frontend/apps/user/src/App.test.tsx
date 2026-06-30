@@ -71,7 +71,7 @@ describe('user legacy route table', () => {
     expect(source).toContain('nestedPrefixes: USER_LEGACY_ROUTE_PATHS');
     expect(source).toContain('getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS)');
     expect(source).toContain('if (normalized !== current) throw redirect(normalized);');
-    expect(source).toContain("import { getAuthData } from '@/lib/auth';");
+    expect(source).toContain("import { buildLoginRedirect, getAuthData } from '@/lib/auth';");
     expect(source).toContain('function matchesUserLegacyRoute(pathname: string): boolean');
     expect(source).toContain('matchPath({ path, end: true }, pathname)');
     expect(source).toContain('function getUserRouteFallback(): string');

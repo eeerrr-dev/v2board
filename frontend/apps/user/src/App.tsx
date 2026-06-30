@@ -12,7 +12,7 @@ import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
 import { RequireAuth } from '@/components/layout/require-auth';
 import { RouteBoundaryOutlet, RouteErrorFallback } from '@/components/route-error-boundary';
-import { getAuthData } from '@/lib/auth';
+import { buildLoginRedirect, getAuthData } from '@/lib/auth';
 import { userQueryOptions } from '@/lib/queries';
 
 export const USER_LEGACY_ROUTE_PATHS = [
@@ -138,7 +138,7 @@ export function createRequireUserLoader(queryClient: QueryClient) {
     const current = getRequestRoutePath(request);
 
     if (!getAuthData()) {
-      throw redirect(`/login?redirect=${encodeURIComponent(current)}`);
+      throw redirect(buildLoginRedirect(current));
     }
 
     await queryClient.ensureQueryData(userQueryOptions.info()).catch(() => null);

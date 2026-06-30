@@ -2,7 +2,7 @@ import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
-import { formatUserLegacyDateMinuteSlash } from '@/lib/legacy-date';
+import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -78,7 +78,7 @@ export default function OrdersPage() {
       sortingFn: 'basic',
       meta: { className: 'text-muted-foreground' },
       header: t('order.created_at'),
-      cell: ({ row }) => formatUserLegacyDateMinuteSlash(row.original.created_at),
+      cell: ({ row }) => formatLegacyDateMinuteSlash(row.original.created_at),
     },
     {
       meta: { align: 'right' },
