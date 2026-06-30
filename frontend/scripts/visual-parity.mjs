@@ -15039,19 +15039,6 @@ async function serviceTableScrollState(page) {
   });
 }
 
-async function activeVisibleElementIndex(page, selector) {
-  return page.evaluate((targetSelector) => {
-    const isVisible = (element) => {
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
-    };
-    return Array.from(document.querySelectorAll(targetSelector))
-      .filter(isVisible)
-      .findIndex((element) => element.className.includes('active'));
-  }, selector);
-}
-
 async function plansFilterState(page) {
   return {
     activeIndex: await activePlanTabIndex(page),

@@ -91,6 +91,7 @@ export async function copyText(text: string | number | null | undefined): Promis
 }
 
 function copyTextWithExecCommand(text: string): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity
   if (typeof document.execCommand !== 'function') return false;
 
   const textarea = document.createElement('textarea');
@@ -106,6 +107,7 @@ function copyTextWithExecCommand(text: string): boolean {
   textarea.setSelectionRange(0, text.length);
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity
     return document.execCommand('copy');
   } catch {
     return false;

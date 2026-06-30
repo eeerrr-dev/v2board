@@ -67,6 +67,7 @@ export default tseslint.config(
       'react/jsx-no-target-blank': 'off',
       'react-hooks/exhaustive-deps': 'off',
       'react-hooks/immutability': 'off',
+      'react-hooks/incompatible-library': 'off',
       'react-hooks/purity': 'off',
       'react-hooks/refs': 'off',
       'react-hooks/set-state-in-effect': 'off',

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Send } from 'lucide-react';
@@ -26,7 +26,7 @@ export default function TicketDetailPage() {
     chat.scrollTo(0, chat.scrollHeight);
   }, [messages.length]);
 
-  const submitReply = async (event?: FormEvent<HTMLFormElement>) => {
+  const submitReply = async (event?: SyntheticEvent<HTMLFormElement>) => {
     event?.preventDefault();
     if (reply.isPending) return;
     toast.loading(t('ticket.reply_sending'));

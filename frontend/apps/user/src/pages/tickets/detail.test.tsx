@@ -229,7 +229,7 @@ describe('TicketDetailPage query polling and reply behavior', () => {
   it('sends a reply through the native form with the toast sequence and clears the input', async () => {
     const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
     const submitSource = source.slice(
-      source.indexOf('const submitReply = async (event?: FormEvent<HTMLFormElement>) => {'),
+      source.indexOf('const submitReply = async (event?: SyntheticEvent<HTMLFormElement>) => {'),
       source.indexOf('const data = {'),
     );
 
