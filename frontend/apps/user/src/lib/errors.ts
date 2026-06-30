@@ -15,6 +15,12 @@ export function i18nGet(message: string): string {
   return ERROR_DICTIONARIES[locale]?.[message] ?? message;
 }
 
+// Resolves the locale for error-dictionary lookups. Intentionally NOT the i18n
+// package's legacyGetLocale: this path must fall back to zh-CN (never
+// navigator.language) before the provider stamps window.g_lang, so an error
+// message is never resolved against an unselected browser locale. Keep the two
+// readers separate — see errors.test.ts "falls back to zh-CN instead of
+// navigator language".
 export function getCurrentLocale(): SupportedLocale {
   return (
     toSupportedLocale(safeLocalStorageGet('umi_locale')) ??

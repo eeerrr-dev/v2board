@@ -26,7 +26,6 @@ import {
   Sun,
   UserRound,
   UsersRound,
-  X,
 } from 'lucide-react';
 import { ShadcnLanguageMenu } from './shadcn-language-menu';
 import { userQueryOptions } from '@/lib/queries';
@@ -45,6 +44,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 
 type ShellIcon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -155,15 +155,9 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
-  const sidebar = (
-    <aside
-      id="sidebar"
-      className={cn(
-        'fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-border bg-card/95 text-card-foreground shadow-sm backdrop-blur transition-transform duration-200 ease-out lg:translate-x-0',
-        sidebarOpen ? 'translate-x-0' : 'max-lg:-translate-x-full',
-      )}
-    >
-      <div className="flex h-16 items-center justify-between border-b border-border px-5">
+  const sidebarBody = (
+    <div className="flex h-full flex-col">
+      <div className="flex h-16 items-center border-b border-border px-5">
         <button
           type="button"
           className="rounded-md text-lg font-semibold tracking-normal text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -171,16 +165,6 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
         >
           {siteTitle}
         </button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Close navigation"
-        >
-          <X className="size-4" />
-        </Button>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Primary navigation">
@@ -220,7 +204,7 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
       <div className="border-t border-border px-5 py-4 text-xs text-muted-foreground">
         {siteTitle} v1.7.4
       </div>
-    </aside>
+    </div>
   );
 
   return (
@@ -235,15 +219,23 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
         </div>
       ) : null}
 
-      <div
-        className={cn(
-          'fixed inset-0 z-30 bg-black/40 transition-opacity lg:hidden',
-          sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
-        )}
-        onClick={() => setSidebarOpen(false)}
-      />
+      <aside
+        id="sidebar"
+        className="fixed inset-y-0 left-0 z-40 hidden w-72 flex-col border-r border-border bg-card/95 text-card-foreground shadow-sm backdrop-blur lg:flex"
+      >
+        {sidebarBody}
+      </aside>
 
-      {sidebar}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent
+          side="left"
+          aria-describedby={undefined}
+          className="w-72 gap-0 bg-card/95 p-0 text-card-foreground sm:max-w-72 lg:hidden"
+        >
+          <SheetTitle className="sr-only">{siteTitle}</SheetTitle>
+          {sidebarBody}
+        </SheetContent>
+      </Sheet>
 
       <div className="min-h-screen bg-muted/40 lg:pl-72">
         <header

@@ -200,29 +200,37 @@ describe('AppLayout shadcn app shell behavior', () => {
     });
   }
 
-  it('scrolls on route changes, opens mobile nav, and closes it after navigation', async () => {
+  it('scrolls on route changes, opens the mobile nav sheet, and closes it after navigation', async () => {
     await renderLayout();
 
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
-    const openButton = container.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]')!;
+    // The persistent desktop rail keeps the #sidebar hook and the nav for every viewport.
+    expect(container.querySelector('#sidebar')).not.toBeNull();
 
+    const sheet = () => document.body.querySelector('[data-slot="sheet-content"]');
+    expect(sheet()).toBeNull();
+
+    const openButton = container.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]')!;
     await act(async () => {
       openButton.click();
       await Promise.resolve();
     });
 
-    expect(container.querySelector('#sidebar')?.className).toContain('translate-x-0');
+    // The mobile drawer is now a Radix Sheet portaled to the document body
+    // (focus trap, Esc-dismiss, aria-modal) instead of a hand-rolled transform.
+    expect(sheet()).not.toBeNull();
 
-    const knowledge = Array.from(container.querySelectorAll<HTMLButtonElement>('nav button')).find(
-      (button) => button.textContent?.includes('使用文档'),
-    )!;
+    const knowledge = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('[data-slot="sheet-content"] nav button'),
+    ).find((button) => button.textContent?.includes('使用文档'))!;
     await act(async () => {
       knowledge.click();
       await Promise.resolve();
     });
 
     expect(mocks.navigate).toHaveBeenCalledWith('/knowledge');
-    expect(container.querySelector('#sidebar')?.className).toContain('max-lg:-translate-x-full');
+    // Navigating closes the controlled Sheet.
+    expect(sheet()).toBeNull();
   });
 
   it('toggles dark mode through the header button', async () => {
