@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { QRCodeCanvas } from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   Dialog,
   DialogContent,
@@ -152,7 +152,7 @@ export const DashboardSubscribeDialog = forwardRef<
             <DialogDescription>{t('dashboard.qrcode_client_tip')}</DialogDescription>
           </DialogHeader>
           <div className="flex justify-center">
-            <QRCodeCanvas value={subscribeUrl} />
+            <QRCodeSVG value={subscribeUrl} />
           </div>
         </DialogContent>
       </Dialog>

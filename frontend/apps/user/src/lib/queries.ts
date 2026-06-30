@@ -28,10 +28,14 @@ declare global {
 }
 
 // The original getUserInfo / getSubscribe sagas report the user to the Tawk and
-// Crisp live-chat widgets right after each successful fetch. React Query v5 has
-// no useQuery onSuccess, so the same pushes run inside the queryFn (which only
-// resolves on a 200, matching the saga's `200 === code` guard).
-function reportUserInfoToChat(info: UserInfo) {
+// Crisp live-chat widgets right after each successful fetch. React Query v5
+// removed the per-observer useQuery onSuccess; its canonical replacement is the
+// QueryClient-level QueryCache onSuccess, which fires once per successful fetch
+// keyed by query. main.tsx wires these reporters there (on userKeys.info /
+// userKeys.subscribe), so the queryFns below stay pure while preserving the
+// saga's "report after each successful 200" cadence, including refetches. The
+// Crisp/Tawk payloads are external-integration contracts — keep their shape.
+export function reportUserInfoToChat(info: UserInfo) {
   if (window.Tawk_API) {
     window.Tawk_API.visitor = { name: info.email, email: info.email };
   }
@@ -41,7 +45,7 @@ function reportUserInfoToChat(info: UserInfo) {
   }
 }
 
-function reportSubscribeToChat(data: SubscribeInfo) {
+export function reportSubscribeToChat(data: SubscribeInfo) {
   if (!window.$crisp) return;
   // Matches moment(1e3 * expired_at).format('YYYY-MM-DD'); a null expiry becomes
   // the epoch date exactly as the original does (no '-' fallback here).
@@ -88,16 +92,12 @@ export const userKeys = {
   telegramBot: ['user', 'telegram', 'bot'] as const,
 };
 
-export async function fetchUserInfo() {
-  const info = await user.info(apiClient);
-  reportUserInfoToChat(info);
-  return info;
+export function fetchUserInfo() {
+  return user.info(apiClient);
 }
 
-async function fetchSubscribe() {
-  const data = await user.getSubscribe(apiClient);
-  reportSubscribeToChat(data);
-  return data;
+function fetchSubscribe() {
+  return user.getSubscribe(apiClient);
 }
 
 export const userQueryOptions = {

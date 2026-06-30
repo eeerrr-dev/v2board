@@ -79,6 +79,14 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).not.toContain('Navigate');
   });
 
+  it('reports user/info and subscribe to the live-chat widgets via QueryCache onSuccess', () => {
+    expect(mainSource).toContain('new QueryCache(');
+    expect(mainSource).toContain('reportUserInfoToChat(data as UserInfo)');
+    expect(mainSource).toContain('reportSubscribeToChat(data as SubscribeInfo)');
+    expect(mainSource).toContain('queryKeyEquals(query.queryKey, userKeys.info)');
+    expect(mainSource).toContain('queryKeyEquals(query.queryKey, userKeys.subscribe)');
+  });
+
   it('keeps the browser-facing config barrel free of Vite-only helpers', () => {
     expect(configIndexSource).toContain("export * from './format';");
     expect(configIndexSource).toContain("export * from './legacy-hash-route';");

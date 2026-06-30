@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { SubscribeInfo, UserInfo } from '@v2board/types';
 import { I18nextProvider } from 'react-i18next';
 import { createI18n, installLocaleDocumentEnvironment } from '@v2board/i18n';
 import {
@@ -16,6 +17,7 @@ import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
 import { Toaster } from './components/ui/toaster';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyLegacySettings } from './lib/legacy-settings';
+import { reportSubscribeToChat, reportUserInfoToChat, userKeys } from './lib/queries';
 import './styles/globals.css';
 import './styles/user-legacy-replica.css';
 import './styles/user-redesigned-surfaces.css';
@@ -52,7 +54,25 @@ if (import.meta.env.DEV) {
 applyLegacySettings();
 const i18n = createI18n();
 installLocaleDocumentEnvironment(i18n);
+function queryKeyEquals(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+// Mirror the legacy sagas: report the user to the Tawk/Crisp live-chat widgets
+// after each successful user/info and user/subscribe fetch (refetches included).
+// QueryCache onSuccess is React Query v5's canonical replacement for the removed
+// useQuery onSuccess and fires once per successful fetch keyed by query, so the
+// queryFns stay pure. The Crisp/Tawk payloads are external-integration contracts.
 const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onSuccess: (data, query) => {
+      if (queryKeyEquals(query.queryKey, userKeys.info)) {
+        reportUserInfoToChat(data as UserInfo);
+      } else if (queryKeyEquals(query.queryKey, userKeys.subscribe)) {
+        reportSubscribeToChat(data as SubscribeInfo);
+      }
+    },
+  }),
   defaultOptions: {
     queries: { retry: false, refetchOnWindowFocus: false },
   },

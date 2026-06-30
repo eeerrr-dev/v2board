@@ -154,7 +154,7 @@ vi.mock('@/lib/toast', () => ({
 }));
 
 vi.mock('qrcode.react', () => ({
-  QRCodeCanvas: ({ value }: { value?: string }) => <canvas data-qrcode={value} />,
+  QRCodeSVG: ({ value }: { value?: string }) => <svg data-qrcode={value} />,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -348,7 +348,7 @@ describe('DashboardPage shadcn shell actions', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('canvas')?.getAttribute('data-qrcode')).toBe(
+    expect(container.querySelector('[data-qrcode]')?.getAttribute('data-qrcode')).toBe(
       'https://example.test/sub',
     );
     expect(container.innerHTML).toContain('使用支持扫码的客户端进行订阅');
