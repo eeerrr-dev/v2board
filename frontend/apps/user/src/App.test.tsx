@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +7,9 @@ import type { LoaderFunctionArgs } from 'react-router';
 import {
   USER_APP_LAYOUT_ROUTE_PATHS,
   USER_LEGACY_ROUTE_PATHS,
+  createDashboardPrefetchLoader,
   createRequireUserLoader,
+  createUserRouter,
 } from './App';
 import { setAuthData } from '@/lib/auth';
 import { userQueryOptions } from '@/lib/queries';
@@ -90,6 +92,21 @@ describe('user legacy route table', () => {
     expect(source).not.toContain('<Suspense');
   });
 
+  it('prefetches the dashboard queries from its route loader', () => {
+    expect(source).toContain(
+      'export function createDashboardPrefetchLoader(queryClient: QueryClient)',
+    );
+    expect(source).toContain(
+      "path === '/dashboard' ? pageRoute(path, prefetchDashboard) : pageRoute(path)",
+    );
+  });
+
+  it('builds the hash router with the dashboard static loader alongside its lazy component', () => {
+    const router = createUserRouter(new QueryClient());
+    expect(router.routes.length).toBeGreaterThan(0);
+    router.dispose();
+  });
+
   it('keeps the shared layout mounted while switching routes', () => {
     expect(source).toContain('element: <GuestLayout />');
     expect(source).toContain('<RequireAuth>');
@@ -130,6 +147,34 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
     const result = await loader(loaderArgs('/dashboard'));
 
     expect(result).toBeNull();
+    setAuthData(null);
+  });
+});
+
+describe('user route dashboard prefetch loader', () => {
+  it('warms subscribe/stat/notices/comm for an authenticated entry and skips them otherwise', () => {
+    const queryClient = new QueryClient();
+    // Pre-seed so ensureQueryData resolves from cache instead of hitting the network.
+    queryClient.setQueryData(userQueryOptions.subscribe().queryKey, {} as never);
+    queryClient.setQueryData(userQueryOptions.stat().queryKey, {} as never);
+    queryClient.setQueryData(userQueryOptions.notices().queryKey, {} as never);
+    queryClient.setQueryData(userQueryOptions.commConfig().queryKey, {} as never);
+    const ensureSpy = vi.spyOn(queryClient, 'ensureQueryData');
+    const prefetch = createDashboardPrefetchLoader(queryClient);
+
+    setAuthData(null);
+    expect(prefetch()).toBeNull();
+    expect(ensureSpy).not.toHaveBeenCalled();
+
+    setAuthData('token-xyz');
+    expect(prefetch()).toBeNull();
+    const warmedKeys = ensureSpy.mock.calls.map(([options]) => options.queryKey);
+    expect(warmedKeys).toEqual([
+      userQueryOptions.subscribe().queryKey,
+      userQueryOptions.stat().queryKey,
+      userQueryOptions.notices().queryKey,
+      userQueryOptions.commConfig().queryKey,
+    ]);
     setAuthData(null);
   });
 });

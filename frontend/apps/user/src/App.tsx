@@ -146,16 +146,37 @@ export function createRequireUserLoader(queryClient: QueryClient) {
   };
 }
 
-function pageRoute(path: UserLegacyRoutePath): RouteObject {
+// Warms the dashboard's own queries while its lazy chunk is still downloading,
+// so the page paints from cache instead of firing them only after mount. It runs
+// in parallel with the AppLayout requireUser loader, so it guards auth itself —
+// an unauthenticated entry must not fire user-scoped queries (requireUser issues
+// the redirect). Fire-and-forget on purpose: prefetching must never delay the
+// route, and the page's own useQuery hooks dedupe onto these in-flight requests
+// on mount. Dashboard has no pinned fetch-order contract, so warming these four
+// in parallel is contract-safe.
+export function createDashboardPrefetchLoader(queryClient: QueryClient) {
+  return (): null => {
+    if (!getAuthData()) return null;
+    void queryClient.ensureQueryData(userQueryOptions.subscribe()).catch(() => null);
+    void queryClient.ensureQueryData(userQueryOptions.stat()).catch(() => null);
+    void queryClient.ensureQueryData(userQueryOptions.notices()).catch(() => null);
+    void queryClient.ensureQueryData(userQueryOptions.commConfig()).catch(() => null);
+    return null;
+  };
+}
+
+function pageRoute(path: UserLegacyRoutePath, loader?: RouteObject['loader']): RouteObject {
   return {
     path,
     lazy: lazyPage(path),
     errorElement: <RouteErrorFallback />,
+    ...(loader ? { loader } : {}),
   };
 }
 
 export function createUserRoutes(queryClient: QueryClient): RouteObject[] {
   const requireUser = createRequireUserLoader(queryClient);
+  const prefetchDashboard = createDashboardPrefetchLoader(queryClient);
 
   return [
     {
@@ -168,7 +189,7 @@ export function createUserRoutes(queryClient: QueryClient): RouteObject[] {
         {
           element: <GuestLayout />,
           errorElement: <RouteErrorFallback />,
-          children: USER_GUEST_ROUTE_PATHS.map(pageRoute),
+          children: USER_GUEST_ROUTE_PATHS.map((path) => pageRoute(path)),
         },
         {
           loader: requireUser,
@@ -178,7 +199,9 @@ export function createUserRoutes(queryClient: QueryClient): RouteObject[] {
             </RequireAuth>
           ),
           errorElement: <RouteErrorFallback />,
-          children: USER_APP_LAYOUT_ROUTE_PATHS.map(pageRoute),
+          children: USER_APP_LAYOUT_ROUTE_PATHS.map((path) =>
+            path === '/dashboard' ? pageRoute(path, prefetchDashboard) : pageRoute(path),
+          ),
         },
         {
           path: '/ticket/:ticket_id',
