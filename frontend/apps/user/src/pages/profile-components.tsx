@@ -104,12 +104,14 @@ export function ProfileSwitch({
 }
 
 export function ProfileDepositDialog({
+  error,
   inputProps,
   onClose,
   onConfirm,
   open,
   placeholder,
 }: {
+  error?: ReactNode;
   inputProps?: ComponentPropsWithRef<typeof Input>;
   onClose: () => void;
   onConfirm: () => void;
@@ -137,13 +139,21 @@ export function ProfileDepositDialog({
           }}
           noValidate
         >
-          <Input
-            data-testid="profile-deposit-input"
-            autoComplete="one-time-code"
-            aria-label={placeholder}
-            placeholder={placeholder}
-            {...inputProps}
-          />
+          <div className="grid gap-2">
+            <Input
+              data-testid="profile-deposit-input"
+              autoComplete="one-time-code"
+              aria-label={placeholder}
+              placeholder={placeholder}
+              invalid={error ? true : undefined}
+              {...inputProps}
+            />
+            {error ? (
+              <p role="alert" className="text-sm text-destructive" data-testid="profile-deposit-error">
+                {error}
+              </p>
+            ) : null}
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               {t('common.cancel')}

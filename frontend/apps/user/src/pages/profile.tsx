@@ -90,7 +90,20 @@ const giftCardSchema = z.object({
 });
 
 const depositSchema = z.object({
-  amount: z.coerce.number().positive(),
+  // Validate the raw string so the decimal-place check sees the typed value
+  // before coercion. deposit_amount is sent as Math.round(amount * 100), so a
+  // value with more than two decimals cannot be represented in cents — reject it
+  // inline instead of silently rounding (e.g. 19.999 → 2000 cents).
+  amount: z
+    .string()
+    .trim()
+    .min(1, 'profile.deposit_invalid')
+    .refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, 'profile.deposit_invalid')
+    .refine((value) => {
+      const decimals = value.split('.')[1];
+      return decimals === undefined || decimals.length <= 2;
+    }, 'profile.deposit_decimals')
+    .transform((value) => Number(value)),
 });
 
 type PasswordFormValues = z.infer<typeof passwordSchema>;
@@ -229,24 +242,23 @@ export default function ProfilePage() {
     depositForm.reset({ amount: '' });
   };
 
-  const onDeposit = depositForm.handleSubmit(
-    ({ amount }) => {
-      void saveOrder
-        .mutateAsync({
-          plan_id: 0,
-          period: 'deposit',
-          // Cents must be an integer: the backend stores total_amount in an int
-          // column that truncates, so a raw float (19.99 * 100 = 1998.9999…)
-          // would under-credit the user by a cent. Round to the nearest cent.
-          deposit_amount: Math.round(amount * 100),
-        })
-        .then((tradeNo) => navigate(`/order/${tradeNo}`))
-        .catch(() => {});
-      closeDeposit();
-    },
-    // A non-positive or non-numeric amount mirrors the legacy silent close.
-    () => closeDeposit(),
-  );
+  const onDeposit = depositForm.handleSubmit(({ amount }) => {
+    void saveOrder
+      .mutateAsync({
+        plan_id: 0,
+        period: 'deposit',
+        // Cents must be an integer: the backend stores total_amount in an int
+        // column that truncates, so a raw float (19.99 * 100 = 1998.9999…)
+        // would under-credit the user by a cent. Round to the nearest cent.
+        deposit_amount: Math.round(amount * 100),
+      })
+      .then((tradeNo) => navigate(`/order/${tradeNo}`))
+      .catch(() => {});
+    closeDeposit();
+  });
+  // No invalid handler: an empty / non-numeric / over-precise amount now keeps
+  // the dialog open and surfaces the schema error inline (like the transfer
+  // dialog) instead of silently closing.
 
   return (
     <>
@@ -561,6 +573,11 @@ export default function ProfilePage() {
         open={depositOpen}
         placeholder={depositPlaceholder}
         inputProps={depositForm.register('amount')}
+        error={
+          depositForm.formState.errors.amount?.message
+            ? t(depositForm.formState.errors.amount.message as ParseKeys)
+            : undefined
+        }
         onClose={closeDeposit}
         onConfirm={onDeposit}
       />

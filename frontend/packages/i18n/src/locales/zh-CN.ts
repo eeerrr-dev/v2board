@@ -402,6 +402,8 @@ const zhCN = {
     wallet: '我的钱包(仅消费)',
     recharge: '充值',
     deposit_placeholder: '请输入充值金额{{currency}}',
+    deposit_invalid: '请输入有效的充值金额',
+    deposit_decimals: '充值金额最多支持两位小数',
     redeem_giftcard: '礼品卡',
     redeem_placeholder: '请输入礼品卡',
     redeem_submit: '兑换',

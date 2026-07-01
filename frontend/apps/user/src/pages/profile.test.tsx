@@ -128,6 +128,8 @@ const labels: Record<string, string> = {
   'profile.password_mismatch': '两次新密码输入不同',
   'profile.change_password_success': '修改成功，请重新登陆',
   'profile.deposit_placeholder': '请输入充值金额{{currency}}',
+  'profile.deposit_invalid': '请输入有效的充值金额',
+  'profile.deposit_decimals': '充值金额最多支持两位小数',
 };
 
 vi.mock('react-router', () => ({
@@ -816,6 +818,51 @@ describe('ProfilePage shadcn account surface', () => {
       deposit_amount: 1234,
     });
     expect(mocks.navigate).toHaveBeenCalledWith('/order/DEPOSIT123');
+  });
+
+  it('rejects a deposit amount with more than two decimals inline instead of closing', async () => {
+    mocks.comm = {
+      currency: 'CNY',
+      is_telegram: false,
+      telegram_discuss_link: '',
+    };
+
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-testid="profile-recharge"]')!.click();
+      await Promise.resolve();
+    });
+
+    const amountInput = container.querySelector<HTMLInputElement>(
+      'input[placeholder="请输入充值金额CNY"]',
+    );
+    // 19.999 is finite and positive but cannot be represented in cents; the old
+    // path silently rounded it to 2000 cents and closed the dialog.
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        amountInput,
+        '19.999',
+      );
+      amountInput!.dispatchEvent(new Event('input', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-testid="profile-deposit-confirm"]')!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.saveOrder).not.toHaveBeenCalled();
+    // The dialog stays open with an inline error rather than silently closing.
+    expect(container.querySelector('[data-testid="profile-deposit-error"]')?.textContent).toBe(
+      '充值金额最多支持两位小数',
+    );
+    expect(container.querySelector('[data-testid="profile-deposit-confirm"]')).toBeTruthy();
   });
 
   it('uses shadcn confirmation dialogs for reset and telegram unbind behavior', async () => {

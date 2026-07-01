@@ -410,6 +410,8 @@ const enUS: Translations = {
     wallet: 'My Wallet (For billing only)',
     recharge: 'Top Up',
     deposit_placeholder: 'Enter top-up amount {{currency}}',
+    deposit_invalid: 'Please enter a valid top-up amount',
+    deposit_decimals: 'The top-up amount supports at most two decimal places',
     redeem_giftcard: 'Gift Card',
     redeem_placeholder: 'Please enter the Gift Card code',
     redeem_submit: 'Redeem',
