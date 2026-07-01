@@ -898,11 +898,15 @@ describe('admin legacy entrypoint', () => {
     expect(visualParitySource).toContain(
       'styleSnapshot: await waitForStableDarkModeStyleSnapshot(page, diagnostics)',
     );
+    // The tri-state dark-mode redesign moved the style-snapshot readiness gate
+    // into hasUsefulDarkModeStyleSnapshot: it requires enough captured elements
+    // plus a real header/sidebar/main background before treating dark mode as
+    // applied, replacing the old inline capturedCount<8 / missing-pageHeader
+    // retry checks.
+    expect(visualParitySource).toContain('hasUsefulDarkModeStyleSnapshot(result.afterReload)');
+    expect(visualParitySource).toContain('snapshot?.capturedCount >= 6 &&');
     expect(visualParitySource).toContain(
-      'result.afterReload?.styleSnapshot?.capturedCount < 8',
-    );
-    expect(visualParitySource).toContain(
-      '!result.afterReload?.styleSnapshot?.elements?.pageHeader?.backgroundColor',
+      'snapshot?.elements?.pageHeader?.backgroundColor ||',
     );
     const interactionLabels = [
       'user-login-form-language',
