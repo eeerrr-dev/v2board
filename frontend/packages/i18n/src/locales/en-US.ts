@@ -427,6 +427,18 @@ const enUS: Translations = {
     uuid: 'UUID',
     last_login: 'Last login',
     created_at: 'Registered',
+    active_sessions: 'Active Sessions',
+    active_sessions_desc:
+      'These devices are currently signed in to your account. Revoke any you do not recognize.',
+    session_device: 'Device',
+    session_ip: 'IP address',
+    session_login_at: 'Signed in',
+    session_current: 'This device',
+    session_revoke: 'Revoke',
+    session_revoke_confirm:
+      'Sign this device out? It will need to sign in again to regain access.',
+    session_revoke_success: 'Device signed out',
+    no_sessions: 'No active sessions',
     change_password: 'Change Password',
     notifications: 'Notification',
     auto_renewal: 'Auto Renewal',

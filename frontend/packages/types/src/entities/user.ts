@@ -26,6 +26,20 @@ export interface UserStat {
   pending_tickets: number;
 }
 
+// One entry from the backend USER_SESSIONS cache map (AuthService::getSessions).
+// The map is keyed by an opaque session guid. `auth_data` is the raw JWT that
+// session logs in with; the UI never renders it, but it is how the current
+// session is identified (compared against the stored token in profile.tsx) so
+// the active-session card can badge "this device" and block self-revocation.
+export interface ActiveSession {
+  ip: string;
+  login_at: number;
+  ua: string;
+  auth_data: string;
+}
+
+export type ActiveSessionMap = Record<string, ActiveSession>;
+
 export interface SubscribeInfo {
   plan_id: number | null;
   token: string;

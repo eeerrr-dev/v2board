@@ -99,14 +99,25 @@ describe('user query state behavior', () => {
     expect(queriesSource).not.toContain('useStripePublicKeyMutation');
   });
 
-  it('does not expose active-session query state absent from the original user bundle', async () => {
-    const queries = await import('./queries');
-    const keys = queries.userKeys as unknown as Record<string, unknown>;
-    const exports = queries as unknown as Record<string, unknown>;
+  it('exposes the active-session query keyed under the user namespace', async () => {
+    const { userKeys, useActiveSessions } = await import('./queries');
 
-    expect(keys.sessions).toBeUndefined();
-    expect(exports.useActiveSessions).toBeUndefined();
-    expect(exports.useRemoveSessionMutation).toBeUndefined();
+    expect(userKeys.sessions).toEqual(['user', 'sessions']);
+
+    const options = useActiveSessions() as unknown as UseQueryOptions;
+    expect(options.queryKey).toEqual(['user', 'sessions']);
+  });
+
+  it('invalidates the session list after a revoke so the removed device disappears', async () => {
+    const { useRemoveSessionMutation } = await import('./queries');
+    const mutation = useRemoveSessionMutation() as unknown as { onSuccess: () => void };
+
+    invalidateQueries.mockReset();
+    expect(mutation.onSuccess()).toBeUndefined();
+
+    expect(invalidateQueries).toHaveBeenCalledTimes(1);
+    const options = invalidateQueries.mock.calls[0]![0] as { queryKey: readonly unknown[] };
+    expect(options.queryKey).toEqual(['user', 'sessions']);
   });
 
   it('keeps route-id query keys aligned with the old direct route params', () => {

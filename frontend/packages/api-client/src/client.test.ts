@@ -42,11 +42,26 @@ describe('createApiClient', () => {
     expect(endpoints.getQuickLoginUrl).toBeUndefined();
   });
 
-  it('does not expose user session endpoints absent from the original user bundle', () => {
-    const endpoints = userEndpoints as unknown as Record<string, unknown>;
+  it('fetches the active-session map with the backend contract shape', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    const sessions = {
+      'guid-1': { ip: '1.1.1.1', login_at: 1000, ua: 'Chrome', auth_data: 'token-a' },
+      'guid-2': { ip: '2.2.2.2', login_at: 2000, ua: 'Firefox', auth_data: 'token-b' },
+    };
+    mock.onGet('/user/getActiveSession').reply(200, { data: sessions });
 
-    expect(endpoints.getActiveSession).toBeUndefined();
-    expect(endpoints.removeActiveSession).toBeUndefined();
+    await expect(userEndpoints.getActiveSession(client)).resolves.toEqual(sessions);
+  });
+
+  it('revokes an active session by posting its session_id', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/user/removeActiveSession').reply(200, { data: true });
+
+    await expect(userEndpoints.removeActiveSession(client, 'guid-2')).resolves.toBe(true);
+
+    expect(mock.history.post[0]?.data).toBe('session_id=guid-2');
   });
 
   it('does not expose a user notice detail endpoint absent from the original user bundle', () => {

@@ -25,6 +25,18 @@ const mocks = vi.hoisted(() => ({
   unbindTelegram: vi.fn(),
   saveOrder: vi.fn(),
   copyText: vi.fn(),
+  refetchSessions: vi.fn(),
+  removeSession: vi.fn(),
+  confirmDialog: vi.fn(),
+  getAuthData: vi.fn(),
+  sessions: {
+    data: undefined as Record<
+      string,
+      { ip: string; login_at: number; ua: string; auth_data: string }
+    > | undefined,
+    isLoading: false,
+    isError: false,
+  },
   userInfo: {
     balance: 0,
     auto_renewal: 0,
@@ -50,7 +62,21 @@ const mocks = vi.hoisted(() => ({
 const labels: Record<string, string> = {
   'common.cancel': '取消',
   'common.copy': '复制',
+  'common.attention': '注意',
+  'common.loading': '加载中',
+  'common.error_title': '加载失败',
+  'common.retry': '重试',
   'dashboard.copy_success': '复制成功',
+  'profile.active_sessions': '登录设备',
+  'profile.active_sessions_desc': '这些设备当前已登录你的账户，如有陌生设备可将其注销。',
+  'profile.session_device': '设备',
+  'profile.session_ip': 'IP 地址',
+  'profile.session_login_at': '登录时间',
+  'profile.session_current': '当前设备',
+  'profile.session_revoke': '注销',
+  'profile.session_revoke_confirm': '确定要注销该设备的登录？',
+  'profile.session_revoke_success': '已注销该设备',
+  'profile.no_sessions': '暂无登录设备',
   'profile.account': '账户信息',
   'profile.email': '邮箱',
   'profile.uuid': 'UUID',
@@ -193,10 +219,27 @@ vi.mock('@/lib/queries', () => ({
   useTelegramBotInfo: () => ({
     data: mocks.botInfo,
   }),
+  useActiveSessions: () => ({
+    data: mocks.sessions.data,
+    isLoading: mocks.sessions.isLoading,
+    isError: mocks.sessions.isError,
+    refetch: mocks.refetchSessions,
+  }),
+  useRemoveSessionMutation: () => ({
+    mutateAsync: mocks.removeSession,
+  }),
 }));
 
 vi.mock('@/lib/legacy-settings', () => ({
   copyText: mocks.copyText,
+}));
+
+vi.mock('@/lib/auth', () => ({
+  getAuthData: mocks.getAuthData,
+}));
+
+vi.mock('@/components/ui/confirm-dialog', () => ({
+  confirmDialog: mocks.confirmDialog,
 }));
 
 vi.mock('@/lib/toast', () => ({
@@ -227,6 +270,38 @@ describe('ProfilePage shadcn account surface', () => {
     mocks.saveOrder.mockReset();
     mocks.copyText.mockClear();
     mocks.copyText.mockResolvedValue(true);
+    mocks.refetchSessions.mockReset();
+    mocks.removeSession.mockReset();
+    mocks.removeSession.mockResolvedValue(true);
+    mocks.getAuthData.mockReset();
+    mocks.getAuthData.mockReturnValue('token-current');
+    mocks.confirmDialog.mockReset();
+    // The imperative confirm dialog is exercised elsewhere; here we auto-confirm
+    // so the revoke flow's onConfirm runs synchronously.
+    mocks.confirmDialog.mockImplementation(
+      (options: { onConfirm?: () => unknown }) => {
+        void options.onConfirm?.();
+        return Promise.resolve(true);
+      },
+    );
+    mocks.sessions = {
+      data: {
+        'guid-other': {
+          ip: '203.0.113.9',
+          login_at: 1_700_003_600,
+          ua: 'Firefox on Windows',
+          auth_data: 'token-other',
+        },
+        'guid-current': {
+          ip: '198.51.100.4',
+          login_at: 1_700_000_000,
+          ua: 'Chrome on macOS',
+          auth_data: 'token-current',
+        },
+      },
+      isLoading: false,
+      isError: false,
+    };
     mocks.userInfo = {
       balance: 0,
       auto_renewal: 0,
@@ -427,6 +502,90 @@ describe('ProfilePage shadcn account surface', () => {
     expect(
       container.querySelector('[data-testid="profile-account-last-login"]')?.textContent,
     ).toBe('—');
+  });
+
+  it('lists active sessions, badges the current device, and blocks self-revocation', async () => {
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-testid="profile-sessions-card"]')).toBeTruthy();
+    const rows = container.querySelectorAll('[data-testid="profile-session-row"]');
+    expect(rows).toHaveLength(2);
+    // Both devices surface their UA + IP so an unfamiliar device is recognizable.
+    expect(container.textContent).toContain('Firefox on Windows');
+    expect(container.textContent).toContain('203.0.113.9');
+    expect(container.textContent).toContain('Chrome on macOS');
+
+    // Rows sort newest-first, so the current (older) device is the second row.
+    const badges = container.querySelectorAll('[data-testid="profile-session-current"]');
+    expect(badges).toHaveLength(1);
+    expect(rows[1]!.contains(badges[0]!)).toBe(true);
+
+    const revokeButtons = container.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="profile-session-revoke"]',
+    );
+    expect(revokeButtons).toHaveLength(2);
+    // The other device can be signed out; the current device cannot revoke itself.
+    expect(revokeButtons[0]!.disabled).toBe(false);
+    expect(revokeButtons[1]!.disabled).toBe(true);
+  });
+
+  it('revokes another device through the confirm dialog and toasts on success', async () => {
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    const revokeButtons = container.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="profile-session-revoke"]',
+    );
+
+    await act(async () => {
+      revokeButtons[0]!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
+    // The revoke posts the guid of the other device, not the current one.
+    expect(mocks.removeSession).toHaveBeenCalledWith('guid-other');
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('已注销该设备');
+  });
+
+  it('shows a retryable error state when the session fetch fails', async () => {
+    mocks.sessions = { data: undefined, isLoading: false, isError: true };
+
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-testid="profile-sessions-error"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="profile-session-row"]')).toBeNull();
+
+    const retry = container.querySelector<HTMLButtonElement>('[data-testid="error-state-retry"]');
+    expect(retry).toBeTruthy();
+    await act(async () => {
+      retry!.click();
+      await Promise.resolve();
+    });
+    expect(mocks.refetchSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a loading state while the session list is fetching', async () => {
+    mocks.sessions = { data: undefined, isLoading: true, isError: false };
+
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-testid="profile-sessions-card"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="profile-session-row"]')).toBeNull();
+    expect(container.querySelector('[data-testid="profile-sessions-error"]')).toBeNull();
+    expect(container.textContent).toContain('加载中');
   });
 
   it('uses the legacy bare Telegram bind command when no subscribe url is cached', async () => {

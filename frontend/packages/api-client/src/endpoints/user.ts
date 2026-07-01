@@ -1,4 +1,5 @@
 import type {
+  ActiveSessionMap,
   AvailableServer,
   CheckLoginResult,
   Coupon,
@@ -92,6 +93,16 @@ export const redeemGiftCard = async (
 
 export const unbindTelegram = (client: ApiClient) =>
   client.request<true>({ url: '/user/unbindTelegram', method: 'GET' });
+
+export const getActiveSession = (client: ApiClient) =>
+  client.request<ActiveSessionMap>({ url: '/user/getActiveSession', method: 'GET' });
+
+export const removeActiveSession = (client: ApiClient, session_id: string) =>
+  client.request<boolean>({
+    url: '/user/removeActiveSession',
+    method: 'POST',
+    data: { session_id },
+  });
 
 export const fetchPlans = (client: ApiClient) =>
   client.request<Plan[]>({ url: '/user/plan/fetch', method: 'GET' });

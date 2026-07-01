@@ -90,6 +90,7 @@ export const userKeys = {
   stripePublicKey: (methodId: string) => ['user', 'stripePublicKey', methodId] as const,
   servers: ['user', 'servers'] as const,
   telegramBot: ['user', 'telegram', 'bot'] as const,
+  sessions: ['user', 'sessions'] as const,
 };
 
 export function fetchUserInfo() {
@@ -194,6 +195,11 @@ export const userQueryOptions = {
     queryOptions({
       queryKey: userKeys.telegramBot,
       queryFn: () => user.getTelegramBotInfo(apiClient),
+    }),
+  sessions: () =>
+    queryOptions({
+      queryKey: userKeys.sessions,
+      queryFn: () => user.getActiveSession(apiClient),
     }),
 };
 
@@ -322,6 +328,12 @@ export const useTelegramBotInfo = (enabled: boolean) =>
     ...userQueryOptions.telegramBot(),
     enabled,
     staleTime: 0,
+  });
+
+export const useActiveSessions = (options?: QueryFreshnessOptions) =>
+  useQuery({
+    ...userQueryOptions.sessions(),
+    ...options,
   });
 
 export function useChangePasswordMutation() {
@@ -467,6 +479,18 @@ export function useUnbindTelegramMutation() {
     // invalidation does not refetch a query with enabled:false.
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: userKeys.info });
+    },
+  });
+}
+
+export function useRemoveSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) => user.removeActiveSession(apiClient, sessionId),
+    // Revoking drops one entry from the session map; invalidate so the list
+    // refetches instead of the call site wiring its own refresh.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: userKeys.sessions });
     },
   });
 }
