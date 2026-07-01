@@ -4,9 +4,14 @@
  * Keep this separate from globals.css so redesigned islands can use unprefixed
  * registry-style classes without injecting a second Tailwind preflight over the
  * legacy app. The `@source` globs below scope candidate scanning to the island
- * page/component sources, and `important` lets these utilities beat old
- * Bootstrap/OneUI naked class collisions such as px-4, p-4, border-0, and
- * text-center inside those islands.
+ * page/component sources. `important` is retained so an island utility still wins
+ * over the equal-specificity (0,1,0) `.v2board-island` base and prose-neutralizer
+ * rules in user-auth-surface.css — e.g. `mb-4`/`text-foreground`/`tracking-wide`
+ * on a bare heading or paragraph must beat that file's later-imported
+ * `.v2board-island :where(h1..h6, p){ margin:0; color:inherit }` and the
+ * `.v2board-island{ letter-spacing:0 }` reset, which would otherwise win on
+ * source order. (Historically it also out-ranked the now-deleted Bootstrap/OneUI
+ * naked-class CSS.)
  */
 @import 'tailwindcss/theme.css';
 

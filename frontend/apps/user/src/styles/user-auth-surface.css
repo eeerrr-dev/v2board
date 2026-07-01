@@ -76,10 +76,6 @@
   font-family: inherit;
 }
 
-.v2board-app-shell .v2board-container-title {
-  flex: initial;
-}
-
 .dark .v2board-island {
   color-scheme: dark;
   --background: oklch(0.145 0 0);

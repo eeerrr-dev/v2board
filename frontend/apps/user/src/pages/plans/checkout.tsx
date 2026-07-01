@@ -226,7 +226,7 @@ export default function PlanCheckoutPage() {
                       <RadioGroupIndicator data-testid="checkout-period-radio" />
                       {t(item.labelKey)}
                     </div>
-                    <span className="price font-medium">
+                    <span className="font-medium">
                       {symbol}
                       {(price / 100).toFixed(2)}
                     </span>
