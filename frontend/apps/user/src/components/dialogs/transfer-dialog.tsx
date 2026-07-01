@@ -36,7 +36,15 @@ const transferSchema = z.object({
     .string()
     .trim()
     .min(1, 'invite.transfer_placeholder')
-    .refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, 'invite.transfer_invalid'),
+    .refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, 'invite.transfer_invalid')
+    // Balance is denominated in cents, so more than two decimals cannot be
+    // represented — without this the extra digits were silently rounded by the
+    // `Math.round(100 * …)` conversion (e.g. 10.999 → 1100 cents), transferring
+    // a different amount than the user typed. Reject them explicitly instead.
+    .refine((value) => {
+      const decimals = value.split('.')[1];
+      return decimals === undefined || decimals.length <= 2;
+    }, 'invite.transfer_decimals'),
 });
 
 type TransferFormValues = z.infer<typeof transferSchema>;

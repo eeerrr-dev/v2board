@@ -40,6 +40,7 @@ vi.mock('react-i18next', () => ({
         'invite.transfer_notice': '划转后的余额仅用于{title}消费使用',
         'invite.transfer_placeholder': '请输入需要划转到余额的金额',
         'invite.transfer_invalid': '请输入有效的划转金额',
+        'invite.transfer_decimals': '划转金额最多支持两位小数',
         'invite.transfer_exceeds': '划转金额不能超过当前推广佣金余额',
         'invite.withdraw': '申请提现',
         'invite.withdraw_account': '提现账号',
@@ -314,6 +315,42 @@ describe('invite commission dialogs shadcn behavior', () => {
 
     expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain('请输入有效的划转金额');
+  });
+
+  it('rejects a transfer amount with more than two decimal places', async () => {
+    await act(async () => {
+      root.render(
+        <TransferDialog max={12345}>
+          <button type="button">划转</button>
+        </TransferDialog>,
+      );
+    });
+
+    await act(async () => {
+      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const amount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
+      (input) => input.placeholder === '请输入需要划转到余额的金额',
+    )!;
+    // 10.999 is finite, positive, and within balance, but cents cannot hold a
+    // third decimal — the old path silently rounded it to 1100 cents.
+    await act(async () => {
+      setNativeInputValue(amount, '10.999');
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      document.body
+        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('划转金额最多支持两位小数');
   });
 
   it('rejects a transfer amount above the available commission balance', async () => {

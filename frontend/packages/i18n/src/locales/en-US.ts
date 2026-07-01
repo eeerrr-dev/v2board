@@ -398,6 +398,7 @@ const enUS: Translations = {
     transfer_amount: 'Transfer amount',
     transfer_placeholder: 'Please enter the amount to be transferred to the balance',
     transfer_invalid: 'Please enter a valid transfer amount',
+    transfer_decimals: 'The transfer amount supports at most two decimal places',
     transfer_exceeds: 'The transfer amount cannot exceed your commission balance',
     withdraw_button: 'Invitation Commission Withdrawal',
     created_at_col: 'Creation Time',
