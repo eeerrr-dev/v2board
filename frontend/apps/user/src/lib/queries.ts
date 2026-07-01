@@ -71,23 +71,27 @@ export const userKeys = {
   stat: ['user', 'stat'] as const,
   subscribe: ['user', 'subscribe'] as const,
   orders: (status?: number) => ['user', 'orders', status ?? 'all'] as const,
-  orderDetail: (tradeNo: string) => ['user', 'orders', 'detail', tradeNo] as const,
-  orderStatus: (tradeNo: string) => ['user', 'orders', 'status', tradeNo] as const,
+  // The id params are honestly `| undefined`: an unset route id lands a literal
+  // undefined in the key, inert because each use* wrapper gates `enabled` (never a
+  // `?? ''` sentinel, which would be a distinct, request-reaching key).
+  orderDetail: (tradeNo: string | undefined) => ['user', 'orders', 'detail', tradeNo] as const,
+  orderStatus: (tradeNo: string | undefined) => ['user', 'orders', 'status', tradeNo] as const,
   plans: ['user', 'plans'] as const,
-  plan: (id: number | string) => ['user', 'plan', id] as const,
+  plan: (id: number | string | undefined) => ['user', 'plan', id] as const,
   payments: ['user', 'payments'] as const,
   notices: ['user', 'notices'] as const,
   tickets: ['user', 'tickets'] as const,
-  ticketDetail: (id: number | string) => ['user', 'ticket', id] as const,
+  ticketDetail: (id: number | string | undefined) => ['user', 'ticket', id] as const,
   invite: ['user', 'invite'] as const,
   inviteDetails: (current?: number, size?: number) =>
     ['user', 'invite', 'details', current ?? '', size ?? ''] as const,
   knowledge: (lang: string, kw?: string) => ['user', 'knowledge', lang, kw ?? ''] as const,
-  knowledgeDetail: (id: number | string, lang: string) =>
+  knowledgeDetail: (id: number | string | undefined, lang: string) =>
     ['user', 'knowledge', 'detail', id, lang] as const,
   trafficLog: ['user', 'trafficLog'] as const,
   commConfig: ['user', 'comm'] as const,
-  stripePublicKey: (methodId: string) => ['user', 'stripePublicKey', methodId] as const,
+  stripePublicKey: (methodId: string | undefined) =>
+    ['user', 'stripePublicKey', methodId] as const,
   servers: ['user', 'servers'] as const,
   telegramBot: ['user', 'telegram', 'bot'] as const,
   sessions: ['user', 'sessions'] as const,
@@ -116,12 +120,12 @@ export const userQueryOptions = {
     }),
   orderDetail: (tradeNo: string | undefined) =>
     queryOptions({
-      queryKey: userKeys.orderDetail(tradeNo as string),
+      queryKey: userKeys.orderDetail(tradeNo),
       queryFn: () => user.orderDetail(apiClient, tradeNo as string),
     }),
   orderStatus: (tradeNo: string | undefined) =>
     queryOptions({
-      queryKey: userKeys.orderStatus(tradeNo as string),
+      queryKey: userKeys.orderStatus(tradeNo),
       queryFn: () => user.checkOrder(apiClient, tradeNo as string),
     }),
   plans: () =>
@@ -131,7 +135,7 @@ export const userQueryOptions = {
     }),
   plan: (id: number | string | undefined) =>
     queryOptions({
-      queryKey: userKeys.plan(id as number | string),
+      queryKey: userKeys.plan(id),
       queryFn: () => user.fetchPlan(apiClient, id as number | string),
     }),
   payments: () =>
@@ -148,7 +152,7 @@ export const userQueryOptions = {
     }),
   ticketDetail: (id: number | string | undefined) =>
     queryOptions({
-      queryKey: userKeys.ticketDetail(id as number | string),
+      queryKey: userKeys.ticketDetail(id),
       queryFn: () => user.ticketDetail(apiClient, id as number | string),
     }),
   invite: () =>
@@ -170,7 +174,7 @@ export const userQueryOptions = {
     }),
   knowledgeDetail: (id: number | string | undefined, language: string) =>
     queryOptions({
-      queryKey: userKeys.knowledgeDetail(id as number | string, language),
+      queryKey: userKeys.knowledgeDetail(id, language),
       queryFn: ({ signal }) =>
         user.knowledgeDetail(apiClient, id as number | string, language, { signal }),
     }),
@@ -183,7 +187,7 @@ export const userQueryOptions = {
     }),
   stripePublicKey: (methodId: string | undefined) =>
     queryOptions({
-      queryKey: userKeys.stripePublicKey(methodId as string),
+      queryKey: userKeys.stripePublicKey(methodId),
       queryFn: () => user.getStripePublicKey(apiClient, Number(methodId)),
     }),
   servers: () =>

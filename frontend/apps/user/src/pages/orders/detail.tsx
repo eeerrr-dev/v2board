@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ParseKeys } from 'i18next';
 import { useParams, useNavigate } from 'react-router';
@@ -27,7 +27,7 @@ import {
   userKeys,
 } from '@/lib/queries';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { StripeCardForm } from '@/components/stripe-card-form';
+import { StripeCardForm, type StripeCardFormHandle } from '@/components/stripe-card-form';
 import { toast } from '@/lib/toast';
 import { formatLegacyDateTime } from '@v2board/config/format';
 import { Button } from '@/components/ui/button';
@@ -65,7 +65,10 @@ export default function OrderDetailPage() {
   const [qrcodeVisible, setQrcodeVisible] = useState(false);
   const [payUrl, setPayUrl] = useState<string | undefined>();
   const [pollOrderStatus, setPollOrderStatus] = useState(false);
-  const [stripeToken, setStripeToken] = useState<{ id: string } | null>(null);
+  // Stripe tokenizes at submit time (see onPay), so the page only tracks whether the
+  // CardElement reports itself complete — enough to gate the checkout button.
+  const [cardComplete, setCardComplete] = useState(false);
+  const stripeCardRef = useRef<StripeCardFormHandle>(null);
   // useOrderStatus owns the 3s self-stopping poll cadence (it stops once the
   // order leaves the pending state or the check errors); this page only decides
   // whether to poll at all, via enabled.
@@ -131,18 +134,11 @@ export default function OrderDetailPage() {
   // pre_handling_amount from the server wins; otherwise derive the fee from the selected
   // method. The bundled poll-success refetch replaces the order detail without re-running
   // getPaymentMethod, so a paid (non-pending) order has no locally injected fee.
-  const effectivePreHandlingAmount = useMemo(() => {
-    const currentOrder = orderQuery.data;
-    if (!currentOrder) return 0;
-    return (
-      currentOrder.pre_handling_amount ??
-      (currentOrder.status === 0 ? calculatePreHandlingAmount(currentOrder, selectedPayment) : 0)
-    );
-  }, [orderQuery.data, selectedPayment]);
-
-  const handleStripeToken = useCallback((token: { id: string } | null) => {
-    setStripeToken(token);
-  }, []);
+  const currentOrder = orderQuery.data;
+  const effectivePreHandlingAmount = !currentOrder
+    ? 0
+    : (currentOrder.pre_handling_amount ??
+      (currentOrder.status === 0 ? calculatePreHandlingAmount(currentOrder, selectedPayment) : 0));
 
   if (loading) {
     return (
@@ -160,15 +156,20 @@ export default function OrderDetailPage() {
 
   const onPay = async () => {
     if (!tradeNo) return;
-    if (isStripePayment && !stripeToken) {
-      toast.error(t('order.credit_card_check'));
-      return;
+    let token: string | undefined;
+    if (isStripePayment) {
+      const stripeToken = await stripeCardRef.current?.tokenize();
+      if (!stripeToken) {
+        toast.error(t('order.credit_card_check'));
+        return;
+      }
+      token = stripeToken.id;
     }
     try {
       const result = await checkoutOrder({
         trade_no: tradeNo,
         method: effectiveMethodId as number,
-        token: isStripePayment ? stripeToken?.id : undefined,
+        token,
       });
       if (isStripePayment) {
         toast.loading(t('order.stripe_verifying'), { duration: 5000 });
@@ -317,7 +318,12 @@ export default function OrderDetailPage() {
               {isStripePayment && stripePk && (
                 <>
                   <h2 className="text-base font-semibold leading-6 text-foreground">{t('order.credit_card_title')}</h2>
-                  <StripeCardForm key={stripePk} publicKey={stripePk} onToken={handleStripeToken} />
+                  <StripeCardForm
+                    key={stripePk}
+                    publicKey={stripePk}
+                    ref={stripeCardRef}
+                    onCompleteChange={setCardComplete}
+                  />
                   <div className="mt-3 mb-5 text-sm text-muted-foreground">
                     {t('order.credit_card_security')}
                   </div>
@@ -400,7 +406,7 @@ export default function OrderDetailPage() {
                   block
                   data-testid="commerce-submit"
                   loading={checkout.isPending}
-                  disabled={isStripePayment && !stripeToken}
+                  disabled={isStripePayment && !cardComplete}
                   onClick={onPay}
                 >
                   {t('order.checkout')}

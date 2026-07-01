@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -67,13 +67,9 @@ export default function PlanCheckoutPage() {
   const symbol = comm?.currency_symbol;
   const currency = comm?.currency;
 
-  const periods = useMemo(() => {
-    if (!planQuery.data) return [];
-    return PERIODS.filter(
-      (p) =>
-        planQuery.data && planQuery.data[p.key] !== null,
-    );
-  }, [planQuery.data]);
+  // React Compiler memoizes this derivation; no manual useMemo needed.
+  const planData = planQuery.data;
+  const periods = planData ? PERIODS.filter((p) => planData[p.key] !== null) : [];
 
   useEffect(() => {
     if (planQuery.error) navigate('/plan');

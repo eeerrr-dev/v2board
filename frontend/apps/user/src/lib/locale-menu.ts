@@ -18,7 +18,11 @@ export function getCurrentLocaleLabel() {
   return SUPPORTED_LOCALES.find((locale) => locale.code === legacyGetLocale())?.label;
 }
 
+// Persist the chosen locale (i18n cookie + umi_locale/g_lang via legacySetLocale)
+// WITHOUT the legacy full-page reload. The caller drives i18next.changeLanguage so
+// react-i18next re-renders in place and installLocaleDocumentEnvironment updates
+// <html lang/dir> off the languageChanged event.
 export function selectLocale(locale: string) {
   setLegacyCookie('i18n', locale);
-  legacySetLocale(locale);
+  legacySetLocale(locale, false);
 }

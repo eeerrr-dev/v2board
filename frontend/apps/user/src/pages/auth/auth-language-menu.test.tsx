@@ -3,10 +3,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthLanguageMenu } from './auth-language-menu';
 
+const i18nMocks = vi.hoisted(() => ({ changeLanguage: vi.fn() }));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => (key === 'common.language' ? 'Language' : key),
-    i18n: { language: 'en-US' },
+    i18n: { language: 'en-US', changeLanguage: i18nMocks.changeLanguage },
   }),
 }));
 
@@ -18,6 +20,7 @@ describe('AuthLanguageMenu', () => {
   let root: Root;
 
   beforeEach(() => {
+    i18nMocks.changeLanguage.mockClear();
     window.localStorage.setItem('umi_locale', 'en-US');
     window.g_lang = 'en-US';
     window.settings = { i18n: ['en-US', 'zh-CN'] as string[] & Record<string, Record<string, string>> };
@@ -75,7 +78,7 @@ describe('AuthLanguageMenu', () => {
     ).toEqual(['English', '简体中文']);
   });
 
-  it('persists locale selection without rendering legacy antd overlay markup', () => {
+  it('persists locale selection in place via changeLanguage without a full-page reload', () => {
     const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => undefined);
     act(() => {
       root.render(<AuthLanguageMenu />);
@@ -93,9 +96,12 @@ describe('AuthLanguageMenu', () => {
       zhCN.dispatchEvent(new Event('click', { bubbles: true }));
     });
 
+    // Persistence writes stay (Tier-1 language persistence contract)...
     expect(document.cookie).toContain('i18n=zh-CN');
     expect(window.localStorage.getItem('umi_locale')).toBe('zh-CN');
-    expect(reload).toHaveBeenCalledOnce();
+    // ...but the switch is now reactive: changeLanguage drives the re-render, no reload.
+    expect(i18nMocks.changeLanguage).toHaveBeenCalledWith('zh-CN');
+    expect(reload).not.toHaveBeenCalled();
     expect(document.body.querySelector('.ant-dropdown')).toBeNull();
   });
 });

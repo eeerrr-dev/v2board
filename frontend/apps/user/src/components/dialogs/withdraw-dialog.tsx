@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
-import type { ParseKeys } from 'i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { fieldError } from '@/lib/field-error';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -91,11 +91,7 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
                 <FormField
                   id="invite-withdraw-method"
                   label={t('invite.withdraw_method')}
-                  error={
-                    form.formState.errors.method?.message
-                      ? t(form.formState.errors.method.message as ParseKeys)
-                      : undefined
-                  }
+                  error={fieldError(form.formState.errors.method, t)}
                 >
                   <SelectTrigger data-testid="invite-select-trigger">
                     <SelectValue placeholder={t('invite.withdraw_method_placeholder')} />
@@ -114,11 +110,7 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
           <FormField
             id="invite-withdraw-account"
             label={t('invite.withdraw_account')}
-            error={
-              form.formState.errors.account?.message
-                ? t(form.formState.errors.account.message as ParseKeys)
-                : undefined
-            }
+            error={fieldError(form.formState.errors.account, t)}
           >
             <Input
               placeholder={t('invite.withdraw_account_placeholder')}

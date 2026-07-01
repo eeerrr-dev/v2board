@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type BaseSyntheticEvent } from 'react';
+import { useEffect, type BaseSyntheticEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { ApiError, user } from '@v2board/api-client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -63,30 +63,28 @@ export function useLoginController(): LoginController {
   const redirect = normalizeRedirectTarget(queryRedirect);
   const verify = params.get('verify');
 
-  const login = useCallback(
-    async ({ email, password }: LoginFormValues) => {
-      form.clearErrors('root.serverError');
-      try {
-        const result = await mutateAsync({ email, password });
-        setAuthData(result.auth_data);
-        // The saga dispatched user/getUserInfo with `put`, then immediately pushed — it never
-        // waited for the user-info request to settle.
-        void queryClient
-          .fetchQuery(userQueryOptions.info())
-          .catch(() => undefined);
-        navigate(redirect);
-      } catch (err) {
-        // The login mutation rejects with ApiError. Transport failures (status 0) surfaced nothing in
-        // the oracle (the api-client toast model); everything else is shown inline beside the form
-        // (the global toast also fires).
-        if (err instanceof ApiError && err.status === 0) return;
-        form.setError('root.serverError', {
-          message: (err instanceof Error && err.message) || i18nGet('请求失败'),
-        });
-      }
-    },
-    [form, mutateAsync, navigate, queryClient, redirect],
-  );
+  // React Compiler keeps this stable; handleSubmit rewraps it each render anyway.
+  const login = async ({ email, password }: LoginFormValues) => {
+    form.clearErrors('root.serverError');
+    try {
+      const result = await mutateAsync({ email, password });
+      setAuthData(result.auth_data);
+      // The saga dispatched user/getUserInfo with `put`, then immediately pushed — it never
+      // waited for the user-info request to settle.
+      void queryClient
+        .fetchQuery(userQueryOptions.info())
+        .catch(() => undefined);
+      navigate(redirect);
+    } catch (err) {
+      // The login mutation rejects with ApiError. Transport failures (status 0) surfaced nothing in
+      // the oracle (the api-client toast model); everything else is shown inline beside the form
+      // (the global toast also fires).
+      if (err instanceof ApiError && err.status === 0) return;
+      form.setError('root.serverError', {
+        message: (err instanceof Error && err.message) || i18nGet('请求失败'),
+      });
+    }
+  };
   const submit = form.handleSubmit(login);
 
   useEffect(() => {
@@ -135,7 +133,7 @@ export function useLoginController(): LoginController {
 
   // RHF only auto-clears root errors on the next submit, so the form-level onInput keeps wiring here
   // to dismiss the alert the moment the user edits a field without resubmitting.
-  const clearError = useCallback(() => form.clearErrors('root.serverError'), [form]);
+  const clearError = () => form.clearErrors('root.serverError');
 
   return { registerInput: form.register, submit, clearError, isPending, error };
 }

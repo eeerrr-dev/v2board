@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -75,10 +75,8 @@ export default function KnowledgePage() {
     setSelectedId(matchedItem ? matchedItem.id : urlId);
   }, [data, searchParams]);
 
-  const renderedBody = useMemo(
-    () => renderLegacyMarkdown(visibleDetail?.body || ''),
-    [visibleDetail?.body],
-  );
+  // React Compiler memoizes this render (one markdown render per visible article).
+  const renderedBody = renderLegacyMarkdown(visibleDetail?.body || '');
 
   const closeDetail = () => {
     setSelectedId(undefined);
@@ -94,20 +92,14 @@ export default function KnowledgePage() {
     if (detail.data && !detail.isFetching) setVisibleDetail(detail.data);
   }, [detail.data, detail.isFetching]);
 
-  const copyMarkdownText = useCallback(
-    async (text: string) => {
-      if (await copyText(text)) toast.success(t('dashboard.copy_success'));
-    },
-    [t],
-  );
+  const copyMarkdownText = async (text: string) => {
+    if (await copyText(text)) toast.success(t('dashboard.copy_success'));
+  };
 
-  const jumpToArticle = useCallback(
-    (id: number | string) => {
-      if (selectedId !== undefined && String(id) === String(selectedId)) void refetchDetail();
-      else setSelectedId(id);
-    },
-    [refetchDetail, selectedId],
-  );
+  const jumpToArticle = (id: number | string) => {
+    if (selectedId !== undefined && String(id) === String(selectedId)) void refetchDetail();
+    else setSelectedId(id);
+  };
 
   const runMarkdownAction = (element: HTMLElement) => {
     const action = element.getAttribute(LEGACY_MARKDOWN_ACTION_ATTRIBUTE);

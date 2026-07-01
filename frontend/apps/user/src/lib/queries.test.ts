@@ -121,10 +121,12 @@ describe('user query state behavior', () => {
   });
 
   it('keeps route-id query keys aligned with the old direct route params', () => {
-    expect(queriesSource).toContain('queryKey: userKeys.orderDetail(tradeNo as string)');
-    expect(queriesSource).toContain('queryKey: userKeys.plan(id as number | string)');
-    expect(queriesSource).toContain('queryKey: userKeys.ticketDetail(id as number | string)');
-    expect(queriesSource).toContain('queryKey: userKeys.knowledgeDetail(id as number | string, language)');
+    // The key factories now take the route id honestly (`| undefined`), so the query
+    // key holds the raw param with no `as string` lie and no `?? ''` sentinel.
+    expect(queriesSource).toContain('queryKey: userKeys.orderDetail(tradeNo)');
+    expect(queriesSource).toContain('queryKey: userKeys.plan(id)');
+    expect(queriesSource).toContain('queryKey: userKeys.ticketDetail(id)');
+    expect(queriesSource).toContain('queryKey: userKeys.knowledgeDetail(id, language)');
     expect(queriesSource).not.toContain("userKeys.orderDetail(tradeNo ?? '')");
     expect(queriesSource).not.toContain("userKeys.plan(id ?? '')");
     expect(queriesSource).not.toContain("userKeys.ticketDetail(id ?? '')");

@@ -2,12 +2,12 @@ import type { ReactNode } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { StripeCardForm } from './stripe-card-form';
+import { StripeCardForm, type StripeCardFormHandle } from './stripe-card-form';
 
 const stripeMocks = vi.hoisted(() => ({
   cardElement: { kind: 'card-element' },
   cardElementProps: null as null | {
-    onChange?: () => void;
+    onChange?: (event: { complete: boolean; error?: { message: string } }) => void;
     options?: unknown;
   },
   createToken: vi.fn(),
@@ -21,7 +21,10 @@ vi.mock('@stripe/stripe-js/pure', () => ({
 }));
 
 vi.mock('@stripe/react-stripe-js', () => ({
-  CardElement: (props: { onChange?: () => void; options?: unknown }) => {
+  CardElement: (props: {
+    onChange?: (event: { complete: boolean; error?: { message: string } }) => void;
+    options?: unknown;
+  }) => {
     stripeMocks.cardElementProps = props;
     return <div data-testid="stripe-card-element" />;
   },
@@ -65,11 +68,11 @@ describe('StripeCardForm official Stripe integration', () => {
     vi.restoreAllMocks();
   });
 
-  it('loads Stripe through the official SDK and tokenizes on every CardElement change', async () => {
-    const handleToken = vi.fn();
+  it('loads Stripe through the official SDK and reports completion without tokenizing on change', async () => {
+    const handleComplete = vi.fn();
 
     act(() => {
-      root!.render(<StripeCardForm publicKey="pk_test" onToken={handleToken} />);
+      root!.render(<StripeCardForm publicKey="pk_test" onCompleteChange={handleComplete} />);
     });
 
     expect(stripeMocks.loadStripe).toHaveBeenCalledWith('pk_test');
@@ -92,33 +95,46 @@ describe('StripeCardForm official Stripe integration', () => {
       },
     });
 
+    // A CardElement change now only reports completion — it must NOT hit Stripe.
+    act(() => {
+      stripeMocks.cardElementProps?.onChange?.({ complete: true });
+    });
+
+    expect(handleComplete).toHaveBeenCalledWith(true);
+    expect(stripeMocks.createToken).not.toHaveBeenCalled();
+  });
+
+  it('tokenizes once, on demand, when the parent calls the submit-time ref', async () => {
+    const ref: { current: StripeCardFormHandle | null } = { current: null };
+
+    act(() => {
+      root!.render(<StripeCardForm publicKey="pk_test" ref={ref} />);
+    });
+
+    let token: { id: string } | null = null;
     await act(async () => {
-      stripeMocks.cardElementProps?.onChange?.();
-      await Promise.resolve();
+      token = (await ref.current?.tokenize()) ?? null;
     });
 
     expect(stripeMocks.getElement).toHaveBeenCalled();
+    expect(stripeMocks.createToken).toHaveBeenCalledTimes(1);
     expect(stripeMocks.createToken).toHaveBeenCalledWith(stripeMocks.cardElement);
-    expect(handleToken).toHaveBeenCalledWith({ id: 'tok_modern' });
+    expect(token).toEqual({ id: 'tok_modern' });
   });
 
-  it('reports Stripe tokenization errors without enabling checkout', async () => {
-    const handleToken = vi.fn();
-    const handleError = vi.fn();
+  it('resolves the submit-time tokenize to null when Stripe rejects the card', async () => {
     stripeMocks.createToken.mockResolvedValue({ error: { message: 'Card declined' } });
+    const ref: { current: StripeCardFormHandle | null } = { current: null };
 
     act(() => {
-      root!.render(
-        <StripeCardForm publicKey="pk_error" onToken={handleToken} onError={handleError} />,
-      );
+      root!.render(<StripeCardForm publicKey="pk_error" ref={ref} />);
     });
 
+    let token: { id: string } | null = { id: 'unset' };
     await act(async () => {
-      stripeMocks.cardElementProps?.onChange?.();
-      await Promise.resolve();
+      token = (await ref.current?.tokenize()) ?? null;
     });
 
-    expect(handleToken).toHaveBeenCalledWith(null);
-    expect(handleError).toHaveBeenCalledWith('Card declined');
+    expect(token).toBeNull();
   });
 });

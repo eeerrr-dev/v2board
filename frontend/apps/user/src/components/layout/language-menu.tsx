@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +32,7 @@ export function LanguageMenu({
   contentClassName,
   itemClassName,
 }: LanguageMenuProps) {
+  const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const locales = getEnabledLocales();
   const currentLabel = getCurrentLocaleLabel();
@@ -51,6 +53,7 @@ export function LanguageMenu({
             onSelect={(event) => {
               event.preventDefault();
               selectLocale(locale.code);
+              void i18n.changeLanguage(locale.code);
             }}
           >
             {locale.label}

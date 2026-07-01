@@ -37,6 +37,7 @@ import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
+import { fieldError } from '@/lib/field-error';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import {
   useCloseTicketMutation,
@@ -257,7 +258,7 @@ export default function TicketsPage() {
                   className="text-sm text-destructive"
                   data-testid="ticket-subject-error"
                 >
-                  {t(form.formState.errors.subject.message as ParseKeys)}
+                  {fieldError(form.formState.errors.subject, t)}
                 </p>
               ) : null}
             </div>
@@ -290,7 +291,7 @@ export default function TicketsPage() {
                   className="text-sm text-destructive"
                   data-testid="ticket-level-error"
                 >
-                  {t(form.formState.errors.level.message as ParseKeys)}
+                  {fieldError(form.formState.errors.level, t)}
                 </p>
               ) : null}
             </div>
@@ -308,7 +309,7 @@ export default function TicketsPage() {
                   className="text-sm text-destructive"
                   data-testid="ticket-message-error"
                 >
-                  {t(form.formState.errors.message.message as ParseKeys)}
+                  {fieldError(form.formState.errors.message, t)}
                 </p>
               ) : null}
             </div>

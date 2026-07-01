@@ -327,13 +327,14 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(paymentMethodSource).toContain('key={method.id}');
   });
 
-  it('keeps the Stripe form keyed by public key', () => {
-    expect(orderDetailSource).toContain(
-      '<StripeCardForm key={stripePk} publicKey={stripePk} onToken={handleStripeToken} />',
-    );
-    expect(orderDetailSource).not.toContain(
-      '<StripeCardForm publicKey={stripePk} onToken={handleStripeToken} />',
-    );
+  it('keeps the Stripe form keyed by public key and tokenizes at submit via a ref', () => {
+    expect(orderDetailSource).toContain('<StripeCardForm');
+    expect(orderDetailSource).toContain('key={stripePk}');
+    expect(orderDetailSource).toContain('publicKey={stripePk}');
+    expect(orderDetailSource).toContain('ref={stripeCardRef}');
+    // Tokenization moved off the per-keystroke onChange onto a submit-time ref call.
+    expect(orderDetailSource).toContain('await stripeCardRef.current?.tokenize()');
+    expect(orderDetailSource).not.toContain('onToken={handleStripeToken}');
   });
 
   it('keeps the Stripe verification loading message behind i18n', () => {

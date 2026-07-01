@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Copy, QrCode } from 'lucide-react';
@@ -48,10 +47,8 @@ export function DashboardSubscribeMenu({
 }: DashboardSubscribeMenuProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const subscribeTargets = useMemo(
-    () => (subscribeUrl ? getSubscribeTargets(subscribeUrl) : []),
-    [subscribeUrl],
-  );
+  // React Compiler memoizes this derivation; no manual useMemo needed.
+  const subscribeTargets = subscribeUrl ? getSubscribeTargets(subscribeUrl) : [];
 
   const copyUrl = async () => {
     if (await copyText(subscribeUrl)) toast.success(t('dashboard.copy_success'));

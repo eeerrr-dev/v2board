@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import type { ParseKeys } from 'i18next';
@@ -42,15 +42,14 @@ export default function PlansPage() {
   const symbol = comm?.currency_symbol;
   const [filter, setFilter] = useState<FilterKind>('all');
 
-  const filtered = useMemo(() => {
-    if (!data) return [];
-    if (filter === 'all') return data;
-    if (filter === 'period')
-      return data.filter((p) =>
-        RENEWAL_PRICE_KEYS.some((k) => Boolean(p[k.key])),
-      );
-    return data.filter((p) => Boolean(p.onetime_price));
-  }, [data, filter]);
+  // React Compiler memoizes this derivation; no manual useMemo needed.
+  const filtered = !data
+    ? []
+    : filter === 'all'
+      ? data
+      : filter === 'period'
+        ? data.filter((p) => RENEWAL_PRICE_KEYS.some((k) => Boolean(p[k.key])))
+        : data.filter((p) => Boolean(p.onetime_price));
 
   return (
     <PageShell data-testid="plans-page">

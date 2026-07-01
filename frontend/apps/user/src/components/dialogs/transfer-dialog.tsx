@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from 'react';
-import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { AlertCircle } from 'lucide-react';
+import { fieldError } from '@/lib/field-error';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -112,11 +112,7 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
             <FormField
               id="invite-transfer-amount"
               label={t('invite.transfer_amount')}
-              error={
-                form.formState.errors.yuan?.message
-                  ? t(form.formState.errors.yuan.message as ParseKeys)
-                  : undefined
-              }
+              error={fieldError(form.formState.errors.yuan, t)}
             >
               <Input
                 placeholder={t('invite.transfer_placeholder')}

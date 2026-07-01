@@ -222,6 +222,11 @@ export function buildAppViteConfig(options: AppViteOptions): UserConfig {
       reportCompressedSize: false,
       rollupOptions: {
         output: {
+          // Vendor split for the admin replica, which still ships antd. The user app
+          // is a pure shadcn island with no antd, so the `antd` branch is inert in its
+          // plain `vite build` output — and that output is never deployed anyway: the
+          // Tier-1 Laravel drop-in is built by vite.config.deploy.ts (a standalone
+          // single-IIFE umi.js/umi.css config that does NOT extend this base).
           manualChunks(id) {
             if (id.includes('node_modules')) {
               if (id.includes('antd') || id.includes('@ant-design')) return 'antd';

@@ -31,6 +31,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
+import { fieldError } from '@/lib/field-error';
 import { ErrorState } from '@/components/ui/error-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -573,11 +574,7 @@ export default function ProfilePage() {
         open={depositOpen}
         placeholder={depositPlaceholder}
         inputProps={depositForm.register('amount')}
-        error={
-          depositForm.formState.errors.amount?.message
-            ? t(depositForm.formState.errors.amount.message as ParseKeys)
-            : undefined
-        }
+        error={fieldError(depositForm.formState.errors.amount, t)}
         onClose={closeDeposit}
         onConfirm={onDeposit}
       />
