@@ -80,14 +80,14 @@ describe('legacy settings bootstrap', () => {
     expect(style.getPropertyValue('--legacy-link-active')).toBe('#13161a');
   });
 
-  it('matches the legacy title assignment for a missing title', () => {
+  it('falls back to the product name instead of "undefined" for a missing title', () => {
     window.settings = {
       theme: { color: 'default', sidebar: 'light', header: 'dark' },
     };
 
     applyLegacySettings();
 
-    expect(document.title).toBe('undefined');
+    expect(document.title).toBe('V2Board');
   });
 
   it('uses the modern Clipboard API', async () => {

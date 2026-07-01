@@ -95,9 +95,12 @@ export function DashboardConfirmDialog({ action, onClose }: DashboardConfirmDial
             data-testid="dashboard-confirm-primary"
             loading={confirmLoading}
             onClick={() => {
-              void (action === 'reset-package'
-                ? confirmResetPackage()
-                : confirmNewPeriod());
+              // Failures are surfaced globally by the API client's onError toast;
+              // swallow the rejection here so it doesn't become an unhandled
+              // promise rejection.
+              (action === 'reset-package' ? confirmResetPackage() : confirmNewPeriod()).catch(
+                () => {},
+              );
             }}
           >
             {t('common.confirm')}

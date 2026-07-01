@@ -108,7 +108,7 @@ export function DashboardSubscribeMenu({
   );
 }
 
-function getSubscribeTargets(url: string) {
+export function getSubscribeTargets(url: string) {
   const title = window.settings!.title;
   const userAgent = window.navigator.userAgent;
   const lowerUserAgent = userAgent.toLowerCase();
@@ -116,7 +116,10 @@ function getSubscribeTargets(url: string) {
     lowerUserAgent.includes('iphone') ||
     lowerUserAgent.includes('ipad') ||
     (/Mac/.test(userAgent) && window.navigator.maxTouchPoints > 2);
-  const isMac = lowerUserAgent.includes('macintosh');
+  // iPadOS Safari reports a "Macintosh" desktop UA; without excluding Apple
+  // mobile devices an iPad would get both the iOS targets and the macOS-only
+  // ClashX entry, so the two menus overlap.
+  const isMac = lowerUserAgent.includes('macintosh') && !isAppleMobile;
   const isAndroid = lowerUserAgent.includes('android');
   const isWindows = lowerUserAgent.includes('windows');
   const shadowrocketPayload = window

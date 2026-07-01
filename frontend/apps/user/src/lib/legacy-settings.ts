@@ -133,5 +133,7 @@ export function applyLegacySettings(): void {
   root.style.setProperty('--legacy-link-hover', palette.linkHover);
   root.style.setProperty('--legacy-link-active', palette.linkActive);
 
-  document.title = String(settings.title);
+  // Fall back to the product name rather than the literal string "undefined"
+  // when the operator has not configured a site title yet.
+  document.title = getLegacyTitle();
 }

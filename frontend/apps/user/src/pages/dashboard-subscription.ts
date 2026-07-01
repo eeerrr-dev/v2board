@@ -28,14 +28,13 @@ export function useDashboardSubscription(sub: Subscribe): DashboardSubscriptionV
   const daysLeft = legacyDaysUntil(sub?.expired_at);
   const expired = isLegacyExpired(sub?.expired_at ?? null);
   const canRenew = isLegacyRenewable(sub);
-  const resetAvailable = Boolean(
-    hasPlan && sub?.plan?.reset_price && usedPctRounded >= 80 && !expired,
-  );
-  const shouldShowTrafficAlert = Boolean(usedPctRounded >= 80 && usedPctRounded < 100 && !expired);
+  // Gate the reset/new-period actions on the true usage, not the 2-decimal
+  // display value: rounding 99.996% up to 100.00 would otherwise offer a new
+  // period (and drop the low-traffic alert) before the quota is really spent.
+  const resetAvailable = Boolean(hasPlan && sub?.plan?.reset_price && usedPct >= 80 && !expired);
+  const shouldShowTrafficAlert = Boolean(usedPct >= 80 && usedPct < 100 && !expired);
   const trafficAlertResetAvailable = Boolean(sub?.plan?.reset_price);
-  const canNewPeriod = Boolean(
-    hasPlan && sub?.allow_new_period && usedPctRounded >= 100 && !expired,
-  );
+  const canNewPeriod = Boolean(hasPlan && sub?.allow_new_period && usedPct >= 100 && !expired);
 
   return {
     used,
