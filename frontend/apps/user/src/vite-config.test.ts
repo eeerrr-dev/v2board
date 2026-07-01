@@ -123,7 +123,7 @@ describe('user Vite dev optimizer', () => {
     expect(userDeployTemplateSource).not.toContain('/assets/umi.js?v={{$version}}');
   });
 
-  it('applies the dark mode cookie before first paint to avoid a theme flash', () => {
+  it('applies the resolved theme before first paint to avoid a theme flash', () => {
     expect(userDeployTemplateSource).toContain(
       "if (parts[0] !== 'dark_mode' || parts[1] === undefined) return value;",
     );
@@ -131,7 +131,12 @@ describe('user Vite dev optimizer', () => {
     expect(userDeployTemplateSource).toContain(
       "document.documentElement.style.colorScheme = 'dark';",
     );
-    expect(userDeployTemplateSource.indexOf("if (mode === '1') {")).toBeLessThan(
+    // A 'system' / absent preference follows the OS before umi.css loads, so a
+    // dark-OS visitor never flashes light.
+    expect(userDeployTemplateSource).toContain(
+      "window.matchMedia('(prefers-color-scheme: dark)').matches",
+    );
+    expect(userDeployTemplateSource.indexOf('if (dark) {')).toBeLessThan(
       userDeployTemplateSource.indexOf('/assets/umi.css?v='),
     );
   });

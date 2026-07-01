@@ -19,6 +19,7 @@ import {
   Headphones,
   LogOut,
   Menu,
+  Monitor,
   Moon,
   ReceiptText,
   Server,
@@ -31,7 +32,12 @@ import { ShadcnLanguageMenu } from './shadcn-language-menu';
 import { userQueryOptions } from '@/lib/queries';
 import { logout } from '@/lib/auth';
 import { cn } from '@/lib/cn';
-import { setDarkMode, useDarkMode } from '@/lib/dark-mode';
+import {
+  setThemePreference,
+  useDarkMode,
+  useThemePreference,
+  type ThemePreference,
+} from '@/lib/dark-mode';
 import { getLegacyTitle } from '@/lib/legacy-settings';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 import { Button } from '@/components/ui/button';
@@ -40,6 +46,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -141,6 +149,7 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
   const darkMode = useDarkMode();
+  const themePreference = useThemePreference();
   const activeLabel = findActiveLabel(location.pathname);
   const siteTitle = getLegacyTitle();
   const title = titleProp ?? (activeLabel ? t(activeLabel) : '');
@@ -275,16 +284,38 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
               </Button>
             ) : null}
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              data-dark-mode-trigger
-              aria-label={darkMode ? t('common.dark_mode_disable') : t('common.dark_mode_enable')}
-              onClick={() => setDarkMode(!darkMode)}
-            >
-              {darkMode ? <Moon className="size-4" /> : <Sun className="size-4" />}
-            </Button>
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  data-dark-mode-trigger
+                  aria-label={t('common.toggle_theme')}
+                >
+                  {darkMode ? <Moon className="size-4" /> : <Sun className="size-4" />}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-36">
+                <DropdownMenuRadioGroup
+                  value={themePreference}
+                  onValueChange={(value) => setThemePreference(value as ThemePreference)}
+                >
+                  <DropdownMenuRadioItem value="system" data-theme-option="system" className="gap-2">
+                    <Monitor className="size-4" />
+                    {t('common.theme_system')}
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="light" data-theme-option="light" className="gap-2">
+                    <Sun className="size-4" />
+                    {t('common.theme_light')}
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="dark" data-theme-option="dark" className="gap-2">
+                    <Moon className="size-4" />
+                    {t('common.theme_dark')}
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <ShadcnLanguageMenu />
 

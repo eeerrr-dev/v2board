@@ -51,6 +51,8 @@ const zhCN = {
     language: '语言',
     theme_dark: '深色',
     theme_light: '浅色',
+    theme_system: '跟随系统',
+    toggle_theme: '切换主题',
     currency: '货币',
     expand: '展开',
     collapse: '收起',

@@ -53,6 +53,8 @@ const enUS: Translations = {
     language: 'Language',
     theme_dark: 'Dark',
     theme_light: 'Light',
+    theme_system: 'System',
+    toggle_theme: 'Toggle theme',
     currency: 'Currency',
     expand: 'Expand',
     collapse: 'Collapse',

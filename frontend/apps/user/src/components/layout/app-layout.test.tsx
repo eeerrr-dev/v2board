@@ -6,10 +6,13 @@ import { AppLayout } from './app-layout';
 
 const mocks = vi.hoisted(() => ({
   darkMode: false,
+  themePreference: 'system' as 'system' | 'light' | 'dark',
   labels: {
     'common.cancel': '取消',
-    'common.dark_mode_disable': 'Disable dark mode',
-    'common.dark_mode_enable': 'Enable dark mode',
+    'common.toggle_theme': 'Toggle theme',
+    'common.theme_system': 'System',
+    'common.theme_light': 'Light',
+    'common.theme_dark': 'Dark',
     'common.logout': '登出',
     'common.search': '搜索',
     'nav.buy_subscribe': '购买订阅',
@@ -34,7 +37,7 @@ const mocks = vi.hoisted(() => ({
   navigationState: 'idle' as 'idle' | 'loading' | 'submitting',
   logout: vi.fn(),
   navigate: vi.fn(),
-  setDarkMode: vi.fn(),
+  setThemePreference: vi.fn(),
   darkListeners: new Set<() => void>(),
   title: 'V2Board',
   user: { email: 'user@example.com' },
@@ -80,23 +83,27 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/lib/dark-mode', async () => {
   const { useEffect, useState } = await import('react');
+  const useStore = <T,>(read: () => T) => {
+    const [value, setValue] = useState(read);
+    useEffect(() => {
+      const listener = () => setValue(read());
+      mocks.darkListeners.add(listener);
+      return () => {
+        mocks.darkListeners.delete(listener);
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    return value;
+  };
   return {
-    setDarkMode: (enabled: boolean) => {
-      mocks.setDarkMode(enabled);
-      mocks.darkMode = enabled;
+    setThemePreference: (preference: 'system' | 'light' | 'dark') => {
+      mocks.setThemePreference(preference);
+      mocks.themePreference = preference;
+      mocks.darkMode = preference === 'dark';
       mocks.darkListeners.forEach((listener) => listener());
     },
-    useDarkMode: () => {
-      const [enabled, setEnabled] = useState(mocks.darkMode);
-      useEffect(() => {
-        const listener = () => setEnabled(mocks.darkMode);
-        mocks.darkListeners.add(listener);
-        return () => {
-          mocks.darkListeners.delete(listener);
-        };
-      }, []);
-      return enabled;
-    },
+    useDarkMode: () => useStore(() => mocks.darkMode),
+    useThemePreference: () => useStore(() => mocks.themePreference),
   };
 });
 
@@ -109,12 +116,13 @@ vi.mock('@/lib/legacy-settings', () => ({
 
 function resetMocks() {
   mocks.darkMode = false;
+  mocks.themePreference = 'system';
   mocks.locale = 'zh-CN';
   mocks.location = { pathname: '/dashboard', search: '' };
   mocks.navigationState = 'idle';
   mocks.logout.mockReset();
   mocks.navigate.mockReset();
-  mocks.setDarkMode.mockReset();
+  mocks.setThemePreference.mockReset();
   mocks.darkListeners.clear();
   mocks.title = 'V2Board';
   mocks.user = { email: 'user@example.com' };
@@ -237,18 +245,27 @@ describe('AppLayout shadcn app shell behavior', () => {
     expect(sheet()).toBeNull();
   });
 
-  it('toggles dark mode through the header button', async () => {
+  it('changes the theme through the header menu', async () => {
     await renderLayout();
 
-    const toggle = container.querySelector<HTMLButtonElement>('button[data-dark-mode-trigger]')!;
+    const trigger = container.querySelector<HTMLButtonElement>('button[data-dark-mode-trigger]')!;
+    expect(trigger.querySelector('svg')).not.toBeNull();
     await act(async () => {
-      toggle.click();
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
+      );
       await Promise.resolve();
     });
 
-    expect(mocks.setDarkMode).toHaveBeenCalledWith(true);
-    expect(toggle.getAttribute('aria-label')).toBe('Disable dark mode');
-    expect(container.querySelector('button[data-dark-mode-trigger] svg')).not.toBeNull();
+    const darkOption = document.body.querySelector<HTMLElement>('[data-theme-option="dark"]')!;
+    expect(darkOption).not.toBeNull();
+    await act(async () => {
+      darkOption.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      darkOption.click();
+      await Promise.resolve();
+    });
+
+    expect(mocks.setThemePreference).toHaveBeenCalledWith('dark');
   });
 
   it('opens the user menu and logs out through the shadcn dropdown', async () => {

@@ -154,13 +154,18 @@ describe('user legacy entrypoint', () => {
     );
   });
 
-  it('applies the dark mode cookie before first paint to avoid a theme flash', () => {
+  it('applies the resolved theme before first paint to avoid a theme flash', () => {
     expect(indexSource).toContain(
       "if (parts[0] !== 'dark_mode' || parts[1] === undefined) return value;",
     );
     expect(indexSource).toContain("document.documentElement.classList.add('dark');");
     expect(indexSource).toContain("document.documentElement.style.colorScheme = 'dark';");
-    expect(indexSource.indexOf("if (mode === '1') {")).toBeLessThan(
+    // A 'system' / absent preference follows the OS before React mounts, so a
+    // dark-OS visitor never flashes light.
+    expect(indexSource).toContain(
+      "window.matchMedia('(prefers-color-scheme: dark)').matches",
+    );
+    expect(indexSource.indexOf('if (dark) {')).toBeLessThan(
       indexSource.indexOf('<script type="module" src="/src/main.tsx?'),
     );
   });

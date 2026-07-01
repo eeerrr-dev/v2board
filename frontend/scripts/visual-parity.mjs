@@ -13653,17 +13653,31 @@ async function headerAvatarDropdownState(page) {
 }
 
 async function clickDarkModeButton(page) {
+  const shadcnTriggerSelector = '#page-header button[data-dark-mode-trigger]';
+  const shadcnTriggerVisible = await page.evaluate((selector) => {
+    const element = document.querySelector(selector);
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+  }, shadcnTriggerSelector);
+
+  if (shadcnTriggerVisible) {
+    // The redesigned user header exposes a System/Light/Dark menu, so the trigger
+    // opens the menu rather than toggling directly — open it and pick Dark to
+    // enable dark mode for this interaction. The radio items are portaled to the
+    // document body, so they are not scoped under #page-header.
+    await page.click(shadcnTriggerSelector);
+    await page.click('[data-theme-option="dark"]');
+    return;
+  }
+
   await page.evaluate(() => {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    const shadcnButton = document.querySelector('#page-header button[data-dark-mode-trigger]');
-    if (shadcnButton && isVisible(shadcnButton)) {
-      shadcnButton.click();
-      return;
-    }
     const icon = Array.from(
       document.querySelectorAll('#page-header button i.fa-sun, #page-header button i.fa-moon'),
     ).find(isVisible);
