@@ -224,7 +224,7 @@ export default function TicketsPage() {
             <DialogTitle data-testid="ticket-dialog-title">{t('ticket.new')}</DialogTitle>
             <DialogDescription>{t('ticket.message_placeholder')}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4">
+          <form className="grid gap-4" onSubmit={saveTicket} noValidate>
             <div className="space-y-2">
               <Label htmlFor="ticket-subject">{t('ticket.subject')}</Label>
               <Input
@@ -266,15 +266,15 @@ export default function TicketsPage() {
                 {...form.register('message')}
               />
             </div>
-          </div>
-          <DialogFooter data-testid="ticket-dialog-footer">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button type="button" loading={save.isPending} onClick={() => void saveTicket()}>
-              {t('ticket.confirm')}
-            </Button>
-          </DialogFooter>
+            <DialogFooter data-testid="ticket-dialog-footer">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" loading={save.isPending}>
+                {t('ticket.confirm')}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </>

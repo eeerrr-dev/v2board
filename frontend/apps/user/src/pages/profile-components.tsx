@@ -129,21 +129,30 @@ export function ProfileDepositDialog({
           <DialogTitle>{t('profile.recharge')}</DialogTitle>
           <DialogDescription>{placeholder}</DialogDescription>
         </DialogHeader>
-        <Input
-          data-testid="profile-deposit-input"
-          autoComplete="one-time-code"
-          aria-label={placeholder}
-          placeholder={placeholder}
-          {...inputProps}
-        />
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button data-testid="profile-deposit-confirm" onClick={onConfirm}>
-            {t('profile.confirm')}
-          </Button>
-        </DialogFooter>
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onConfirm();
+          }}
+          noValidate
+        >
+          <Input
+            data-testid="profile-deposit-input"
+            autoComplete="one-time-code"
+            aria-label={placeholder}
+            placeholder={placeholder}
+            {...inputProps}
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" data-testid="profile-deposit-confirm">
+              {t('profile.confirm')}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

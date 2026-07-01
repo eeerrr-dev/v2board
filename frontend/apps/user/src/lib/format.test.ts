@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatBytes,
+  formatCentsPlain,
   formatDateTime,
   formatLegacyDate,
   formatLegacyDateMinuteSlash,
@@ -23,6 +24,11 @@ describe('formatters', () => {
   it('formats money in cents', () => {
     expect(formatMoney(12345)).toBe('¥123.45');
     expect(formatMoney(50, '$')).toBe('$0.50');
+  });
+  it('formats symbol-less cents', () => {
+    expect(formatCentsPlain(12345)).toBe('123.45');
+    expect(formatCentsPlain('50')).toBe('0.50');
+    expect(formatCentsPlain(0)).toBe('0.00');
   });
   it('formats date time', () => {
     expect(formatDateTime(null)).toBe('-');

@@ -20,6 +20,13 @@ export function formatMoney(cents: number, symbol = '¥', fractionDigits = 2): s
   return `${symbol}${(cents / 100).toFixed(fractionDigits)}`;
 }
 
+// Symbol-less cents -> decimal string. The caller composes its own currency
+// symbol/spacing/suffix around this (invite commission cells, profile balance),
+// which is why it stays separate from formatMoney's symbol-prefixed shape.
+export function formatCentsPlain(cents: number | string): string {
+  return (parseInt(String(cents)) / 100).toFixed(2);
+}
+
 export function formatDate(timestamp: number | null | undefined): string {
   if (!timestamp) return '-';
   return dayjs(timestamp * 1000).format('YYYY-MM-DD');

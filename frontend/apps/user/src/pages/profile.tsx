@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ParseKeys } from 'i18next';
 import { ApiError } from '@v2board/api-client';
+import { formatCentsPlain } from '@v2board/config/format';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -538,8 +539,4 @@ function redeemGiftcardText(
 // anti-pattern api.test.ts forbids in the api layer).
 function isTransportError(error: unknown) {
   return error instanceof ApiError && error.status === 0;
-}
-
-function formatCentsPlain(cents: number) {
-  return (parseInt(String(cents)) / 100).toFixed(2);
 }

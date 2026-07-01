@@ -40,7 +40,7 @@ import {
   useUserInfo,
   userKeys,
 } from '@/lib/queries';
-import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { formatCentsPlain, formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { copyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
 
@@ -376,8 +376,4 @@ function ServiceTable<TData>({
       scrollProps={{ 'data-testid': 'invite-table-scroll' }}
     />
   );
-}
-
-function formatCentsPlain(cents: number) {
-  return (parseInt(String(cents)) / 100).toFixed(2);
 }
