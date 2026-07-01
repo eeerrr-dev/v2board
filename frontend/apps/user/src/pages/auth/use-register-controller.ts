@@ -104,12 +104,16 @@ export function useRegisterController(): RegisterController {
       toast.error(i18nGet('请求失败'), { description: t('auth.tos_required') });
       return;
     }
+    const inviteCode = values.invite_code || initialInviteCode || '';
+    if (config?.is_invite_force && !inviteCode) {
+      toast.error(i18nGet('请求失败'), { description: t('auth.invite_code_required') });
+      return;
+    }
     try {
       await register({
         email: getEmail(values.email),
         password: values.password,
-        invite_code:
-          values.invite_code || initialInviteCode || '',
+        invite_code: inviteCode,
         email_code: config?.is_email_verify ? values.email_code ?? '' : '',
         ...(recaptchaData ? { recaptcha_data: recaptchaData } : {}),
       });

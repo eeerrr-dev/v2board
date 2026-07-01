@@ -53,14 +53,26 @@ const LEVELS: { value: TicketLevel; labelKey: ParseKeys }[] = [
 const ticketLevelSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
 const ticketFormSchema = z
   .object({
-    subject: z.string().optional(),
+    // The backend requires all three fields, so gate them client-side with the
+    // existing placeholder copy ("请输入工单主题" / "请选择工单等级" / …) as the
+    // required message rather than letting an empty submit round-trip.
+    subject: z.string().trim().min(1, 'ticket.subject_placeholder'),
     level: ticketLevelSchema.optional(),
-    message: z.string().optional(),
+    message: z.string().trim().min(1, 'ticket.message_placeholder'),
+  })
+  .superRefine((values, ctx) => {
+    if (values.level === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['level'],
+        message: 'ticket.level_placeholder',
+      });
+    }
   })
   .transform((values) => ({
     level: values.level,
-    message: values.message || undefined,
-    subject: values.subject || undefined,
+    message: values.message,
+    subject: values.subject,
   }));
 
 type TicketFormValues = z.input<typeof ticketFormSchema>;
@@ -239,6 +251,15 @@ export default function TicketsPage() {
                 placeholder={t('ticket.subject_placeholder')}
                 {...form.register('subject')}
               />
+              {form.formState.errors.subject ? (
+                <p
+                  role="alert"
+                  className="text-sm text-destructive"
+                  data-testid="ticket-subject-error"
+                >
+                  {t(form.formState.errors.subject.message as ParseKeys)}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="ticket-level">{t('ticket.level_form')}</Label>
@@ -263,6 +284,15 @@ export default function TicketsPage() {
                   </Select>
                 )}
               />
+              {form.formState.errors.level ? (
+                <p
+                  role="alert"
+                  className="text-sm text-destructive"
+                  data-testid="ticket-level-error"
+                >
+                  {t(form.formState.errors.level.message as ParseKeys)}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="ticket-message">{t('ticket.message')}</Label>
@@ -272,6 +302,15 @@ export default function TicketsPage() {
                 placeholder={t('ticket.message_placeholder')}
                 {...form.register('message')}
               />
+              {form.formState.errors.message ? (
+                <p
+                  role="alert"
+                  className="text-sm text-destructive"
+                  data-testid="ticket-message-error"
+                >
+                  {t(form.formState.errors.message.message as ParseKeys)}
+                </p>
+              ) : null}
             </div>
             <DialogFooter data-testid="ticket-dialog-footer">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>

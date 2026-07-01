@@ -39,6 +39,8 @@ vi.mock('react-i18next', () => ({
         'invite.transfer_amount': '划转金额',
         'invite.transfer_notice': '划转后的余额仅用于{title}消费使用',
         'invite.transfer_placeholder': '请输入需要划转到余额的金额',
+        'invite.transfer_invalid': '请输入有效的划转金额',
+        'invite.transfer_exceeds': '划转金额不能超过当前推广佣金余额',
         'invite.withdraw': '申请提现',
         'invite.withdraw_account': '提现账号',
         'invite.withdraw_account_placeholder': '请输入提现账号',
@@ -278,6 +280,75 @@ describe('invite commission dialogs shadcn behavior', () => {
 
     expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain('请输入需要划转到余额的金额');
+  });
+
+  it('rejects a non-numeric transfer amount before calling the mutation', async () => {
+    await act(async () => {
+      root.render(
+        <TransferDialog max={12345}>
+          <button type="button">划转</button>
+        </TransferDialog>,
+      );
+    });
+
+    await act(async () => {
+      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const amount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
+      (input) => input.placeholder === '请输入需要划转到余额的金额',
+    )!;
+    await act(async () => {
+      setNativeInputValue(amount, 'abc');
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      document.body
+        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('请输入有效的划转金额');
+  });
+
+  it('rejects a transfer amount above the available commission balance', async () => {
+    await act(async () => {
+      root.render(
+        <TransferDialog max={12345}>
+          <button type="button">划转</button>
+        </TransferDialog>,
+      );
+    });
+
+    await act(async () => {
+      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const amount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
+      (input) => input.placeholder === '请输入需要划转到余额的金额',
+    )!;
+    // max={12345} cents = 123.45 yuan; 200 yuan exceeds it.
+    await act(async () => {
+      setNativeInputValue(amount, '200');
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      document.body
+        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('划转金额不能超过当前推广佣金余额');
   });
 
   it('renders the shadcn withdraw dialog and submits the ticket-withdraw payload', async () => {

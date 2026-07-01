@@ -30,7 +30,13 @@ interface TransferDialogProps {
 }
 
 const transferSchema = z.object({
-  yuan: z.string().trim().min(1, 'invite.transfer_placeholder'),
+  // The amount is sent as `Math.round(100 * Number(yuan))`, so a non-numeric or
+  // non-positive value would post NaN / a negative integer. Gate it here.
+  yuan: z
+    .string()
+    .trim()
+    .min(1, 'invite.transfer_placeholder')
+    .refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, 'invite.transfer_invalid'),
 });
 
 type TransferFormValues = z.infer<typeof transferSchema>;
@@ -49,7 +55,14 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
     form.reset({ yuan: '' });
   };
 
+  const maxYuan = max !== undefined ? max / 100 : undefined;
+
   const onSubmit = form.handleSubmit(async ({ yuan }) => {
+    // Surface the balance ceiling client-side; the backend still enforces it.
+    if (maxYuan !== undefined && Number(yuan) > maxYuan) {
+      form.setError('yuan', { message: 'invite.transfer_exceeds' });
+      return;
+    }
     try {
       // The transfer mutation invalidates the user record on success.
       await transfer.mutateAsync(yuan);

@@ -389,6 +389,8 @@ const zhCN = {
     current_commission_balance: '当前推广佣金余额',
     transfer_amount: '划转金额',
     transfer_placeholder: '请输入需要划转到余额的金额',
+    transfer_invalid: '请输入有效的划转金额',
+    transfer_exceeds: '划转金额不能超过当前推广佣金余额',
     withdraw_button: '推广佣金提现',
     created_at_col: '创建时间',
     commission_col: '佣金',

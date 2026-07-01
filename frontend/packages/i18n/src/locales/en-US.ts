@@ -397,6 +397,8 @@ const enUS: Translations = {
     current_commission_balance: 'Current invitation balance',
     transfer_amount: 'Transfer amount',
     transfer_placeholder: 'Please enter the amount to be transferred to the balance',
+    transfer_invalid: 'Please enter a valid transfer amount',
+    transfer_exceeds: 'The transfer amount cannot exceed your commission balance',
     withdraw_button: 'Invitation Commission Withdrawal',
     created_at_col: 'Creation Time',
     commission_col: 'Commission',

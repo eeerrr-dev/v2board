@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
     'auth.email_domain': '邮箱后缀',
     'auth.invite_code': '邀请码',
     'auth.invite_code_optional': '邀请码(选填)',
+    'auth.invite_code_required': '请输入邀请码',
     'auth.password': '密码',
     'auth.password_mismatch': '两次密码输入不同',
     'auth.have_account': '已有账号？',
@@ -355,6 +356,38 @@ describe('RegisterPage behavior', () => {
     });
 
     expect(submit.disabled).toBe(false);
+  });
+
+  it('blocks submit with the invite-required toast when invite is forced and empty', async () => {
+    mocks.config = {
+      email_whitelist_suffix: undefined,
+      is_email_verify: false,
+      is_invite_force: true,
+      is_recaptcha: false,
+      tos_url: undefined,
+    };
+
+    await renderRegister();
+
+    setInputValue(container.querySelector<HTMLInputElement>('input[name="email"]'), 'new-user');
+    setInputValue(container.querySelector<HTMLInputElement>('input[name="password"]'), 'secret');
+    setInputValue(
+      container.querySelector<HTMLInputElement>('input[name="confirm_password"]'),
+      'secret',
+    );
+
+    await act(async () => {
+      container.querySelector('form')!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(mocks.toastError).toHaveBeenCalledWith('请求失败', {
+      description: '请输入邀请码',
+    });
+    expect(mocks.registerMutateAsync).not.toHaveBeenCalled();
   });
 
   it('registers with the exact payload and returns to login after success', async () => {

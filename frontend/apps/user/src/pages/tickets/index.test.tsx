@@ -361,6 +361,28 @@ describe('TicketsPage shadcn interactions', () => {
     // queries.test.ts), so the page no longer invalidates at the call site.
   });
 
+  it('blocks an empty submit and surfaces the required-field errors', async () => {
+    await renderTickets();
+    await openCreateDialog();
+
+    const confirm = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="ticket-dialog-footer"] button:last-child',
+    )!;
+
+    await act(async () => {
+      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
+    const subjectError = document.body.querySelector('[data-testid="ticket-subject-error"]');
+    const levelError = document.body.querySelector('[data-testid="ticket-level-error"]');
+    const messageError = document.body.querySelector('[data-testid="ticket-message-error"]');
+    expect(subjectError?.textContent).toBe('请输入工单主题');
+    expect(levelError?.textContent).toBe('请选择工单等级');
+    expect(messageError?.textContent).toBe('请描述您遇到的问题');
+  });
+
   it('keeps new-ticket form data after canceling because only a successful save clears state', async () => {
     await renderTickets();
     await openCreateDialog();
@@ -456,6 +478,8 @@ describe('TicketsPage shadcn interactions', () => {
       )!.value,
     ).toBe('');
 
+    // Re-submitting the now-empty form is blocked by the required-field
+    // validation, so the mutation is not called a second time.
     await act(async () => {
       document.body
         .querySelector<HTMLButtonElement>('[data-testid="ticket-dialog-footer"] button:last-child')!
@@ -464,11 +488,10 @@ describe('TicketsPage shadcn interactions', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.saveMutateAsync).toHaveBeenLastCalledWith({
-      level: undefined,
-      message: undefined,
-      subject: undefined,
-    });
+    expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
+    expect(
+      document.body.querySelector('[data-testid="ticket-subject-error"]')?.textContent,
+    ).toBe('请输入工单主题');
   });
 
   it('keeps the ticket level select value as the direct numeric payload value', () => {
