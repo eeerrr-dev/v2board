@@ -20,6 +20,7 @@ import {
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { formatCentsPlain } from '@v2board/config/format';
 import { useTransferMutation } from '@/lib/queries';
 import { getLegacySettings } from '@/lib/legacy-settings';
 
@@ -56,6 +57,8 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
     } catch {}
   });
 
+  const maxText = max !== undefined ? formatCentsPlain(max) : '--.--';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
@@ -67,7 +70,7 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
             {t('dashboard.transfer_to_balance')}
           </DialogTitle>
           <DialogDescription>
-            {t('invite.current_commission_balance')}: {Number(max) / 100}
+            {t('invite.current_commission_balance')}: {maxText}
           </DialogDescription>
         </DialogHeader>
 
@@ -82,7 +85,7 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
             <Label htmlFor="invite-transfer-current">
               {t('invite.current_commission_balance')}
             </Label>
-            <Input id="invite-transfer-current" disabled value={Number(max) / 100} readOnly />
+            <Input id="invite-transfer-current" disabled value={maxText} readOnly />
           </div>
           <form className="space-y-4" onSubmit={onSubmit} noValidate>
             <FormField

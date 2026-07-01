@@ -229,7 +229,7 @@ describe('InvitePage shadcn surface', () => {
     const html = renderToStaticMarkup(<InvitePage />);
 
     expect(html).toContain('三级分销比例');
-    expect(html).toContain('6%,3.5999999999999996%,2.4%');
+    expect(html).toContain('6%,3.6%,2.4%');
     expect(html).toContain('推广佣金提现');
     expect(html).toContain('data-testid="invite-withdraw-trigger"');
   });

@@ -78,7 +78,7 @@ export default function InvitePage() {
           comm?.commission_distribution_l2,
           comm?.commission_distribution_l3,
         ]
-          .map((level) => `${Number(level ?? 0) * (rate / 100)}%`)
+          .map((level) => `${Number((Number(level ?? 0) * (rate / 100)).toFixed(2))}%`)
           .join(',')
     : rate === undefined
       ? undefined
@@ -222,7 +222,7 @@ export default function InvitePage() {
               }
               value={
                 pendingCommission !== undefined
-                  ? `${symbol} ${pendingCommission / 100}`
+                  ? `${symbol} ${formatCentsPlain(pendingCommission)}`
                   : undefined
               }
             />
@@ -230,7 +230,9 @@ export default function InvitePage() {
               icon={<WalletCards className="size-4" />}
               label={t('invite.valid_commission')}
               value={
-                validCommission !== undefined ? `${symbol} ${validCommission / 100}` : undefined
+                validCommission !== undefined
+                  ? `${symbol} ${formatCentsPlain(validCommission)}`
+                  : undefined
               }
             />
           </CardContent>
