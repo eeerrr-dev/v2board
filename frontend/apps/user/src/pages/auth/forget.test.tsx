@@ -22,7 +22,7 @@ const flowSource = readFileSync(
 const mocks = vi.hoisted(() => ({
   config: undefined as Record<string, unknown> | undefined,
   forgetMutateAsync: vi.fn(),
-  isFetching: false,
+  isLoading: false,
   isPending: false,
   isSendingCode: false,
   labels: {
@@ -74,7 +74,7 @@ vi.mock('@/lib/guest', () => ({
     isPending: mocks.isPending,
     mutateAsync: mocks.forgetMutateAsync,
   }),
-  useGuestConfig: () => ({ data: mocks.config, isFetching: mocks.isFetching }),
+  useGuestConfig: () => ({ data: mocks.config, isLoading: mocks.isLoading }),
   useSendEmailVerifyMutation: () => ({
     isPending: mocks.isSendingCode,
     mutateAsync: mocks.sendCodeMutateAsync,
@@ -105,7 +105,7 @@ function resetMocks() {
   };
   mocks.forgetMutateAsync.mockReset();
   mocks.forgetMutateAsync.mockResolvedValue(true);
-  mocks.isFetching = false;
+  mocks.isLoading = false;
   mocks.isPending = false;
   mocks.isSendingCode = false;
   mocks.navigate.mockReset();
@@ -210,7 +210,7 @@ describe('ForgetPage behavior', () => {
 
   it('shows the modern centered spinner after mount while guest config is fetching', async () => {
     mocks.config = undefined;
-    mocks.isFetching = true;
+    mocks.isLoading = true;
 
     await renderForget();
 

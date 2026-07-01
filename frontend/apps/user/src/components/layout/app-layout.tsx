@@ -38,7 +38,7 @@ import {
   useThemePreference,
   type ThemePreference,
 } from '@/lib/dark-mode';
-import { getLegacyTitle } from '@/lib/legacy-settings';
+import { getLegacySettings, getLegacyTitle } from '@/lib/legacy-settings';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 import { Button } from '@/components/ui/button';
 import {
@@ -51,7 +51,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 
@@ -68,15 +67,8 @@ interface NavGroup {
   items: NavItem[];
 }
 
-interface LegacyLayoutSearch {
-  placeholder?: string;
-  defaultValue?: string;
-  onChange: (value: string) => void;
-}
-
 interface AppLayoutProps {
   loading?: boolean;
-  search?: LegacyLayoutSearch;
   title?: string;
 }
 
@@ -130,7 +122,7 @@ function findActiveLabel(pathname: string): ParseKeys | undefined {
   return undefined;
 }
 
-function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps = {}) {
+function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
   const { i18n, t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -147,11 +139,13 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
     refetchOnMount: false,
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showSearchBar, setShowSearchBar] = useState(false);
   const darkMode = useDarkMode();
   const themePreference = useThemePreference();
   const activeLabel = findActiveLabel(location.pathname);
   const siteTitle = getLegacyTitle();
+  // Read the real deployed version the backend injects into window.settings
+  // rather than a hardcoded string that drifts out of date.
+  const version = getLegacySettings().version;
   const title = titleProp ?? (activeLabel ? t(activeLabel) : '');
   const localeClass = getLegacyLocaleClassName(i18n.language);
 
@@ -212,7 +206,8 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
       </nav>
 
       <div className="border-t border-border px-5 py-4 text-xs text-muted-foreground">
-        {siteTitle} v1.7.4
+        {siteTitle}
+        {version ? ` v${version}` : null}
       </div>
     </div>
   );
@@ -272,17 +267,6 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
                 {title}
               </h1>
             </div>
-
-            {search ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowSearchBar(true)}
-              >
-                {t('common.search')}
-              </Button>
-            ) : null}
 
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
@@ -359,26 +343,6 @@ function AppLayoutContent({ loading, search, title: titleProp }: AppLayoutProps 
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-
-          {search ? (
-            <div
-              className={cn(
-                'border-t border-border bg-background px-4 py-3 sm:px-6 lg:px-8',
-                !showSearchBar && 'hidden',
-              )}
-            >
-              <div className="flex gap-2">
-                <Input
-                  placeholder={search.placeholder}
-                  onChange={(event) => search.onChange(event.target.value)}
-                  defaultValue={search.defaultValue}
-                />
-                <Button type="button" variant="outline" onClick={() => setShowSearchBar(false)}>
-                  {t('common.cancel')}
-                </Button>
-              </div>
-            </div>
-          ) : null}
         </header>
 
         {loading ? (

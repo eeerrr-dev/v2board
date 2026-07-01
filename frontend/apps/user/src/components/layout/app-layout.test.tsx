@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
     'common.theme_light': 'Light',
     'common.theme_dark': 'Dark',
     'common.logout': '登出',
-    'common.search': '搜索',
     'nav.buy_subscribe': '购买订阅',
     'nav.dashboard': '仪表盘',
     'nav.group_finance': '财务',
@@ -40,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   setThemePreference: vi.fn(),
   darkListeners: new Set<() => void>(),
   title: 'V2Board',
+  version: '9.9.9',
   user: { email: 'user@example.com' },
 }));
 
@@ -109,6 +109,7 @@ vi.mock('@/lib/dark-mode', async () => {
 
 vi.mock('@/lib/legacy-settings', () => ({
   getLegacyTitle: () => mocks.title,
+  getLegacySettings: () => ({ title: mocks.title, version: mocks.version }),
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -297,28 +298,10 @@ describe('AppLayout shadcn app shell behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 
-  it('renders the optional search row without legacy overlay markup', async () => {
-    const onChange = vi.fn();
-    await renderLayout({ search: { placeholder: 'Search...', onChange } });
+  it('shows the deployed version from settings instead of a hardcoded string', async () => {
+    await renderLayout();
 
-    const search = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent === '搜索',
-    )!;
-    await act(async () => {
-      search.click();
-      await Promise.resolve();
-    });
-
-    const input = container.querySelector<HTMLInputElement>('input[placeholder="Search..."]')!;
-    expect(input.closest('.border-t')?.className).not.toMatch(/(^|\s)block(\s|$)/);
-    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    valueSetter?.call(input, 'node');
-    await act(async () => {
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(onChange).toHaveBeenCalledWith('node');
-    expect(container.innerHTML).not.toContain('overlay-header');
+    expect(container.textContent).toContain('V2Board v9.9.9');
+    expect(container.innerHTML).not.toContain('v1.7.4');
   });
 });

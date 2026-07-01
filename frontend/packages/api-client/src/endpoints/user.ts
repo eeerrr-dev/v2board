@@ -33,11 +33,12 @@ export const info = (client: ApiClient) =>
   client.request<UserInfo>({ url: '/user/info', method: 'GET' });
 
 export const getStat = (client: ApiClient) =>
+  // The backend returns a [pending_orders, pending_tickets, invited_count]
+  // tuple; only the first two are surfaced in the UI.
   client.request<[number, number, number]>({ url: '/user/getStat', method: 'GET' }).then(
-    ([pending_orders, pending_tickets, invited_count]): UserStat => ({
+    ([pending_orders, pending_tickets]): UserStat => ({
       pending_orders,
       pending_tickets,
-      invited_count,
     }),
   );
 

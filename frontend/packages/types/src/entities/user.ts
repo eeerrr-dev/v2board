@@ -24,7 +24,6 @@ export interface UserInfo {
 export interface UserStat {
   pending_orders: number;
   pending_tickets: number;
-  invited_count: number;
 }
 
 export interface SubscribeInfo {

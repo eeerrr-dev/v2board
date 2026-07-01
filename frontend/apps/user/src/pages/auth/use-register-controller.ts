@@ -61,7 +61,9 @@ export function useRegisterController(): RegisterController {
   const [params] = useSearchParams();
   const guestConfig = useGuestConfig();
   const { data: config } = guestConfig;
-  const configLoading = guestConfig.isFetching;
+  // Only show the full-form spinner on the true initial load; isFetching would
+  // re-flash it on every background refetch (staleTime 0 + refetchOnMount).
+  const configLoading = guestConfig.isLoading;
   const { mutateAsync: register, isPending } = useRegisterMutation();
   const { run: runRecaptcha, recaptchaModal } = useAuthRecaptcha(
     Boolean(config?.is_recaptcha),

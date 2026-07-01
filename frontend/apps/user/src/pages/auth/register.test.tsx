@@ -22,7 +22,7 @@ const flowSource = readFileSync(
 
 const mocks = vi.hoisted(() => ({
   config: undefined as Record<string, unknown> | undefined,
-  isFetching: false,
+  isLoading: false,
   isPending: false,
   isSendingCode: false,
   labels: {
@@ -80,7 +80,7 @@ vi.mock('./auth-recaptcha', () => ({
 }));
 
 vi.mock('@/lib/guest', () => ({
-  useGuestConfig: () => ({ data: mocks.config, isFetching: mocks.isFetching }),
+  useGuestConfig: () => ({ data: mocks.config, isLoading: mocks.isLoading }),
   useRegisterMutation: () => ({
     isPending: mocks.isPending,
     mutateAsync: mocks.registerMutateAsync,
@@ -117,7 +117,7 @@ function resetMocks() {
     is_recaptcha: false,
     tos_url: undefined,
   };
-  mocks.isFetching = false;
+  mocks.isLoading = false;
   mocks.isPending = false;
   mocks.isSendingCode = false;
   mocks.navigate.mockReset();
@@ -261,7 +261,7 @@ describe('RegisterPage behavior', () => {
 
   it('switches to the modern centered spinner after mount while guest config is fetching', async () => {
     mocks.config = undefined;
-    mocks.isFetching = true;
+    mocks.isLoading = true;
 
     await renderRegister();
 
