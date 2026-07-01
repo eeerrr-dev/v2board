@@ -362,6 +362,82 @@ describe('PlanCheckoutPage commerce behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE123');
   });
 
+  it('drops a previously applied coupon when a re-verify fails, so no stale discount is submitted', async () => {
+    mocks.checkCoupon
+      .mockResolvedValueOnce({
+        id: 1,
+        code: 'SAVE',
+        name: 'Legacy Coupon',
+        type: 1,
+        value: 250,
+        show: 1,
+        limit_use: null,
+        limit_use_with_user: null,
+        limit_plan_ids: null,
+        limit_period: null,
+        started_at: 0,
+        ended_at: 0,
+        created_at: 0,
+        updated_at: 0,
+      })
+      .mockRejectedValueOnce(new Error('invalid'));
+    mocks.saveOrder.mockResolvedValue('TRADE-NO-COUPON');
+
+    await act(async () => {
+      root.render(<PlanCheckoutPage />);
+      await Promise.resolve();
+    });
+
+    const couponInput = container.querySelector<HTMLInputElement>('[data-testid="coupon-input"]')!;
+    const setCoupon = (value: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        couponInput,
+        value,
+      );
+      couponInput.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const clickVerify = async () => {
+      const verifyButton = [...container.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('验证'),
+      )!;
+      await act(async () => {
+        verifyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    };
+
+    // Apply a valid coupon: the discount and reduced total appear.
+    await act(async () => {
+      setCoupon('SAVE');
+      await Promise.resolve();
+    });
+    await clickVerify();
+    expect(container.textContent).toContain('Legacy Coupon');
+    expect(container.textContent).toContain('¥ 7.50 CNY');
+
+    // Re-verify a different, now-invalid code: the previously applied coupon
+    // must be dropped rather than left silently in place.
+    await act(async () => {
+      setCoupon('BAD');
+      await Promise.resolve();
+    });
+    await clickVerify();
+    expect(container.textContent).not.toContain('Legacy Coupon');
+    expect(container.textContent).toContain('¥ 10.00 CNY');
+
+    // The order is then placed with no stale coupon_code.
+    const submitButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('下单'),
+    )!;
+    await act(async () => {
+      submitButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.saveOrder).toHaveBeenCalledWith({ plan_id: 1, period: 'month_price' });
+  });
+
   it('keeps the undefined period payload when no price period exists', async () => {
     const plan = mocks.plan as Plan;
     plan.month_price = null;

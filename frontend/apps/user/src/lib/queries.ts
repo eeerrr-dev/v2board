@@ -344,8 +344,15 @@ export function useUpdateProfileMutation() {
 }
 
 export function useResetSubscribeMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => user.resetSecurity(apiClient),
+    // resetSecurity rotates the account uuid + token, so the cached user record
+    // is stale after it resolves. The subscribe query is disabled, so callers
+    // still refetch it imperatively for the rotated subscribe URL.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: userKeys.info });
+    },
   });
 }
 

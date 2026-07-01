@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { ParseKeys } from 'i18next';
 import { useParams, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Order, PaymentMethod } from '@v2board/types';
 import { BookOpen, CheckCircle2, Info, TriangleAlert } from 'lucide-react';
@@ -23,6 +24,7 @@ import {
   useCancelOrderMutation,
   useStripePublicKey,
   useUserInfo,
+  userKeys,
 } from '@/lib/queries';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { StripeCardForm } from '@/components/stripe-card-form';
@@ -51,6 +53,7 @@ export default function OrderDetailPage() {
   const { trade_no } = useParams();
   const tradeNo = trade_no;
   const orderQuery = useOrder(tradeNo);
+  const queryClient = useQueryClient();
   const paymentsQuery = usePaymentMethods({ enabled: Boolean(orderQuery.data) });
   // Old componentDidMount dispatches order/detail, then user/getUserInfo, then comm/config.
   useUserInfo({ refetchOnMount: 'always' });
@@ -87,6 +90,16 @@ export default function OrderDetailPage() {
     };
   }, [tradeNo, hasLoadedOrder]);
 
+  // Payment settled (gateway poll flips the order out of pending, or a free /
+  // balance-covered order returns immediately): refresh the order plus the two
+  // account records it just moved — balance (info) and the subscription
+  // (subscribe) it extended. The original left both stale until a full reload.
+  const refreshAfterPayment = useCallback(() => {
+    void orderQuery.refetch();
+    void queryClient.invalidateQueries({ queryKey: userKeys.info });
+    void queryClient.invalidateQueries({ queryKey: userKeys.subscribe });
+  }, [orderQuery.refetch, queryClient]);
+
   useEffect(() => {
     const status = orderStatusQuery.data;
     if (status === undefined || status === 0) return;
@@ -94,8 +107,8 @@ export default function OrderDetailPage() {
     // The original poll success only hides the QR modal; it leaves payUrl in state.
     // Manual modal cancel is the path that clears it. useOrderStatus owns stopping
     // the poll once the order leaves the pending state.
-    orderQuery.refetch();
-  }, [orderQuery.refetch, orderStatusQuery.data]);
+    refreshAfterPayment();
+  }, [refreshAfterPayment, orderStatusQuery.data]);
 
   useEffect(() => {
     // The bundled poll success only hides the QR modal once the order leaves the
@@ -167,6 +180,13 @@ export default function OrderDetailPage() {
       } else if (result.type === 1 && typeof result.data === 'string') {
         window.location.href = result.data;
         toast.info(t('order.redirecting_checkout'));
+      } else if (result.type === -1) {
+        // Free / balance-covered order (backend total_amount <= 0): it settles
+        // immediately with no gateway, so there is no QR or redirect. Without
+        // this branch onPay fell through silently. Confirm it and refresh the
+        // order + account state so the result card and balance render at once.
+        toast.success(t('order.success'));
+        refreshAfterPayment();
       }
     } catch {
       // The mutation tracks its own error/pending state; swallow here to keep

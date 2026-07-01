@@ -86,7 +86,12 @@ export default function PlanCheckoutPage() {
         planId: planId as string,
       });
       setAppliedCoupon(checked);
-    } catch {}
+    } catch {
+      // A failed re-verify must not leave a previously applied coupon in place:
+      // saveOrder sends appliedCoupon.code, so a stale discount would otherwise
+      // be shown in the total and submitted under a now-invalid code.
+      setAppliedCoupon(null);
+    }
   };
 
   const saveOrder = async () => {

@@ -80,11 +80,13 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({
-    invalidateQueries,
-  }),
-}));
+vi.mock('@tanstack/react-query', () => {
+  // Return a stable client reference so the page's useCallback memoizes the way
+  // a real QueryClient would; a fresh object each render would defeat that and
+  // make the payment-refresh effect re-run on every render.
+  const client = { invalidateQueries };
+  return { useQueryClient: () => client };
+});
 
 vi.mock('@/components/ui/confirm-dialog', () => ({
   confirmDialog,
@@ -92,6 +94,8 @@ vi.mock('@/components/ui/confirm-dialog', () => ({
 
 vi.mock('@/lib/queries', () => ({
   userKeys: {
+    info: ['user', 'info'],
+    subscribe: ['user', 'subscribe'],
     orders: () => ['user', 'orders', 'all'],
     orderDetail: (tradeNo: string) => ['user', 'orders', 'detail', tradeNo],
     payments: ['user', 'payments'],
@@ -405,6 +409,36 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     expect(document.querySelector('[data-testid="payment-qrcode"] svg')).toBeNull();
   });
 
+  it('settles a free / balance-covered order (type -1) instead of falling through silently', async () => {
+    // total_amount <= 0 orders settle server-side with no gateway, so checkout
+    // returns type -1 with no QR/redirect. onPay must still refresh the order
+    // plus the balance (info) and subscription (subscribe) it just consumed.
+    checkoutOrder.mockResolvedValue({ type: -1, data: undefined });
+
+    await act(async () => {
+      root.render(<OrderDetailPage />);
+    });
+
+    const checkoutButton = [...document.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('order.checkout'),
+    );
+    expect(checkoutButton).toBeDefined();
+
+    await act(async () => {
+      checkoutButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector('[data-testid="payment-qrcode"] svg')).toBeNull();
+    expect(orderRefetch).toHaveBeenCalledTimes(1);
+    const invalidatedKeys = invalidateQueries.mock.calls.map(
+      (call) => (call[0] as { queryKey: readonly unknown[] }).queryKey,
+    );
+    expect(invalidatedKeys).toContainEqual(['user', 'info']);
+    expect(invalidatedKeys).toContainEqual(['user', 'subscribe']);
+  });
+
   it('restores the checkout button after a status-0 transport failure', async () => {
     checkoutOrder.mockRejectedValue({ status: 0, message: 'Network Error' });
 
@@ -547,15 +581,18 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     });
 
     expect(cancelMutateAsync).toHaveBeenCalledWith('DETAIL123');
+    // The cancel path itself neither invalidates nor refetches (the cancel
+    // mutation owns the order-list invalidation); only payment settlement does.
     expect(invalidateQueries).not.toHaveBeenCalled();
     expect(orderRefetch).not.toHaveBeenCalled();
     expect(orderDetailSource).not.toContain('queryClient.invalidateQueries({ queryKey: userKeys.orders() })');
-    expect(orderDetailSource).not.toContain('void orderQuery.refetch();');
   });
 
   it('lets TanStack Query retain order detail cache on unmount', () => {
+    // No manual cache teardown on unmount. useQueryClient is still used, but only
+    // to refresh account state after a payment settles, never to remove queries.
     expect(orderDetailSource).not.toContain('removeQueries');
-    expect(orderDetailSource).not.toContain('useQueryClient');
+    expect(orderDetailSource).not.toContain('cancelQueries');
   });
 
   it('renders cancel loading through the shadcn Button busy state', () => {

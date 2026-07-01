@@ -208,6 +208,9 @@ describe('user query state behavior', () => {
       'useTransferMutation',
       'useRedeemGiftCardMutation',
       'useUnbindTelegramMutation',
+      // resetSecurity rotates the account uuid + token; the user record it caches
+      // must be invalidated too (profile refetches the disabled subscribe query).
+      'useResetSubscribeMutation',
     ] as const;
 
     for (const name of userInfoMutations) {
