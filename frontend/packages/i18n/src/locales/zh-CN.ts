@@ -336,6 +336,7 @@ const zhCN = {
     open: '待回复',
     pending: '待处理',
     closed: '已关闭',
+    closed_notice: '工单已关闭，无法回复。',
     replied: '已答复',
     last_reply: '最后回复',
     message: '消息',

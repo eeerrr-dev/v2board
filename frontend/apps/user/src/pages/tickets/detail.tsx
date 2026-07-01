@@ -20,6 +20,9 @@ export default function TicketDetailPage() {
   const [message, setMessage] = useState('');
   const chatRef = useRef<HTMLDivElement | null>(null);
   const messages = ticket.data?.message ?? [];
+  // A closed ticket (status 1) rejects replies server-side; gate the composer so
+  // the user sees why instead of hitting a silent failure on submit.
+  const isClosed = ticket.data?.status === 1;
 
   useEffect(() => {
     const chat = chatRef.current;
@@ -98,31 +101,40 @@ export default function TicketDetailPage() {
         </div>
       </div>
 
-      <form
-        className="js-chat-form border-t border-border bg-background p-3"
-        data-testid="ticket-reply-form"
-        onSubmit={(event) => void submitReply(event)}
-      >
-        <div className="flex items-center gap-2">
-          <Input
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            type="text"
-            className="js-chat-input"
-            data-testid="ticket-reply-input"
-            placeholder={t('ticket.reply_placeholder')}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            data-testid="ticket-reply-send"
-            loading={reply.isPending}
-            aria-label={t('ticket.reply_placeholder')}
-          >
-            <Send className="size-4" />
-          </Button>
+      {isClosed ? (
+        <div
+          className="border-t border-border bg-background p-4 text-center text-sm text-muted-foreground"
+          data-testid="ticket-closed-notice"
+        >
+          {t('ticket.closed_notice')}
         </div>
-      </form>
+      ) : (
+        <form
+          className="js-chat-form border-t border-border bg-background p-3"
+          data-testid="ticket-reply-form"
+          onSubmit={(event) => void submitReply(event)}
+        >
+          <div className="flex items-center gap-2">
+            <Input
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              type="text"
+              className="js-chat-input"
+              data-testid="ticket-reply-input"
+              placeholder={t('ticket.reply_placeholder')}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              data-testid="ticket-reply-send"
+              loading={reply.isPending}
+              aria-label={t('ticket.reply_placeholder')}
+            >
+              <Send className="size-4" />
+            </Button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

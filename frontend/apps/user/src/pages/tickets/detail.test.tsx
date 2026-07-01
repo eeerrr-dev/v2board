@@ -9,6 +9,7 @@ import TicketDetailPage from './detail';
 const state = vi.hoisted(() => {
   const makeTicket = () => ({
     subject: 'Need help',
+    status: 0,
     message: [
       {
         id: 1,
@@ -54,6 +55,7 @@ const labels: Record<string, string> = {
   'ticket.reply_placeholder': '输入内容回复工单...',
   'ticket.reply_sending': '发送中',
   'ticket.reply_success': '发送成功',
+  'ticket.closed_notice': '工单已关闭，无法回复。',
 };
 
 vi.mock('react-router', () => ({
@@ -176,6 +178,19 @@ describe('TicketDetailPage shadcn chat surface', () => {
     expect(html).toContain('加载中...');
     expect(html).toContain('data-testid="ticket-detail-header"');
     expect(html).toContain('text-center text-sm text-muted-foreground');
+  });
+
+  it('replaces the reply composer with a closed notice for a closed ticket', () => {
+    // status 1 = closed; the backend rejects replies, so the composer must not
+    // be offered — show why instead of letting the user hit a silent failure.
+    state.ticket = { ...state.makeTicket(), status: 1 };
+
+    const html = renderToStaticMarkup(<TicketDetailPage />);
+
+    expect(html).toContain('data-testid="ticket-closed-notice"');
+    expect(html).toContain('工单已关闭，无法回复。');
+    expect(html).not.toContain('data-testid="ticket-reply-form"');
+    expect(html).not.toContain('data-testid="ticket-reply-input"');
   });
 });
 

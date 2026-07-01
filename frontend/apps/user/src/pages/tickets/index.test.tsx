@@ -56,10 +56,14 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+const confirmDialog = vi.hoisted(() => vi.fn());
+
 const labels: Record<string, string> = {
+  'common.attention': '注意',
   'common.cancel': '取消',
   'ticket.action': '操作',
   'ticket.close_ticket': '关闭',
+  'ticket.confirm_close': '确定关闭该工单吗？',
   'ticket.col_id': '#',
   'ticket.confirm': '确认',
   'ticket.created_at_col': '创建时间',
@@ -105,6 +109,10 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
+vi.mock('@/components/ui/confirm-dialog', () => ({
+  confirmDialog,
+}));
+
 vi.mock('@/components/ui/select', () => ({
   Select: ({
     children,
@@ -135,6 +143,8 @@ function resetMocks() {
   mocks.tickets = mocks.makeTickets();
   mocks.fetching = true;
   mocks.savePending = false;
+  mocks.closeMutateAsync.mockReset();
+  confirmDialog.mockReset();
 }
 
 function setNativeInputValue(input: HTMLInputElement, value: string) {
@@ -480,6 +490,19 @@ describe('TicketsPage shadcn interactions', () => {
       await Promise.resolve();
     });
 
+    // Closing confirms through the shared AlertDialog first; the mutation only
+    // fires once the user accepts.
+    expect(confirmDialog).toHaveBeenCalledTimes(1);
+    const options = confirmDialog.mock.calls[0]![0] as {
+      description?: unknown;
+      onConfirm?: () => Promise<unknown>;
+    };
+    expect(options.description).toBe('确定关闭该工单吗？');
+    expect(mocks.closeMutateAsync).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await options.onConfirm?.();
+    });
     expect(mocks.closeMutateAsync).toHaveBeenCalledWith(7);
     // The list refresh is now owned by useCloseTicketMutation's onSuccess.
     expect(source).not.toContain('removeQueries');
@@ -500,6 +523,10 @@ describe('TicketsPage shadcn interactions', () => {
       await Promise.resolve();
     });
 
+    const options = confirmDialog.mock.calls[0]![0] as { onConfirm?: () => Promise<unknown> };
+    await act(async () => {
+      await options.onConfirm?.();
+    });
     expect(mocks.closeMutateAsync).toHaveBeenCalledWith(9);
   });
 });

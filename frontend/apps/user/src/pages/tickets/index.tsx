@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
@@ -140,7 +141,7 @@ export default function TicketsPage() {
             size="sm"
             className={cn('h-8 px-2', row.original.status === 1 && 'text-muted-foreground')}
             data-testid="ticket-close"
-            onClick={() => void closeTicket(row.original.id)}
+            onClick={() => closeTicket(row.original.id)}
           >
             <XCircle className="size-3.5" />
             {t('ticket.close_ticket')}
@@ -162,10 +163,16 @@ export default function TicketsPage() {
     } catch {}
   });
 
-  const closeTicket = async (id: number) => {
-    try {
-      await close.mutateAsync(id);
-    } catch {}
+  const closeTicket = (id: number) => {
+    // Closing a ticket cannot be undone, so confirm through the shared
+    // AlertDialog before firing the mutation. The dialog owns the in-flight
+    // loading state and swallows a rejected close.
+    void confirmDialog({
+      title: t('common.attention'),
+      description: t('ticket.confirm_close'),
+      confirmText: t('ticket.close_ticket'),
+      onConfirm: () => close.mutateAsync(id),
+    });
   };
 
   const openTicket = (id: number) => {
