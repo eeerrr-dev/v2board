@@ -42,4 +42,22 @@ describe('dialog centering is owned by the translate: utility, not the keyframe'
       expect(source).toContain('dialogContentClassName');
     }
   });
+
+  it('the @source scope scans .ts so dialog-surface.ts utilities are generated', () => {
+    // dialog-surface.ts is a plain `.ts` module. `@tailwindcss/vite` only
+    // generates a utility when it sees the candidate in a scanned source, so an
+    // `@source '**/*.tsx'` glob (tsx only) prunes `left-1/2`/`-translate-x-1/2`
+    // — referenced by no `.tsx` — and every modal loses horizontal centering,
+    // rendering pinned to the left edge. The components glob must cover `.ts`.
+    const shadcnCss = readFileSync(resolve(here, 'user-shadcn.css'), 'utf8');
+    const componentsSource = shadcnCss
+      .split('\n')
+      .find((line) => line.includes('@source') && line.includes('components/'));
+    expect(
+      componentsSource,
+      '@source glob for components/ not found in user-shadcn.css',
+    ).toBeDefined();
+    // Match `{ts,tsx}` or a bare `*.ts` glob, but not `*.tsx` alone.
+    expect(componentsSource).toMatch(/\{ts,tsx\}|\*\.ts['"]/);
+  });
 });

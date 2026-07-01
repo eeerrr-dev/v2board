@@ -52,9 +52,16 @@
  * detection; `@tailwindcss/vite` honors these `@source` globs exactly, so the
  * list must be authoritative. Two directory globs cannot drift as files are
  * added or split.
+ *
+ * The extension set is `{ts,tsx}`, not `tsx` alone: shared class-string helpers
+ * live in plain `.ts` modules (e.g. `components/ui/dialog-surface.ts`, which
+ * owns the dialog centering geometry `fixed top-1/2 left-1/2 -translate-x-1/2
+ * -translate-y-1/2`). Scanning `.tsx` only pruned `left-1/2`/`-translate-x-1/2`
+ * — utilities no `.tsx` happened to reference — so every modal lost horizontal
+ * centering and rendered pinned to the left edge. See dialog-centering.test.ts.
  */
-@source '../pages/**/*.tsx';
-@source '../components/**/*.tsx';
+@source '../pages/**/*.{ts,tsx}';
+@source '../components/**/*.{ts,tsx}';
 
 @media important {
   @tailwind utilities source(none);

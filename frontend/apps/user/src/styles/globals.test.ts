@@ -64,8 +64,11 @@ describe('shadcn island presentation CSS', () => {
     // Naked utilities are scanned from every island page/component source (not a
     // drift-prone per-file list), so a surface split into helper files keeps its
     // unique utilities (regression: dashboard-notice-carousel.tsx lost w-6/h-1.5).
-    expect(globals).toContain("@source '../pages/**/*.tsx';");
-    expect(globals).toContain("@source '../components/**/*.tsx';");
+    // The set is `{ts,tsx}`: shared class-string helpers live in `.ts` modules
+    // (dialog-surface.ts owns the dialog centering geometry), and a `tsx`-only
+    // glob pruned left-1/2/-translate-x-1/2 so every modal lost centering.
+    expect(globals).toContain("@source '../pages/**/*.{ts,tsx}';");
+    expect(globals).toContain("@source '../components/**/*.{ts,tsx}';");
     // Every island root (surface + portaled menu/dialog/sheet/popover/tooltip/
     // toast) carries the shared `.v2board-island` membership class; theming keys
     // off that single selector instead of drift-prone parallel root lists, so a
