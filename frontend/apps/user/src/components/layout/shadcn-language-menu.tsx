@@ -1,4 +1,5 @@
 import { ChevronDown, Languages } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { LanguageMenu } from './language-menu';
 
@@ -7,6 +8,7 @@ interface ShadcnLanguageMenuProps {
 }
 
 export function ShadcnLanguageMenu({ className }: ShadcnLanguageMenuProps) {
+  const { t } = useTranslation();
   return (
     <LanguageMenu
       align="center"
@@ -16,7 +18,7 @@ export function ShadcnLanguageMenu({ className }: ShadcnLanguageMenuProps) {
       trigger={(currentLabel) => (
         <button
           type="button"
-          aria-label={currentLabel ? `Language: ${currentLabel}` : 'Language'}
+          aria-label={currentLabel ? `${t('common.language')}: ${currentLabel}` : t('common.language')}
           className={cn(
             'inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground',
             className,

@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   inviteStat: [7, 2345, 678, 12] as Array<number | undefined> | undefined,
   labels: {
     'common.items_per_page': '条/页',
+    'common.loading': 'Loading...',
     'common.next_5': '向后 5 页',
     'common.next_page': '下一页',
     'common.prev_5': '向前 5 页',

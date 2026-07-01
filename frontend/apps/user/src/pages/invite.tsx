@@ -274,7 +274,7 @@ export default function InvitePage() {
                 role="status"
               >
                 <Spinner className="size-4" />
-                <span>Loading...</span>
+                <span>{t('common.loading')}</span>
               </div>
             ) : null}
           </CardHeader>
