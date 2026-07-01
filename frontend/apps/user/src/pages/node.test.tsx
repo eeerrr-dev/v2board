@@ -31,6 +31,8 @@ const queryState = vi.hoisted(() => ({
       }>
     | undefined,
   serversFetching: true,
+  serversError: false,
+  serversRefetch: vi.fn(),
   subscribe: undefined as { plan_id?: number | null } | undefined,
 }));
 
@@ -44,6 +46,9 @@ const labels: Record<string, string> = {
   'node.no_available': '没有可用节点，如果您未订阅或已过期请',
   'node.subscribe': '订阅',
   'node.renew': '续费',
+  'common.loading': 'Loading...',
+  'common.error_title': '加载失败',
+  'common.retry': '重试',
 };
 
 vi.mock('react-i18next', () => ({
@@ -56,7 +61,12 @@ vi.mock('react-router', () => ({
 
 vi.mock('@/lib/queries', () => ({
   useSubscribe: () => ({ data: queryState.subscribe }),
-  useServers: () => ({ data: queryState.servers, isFetching: queryState.serversFetching }),
+  useServers: () => ({
+    data: queryState.servers,
+    isFetching: queryState.serversFetching,
+    isError: queryState.serversError,
+    refetch: queryState.serversRefetch,
+  }),
 }));
 
 describe('NodePage shadcn loading state', () => {
@@ -65,6 +75,8 @@ describe('NodePage shadcn loading state', () => {
 
   beforeEach(() => {
     queryState.navigate.mockClear();
+    queryState.serversRefetch.mockClear();
+    queryState.serversError = false;
     queryState.servers = undefined;
     queryState.serversFetching = true;
     queryState.subscribe = undefined;
@@ -99,6 +111,8 @@ describe('NodePage shadcn table and empty state', () => {
 
   beforeEach(() => {
     queryState.navigate.mockClear();
+    queryState.serversRefetch.mockClear();
+    queryState.serversError = false;
     queryState.serversFetching = false;
     queryState.subscribe = undefined;
     container = document.createElement('div');
@@ -197,6 +211,8 @@ describe('NodePage shadcn table and empty state', () => {
     expect(queryState.navigate).toHaveBeenCalledWith('/plan/7');
 
     queryState.navigate.mockClear();
+    queryState.serversRefetch.mockClear();
+    queryState.serversError = false;
     queryState.subscribe = {};
     await act(async () => {
       root.render(<NodePage />);
@@ -214,5 +230,28 @@ describe('NodePage shadcn table and empty state', () => {
     });
 
     expect(queryState.navigate).toHaveBeenCalledWith('/plan');
+  });
+
+  it('shows a retryable error state instead of the subscribe prompt when the fetch fails', async () => {
+    queryState.servers = undefined;
+    queryState.serversError = true;
+    queryState.subscribe = { plan_id: 7 };
+
+    await act(async () => {
+      root.render(<NodePage />);
+      await Promise.resolve();
+    });
+
+    // A failed fetch must not wrongly tell a paying user to "subscribe".
+    expect(container.innerHTML).toContain('data-testid="node-error"');
+    expect(container.querySelector('[data-testid="node-empty"]')).toBeNull();
+
+    const retry = container.querySelector<HTMLButtonElement>('[data-testid="error-state-retry"]');
+    await act(async () => {
+      retry!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(queryState.serversRefetch).toHaveBeenCalled();
   });
 });

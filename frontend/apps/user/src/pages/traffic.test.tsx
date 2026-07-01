@@ -16,6 +16,8 @@ const queryState = vi.hoisted(() => ({
     server_rate: string;
   }>,
   fetching: true,
+  error: false,
+  refetch: vi.fn(),
 }));
 
 const labels: Record<string, string> = {
@@ -26,6 +28,9 @@ const labels: Record<string, string> = {
   'traffic.deduct_rate': '扣费倍率',
   'traffic.total_charged': '合计',
   'traffic.total_formula': '公式：(实际上行 + 实际下行) x 扣费倍率 = 扣除流量',
+  'common.loading': 'Loading...',
+  'common.error_title': '加载失败',
+  'common.retry': '重试',
 };
 
 vi.mock('react-i18next', () => ({
@@ -36,7 +41,12 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/lib/queries', () => ({
-  useTrafficLog: () => ({ data: queryState.rows, isFetching: queryState.fetching }),
+  useTrafficLog: () => ({
+    data: queryState.rows,
+    isFetching: queryState.fetching,
+    isError: queryState.error,
+    refetch: queryState.refetch,
+  }),
 }));
 
 (
@@ -50,6 +60,8 @@ describe('TrafficPage shadcn loading state', () => {
   beforeEach(() => {
     queryState.rows = [];
     queryState.fetching = true;
+    queryState.error = false;
+    queryState.refetch.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -77,6 +89,8 @@ describe('TrafficPage shadcn loading state', () => {
 describe('TrafficPage shadcn service table', () => {
   beforeEach(() => {
     queryState.fetching = false;
+    queryState.error = false;
+    queryState.refetch.mockClear();
     queryState.rows = [
       {
         u: 2048,
@@ -147,5 +161,46 @@ describe('TrafficPage shadcn service table', () => {
     expect(trafficSource).toContain('satisfies DataTableColumn<(typeof rows)[number]>[]');
     expect(trafficSource).not.toContain('data-row-key={row.record_at}');
     expect(trafficSource).not.toContain('<TableRow');
+  });
+});
+
+describe('TrafficPage error state', () => {
+  let container: HTMLDivElement;
+  let root: Root | null;
+
+  beforeEach(() => {
+    queryState.rows = [];
+    queryState.fetching = false;
+    queryState.error = true;
+    queryState.refetch.mockClear();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root?.unmount());
+    root = null;
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  it('renders a retryable error state instead of an empty traffic table on fetch failure', async () => {
+    await act(async () => {
+      root!.render(<TrafficPage />);
+      await Promise.resolve();
+    });
+
+    // A failed fetch must not render as an empty "no usage" table.
+    expect(container.innerHTML).toContain('data-testid="traffic-error"');
+    expect(container.querySelector('[data-testid="traffic-table"]')).toBeNull();
+
+    const retry = container.querySelector<HTMLButtonElement>('[data-testid="error-state-retry"]');
+    await act(async () => {
+      retry!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(queryState.refetch).toHaveBeenCalled();
   });
 });

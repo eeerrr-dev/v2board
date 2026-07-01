@@ -109,7 +109,11 @@ export function useLoginController(): LoginController {
         .catch(() => undefined);
     }
 
-    if (getAuthData()) {
+    // Skip the stale-session probe while a verify token is being redeemed:
+    // token2Login is minting a fresh auth_data, and a late checkLogin resolving
+    // `is_login:false` against the OLD token would wipe the freshly-minted one
+    // and silently deauth the user. The two token-writing branches must not race.
+    if (!verify && getAuthData()) {
       user.checkLogin(apiClient)
         .then((result) => {
           if (active && result.is_login) {

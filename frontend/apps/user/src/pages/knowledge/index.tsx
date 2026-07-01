@@ -7,6 +7,7 @@ import type { Knowledge, KnowledgeSummary } from '@v2board/types';
 import { ChevronRight, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ErrorState } from '@/components/ui/error-state';
 import { Input } from '@/components/ui/input';
 import { PageShell } from '@/components/ui/page';
 import {
@@ -47,6 +48,8 @@ export default function KnowledgePage() {
   const detail = useKnowledgeDetail(selectedId, language);
   const refetchDetail = detail.refetch;
   const detailVisible = selectedId !== undefined;
+  const detailTitle =
+    visibleDetail?.title || (detail.isError ? t('common.error_title') : t('common.loading'));
   const urlIdAppliedRef = useRef(false);
   const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
 
@@ -59,17 +62,17 @@ export default function KnowledgePage() {
       return;
     }
     const urlId = parseInt(raw);
-    if (Number.isNaN(urlId)) {
-      urlIdAppliedRef.current = true;
-      return;
-    }
+    // Apply the URL id exactly once now that the list has settled, whether or
+    // not it is present in the current (language-filtered / searched) list. The
+    // detail endpoint fetches any shown article by id, so a link to a
+    // cross-language or search-excluded article still opens instead of silently
+    // failing and re-running this effect forever.
+    urlIdAppliedRef.current = true;
+    if (Number.isNaN(urlId)) return;
     const matchedItem = Object.values(data)
       .flatMap((items) => items ?? [])
       .find((item) => parseInt(String(item.id)) === urlId);
-    if (matchedItem) {
-      urlIdAppliedRef.current = true;
-      setSelectedId(matchedItem.id);
-    }
+    setSelectedId(matchedItem ? matchedItem.id : urlId);
   }, [data, searchParams]);
 
   const renderedBody = useMemo(
@@ -158,7 +161,7 @@ export default function KnowledgePage() {
           <CardContent className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
             <span role="status" className="inline-flex items-center gap-2">
               <Spinner />
-              <span>Loading...</span>
+              <span>{t('common.loading')}</span>
             </span>
           </CardContent>
         </Card>
@@ -214,7 +217,7 @@ export default function KnowledgePage() {
             className="py-14 text-center text-sm text-muted-foreground"
             data-testid="knowledge-empty"
           >
-            {emptyDescription}
+            {deferredKeyword ? t('knowledge.no_results') : emptyDescription}
           </CardContent>
         </Card>
       )}
@@ -232,14 +235,14 @@ export default function KnowledgePage() {
         >
           <SheetHeader className="border-b border-border px-6 py-5 pr-12">
             <SheetTitle className="leading-6" data-testid="knowledge-sheet-title">
-              {visibleDetail?.title || 'Loading...'}
+              {detailTitle}
             </SheetTitle>
             <SheetDescription className={visibleDetail?.updated_at ? undefined : 'sr-only'}>
               {visibleDetail?.updated_at
                 ? t('knowledge.last_update', {
                     date: formatLegacyDateSlash(visibleDetail.updated_at),
                   })
-                : 'Loading...'}
+                : t('common.loading')}
             </SheetDescription>
           </SheetHeader>
           <div
@@ -252,8 +255,12 @@ export default function KnowledgePage() {
                 className="flex items-center gap-2 text-sm text-muted-foreground"
               >
                 <Spinner />
-                <span>Loading...</span>
+                <span>{t('common.loading')}</span>
               </div>
+            ) : detail.isError ? (
+              // A failed detail fetch must not sit on a blank body under a stuck
+              // "Loading..." title; surface the error with a retry instead.
+              <ErrorState onRetry={() => void refetchDetail()} data-testid="knowledge-error" />
             ) : (
               <div
                 className="custom-html-style min-w-0"

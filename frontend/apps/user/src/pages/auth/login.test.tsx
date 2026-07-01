@@ -562,4 +562,20 @@ describe('LoginPage bundled-theme behavior', () => {
     expect(mocks.setAuthData).toHaveBeenCalledWith(null);
     expect(mocks.navigate).not.toHaveBeenCalledWith('/dashboard');
   });
+
+  it('does not run the stale-session checkLogin while a verify token is redeemed', async () => {
+    // An already-authed user opening a verify handoff link: token2Login mints a
+    // fresh session, so the stale-token checkLogin must not race it — a late
+    // is_login:false would otherwise wipe the freshly-minted token.
+    mocks.params = new URLSearchParams('verify=verify-token&redirect=order');
+    mocks.getAuthData.mockReturnValue('EXISTING_AUTH');
+    mocks.checkLogin.mockResolvedValue({ is_login: false });
+
+    await renderLogin();
+    await flushPromises();
+
+    expect(mocks.setAuthData).toHaveBeenCalledWith('TOKEN_AUTH');
+    expect(mocks.checkLogin).not.toHaveBeenCalled();
+    expect(mocks.setAuthData).not.toHaveBeenCalledWith(null);
+  });
 });

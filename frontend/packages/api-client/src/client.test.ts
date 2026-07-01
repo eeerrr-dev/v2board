@@ -185,11 +185,23 @@ describe('createApiClient', () => {
     expect(mock.history.post[0]?.data).toBe('transfer_amount=1234');
   });
 
-  it('uses the legacy user transfer multiplication shape in the API layer', () => {
+  it('rounds a float-cents transfer amount instead of truncating it', async () => {
+    const client = createApiClient({ baseURL: '/api/v1' });
+    const mock = new AxiosMockAdapter(client.axios);
+    mock.onPost('/user/transfer').reply(200, { data: true });
+
+    await userEndpoints.transfer(client, '19.99');
+
+    // 100 * 19.99 = 1998.9999… — the raw float truncated to 1998 and
+    // short-changed the user; rounding sends the correct 1999.
+    expect(mock.history.post[0]?.data).toBe('transfer_amount=1999');
+  });
+
+  it('rounds the user transfer amount to integer cents in the API layer', () => {
     const source = readFileSync(new URL('./endpoints/user.ts', import.meta.url), 'utf8');
 
-    expect(source).toContain('transfer_amount: 100 * (transferAmount as number)');
-    expect(source).not.toContain('Number(transferAmount)');
+    expect(source).toContain('Math.round(100 * Number(transferAmount))');
+    expect(source).not.toContain('100 * (transferAmount as number)');
   });
 
   it('keeps redeem gift card type and value on the legacy response envelope', async () => {

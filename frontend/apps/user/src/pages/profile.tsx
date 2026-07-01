@@ -210,7 +210,10 @@ export default function ProfilePage() {
         .mutateAsync({
           plan_id: 0,
           period: 'deposit',
-          deposit_amount: amount * 100,
+          // Cents must be an integer: the backend stores total_amount in an int
+          // column that truncates, so a raw float (19.99 * 100 = 1998.9999…)
+          // would under-credit the user by a cent. Round to the nearest cent.
+          deposit_amount: Math.round(amount * 100),
         })
         .then((tradeNo) => navigate(`/order/${tradeNo}`))
         .catch(() => {});

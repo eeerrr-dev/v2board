@@ -64,7 +64,9 @@ export const transfer = (client: ApiClient, transferAmount: number | string | un
   client.request<true>({
     url: '/user/transfer',
     method: 'POST',
-    data: { transfer_amount: 100 * (transferAmount as number) },
+    // transfer_amount is integer cents; round so a float dollar value
+    // (19.99 * 100 = 1998.9999…) is not truncated by the backend int column.
+    data: { transfer_amount: Math.round(100 * Number(transferAmount)) },
   });
 
 export const newPeriod = (client: ApiClient) =>

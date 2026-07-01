@@ -69,6 +69,7 @@ const mocks = vi.hoisted(() => {
     detailArgs: [] as Array<{ id: number | string | undefined; language: string }>,
     fetching: false,
     detailFetching: false,
+    detailError: false,
     searchParams: new URLSearchParams(),
     defaultGroups,
     defaultDetailById,
@@ -78,8 +79,12 @@ const mocks = vi.hoisted(() => {
 });
 
 const labels: Record<string, string> = {
+  'common.loading': 'Loading...',
+  'common.error_title': 'Something went wrong',
+  'common.retry': 'Retry',
   'dashboard.copy_success': '复制成功',
   'knowledge.last_update': '最后更新: {date}',
+  'knowledge.no_results': '没有匹配的文档',
   'knowledge.search_placeholder': '搜索文档',
   'nav.knowledge': '使用文档',
 };
@@ -116,6 +121,7 @@ vi.mock('@/lib/queries', () => ({
     return {
       data: id === undefined ? undefined : mocks.detailById[String(id)],
       isFetching: mocks.detailFetching,
+      isError: mocks.detailError,
       refetch: mocks.detailRefetch,
     };
   },
@@ -135,6 +141,7 @@ describe('KnowledgePage shadcn library surface', () => {
   beforeEach(() => {
     mocks.fetching = false;
     mocks.detailFetching = false;
+    mocks.detailError = false;
     mocks.searchParams = new URLSearchParams();
     mocks.groups = mocks.defaultGroups;
     mocks.detailById = { ...mocks.defaultDetailById };
@@ -220,6 +227,7 @@ describe('KnowledgePage redesigned interactions', () => {
     root = createRoot(container);
     mocks.fetching = false;
     mocks.detailFetching = false;
+    mocks.detailError = false;
     mocks.searchParams = new URLSearchParams();
     mocks.groups = mocks.defaultGroups;
     mocks.detailById = { ...mocks.defaultDetailById };
@@ -293,6 +301,74 @@ describe('KnowledgePage redesigned interactions', () => {
     expect(document.body.innerHTML).toContain('custom-html-style');
     expect(document.body.innerHTML).toContain('data-v2board-markdown-action="jump"');
     expect(document.body.innerHTML).not.toContain('onclick=');
+  });
+
+  it('opens an article by URL id even when it is absent from the current list', async () => {
+    // A link to a cross-language / search-excluded article: not in the loaded
+    // list, but the detail endpoint fetches it by id, so it must still open.
+    mocks.searchParams = new URLSearchParams('id=99');
+    mocks.detailById = {
+      '99': { id: 99, title: 'Cross-language Doc', body: 'body', updated_at: 1_700_000_000 },
+    } as Record<string, unknown>;
+
+    await act(async () => {
+      root!.render(<KnowledgePage />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.detailArgs).toContainEqual({ id: 99, language: 'zh-CN' });
+    expect(document.body.innerHTML).toContain('data-testid="knowledge-sheet"');
+    expect(document.body.innerHTML).toContain('Cross-language Doc');
+  });
+
+  it('shows a retryable error state when the article detail fetch fails', async () => {
+    mocks.detailById = {} as Record<string, unknown>;
+    mocks.detailError = true;
+
+    await act(async () => {
+      root!.render(<KnowledgePage />);
+      await Promise.resolve();
+    });
+
+    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
+    await act(async () => {
+      item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    // A failed fetch surfaces the error + retry, not a blank article body.
+    expect(document.body.innerHTML).toContain('data-testid="knowledge-error"');
+    expect(document.body.innerHTML).not.toContain('data-testid="knowledge-article"');
+
+    const retry = document.body.querySelector(
+      '[data-testid="error-state-retry"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      retry.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(mocks.detailRefetch).toHaveBeenCalled();
+  });
+
+  it('distinguishes no-search-matches from an empty knowledge base', async () => {
+    await act(async () => {
+      root!.render(<KnowledgePage />);
+      await Promise.resolve();
+    });
+
+    // Searching with no matches shows the purpose-built no-results copy...
+    mocks.groups = {};
+    const input = container.querySelector('input[placeholder="搜索文档"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'zzz');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.innerHTML).toContain('没有匹配的文档');
   });
 
   it('shows sheet loading content while fetching an article without installing global hooks', async () => {

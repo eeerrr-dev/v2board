@@ -5,6 +5,7 @@ import { CircleHelp } from 'lucide-react';
 import { formatBytes, formatLegacyDateSlash } from '@v2board/config/format';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
+import { ErrorState } from '@/components/ui/error-state';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -16,7 +17,7 @@ import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 export default function TrafficPage() {
   const { t, i18n } = useTranslation();
   const trafficQuery = useTrafficLog();
-  const { data, isFetching } = trafficQuery;
+  const { data, isFetching, isError, refetch } = trafficQuery;
   const loading = isFetching;
   const rows = data ?? [];
   const { bodyRef, onScroll, scrollPosition } = useTableScrollPosition(rows.length);
@@ -87,30 +88,38 @@ export default function TrafficPage() {
                 role="status"
               >
                 <Spinner className="size-4" />
-                <span>Loading...</span>
+                <span>{t('common.loading')}</span>
               </div>
             ) : null}
 
-            <DataTable
-              className="min-w-[800px]"
-              columns={trafficColumns}
-              data={rows}
-              data-table-kind="service"
-              data-testid="traffic-table"
-              empty={!rows.length ? emptyDescription : undefined}
-              emptyClassName="py-16"
-              emptyTestId="traffic-empty"
-              scrollRef={bodyRef}
-              scrollProps={{
-                tabIndex: 0,
-                role: 'region',
-                'aria-label': t('nav.traffic'),
-                'data-scroll-position': scrollPosition,
-                'data-testid': 'service-table-scroll',
-                onScroll,
-              }}
-              virtualizer={{ enabled: rows.length > VIRTUALIZE_MIN_ROWS }}
-            />
+            {isError ? (
+              // A failed fetch must not render as an empty traffic table (which
+              // reads as "no usage"); show the error with a retry instead.
+              <div className="p-4">
+                <ErrorState onRetry={() => void refetch()} data-testid="traffic-error" />
+              </div>
+            ) : (
+              <DataTable
+                className="min-w-[800px]"
+                columns={trafficColumns}
+                data={rows}
+                data-table-kind="service"
+                data-testid="traffic-table"
+                empty={!rows.length ? emptyDescription : undefined}
+                emptyClassName="py-16"
+                emptyTestId="traffic-empty"
+                scrollRef={bodyRef}
+                scrollProps={{
+                  tabIndex: 0,
+                  role: 'region',
+                  'aria-label': t('nav.traffic'),
+                  'data-scroll-position': scrollPosition,
+                  'data-testid': 'service-table-scroll',
+                  onScroll,
+                }}
+                virtualizer={{ enabled: rows.length > VIRTUALIZE_MIN_ROWS }}
+              />
+            )}
           </CardContent>
         </Card>
       </PageShell>

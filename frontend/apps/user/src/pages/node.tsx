@@ -5,6 +5,7 @@ import { CircleHelp, Server } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { ErrorState } from '@/components/ui/error-state';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -19,7 +20,7 @@ export default function NodePage() {
   // Old componentDidMount dispatches user/getSubscribe before server/fetch.
   const subscribe = useSubscribe({ refetchOnMount: 'always' });
   const serversQuery = useServers({ refetchOnMount: 'always' });
-  const { data, isFetching } = serversQuery;
+  const { data, isFetching, isError, refetch } = serversQuery;
   const loading = isFetching;
   const servers = data ?? [];
   const { bodyRef, onScroll, scrollPosition } = useTableScrollPosition(servers.length, {
@@ -90,8 +91,19 @@ export default function NodePage() {
           role="status"
         >
           <Spinner className="size-5 text-muted-foreground" />
-          <span className="sr-only">Loading...</span>
+          <span className="sr-only">{t('common.loading')}</span>
         </div>
+      </PageShell>
+    );
+  }
+
+  // A failed fetch must not fall through to the empty state below — that would
+  // wrongly tell a paying user their subscription has no nodes. Surface the
+  // error with a retry instead.
+  if (isError) {
+    return (
+      <PageShell data-testid="node-page">
+        <ErrorState onRetry={() => void refetch()} data-testid="node-error" />
       </PageShell>
     );
   }
