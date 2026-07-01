@@ -153,6 +153,7 @@ const zhCN = {
     redeem_giftcard: '礼品卡',
     renew_period: '续费当前周期',
     long_term: '该订阅长期有效',
+    active: '生效中',
     expired_label: '已过期',
     expires_in: '于 {date} 到期，距离到期还有 {day} 天。',
     copy_success: '复制成功',

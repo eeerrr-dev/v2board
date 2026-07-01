@@ -14,7 +14,6 @@ import { getLegacyLocaleClassName } from '@v2board/i18n';
 import {
   Activity,
   BookOpen,
-  CircleUserRound,
   Gauge,
   Headphones,
   LogOut,
@@ -45,7 +44,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -108,6 +106,19 @@ const DETAIL_LABELS: { match: RegExp; labelKey: ParseKeys }[] = [
   { match: /^\/plan\/[^/]+$/, labelKey: 'plan.checkout_title' },
 ];
 
+// Derive a compact avatar monogram from the account email so the header shows a
+// real avatar instead of the raw, truncated address. Prefer the first letters of
+// the first two dot/underscore-separated name parts, else the first two chars.
+function getInitials(email: string): string {
+  const local = (email.split('@')[0] ?? '').trim();
+  const parts = local.split(/[._\-+]+/).filter(Boolean);
+  const letters =
+    parts.length >= 2
+      ? `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`
+      : local.slice(0, 2);
+  return letters.toUpperCase() || 'U';
+}
+
 function findActiveLabel(pathname: string): ParseKeys | undefined {
   for (const d of DETAIL_LABELS) {
     if (d.match.test(pathname)) return d.labelKey;
@@ -148,6 +159,7 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
   const version = getLegacySettings().version;
   const title = titleProp ?? (activeLabel ? t(activeLabel) : '');
   const localeClass = getLegacyLocaleClassName(i18n.language);
+  const initials = getInitials(user.email);
 
   const go = (to: string) => {
     navigate(to);
@@ -268,80 +280,90 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
               </h1>
             </div>
 
-            <DropdownMenu modal={false}>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  data-dark-mode-trigger
-                  aria-label={t('common.toggle_theme')}
-                >
-                  {darkMode ? <Moon className="size-4" /> : <Sun className="size-4" />}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-36">
-                <DropdownMenuRadioGroup
-                  value={themePreference}
-                  onValueChange={(value) => setThemePreference(value as ThemePreference)}
-                >
-                  <DropdownMenuRadioItem value="system" data-theme-option="system" className="gap-2">
-                    <Monitor className="size-4" />
-                    {t('common.theme_system')}
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="light" data-theme-option="light" className="gap-2">
-                    <Sun className="size-4" />
-                    {t('common.theme_light')}
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="dark" data-theme-option="dark" className="gap-2">
-                    <Moon className="size-4" />
-                    {t('common.theme_dark')}
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex items-center gap-0.5">
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground"
+                    data-dark-mode-trigger
+                    aria-label={t('common.toggle_theme')}
+                  >
+                    {darkMode ? <Moon className="size-4" /> : <Sun className="size-4" />}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-36">
+                  <DropdownMenuRadioGroup
+                    value={themePreference}
+                    onValueChange={(value) => setThemePreference(value as ThemePreference)}
+                  >
+                    <DropdownMenuRadioItem value="system" data-theme-option="system" className="gap-2">
+                      <Monitor className="size-4" />
+                      {t('common.theme_system')}
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="light" data-theme-option="light" className="gap-2">
+                      <Sun className="size-4" />
+                      {t('common.theme_light')}
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="dark" data-theme-option="dark" className="gap-2">
+                      <Moon className="size-4" />
+                      {t('common.theme_dark')}
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            <ShadcnLanguageMenu />
+              <ShadcnLanguageMenu />
 
-            <DropdownMenu modal={false}>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-9 max-w-[220px] gap-2 px-2.5"
-                  data-testid="app-avatar-trigger"
+              <div className="mx-1.5 h-5 w-px bg-border" aria-hidden="true" />
+
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    data-testid="app-avatar-trigger"
+                    aria-label={user.email}
+                    className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground ring-1 ring-border outline-none transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:ring-[3px] data-[state=open]:ring-ring/50"
+                  >
+                    <span aria-hidden="true">{initials}</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  sideOffset={8}
+                  className="v2board-island v2board-app-shell-menu-content w-60"
+                  data-testid="app-avatar-menu"
                 >
-                  <CircleUserRound className="size-4" />
-                  <span className="hidden truncate text-sm font-medium lg:inline">
-                    {user.email}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                sideOffset={8}
-                className="v2board-island v2board-app-shell-menu-content w-56"
-                data-testid="app-avatar-menu"
-              >
-                <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
-                  {user.email}
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => navigate('/profile')}>
-                  <UserRound className="size-4" />
-                  {t('nav.profile')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => {
-                    logout();
-                    navigate('/login');
-                  }}
-                >
-                  <LogOut className="size-4" />
-                  {t('common.logout')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <div className="flex items-center gap-2.5 px-2 py-1.5">
+                    <span
+                      aria-hidden="true"
+                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground ring-1 ring-border"
+                    >
+                      {initials}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                      {user.email}
+                    </span>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => navigate('/profile')}>
+                    <UserRound className="size-4" />
+                    {t('nav.profile')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      logout();
+                      navigate('/login');
+                    }}
+                  >
+                    <LogOut className="size-4" />
+                    {t('common.logout')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </header>
 

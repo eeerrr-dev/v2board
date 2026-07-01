@@ -173,9 +173,6 @@ export default function DashboardPage() {
               <CardTitle data-testid="dashboard-card-title" className="text-xl">
                 {t('dashboard.plan')}
               </CardTitle>
-              {hasPlan && hasSubscribeData ? (
-                <p className="text-sm text-muted-foreground">{legacySub.plan?.name}</p>
-              ) : null}
             </div>
             <span className="flex size-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
               <Package className="size-4" />
@@ -206,7 +203,7 @@ export default function DashboardPage() {
                         tone="success"
                       >
                         <CheckCircle2 className="size-3" />
-                        {legacySub.expired_at === null ? t('dashboard.long_term') : t('dashboard.plan')}
+                        {t('dashboard.active')}
                       </StatusBadge>
                     )}
                   </div>
@@ -236,7 +233,9 @@ export default function DashboardPage() {
                     indicatorClassName={cn(
                       vm.trafficTone === 'danger' && 'bg-destructive',
                       vm.trafficTone === 'warning' && 'bg-amber-500',
-                      vm.trafficTone === 'success' && 'bg-emerald-500',
+                      // Healthy usage stays neutral (shadcn's default primary bar) rather
+                      // than a saturated green, so the card reads calm until usage is high.
+                      vm.trafficTone === 'success' && 'bg-primary',
                     )}
                     indicatorProps={{
                       'data-testid': 'dashboard-progress-bar',

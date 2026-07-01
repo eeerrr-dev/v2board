@@ -1,16 +1,11 @@
 /*
- * The island font stack, consumed via `font-family: var(--font-sans)` on every
- * `.v2board-island` root (user-auth-surface.css). The former `--radius-card`,
+ * The island font stack (`--font-sans`, consumed via `font-family: var(--font-sans)`
+ * on every `.v2board-island` root in user-auth-surface.css) now lives in a `@theme`
+ * block in user-shadcn.css, alongside the self-hosted Inter `@font-face` rules. It
+ * has to be declared there — after `@import 'tailwindcss/theme.css'` — so it wins
+ * over Tailwind v4's default `--font-sans`; a plain `:root` override in this file
+ * (imported earlier) was silently losing that cascade. The former `--radius-card`,
  * `--radius-input`, and `--shadow-block` tokens (and the parallel `@theme`
- * duplicate) are removed: no source renders their generated utilities
+ * duplicate) were removed: no source renders their generated utilities
  * (`rounded-card` is asserted absent) and nothing reads them via var().
  */
-:root,
-:host {
-  --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
-    'Noto Sans CJK SC', 'Noto Sans SC', 'WenQuanYi Micro Hei', 'Noto Sans',
-    'Liberation Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-    'Noto Color Emoji';
-}

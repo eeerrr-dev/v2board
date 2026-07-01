@@ -156,6 +156,7 @@ const enUS: Translations = {
     redeem_giftcard: 'Gift Card',
     renew_period: 'Renew current period',
     long_term: 'The subscription is valid for an unlimited time',
+    active: 'Active',
     expired_label: 'Expired',
     expires_in: 'Will expire on {{date}}, {{day}} days before expiration, ',
     copy_success: 'Copied successfully',

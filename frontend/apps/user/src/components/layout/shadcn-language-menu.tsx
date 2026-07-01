@@ -1,4 +1,4 @@
-import { ChevronDown, Languages } from 'lucide-react';
+import { Languages } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { LanguageMenu } from './language-menu';
@@ -11,26 +11,22 @@ export function ShadcnLanguageMenu({ className }: ShadcnLanguageMenuProps) {
   const { t } = useTranslation();
   return (
     <LanguageMenu
-      align="center"
+      align="end"
       side="bottom"
-      contentClassName="v2board-island v2board-app-shell-menu-content min-w-28"
+      contentClassName="v2board-island v2board-app-shell-menu-content min-w-40"
       itemClassName="whitespace-nowrap"
+      activeIndicator
       trigger={(currentLabel) => (
         <button
           type="button"
           aria-label={currentLabel ? `${t('common.language')}: ${currentLabel}` : t('common.language')}
           className={cn(
-            'inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground',
+            'inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground',
             className,
           )}
           data-testid="app-language-trigger"
         >
           <Languages className="size-4" aria-hidden="true" />
-          <span className="hidden sm:inline">{currentLabel}</span>
-          <ChevronDown
-            aria-hidden="true"
-            className="size-3.5 opacity-70 transition-transform data-[state=open]:rotate-180"
-          />
         </button>
       )}
     />

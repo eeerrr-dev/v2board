@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from 'react';
+import { Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/cn';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +21,13 @@ interface LanguageMenuProps {
   side: 'top' | 'bottom';
   contentClassName?: string;
   itemClassName?: string;
+  /**
+   * Mark the active locale with a check. The shell trigger is icon-only, so the
+   * current language is no longer shown as trigger text and the menu carries it
+   * instead. Opt-in so the auth trigger (which still renders its label) keeps its
+   * plain item markup. Adds no item text, so exact-textContent assertions hold.
+   */
+  activeIndicator?: boolean;
 }
 
 // Authored V2Board — shared language switcher behavior. Both the auth surface and the logged-in
@@ -31,6 +40,7 @@ export function LanguageMenu({
   side,
   contentClassName,
   itemClassName,
+  activeIndicator,
 }: LanguageMenuProps) {
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -49,7 +59,7 @@ export function LanguageMenu({
         {locales.map((locale) => (
           <DropdownMenuItem
             key={locale.code}
-            className={itemClassName}
+            className={cn(activeIndicator && 'justify-between gap-4', itemClassName)}
             onSelect={(event) => {
               event.preventDefault();
               selectLocale(locale.code);
@@ -57,6 +67,12 @@ export function LanguageMenu({
             }}
           >
             {locale.label}
+            {activeIndicator ? (
+              <Check
+                aria-hidden="true"
+                className={cn('size-4', locale.label === currentLabel ? 'opacity-100' : 'opacity-0')}
+              />
+            ) : null}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

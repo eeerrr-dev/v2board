@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     'dashboard.copy_subscribe': '复制订阅地址',
     'dashboard.copy_success': '复制成功',
     'dashboard.devices_online': '在线设备 {alive_ip}/{device_limit}',
+    'dashboard.active': '生效中',
     'dashboard.expired_label': '已过期',
     'dashboard.expires_in': '于 {date} 到期，距离到期还有 {day} 天。',
     'dashboard.import_to': '导入到',
