@@ -412,6 +412,7 @@ const zhCN = {
     reset_subscribe_confirm: '确定要重置订阅信息？',
     reset_success: '重置成功',
     reset: '重置',
+    account: '账户信息',
     email: '邮箱',
     uuid: 'UUID',
     last_login: '上次登录',

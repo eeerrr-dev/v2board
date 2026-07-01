@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ParseKeys } from 'i18next';
 import { ApiError } from '@v2board/api-client';
-import { formatCentsPlain } from '@v2board/config/format';
+import { formatCentsPlain, formatLegacyDateTime } from '@v2board/config/format';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,6 +10,8 @@ import { z } from 'zod';
 import {
   AlertCircle,
   Bell,
+  CircleUser,
+  Copy,
   Gift,
   KeyRound,
   MessageCircle,
@@ -52,7 +54,9 @@ import {
   useUserInfo,
 } from '@/lib/queries';
 import { toast } from '@/lib/toast';
+import { copyText } from '@/lib/legacy-settings';
 import { makeConfirmPasswordRefinement } from './auth/refine-confirm-password';
+import type { ReactNode } from 'react';
 
 const passwordSchema = z
   .object({
@@ -121,6 +125,10 @@ export default function ProfilePage() {
   const currency = comm?.currency;
   const depositPlaceholder = t('profile.deposit_placeholder', { currency });
   const redeemLoading = redeem.isPending || redeemTimeoutStuck;
+
+  const copyUuid = async () => {
+    if (data?.uuid && (await copyText(data.uuid))) toast.success(t('dashboard.copy_success'));
+  };
 
   const togglePref = async (key: ProfilePreferenceKey, value: 0 | 1) => {
     setUpdatingPref((current) => ({ ...current, [key]: true }));
@@ -308,6 +316,47 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
         </div>
+
+        <Card data-testid="profile-account-card">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="rounded-md border border-border bg-muted p-2 text-muted-foreground">
+                <CircleUser className="size-4" />
+              </div>
+              <CardTitle className="text-lg" data-testid="profile-card-title">
+                {t('profile.account')}
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+              <IdentityField
+                label={t('profile.email')}
+                value={data?.email}
+                testId="profile-account-email"
+              />
+              <IdentityField
+                label={t('profile.uuid')}
+                value={data?.uuid}
+                testId="profile-account-uuid"
+                copyLabel={data?.uuid ? t('common.copy') : undefined}
+                onCopy={data?.uuid ? copyUuid : undefined}
+              />
+              <IdentityField
+                label={t('profile.created_at')}
+                value={data?.created_at ? formatLegacyDateTime(data.created_at) : undefined}
+                testId="profile-account-created"
+              />
+              <IdentityField
+                label={t('profile.last_login')}
+                value={
+                  data?.last_login_at ? formatLegacyDateTime(data.last_login_at) : undefined
+                }
+                testId="profile-account-last-login"
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card data-testid="profile-password-card">
@@ -508,6 +557,46 @@ export default function ProfilePage() {
         onConfirm={onConfirmAction}
       />
     </>
+  );
+}
+
+function IdentityField({
+  label,
+  value,
+  testId,
+  onCopy,
+  copyLabel,
+}: {
+  label: string;
+  value: ReactNode;
+  testId: string;
+  onCopy?: () => void;
+  copyLabel?: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <span className="min-w-0 truncate" data-testid={testId}>
+          {value == null || value === '' ? '—' : value}
+        </span>
+        {onCopy ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-6 shrink-0 text-muted-foreground"
+            aria-label={copyLabel}
+            data-testid={`${testId}-copy`}
+            onClick={() => void onCopy()}
+          >
+            <Copy className="size-3.5" />
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

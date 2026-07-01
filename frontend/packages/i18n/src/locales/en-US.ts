@@ -420,6 +420,7 @@ const enUS: Translations = {
     reset_subscribe_confirm: 'Do you want to reset subscription?',
     reset_success: 'Reset successfully',
     reset: 'Reset',
+    account: 'Account',
     email: 'Email',
     uuid: 'UUID',
     last_login: 'Last login',

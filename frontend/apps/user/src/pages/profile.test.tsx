@@ -31,6 +31,10 @@ const mocks = vi.hoisted(() => ({
     remind_expire: 0,
     remind_traffic: 0,
     telegram_id: null as number | null,
+    email: 'user@example.test',
+    uuid: 'uuid-abc-123',
+    created_at: 1_700_000_000,
+    last_login_at: 1_700_003_600 as number | null,
   },
   comm: {
     currency: 'USD',
@@ -45,6 +49,13 @@ const mocks = vi.hoisted(() => ({
 
 const labels: Record<string, string> = {
   'common.cancel': '取消',
+  'common.copy': '复制',
+  'dashboard.copy_success': '复制成功',
+  'profile.account': '账户信息',
+  'profile.email': '邮箱',
+  'profile.uuid': 'UUID',
+  'profile.last_login': '上次登录',
+  'profile.created_at': '注册时间',
   'profile.wallet': '我的钱包(仅消费)',
   'profile.auto_renewal': '自动续费',
   'profile.recharge': '充值',
@@ -222,6 +233,10 @@ describe('ProfilePage shadcn account surface', () => {
       remind_expire: 0,
       remind_traffic: 0,
       telegram_id: null,
+      email: 'user@example.test',
+      uuid: 'uuid-abc-123',
+      created_at: 1_700_000_000,
+      last_login_at: 1_700_003_600,
     };
     mocks.comm = {
       currency: 'USD',
@@ -366,6 +381,54 @@ describe('ProfilePage shadcn account surface', () => {
     expect(mocks.copyText).toHaveBeenCalledWith('/bind https://example.test/sub');
   });
 
+  it('surfaces the account identity fields and copies the uuid', async () => {
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    // The backend already returns these on info(); the card must surface them
+    // instead of leaving the email/uuid/last_login/created_at keys dead.
+    expect(container.querySelector('[data-testid="profile-account-card"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="profile-account-email"]')?.textContent).toBe(
+      'user@example.test',
+    );
+    expect(container.querySelector('[data-testid="profile-account-uuid"]')?.textContent).toBe(
+      'uuid-abc-123',
+    );
+    // Registration + last login render through the shared legacy datetime formatter.
+    expect(container.querySelector('[data-testid="profile-account-created"]')?.textContent).not.toBe(
+      '—',
+    );
+    expect(
+      container.querySelector('[data-testid="profile-account-last-login"]')?.textContent,
+    ).not.toBe('—');
+
+    const copyButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="profile-account-uuid-copy"]',
+    );
+    expect(copyButton).toBeTruthy();
+    await act(async () => {
+      copyButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(mocks.copyText).toHaveBeenCalledWith('uuid-abc-123');
+    expect(mocks.toastSuccess).toHaveBeenCalled();
+  });
+
+  it('falls back to an em dash when a last login timestamp is absent', async () => {
+    mocks.userInfo = { ...mocks.userInfo, last_login_at: null };
+
+    await act(async () => {
+      root!.render(<ProfilePage />);
+      await Promise.resolve();
+    });
+
+    expect(
+      container.querySelector('[data-testid="profile-account-last-login"]')?.textContent,
+    ).toBe('—');
+  });
+
   it('uses the legacy bare Telegram bind command when no subscribe url is cached', async () => {
     mocks.comm = {
       currency: 'USD',
@@ -448,7 +511,7 @@ describe('ProfilePage shadcn account surface', () => {
   it('renders profile switches with Radix boolean checked state', async () => {
     mocks.updateProfile.mockResolvedValue(true);
     mocks.userInfo = {
-      balance: 0,
+      ...mocks.userInfo,
       auto_renewal: 1,
       remind_expire: 0,
       remind_traffic: 1,
@@ -603,7 +666,7 @@ describe('ProfilePage shadcn account surface', () => {
       telegram_discuss_link: '',
     };
     mocks.userInfo = {
-      balance: 0,
+      ...mocks.userInfo,
       auto_renewal: 0,
       remind_expire: 0,
       remind_traffic: 0,
