@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export interface Countdown {
   /** The number to display while counting down (the legacy send-code seconds). */
@@ -26,7 +26,9 @@ export function useCountdown(seconds: number): Countdown {
     return () => window.clearTimeout(timer);
   }, [seconds, value]);
 
-  const start = useCallback(() => setValue(seconds - 1), [seconds]);
+  // Plain handler: callers invoke start() from event closures and never read its
+  // identity, so the manual useCallback was compiler-redundant.
+  const start = () => setValue(seconds - 1);
 
   return { remaining: value, isActive: value !== seconds, start };
 }

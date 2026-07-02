@@ -1,6 +1,7 @@
 import { useEffect, type BaseSyntheticEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { ApiError, user } from '@v2board/api-client';
+import type { AuthData } from '@v2board/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormRegister } from 'react-hook-form';
@@ -17,6 +18,16 @@ const loginSchema = z.object({
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
+
+// A one-time verify token (the backend-emailed `?verify=` handoff) must be redeemed
+// exactly once. React 19 StrictMode double-invokes the bootstrap effect in dev
+// (mount → cleanup → mount), which would POST token2Login twice and fail the surviving
+// call against the already-consumed token. De-dupe by verify value at module scope: the
+// first effect run owns the in-flight redemption promise, a doubled run re-attaches to
+// it (so the surviving mount still finishes login via its own `active` guard), and the
+// entry is released once the request settles so a fresh visit re-redeems. This mirrors
+// the file's existing race guards without touching the request or redirect contract.
+const pendingVerifyRedemptions = new Map<string, Promise<AuthData | null>>();
 
 function normalizeRedirectTarget(target: string | null): string {
   if (!target) return '/dashboard';
@@ -97,10 +108,21 @@ export function useLoginController(): LoginController {
     };
 
     if (verify) {
-      tokenLogin({
-        verify,
-        ...(queryRedirect !== null ? { redirect: queryRedirect } : {}),
-      })
+      // Redeem this verify token at most once per value (see pendingVerifyRedemptions):
+      // the first run creates the request, a StrictMode-doubled run re-attaches to the
+      // same promise instead of re-POSTing the one-time token.
+      let redemption = pendingVerifyRedemptions.get(verify);
+      if (!redemption) {
+        redemption = tokenLogin({
+          verify,
+          ...(queryRedirect !== null ? { redirect: queryRedirect } : {}),
+        });
+        pendingVerifyRedemptions.set(verify, redemption);
+        void redemption
+          .catch(() => undefined)
+          .finally(() => pendingVerifyRedemptions.delete(verify));
+      }
+      redemption
         .then((result) => {
           if (result?.auth_data) finishLogin(result.auth_data);
         })

@@ -65,6 +65,7 @@ export default defineConfig({
       'clsx',
       'dayjs',
       'dompurify',
+      'embla-carousel-react',
       'i18next',
       'lucide-react',
       'markdown-it',

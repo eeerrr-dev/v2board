@@ -40,9 +40,11 @@ const mocks = vi.hoisted(() => {
 
   return {
     closeMutateAsync: vi.fn(),
+    error: false,
     fetching: true,
     makeTickets,
     openWindow: vi.fn(),
+    refetch: vi.fn(),
     saveMutateAsync: vi.fn(),
     savePending: false,
     tickets: makeTickets(),
@@ -91,7 +93,9 @@ vi.mock('@/lib/queries', () => ({
   useTickets: () => ({
     data: mocks.tickets,
     error: undefined,
+    isError: mocks.error,
     isFetching: mocks.fetching,
+    refetch: mocks.refetch,
   }),
   useSaveTicketMutation: () => ({
     isPending: mocks.savePending,
@@ -139,11 +143,13 @@ vi.mock('@/components/ui/select', () => ({
 
 function resetMocks() {
   mocks.tickets = mocks.makeTickets();
+  mocks.error = false;
   mocks.fetching = true;
   mocks.savePending = false;
   mocks.saveMutateAsync.mockReset();
   mocks.closeMutateAsync.mockReset();
   mocks.openWindow.mockClear();
+  mocks.refetch.mockClear();
   confirmDialog.mockReset();
 }
 
@@ -257,6 +263,24 @@ describe('TicketsPage shadcn surface', () => {
     expect(screen.getByTestId('ticket-empty')).toHaveTextContent(
       getLocaleAntdMessages('zh-CN').emptyDescription,
     );
+  });
+
+  it('surfaces a failed fetch as an error state with retry instead of the empty table', async () => {
+    mocks.tickets = [];
+    mocks.error = true;
+
+    const { user } = renderWithProviders(<TicketsPage />);
+
+    // A failed fetch must not be misrepresented as "no tickets".
+    expect(screen.getByTestId('ticket-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('ticket-empty')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ticket-table')).not.toBeInTheDocument();
+    // The new-ticket entry point stays available alongside the error.
+    expect(screen.getByTestId('ticket-new-trigger')).toBeEnabled();
+
+    await user.click(screen.getByTestId('error-state-retry'));
+
+    expect(mocks.refetch).toHaveBeenCalledTimes(1);
   });
 });
 

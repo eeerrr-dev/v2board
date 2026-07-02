@@ -1,27 +1,27 @@
-import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getLocaleAntdMessages } from '@v2board/i18n';
-import { CircleHelp } from 'lucide-react';
 import { formatBytes, formatLegacyDateSlash } from '@v2board/config/format';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
+import { HeaderTooltip } from '@/components/ui/header-tooltip';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useTrafficLog } from '@/lib/queries';
+import { useEmptyDescription } from '@/lib/use-empty-description';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 
 export default function TrafficPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const trafficQuery = useTrafficLog();
-  const { data, isFetching, isError, refetch } = trafficQuery;
-  const loading = isFetching;
+  // Key the loading banner on isPending (no data yet), not isFetching, so
+  // cached rows keep rendering quietly during background refetches.
+  const { data, isPending, isError, refetch } = trafficQuery;
   const rows = data ?? [];
   const { bodyRef, onScroll, scrollPosition } = useTableScrollPosition(rows.length);
-  const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
+  const emptyDescription = useEmptyDescription();
   const trafficColumns = [
     {
       accessorKey: 'record_at',
@@ -58,7 +58,7 @@ export default function TrafficPage() {
       id: 'total-charged',
       meta: { align: 'right', className: 'font-medium' },
       header: () => (
-        <HeaderTooltip title={t('traffic.total_formula')} placement="topRight">
+        <HeaderTooltip className="justify-end" placement="topRight" title={t('traffic.total_formula')}>
           {t('traffic.total_charged')}
         </HeaderTooltip>
       ),
@@ -82,7 +82,7 @@ export default function TrafficPage() {
               </Alert>
             </div>
 
-            {loading ? (
+            {isPending ? (
               <div
                 className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground"
                 role="status"
@@ -124,27 +124,5 @@ export default function TrafficPage() {
         </Card>
       </PageShell>
     </TooltipProvider>
-  );
-}
-
-function HeaderTooltip({
-  children,
-  placement = 'top',
-  title,
-}: {
-  children: ReactNode;
-  placement?: 'top' | 'topRight';
-  title: string;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="v2board-service-tooltip-trigger inline-flex cursor-help items-center justify-end gap-1">
-          {children}
-          <CircleHelp className="size-3.5" />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent placement={placement}>{title}</TooltipContent>
-    </Tooltip>
   );
 }

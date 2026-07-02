@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  CircleHelp,
   Copy,
   Plus,
   Send,
@@ -21,16 +20,13 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { ErrorState } from '@/components/ui/error-state';
+import { HeaderTooltip } from '@/components/ui/header-tooltip';
 import { PaginationControl, getPaginationMaxCurrent } from '@/components/ui/pagination';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { DataTable, type DataTableColumn } from '@/components/ui/table';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import {
   useCommConfig,
@@ -189,53 +185,65 @@ export default function InvitePage() {
           </CardContent>
         </Card>
 
+        {/* A failed invite fetch must not leave the stat tiles spinning forever
+            or fall through to an empty-looking code table — surface the error
+            with a retry instead. */}
         <Card className={cn(loading && 'opacity-80')} data-testid="invite-stats-card">
-          <CardContent className="grid gap-0 p-0 sm:grid-cols-2 xl:grid-cols-4">
-            <StatTile
-              icon={<Users className="size-4" />}
-              label={t('invite.registered')}
-              value={
-                registered !== undefined
-                  ? t('invite.people_count', { count: registered })
-                  : undefined
-              }
-            />
-            <StatTile
-              icon={<TrendingUp className="size-4" />}
-              label={
-                isDistribution ? (
-                  <HeaderTooltip title={t('invite.triple_hint')}>
-                    {t('invite.triple_rate')}
+          {invite.isError ? (
+            <CardContent>
+              <ErrorState
+                onRetry={() => void invite.refetch()}
+                data-testid="invite-stats-error"
+              />
+            </CardContent>
+          ) : (
+            <CardContent className="grid gap-0 p-0 sm:grid-cols-2 xl:grid-cols-4">
+              <StatTile
+                icon={<Users className="size-4" />}
+                label={t('invite.registered')}
+                value={
+                  registered !== undefined
+                    ? t('invite.people_count', { count: registered })
+                    : undefined
+                }
+              />
+              <StatTile
+                icon={<TrendingUp className="size-4" />}
+                label={
+                  isDistribution ? (
+                    <HeaderTooltip title={t('invite.triple_hint')}>
+                      {t('invite.triple_rate')}
+                    </HeaderTooltip>
+                  ) : (
+                    t('invite.commission_rate')
+                  )
+                }
+                value={commissionRate}
+              />
+              <StatTile
+                icon={<WalletCards className="size-4" />}
+                label={
+                  <HeaderTooltip title={t('invite.pending_hint')}>
+                    {t('invite.pending_commission')}
                   </HeaderTooltip>
-                ) : (
-                  t('invite.commission_rate')
-                )
-              }
-              value={commissionRate}
-            />
-            <StatTile
-              icon={<WalletCards className="size-4" />}
-              label={
-                <HeaderTooltip title={t('invite.pending_hint')}>
-                  {t('invite.pending_commission')}
-                </HeaderTooltip>
-              }
-              value={
-                pendingCommission !== undefined
-                  ? `${symbol} ${formatCentsPlain(pendingCommission)}`
-                  : undefined
-              }
-            />
-            <StatTile
-              icon={<WalletCards className="size-4" />}
-              label={t('invite.valid_commission')}
-              value={
-                validCommission !== undefined
-                  ? `${symbol} ${formatCentsPlain(validCommission)}`
-                  : undefined
-              }
-            />
-          </CardContent>
+                }
+                value={
+                  pendingCommission !== undefined
+                    ? `${symbol} ${formatCentsPlain(pendingCommission)}`
+                    : undefined
+                }
+              />
+              <StatTile
+                icon={<WalletCards className="size-4" />}
+                label={t('invite.valid_commission')}
+                value={
+                  validCommission !== undefined
+                    ? `${symbol} ${formatCentsPlain(validCommission)}`
+                    : undefined
+                }
+              />
+            </CardContent>
+          )}
         </Card>
 
         <Card className="overflow-hidden" data-testid="invite-code-card">
@@ -254,13 +262,20 @@ export default function InvitePage() {
               {t('invite.generate')}
             </Button>
           </CardHeader>
-          <CardContent className="p-0">
-            <ServiceTable
-              testId="invite-code-table"
-              columns={codeColumns}
-              data={codes}
-              empty={codes.length === 0 ? emptyDescription : undefined}
-            />
+          <CardContent className={invite.isError ? undefined : 'p-0'}>
+            {invite.isError ? (
+              <ErrorState
+                onRetry={() => void invite.refetch()}
+                data-testid="invite-code-error"
+              />
+            ) : (
+              <ServiceTable
+                testId="invite-code-table"
+                columns={codeColumns}
+                data={codes}
+                empty={codes.length === 0 ? emptyDescription : undefined}
+              />
+            )}
           </CardContent>
         </Card>
 
@@ -280,35 +295,44 @@ export default function InvitePage() {
               </div>
             ) : null}
           </CardHeader>
-          <CardContent className="p-0">
-            <ServiceTable
-              testId="invite-history-table"
-              columns={detailColumns}
-              data={detailRows}
-              empty={!detailRows.length ? emptyDescription : undefined}
-            />
-            {detailPaginationItemTotal > 0 && (
-              <PaginationControl
-                data-testid="invite-pagination"
-                current={detailPaginationCurrent}
-                labels={{
-                  itemsPerPage: t('common.items_per_page'),
-                  nextPage: t('common.next_page'),
-                  nextWindow: t('common.next_5'),
-                  previousPage: t('common.prev_page'),
-                  previousWindow: t('common.prev_5'),
-                }}
-                pageSize={pageSize ?? 10}
-                total={detailPaginationItemTotal}
-                testIds={{
-                  page: 'invite-page',
-                  pageSize: 'invite-page-size',
-                }}
-                onChange={(nextPage, nextPageSize) => {
-                  setPage(nextPage);
-                  setPageSize(nextPageSize);
-                }}
+          <CardContent className={details.isError ? undefined : 'p-0'}>
+            {details.isError ? (
+              <ErrorState
+                onRetry={() => void details.refetch()}
+                data-testid="invite-history-error"
               />
+            ) : (
+              <>
+                <ServiceTable
+                  testId="invite-history-table"
+                  columns={detailColumns}
+                  data={detailRows}
+                  empty={!detailRows.length ? emptyDescription : undefined}
+                />
+                {detailPaginationItemTotal > 0 && (
+                  <PaginationControl
+                    data-testid="invite-pagination"
+                    current={detailPaginationCurrent}
+                    labels={{
+                      itemsPerPage: t('common.items_per_page'),
+                      nextPage: t('common.next_page'),
+                      nextWindow: t('common.next_5'),
+                      previousPage: t('common.prev_page'),
+                      previousWindow: t('common.prev_5'),
+                    }}
+                    pageSize={pageSize ?? 10}
+                    total={detailPaginationItemTotal}
+                    testIds={{
+                      page: 'invite-page',
+                      pageSize: 'invite-page-size',
+                    }}
+                    onChange={(nextPage, nextPageSize) => {
+                      setPage(nextPage);
+                      setPageSize(nextPageSize);
+                    }}
+                  />
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -338,20 +362,6 @@ function StatTile({
         {value ?? <Spinner className="ml-auto size-5 text-muted-foreground" />}
       </div>
     </div>
-  );
-}
-
-function HeaderTooltip({ children, title }: { children: ReactNode; title: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="v2board-service-tooltip-trigger inline-flex cursor-help items-center gap-1">
-          {children}
-          <CircleHelp className="size-3.5" />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{title}</TooltipContent>
-    </Tooltip>
   );
 }
 

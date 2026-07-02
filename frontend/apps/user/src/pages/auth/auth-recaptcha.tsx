@@ -98,24 +98,25 @@ export function useAuthRecaptcha(enabled: boolean, siteKey?: string | null) {
     }
   }, []);
 
-  const cancel = useCallback(() => {
+  // Plain handler: only ever invoked from the Dialog onOpenChange closure, so its
+  // identity is never read and the manual useCallback was compiler-redundant residue.
+  const cancel = () => {
     clearPendingToken();
     setOpen(false);
     actionRef.current = null;
-  }, [clearPendingToken]);
+  };
 
-  const run = useCallback(
-    (action: ProtectedAction) => {
-      if (!enabled) {
-        void action();
-        return;
-      }
-      actionRef.current = action;
-      setWidgetKey((value) => value + 1);
-      setOpen(true);
-    },
-    [enabled],
-  );
+  // Plain handler: callers invoke run() from event closures and never read its
+  // identity, so the manual useCallback ceremony added nothing.
+  const run = (action: ProtectedAction) => {
+    if (!enabled) {
+      void action();
+      return;
+    }
+    actionRef.current = action;
+    setWidgetKey((value) => value + 1);
+    setOpen(true);
+  };
 
   const handleToken = useCallback(
     (token: string | null) => {

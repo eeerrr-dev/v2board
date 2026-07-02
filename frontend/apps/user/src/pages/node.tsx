@@ -1,16 +1,16 @@
-import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
-import { CircleHelp, Server } from 'lucide-react';
+import { Server } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
+import { HeaderTooltip } from '@/components/ui/header-tooltip';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useServers, useSubscribe } from '@/lib/queries';
 import { useTableScrollPosition } from '@/lib/use-table-scroll-position';
 
@@ -20,8 +20,10 @@ export default function NodePage() {
   // Old componentDidMount dispatches user/getSubscribe before server/fetch.
   const subscribe = useSubscribe({ refetchOnMount: 'always' });
   const serversQuery = useServers({ refetchOnMount: 'always' });
-  const { data, isFetching, isError, refetch } = serversQuery;
-  const loading = isFetching;
+  // Key the full-page spinner on isPending (no data yet), not isFetching, so
+  // cached rows keep rendering while the refetchOnMount('always') background
+  // refetch runs instead of blanking the page on every revisit.
+  const { data, isPending, isError, refetch } = serversQuery;
   const servers = data ?? [];
   const { bodyRef, onScroll, scrollPosition } = useTableScrollPosition(servers.length, {
     syncOnMount: false,
@@ -39,7 +41,9 @@ export default function NodePage() {
       id: 'status',
       meta: { align: 'center' },
       header: () => (
-        <HeaderTooltip title={t('node.status_tip')}>{t('node.status')}</HeaderTooltip>
+        <HeaderTooltip className="justify-center" title={t('node.status_tip')}>
+          {t('node.status')}
+        </HeaderTooltip>
       ),
       cell: ({ row }) => {
         const online = Boolean(parseInt(String(row.original.is_online)));
@@ -58,7 +62,9 @@ export default function NodePage() {
       id: 'rate',
       meta: { align: 'center' },
       header: () => (
-        <HeaderTooltip title={t('node.rate_tip')}>{t('node.rate')}</HeaderTooltip>
+        <HeaderTooltip className="justify-center" title={t('node.rate_tip')}>
+          {t('node.rate')}
+        </HeaderTooltip>
       ),
       cell: ({ row }) => <StatusBadge>{String(row.original.rate)} x</StatusBadge>,
     },
@@ -82,7 +88,7 @@ export default function NodePage() {
 
   const to = subscribe.data?.plan_id ? `/plan/${subscribe.data.plan_id}` : '/plan';
 
-  if (loading) {
+  if (isPending) {
     return (
       <PageShell data-testid="node-page">
         <div
@@ -157,19 +163,5 @@ export default function NodePage() {
         </Card>
       </PageShell>
     </TooltipProvider>
-  );
-}
-
-function HeaderTooltip({ children, title }: { children: ReactNode; title: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="v2board-service-tooltip-trigger inline-flex cursor-help items-center justify-center gap-1">
-          {children}
-          <CircleHelp className="size-3.5" />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{title}</TooltipContent>
-    </Tooltip>
   );
 }

@@ -8,6 +8,12 @@ import {
   DialogTitle,
 } from '@/components/ui/shadcn-dialog';
 import { Badge } from '@/components/ui/badge';
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  type CarouselApi,
+} from '@/components/ui/carousel';
 import { formatLegacyDate } from '@v2board/config/format';
 import { sanitizeLegacyHtml } from '@/lib/sanitize-html';
 import { cn } from '@/lib/cn';
@@ -18,13 +24,22 @@ interface DashboardNoticeCarouselProps {
 
 export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProps) {
   const { t } = useTranslation();
-  const [activeNoticeIndex, setActiveNoticeIndex] = useState(0);
+  const [api, setApi] = useState<CarouselApi>();
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [activeNotice, setActiveNotice] = useState<Notice | null>(null);
   const [noticeOpen, setNoticeOpen] = useState(false);
 
   useEffect(() => {
-    setActiveNoticeIndex(0);
-  }, [notices.length]);
+    if (!api) return;
+    const onSelect = () => setSelectedIndex(api.selectedScrollSnap());
+    onSelect();
+    api.on('select', onSelect);
+    api.on('reInit', onSelect);
+    return () => {
+      api.off('select', onSelect);
+      api.off('reInit', onSelect);
+    };
+  }, [api]);
 
   useEffect(() => {
     if (!notices.length) return;
@@ -40,22 +55,26 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
     setNoticeOpen(true);
   };
 
-  const activeNoticeCard = notices[activeNoticeIndex] ?? notices[0];
-  if (!notices.length || !activeNoticeCard) return null;
+  if (!notices.length) return null;
 
   return (
     <section data-testid="dashboard-notices" className="space-y-3">
-      <div data-testid="dashboard-notice-carousel">
-        {notices.map((notice, index) => (
-          <div
-            key={notice.id}
-            data-testid="dashboard-notice-slide"
-            data-active={index === activeNoticeIndex ? 'true' : 'false'}
-            className={cn('mt-0', index !== activeNoticeIndex && 'hidden')}
-          >
-            {index === activeNoticeIndex ? <NoticeCard notice={notice} onOpen={openNotice} /> : null}
-          </div>
-        ))}
+      <Carousel
+        data-testid="dashboard-notice-carousel"
+        setApi={setApi}
+        aria-label={t('notice.title')}
+      >
+        <CarouselContent>
+          {notices.map((notice, index) => (
+            <CarouselItem
+              key={notice.id}
+              data-testid="dashboard-notice-slide"
+              data-active={index === selectedIndex ? 'true' : 'false'}
+            >
+              <NoticeCard notice={notice} onOpen={openNotice} />
+            </CarouselItem>
+          ))}
+        </CarouselContent>
         {notices.length > 1 ? (
           <div
             data-testid="dashboard-notice-dots"
@@ -68,19 +87,19 @@ export function DashboardNoticeCarousel({ notices }: DashboardNoticeCarouselProp
                 key={notice.id}
                 type="button"
                 data-testid="dashboard-notice-dot"
-                data-active={index === activeNoticeIndex ? 'true' : 'false'}
+                data-active={index === selectedIndex ? 'true' : 'false'}
                 aria-label={`${t('notice.title')} ${index + 1}`}
-                aria-current={index === activeNoticeIndex ? 'true' : undefined}
-                onClick={() => setActiveNoticeIndex(index)}
+                aria-current={index === selectedIndex ? 'true' : undefined}
+                onClick={() => api?.scrollTo(index)}
                 className={cn(
                   'h-1.5 w-6 rounded-full bg-border transition-colors hover:bg-muted-foreground/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                  index === activeNoticeIndex && 'bg-primary',
+                  index === selectedIndex && 'bg-primary',
                 )}
               />
             ))}
           </div>
         ) : null}
-      </div>
+      </Carousel>
 
       <Dialog
         open={noticeOpen}

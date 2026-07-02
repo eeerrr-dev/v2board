@@ -40,6 +40,9 @@ interface StripeCardFormProps {
 }
 
 export function StripeCardForm({ publicKey, onCompleteChange, ref }: StripeCardFormProps) {
+  // Intentional manual memo, not compiler residue: loadStripe injects the Stripe.js
+  // <script> as a side effect that must run once per publicKey, and <Elements> needs a
+  // referentially stable promise — the React Compiler must not infer this impure call away.
   const stripePromise = useMemo(() => loadStripe(publicKey), [publicKey]);
 
   return (

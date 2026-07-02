@@ -18,6 +18,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/cn';
 import { getRequestLocale } from '@/lib/api';
 import { formatLegacyDateSlash } from '@v2board/config/format';
 import { copyText } from '@/lib/legacy-settings';
@@ -36,10 +37,17 @@ export default function KnowledgePage() {
   const [searchParams] = useSearchParams();
   const language = getRequestLocale();
   const [selectedId, setSelectedId] = useState<number | string | undefined>(undefined);
-  const [visibleDetail, setVisibleDetail] = useState<Knowledge | undefined>();
+  // Remembers the article that is on screen while a jump to another article
+  // loads, so the previous one stays visible instead of blanking to a spinner.
+  const previousArticleRef = useRef<Knowledge | undefined>(undefined);
   const knowledgeQuery = useKnowledge(language, deferredKeyword || undefined);
-  const { data, isFetching } = knowledgeQuery;
-  const loading = isFetching;
+  const { data, isPending, isFetching, isPlaceholderData } = knowledgeQuery;
+  // The full spinner card is only for the initial load (no cached list yet).
+  // While a debounced search resolves, keepPreviousData keeps the prior list as
+  // placeholder data, so keep rendering it dimmed instead of blanking it —
+  // matching the opacity-80 refetch pattern invite/tickets already use.
+  const showListSpinner = isPending;
+  const listRefreshing = isFetching && isPlaceholderData;
   const knowledgeGroups = data ?? {};
   const categories = Object.entries(knowledgeGroups).filter(
     ([, items]) => (items?.length ?? 0) > 0,
@@ -47,6 +55,12 @@ export default function KnowledgePage() {
   const articleCount = categories.reduce((total, [, items]) => total + (items?.length ?? 0), 0);
   const detail = useKnowledgeDetail(selectedId, language);
   const refetchDetail = detail.refetch;
+  // Render the detail straight from the query. While jumping to another article
+  // the new query has no data yet, so fall back to the last-shown article
+  // (captured in jumpToArticle) to keep it visible; a fresh open clears the ref
+  // and shows the loading state instead.
+  const visibleDetail =
+    detail.data ?? (detail.isFetching ? previousArticleRef.current : undefined);
   const detailVisible = selectedId !== undefined;
   const detailTitle =
     visibleDetail?.title || (detail.isError ? t('common.error_title') : t('common.loading'));
@@ -79,26 +93,28 @@ export default function KnowledgePage() {
   const renderedBody = renderLegacyMarkdown(visibleDetail?.body || '');
 
   const closeDetail = () => {
+    previousArticleRef.current = undefined;
     setSelectedId(undefined);
-    setVisibleDetail(undefined);
   };
 
   const openDetail = (item: KnowledgeSummary) => {
-    setVisibleDetail(undefined);
+    // A fresh open from the list shows the loading state, not the last article.
+    previousArticleRef.current = undefined;
     setSelectedId(item.id);
   };
-
-  useEffect(() => {
-    if (detail.data && !detail.isFetching) setVisibleDetail(detail.data);
-  }, [detail.data, detail.isFetching]);
 
   const copyMarkdownText = async (text: string) => {
     if (await copyText(text)) toast.success(t('dashboard.copy_success'));
   };
 
   const jumpToArticle = (id: number | string) => {
-    if (selectedId !== undefined && String(id) === String(selectedId)) void refetchDetail();
-    else setSelectedId(id);
+    if (selectedId !== undefined && String(id) === String(selectedId)) {
+      void refetchDetail();
+      return;
+    }
+    // Keep the current article visible while the jumped-to article loads.
+    previousArticleRef.current = visibleDetail;
+    setSelectedId(id);
   };
 
   const runMarkdownAction = (element: HTMLElement) => {
@@ -148,7 +164,7 @@ export default function KnowledgePage() {
         </CardHeader>
       </Card>
 
-      {loading ? (
+      {showListSpinner ? (
         <Card data-testid="knowledge-loading">
           <CardContent className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
             <span role="status" className="inline-flex items-center gap-2">
@@ -158,7 +174,10 @@ export default function KnowledgePage() {
           </CardContent>
         </Card>
       ) : categories.length ? (
-        <div className="grid gap-4">
+        <div
+          className={cn('grid gap-4', listRefreshing && 'opacity-80')}
+          data-testid="knowledge-list-grid"
+        >
           {categories.map(([category, items]) => (
             <Card key={category} className="overflow-hidden py-0" data-testid="knowledge-category">
               <CardHeader className="border-b border-border py-4">

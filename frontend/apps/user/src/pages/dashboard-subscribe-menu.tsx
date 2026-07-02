@@ -24,6 +24,12 @@ interface DashboardSubscribeMenuProps {
   subscribeUrl: string;
 }
 
+// Shared menu-row layout for the copy / QR / per-client import buttons so a
+// tweak (padding, hover, focus ring) stays a single-line change instead of
+// drifting across three sibling rows.
+const SUBSCRIBE_MENU_ROW_CLASS =
+  'flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+
 const SUBSCRIBE_TARGET_ICONS: Record<string, string> = {
   'Clash For Android': clashForAndroidIcon,
   'Clash For Windows': clashForWindowsIcon,
@@ -59,7 +65,7 @@ export function DashboardSubscribeMenu({
       <button
         type="button"
         data-testid="dashboard-subscribe-copy"
-        className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className={SUBSCRIBE_MENU_ROW_CLASS}
         onClick={copyUrl}
       >
         <Copy className="size-4 text-muted-foreground" />
@@ -68,7 +74,7 @@ export function DashboardSubscribeMenu({
       <button
         type="button"
         data-testid="dashboard-subscribe-qrcode"
-        className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className={SUBSCRIBE_MENU_ROW_CLASS}
         onClick={onOpenQr}
       >
         <QrCode className="size-4 text-muted-foreground" />
@@ -80,7 +86,7 @@ export function DashboardSubscribeMenu({
           key={target.title}
           data-testid="dashboard-subscribe-target"
           data-subscribe-target={subscribeTargetSlug(target.title)}
-          className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className={SUBSCRIBE_MENU_ROW_CLASS}
           onClick={() => {
             window.location.href = target.href;
           }}

@@ -22,6 +22,7 @@ interface ServerRow {
 const queryState = vi.hoisted(() => ({
   navigate: vi.fn(),
   servers: undefined as ServerRow[] | undefined,
+  serversPending: false,
   serversFetching: false,
   serversError: false,
   serversRefetch: vi.fn(),
@@ -55,6 +56,7 @@ vi.mock('@/lib/queries', () => ({
   useSubscribe: () => ({ data: queryState.subscribe }),
   useServers: () => ({
     data: queryState.servers,
+    isPending: queryState.serversPending,
     isFetching: queryState.serversFetching,
     isError: queryState.serversError,
     refetch: queryState.serversRefetch,
@@ -84,13 +86,15 @@ beforeEach(() => {
   queryState.navigate.mockClear();
   queryState.serversRefetch.mockClear();
   queryState.servers = undefined;
+  queryState.serversPending = false;
   queryState.serversFetching = false;
   queryState.serversError = false;
   queryState.subscribe = undefined;
 });
 
 describe('NodePage loading state', () => {
-  it('shows only the loading status while the servers fetch is pending', () => {
+  it('shows only the loading status while the initial servers fetch is pending', () => {
+    queryState.serversPending = true;
     queryState.serversFetching = true;
 
     renderWithProviders(<NodePage />);
@@ -99,6 +103,18 @@ describe('NodePage loading state', () => {
     expect(screen.getByTestId('node-loading')).toHaveTextContent('Loading...');
     expect(screen.queryByTestId('node-table')).not.toBeInTheDocument();
     expect(screen.queryByTestId('node-empty')).not.toBeInTheDocument();
+  });
+
+  it('keeps cached servers rendered during a background refetch instead of blanking to the spinner', () => {
+    queryState.servers = [makeServer({ id: 1, name: 'HK 01' })];
+    queryState.serversPending = false;
+    queryState.serversFetching = true; // refetchOnMount('always') revisit with cached data
+
+    renderWithProviders(<NodePage />);
+
+    expect(screen.queryByTestId('node-loading')).not.toBeInTheDocument();
+    expect(screen.getByTestId('node-table')).toBeInTheDocument();
+    expect(screen.getByText('HK 01')).toBeInTheDocument();
   });
 });
 
@@ -156,6 +172,8 @@ describe('NodePage service table', () => {
 
     const trigger = screen.getByText('状态');
     expect(trigger).toHaveClass('v2board-service-tooltip-trigger');
+    // The shared HeaderTooltip keeps node's centered alignment via className.
+    expect(trigger).toHaveClass('justify-center');
 
     await user.hover(trigger);
 

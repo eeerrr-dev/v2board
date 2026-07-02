@@ -60,7 +60,9 @@ const mocks = vi.hoisted(() => {
     detailRefetch: vi.fn(),
     knowledgeArgs: [] as Array<{ language: string; keyword?: string }>,
     detailArgs: [] as Array<{ id: number | string | undefined; language: string }>,
+    pending: false,
     fetching: false,
+    placeholder: false,
     detailFetching: false,
     detailError: false,
     searchParams: new URLSearchParams(),
@@ -107,13 +109,20 @@ vi.mock('@/lib/queries', () => ({
     return {
       data: mocks.groups,
       error: undefined,
+      isPending: mocks.pending,
       isFetching: mocks.fetching,
+      isPlaceholderData: mocks.placeholder,
     };
   },
   useKnowledgeDetail: (id: number | string | undefined, language: string) => {
     mocks.detailArgs.push({ id, language });
     return {
-      data: id === undefined ? undefined : mocks.detailById[String(id)],
+      // The detail query has no placeholderData, so a pending fetch resolves to
+      // no data yet; the page keeps the previous article visible on its own.
+      data:
+        id === undefined || mocks.detailFetching
+          ? undefined
+          : mocks.detailById[String(id)],
       isFetching: mocks.detailFetching,
       isError: mocks.detailError,
       refetch: mocks.detailRefetch,
@@ -132,7 +141,9 @@ vi.mock('@/lib/toast', () => ({
 }));
 
 beforeEach(() => {
+  mocks.pending = false;
   mocks.fetching = false;
+  mocks.placeholder = false;
   mocks.detailFetching = false;
   mocks.detailError = false;
   mocks.searchParams = new URLSearchParams();
@@ -200,7 +211,9 @@ describe('KnowledgePage redesigned interactions', () => {
     );
   });
 
-  it('shows the loading state while the list fetch is pending and keeps the search bar', () => {
+  it('shows the full spinner card only on the initial load (isPending) and keeps the search bar', () => {
+    // Initial load: no cached list yet, so the full spinner card replaces it.
+    mocks.pending = true;
     mocks.fetching = true;
 
     renderWithProviders(<KnowledgePage />);
@@ -211,6 +224,21 @@ describe('KnowledgePage redesigned interactions', () => {
     ).toHaveTextContent('Loading...');
     expect(screen.queryByText('General')).not.toBeInTheDocument();
     expect(screen.queryAllByTestId('knowledge-item')).toHaveLength(0);
+  });
+
+  it('keeps the previous list rendered (dimmed) while a debounced search refetch resolves', () => {
+    // keepPreviousData supplies the prior list during a search refetch, so
+    // isPending is false while isFetching/isPlaceholderData are true.
+    mocks.pending = false;
+    mocks.fetching = true;
+    mocks.placeholder = true;
+
+    renderWithProviders(<KnowledgePage />);
+
+    // No blanking spinner card: the previous categories keep rendering, dimmed.
+    expect(screen.queryByTestId('knowledge-loading')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('knowledge-item')).toHaveLength(2);
+    expect(screen.getByTestId('knowledge-list-grid').className).toContain('opacity-80');
   });
 
   it('opens the article in a dialog sheet from the URL id with sanitized markdown actions', async () => {

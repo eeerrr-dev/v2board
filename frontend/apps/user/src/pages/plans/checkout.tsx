@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -12,40 +12,27 @@ import {
   useSubscribe,
   useUserInfo,
 } from '@/lib/queries';
-import type { ParseKeys } from 'i18next';
 import type { Coupon, Plan, PlanPeriod } from '@v2board/types';
+import { PLAN_PERIOD_LABELS, PURCHASABLE_PLAN_PERIODS } from '@/lib/plan-periods';
+import { isLegacyExpired } from '@/pages/dashboard-subscription';
 import { PlanContent } from '@/components/plan-content';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ErrorState } from '@/components/ui/error-state';
 import { Input } from '@/components/ui/input';
 import { PageShell } from '@/components/ui/page';
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group';
 import { Spinner } from '@/components/ui/spinner';
 
-const PERIOD_LABELS: Record<PlanPeriod, ParseKeys> = {
-  month_price: 'plan.monthly',
-  quarter_price: 'plan.quarterly',
-  half_year_price: 'plan.half_year',
-  year_price: 'plan.yearly',
-  two_year_price: 'plan.two_year',
-  three_year_price: 'plan.three_year',
-  onetime_price: 'plan.onetime',
-  reset_price: 'plan.reset',
-};
-
-type PurchasablePlanPeriod = Exclude<PlanPeriod, 'reset_price'>;
-
-const PERIODS: { key: PurchasablePlanPeriod; period: PurchasablePlanPeriod; labelKey: ParseKeys }[] = [
-  { key: 'month_price', period: 'month_price', labelKey: 'plan.monthly' },
-  { key: 'quarter_price', period: 'quarter_price', labelKey: 'plan.quarterly' },
-  { key: 'half_year_price', period: 'half_year_price', labelKey: 'plan.half_year' },
-  { key: 'year_price', period: 'year_price', labelKey: 'plan.yearly' },
-  { key: 'two_year_price', period: 'two_year_price', labelKey: 'plan.two_year' },
-  { key: 'three_year_price', period: 'three_year_price', labelKey: 'plan.three_year' },
-  { key: 'onetime_price', period: 'onetime_price', labelKey: 'plan.onetime' },
-];
+// Derived from the canonical lib/plan-periods tables; plan-periods.test.ts pins
+// that this derivation matches the legacy page literal byte-for-byte.
+const PERIODS = PURCHASABLE_PLAN_PERIODS.map((key) => ({
+  key,
+  period: key,
+  labelKey: PLAN_PERIOD_LABELS[key],
+}));
 
 export default function PlanCheckoutPage() {
   const { plan_id } = useParams();
@@ -70,10 +57,6 @@ export default function PlanCheckoutPage() {
   // React Compiler memoizes this derivation; no manual useMemo needed.
   const planData = planQuery.data;
   const periods = planData ? PERIODS.filter((p) => planData[p.key] !== null) : [];
-
-  useEffect(() => {
-    if (planQuery.error) navigate('/plan');
-  }, [navigate, planQuery.error]);
 
   const onApplyCoupon = async () => {
     try {
@@ -142,12 +125,21 @@ export default function PlanCheckoutPage() {
     await saveOrder();
   };
 
-  if (planQuery.isFetching || planQuery.error || !planQuery.data) {
+  // Full-page spinner only for the initial load: cached plan data keeps
+  // rendering while the mount refetch runs in the background.
+  if (planQuery.isPending) {
     return (
       <div className="flex min-h-44 items-center justify-center" role="status">
         <Spinner className="size-5" />
       </div>
     );
+  }
+
+  // A failed plan fetch must not fall through to the cashier below — with no
+  // plan every price renders NaN. Surface the error with a retry instead
+  // (failure presentation is Tier-2 on this redesigned surface).
+  if (planQuery.isError || !planQuery.data) {
+    return <ErrorState data-testid="checkout-error" onRetry={() => void planQuery.refetch()} />;
   }
 
   const plan = planQuery.data;
@@ -159,7 +151,7 @@ export default function PlanCheckoutPage() {
   const basePrice = (plan as unknown as Record<string, number | null>)[
     selectedPeriod as PlanPeriod
   ] as number;
-  const periodLabel = selectedPeriod ? t(PERIOD_LABELS[selectedPeriod]) : '';
+  const periodLabel = selectedPeriod ? t(PLAN_PERIOD_LABELS[selectedPeriod]) : '';
   // Faithful to the original couponProcess(amount, type, value): case 1 → value,
   // case 2 → amount*(value/100), no default → undefined → the discount/total render
   // "NaN" for any unknown coupon type.
@@ -302,16 +294,15 @@ export default function PlanCheckoutPage() {
   );
 }
 
+// Deliberately local and unshared (see lib/plan-periods.ts): includes
+// reset_price and iterates server JSON key order — it feeds the Tier-1
+// save-order payload.
 function getDefaultPeriod(plan: Plan): PlanPeriod | undefined {
   let period: PlanPeriod | undefined;
   for (const key of Object.keys(plan).reverse()) {
-    if (key in PERIOD_LABELS && plan[key as PlanPeriod] !== null) {
+    if (key in PLAN_PERIOD_LABELS && plan[key as PlanPeriod] !== null) {
       period = key as PlanPeriod;
     }
   }
   return period;
-}
-
-function isLegacyExpired(expiredAt: number | null | undefined) {
-  return expiredAt !== null && Number(expiredAt) < Date.now() / 1000;
 }

@@ -11,6 +11,7 @@ const queryState = vi.hoisted(() => ({
     user_id: number;
     server_rate: string;
   }>,
+  pending: false,
   fetching: false,
   error: false,
   refetch: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('@/lib/queries', () => ({
   useTrafficLog: () => ({
     data: queryState.rows,
+    isPending: queryState.pending,
     isFetching: queryState.fetching,
     isError: queryState.error,
     refetch: queryState.refetch,
@@ -47,18 +49,40 @@ vi.mock('@/lib/queries', () => ({
 
 beforeEach(() => {
   queryState.rows = [];
+  queryState.pending = false;
   queryState.fetching = false;
   queryState.error = false;
   queryState.refetch.mockClear();
 });
 
 describe('TrafficPage loading state', () => {
-  it('shows the inline loading status while the traffic fetch is pending', () => {
+  it('shows the inline loading status while the initial traffic fetch is pending', () => {
+    queryState.pending = true;
     queryState.fetching = true;
 
     renderWithProviders(<TrafficPage />);
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading...');
+  });
+
+  it('keeps cached rows rendered without the loading banner during a background refetch', () => {
+    queryState.rows = [
+      { u: 2048, d: 1024, record_at: 1_705_320_000, user_id: 1, server_rate: '1.5' },
+    ];
+    queryState.pending = false;
+    queryState.fetching = true; // background refetch with cached data
+
+    renderWithProviders(<TrafficPage />);
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByText('2024/01/15')).toBeInTheDocument();
+  });
+
+  it('renders the localized empty description when there are no rows', () => {
+    renderWithProviders(<TrafficPage />);
+
+    // useEmptyDescription resolves the antd empty message for zh-CN.
+    expect(screen.getByTestId('traffic-empty')).toHaveTextContent('暂无数据');
   });
 });
 
@@ -131,6 +155,8 @@ describe('TrafficPage service table', () => {
     const trigger = screen.getByText('合计');
     // The parity harness hovers [data-testid="traffic-table"] .v2board-service-tooltip-trigger.
     expect(trigger).toHaveClass('v2board-service-tooltip-trigger');
+    // The shared HeaderTooltip keeps traffic's end alignment via className.
+    expect(trigger).toHaveClass('justify-end');
 
     await user.hover(trigger);
 

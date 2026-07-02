@@ -19,21 +19,27 @@ const mocks = vi.hoisted(() => ({
   copyText: vi.fn(),
   detailQueryCalls: [] as Array<{ current?: number; pageSize?: number }>,
   detailRows: [] as Array<{ created_at: number; get_amount: number }>,
+  detailsError: false,
   detailsFetching: false,
+  detailsRefetch: vi.fn(),
   detailsTotal: 0,
   generateIsPending: false,
   generateMutateAsync: vi.fn(),
   invalidateQueries: vi.fn(),
   inviteCodes: [] as Array<{ code: string; created_at: number }>,
+  inviteError: false,
   inviteFetching: false,
+  inviteRefetch: vi.fn(),
   inviteStat: [7, 2345, 678, 12] as Array<number | undefined> | undefined,
   labels: {
+    'common.error_title': '出错了',
     'common.items_per_page': '条/页',
     'common.loading': 'Loading...',
     'common.next_5': '向后 5 页',
     'common.next_page': '下一页',
     'common.prev_5': '向前 5 页',
     'common.prev_page': '上一页',
+    'common.retry': '重试',
     'dashboard.copy_success': '复制成功',
     'invite.available': '当前剩余佣金',
     'invite.code_col': '邀请码',
@@ -100,17 +106,25 @@ vi.mock('@/lib/queries', () => ({
     mutateAsync: mocks.generateMutateAsync,
   }),
   useInvite: () => ({
-    data: {
-      codes: mocks.inviteCodes,
-      stat: mocks.inviteStat,
-    },
+    data: mocks.inviteError
+      ? undefined
+      : {
+          codes: mocks.inviteCodes,
+          stat: mocks.inviteStat,
+        },
+    isError: mocks.inviteError,
     isFetching: mocks.inviteFetching,
+    refetch: mocks.inviteRefetch,
   }),
   useInviteDetails: (current?: number, pageSize?: number) => {
     mocks.detailQueryCalls.push({ current, pageSize });
     return {
-      data: { data: mocks.detailRows, total: mocks.detailsTotal },
+      data: mocks.detailsError
+        ? undefined
+        : { data: mocks.detailRows, total: mocks.detailsTotal },
+      isError: mocks.detailsError,
       isFetching: mocks.detailsFetching,
+      refetch: mocks.detailsRefetch,
     };
   },
   useUserInfo: () => ({
@@ -143,14 +157,18 @@ function resetMocks() {
   mocks.copyText.mockResolvedValue(true);
   mocks.detailQueryCalls = [];
   mocks.detailRows = [];
+  mocks.detailsError = false;
   mocks.detailsFetching = false;
+  mocks.detailsRefetch.mockReset();
   mocks.detailsTotal = 0;
   mocks.generateIsPending = false;
   mocks.generateMutateAsync.mockReset();
   mocks.generateMutateAsync.mockResolvedValue(true);
   mocks.invalidateQueries.mockReset();
   mocks.inviteCodes = [];
+  mocks.inviteError = false;
   mocks.inviteFetching = false;
+  mocks.inviteRefetch.mockReset();
   mocks.inviteStat = [7, 2345, 678, 12];
   mocks.toastSuccess.mockReset();
   mocks.userInfo = { commission_balance: 12345 };
@@ -180,6 +198,11 @@ describe('InvitePage shadcn surface', () => {
 
     // Stats card: stat tuple [registered, valid, pending, rate] read positionally.
     const stats = screen.getByTestId('invite-stats-card');
+    // Tooltip-bearing stat headers render through the shared HeaderTooltip
+    // primitive and keep the parity trigger class the harness selects.
+    expect(within(stats).getByText('确认中的佣金')).toHaveClass(
+      'v2board-service-tooltip-trigger',
+    );
     expect(within(stats).getByText('已注册用户数')).toBeInTheDocument();
     expect(within(stats).getByText('7人')).toBeInTheDocument();
     expect(within(stats).getByText('佣金比例')).toBeInTheDocument();
@@ -280,6 +303,45 @@ describe('InvitePage shadcn surface', () => {
     expect(stats).toHaveClass('opacity-80');
     expect(within(stats).getByText('已注册用户数')).toBeInTheDocument();
     expect(within(stats).getByText('7人')).toBeInTheDocument();
+  });
+});
+
+describe('InvitePage fetch failures', () => {
+  beforeEach(resetMocks);
+
+  it('replaces the stat tiles and code table with a retryable error state when invite/fetch fails', async () => {
+    mocks.inviteError = true;
+    const { user } = renderWithProviders(<InvitePage />);
+
+    // No perpetual stat spinners: the tile grid is replaced by the error state.
+    const stats = screen.getByTestId('invite-stats-card');
+    expect(within(stats).getByTestId('invite-stats-error')).toHaveTextContent('出错了');
+    expect(within(stats).queryByText('已注册用户数')).toBeNull();
+    expect(stats.querySelector('.animate-spin')).toBeNull();
+
+    // The code table must not masquerade as "no invite codes" on failure.
+    const codeCard = screen.getByTestId('invite-code-card');
+    expect(within(codeCard).getByTestId('invite-code-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('invite-code-table')).toBeNull();
+    expect(within(codeCard).queryByTestId('invite-empty')).toBeNull();
+
+    await user.click(within(stats).getByRole('button', { name: '重试' }));
+    expect(mocks.inviteRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces the commission history with a retryable error state when invite/details fails', async () => {
+    mocks.detailsError = true;
+    const { user } = renderWithProviders(<InvitePage />);
+
+    const historyCard = screen.getByTestId('invite-history-card');
+    expect(within(historyCard).getByTestId('invite-history-error')).toHaveTextContent(
+      '出错了',
+    );
+    expect(screen.queryByTestId('invite-history-table')).toBeNull();
+    expect(screen.queryByTestId('invite-pagination')).toBeNull();
+
+    await user.click(within(historyCard).getByRole('button', { name: '重试' }));
+    expect(mocks.detailsRefetch).toHaveBeenCalledTimes(1);
   });
 });
 

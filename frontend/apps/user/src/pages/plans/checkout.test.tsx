@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   saveOrder: vi.fn(),
   cancelOrder: vi.fn(),
   refetchOrders: vi.fn(),
+  refetchPlan: vi.fn(),
   planId: '1',
   plan: {
     id: 1,
@@ -42,7 +43,8 @@ const mocks = vi.hoisted(() => ({
   info: { plan_id: 1 },
   subscribe: { expired_at: 4_102_444_800 },
   orders: [] as Array<{ trade_no: string; status: number }>,
-  planError: null as unknown,
+  planIsError: false,
+  planPending: false,
   planFetching: false,
 }));
 
@@ -93,7 +95,8 @@ function resetPlan() {
     created_at: 0,
     updated_at: 0,
   });
-  mocks.planError = null;
+  mocks.planIsError = false;
+  mocks.planPending = false;
   mocks.planFetching = false;
 }
 
@@ -119,9 +122,11 @@ vi.mock('@/components/ui/confirm-dialog', () => ({
 
 vi.mock('@/lib/queries', () => ({
   usePlan: mocks.usePlan.mockImplementation(() => ({
-    data: mocks.plan,
-    error: mocks.planError,
-    isFetching: mocks.planFetching,
+    data: mocks.planPending || mocks.planIsError ? undefined : mocks.plan,
+    isError: mocks.planIsError,
+    isPending: mocks.planPending,
+    isFetching: mocks.planPending || mocks.planFetching,
+    refetch: mocks.refetchPlan,
   })),
   useCommConfig: () => ({
     data: {
@@ -164,6 +169,7 @@ beforeEach(() => {
   mocks.saveOrder.mockReset();
   mocks.cancelOrder.mockReset();
   mocks.refetchOrders.mockClear();
+  mocks.refetchPlan.mockClear();
   mocks.info = { plan_id: 1 };
   mocks.subscribe = { expired_at: 4_102_444_800 };
   mocks.orders = [];
@@ -271,6 +277,42 @@ describe('PlanCheckoutPage rendering', () => {
 
     expect(mocks.invalidateQueries).not.toHaveBeenCalled();
     expect(mocks.removeQueries).not.toHaveBeenCalled();
+  });
+});
+
+describe('PlanCheckoutPage query states', () => {
+  it('shows the full-page spinner only while the initial plan load is pending', () => {
+    mocks.planPending = true;
+
+    renderWithProviders(<PlanCheckoutPage />);
+
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.queryByTestId('checkout-page')).not.toBeInTheDocument();
+  });
+
+  it('keeps rendering cached plan data during a background refetch instead of blanking to a spinner', () => {
+    mocks.planFetching = true;
+
+    const { container } = renderWithProviders(<PlanCheckoutPage />);
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(container.querySelector('#cashier')).toBeInTheDocument();
+    expect(screen.getByTestId('checkout-summary')).toHaveTextContent('¥ 10.00 CNY');
+  });
+
+  it('surfaces a failed plan fetch as a retryable error state instead of a NaN cashier or redirect', async () => {
+    mocks.planIsError = true;
+
+    const { user, container } = renderWithProviders(<PlanCheckoutPage />);
+
+    expect(screen.getByTestId('checkout-error')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(container.querySelector('#cashier')).not.toBeInTheDocument();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('error-state-retry'));
+
+    expect(mocks.refetchPlan).toHaveBeenCalledTimes(1);
   });
 });
 

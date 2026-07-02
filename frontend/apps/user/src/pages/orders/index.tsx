@@ -2,10 +2,12 @@ import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
+import { PLAN_PERIOD_LABELS } from '@/lib/plan-periods';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { ErrorState } from '@/components/ui/error-state';
 import { PageShell } from '@/components/ui/page';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
@@ -19,22 +21,16 @@ const STATUS_LABEL: Record<number, { key: ParseKeys; status: string }> = {
   4: { key: 'order.status_credit', status: 'default' },
 };
 
-const PERIOD_LABEL: Record<string, ParseKeys> = {
-  month_price: 'plan.monthly',
-  quarter_price: 'plan.quarterly',
-  half_year_price: 'plan.half_year',
-  year_price: 'plan.yearly',
-  two_year_price: 'plan.two_year',
-  three_year_price: 'plan.three_year',
-  onetime_price: 'plan.onetime',
-  reset_price: 'plan.reset',
-};
+// Rebuilt from the canonical lib/plan-periods table (plan-periods.test.ts pins
+// the derivation). Typed as Record<string, …> so an order's `period` union
+// member outside the plan-period keys (e.g. 'deposit') indexes safely.
+const PERIOD_LABEL: Record<string, ParseKeys> = PLAN_PERIOD_LABELS;
 
 export default function OrdersPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const ordersQuery = useOrders();
-  const { data, isFetching } = ordersQuery;
+  const { data, isFetching, isError, refetch } = ordersQuery;
   const loading = isFetching;
   const cancel = useCancelOrderMutation();
   const orders = data ?? [];
@@ -128,7 +124,14 @@ export default function OrdersPage() {
             </div>
           ) : null}
 
-          {orders.length === 0 ? (
+          {isError ? (
+            // A failed fetch must not fall through to the empty state below —
+            // that would wrongly tell the user they have no orders. Surface the
+            // error with a retry instead.
+            <div className="p-4">
+              <ErrorState onRetry={() => void refetch()} data-testid="orders-error" />
+            </div>
+          ) : orders.length === 0 ? (
             <div
               className="flex min-h-44 items-center justify-center px-6 text-sm text-muted-foreground"
               data-testid="orders-empty"

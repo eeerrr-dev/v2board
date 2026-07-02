@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   cancelMutateAsync: vi.fn(),
   confirmDialog: vi.fn(),
   refetchOrders: vi.fn(),
-  orderError: undefined as unknown,
+  isError: false,
   fetching: false,
   orders: [
     {
@@ -95,8 +95,8 @@ vi.mock('react-i18next', () => ({
 vi.mock('@/lib/queries', () => ({
   useOrders: () => ({
     data: mocks.orders,
-    error: mocks.orderError,
     isFetching: mocks.fetching,
+    isError: mocks.isError,
     refetch: mocks.refetchOrders,
   }),
   useCancelOrderMutation: () => ({
@@ -115,7 +115,7 @@ beforeEach(() => {
   mocks.cancelMutateAsync.mockResolvedValue(true);
   mocks.confirmDialog.mockClear();
   mocks.refetchOrders.mockClear();
-  mocks.orderError = undefined;
+  mocks.isError = false;
   mocks.fetching = false;
   mocks.orders = defaultOrders();
 });
@@ -330,24 +330,34 @@ describe('OrdersPage commerce behavior', () => {
     expect(mocks.cancelMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('shows the loading strip while fetching but not after a settled fetch error', () => {
+  it('shows the loading strip while fetching and clears it once the fetch settles', () => {
     mocks.fetching = true;
 
     const { rerender } = renderWithProviders(<OrdersPage />);
 
     expect(screen.getByText('正在加载')).toBeInTheDocument();
 
-    // A settled transport failure (status 0) no longer pins a perpetual spinner —
-    // loading tracks the query's isFetching, so it clears like any other error.
     mocks.fetching = false;
-    mocks.orderError = { status: 0, message: 'timeout of 30000ms exceeded' };
     rerender(<OrdersPage />);
 
     expect(screen.queryByText('正在加载')).not.toBeInTheDocument();
+  });
 
-    mocks.orderError = { status: 500, message: 'Server Error' };
-    rerender(<OrdersPage />);
+  it('surfaces a retryable error state instead of the empty list on a failed fetch', async () => {
+    // A failed fetch must not read as "no orders": show the shared ErrorState
+    // (with a retry) rather than falling through to the empty state.
+    mocks.orders = [];
+    mocks.isError = true;
+    mocks.fetching = false;
 
+    const { user } = renderWithProviders(<OrdersPage />);
+
+    expect(screen.getByTestId('orders-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('orders-empty')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('orders-table')).not.toBeInTheDocument();
     expect(screen.queryByText('正在加载')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('error-state-retry'));
+    expect(mocks.refetchOrders).toHaveBeenCalledTimes(1);
   });
 });

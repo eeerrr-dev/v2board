@@ -220,7 +220,7 @@ const scenarios = [
     authenticated: true,
     label: 'user-plans-sold-out',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -502,7 +502,7 @@ const scenarios = [
     label: 'user-plans-sold-out-zh-tw',
     locale: 'zh-TW',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -650,7 +650,7 @@ const scenarios = [
     label: 'user-plans-sold-out-en-us',
     locale: 'en-US',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -1020,7 +1020,7 @@ const scenarios = [
     label: 'user-plans-sold-out-ja-jp',
     locale: 'ja-JP',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -1289,7 +1289,7 @@ const scenarios = [
     label: 'user-plans-sold-out-vi-vn',
     locale: 'vi-VN',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -1558,7 +1558,7 @@ const scenarios = [
     label: 'user-plans-sold-out-ko-kr',
     locale: 'ko-KR',
     path: '/#/plan',
-    readySelector: '[data-testid="plan-card"][disabled], .block-link-pop button[disabled]',
+    readySelector: '[data-testid="plan-card"][aria-disabled="true"], .block-link-pop button[disabled]',
     soldOutPlans: true,
     visualRetired: true,
   },
@@ -9890,6 +9890,9 @@ function normalizeInteractionResult(label, result) {
       'user-knowledge-fetch-timeout',
       'user-node-fetch-api-500',
       'user-node-fetch-timeout',
+      'user-orders-fetch-api-500',
+      'user-orders-fetch-timeout',
+      'user-plans-fetch-timeout',
       'user-tickets-fetch-timeout',
       'user-traffic-fetch-timeout',
     ].includes(label)
@@ -10405,6 +10408,9 @@ function normalizeRedesignedFetchFailureInteractionResult(label, result) {
     'user-knowledge-fetch-timeout': 'userKnowledgeFetch',
     'user-node-fetch-api-500': 'userServerFetch',
     'user-node-fetch-timeout': 'userServerFetch',
+    'user-orders-fetch-api-500': 'userOrderFetch',
+    'user-orders-fetch-timeout': 'userOrderFetch',
+    'user-plans-fetch-timeout': 'userPlanFetch',
     'user-tickets-fetch-timeout': 'userTicketFetch',
     'user-traffic-fetch-timeout': 'userTrafficFetch',
   }[label];
@@ -13814,7 +13820,27 @@ function normalizeDashboardSubscribeItemClassName(value, attributes = {}) {
 }
 
 function normalizeDashboardNoticeModalBody(value, title) {
-  let text = normalizeParityText(value).replace(/Close$/u, '');
+  // The redesigned dialog appends an sr-only close label inside
+  // [data-testid="dashboard-dialog"] (t('common.close_dialog')), which textContent
+  // captures; the legacy oracle's antd close is an icon outside .ant-modal-body.
+  // Strip the localized close label (every locale the scenarios run in, plus the
+  // legacy English "Close") so the comparison is on the notice body, not chrome.
+  const closeLabels = [
+    'Close',
+    '关闭弹窗',
+    '關閉彈窗',
+    'Close dialog',
+    'ダイアログを閉じる',
+    'Đóng hộp thoại',
+    '대화 상자 닫기',
+  ];
+  let text = normalizeParityText(value);
+  for (const label of closeLabels) {
+    if (text.endsWith(label)) {
+      text = text.slice(0, -label.length).trimEnd();
+      break;
+    }
+  }
   const normalizedTitle = normalizeParityText(title);
   if (normalizedTitle && text.startsWith(normalizedTitle)) {
     text = text.slice(normalizedTitle.length);
@@ -15272,7 +15298,15 @@ async function keyboardFocusState(page) {
 }
 
 async function fetchFailureState(page) {
-  const alertTexts = await visibleTexts(page, '.alert, .ant-alert', 6);
+  const alertTexts = await visibleTexts(
+    page,
+    // Redesigned user surfaces render the shared ErrorState on fetch failure. It is
+    // a Radix-style alert (role="alert", no literal `.alert` class), so capture its
+    // per-surface testids: plans has no card fallback in `tables`, and this keeps the
+    // failure state observable for the collapsed redesigned-fetch-failure normalizer.
+    '.alert, .ant-alert, [data-testid="plan-error"], [data-testid="orders-error"], [data-testid="ticket-error"]',
+    6,
+  );
   const emptyTexts = await visibleTexts(
     page,
     '[data-testid="plan-empty"], [data-testid="orders-empty"], [data-testid="node-empty"], [data-testid="traffic-empty"], [data-testid="ticket-empty"], [data-testid="knowledge-empty"], .ant-empty, .ant-table-placeholder',

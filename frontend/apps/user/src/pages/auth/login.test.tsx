@@ -356,6 +356,44 @@ describe('LoginPage', () => {
     expect(mocks.navigate).not.toHaveBeenCalledWith('order');
   });
 
+  it('redeems the one-time verify token only once across a doubled bootstrap (StrictMode-safe)', async () => {
+    // React 19 StrictMode double-invokes the mount effect in dev (mount → cleanup →
+    // mount). A doubled bootstrap for the same verify token must POST token2Login only
+    // once — the one-time token would fail the second redemption — while the surviving
+    // mount still finishes the login. The controller guards this with a module-level
+    // in-flight map keyed by verify value, exercised here by two live mounts.
+    let resolveTokenLogin: ((value: { auth_data: string }) => void) | undefined;
+    mocks.params = new URLSearchParams('verify=verify-once&redirect=order');
+    mocks.tokenLoginMutateAsync.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveTokenLogin = resolve;
+        }),
+    );
+
+    // First mount arms the in-flight redemption for verify-once.
+    const first = renderWithProviders(<LoginPage />);
+    await waitFor(() => expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledTimes(1));
+
+    // A second bootstrap for the same token re-attaches to the shared redemption
+    // instead of POSTing token2Login again.
+    const second = renderWithProviders(<LoginPage />);
+    await flushMicrotasks();
+    expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledWith({
+      redirect: 'order',
+      verify: 'verify-once',
+    });
+
+    // Completing the shared redemption still finishes the login on the live surface.
+    resolveTokenLogin?.({ auth_data: 'TOKEN_AUTH' });
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order'));
+    expect(mocks.setAuthData).toHaveBeenCalledWith('TOKEN_AUTH');
+
+    first.unmount();
+    second.unmount();
+  });
+
   it('ignores stale token2Login completions after the bootstrap effect is cleaned up', async () => {
     let resolveTokenLogin: ((value: { auth_data: string }) => void) | undefined;
     mocks.params = new URLSearchParams('verify=verify-token&redirect=order');

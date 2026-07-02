@@ -18,6 +18,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ErrorState } from '@/components/ui/error-state';
 import { PageShell } from '@/components/ui/page';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
@@ -181,7 +182,15 @@ export default function DashboardPage() {
             </span>
           </CardHeader>
           <CardContent>
-            {subscribe.isLoading || !hasSubscribeData ? (
+            {subscribe.isError ? (
+              // A failed subscribe fetch must not fall through to the spinner
+              // (which would spin forever) or the buy-subscribe empty state
+              // (which would misrepresent a paying user as having no plan).
+              <ErrorState
+                onRetry={() => void subscribe.refetch()}
+                data-testid="dashboard-plan-error"
+              />
+            ) : subscribe.isLoading || !hasSubscribeData ? (
               <div className="flex min-h-36 items-center justify-center">
                 <Spinner className="size-6" />
               </div>

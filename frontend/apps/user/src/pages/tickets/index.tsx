@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
+import { ErrorState } from '@/components/ui/error-state';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
@@ -64,7 +65,7 @@ const ticketFormSchema = z
   .superRefine((values, ctx) => {
     if (values.level === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['level'],
         message: 'ticket.level_placeholder',
       });
@@ -82,7 +83,7 @@ type TicketPayload = z.output<typeof ticketFormSchema>;
 export default function TicketsPage() {
   const { t, i18n } = useTranslation();
   const ticketsQuery = useTickets();
-  const { data, isFetching } = ticketsQuery;
+  const { data, isFetching, isError, refetch } = ticketsQuery;
   const loading = isFetching;
   const save = useSaveTicketMutation();
   const close = useCloseTicketMutation();
@@ -223,17 +224,25 @@ export default function TicketsPage() {
             </Button>
           </CardHeader>
           <CardContent className="p-0">
-            <DataTable
-              className="min-w-[900px]"
-              columns={ticketColumns}
-              data={tickets}
-              data-testid="ticket-table"
-              empty={!tickets.length ? emptyDescription : undefined}
-              emptyTestId="ticket-empty"
-              headerClassName="border-y"
-              scrollProps={{ 'data-testid': 'ticket-table-scroll' }}
-              virtualizer={{ enabled: tickets.length > VIRTUALIZE_MIN_ROWS }}
-            />
+            {isError ? (
+              // A failed fetch must not render as an empty ticket table (which
+              // reads as "no tickets"); show the error with a retry instead.
+              <div className="border-t border-border p-4">
+                <ErrorState onRetry={() => void refetch()} data-testid="ticket-error" />
+              </div>
+            ) : (
+              <DataTable
+                className="min-w-[900px]"
+                columns={ticketColumns}
+                data={tickets}
+                data-testid="ticket-table"
+                empty={!tickets.length ? emptyDescription : undefined}
+                emptyTestId="ticket-empty"
+                headerClassName="border-y"
+                scrollProps={{ 'data-testid': 'ticket-table-scroll' }}
+                virtualizer={{ enabled: tickets.length > VIRTUALIZE_MIN_ROWS }}
+              />
+            )}
           </CardContent>
         </Card>
       </PageShell>
@@ -326,14 +335,15 @@ export default function TicketsPage() {
       </Dialog>
     </>
   );
+}
 
-  function TicketStatus({ closed, replied }: { closed: boolean; replied: boolean }) {
-    const label = closed ? t('ticket.closed') : replied ? t('ticket.replied') : t('ticket.pending');
-    const tone: StatusTone = closed ? 'success' : replied ? 'info' : 'destructive';
-    return (
-      <StatusBadge data-testid="ticket-status" tone={tone} showDot>
-        {label}
-      </StatusBadge>
-    );
-  }
+function TicketStatus({ closed, replied }: { closed: boolean; replied: boolean }) {
+  const { t } = useTranslation();
+  const label = closed ? t('ticket.closed') : replied ? t('ticket.replied') : t('ticket.pending');
+  const tone: StatusTone = closed ? 'success' : replied ? 'info' : 'destructive';
+  return (
+    <StatusBadge data-testid="ticket-status" tone={tone} showDot>
+      {label}
+    </StatusBadge>
+  );
 }

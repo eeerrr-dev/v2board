@@ -70,9 +70,43 @@ const mocks = vi.hoisted(() => ({
     pending_tickets: 0,
   },
   subscribe: {} as Record<string, unknown> | undefined,
+  subscribeIsError: false,
   subscribeIsLoading: false,
   toastSuccess: vi.fn(),
 }));
+
+// Embla drives the notice carousel via live layout, which jsdom cannot measure,
+// so replace it with a deterministic api: scrollTo(i) selects slide i and fires
+// 'select'. Real drag/keyboard/embla behavior is covered by the browser
+// interaction-parity scenario user-dashboard-notice-carousel.
+const embla = vi.hoisted(() => ({
+  index: 0,
+  listeners: {} as Record<string, Array<() => void>>,
+}));
+
+vi.mock('embla-carousel-react', () => {
+  const api = {
+    scrollSnapList: () => [] as number[],
+    selectedScrollSnap: () => embla.index,
+    scrollTo: (index: number) => {
+      embla.index = index;
+      (embla.listeners.select ?? []).forEach((cb) => cb());
+    },
+    scrollPrev: () => api.scrollTo(Math.max(0, embla.index - 1)),
+    scrollNext: () => api.scrollTo(embla.index + 1),
+    canScrollPrev: () => embla.index > 0,
+    canScrollNext: () => true,
+    on: (event: string, cb: () => void) => {
+      (embla.listeners[event] ??= []).push(cb);
+      return api;
+    },
+    off: (event: string, cb: () => void) => {
+      embla.listeners[event] = (embla.listeners[event] ?? []).filter((listener) => listener !== cb);
+      return api;
+    },
+  };
+  return { default: () => [() => {}, api] as const };
+});
 
 vi.mock('react-router', () => ({
   useNavigate: () => mocks.navigate,
@@ -163,6 +197,7 @@ vi.mock('@/lib/queries', () => ({
   }),
   useSubscribe: () => ({
     data: mocks.subscribe,
+    isError: mocks.subscribeIsError,
     isLoading: mocks.subscribeIsLoading,
     refetch: mocks.refetchSubscribe,
   }),
@@ -221,8 +256,11 @@ function resetMocks() {
     pending_tickets: 0,
   };
   mocks.subscribe = baseSubscribe();
+  mocks.subscribeIsError = false;
   mocks.subscribeIsLoading = false;
   mocks.toastSuccess.mockReset();
+  embla.index = 0;
+  embla.listeners = {};
   window.settings = {
     title: 'V2Board',
   };
@@ -290,6 +328,22 @@ describe('DashboardPage shadcn shell rendering', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/plan');
   });
 
+  it('shows a retryable error state when the subscription fetch fails', async () => {
+    mocks.subscribe = {};
+    mocks.subscribeIsError = true;
+
+    const { user } = renderWithProviders(<DashboardPage />);
+
+    // A failed fetch surfaces the error, not the perpetual spinner or the
+    // buy-subscribe empty state.
+    expect(screen.getByTestId('dashboard-plan-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('dashboard-empty-plan')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Pro' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('error-state-retry'));
+    expect(mocks.refetchSubscribe).toHaveBeenCalled();
+  });
+
   it('renders a loading state without plan content while subscription data is incomplete', () => {
     mocks.subscribe = {};
 
@@ -335,7 +389,7 @@ describe('DashboardPage shadcn shell actions', () => {
     expect(screen.getByText('使用支持扫码的客户端进行订阅')).toBeInTheDocument();
   });
 
-  it('switches notice dots and opens the notice dialog', async () => {
+  it('switches notice dots and opens the active notice dialog', async () => {
     mocks.notices = [
       {
         content: '<p>First notice</p>',
@@ -352,18 +406,28 @@ describe('DashboardPage shadcn shell actions', () => {
     ];
     const { user } = renderWithProviders(<DashboardPage />);
 
+    // Embla mounts every slide; the active one is flagged with data-active.
     expect(screen.getByText('Notice A')).toBeInTheDocument();
-    expect(screen.queryByText('Notice B')).not.toBeInTheDocument();
+    expect(screen.getByText('Notice B')).toBeInTheDocument();
+    const slides = screen.getAllByTestId('dashboard-notice-slide');
+    expect(slides[0]).toHaveAttribute('data-active', 'true');
+    expect(slides[1]).toHaveAttribute('data-active', 'false');
 
+    // Clicking the second dot scrolls embla and moves the active flag onto slide 2.
     await user.click(screen.getByRole('button', { name: '公告 2' }));
 
     const activeSlide = screen
       .getAllByTestId('dashboard-notice-slide')
       .find((slide) => slide.getAttribute('data-active') === 'true')!;
     expect(activeSlide).toHaveTextContent('Notice B');
-    expect(screen.queryByText('Notice A')).not.toBeInTheDocument();
+    const activeDot = screen
+      .getAllByTestId('dashboard-notice-dot')
+      .find((dot) => dot.getAttribute('data-active') === 'true')!;
+    expect(activeDot).toHaveAttribute('aria-current', 'true');
+    expect(activeDot).toHaveAttribute('aria-label', '公告 2');
 
-    await user.click(screen.getByTestId('dashboard-notice-card'));
+    // The active slide's card opens its own notice dialog.
+    await user.click(within(activeSlide).getByTestId('dashboard-notice-card'));
     expect(screen.getByText('Second notice')).toBeInTheDocument();
   });
 
