@@ -31,6 +31,23 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+  /*
+   * shadcn Sidebar primitive tokens. The shell is a full-bleed rail layout:
+   * --sidebar paints the left rail sitting against the white content with a
+   * 1px --sidebar-border divider — so light --sidebar is deepened one step
+   * from upstream's 0.985 (which reads white-on-white next to the content)
+   * and --sidebar-accent is a white pill that echoes the content surface.
+   * --sidebar-primary(-foreground) also diverges from upstream, which ships a
+   * blue accent there; this island stays monochrome, matching --primary.
+   */
+  --sidebar: oklch(0.97 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(1 0 0);
+  --sidebar-accent-foreground: oklch(0.145 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
 .v2board-island {
@@ -96,6 +113,14 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.922 0 0);
+  --sidebar-primary-foreground: oklch(0.205 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
 }
 
 /*

@@ -84,7 +84,10 @@ describe('shadcn island presentation CSS', () => {
     const globals = css();
 
     expect(globals).toContain('.v2board-page-shell {\n  animation: v2board-page-in 180ms ease-out both;');
-    expect(globals).toContain('color-mix(in oklch, var(--muted) 42%, transparent)');
+    // The sidebar tokens paint the rail in both themes: a deepened light
+    // gray against the white content, canonical near-black in dark.
+    expect(globals).toContain('--sidebar: oklch(0.97 0 0);');
+    expect(globals).toContain('--sidebar: oklch(0.205 0 0);');
     expect(globals).not.toContain('hsl(var(--background))');
     expect(globals).not.toContain('@media (prefers-color-scheme: dark)');
     expect(globals).toContain('.dark .v2board-island {');

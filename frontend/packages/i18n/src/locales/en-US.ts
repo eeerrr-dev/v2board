@@ -54,7 +54,6 @@ const enUS: Translations = {
     theme_dark: 'Dark',
     theme_light: 'Light',
     theme_system: 'System',
-    toggle_theme: 'Toggle theme',
     currency: 'Currency',
     expand: 'Expand',
     collapse: 'Collapse',
@@ -84,8 +83,9 @@ const enUS: Translations = {
     tickets: 'My Tickets',
     traffic: 'Transfer Data Details',
     notices: 'Announcements',
-    open_nav: 'Open navigation',
+    toggle_nav: 'Toggle navigation',
     primary_nav: 'Primary navigation',
+    mobile_nav_description: 'Displays the primary navigation.',
   },
   auth: {
     sign_in: 'Login',

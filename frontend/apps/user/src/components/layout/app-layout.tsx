@@ -1,12 +1,11 @@
 import {
-  Fragment,
   Suspense,
-  type ComponentType,
-  type SVGProps,
   useEffect,
   useState,
+  type ComponentType,
+  type SVGProps,
 } from 'react';
-import { useLocation, useNavigate, useNavigation } from 'react-router';
+import { Link, useLocation, useNavigation } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
@@ -16,8 +15,6 @@ import {
   BookOpen,
   Gauge,
   Headphones,
-  LogOut,
-  Menu,
   Monitor,
   Moon,
   ReceiptText,
@@ -27,9 +24,8 @@ import {
   UserRound,
   UsersRound,
 } from 'lucide-react';
-import { ShadcnLanguageMenu } from './shadcn-language-menu';
+import { NavUser } from './nav-user';
 import { userQueryOptions } from '@/lib/queries';
-import { logout } from '@/lib/auth';
 import { cn } from '@/lib/cn';
 import {
   setThemePreference,
@@ -37,19 +33,33 @@ import {
   useThemePreference,
   type ThemePreference,
 } from '@/lib/dark-mode';
-import { getLegacySettings, getLegacyTitle } from '@/lib/legacy-settings';
+import { getLegacyTitle } from '@/lib/legacy-settings';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { Separator } from '@/components/ui/separator';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from '@/components/ui/sidebar';
 import { Spinner } from '@/components/ui/spinner';
 
 type ShellIcon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -106,17 +116,18 @@ const DETAIL_LABELS: { match: RegExp; labelKey: ParseKeys }[] = [
   { match: /^\/plan\/[^/]+$/, labelKey: 'plan.checkout_title' },
 ];
 
-// Derive a compact avatar monogram from the account email so the header shows a
-// real avatar instead of the raw, truncated address. Prefer the first letters of
-// the first two dot/underscore-separated name parts, else the first two chars.
-function getInitials(email: string): string {
-  const local = (email.split('@')[0] ?? '').trim();
-  const parts = local.split(/[._\-+]+/).filter(Boolean);
-  const letters =
-    parts.length >= 2
-      ? `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`
-      : local.slice(0, 2);
-  return letters.toUpperCase() || 'U';
+const SIDEBAR_STATE_COOKIE = 'sidebar_state';
+
+// The Sidebar primitive writes this cookie on every desktop expand/collapse;
+// reading it back into defaultOpen makes the choice survive reloads (a
+// frontend-only Tier-2 nicety, same pattern as the dark_mode cookie).
+function readSidebarDefaultOpen(): boolean {
+  if (typeof document === 'undefined') return true;
+  const value = document.cookie
+    .split('; ')
+    .find((part) => part.startsWith(`${SIDEBAR_STATE_COOKIE}=`))
+    ?.slice(SIDEBAR_STATE_COOKIE.length + 1);
+  return value !== 'false';
 }
 
 function findActiveLabel(pathname: string): ParseKeys | undefined {
@@ -133,9 +144,89 @@ function findActiveLabel(pathname: string): ParseKeys | undefined {
   return undefined;
 }
 
+// The sidebar lives inside SidebarProvider, so it owns the router hooks and the
+// mobile-sheet close-on-navigate (setOpenMobile) that AppLayoutContent — which
+// renders the provider — cannot reach through useSidebar.
+function AppSidebar({ siteTitle, email }: { siteTitle: string; email: string }) {
+  const { t } = useTranslation();
+  const location = useLocation();
+  const { setOpenMobile } = useSidebar();
+
+  const closeMobile = () => setOpenMobile(false);
+
+  return (
+    <Sidebar
+      id="sidebar"
+      variant="sidebar"
+      collapsible="icon"
+      sheetTitle={t('nav.primary_nav')}
+      sheetDescription={t('nav.mobile_nav_description')}
+    >
+      {/* Wordmark-only brand (no logo chip) with the collapse trigger living in
+          the sidebar itself. Collapsed, the wordmark hides and the size-8
+          trigger left-anchors onto the same column as the nav icons, so the
+          rail reads as one stable icon column. */}
+      <SidebarHeader>
+        <div className="flex items-center justify-between gap-1">
+          <Link
+            to="/dashboard"
+            onClick={closeMobile}
+            className="min-w-0 truncate rounded-md px-2 py-1 text-base font-semibold text-sidebar-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:hidden"
+          >
+            {siteTitle}
+          </Link>
+          <SidebarTrigger className="size-8 shrink-0" aria-label={t('nav.toggle_nav')} />
+        </div>
+      </SidebarHeader>
+
+      <SidebarContent role="navigation" aria-label={t('nav.primary_nav')}>
+        {NAV.map((group, groupIndex) => (
+          <SidebarGroup key={group.labelKey ?? `group-${groupIndex}`}>
+            {group.labelKey ? (
+              // mt-0 overrides the primitive's -mt-8 retraction so the label
+              // row keeps its height when collapsed (text still fades): the
+              // icons below never shift vertically during expand/collapse.
+              <SidebarGroupLabel className="group-data-[collapsible=icon]:mt-0">
+                {t(group.labelKey)}
+              </SidebarGroupLabel>
+            ) : null}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => {
+                  const active =
+                    location.pathname === item.to ||
+                    location.pathname.startsWith(item.to + '/');
+
+                  return (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton asChild isActive={active} tooltip={t(item.labelKey)}>
+                        <Link
+                          to={item.to}
+                          aria-current={active ? 'page' : undefined}
+                          onClick={closeMobile}
+                        >
+                          <item.icon />
+                          <span>{t(item.labelKey)}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
+
+      <SidebarFooter>
+        <NavUser email={email} />
+      </SidebarFooter>
+    </Sidebar>
+  );
+}
+
 function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
   const { i18n, t } = useTranslation();
-  const navigate = useNavigate();
   const location = useLocation();
   // The redesigned shell lazy-loads each route's chunk and runs its loader on
   // navigation; surface that interstitial with the data router's own navigation
@@ -149,85 +240,26 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
     ...userQueryOptions.info(),
     refetchOnMount: false,
   });
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const darkMode = useDarkMode();
   const themePreference = useThemePreference();
+  const [sidebarDefaultOpen] = useState(readSidebarDefaultOpen);
   const activeLabel = findActiveLabel(location.pathname);
   const siteTitle = getLegacyTitle();
-  // Read the real deployed version the backend injects into window.settings
-  // rather than a hardcoded string that drifts out of date.
-  const version = getLegacySettings().version;
   const title = titleProp ?? (activeLabel ? t(activeLabel) : '');
   const localeClass = getLegacyLocaleClassName(i18n.language);
-  const initials = getInitials(user.email);
-
-  const go = (to: string) => {
-    navigate(to);
-    setSidebarOpen(false);
-  };
+  const themeControlLabel = darkMode
+    ? t('common.dark_mode_disable')
+    : t('common.dark_mode_enable');
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
-  const sidebarBody = (
-    <div className="flex h-full flex-col">
-      <div className="flex h-16 items-center border-b border-border px-5">
-        <button
-          type="button"
-          className="rounded-md text-lg font-semibold tracking-normal text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          onClick={() => go('/dashboard')}
-        >
-          {siteTitle}
-        </button>
-      </div>
-
-      <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label={t('nav.primary_nav')}>
-        {NAV.map((group, groupIndex) => (
-          <Fragment key={group.labelKey ?? `group-${groupIndex}`}>
-            {group.labelKey ? (
-              <div className="px-3 pb-2 pt-4 text-xs font-medium uppercase tracking-normal text-muted-foreground first:pt-0">
-                {t(group.labelKey)}
-              </div>
-            ) : null}
-            <div className="space-y-1">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const active =
-                  location.pathname === item.to || location.pathname.startsWith(item.to + '/');
-
-                return (
-                  <button
-                    type="button"
-                    key={item.to}
-                    aria-current={active ? 'page' : undefined}
-                    className={cn(
-                      'flex h-9 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm font-medium text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                      active && 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 hover:text-primary-foreground',
-                    )}
-                    onClick={() => go(item.to)}
-                  >
-                    <Icon className="size-4" />
-                    <span>{t(item.labelKey)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Fragment>
-        ))}
-      </nav>
-
-      <div className="border-t border-border px-5 py-4 text-xs text-muted-foreground">
-        {siteTitle}
-        {version ? ` v${version}` : null}
-      </div>
-    </div>
-  );
-
   return (
-    <div
+    <SidebarProvider
       id="page-container"
-      className={cn('v2board-island v2board-app-shell min-h-screen text-foreground', localeClass)}
+      defaultOpen={sidebarDefaultOpen}
+      className={cn('v2board-island v2board-app-shell text-foreground', localeClass)}
     >
       {navPending ? (
         <div
@@ -239,62 +271,43 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
         </div>
       ) : null}
 
-      <aside
-        id="sidebar"
-        className="fixed inset-y-0 left-0 z-40 hidden w-72 flex-col border-r border-border bg-card/95 text-card-foreground shadow-sm backdrop-blur lg:flex"
-      >
-        {sidebarBody}
-      </aside>
+      <AppSidebar siteTitle={siteTitle} email={user.email} />
 
-      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent
-          side="left"
-          aria-describedby={undefined}
-          className="w-72 gap-0 bg-card/95 p-0 text-card-foreground sm:max-w-72 lg:hidden"
-        >
-          <SheetTitle className="sr-only">{siteTitle}</SheetTitle>
-          {sidebarBody}
-        </SheetContent>
-      </Sheet>
-
-      <div className="min-h-screen bg-muted/40 lg:pl-72">
+      <SidebarInset>
         <header
           id="page-header"
-          className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+          className="flex h-12 shrink-0 items-center gap-2 border-b border-border"
         >
-          <div className="flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="lg:hidden"
-              onClick={() => setSidebarOpen(true)}
-              aria-label={t('nav.open_nav')}
-            >
-              <Menu className="size-4" />
-            </Button>
+          <div className="flex w-full items-center gap-1 px-4 sm:px-6 lg:gap-2">
+            {/* The desktop collapse control lives in the sidebar header; this
+                trigger only opens the mobile drawer. */}
+            <SidebarTrigger className="-ml-1 md:hidden" aria-label={t('nav.toggle_nav')} />
 
-            <div className="min-w-0 flex-1">
-              <h1 className="v2board-container-title truncate text-base font-semibold text-foreground">
-                {title}
-              </h1>
-            </div>
+            <Separator
+              orientation="vertical"
+              className="mx-2 data-[orientation=vertical]:h-4 md:hidden"
+            />
 
-            <div className="flex items-center gap-0.5">
+            <h1 className="v2board-container-title min-w-0 flex-1 truncate text-base font-medium text-foreground">
+              {title}
+            </h1>
+
+            <div className="ml-auto flex shrink-0 items-center gap-1">
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="text-muted-foreground"
+                    className="size-8 text-muted-foreground hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
                     data-dark-mode-trigger
-                    aria-label={t('common.toggle_theme')}
+                    aria-label={themeControlLabel}
+                    title={themeControlLabel}
                   >
-                    {darkMode ? <Moon className="size-4" /> : <Sun className="size-4" />}
+                    {darkMode ? <Moon /> : <Sun />}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-36">
+                <DropdownMenuContent align="end" className="w-40">
                   <DropdownMenuRadioGroup
                     value={themePreference}
                     onValueChange={(value) => setThemePreference(value as ThemePreference)}
@@ -314,80 +327,33 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              <ShadcnLanguageMenu />
-
-              <div className="mx-1.5 h-5 w-px bg-border" aria-hidden="true" />
-
-              <DropdownMenu modal={false}>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    data-testid="app-avatar-trigger"
-                    aria-label={user.email}
-                    className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground ring-1 ring-border outline-none transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:ring-[3px] data-[state=open]:ring-ring/50"
-                  >
-                    <span aria-hidden="true">{initials}</span>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="end"
-                  sideOffset={8}
-                  className="v2board-island v2board-app-shell-menu-content w-60"
-                  data-testid="app-avatar-menu"
-                >
-                  <div className="flex items-center gap-2.5 px-2 py-1.5">
-                    <span
-                      aria-hidden="true"
-                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground ring-1 ring-border"
-                    >
-                      {initials}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                      {user.email}
-                    </span>
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => navigate('/profile')}>
-                    <UserRound className="size-4" />
-                    {t('nav.profile')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      logout();
-                      navigate('/login');
-                    }}
-                  >
-                    <LogOut className="size-4" />
-                    {t('common.logout')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
           </div>
         </header>
 
         {loading ? (
-          <main id="main-container" className="v2board-app-main bg-muted">
-            <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-7xl items-center justify-center px-4 py-10 sm:px-6 lg:px-8">
+          <div id="main-container" className="v2board-app-main flex flex-1">
+            <div className="flex w-full flex-1 items-center justify-center px-4 py-10">
               <Spinner className="size-6" />
             </div>
-          </main>
+          </div>
         ) : (
-          <main id="main-container" className="v2board-app-main bg-muted">
-            <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <div id="main-container" className="v2board-app-main flex-1">
+            <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 md:py-6">
               <RouteBoundaryOutlet />
             </div>
-          </main>
+          </div>
         )}
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 
 function AppLayoutFallback() {
+  // Renders before the shell (and its island wrapper) exists, so it must carry
+  // v2board-island itself for the token background to resolve.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40">
+    <div className="v2board-island flex min-h-screen items-center justify-center bg-background">
       <Spinner className="size-6" />
     </div>
   );

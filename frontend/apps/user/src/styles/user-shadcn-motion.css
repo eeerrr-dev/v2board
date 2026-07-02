@@ -2,11 +2,6 @@
   animation: v2board-page-in 180ms ease-out both;
 }
 
-.v2board-app-shell {
-  background:
-    linear-gradient(180deg, var(--background) 0%, color-mix(in oklch, var(--muted) 42%, transparent) 100%);
-}
-
 .v2board-radix-overlay[data-state='open'] {
   animation: v2board-overlay-in 150ms ease-out both;
 }

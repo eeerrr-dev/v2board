@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,10 +9,12 @@ const mocks = vi.hoisted(() => ({
   themePreference: 'system' as 'system' | 'light' | 'dark',
   labels: {
     'common.cancel': '取消',
-    'common.toggle_theme': 'Toggle theme',
+    'common.dark_mode_disable': 'Disable dark mode',
+    'common.dark_mode_enable': 'Enable dark mode',
     'common.theme_system': 'System',
     'common.theme_light': 'Light',
     'common.theme_dark': 'Dark',
+    'common.language': 'Language',
     'common.logout': '登出',
     'nav.buy_subscribe': '购买订阅',
     'nav.dashboard': '仪表盘',
@@ -26,25 +28,51 @@ const mocks = vi.hoisted(() => ({
     'nav.profile': '个人中心',
     'nav.tickets': '我的工单',
     'nav.traffic': '流量明细',
-    'nav.open_nav': 'Open navigation',
+    'nav.toggle_nav': 'Toggle navigation',
     'nav.primary_nav': 'Primary navigation',
+    'nav.mobile_nav_description': 'Displays the primary navigation.',
     'order.detail': '订单详情',
     'plan.checkout_title': '确认订单',
   } as Record<string, string>,
   locale: 'zh-CN',
   location: { pathname: '/dashboard', search: '' },
   navigationState: 'idle' as 'idle' | 'loading' | 'submitting',
+  changeLanguage: vi.fn(),
   logout: vi.fn(),
   navigate: vi.fn(),
+  selectLocale: vi.fn(),
   setThemePreference: vi.fn(),
   darkListeners: new Set<() => void>(),
   title: 'V2Board',
-  version: '9.9.9',
   user: { email: 'user@example.com' },
 }));
 
 vi.mock('react-router', () => ({
   Outlet: () => <div data-outlet="true">Outlet content</div>,
+  // Nav items render as real <a> elements through SidebarMenuButton asChild;
+  // the mock mirrors Link's real contract: the user onClick runs first on an
+  // un-prevented event, and navigation is skipped entirely when that handler
+  // calls preventDefault — so a handler that kills navigation fails the tests.
+  Link: ({
+    to,
+    onClick,
+    children,
+    ...rest
+  }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) => (
+    <a
+      href={to}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!event.defaultPrevented) {
+          event.preventDefault();
+          mocks.navigate(to);
+        }
+      }}
+      {...rest}
+    >
+      {children}
+    </a>
+  ),
   useLocation: () => mocks.location,
   useNavigate: () => mocks.navigate,
   useNavigation: () => ({ state: mocks.navigationState }),
@@ -52,17 +80,20 @@ vi.mock('react-router', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    i18n: { language: mocks.locale },
+    i18n: { language: mocks.locale, changeLanguage: mocks.changeLanguage },
     t: (key: string) => mocks.labels[key] ?? key,
   }),
 }));
 
-vi.mock('./shadcn-language-menu', () => ({
-  ShadcnLanguageMenu: () => (
-    <button type="button" data-testid="app-language-trigger">
-      简体中文
-    </button>
-  ),
+// The account menu's Language submenu renders the shared locale items; pin the
+// enabled-locale list so the test asserts the submenu wiring, not settings.
+vi.mock('@/lib/locale-menu', () => ({
+  getCurrentLocaleLabel: () => '简体中文',
+  getEnabledLocales: () => [
+    { code: 'en-US', label: 'English' },
+    { code: 'zh-CN', label: '简体中文' },
+  ],
+  selectLocale: (code: string) => mocks.selectLocale(code),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -109,7 +140,6 @@ vi.mock('@/lib/dark-mode', async () => {
 
 vi.mock('@/lib/legacy-settings', () => ({
   getLegacyTitle: () => mocks.title,
-  getLegacySettings: () => ({ title: mocks.title, version: mocks.version }),
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -121,8 +151,10 @@ function resetMocks() {
   mocks.locale = 'zh-CN';
   mocks.location = { pathname: '/dashboard', search: '' };
   mocks.navigationState = 'idle';
+  mocks.changeLanguage.mockReset();
   mocks.logout.mockReset();
   mocks.navigate.mockReset();
+  mocks.selectLocale.mockReset();
   mocks.setThemePreference.mockReset();
   mocks.darkListeners.clear();
   mocks.title = 'V2Board';
@@ -138,6 +170,12 @@ describe('AppLayout shadcn app shell markup', () => {
     expect(html).toContain('id="page-container"');
     expect(html).toContain('v2board-app-shell');
     expect(html).toContain('id="sidebar"');
+    // Nav items are real links (asChild), and exactly one of them — the
+    // /dashboard item matching the mocked location — carries aria-current.
+    expect(html).toContain('href="/knowledge"');
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+    const dashboardAnchors = html.match(/<a [^>]*href="\/dashboard"[^>]*>/g) ?? [];
+    expect(dashboardAnchors.some((anchor) => anchor.includes('aria-current="page"'))).toBe(true);
     expect(html).toContain('V2Board');
     expect(html).toContain('仪表盘');
     expect(html).toContain('使用文档');
@@ -147,7 +185,9 @@ describe('AppLayout shadcn app shell markup', () => {
     expect(html).toContain('个人中心');
     expect(html).toContain('id="page-header"');
     expect(html).toContain('v2board-container-title');
-    expect(html).toContain('data-testid="app-language-trigger"');
+    // The language switcher moved into the account menu's submenu; the header
+    // must no longer carry a standalone trigger for it.
+    expect(html).not.toContain('data-testid="app-language-trigger"');
     expect(html).toContain('data-testid="app-avatar-trigger"');
     expect(html).toContain('user@example.com');
     expect(html).toContain('id="main-container"');
@@ -190,6 +230,16 @@ describe('AppLayout shadcn app shell behavior', () => {
 
   beforeEach(() => {
     resetMocks();
+    // The primitive persists expanded/collapsed in the sidebar_state cookie;
+    // clear it so a toggle in one test cannot leak into the next.
+    document.cookie = 'sidebar_state=; path=/; max-age=0';
+    // Pin a desktop viewport by default so useIsMobile resolves to the
+    // collapsible rail; the mobile-sheet test overrides innerWidth locally.
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 1024,
+    });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -213,29 +263,85 @@ describe('AppLayout shadcn app shell behavior', () => {
     });
   }
 
-  it('scrolls on route changes, opens the mobile nav sheet, and closes it after navigation', async () => {
+  it('scrolls on route changes and toggles the collapsible desktop rail', async () => {
     await renderLayout();
 
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
-    // The persistent desktop rail keeps the #sidebar hook and the nav for every viewport.
+    // The desktop rail keeps the #sidebar hook and renders no mobile Sheet.
     expect(container.querySelector('#sidebar')).not.toBeNull();
+    expect(
+      document.body.querySelector('[data-slot="sidebar"][data-mobile="true"]'),
+    ).toBeNull();
 
-    const sheet = () => document.body.querySelector('[data-slot="sheet-content"]');
+    const rail = container.querySelector<HTMLElement>('[data-slot="sidebar"]')!;
+    expect(rail.getAttribute('data-state')).toBe('expanded');
+
+    // On desktop the collapse control lives inside the sidebar header itself
+    // and collapses the icon rail (backed by the sidebar_state cookie).
+    const trigger = container.querySelector<HTMLButtonElement>('#sidebar [data-sidebar="trigger"]')!;
+    expect(trigger.getAttribute('aria-label')).toBe('Toggle navigation');
+    await act(async () => {
+      trigger.click();
+      await Promise.resolve();
+    });
+    expect(rail.getAttribute('data-state')).toBe('collapsed');
+    // The collapse is persisted under the same cookie name the restore path
+    // reads back — the write half of the sidebar_state round trip.
+    expect(document.cookie).toContain('sidebar_state=false');
+
+    // Nav items stay reachable in the rail as real links (middle-click/a11y)
+    // inside the navigation landmark, and route through the router.
+    const knowledge = Array.from(
+      container.querySelectorAll<HTMLAnchorElement>('[data-sidebar="content"] a'),
+    ).find((link) => link.textContent?.includes('使用文档'))!;
+    expect(knowledge.getAttribute('href')).toBe('/knowledge');
+    await act(async () => {
+      knowledge.click();
+      await Promise.resolve();
+    });
+    expect(mocks.navigate).toHaveBeenCalledWith('/knowledge');
+  });
+
+  it('restores the collapsed rail from the sidebar_state cookie', async () => {
+    document.cookie = 'sidebar_state=false; path=/';
+    await renderLayout();
+
+    const rail = container.querySelector<HTMLElement>('[data-slot="sidebar"]')!;
+    expect(rail.getAttribute('data-state')).toBe('collapsed');
+  });
+
+  it('opens the mobile nav sheet and closes it after navigation', async () => {
+    // Below the 768px breakpoint useIsMobile swaps the rail for a Radix Sheet.
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 500,
+    });
+    await renderLayout();
+
+    const sheet = () =>
+      document.body.querySelector('[data-slot="sidebar"][data-mobile="true"]');
     expect(sheet()).toBeNull();
 
-    const openButton = container.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]')!;
+    // On mobile the drawer opener is the header trigger (the sidebar and its
+    // own trigger are inside the not-yet-open Sheet).
+    const openButton = container.querySelector<HTMLButtonElement>(
+      '#page-header [data-sidebar="trigger"]',
+    )!;
     await act(async () => {
       openButton.click();
       await Promise.resolve();
     });
 
-    // The mobile drawer is now a Radix Sheet portaled to the document body
+    // The mobile drawer is a Radix Sheet portaled to the document body
     // (focus trap, Esc-dismiss, aria-modal) instead of a hand-rolled transform.
     expect(sheet()).not.toBeNull();
 
     const knowledge = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>('[data-slot="sheet-content"] nav button'),
-    ).find((button) => button.textContent?.includes('使用文档'))!;
+      document.body.querySelectorAll<HTMLAnchorElement>(
+        '[data-slot="sidebar"][data-mobile="true"] [data-sidebar="content"] a',
+      ),
+    ).find((link) => link.textContent?.includes('使用文档'))!;
     await act(async () => {
       knowledge.click();
       await Promise.resolve();
@@ -282,12 +388,17 @@ describe('AppLayout shadcn app shell behavior', () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent).toContain('个人中心');
-    expect(document.body.textContent).toContain('登出');
+    // On desktop the account menu pops upward from the sidebar-footer card,
+    // never sideways into the content area.
+    const menu = document.body.querySelector<HTMLElement>('[data-testid="app-avatar-menu"]')!;
+    expect(menu.getAttribute('data-side')).toBe('top');
 
-    const logoutItem = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
-      (item) => item.textContent?.includes('登出'),
-    )!;
+    // Both entries must be actual menu items — the sidebar nav also renders
+    // 个人中心, so body-text alone cannot pin the dropdown's contents.
+    const menuItems = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+    expect(menuItems.some((item) => item.textContent?.includes('个人中心'))).toBe(true);
+
+    const logoutItem = menuItems.find((item) => item.textContent?.includes('登出'))!;
     await act(async () => {
       logoutItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       logoutItem.click();
@@ -298,10 +409,70 @@ describe('AppLayout shadcn app shell behavior', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 
-  it('shows the deployed version from settings instead of a hardcoded string', async () => {
+  it('switches the language through the user-menu submenu', async () => {
     await renderLayout();
 
-    expect(container.textContent).toContain('V2Board v9.9.9');
-    expect(container.innerHTML).not.toContain('v1.7.4');
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="app-avatar-trigger"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
+      );
+      await Promise.resolve();
+    });
+
+    // The language switcher lives inside the account menu as a Radix submenu.
+    const subTrigger = document.body.querySelector<HTMLElement>(
+      '[data-testid="app-language-trigger"]',
+    )!;
+    expect(subTrigger.getAttribute('data-slot')).toBe('dropdown-menu-sub-trigger');
+    await act(async () => {
+      subTrigger.click();
+      await Promise.resolve();
+    });
+
+    const submenu = document.body.querySelector<HTMLElement>(
+      '[data-testid="app-language-menu"]',
+    )!;
+    expect(submenu).not.toBeNull();
+    const english = Array.from(
+      submenu.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent?.includes('English'))!;
+    await act(async () => {
+      english.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      english.click();
+      await Promise.resolve();
+    });
+
+    // Selecting persists the locale and switches i18n — the language
+    // persistence contract, now routed through the profile menu.
+    expect(mocks.selectLocale).toHaveBeenCalledWith('en-US');
+    expect(mocks.changeLanguage).toHaveBeenCalledWith('en-US');
+  });
+
+  it('navigates to the profile page from the user menu', async () => {
+    await renderLayout();
+
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="app-avatar-trigger"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
+      );
+      await Promise.resolve();
+    });
+
+    const profileItem = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent?.includes('个人中心'))!;
+    await act(async () => {
+      profileItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      profileItem.click();
+      await Promise.resolve();
+    });
+
+    expect(mocks.navigate).toHaveBeenCalledWith('/profile');
   });
 });

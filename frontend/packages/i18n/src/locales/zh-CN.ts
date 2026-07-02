@@ -52,7 +52,6 @@ const zhCN = {
     theme_dark: '深色',
     theme_light: '浅色',
     theme_system: '跟随系统',
-    toggle_theme: '切换主题',
     currency: '货币',
     expand: '展开',
     collapse: '收起',
@@ -82,8 +81,9 @@ const zhCN = {
     tickets: '我的工单',
     traffic: '流量明细',
     notices: '公告',
-    open_nav: '打开导航',
+    toggle_nav: '切换导航栏',
     primary_nav: '主导航',
+    mobile_nav_description: '显示主导航。',
   },
   auth: {
     sign_in: '登录',

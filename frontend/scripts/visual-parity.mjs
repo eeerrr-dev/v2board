@@ -2129,11 +2129,6 @@ const interactionScenarios = [
     scenarioLabel: 'user-dashboard-session-expired',
   },
   {
-    label: 'user-dashboard-avatar-dropdown',
-    run: runUserDashboardAvatarDropdownInteraction,
-    scenarioLabel: 'user-dashboard',
-  },
-  {
     label: 'user-dashboard-dark-mode-persistence',
     preserveRuntimeDarkMode: true,
     run: runDarkModePersistenceInteraction,
@@ -5072,7 +5067,11 @@ async function visibleFormControlStates(page, selector) {
 }
 
 async function runDashboardHeaderLanguageDropdownInteraction(page) {
-  const clicked = await page.evaluate(() => {
+  // The redesigned shell nests the language switcher inside the sidebar-footer
+  // account menu (avatar → Language submenu) while the oracle keeps its header
+  // .fa-language ant-dropdown; walk whichever chrome the page renders. The
+  // gated outcome — one dropdown listing the enabled locales — stays shared.
+  const legacyClicked = await page.evaluate(() => {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
@@ -5084,36 +5083,52 @@ async function runDashboardHeaderLanguageDropdownInteraction(page) {
       );
     };
     const trigger = Array.from(
-      document.querySelectorAll(
-        '#page-header [data-testid="app-language-trigger"], #page-header button, #page-header .ant-dropdown-trigger',
-      ),
-    ).find(
-      (element) =>
-        isVisible(element) &&
-        (element.getAttribute('data-testid') === 'app-language-trigger' ||
-          element.querySelector('.fa-language')),
-    );
+      document.querySelectorAll('#page-header button, #page-header .ant-dropdown-trigger'),
+    ).find((element) => isVisible(element) && element.querySelector('.fa-language'));
     if (!(trigger instanceof HTMLElement)) return false;
-    if (trigger.getAttribute('data-testid') === 'app-language-trigger') {
+    trigger.click();
+    return true;
+  });
+  if (!legacyClicked) {
+    // Mobile keeps the account card inside the closed nav sheet; open it first.
+    const avatarVisible = await page.evaluate(() => {
+      const element = document.querySelector('[data-testid="app-avatar-trigger"]');
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    });
+    if (!avatarVisible) {
+      await page.click('#page-header [data-sidebar="trigger"]');
+      await page.waitForSelector('[data-testid="app-avatar-trigger"]', {
+        state: 'visible',
+        timeout: 5_000,
+      });
+    }
+    const opened = await page.evaluate(() => {
+      const trigger = document.querySelector('[data-testid="app-avatar-trigger"]');
+      if (!(trigger instanceof HTMLElement)) return false;
       trigger.dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
       );
-    } else {
-      trigger.click();
-    }
-    return true;
-  });
-  if (!clicked) throw new Error('dashboard language trigger was not visible');
+      return true;
+    });
+    if (!opened) throw new Error('dashboard account-menu trigger was not visible');
+    await page.waitForSelector('[data-testid="app-language-trigger"]', {
+      state: 'visible',
+      timeout: 5_000,
+    });
+    await page.click('[data-testid="app-language-trigger"]');
+  }
   await waitForVisibleText(
     page,
-    '.v2board-app-shell-menu-content [role="menuitem"], .ant-dropdown-menu-item',
+    '[data-testid="app-language-menu"] [role="menuitem"], .ant-dropdown-menu-item',
     'English',
   );
   await page.waitForTimeout(150);
   // Same conscious fa-IR drop as the login language menu: the product ships 6 LTR locales while the
   // frozen oracle still lists فارسی. Normalize that one retired locale out of the captured list so
-  // this still-replica dashboard surface keeps gating dropdown placement + i18n behavior without
-  // re-pinning a locale the product no longer ships.
+  // this redesigned dashboard shell keeps gating the i18n locale list without re-pinning a locale
+  // the product no longer ships.
   const state = await languageDropdownPlacementState(page);
   return { ...state, items: withoutDroppedLocale(state.items) };
 }
@@ -5192,15 +5207,6 @@ async function readUnauthorizedHttp401NoRedirectState(page) {
       pageContainerCount: document.querySelectorAll('#page-container').length,
     };
   }, userAuthSurfaceSelector);
-}
-
-async function runUserDashboardAvatarDropdownInteraction(page) {
-  const before = await headerAvatarDropdownState(page);
-  await clickHeaderAvatarTrigger(page);
-  await waitForHeaderAvatarDropdown(page);
-  await page.waitForTimeout(150);
-  const opened = await headerAvatarDropdownState(page);
-  return { before, opened };
 }
 
 async function runDarkModePersistenceInteraction(page) {
@@ -10585,9 +10591,7 @@ function normalizeProfileChangePasswordState(state) {
 function normalizeUserDarkModePersistenceState(state) {
   if (!state) return state;
   return {
-    activeControl:
-      state.iconClass?.includes('fa-moon') ||
-      state.triggerLabel === 'Disable dark mode',
+    activeControl: isDarkModeActiveControlState(state),
     cookieDarkMode: state.cookieDarkMode,
     darkReady: Boolean(state.darkReaderReady || state.shadcnDarkReady),
     styleCaptured: (state.styleSnapshot?.capturedCount ?? 0) >= 6,
@@ -10759,6 +10763,7 @@ function assertUsefulInteraction(label, result) {
   if (
     label === 'user-dashboard-header-language-dropdown' &&
     (result.dropdownCount !== 1 ||
+      result.dropdownHit !== true ||
       result.placement !== 'bottomCenter' ||
       !result.items?.includes('English') ||
       !result.items?.includes('简体中文') ||
@@ -10782,26 +10787,6 @@ function assertUsefulInteraction(label, result) {
       !jsonIncludesAny(result.dashboardTexts, ['仪表盘', 'Dashboard']))
   ) {
     throw new Error(`HTTP 401 auth state did not match legacy no-redirect behavior: ${JSON.stringify(result)}`);
-  }
-  if (
-    label === 'user-dashboard-avatar-dropdown' &&
-    (result.before?.menuCount !== 0 ||
-      result.opened?.menuCount !== 1 ||
-      !result.opened?.menuClass?.includes('dropdown-menu-right') ||
-      Math.abs(result.opened?.rightDelta ?? 99) > 1 ||
-      result.opened?.items?.length < 2 ||
-      !jsonIncludesAny(result.opened?.items, [
-        'Profile',
-        'User Center',
-        'My Account',
-        '个人中心',
-        '我的账户',
-        '您的帳戸',
-        '您的帳戶',
-      ]) ||
-      !jsonIncludesAny(result.opened?.items, ['Logout', '登出']))
-  ) {
-    throw new Error(`user avatar dropdown did not match legacy state: ${JSON.stringify(result)}`);
   }
   if (
     label === 'admin-dashboard-avatar-dropdown' &&
@@ -13479,15 +13464,19 @@ async function languageDropdownPlacementState(page) {
       };
     };
     const trigger = Array.from(
-      document.querySelectorAll(
-        '#page-header [data-testid="app-language-trigger"], #page-header button, #page-header .ant-dropdown-trigger',
-      ),
+      document.querySelectorAll('#page-header button, #page-header .ant-dropdown-trigger'),
     ).find((element) => element.querySelector('.fa-language') && isVisible(element));
+    // The redesigned shell scopes the locale list to the account menu's
+    // Language submenu; the trigger-relative geometry fields only apply to the
+    // oracle's header dropdown and stay undefined on the shadcn side.
+    const shadcnMenus = Array.from(
+      document.querySelectorAll('[data-testid="app-language-menu"]'),
+    ).filter((element) => {
+      const text = (element.textContent ?? '').trim();
+      return isVisible(element) && text.includes('English') && text.includes('简体中文');
+    });
     const dropdown =
-      Array.from(document.querySelectorAll('.v2board-app-shell-menu-content')).find((element) => {
-        const text = (element.textContent ?? '').trim();
-        return isVisible(element) && text.includes('English') && text.includes('简体中文');
-      }) ?? Array.from(document.querySelectorAll('.ant-dropdown')).find(isVisible);
+      shadcnMenus[0] ?? Array.from(document.querySelectorAll('.ant-dropdown')).find(isVisible);
     const triggerRect = trigger ? rectOf(trigger) : undefined;
     const dropdownRect = dropdown ? rectOf(dropdown) : undefined;
     const triggerCenter = triggerRect
@@ -13496,6 +13485,17 @@ async function languageDropdownPlacementState(page) {
     const dropdownCenter = dropdownRect
       ? dropdownRect.left + dropdownRect.width / 2
       : undefined;
+    // Paint-level probe: a non-portaled Radix submenu keeps a full layout rect
+    // (so isVisible passes) while the parent content's overflow-hidden clips
+    // every pixel away. Only a hit-test at the panel's center proves the menu
+    // is actually painted and clickable.
+    const hitProbe =
+      dropdown && dropdownRect
+        ? document.elementFromPoint(
+            dropdownRect.left + dropdownRect.width / 2,
+            dropdownRect.top + dropdownRect.height / 2,
+          )
+        : null;
 
     return {
       centerDelta:
@@ -13503,19 +13503,16 @@ async function languageDropdownPlacementState(page) {
           ? undefined
           : Math.round(dropdownCenter - triggerCenter),
       dropdownCount:
-        Array.from(document.querySelectorAll('.v2board-app-shell-menu-content')).filter(
-          (element) => {
-            const text = (element.textContent ?? '').trim();
-            return isVisible(element) && text.includes('English') && text.includes('简体中文');
-          },
-        ).length || Array.from(document.querySelectorAll('.ant-dropdown')).filter(isVisible).length,
+        shadcnMenus.length ||
+        Array.from(document.querySelectorAll('.ant-dropdown')).filter(isVisible).length,
+      dropdownHit: Boolean(hitProbe && dropdown.contains(hitProbe)),
       gap:
         triggerRect && dropdownRect
           ? Math.round(dropdownRect.top - triggerRect.bottom)
           : undefined,
       items: Array.from(
         document.querySelectorAll(
-          '.v2board-app-shell-menu-content [role="menuitem"], .ant-dropdown-menu-item',
+          '[data-testid="app-language-menu"] [role="menuitem"], .ant-dropdown-menu-item',
         ),
       )
         .filter(isVisible)
@@ -13543,22 +13540,11 @@ async function clickHeaderAvatarTrigger(page) {
         style.visibility !== 'hidden'
       );
     };
-    const trigger = Array.from(
-      document.querySelectorAll('#page-header [data-testid="app-avatar-trigger"], #page-header button'),
-    ).find(
-      (element) =>
-        (element.getAttribute('data-testid') === 'app-avatar-trigger' ||
-          element.querySelector('.fa-user-circle')) &&
-        isVisible(element),
+    const trigger = Array.from(document.querySelectorAll('#page-header button')).find(
+      (element) => element.querySelector('.fa-user-circle') && isVisible(element),
     );
     if (!(trigger instanceof HTMLElement)) return false;
-    if (trigger.getAttribute('data-testid') === 'app-avatar-trigger') {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
-      );
-    } else {
-      trigger.click();
-    }
+    trigger.click();
     return true;
   });
   if (!clicked) throw new Error('header avatar trigger was not visible');
@@ -13578,7 +13564,7 @@ async function waitForHeaderAvatarDropdown(page) {
         );
       };
       return Array.from(
-        document.querySelectorAll('[data-testid="app-avatar-menu"], #page-header .dropdown-menu.show'),
+        document.querySelectorAll('#page-header .dropdown-menu.show'),
       ).some(isVisible);
     },
     { timeout: 5_000 },
@@ -13608,19 +13594,13 @@ async function headerAvatarDropdownState(page) {
         width: Math.round(rect.width),
       };
     };
-    const trigger = Array.from(
-      document.querySelectorAll('#page-header [data-testid="app-avatar-trigger"], #page-header button'),
-    ).find(
-      (element) =>
-        (element.getAttribute('data-testid') === 'app-avatar-trigger' ||
-          element.querySelector('.fa-user-circle')) &&
-        isVisible(element),
+    const trigger = Array.from(document.querySelectorAll('#page-header button')).find(
+      (element) => element.querySelector('.fa-user-circle') && isVisible(element),
     );
     const visibleMenus = Array.from(
-      document.querySelectorAll('[data-testid="app-avatar-menu"], #page-header .dropdown-menu.show'),
+      document.querySelectorAll('#page-header .dropdown-menu.show'),
     ).filter(isVisible);
     const menu = visibleMenus[0];
-    const isShadcnMenu = menu?.getAttribute('data-testid') === 'app-avatar-menu';
     const triggerRect = trigger ? rectOf(trigger) : undefined;
     const menuRect = menu ? rectOf(menu) : undefined;
 
@@ -13631,21 +13611,11 @@ async function headerAvatarDropdownState(page) {
             .map((element) => normalize(element.textContent))
             .filter(Boolean)
         : [],
-      menuClass: menu
-        ? normalize(
-            isShadcnMenu
-              ? 'dropdown-menu dropdown-menu-right p-0 show'
-              : menu.className,
-          )
-        : '',
+      menuClass: menu ? normalize(menu.className) : '',
       menuCount: visibleMenus.length,
       menuTopDelta:
-        triggerRect && menuRect
-          ? isShadcnMenu
-            ? 2
-            : Math.round(menuRect.top - triggerRect.bottom)
-          : undefined,
-      menuWidth: isShadcnMenu ? 192 : menuRect?.width,
+        triggerRect && menuRect ? Math.round(menuRect.top - triggerRect.bottom) : undefined,
+      menuWidth: menuRect?.width,
       rightDelta:
         triggerRect && menuRect ? Math.round(menuRect.right - triggerRect.right) : undefined,
     };

@@ -30,10 +30,47 @@ interface LanguageMenuProps {
   activeIndicator?: boolean;
 }
 
-// Authored V2Board — shared language switcher behavior. Both the auth surface and the logged-in
-// app shell render the identical Radix DropdownMenu (modal={false}) over the enabled locales, with
-// each item persisting the locale through selectLocale. Only the trigger chrome and the
-// align/side/className wiring differ, so those stay caller-owned via props.
+// Authored V2Board — shared language switcher items. The auth surface renders them
+// in its own dropdown (LanguageMenu below); the logged-in shell nests them in the
+// account menu's Language submenu. Each item persists the locale through
+// selectLocale, and preventDefault keeps the menu open so the check mark's move
+// to the picked locale is visible.
+export function LanguageMenuItems({
+  itemClassName,
+  activeIndicator,
+}: Pick<LanguageMenuProps, 'itemClassName' | 'activeIndicator'>) {
+  const { i18n } = useTranslation();
+  const locales = getEnabledLocales();
+  const currentLabel = getCurrentLocaleLabel();
+
+  return (
+    <>
+      {locales.map((locale) => (
+        <DropdownMenuItem
+          key={locale.code}
+          className={cn(activeIndicator && 'justify-between gap-4', itemClassName)}
+          onSelect={(event) => {
+            event.preventDefault();
+            selectLocale(locale.code);
+            void i18n.changeLanguage(locale.code);
+          }}
+        >
+          {locale.label}
+          {activeIndicator ? (
+            <Check
+              aria-hidden="true"
+              className={cn('size-4', locale.label === currentLabel ? 'opacity-100' : 'opacity-0')}
+            />
+          ) : null}
+        </DropdownMenuItem>
+      ))}
+    </>
+  );
+}
+
+// Standalone dropdown chrome around the shared items, still used by the auth
+// surface. Only the trigger chrome and the align/side/className wiring are
+// caller-owned via props.
 export function LanguageMenu({
   trigger,
   align,
@@ -42,9 +79,7 @@ export function LanguageMenu({
   itemClassName,
   activeIndicator,
 }: LanguageMenuProps) {
-  const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
-  const locales = getEnabledLocales();
   const currentLabel = getCurrentLocaleLabel();
 
   return (
@@ -56,25 +91,7 @@ export function LanguageMenu({
         sideOffset={4}
         className={contentClassName}
       >
-        {locales.map((locale) => (
-          <DropdownMenuItem
-            key={locale.code}
-            className={cn(activeIndicator && 'justify-between gap-4', itemClassName)}
-            onSelect={(event) => {
-              event.preventDefault();
-              selectLocale(locale.code);
-              void i18n.changeLanguage(locale.code);
-            }}
-          >
-            {locale.label}
-            {activeIndicator ? (
-              <Check
-                aria-hidden="true"
-                className={cn('size-4', locale.label === currentLabel ? 'opacity-100' : 'opacity-0')}
-              />
-            ) : null}
-          </DropdownMenuItem>
-        ))}
+        <LanguageMenuItems itemClassName={itemClassName} activeIndicator={activeIndicator} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
