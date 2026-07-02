@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import {
   AuthEmailCodeField,
   AuthEmailWithSuffixField,
+  AuthField,
   AuthFormStack,
   AuthLoadingState,
   AuthPasswordConfirmationFields,
@@ -64,14 +64,15 @@ export default function RegisterPage() {
                 inputProps={registerInput('email')}
               />
             ) : (
-              <FormField id="register-email" label={t('auth.email')}>
+              <AuthField id="register-email" label={t('auth.email')}>
                 <Input
+                  id="register-email"
                   type="email"
                   autoComplete="username"
                   placeholder="m@example.com"
                   {...registerInput('email')}
                 />
-              </FormField>
+              </AuthField>
             )}
 
             {config?.is_email_verify ? (
@@ -98,7 +99,7 @@ export default function RegisterPage() {
               confirmInputProps={registerInput('confirm_password')}
               confirmError={passwordMismatch ? t('auth.password_mismatch') : undefined}
             />
-            <FormField
+            <AuthField
               id="register-invite-code"
               label={
                 config?.is_invite_force
@@ -107,13 +108,14 @@ export default function RegisterPage() {
               }
             >
               <Input
+                id="register-invite-code"
                 type="text"
                 disabled={Boolean(initialInviteCode)}
                 defaultValue={initialInviteCode ?? undefined}
                 autoComplete="off"
                 {...registerInput('invite_code')}
               />
-            </FormField>
+            </AuthField>
 
             {config?.tos_url ? (
               <AuthTosField

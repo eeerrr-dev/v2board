@@ -237,7 +237,7 @@ describe('user query state behavior', () => {
   });
 
   it('invalidates all order queries after cancel so detail state is not kept stale', async () => {
-    const { useCancelOrderMutation } = await import('./queries');
+    const { useCancelOrderMutation, userKeys } = await import('./queries');
     const mutation = useCancelOrderMutation() as unknown as {
       onSuccess: () => void;
     };
@@ -246,9 +246,11 @@ describe('user query state behavior', () => {
     expect(mutation.onSuccess()).toBeUndefined();
 
     expect(invalidateQueries).toHaveBeenCalledTimes(1);
-    // Exactly the whole orders prefix (list + detail + status) — no predicate
-    // filtering that would keep detail entries stale after a cancel.
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['user', 'orders'] });
+    // Exactly the whole orders prefix (list + detail + status) via the userKeys
+    // factory — no predicate filtering, and no raw literal a key-shape change
+    // could silently miss.
+    expect(userKeys.ordersScope).toEqual(['user', 'orders']);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: userKeys.ordersScope });
   });
 
   it('invalidates the ticket list from the ticket mutations, not the call sites', async () => {
@@ -275,9 +277,6 @@ describe('user query state behavior', () => {
       'useTransferMutation',
       'useRedeemGiftCardMutation',
       'useUnbindTelegramMutation',
-      // resetSecurity rotates the account uuid + token; the user record it caches
-      // must be invalidated too (profile refetches the disabled subscribe query).
-      'useResetSubscribeMutation',
     ] as const;
 
     for (const name of userInfoMutations) {
@@ -291,6 +290,19 @@ describe('user query state behavior', () => {
       const options = invalidateQueries.mock.calls[0]![0] as { queryKey: readonly unknown[] };
       expect(options.queryKey).toEqual(['user', 'info']);
     }
+  });
+
+  it('leaves the reset-subscribe mutation fire-and-forget so it refetches nothing', async () => {
+    // resetSecurity rotates the uuid/token into the subscribe URL, not the displayed
+    // /user/info fields; the legacy profile refetched neither. The interaction-parity
+    // oracle pins infoFetchDelta/subscribeFetchDelta at 0, so the mutation must expose
+    // no onSuccess invalidation at all.
+    const { useResetSubscribeMutation } = await import('./queries');
+    const mutation = useResetSubscribeMutation() as unknown as { onSuccess?: unknown };
+
+    invalidateQueries.mockReset();
+    expect(mutation.onSuccess).toBeUndefined();
+    expect(invalidateQueries).not.toHaveBeenCalled();
   });
 
   it('keeps the payment-method query off the per-mount refetch path while leaving plans live', async () => {

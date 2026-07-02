@@ -137,9 +137,12 @@ describe('forbidden module imports', () => {
     // island's dialog is '@/components/ui/shadcn-dialog'), auth-recaptcha.test.tsx
     // (same bridge), register/forget tests (lib/legacy-toast), login tests
     // (retired components/layout/auth-language-menu), toast.test.ts
-    // (@radix-ui/react-toast store replaced by Sonner).
+    // (@radix-ui/react-toast store replaced by Sonner), form-field.test.tsx
+    // (retired cloneElement FormField — the canonical RHF primitive is
+    // '@/components/ui/form', which exports its own FormField).
     const banned = new Map<string, string>([
       ['components/ui/dialog', "legacy dialog bridge — use '@/components/ui/shadcn-dialog'"],
+      ['components/ui/form-field', "retired cloneElement FormField — use the canonical '@/components/ui/form'"],
       ['lib/legacy-toast', "retired legacy toast — use '@/lib/toast'"],
       ['components/layout/auth-language-menu', 'retired auth language-menu module'],
       ['@radix-ui/react-toast', 'legacy self-owned toast store — Sonner owns toasts'],

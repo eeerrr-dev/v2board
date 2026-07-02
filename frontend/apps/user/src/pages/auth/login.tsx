@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  AuthField,
   AuthFormStack,
   AuthInlineError,
   AuthSubmitButton,
@@ -34,8 +34,9 @@ export default function LoginPage() {
       <AuthFormStack>
         {error ? <AuthInlineError id="login-error">{error}</AuthInlineError> : null}
 
-        <FormField id="login-email" label={t('auth.email')}>
+        <AuthField id="login-email" label={t('auth.email')}>
           <Input
+            id="login-email"
             type="email"
             autoComplete="username"
             placeholder="m@example.com"
@@ -43,7 +44,7 @@ export default function LoginPage() {
             aria-describedby={error ? 'login-error' : undefined}
             {...registerInput('email')}
           />
-        </FormField>
+        </AuthField>
         <div className="grid gap-3">
           <div className="flex items-center">
             <Label htmlFor="login-password">{t('auth.password')}</Label>

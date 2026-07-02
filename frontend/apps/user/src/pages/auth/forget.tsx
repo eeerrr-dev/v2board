@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import {
   AuthEmailCodeField,
+  AuthField,
   AuthFormStack,
   AuthLoadingState,
   AuthPasswordConfirmationFields,
@@ -38,14 +38,15 @@ export default function ForgetPage() {
           <AuthLoadingState />
         ) : (
           <AuthFormStack>
-            <FormField id="forget-email" label={t('auth.email')}>
+            <AuthField id="forget-email" label={t('auth.email')}>
               <Input
+                id="forget-email"
                 type="email"
                 autoComplete="username"
                 placeholder="m@example.com"
                 {...registerInput('email')}
               />
-            </FormField>
+            </AuthField>
 
             <AuthEmailCodeField
               id="forget-email-code"

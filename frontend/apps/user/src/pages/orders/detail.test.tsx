@@ -65,7 +65,6 @@ const orderState = vi.hoisted(() => ({
         pre_handling_amount?: number;
       }
     | undefined,
-  isFetching: false,
 }));
 const orderStatusState = vi.hoisted(() => ({
   data: undefined as number | undefined,
@@ -146,7 +145,9 @@ vi.mock('@/lib/queries', () => ({
   },
   useOrder: () => ({
     data: orderState.data,
-    isFetching: orderState.isFetching,
+    // The page now gates its full-page spinner on isPending (no data yet), not
+    // isFetching, so a background refetch no longer blanks the cashier.
+    isPending: orderState.data === undefined,
     refetch: orderRefetch,
   }),
   usePaymentMethods: () => ({
@@ -209,7 +210,6 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     toastSpies.loading.mockReset();
     toastSpies.success.mockReset();
     paymentState.data = [{ id: 1, name: 'Legacy Pay', payment: 'LegacyPay' }];
-    orderState.isFetching = false;
     orderState.data = {
       trade_no: 'ORDER123',
       period: 'month_price',
@@ -286,7 +286,6 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
 
   it('shows the centered detail spinner while the order detail fetch is pending', () => {
     orderState.data = undefined;
-    orderState.isFetching = true;
 
     const { container } = renderWithProviders(<OrderDetailPage />);
 

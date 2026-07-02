@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { getLocaleAntdMessages } from '@v2board/i18n';
 import type { TicketLevel } from '@v2board/types';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useForm } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ExternalLink, Plus, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,8 +22,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/shadcn-dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { PageShell } from '@/components/ui/page';
 import {
   Select,
@@ -38,7 +45,6 @@ import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
-import { fieldError } from '@/lib/field-error';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import {
   useCloseTicketMutation,
@@ -253,84 +259,75 @@ export default function TicketsPage() {
             <DialogTitle data-testid="ticket-dialog-title">{t('ticket.new')}</DialogTitle>
             <DialogDescription>{t('ticket.message_placeholder')}</DialogDescription>
           </DialogHeader>
-          <form className="grid gap-4" onSubmit={saveTicket} noValidate>
-            <div className="space-y-2">
-              <Label htmlFor="ticket-subject">{t('ticket.subject')}</Label>
-              <Input
-                id="ticket-subject"
-                placeholder={t('ticket.subject_placeholder')}
-                {...form.register('subject')}
+          <Form {...form}>
+            <form className="grid gap-4" onSubmit={saveTicket} noValidate>
+              <FormField
+                control={form.control}
+                name="subject"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('ticket.subject')}</FormLabel>
+                    <FormControl>
+                      <Input placeholder={t('ticket.subject_placeholder')} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              {form.formState.errors.subject ? (
-                <p
-                  role="alert"
-                  className="text-sm text-destructive"
-                  data-testid="ticket-subject-error"
-                >
-                  {fieldError(form.formState.errors.subject, t)}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ticket-level">{t('ticket.level_form')}</Label>
-              <Controller
+              <FormField
                 control={form.control}
                 name="level"
                 render={({ field }) => (
-                  <Select
-                    value={field.value === undefined ? undefined : String(field.value)}
-                    onValueChange={(nextLevel) => field.onChange(Number(nextLevel) as TicketLevel)}
-                  >
-                    <SelectTrigger id="ticket-level" data-testid="ticket-select-trigger">
-                      <SelectValue placeholder={t('ticket.level_placeholder')} />
-                    </SelectTrigger>
-                    <SelectContent data-testid="ticket-select-content">
-                      {LEVELS.map((item) => (
-                        <SelectItem key={item.value} value={String(item.value)}>
-                          {t(item.labelKey)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormItem>
+                    <FormLabel>{t('ticket.level_form')}</FormLabel>
+                    <Select
+                      value={field.value === undefined ? undefined : String(field.value)}
+                      onValueChange={(nextLevel) => field.onChange(Number(nextLevel) as TicketLevel)}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="ticket-select-trigger">
+                          <SelectValue placeholder={t('ticket.level_placeholder')} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent data-testid="ticket-select-content">
+                        {LEVELS.map((item) => (
+                          <SelectItem key={item.value} value={String(item.value)}>
+                            {t(item.labelKey)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
                 )}
               />
-              {form.formState.errors.level ? (
-                <p
-                  role="alert"
-                  className="text-sm text-destructive"
-                  data-testid="ticket-level-error"
-                >
-                  {fieldError(form.formState.errors.level, t)}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ticket-message">{t('ticket.message')}</Label>
-              <Textarea
-                id="ticket-message"
-                rows={5}
-                placeholder={t('ticket.message_placeholder')}
-                {...form.register('message')}
+              <FormField
+                control={form.control}
+                name="message"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('ticket.message')}</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        rows={5}
+                        placeholder={t('ticket.message_placeholder')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              {form.formState.errors.message ? (
-                <p
-                  role="alert"
-                  className="text-sm text-destructive"
-                  data-testid="ticket-message-error"
-                >
-                  {fieldError(form.formState.errors.message, t)}
-                </p>
-              ) : null}
-            </div>
-            <DialogFooter data-testid="ticket-dialog-footer">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" loading={save.isPending}>
-                {t('ticket.confirm')}
-              </Button>
-            </DialogFooter>
-          </form>
+              <DialogFooter data-testid="ticket-dialog-footer">
+                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" loading={save.isPending}>
+                  {t('ticket.confirm')}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </>

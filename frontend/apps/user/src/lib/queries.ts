@@ -66,16 +66,22 @@ export function reportSubscribeToChat(data: SubscribeInfo) {
   ]);
 }
 
+// Shared prefix for every order query (list + detail + status). Kept as a single
+// source so a scope-wide invalidation (useCancelOrderMutation) routes through the
+// factory instead of a raw literal that a future rename would silently miss.
+const ordersScope = ['user', 'orders'] as const;
+
 export const userKeys = {
   info: ['user', 'info'] as const,
   stat: ['user', 'stat'] as const,
   subscribe: ['user', 'subscribe'] as const,
-  orders: (status?: number) => ['user', 'orders', status ?? 'all'] as const,
+  ordersScope,
+  orders: (status?: number) => [...ordersScope, status ?? 'all'] as const,
   // The id params are honestly `| undefined`: an unset route id lands a literal
   // undefined in the key, inert because each use* wrapper gates `enabled` (never a
   // `?? ''` sentinel, which would be a distinct, request-reaching key).
-  orderDetail: (tradeNo: string | undefined) => ['user', 'orders', 'detail', tradeNo] as const,
-  orderStatus: (tradeNo: string | undefined) => ['user', 'orders', 'status', tradeNo] as const,
+  orderDetail: (tradeNo: string | undefined) => [...ordersScope, 'detail', tradeNo] as const,
+  orderStatus: (tradeNo: string | undefined) => [...ordersScope, 'status', tradeNo] as const,
   plans: ['user', 'plans'] as const,
   plan: (id: number | string | undefined) => ['user', 'plan', id] as const,
   payments: ['user', 'payments'] as const,
@@ -360,15 +366,14 @@ export function useUpdateProfileMutation() {
 }
 
 export function useResetSubscribeMutation() {
-  const queryClient = useQueryClient();
+  // resetSecurity rotates the account uuid + token, but the rotated value lives in
+  // the subscribe URL (/user/getSubscribe), not the displayed /user/info fields, and
+  // the legacy profile refetched neither — it fire-and-forgot the reset and left the
+  // cached records stale until the next navigation. Match that: no onSuccess
+  // invalidation (the subscribe query stays disabled too), so the reset touches only
+  // the /user/resetSecurity call and the success toast.
   return useMutation({
     mutationFn: () => user.resetSecurity(apiClient),
-    // resetSecurity rotates the account uuid + token, so the cached user record
-    // is stale after it resolves. The subscribe query is disabled, so callers
-    // still refetch it imperatively for the rotated subscribe URL.
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: userKeys.info });
-    },
   });
 }
 
@@ -463,7 +468,7 @@ export function useCancelOrderMutation() {
   return useMutation({
     mutationFn: (tradeNo: string) => user.cancelOrder(apiClient, tradeNo),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['user', 'orders'] });
+      void queryClient.invalidateQueries({ queryKey: userKeys.ordersScope });
     },
   });
 }

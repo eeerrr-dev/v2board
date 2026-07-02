@@ -359,10 +359,29 @@ describe('TicketsPage shadcn interactions', () => {
     await user.click(screen.getByRole('button', { name: '确认' }));
 
     expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
-    expect(await screen.findByTestId('ticket-subject-error')).toHaveTextContent('请输入工单主题');
-    expect(screen.getByTestId('ticket-level-error')).toHaveTextContent('请选择工单等级');
-    expect(screen.getByTestId('ticket-message-error')).toHaveTextContent('请描述您遇到的问题');
-    expect(screen.getAllByRole('alert')).toHaveLength(3);
+
+    // The canonical Form primitive renders each error through FormMessage (the
+    // parity harness never read the old per-field error testids). The three
+    // messages carry the placeholder copy as required text, in field order.
+    await screen.findByText('请输入工单主题');
+    const dialog = screen.getByTestId('ticket-dialog');
+    const messages = Array.from(
+      dialog.querySelectorAll<HTMLElement>('[data-slot="form-message"]'),
+    );
+    expect(messages.map((node) => node.textContent)).toEqual([
+      '请输入工单主题',
+      '请选择工单等级',
+      '请描述您遇到的问题',
+    ]);
+
+    // Each control is now wired to its message via aria-invalid +
+    // aria-describedby — the accessibility the hand-rolled fields lacked.
+    const subject = screen.getByLabelText('主题');
+    expect(subject).toHaveAttribute('aria-invalid', 'true');
+    expect(subject.getAttribute('aria-describedby')).toContain(messages[0]!.id);
+    const message = screen.getByLabelText('消息');
+    expect(message).toHaveAttribute('aria-invalid', 'true');
+    expect(message.getAttribute('aria-describedby')).toContain(messages[2]!.id);
   });
 
   it('keeps new-ticket form data after canceling because only a successful save clears state', async () => {
@@ -414,7 +433,7 @@ describe('TicketsPage shadcn interactions', () => {
     await user.click(screen.getByRole('button', { name: '确认' }));
 
     expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
-    expect(await screen.findByTestId('ticket-subject-error')).toHaveTextContent('请输入工单主题');
+    expect(await screen.findByText('请输入工单主题')).toBeInTheDocument();
   });
 
   it('confirms before closing a ticket and only fires the close mutation on accept', async () => {

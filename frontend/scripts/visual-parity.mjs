@@ -3003,7 +3003,7 @@ const userInfoFixture = {
   avatar_url: '',
   balance: 12345,
   banned: 0,
-  commission_balance: 0,
+  commission_balance: 10_000_000,
   commission_rate: null,
   created_at: 1_700_000_000,
   device_limit: 5,
@@ -6264,6 +6264,7 @@ async function runInviteFinanceSubmitMatrixInteraction(page) {
   await clickFirstVisibleText(page, 'button, .ant-btn', ['划转', 'Transfer']);
   await waitForVisibleElementCountAtLeast(page, '[data-testid="invite-dialog"], .ant-modal', 1);
   const transferEmptyOpened = await inviteFinanceDialogState(page);
+  await fillVisibleAt(page, '[data-testid="invite-dialog"] input:not([disabled]), .ant-modal input:not([disabled])', 0, '12.34');
   await clickVisibleAt(page, '[data-testid="invite-dialog-footer"] button, .ant-modal-footer .ant-btn', 1);
   await waitForPagePropertyAtLeast(
     page,
@@ -6418,6 +6419,20 @@ async function runUserTicketErrorMatrixInteraction(page) {
     '关闭',
     'Close',
   ]);
+  // The redesigned list guards close behind the shared confirm AlertDialog (closing a
+  // ticket cannot be undone); the legacy oracle fires close directly on the link click.
+  // Confirm the dialog when it appears so the close request fires on both. Do not wait
+  // for it to hide -- this matrix rejects the close, and the shared dialog intentionally
+  // stays open on a rejected onConfirm.
+  const closeConfirmSelector = '.v2board-confirm-dialog, .ant-modal-confirm, .ant-modal';
+  const closeConfirmPrimarySelector =
+    '.v2board-confirm-primary, .ant-modal-confirm-btns .ant-btn-primary, .ant-modal .ant-btn-primary';
+  const closeConfirm = await page
+    .waitForSelector(closeConfirmSelector, { state: 'visible', timeout: 1_500 })
+    .catch(() => null);
+  if (closeConfirm) {
+    await clickFirstVisible(page, closeConfirmPrimarySelector);
+  }
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityUserTicketCloseCount',
@@ -6529,6 +6544,23 @@ async function runUserTicketCreateValidationFailureInteraction(page) {
   });
   await page.waitForTimeout(100);
   const opened = await userTicketCreateModalState(page);
+  // The redesigned form validates client-side (zod min(1) on subject/message), so
+  // an empty submit never fires a request. Fill valid fields so the save reaches
+  // the server, where `ticketSaveError` rejects it -- exercising the server-error
+  // path (save fires once, modal stays open, no list refetch) on both the source
+  // and the legacy oracle, rather than the legacy-only "empty submit reaches the
+  // server" path the redesigned surface intentionally blocks.
+  await fillVisibleAt(page, '[data-testid="ticket-dialog"] input, .ant-modal .ant-input', 0, 'Parity subject');
+  await clickFirstVisible(page, '[data-testid="ticket-select-trigger"], .ant-modal .ant-select-selection');
+  await page.waitForSelector('[data-testid="ticket-select-content"] [role="option"], .ant-select-dropdown-menu-item', {
+    state: 'visible',
+    timeout: 5_000,
+  });
+  await clickVisibleAt(page, '[data-testid="ticket-select-content"] [role="option"], .ant-select-dropdown-menu-item', 2);
+  await waitForVisibleElementsHidden(page, '[data-testid="ticket-select-content"], .ant-select-dropdown');
+  await fillVisibleAt(page, '[data-testid="ticket-dialog"] textarea, .ant-modal textarea.ant-input', 0, 'Parity ticket body');
+  await page.waitForTimeout(100);
+  const filled = await userTicketCreateModalState(page);
   await clickFirstVisible(page, '[data-testid="ticket-dialog-footer"] button:last-child, .ant-modal-footer .ant-btn-primary');
   await page.waitForTimeout(100);
   const saving = await userTicketCreateModalState(page);
@@ -6542,6 +6574,7 @@ async function runUserTicketCreateValidationFailureInteraction(page) {
   return {
     after,
     before,
+    filled,
     opened,
     saveRequests: clonePageRequests(page.__visualParityUserTicketSaveRequests),
     saving,
@@ -10244,6 +10277,16 @@ function looksLikeInviteInteractionState(value) {
   ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
 }
 
+function stripTrailingDecimalZeros(text) {
+  if (typeof text !== 'string') return text;
+  // Collapse trailing zeros in decimals (67.80 -> 67.8, 234.50 -> 234.5, 0.00 -> 0)
+  // without touching integers, times, or dates, so display-only toFixed formatting
+  // does not diverge from the trailing-zero-stripped oracle rendering.
+  return text.replace(/(\d+)\.(\d*?)0+(?=\D|$)/g, (_match, intPart, frac) =>
+    frac ? `${intPart}.${frac}` : intPart,
+  );
+}
+
 function normalizeInviteInteractionState(state, options = {}) {
   const { selectedValues: _selectedValues, ...rest } = state;
   const normalized = { ...rest };
@@ -10255,11 +10298,26 @@ function normalizeInviteInteractionState(state, options = {}) {
     normalized.generateButton = normalizeInviteButtonState(normalized.generateButton);
   }
   if ('inputValues' in normalized) {
-    normalized.inputValues = normalizeInviteTextArray(normalized.inputValues);
+    // The redesigned transfer/withdraw dialogs render the current commission
+    // balance in a disabled input via toFixed(2) (e.g. 100000.00), while the
+    // legacy oracle renders it without trailing zeros (100000). AGENTS.md pins
+    // this commission toFixed formatting as Tier-2 relaxable, so fold trailing
+    // decimal zeros on both sides; genuinely typed values like 12.34 or an
+    // account string are untouched by the fold.
+    normalized.inputValues = normalizeInviteTextArray(normalized.inputValues).map(
+      stripTrailingDecimalZeros,
+    );
   }
   if ('labels' in normalized) normalized.labels = normalizeInviteTextArray(normalized.labels);
   if ('statBlocks' in normalized) {
-    normalized.statBlocks = normalizeInviteTextArray(normalized.statBlocks, { compact: true });
+    // The redesigned invite surface renders commission with toFixed(2) (e.g.
+    // ¥67.80), which AGENTS.md pins as Tier-2 relaxable formatting; the legacy
+    // oracle strips trailing zeros (¥67.8). Fold trailing decimal zeros on both
+    // sides so the display formatting difference does not fail parity while any
+    // genuinely different value still diverges.
+    normalized.statBlocks = normalizeInviteTextArray(normalized.statBlocks, {
+      compact: true,
+    }).map(stripTrailingDecimalZeros);
   }
   if ('tableRows' in normalized) {
     if (options.stripTableRows) delete normalized.tableRows;
@@ -11509,13 +11567,14 @@ function assertUsefulInteraction(label, result) {
     label === 'user-ticket-create-validation-failure' &&
     (result.before?.modalCount !== 0 ||
       result.opened?.modalCount !== 1 ||
+      !result.filled?.inputValues?.length ||
+      result.filled?.inputValues?.some((value) => value === '') ||
       result.saveRequests?.length !== 1 ||
       result.after?.modalCount !== 1 ||
-      result.after?.inputValues?.some((value) => value !== '') ||
       result.ticketFetchDelta !== 0)
   ) {
     throw new Error(
-      `ticket create validation failure did not preserve legacy state: ${JSON.stringify(result)}`,
+      `ticket create server error did not keep the modal open without refetching: ${JSON.stringify(result)}`,
     );
   }
   if (
@@ -13145,10 +13204,21 @@ async function tooltipState(page) {
           ].join(', '),
         ),
       ).filter(isVisible).length,
-      placement:
-        tooltip?.getAttribute('data-placement') ??
-        tooltip?.className.match(/ant-tooltip-placement-([A-Za-z]+)/)?.[1] ??
-        '',
+      placement: (() => {
+        const antPlacement =
+          tooltip?.getAttribute('data-placement') ??
+          tooltip?.className.match(/ant-tooltip-placement-([A-Za-z]+)/)?.[1];
+        if (antPlacement) return antPlacement;
+        // The redesigned Radix tooltip encodes its position as data-side +
+        // data-align instead of a legacy data-placement attribute or
+        // ant-tooltip-placement-* class: side 'top' with align 'end' is the
+        // legacy 'topRight', any other top alignment is plain 'top'. Reading
+        // it back keeps the placement assertion honest instead of dropping it.
+        const side = tooltip?.getAttribute('data-side');
+        if (!side) return '';
+        const align = tooltip?.getAttribute('data-align');
+        return side === 'top' && align === 'end' ? 'topRight' : side;
+      })(),
       texts: tooltip
         ? textElements
             .filter(isVisible)
@@ -13782,9 +13852,19 @@ async function darkModeStyleSnapshot(page) {
   }, darkModeStyleTargets);
 }
 
+// Redesigned shadcn dialogs append an sr-only close label (t('common.close_dialog'))
+// as the modal's last child, which textContent/aria captures where the legacy oracle's
+// antd close is an icon outside the compared region. Strip that trailing close label in
+// every locale the interaction scenarios run in (plus the legacy English "Close").
+function withoutTrailingCloseLabel(text) {
+  return text.replace(
+    /(?:Close dialog|Close|关闭弹窗|關閉彈窗|ダイアログを閉じる|Đóng hộp thoại|대화 상자 닫기)$/u,
+    '',
+  );
+}
+
 function normalizeDashboardDialogText(value) {
-  return normalizeParityText(value)
-    .replace(/Close$/u, '')
+  return withoutTrailingCloseLabel(normalizeParityText(value))
     .replace(/^一键订阅(?=复制订阅地址|扫描二维码订阅|导入到)/u, '')
     .replace(/^扫描二维码订阅(?=使用支持扫码的客户端进行订阅)/u, '');
 }
@@ -13849,7 +13929,7 @@ function normalizeDashboardNoticeModalBody(value, title) {
 }
 
 function normalizeDashboardConfirmButtons(values) {
-  return values.map(normalizeParityText).filter((text) => text && text !== 'Close');
+  return values.map((value) => withoutTrailingCloseLabel(normalizeParityText(value))).filter(Boolean);
 }
 
 function normalizeDashboardConfirmContent(values, titles) {
@@ -13872,10 +13952,24 @@ function normalizeDashboardConfirmContent(values, titles) {
 }
 
 function normalizeProfileBlockTitles(values) {
+  // The redesigned profile adds an account-info card (profile.account) and an
+  // active-sessions card (profile.active_sessions) the legacy oracle has no
+  // equivalent for — neither carries a backend contract (they are absent from the
+  // AGENTS.md profile Tier-1 list). Drop those redesign-only titles in every locale
+  // the scenarios run in so the card-inventory comparison stays on the legacy-common
+  // set; the reset / telegram / preference / gift-card / password behavior each
+  // scenario exercises is asserted separately.
+  const redesignOnlyTitles = new Set(
+    [
+      '账户信息', '帳戶資訊', 'Account', 'アカウント情報', 'Thông tin tài khoản', '계정 정보',
+      '登录设备', '登入裝置', 'Active Sessions', 'ログイン中のデバイス', 'Thiết bị đăng nhập', '로그인된 기기',
+    ].map(normalizeParityText),
+  );
   return values
     .map(normalizeParityText)
     .filter(Boolean)
-    .filter((text) => !/^-?\d+(?:\.\d+)?[A-Z]{2,5}$/u.test(text));
+    .filter((text) => !/^-?\d+(?:\.\d+)?[A-Z]{2,5}$/u.test(text))
+    .filter((text) => !redesignOnlyTitles.has(text));
 }
 
 function normalizeProfileTelegramBindBodies(values, titles) {
@@ -13884,7 +13978,7 @@ function normalizeProfileTelegramBindBodies(values, titles) {
     new Set(
       values
         .map((value) => {
-          let text = normalizeParityText(value).replace(/Close$/u, '');
+          let text = withoutTrailingCloseLabel(normalizeParityText(value));
           for (const title of normalizedTitles) {
             if (text.startsWith(title)) text = text.slice(title.length);
           }
@@ -14287,7 +14381,10 @@ async function profileTelegramBindState(page) {
     buttons: normalizeDashboardConfirmButtons(
       await visibleTexts(
         page,
-        '[data-testid="profile-telegram-bind-dialog"] button, .ant-modal-footer .ant-btn, .ant-modal .ant-btn',
+        // Exclude the redesign's copy-command button (profile-copy-code, e.g. "/bind");
+        // the legacy oracle rendered that command as inline <code>, not a button, so it
+        // is compared via modalCode instead. The remaining buttons match the oracle.
+        '[data-testid="profile-telegram-bind-dialog"] button:not([data-testid="profile-copy-code"]), .ant-modal-footer .ant-btn, .ant-modal .ant-btn',
         4,
       ),
     ),
@@ -14995,7 +15092,7 @@ async function waitForCreditCardSection(page) {
 }
 
 async function commerceCreditCardTexts(page) {
-  const texts = await visibleTexts(page, '#cashier h3, #cashier .fa-user-shield, #cashier .mt-3.mb-5', 8);
+  const texts = await visibleTexts(page, '#cashier h2, #cashier h3, #cashier .fa-user-shield, #cashier .mt-3.mb-5', 8);
   return texts.filter((text) => /信用卡|credit card|安全|secure|security|encrypt|加密/i.test(text));
 }
 

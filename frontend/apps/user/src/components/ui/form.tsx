@@ -17,12 +17,11 @@ import { Label } from './label';
 // Vendored shadcn Form primitive (new-york-v4 registry, React 19 shape), owned
 // locally per the island rules. This is the canonical RHF-context composition —
 // FormField wraps Controller, FormControl injects id/aria wiring through a
-// Radix Slot — replacing per-call-site cloneElement injection (the legacy
-// form-field.tsx, kept until its call sites migrate; note both files export a
-// `FormField`, with different meanings). Adaptations from canonical: local
-// cn/Label imports, and FormMessage resolves the error message through i18n —
-// the island's zod resolvers stash i18n keys in FieldError.message (see
-// lib/field-error.ts), so the raw key must be translated before display.
+// Radix Slot — and is the sole Form/Field primitive for the island (the legacy
+// cloneElement-injection form-field.tsx has been retired). Adaptations from
+// canonical: local cn/Label imports, and FormMessage resolves the error message
+// through i18n — the island's zod resolvers stash i18n keys in FieldError.message
+// (see lib/field-error.ts), so the raw key must be translated before display.
 
 const Form = FormProvider;
 

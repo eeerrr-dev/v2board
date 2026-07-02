@@ -1,11 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ParseKeys } from 'i18next';
 import { useParams, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
-import type { Order, PaymentMethod } from '@v2board/types';
 import { BookOpen, CheckCircle2, Info, TriangleAlert } from 'lucide-react';
 import {
   Dialog,
@@ -15,20 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/shadcn-dialog';
-import {
-  useCheckoutOrderMutation,
-  useCommConfig,
-  useOrder,
-  useOrderStatus,
-  usePaymentMethods,
-  useCancelOrderMutation,
-  useStripePublicKey,
-  useUserInfo,
-  userKeys,
-} from '@/lib/queries';
-import { confirmDialog } from '@/components/ui/confirm-dialog';
-import { StripeCardForm, type StripeCardFormHandle } from '@/components/stripe-card-form';
-import { toast } from '@/lib/toast';
+import { StripeCardForm } from '@/components/stripe-card-form';
 import { formatLegacyDateTime } from '@v2board/config/format';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,6 +20,7 @@ import { PageShell } from '@/components/ui/page';
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/cn';
+import { useOrderCheckoutController } from './use-order-checkout-controller';
 
 const PERIOD_LABEL_KEY: Record<string, ParseKeys> = {
   month_price: 'plan.monthly',
@@ -51,166 +36,43 @@ const PERIOD_LABEL_KEY: Record<string, ParseKeys> = {
 export default function OrderDetailPage() {
   const { t } = useTranslation();
   const { trade_no } = useParams();
-  const tradeNo = trade_no;
-  const orderQuery = useOrder(tradeNo);
-  const queryClient = useQueryClient();
-  const paymentsQuery = usePaymentMethods({ enabled: Boolean(orderQuery.data) });
-  // Old componentDidMount dispatches order/detail, then user/getUserInfo, then comm/config.
-  useUserInfo({ refetchOnMount: 'always' });
-  const { data: comm } = useCommConfig({ refetchOnMount: 'always' });
-  const cancel = useCancelOrderMutation();
-  const checkout = useCheckoutOrderMutation();
-  const { mutateAsync: checkoutOrder } = checkout;
-  const [methodId, setMethodId] = useState<number | undefined>();
-  const [qrcodeVisible, setQrcodeVisible] = useState(false);
-  const [payUrl, setPayUrl] = useState<string | undefined>();
-  const [pollOrderStatus, setPollOrderStatus] = useState(false);
-  // Stripe tokenizes at submit time (see onPay), so the page only tracks whether the
-  // CardElement reports itself complete — enough to gate the checkout button.
-  const [cardComplete, setCardComplete] = useState(false);
-  const stripeCardRef = useRef<StripeCardFormHandle>(null);
-  // useOrderStatus owns the 3s self-stopping poll cadence (it stops once the
-  // order leaves the pending state or the check errors); this page only decides
-  // whether to poll at all, via enabled.
-  const orderStatusQuery = useOrderStatus(tradeNo, { enabled: pollOrderStatus });
-  const symbol = comm?.currency_symbol;
-  const currency = comm?.currency;
-  const paymentMethods = orderQuery.data ? paymentsQuery.data : undefined;
-  const hasLoadedOrder = Boolean(orderQuery.data);
-  const loading = orderQuery.isFetching;
+  const {
+    order,
+    isLoading,
+    isPending,
+    paymentMethods,
+    effectiveMethodId,
+    selectMethod,
+    isStripePayment,
+    stripePublicKey,
+    stripeCardRef,
+    cardComplete,
+    setCardComplete,
+    onPay,
+    isCheckoutPending,
+    qrcode,
+    cancel,
+    fee,
+    currencySymbol: symbol,
+    currency,
+  } = useOrderCheckoutController(trade_no);
 
-  // The original waits 3s before starting /user/order/check and only starts once per trade_no.
-  // After that first delay, TanStack Query owns the 3s refetch cadence.
-  const checkedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!tradeNo || !hasLoadedOrder) return;
-    if (checkedRef.current === tradeNo) return;
-    checkedRef.current = tradeNo;
-    const timer = window.setTimeout(() => setPollOrderStatus(true), 3000);
-    return () => {
-      window.clearTimeout(timer);
-      setPollOrderStatus(false);
-    };
-  }, [tradeNo, hasLoadedOrder]);
-
-  // Payment settled (gateway poll flips the order out of pending, or a free /
-  // balance-covered order returns immediately): refresh the order plus the two
-  // account records it just moved — balance (info) and the subscription
-  // (subscribe) it extended. The original left both stale until a full reload.
-  const refreshAfterPayment = useCallback(() => {
-    void orderQuery.refetch();
-    void queryClient.invalidateQueries({ queryKey: userKeys.info });
-    void queryClient.invalidateQueries({ queryKey: userKeys.subscribe });
-  }, [orderQuery.refetch, queryClient]);
-
-  useEffect(() => {
-    const status = orderStatusQuery.data;
-    if (status === undefined || status === 0) return;
-    setQrcodeVisible(false);
-    // The original poll success only hides the QR modal; it leaves payUrl in state.
-    // Manual modal cancel is the path that clears it. useOrderStatus owns stopping
-    // the poll once the order leaves the pending state.
-    refreshAfterPayment();
-  }, [refreshAfterPayment, orderStatusQuery.data]);
-
-  useEffect(() => {
-    // The bundled poll success only hides the QR modal once the order leaves the
-    // pending (status 0) state.
-    if (orderQuery.data?.status !== 0) setQrcodeVisible(false);
-  }, [orderQuery.data?.status]);
-
-  const effectiveMethodId = methodId ?? paymentMethods?.[0]?.id;
-  const selectedPayment = paymentMethods?.find((p) => p.id === effectiveMethodId);
-  const isStripePayment = selectedPayment?.payment === 'StripeCredit';
-
-  // The original only fetches the Stripe public key once a Stripe method is selected and
-  // never refetches it, so cache it forever behind the selected method.
-  const stripeQuery = useStripePublicKey(
-    effectiveMethodId === undefined ? undefined : String(effectiveMethodId),
-    { enabled: isStripePayment },
-  );
-  const stripePk = stripeQuery.data ?? null;
-
-  // pre_handling_amount from the server wins; otherwise derive the fee from the selected
-  // method. The bundled poll-success refetch replaces the order detail without re-running
-  // getPaymentMethod, so a paid (non-pending) order has no locally injected fee.
-  const currentOrder = orderQuery.data;
-  const effectivePreHandlingAmount = !currentOrder
-    ? 0
-    : (currentOrder.pre_handling_amount ??
-      (currentOrder.status === 0 ? calculatePreHandlingAmount(currentOrder, selectedPayment) : 0));
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex min-h-44 items-center justify-center" role="status">
         <Spinner className="size-5" />
       </div>
     );
   }
-  const order = (orderQuery.data ?? { plan: {} }) as Order;
-  const isPending = order.status === 0;
   const isDeposit = order.plan?.id == 0;
   const periodLabelKey = order.period ? PERIOD_LABEL_KEY[order.period] : undefined;
   const periodLabel = periodLabelKey ? t(periodLabelKey) : undefined;
-  const grandTotal = order.total_amount + (effectivePreHandlingAmount || 0);
-
-  const onPay = async () => {
-    if (!tradeNo) return;
-    let token: string | undefined;
-    if (isStripePayment) {
-      const stripeToken = await stripeCardRef.current?.tokenize();
-      if (!stripeToken) {
-        toast.error(t('order.credit_card_check'));
-        return;
-      }
-      token = stripeToken.id;
-    }
-    try {
-      const result = await checkoutOrder({
-        trade_no: tradeNo,
-        method: effectiveMethodId as number,
-        token,
-      });
-      if (isStripePayment) {
-        toast.loading(t('order.stripe_verifying'), { duration: 5000 });
-        return;
-      }
-      if (result.type === 0) {
-        setQrcodeVisible(true);
-        setPayUrl(typeof result.data === 'string' ? result.data : undefined);
-      } else if (result.type === 1 && typeof result.data === 'string') {
-        window.location.href = result.data;
-        toast.info(t('order.redirecting_checkout'));
-      } else if (result.type === -1) {
-        // Free / balance-covered order (backend total_amount <= 0): it settles
-        // immediately with no gateway, so there is no QR or redirect. Without
-        // this branch onPay fell through silently. Confirm it and refresh the
-        // order + account state so the result card and balance render at once.
-        toast.success(t('order.success'));
-        refreshAfterPayment();
-      }
-    } catch {
-      // The mutation tracks its own error/pending state; swallow here to keep
-      // the checkout button restored after a failed /payment request.
-    }
-  };
+  const grandTotal = order.total_amount + (fee || 0);
 
   const transferEnable =
     order.plan && 'transfer_enable' in order.plan && order.plan.transfer_enable != null
       ? order.plan.transfer_enable
       : null;
-
-  const handleCancel = () => {
-    const cancelTradeNo = order.trade_no;
-    if (!cancelTradeNo) return;
-    void confirmDialog({
-      title: t('common.attention'),
-      description: t('order.cancel_confirm'),
-      confirmText: t('order.cancel'),
-      confirmButtonProps: { loading: cancel.isPending },
-      onConfirm: () => cancel.mutateAsync(cancelTradeNo),
-    });
-  };
 
   return (
     <>
@@ -247,7 +109,7 @@ export default function OrderDetailPage() {
                   variant="outline"
                   size="sm"
                   loading={cancel.isPending}
-                  onClick={handleCancel}
+                  onClick={cancel.run}
                 >
                   {t('order.cancel')}
                 </Button>
@@ -272,10 +134,8 @@ export default function OrderDetailPage() {
               {order.balance_amount ? (
                 <InfoRow label={t('order.balance_used')}>{amountText(order.balance_amount)}</InfoRow>
               ) : null}
-              {effectivePreHandlingAmount ? (
-                <InfoRow label={t('order.handling_fee')}>
-                  {amountText(effectivePreHandlingAmount)}
-                </InfoRow>
+              {fee ? (
+                <InfoRow label={t('order.handling_fee')}>{amountText(fee)}</InfoRow>
               ) : null}
               <InfoRow label={t('order.created_at')}>
                 {formatLegacyDateTime(order.created_at)}
@@ -293,7 +153,7 @@ export default function OrderDetailPage() {
                   <RadioGroup
                     value={effectiveMethodId === undefined ? undefined : String(effectiveMethodId)}
                     onValueChange={(nextMethodId) => {
-                      setMethodId(Number(nextMethodId));
+                      selectMethod(Number(nextMethodId));
                     }}
                   >
                     {paymentMethods?.map((method) => (
@@ -315,12 +175,12 @@ export default function OrderDetailPage() {
                 </CardContent>
               </Card>
 
-              {isStripePayment && stripePk && (
+              {isStripePayment && stripePublicKey && (
                 <>
                   <h2 className="text-base font-semibold leading-6 text-foreground">{t('order.credit_card_title')}</h2>
                   <StripeCardForm
-                    key={stripePk}
-                    publicKey={stripePk}
+                    key={stripePublicKey}
+                    publicKey={stripePublicKey}
                     ref={stripeCardRef}
                     onCompleteChange={setCardComplete}
                   />
@@ -389,9 +249,9 @@ export default function OrderDetailPage() {
                     - {moneyText(order.refund_amount, symbol)}
                   </AmountBlock>
                 ) : null}
-                {effectivePreHandlingAmount ? (
+                {fee ? (
                   <AmountBlock label={t('order.handling_fee')}>
-                    + {(effectivePreHandlingAmount / 100).toFixed(2)}
+                    + {(fee / 100).toFixed(2)}
                   </AmountBlock>
                 ) : null}
 
@@ -405,7 +265,7 @@ export default function OrderDetailPage() {
                   type="button"
                   block
                   data-testid="commerce-submit"
-                  loading={checkout.isPending}
+                  loading={isCheckoutPending}
                   disabled={isStripePayment && !cardComplete}
                   onClick={onPay}
                 >
@@ -418,12 +278,9 @@ export default function OrderDetailPage() {
       </PageShell>
 
       <Dialog
-        open={qrcodeVisible}
+        open={qrcode.visible}
         onOpenChange={(open) => {
-          if (!open) {
-            setQrcodeVisible(false);
-            setPayUrl(undefined);
-          }
+          if (!open) qrcode.close();
         }}
       >
         <DialogContent
@@ -435,10 +292,10 @@ export default function OrderDetailPage() {
             <DialogTitle>{t('order.checkout')}</DialogTitle>
             <DialogDescription>{t('order.waiting_pay')}</DialogDescription>
           </DialogHeader>
-          {payUrl && (
+          {qrcode.payUrl && (
             <div className="flex justify-center" role="img" aria-label={t('common.scan_qrcode')}>
               <QRCodeSVG
-                value={payUrl}
+                value={qrcode.payUrl}
                 size={250}
               />
             </div>
@@ -513,13 +370,6 @@ function moneyText(cents: number | null | undefined, symbol?: string | null) {
       {((cents as number) / 100).toFixed(2)}
     </>
   );
-}
-
-function calculatePreHandlingAmount(order: Order, method?: PaymentMethod) {
-  return order.total_amount > 0 && (method?.handling_fee_fixed || method?.handling_fee_percent)
-    ? order.total_amount * ((method.handling_fee_percent as number) / 100) +
-        (method.handling_fee_fixed as number)
-    : 0;
 }
 
 function OrderResult({ status }: { status?: number }) {

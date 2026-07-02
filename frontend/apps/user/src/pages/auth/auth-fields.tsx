@@ -2,7 +2,6 @@ import type { ComponentPropsWithRef, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button, type ButtonProps } from '@/components/ui/button';
-import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -13,11 +12,42 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/cn';
 
 type AuthInputProps = ComponentPropsWithRef<typeof Input>;
 
 export function AuthFormStack({ children }: { children: ReactNode }) {
   return <div className="grid gap-6">{children}</div>;
+}
+
+interface AuthFieldProps {
+  /** Stable id shared by the control (caller sets `id` on it) and the label's `htmlFor`. */
+  id: string;
+  label: ReactNode;
+  /** Inline field error copy; rendered as a `role="alert"` message tied to the control. */
+  error?: ReactNode;
+  className?: string;
+  /** The form control (e.g. <Input id={id} />). Props stay explicit — no cloneElement injection. */
+  children: ReactNode;
+}
+
+// Explicit label/control/error field wrapper for the register-based auth island.
+// The auth controllers expose only RHF `register` (no FormProvider/control), and
+// the error copy is external controller state rather than a FieldError, so the
+// context-driven components/ui/form.tsx primitive cannot wire these fields; this
+// keeps the wiring explicit instead of the retired cloneElement FormField.
+export function AuthField({ id, label, error, className, children }: AuthFieldProps) {
+  return (
+    <div className={cn('grid gap-3', className)}>
+      <Label htmlFor={id}>{label}</Label>
+      {children}
+      {error ? (
+        <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export function AuthLoadingState() {
@@ -117,9 +147,9 @@ export function AuthEmailCodeField({
 }: AuthEmailCodeFieldProps) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-      <FormField id={id} label={label} className="min-w-0">
-        <Input type="text" inputMode="numeric" {...inputProps} />
-      </FormField>
+      <AuthField id={id} label={label} className="min-w-0">
+        <Input id={id} type="text" inputMode="numeric" {...inputProps} />
+      </AuthField>
       <Button
         type="button"
         size="lg"
@@ -156,12 +186,19 @@ export function AuthPasswordConfirmationFields({
 }: AuthPasswordConfirmationFieldsProps) {
   return (
     <>
-      <FormField id={passwordId} label={passwordLabel}>
-        <Input type="password" autoComplete="new-password" {...passwordInputProps} />
-      </FormField>
-      <FormField id={confirmId} label={confirmLabel} error={confirmError}>
-        <Input type="password" autoComplete="new-password" {...confirmInputProps} />
-      </FormField>
+      <AuthField id={passwordId} label={passwordLabel}>
+        <Input id={passwordId} type="password" autoComplete="new-password" {...passwordInputProps} />
+      </AuthField>
+      <AuthField id={confirmId} label={confirmLabel} error={confirmError}>
+        <Input
+          id={confirmId}
+          type="password"
+          autoComplete="new-password"
+          invalid={confirmError ? true : undefined}
+          aria-describedby={confirmError ? `${confirmId}-error` : undefined}
+          {...confirmInputProps}
+        />
+      </AuthField>
     </>
   );
 }

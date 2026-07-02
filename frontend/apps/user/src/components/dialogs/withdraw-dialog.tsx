@@ -2,9 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useForm } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { fieldError } from '@/lib/field-error';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -16,7 +15,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/shadcn-dialog';
-import { FormField } from '@/components/ui/form-field';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -82,53 +88,61 @@ export function WithdrawDialog({ methods, children }: WithdrawDialogProps) {
           <DialogDescription>{t('invite.withdraw_button')}</DialogDescription>
         </DialogHeader>
 
-        <form className="space-y-4" onSubmit={onSubmit} noValidate>
-          <Controller
-            control={form.control}
-            name="method"
-            render={({ field }) => (
-              <Select value={field.value || undefined} onValueChange={field.onChange}>
-                <FormField
-                  id="invite-withdraw-method"
-                  label={t('invite.withdraw_method')}
-                  error={fieldError(form.formState.errors.method, t)}
-                >
-                  <SelectTrigger data-testid="invite-select-trigger">
-                    <SelectValue placeholder={t('invite.withdraw_method_placeholder')} />
-                  </SelectTrigger>
-                </FormField>
-                <SelectContent data-testid="invite-select-content">
-                  {methods.map((item) => (
-                    <SelectItem key={item} value={item}>
-                      {item}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
-          <FormField
-            id="invite-withdraw-account"
-            label={t('invite.withdraw_account')}
-            error={fieldError(form.formState.errors.account, t)}
-          >
-            <Input
-              placeholder={t('invite.withdraw_account_placeholder')}
-              {...form.register('account')}
+        <Form {...form}>
+          <form className="space-y-4" onSubmit={onSubmit} noValidate>
+            <FormField
+              control={form.control}
+              name="method"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('invite.withdraw_method')}</FormLabel>
+                  <Select value={field.value || undefined} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger data-testid="invite-select-trigger">
+                        <SelectValue placeholder={t('invite.withdraw_method_placeholder')} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent data-testid="invite-select-content">
+                      {methods.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {item}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </FormField>
+            <FormField
+              control={form.control}
+              name="account"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('invite.withdraw_account')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={t('invite.withdraw_account_placeholder')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-          <DialogFooter data-testid="invite-dialog-footer">
-            <DialogClose asChild>
-              <Button type="button" variant="outline">
-                {t('common.cancel')}
+            <DialogFooter data-testid="invite-dialog-footer">
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  {t('common.cancel')}
+                </Button>
+              </DialogClose>
+              <Button type="submit" loading={withdraw.isPending}>
+                {t('profile.confirm')}
               </Button>
-            </DialogClose>
-            <Button type="submit" loading={withdraw.isPending}>
-              {t('profile.confirm')}
-            </Button>
-          </DialogFooter>
-        </form>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

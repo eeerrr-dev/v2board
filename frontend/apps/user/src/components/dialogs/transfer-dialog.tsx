@@ -4,7 +4,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { AlertCircle } from 'lucide-react';
-import { fieldError } from '@/lib/field-error';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,7 +16,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/shadcn-dialog';
-import { FormField } from '@/components/ui/form-field';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatCentsPlain } from '@v2board/config/format';
@@ -108,28 +114,36 @@ export function TransferDialog({ max, children }: TransferDialogProps) {
             </Label>
             <Input id="invite-transfer-current" disabled value={maxText} readOnly />
           </div>
-          <form className="space-y-4" onSubmit={onSubmit} noValidate>
-            <FormField
-              id="invite-transfer-amount"
-              label={t('invite.transfer_amount')}
-              error={fieldError(form.formState.errors.yuan, t)}
-            >
-              <Input
-                placeholder={t('invite.transfer_placeholder')}
-                {...form.register('yuan')}
+          <Form {...form}>
+            <form className="space-y-4" onSubmit={onSubmit} noValidate>
+              <FormField
+                control={form.control}
+                name="yuan"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('invite.transfer_amount')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={t('invite.transfer_placeholder')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </FormField>
-            <DialogFooter data-testid="invite-dialog-footer">
-              <DialogClose asChild>
-                <Button type="button" variant="outline">
-                  {t('common.cancel')}
+              <DialogFooter data-testid="invite-dialog-footer">
+                <DialogClose asChild>
+                  <Button type="button" variant="outline">
+                    {t('common.cancel')}
+                  </Button>
+                </DialogClose>
+                <Button type="submit" loading={transfer.isPending}>
+                  {t('profile.confirm')}
                 </Button>
-              </DialogClose>
-              <Button type="submit" loading={transfer.isPending}>
-                {t('profile.confirm')}
-              </Button>
-            </DialogFooter>
-          </form>
+              </DialogFooter>
+            </form>
+          </Form>
         </div>
       </DialogContent>
     </Dialog>
