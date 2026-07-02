@@ -22,8 +22,8 @@ export default defineConfig({
     cssCodeSplit: false,
     assetsInlineLimit: 0,
     reportCompressedSize: false,
-    // The Laravel drop-in deploy is intentionally a single classic script.
-    // Keep the limit near the current bundle so real growth still warns.
+    // Keep the warning limit near the current single bundle so real growth still
+    // warns (the deploy stays one classic script — see the output config below).
     chunkSizeWarningLimit: 1400,
     outDir: deployOutDir,
     emptyOutDir: false,
@@ -38,6 +38,18 @@ export default defineConfig({
       },
       input: path.resolve(__dirname, 'src/main.tsx'),
       output: {
+        // Single classic-script deploy is a deliberate tradeoff, not an oversight.
+        // The app source is already route-split (App.tsx USER_ROUTE_MODULES lazy
+        // imports); this flattens it on purpose. Flipping to format:'es' +
+        // codeSplitting:true works technically (a native ESM entry carries its own
+        // import graph, so the hand-maintained Laravel blade needs no chunk manifest),
+        // but is not worth it: `type="module"` would defer umi.js past the in-body
+        // classic custom.js hook — running an operator's custom.js before the app
+        // boots, a silent and untested break — and without modulePreload each deferred
+        // route pays a fetch waterfall, for only a modest first-paint gain on a
+        // login-gated SPA. Revisit together with a custom.js-ordering decision and
+        // manifest-driven modulepreload injection if this bundle ever becomes a
+        // measured LCP bottleneck.
         format: 'iife',
         codeSplitting: false,
         entryFileNames: 'umi.js',
