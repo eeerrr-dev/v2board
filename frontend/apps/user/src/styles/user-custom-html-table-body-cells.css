@@ -1,8 +1,0 @@
-/* Restored custom HTML table body cell styles. */
-.custom-html-style table td {
-  border: 1px solid #efefef;
-  text-align: left;
-  padding: 10px 15px;
-  min-width: 60px;
-  word-break: break-word;
-}

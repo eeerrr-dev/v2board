@@ -20,9 +20,6 @@ import type {
   TicketReplyPayload,
   TicketWithdrawPayload,
   TrafficLogEntry,
-  Tutorial,
-  TutorialFetchResult,
-  TutorialStep,
   UserCommConfig,
   UserInfo,
   UserUpdatePayload,
@@ -190,24 +187,6 @@ export const withdrawTicket = (client: ApiClient, payload: TicketWithdrawPayload
 
 export const fetchServers = (client: ApiClient) =>
   client.request<AvailableServer[]>({ url: '/user/server/fetch', method: 'GET' });
-
-export const fetchTutorials = (client: ApiClient) =>
-  client.request<TutorialFetchResult>({ url: '/user/tutorial/fetch', method: 'GET' });
-
-export const tutorialDetail = async (client: ApiClient, id: number | string): Promise<Tutorial> => {
-  const data = await client.request<Tutorial>({
-    url: '/user/tutorial/fetch',
-    method: 'GET',
-    params: { id },
-  });
-  return { ...data, steps: parseTutorialSteps(data.steps) };
-};
-
-function parseTutorialSteps(steps: Tutorial['steps']): TutorialStep[] {
-  if (!steps) return [];
-  if (Array.isArray(steps)) return steps;
-  return JSON.parse(steps) as TutorialStep[];
-}
 
 export const checkCoupon = (client: ApiClient, code: string, plan_id: number | string) =>
   client.request<Coupon>({

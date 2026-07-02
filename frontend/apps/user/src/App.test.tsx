@@ -92,6 +92,15 @@ describe('user legacy route table', () => {
     expect(source).not.toContain('<Suspense');
   });
 
+  it('paints a role=status spinner while pending initial loaders hydrate the root', () => {
+    // Without a hydrate fallback the data router leaves #root empty while the
+    // first navigation's loaders run — the DOM shape the retired production
+    // white-screen watchdog keyed on.
+    expect(source).toContain('function RouteHydrateFallback()');
+    expect(source).toContain('hydrateFallbackElement: <RouteHydrateFallback />');
+    expect(source).toContain('role="status"');
+  });
+
   it('prefetches the dashboard queries from its route loader', () => {
     expect(source).toContain(
       'export function createDashboardPrefetchLoader(queryClient: QueryClient)',
@@ -147,6 +156,56 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
     const result = await loader(loaderArgs('/dashboard'));
 
     expect(result).toBeNull();
+    setAuthData(null);
+  });
+
+  it('seeds the legacy empty user record when /user/info fails while still authenticated', async () => {
+    // Legacy keeps the dashboard shell mounted on an HTTP 401 from /user/info
+    // (user-auth-401-no-redirect); an errored info query would make AppLayout's
+    // useSuspenseQuery re-throw to the route errorElement and unmount the shell.
+    setAuthData('token-xyz');
+    const queryClient = new QueryClient();
+    vi.spyOn(queryClient, 'ensureQueryData').mockRejectedValue(new Error('auth required'));
+    const loader = createRequireUserLoader(queryClient);
+
+    const result = await loader(loaderArgs('/dashboard'));
+
+    expect(result).toBeNull();
+    expect(queryClient.getQueryData(userQueryOptions.info().queryKey)).toMatchObject({
+      email: '',
+      balance: 0,
+    });
+    setAuthData(null);
+  });
+
+  it('does not seed when the 403 teardown already cleared the session mid-flight', async () => {
+    setAuthData('token-xyz');
+    const queryClient = new QueryClient();
+    vi.spyOn(queryClient, 'ensureQueryData').mockImplementation(async () => {
+      // redirectToLegacyLogin clears the token before the rejection propagates.
+      setAuthData(null);
+      throw new Error('auth required');
+    });
+    const loader = createRequireUserLoader(queryClient);
+
+    const result = await loader(loaderArgs('/dashboard'));
+
+    expect(result).toBeNull();
+    expect(queryClient.getQueryData(userQueryOptions.info().queryKey)).toBeUndefined();
+  });
+
+  it('keeps previously fetched user info instead of overwriting it with the fallback', async () => {
+    setAuthData('token-xyz');
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(userQueryOptions.info().queryKey, { email: 'a@b.c' } as never);
+    vi.spyOn(queryClient, 'ensureQueryData').mockRejectedValue(new Error('timeout'));
+    const loader = createRequireUserLoader(queryClient);
+
+    await loader(loaderArgs('/dashboard'));
+
+    expect(queryClient.getQueryData(userQueryOptions.info().queryKey)).toEqual({
+      email: 'a@b.c',
+    });
     setAuthData(null);
   });
 });

@@ -16,6 +16,21 @@ describe('custom HTML content CSS', () => {
     expect(globals).toContain('.custom-html-style table {\n  font-size: 14px;');
     expect(globals).toContain('.custom-html-style table td {\n  border: 1px solid #efefef;');
   });
+
+  it('re-points the light-only rich-content colors in dark mode', () => {
+    const globals = css();
+
+    // The light rules pin element-matched colors (link blue, #f5f5f5 code fill,
+    // #333 blockquote, #f5f7fa table header) that beat the inherited dark
+    // foreground, so each needs an explicit .dark override to stay readable.
+    expect(globals).toContain('.dark .custom-html-style {\n  color: var(--foreground, #fafafa);');
+    expect(globals).toContain('.dark .custom-html-style a {\n  color: #8ab4f8;\n}');
+    expect(globals).toContain('.dark .custom-html-style pre,\n.dark .custom-html-style code {');
+    expect(globals).toContain('.dark .custom-html-style blockquote {\n  color: inherit;');
+    expect(globals).toContain(
+      '.dark .custom-html-style table th {\n  background-color: var(--muted, oklch(0.269 0 0));',
+    );
+  });
 });
 
 describe('remaining legacy utility CSS boundary', () => {
@@ -55,7 +70,15 @@ describe('shadcn island presentation CSS', () => {
 
     expect(globals).toContain("@import 'tailwindcss' source(none);");
     expect(globals).toContain("@import 'tailwindcss/theme.css';");
-    expect(globals).toContain('@media important {\n  @tailwind utilities source(none);');
+    // Utilities are emitted without blanket !important; user-redesigned-surfaces
+    // imports the island base (user-auth-surface.css) before user-shadcn.css so
+    // utilities win the equal-specificity island/neutralizer rules on source
+    // order instead.
+    expect(globals).toContain('@tailwind utilities source(none);');
+    expect(globals).not.toContain('@media important');
+    expect(globals).toContain(
+      "@import './user-auth-surface.css';\n@import './user-shadcn.css';\n@import './user-shadcn-motion.css';",
+    );
     expect(globals).not.toContain("@import 'tailwindcss';");
     expect(globals).not.toContain('prefix(tw)');
     expect(globals).toContain('@theme inline {');

@@ -1,9 +1,9 @@
 import zhCN, { type Translations } from './locales/zh-CN';
-import zhTW from './locales/zh-TW';
-import enUS from './locales/en-US';
-import jaJP from './locales/ja-JP';
-import viVN from './locales/vi-VN';
-import koKR from './locales/ko-KR';
+import zhTWErrors from './locales/zh-TW';
+import enUSErrors from './locales/en-US';
+import jaJPErrors from './locales/ja-JP';
+import viVNErrors from './locales/vi-VN';
+import koKRErrors from './locales/ko-KR';
 
 // Single source of truth for locale identity.
 //
@@ -57,8 +57,12 @@ export interface LocaleEntry {
    * navigator maps to zh-CN, matching the old frontend.
    */
   navigatorKeys: string[];
-  /** Bundled translation tree (raw-Chinese-keyed; see locales/legacy-fallback). */
-  translations: Translations;
+  /**
+   * Localized backend error-message strings. This is the only per-locale slice of
+   * the old full translation trees still bundled: UI copy renders at runtime from
+   * the zh-CN tree plus the legacy dictionaries (see index.ts `legacyLocale`).
+   */
+  errors: Translations['errors'];
   /** Reproduced antd locale-pack strings for the no-antd user app. */
   antd: AntdMessages;
 }
@@ -70,7 +74,7 @@ export const LOCALE_ENTRIES: LocaleEntry[] = [
     label: '简体中文',
     dir: 'ltr',
     navigatorKeys: ['zh'],
-    translations: zhCN,
+    errors: zhCN.errors,
     antd: { emptyDescription: '暂无数据', iconWord: '图标', okText: '确 定', cancelText: '取 消' },
   },
   {
@@ -78,7 +82,7 @@ export const LOCALE_ENTRIES: LocaleEntry[] = [
     label: '繁體中文',
     dir: 'ltr',
     navigatorKeys: [],
-    translations: zhTW,
+    errors: zhTWErrors,
     antd: { emptyDescription: '無此資料', iconWord: 'icon', okText: '確 定', cancelText: '取 消' },
   },
   {
@@ -86,7 +90,7 @@ export const LOCALE_ENTRIES: LocaleEntry[] = [
     label: 'English',
     dir: 'ltr',
     navigatorKeys: ['en'],
-    translations: enUS,
+    errors: enUSErrors,
     antd: { emptyDescription: 'No Data', iconWord: 'icon', okText: 'OK', cancelText: 'Cancel' },
   },
   {
@@ -94,7 +98,7 @@ export const LOCALE_ENTRIES: LocaleEntry[] = [
     label: '日本語',
     dir: 'ltr',
     navigatorKeys: ['ja'],
-    translations: jaJP,
+    errors: jaJPErrors,
     antd: { emptyDescription: 'データがありません', iconWord: 'icon', okText: 'OK', cancelText: 'キャンセル' },
   },
   {
@@ -102,7 +106,7 @@ export const LOCALE_ENTRIES: LocaleEntry[] = [
     label: 'Tiếng Việt',
     dir: 'ltr',
     navigatorKeys: ['vi'],
-    translations: viVN,
+    errors: viVNErrors,
     antd: { emptyDescription: 'Trống', iconWord: 'icon', okText: 'Đồng ý', cancelText: 'Hủy' },
   },
   {
@@ -110,7 +114,7 @@ export const LOCALE_ENTRIES: LocaleEntry[] = [
     label: '한국어',
     dir: 'ltr',
     navigatorKeys: ['ko'],
-    translations: koKR,
+    errors: koKRErrors,
     antd: { emptyDescription: '데이터 없음', iconWord: 'icon', okText: '확인', cancelText: '취소' },
   },
 ];

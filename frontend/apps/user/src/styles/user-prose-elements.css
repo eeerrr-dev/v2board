@@ -1,6 +1,9 @@
-/* Restored packaged prose element defaults for the user app shell. */
-small,
-.small {
+/*
+ * Restored packaged prose element defaults for the user app shell. The unused
+ * Bootstrap `.small` class half was dropped (no markup consumer); only the bare
+ * element selectors that real markup/backend HTML hits remain.
+ */
+small {
   font-size: 80%;
   font-weight: 400;
 }

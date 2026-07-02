@@ -6,25 +6,9 @@
  */
 @import './user-theme-colors.css';
 @import './user-theme-legacy-tokens.css';
-@import './user-theme-layout-tokens.css';
 @import './user-document-root.css';
-@import './user-heading-base.css';
-@import './user-heading-scale.css';
-@import './user-heading-native-color.css';
+@import './user-headings.css';
 @import './user-prose-elements.css';
 @import './user-link-elements.css';
-@import './user-custom-html-base.css';
-@import './user-custom-html-headings.css';
-@import './user-custom-html-inline.css';
-@import './user-custom-html-lists.css';
-@import './user-custom-html-divider.css';
-@import './user-custom-html-code-block.css';
-@import './user-custom-html-inline-code.css';
-@import './user-custom-html-blockquote.css';
-@import './user-custom-html-media.css';
-@import './user-custom-html-table-shell.css';
-@import './user-custom-html-table-cell-wrap.css';
-@import './user-custom-html-table-rows.css';
-@import './user-custom-html-table-header-cells.css';
-@import './user-custom-html-table-body-cells.css';
+@import './user-custom-html.css';
 @import './user-browser-modes.css';

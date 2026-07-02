@@ -3,11 +3,6 @@ import { initReactI18next } from 'react-i18next';
 
 import zhCN from './locales/zh-CN';
 import type { Translations } from './locales/zh-CN';
-import zhTW from './locales/zh-TW';
-import enUS from './locales/en-US';
-import jaJP from './locales/ja-JP';
-import viVN from './locales/vi-VN';
-import koKR from './locales/ko-KR';
 import { legacyDictionaries } from './locales/legacy-dictionaries';
 import {
   createLegacySourceReverseMap,
@@ -76,7 +71,12 @@ function normalizeLegacyBootstrapLocale(locale: string | null | undefined): stri
   return region ? `${language}${separator}${region}` : language;
 }
 
-function getCookie(name: string): string {
+/**
+ * Legacy cookie reader with the old frontend's parsing semantics (including
+ * tolerating malformed URI encoding). Shared with the apps so the `i18n`
+ * cookie contract is parsed by exactly one implementation.
+ */
+export function getLegacyCookie(name: string): string {
   if (typeof document === 'undefined') return '';
   return document.cookie.split('; ').reduce((value, item) => {
     const [key, raw] = item.split('=');
@@ -90,7 +90,7 @@ function getCookie(name: string): string {
 }
 
 function getLegacyBootstrapLocale(): string | undefined {
-  const cookieLocale = normalizeLegacyBootstrapLocale(getCookie('i18n'));
+  const cookieLocale = normalizeLegacyBootstrapLocale(getLegacyCookie('i18n'));
   if (cookieLocale) return cookieLocale;
   const navigatorLanguage = window.navigator.language?.trim().split(/[-_@]/)[0]?.toLowerCase();
   return LEGACY_NAVIGATOR_LOCALES[navigatorLanguage ?? ''];
@@ -170,10 +170,15 @@ export function installLocaleDocumentEnvironment(
   return () => instance.off('languageChanged', onLanguageChanged);
 }
 
-function legacyLocale(locale: SupportedLocale, fallback: Translations): Translations {
-  const dict = getLegacyDictionary(locale);
-  const sourceReverse = createLegacySourceReverseMap(getLegacyDictionary('zh-CN'));
-  return translateLegacyDictionary(dict ? zhCN : fallback, dict, sourceReverse);
+// Renders a locale's resource tree by dictionary-translating the zh-CN source
+// tree. The full per-locale UI trees are no longer bundled (only their errors
+// slice survives in the locale registry), so a locale without a dictionary
+// (windowless environments only) serves the zh-CN copy as-is.
+function legacyLocale(
+  locale: SupportedLocale,
+  sourceReverse: Map<string, string> | undefined,
+): Translations {
+  return translateLegacyDictionary(zhCN, getLegacyDictionary(locale), sourceReverse);
 }
 
 export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
@@ -188,6 +193,9 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
     window.g_lang = lng;
     window.g_langSeparator = '-';
   }
+  // The zh-CN reverse map is identical for every locale; build it once instead
+  // of once per registered locale.
+  const sourceReverse = createLegacySourceReverseMap(getLegacyDictionary('zh-CN'));
   instance
     .use(initReactI18next)
     .init({
@@ -195,7 +203,7 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
       resources: Object.fromEntries(
         LOCALE_ENTRIES.map((entry) => [
           entry.code,
-          { translation: legacyLocale(entry.code, entry.translations) },
+          { translation: legacyLocale(entry.code, sourceReverse) },
         ]),
       ),
       fallbackLng: fallback,
@@ -206,6 +214,6 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
   return instance;
 }
 
-export { zhCN, zhTW, enUS, jaJP, viVN, koKR };
+export { zhCN };
 export type { Translations } from './locales/zh-CN';
 export * from './locale-registry';

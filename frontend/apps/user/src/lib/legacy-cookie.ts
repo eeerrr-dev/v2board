@@ -1,15 +1,7 @@
-export function getLegacyCookie(name: string): string {
-  if (typeof document === 'undefined') return '';
-  return document.cookie.split('; ').reduce((value, item) => {
-    const [key, raw] = item.split('=');
-    if (key !== name || raw === undefined) return value;
-    try {
-      return decodeURIComponent(raw);
-    } catch {
-      return value;
-    }
-  }, '');
-}
+// The reader lives in @v2board/i18n, which parses the same legacy `i18n` cookie
+// during boot; re-export the shared implementation instead of keeping a second
+// copy of the parsing semantics.
+export { getLegacyCookie } from '@v2board/i18n';
 
 export function setLegacyCookie(
   name: string,

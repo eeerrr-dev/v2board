@@ -18,9 +18,9 @@ function SelectTrigger({
       data-slot="select-trigger"
       aria-invalid={invalid || undefined}
       className={cn(
-        'flex h-10 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-hidden transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground [&>span]:line-clamp-1',
+        'flex h-10 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-hidden transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground dark:bg-input/30 dark:hover:bg-input/50 [&>span]:line-clamp-1',
         invalid
-          ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20'
+          ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20 dark:aria-invalid:ring-destructive/40'
           : 'border-input',
         className,
       )}
@@ -75,7 +75,7 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          'v2board-island v2board-radix-popover-content relative z-50 max-h-96 min-w-32 overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-hidden',
+          'v2board-island v2board-radix-popover-content relative z-50 max-h-(--radix-select-content-available-height) min-w-32 overflow-x-hidden overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-hidden',
           position === 'popper' &&
             'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
           className,

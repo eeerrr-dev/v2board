@@ -47,13 +47,17 @@ function parseLegacyMarkdownAction(expression: string): LegacyMarkdownAction | n
   };
 }
 
+const LEGACY_MARKDOWN_ESCAPES: Record<string, string> = { n: '\n', r: '\r', t: '\t' };
+
 function parseLegacyMarkdownActionValue(value: string) {
   const trimmed = value.trim();
   const quoted = /^(['"`])(.*)\1$/.exec(trimmed);
   if (!quoted) return trimmed;
-  return (quoted[2] ?? '')
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '\r')
-    .replace(/\\t/g, '\t')
-    .replace(/\\(["'\\])/g, '$1');
+  // Single left-to-right pass, matching how the legacy inline JS string literal
+  // evaluated: `\\` consumes both characters before a following n/r/t can be
+  // misread as an escape, and unknown escapes drop the backslash (`\z` -> `z`).
+  return (quoted[2] ?? '').replace(
+    /\\(.)/g,
+    (_, char: string) => LEGACY_MARKDOWN_ESCAPES[char] ?? char,
+  );
 }

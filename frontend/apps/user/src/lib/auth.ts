@@ -27,8 +27,24 @@ export function subscribeAuth(listener: (value: string | null) => void): () => v
   };
 }
 
+// The QueryClient (created in main.tsx) holds per-session server state — user
+// info, orders, invite stats, and the subscribe record whose subscribe_url is
+// effectively a credential. Auth teardown must drop all of it so the next
+// session on this tab cannot read the previous account's cached data. main.tsx
+// registers the clearer at boot; lib code never imports the app entry.
+let sessionCacheClearer: (() => void) | undefined;
+
+export function registerSessionCacheClearer(clearer: () => void): void {
+  sessionCacheClearer = clearer;
+}
+
+export function clearSessionCaches(): void {
+  sessionCacheClearer?.();
+}
+
 export function logout(): void {
   setAuthData(null);
+  clearSessionCaches();
 }
 
 // Single source of truth for the auth gate's login redirect. The login page

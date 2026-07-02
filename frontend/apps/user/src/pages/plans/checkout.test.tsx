@@ -174,7 +174,7 @@ describe('PlanCheckoutPage shadcn commerce markup', () => {
     const html = renderToStaticMarkup(<PlanCheckoutPage />);
 
     expect(html).toContain('id="cashier"');
-    expect(html).toContain('plan-content');
+    expect(html).toContain('Feature A');
     expect(html).toContain('lucide-check');
     expect(html).toContain('付款周期');
     expect(html).toContain('data-testid="checkout-period-option"');

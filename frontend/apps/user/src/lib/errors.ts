@@ -4,7 +4,7 @@ import { LOCALE_ENTRIES, isSupportedLocale, type SupportedLocale } from '@v2boar
 const ERROR_DICTIONARIES: Record<SupportedLocale, Record<string, string>> = Object.fromEntries(
   LOCALE_ENTRIES.map((entry): [SupportedLocale, Record<string, string>] => [
     entry.code,
-    entry.translations.errors,
+    entry.errors,
   ]),
 ) as Record<SupportedLocale, Record<string, string>>;
 
@@ -23,7 +23,7 @@ export function i18nGet(message: string): string {
 // navigator language".
 export function getCurrentLocale(): SupportedLocale {
   return (
-    toSupportedLocale(safeLocalStorageGet('umi_locale')) ??
+    toSupportedLocale(window.localStorage.getItem('umi_locale')) ??
     toSupportedLocale(window.g_lang) ??
     'zh-CN'
   );
@@ -31,13 +31,4 @@ export function getCurrentLocale(): SupportedLocale {
 
 function toSupportedLocale(locale: string | null | undefined): SupportedLocale | undefined {
   return isSupportedLocale(locale) ? locale : undefined;
-}
-
-// localStorage access can throw (private mode / storage disabled); fall back.
-function safeLocalStorageGet(key: string): string {
-  try {
-    return window.localStorage.getItem(key) ?? '';
-  } catch {
-    return '';
-  }
 }

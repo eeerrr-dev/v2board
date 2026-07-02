@@ -89,29 +89,6 @@ describe('createApiClient', () => {
     expect(source).not.toContain('NoticePage');
   });
 
-  it('exposes the original tutorial fetch endpoints and parses detail steps like the old model', async () => {
-    const client = createApiClient({ baseURL: '/api/v1' });
-    const mock = new AxiosMockAdapter(client.axios);
-    mock.onGet('/user/tutorial/fetch').reply(200, {
-      data: { tutorials: [{ id: 1, title: 'Windows' }], safe_area_var: { top: 0 } },
-    });
-    mock.onGet('/user/tutorial/fetch?id=1').reply(200, {
-      data: { id: 1, title: 'Windows', steps: '[{"title":"Install"}]' },
-    });
-
-    await expect(userEndpoints.fetchTutorials(client)).resolves.toEqual({
-      tutorials: [{ id: 1, title: 'Windows' }],
-      safe_area_var: { top: 0 },
-    });
-    await expect(userEndpoints.tutorialDetail(client, 1)).resolves.toEqual({
-      id: 1,
-      title: 'Windows',
-      steps: [{ title: 'Install' }],
-    });
-    expect(mock.history.get[0]?.url).toBe('/user/tutorial/fetch');
-    expect(mock.history.get[1]?.url).toBe('/user/tutorial/fetch?id=1');
-  });
-
   it('unwraps the data envelope', async () => {
     const client = createApiClient({ baseURL: '/api/v1' });
     const mock = new AxiosMockAdapter(client.axios);

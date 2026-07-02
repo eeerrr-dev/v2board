@@ -71,12 +71,14 @@
 /*
  * Neutralize the legacy global heading/paragraph rhythm AND color inside every
  * island. The replica's prose CSS sets h1-h6 / p margins plus a document-wide
- * heading color (#171717) and body color whose bare element selectors still
- * match any heading inside an island. Resetting margin to 0 and color to
- * `inherit` makes portaled Dialog/Sheet titles and any bare island heading
- * follow the shadcn rhythm and the island `--foreground` instead of the vendored
- * margin and near-black. The !important shadcn color utilities (text-foreground /
- * text-card-foreground) still win wherever a surface sets one explicitly.
+ * heading color (rgba(0, 0, 0, 0.85), user-headings.css) and body color whose
+ * bare element selectors still match any heading inside an island. Resetting
+ * margin to 0 and color to `inherit` makes portaled Dialog/Sheet titles and any
+ * bare island heading follow the shadcn rhythm and the island `--foreground`
+ * instead of the vendored margin and near-black. The shadcn color utilities
+ * (text-foreground / text-card-foreground) still win wherever a surface sets
+ * one explicitly: they are emitted after this file, so they take equal-
+ * specificity conflicts on source order.
  */
 .v2board-island :where(h1, h2, h3, h4, h5, h6, p) {
   margin: 0;
@@ -129,9 +131,9 @@
  * Dialog, plan checkout) whose island variables are scoped and dark-flipped
  * above, AND the public operator homepage (home.tsx), which renders OUTSIDE any
  * island. The legacy replica pins this content to fixed light-mode colors
- * (color: #333, plus the global h1-h6 #171717 rule), so in dark mode they render
- * near-black on the dark page/drawer. Re-point body and heading text to the
- * island foreground in dark mode only. The fallback keeps the non-island
+ * (color: #333, plus the global h1-h6 rgba(0, 0, 0, 0.85) rule), so in dark mode
+ * they render near-black on the dark page/drawer. Re-point body and heading text
+ * to the island foreground in dark mode only. The fallback keeps the non-island
  * homepage legible: outside an island `--foreground` is undefined, so without it
  * `var(--foreground)` would be invalid and the text would fall back to the light
  * body color (#495057) on the dark `#0a0a0a` page — a failing-contrast pairing.
@@ -142,4 +144,45 @@
 
 .dark .custom-html-style :where(h1, h2, h3, h4, h5, h6) {
   color: inherit;
+}
+
+/*
+ * The remaining light-only colors in user-custom-html.css match elements
+ * directly, so they beat the inherited dark foreground above and must each be
+ * re-pointed: the #0052d9 link blue (~2.4:1 on the dark page), the #f5f5f5
+ * pre/code fill (which would sit under near-white inherited text), the #333
+ * blockquote text, the #f5f7fa table-header fill, and the #eee/#efefef/#f6f6f6
+ * hairlines. Island token vars apply inside islands (knowledge Sheet, notice
+ * Dialog, plan checkout); the fixed fallbacks keep the non-island homepage
+ * legible, mirroring the var(--foreground, #fafafa) pattern above. Links use a
+ * fixed accessible light blue rather than the island --primary, which is
+ * near-white in dark mode and would leave links indistinguishable from text.
+ */
+.dark .custom-html-style a {
+  color: #8ab4f8;
+}
+
+.dark .custom-html-style pre,
+.dark .custom-html-style code {
+  background-color: var(--muted, oklch(0.269 0 0));
+}
+
+.dark .custom-html-style blockquote {
+  color: inherit;
+  border-left-color: oklch(1 0 0 / 25%);
+}
+
+.dark .custom-html-style hr {
+  border-top-color: var(--border, oklch(1 0 0 / 15%));
+}
+
+.dark .custom-html-style table,
+.dark .custom-html-style table tr,
+.dark .custom-html-style table th,
+.dark .custom-html-style table td {
+  border-color: var(--border, oklch(1 0 0 / 15%));
+}
+
+.dark .custom-html-style table th {
+  background-color: var(--muted, oklch(0.269 0 0));
 }

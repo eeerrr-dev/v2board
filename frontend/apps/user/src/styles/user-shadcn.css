@@ -4,14 +4,18 @@
  * Keep this separate from globals.css so redesigned islands can use unprefixed
  * registry-style classes without injecting a second Tailwind preflight over the
  * legacy app. The `@source` globs below scope candidate scanning to the island
- * page/component sources. `important` is retained so an island utility still wins
- * over the equal-specificity (0,1,0) `.v2board-island` base and prose-neutralizer
- * rules in user-auth-surface.css — e.g. `mb-4`/`text-foreground`/`tracking-wide`
- * on a bare heading or paragraph must beat that file's later-imported
+ * page/component sources. Utilities are emitted WITHOUT `important`: the only
+ * equal-specificity (0,1,0) competitors are the `.v2board-island` base and
+ * prose-neutralizer rules in user-auth-surface.css, which
+ * user-redesigned-surfaces.css deliberately imports BEFORE this file — so
+ * `mb-4`/`text-foreground`/`tracking-wide` on a bare heading or paragraph beat
  * `.v2board-island :where(h1..h6, p){ margin:0; color:inherit }` and the
- * `.v2board-island{ letter-spacing:0 }` reset, which would otherwise win on
- * source order. (Historically it also out-ranked the now-deleted Bootstrap/OneUI
- * naked-class CSS.)
+ * `.v2board-island{ letter-spacing:0 }` reset on source order. Every remaining
+ * legacy-replica conflict is already won on specificity (its live selectors are
+ * bare elements at (0,0,1)); the Bootstrap/OneUI naked-class CSS that the former
+ * blanket `!important` out-ranked is deleted. Not being `!important` also lets
+ * intentional inline styles (e.g. the virtualized table's `padding: 0` spacer
+ * rows) win over same-property utilities, as inline styles should.
  */
 @import 'tailwindcss/theme.css';
 
@@ -22,8 +26,9 @@
  * Subsets mirror @fontsource-variable/inter (latin, latin-ext, vietnamese) so the
  * six shipped LTR locales stay in one typeface; CJK still falls back through the
  * stack. The `--font-sans` override below must come after `tailwindcss/theme.css`
- * so it wins over Tailwind's default theme token (which the plain `:root` override
- * in user-theme-layout-tokens.css could not, being imported earlier).
+ * so it wins over Tailwind's default theme token (a plain `:root` override in an
+ * earlier-imported stylesheet — where this token used to live — silently lost
+ * that cascade).
  */
 @font-face {
   font-family: 'Inter Variable';
@@ -120,6 +125,4 @@
 @source '../pages/**/*.{ts,tsx}';
 @source '../components/**/*.{ts,tsx}';
 
-@media important {
-  @tailwind utilities source(none);
-}
+@tailwind utilities source(none);

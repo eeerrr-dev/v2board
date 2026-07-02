@@ -15,7 +15,6 @@ html {
 
 body {
   color: var(--color-body);
-  background: var(--color-page) !important;
   background-color: var(--color-page);
   font-family: var(--font-sans);
   font-size: 1rem;
@@ -30,9 +29,11 @@ body {
 /*
  * The body sits behind every island and is painted from the operator-themed
  * --color-page (light). In dark mode it would otherwise flash a light page color
- * on overscroll or before an island mounts, so override it to a dark base. The
- * island `background: ... !important` above forces the !important here too.
+ * on overscroll or before an island mounts, so override it to a dark base.
+ * Nothing else paints the body background (the Bootstrap/OneUI framework layer
+ * the packaged rule's `!important` once fought is deleted), so the plain
+ * cascade suffices: `.dark body` beats `body` on specificity.
  */
 .dark body {
-  background-color: #0a0a0a !important;
+  background-color: #0a0a0a;
 }

@@ -33,6 +33,18 @@ describe('legacy markdown rendering', () => {
     );
   });
 
+  it('unescapes quoted onclick values in a single pass like the legacy inline JS evaluation', () => {
+    // Attribute chars `C:\\note` are the JS literal 'C:\\note', which the legacy
+    // frontend evaluated to `C:\note` — the escaped backslash must be consumed
+    // before `n` so it is not misread as a newline escape.
+    expect(renderLegacyMarkdown('<span onclick="copy(\'C:\\\\note\')">c</span>')).toContain(
+      'data-v2board-markdown-value="C:\\note"',
+    );
+    expect(renderLegacyMarkdown('<span onclick="copy(\'a\\nb\')">c</span>')).toContain(
+      'data-v2board-markdown-value="a\nb"',
+    );
+  });
+
   it('translates legacy copy and jump inline handlers into safe React action hooks', () => {
     expect(
       renderLegacyMarkdown(

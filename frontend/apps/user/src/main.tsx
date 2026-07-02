@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SubscribeInfo, UserInfo } from '@v2board/types';
@@ -16,6 +16,7 @@ import { RouterProvider } from 'react-router';
 import { createUserRouter, USER_LEGACY_ROUTE_PATHS } from './App';
 import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
 import { Toaster } from './components/ui/toaster';
+import { registerSessionCacheClearer } from './lib/auth';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { applyLegacySettings } from './lib/legacy-settings';
 import { reportSubscribeToChat, reportUserInfoToChat, userKeys } from './lib/queries';
@@ -49,9 +50,15 @@ if (import.meta.env.DEV) {
     delay: 3000,
   });
   installLegacyDevWhiteScreenFallback({ delay: 5000 });
-} else {
-  installLegacyWhiteScreenRecovery(legacyHashRouteOptions, legacyWhiteScreenRecoveryConfig);
 }
+// Production deliberately ships NO white-screen watchdog: its terminal recovery
+// pass removes the Tier-1 `authorization` storage key off a DOM-emptiness
+// heuristic (packages/config/src/legacy-hash-route.ts), which would destroy a
+// valid session whenever the backend is merely slow. The router's
+// hydrateFallbackElement (App.tsx) keeps #root non-empty while initial loaders
+// are pending, and auth clearing stays owned by the tested 403 handler
+// (lib/api.ts). The dev-only installs above remain for the Vite module-graph
+// recovery cases that production builds cannot hit.
 applyLegacySettings();
 const i18n = createI18n();
 installLocaleDocumentEnvironment(i18n);
@@ -79,6 +86,12 @@ const queryClient = new QueryClient({
   },
 });
 
+// Auth teardown (logout and the 403 session-expiry handler in lib/api.ts) must
+// drop cached server state so the next session on this tab cannot read the
+// previous account's data (e.g. the subscribe_url credential). Registered here
+// because the QueryClient lives in the entry; lib/auth never imports main.
+registerSessionCacheClearer(() => queryClient.clear());
+
 applyInitialDarkMode();
 const router = createUserRouter(queryClient);
 
@@ -97,16 +110,18 @@ const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');
 
 createRoot(root).render(
-  <I18nextProvider i18n={i18n}>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      <ConfirmDialogProvider />
-      <Toaster />
-      {ReactQueryDevtools ? (
-        <Suspense fallback={null}>
-          <ReactQueryDevtools initialIsOpen={false} />
-        </Suspense>
-      ) : null}
-    </QueryClientProvider>
-  </I18nextProvider>,
+  <StrictMode>
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+        <ConfirmDialogProvider />
+        <Toaster />
+        {ReactQueryDevtools ? (
+          <Suspense fallback={null}>
+            <ReactQueryDevtools initialIsOpen={false} />
+          </Suspense>
+        ) : null}
+      </QueryClientProvider>
+    </I18nextProvider>
+  </StrictMode>,
 );

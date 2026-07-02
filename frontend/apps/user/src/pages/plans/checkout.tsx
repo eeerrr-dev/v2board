@@ -197,11 +197,7 @@ export default function PlanCheckoutPage() {
             <CardTitle className="text-xl leading-7">{plan.name}</CardTitle>
           </CardHeader>
           <CardContent>
-            <PlanContent
-              content={plan.content}
-              className="plan-content"
-              htmlClassName="custom-html-style plan-content"
-            />
+            <PlanContent content={plan.content} htmlClassName="custom-html-style" />
           </CardContent>
         </Card>
 

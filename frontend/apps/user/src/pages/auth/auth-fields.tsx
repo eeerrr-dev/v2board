@@ -1,4 +1,5 @@
 import type { ComponentPropsWithRef, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button, type ButtonProps } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
@@ -20,10 +21,11 @@ export function AuthFormStack({ children }: { children: ReactNode }) {
 }
 
 export function AuthLoadingState() {
+  const { t } = useTranslation();
   return (
     <div className="flex min-h-64 items-center justify-center" role="status">
       <Spinner className="size-5 text-muted-foreground" />
-      <span className="sr-only">Loading...</span>
+      <span className="sr-only">{t('common.loading')}</span>
     </div>
   );
 }

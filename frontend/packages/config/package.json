@@ -13,10 +13,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "dayjs": "catalog:",
-    "vite": "catalog:"
+    "dayjs": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vite": "catalog:"
   }
 }

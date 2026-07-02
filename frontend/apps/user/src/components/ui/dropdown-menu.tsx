@@ -64,7 +64,7 @@ function DropdownMenuContent({
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         className={cn(
-          'v2board-island v2board-radix-popover-content z-50 min-w-32 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-hidden',
+          'v2board-island v2board-radix-popover-content z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-32 overflow-x-hidden overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-hidden',
           className,
         )}
         {...props}

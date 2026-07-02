@@ -45,9 +45,13 @@ describe('user legacy entrypoint', () => {
       'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, {\n    ...legacyWhiteScreenRecoveryConfig,\n    delay: 3000,\n  });',
     );
     expect(mainSource).toContain('installLegacyDevWhiteScreenFallback({ delay: 5000 });');
-    expect(mainSource).toContain(
-      '} else {\n  installLegacyWhiteScreenRecovery(legacyHashRouteOptions, legacyWhiteScreenRecoveryConfig);',
+    // Production must NOT install the white-screen watchdog: its recovery pass
+    // deletes the Tier-1 `authorization` key off a DOM-emptiness heuristic. The
+    // router's hydrateFallbackElement owns the pending-initial-loader case.
+    expect(mainSource).not.toContain(
+      'installLegacyWhiteScreenRecovery(legacyHashRouteOptions, legacyWhiteScreenRecoveryConfig);',
     );
+    expect(mainSource).not.toContain('} else {');
     expect(mainSource.indexOf('if (import.meta.env.DEV) {')).toBeLessThan(
       mainSource.indexOf('installLegacyDevModuleRecovery(legacyDevModuleRecoveryConfig);'),
     );
@@ -74,9 +78,15 @@ describe('user legacy entrypoint', () => {
     expect(mainSource).toContain('<RouterProvider router={router} />');
     expect(mainSource).toContain('<ConfirmDialogProvider />');
     expect(mainSource).toContain('<Toaster />');
+    expect(mainSource).toContain('<StrictMode>');
     expect(mainSource).not.toContain('HashRouter');
     expect(mainSource).not.toContain('useLocation');
     expect(mainSource).not.toContain('Navigate');
+  });
+
+  it('registers the session cache clearer so auth teardown wipes server state', () => {
+    expect(mainSource).toContain("import { registerSessionCacheClearer } from './lib/auth';");
+    expect(mainSource).toContain('registerSessionCacheClearer(() => queryClient.clear());');
   });
 
   it('reports user/info and subscribe to the live-chat widgets via QueryCache onSuccess', () => {

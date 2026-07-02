@@ -1,21 +1,32 @@
 import { createApiClient } from '@v2board/api-client';
 import type { ApiError } from '@v2board/api-client';
 import { legacyGetLocale } from '@v2board/i18n';
-import { getAuthData, setAuthData } from './auth';
+import { clearSessionCaches, getAuthData, setAuthData } from './auth';
 import { i18nGet } from './errors';
 import { getLegacySettings } from './legacy-settings';
 import { toast } from './toast';
 
 let redirectingToLogin = false;
 
+// Legacy 403 ("session expired") teardown, restored byte-for-byte in outcome:
+// drop the token so the auth gates bounce to the login screen, then put it
+// back 50ms later exactly like the packaged frontend did — the oracle run ends
+// parked on #/login with the credential still in storage (pinned by the
+// user-session-expired-redirect interaction scenario). Cached server state
+// from the torn-down session is cleared so the next account on this tab cannot
+// read it. The guard collapses concurrent 403s into a single teardown and
+// re-arms once the restore timer has run.
 function redirectToLegacyLogin(): void {
   if (redirectingToLogin) return;
   redirectingToLogin = true;
-  if (getAuthData() !== null) setAuthData(null);
+  const authData = getAuthData();
+  if (authData !== null) setAuthData(null);
+  clearSessionCaches();
   window.location.hash = '#/login';
   window.setTimeout(() => {
+    if (authData !== null) setAuthData(authData);
     redirectingToLogin = false;
-  }, 0);
+  }, 50);
 }
 
 export const apiClient = createApiClient({

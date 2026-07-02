@@ -1,5 +1,6 @@
 import { type QueryClient } from '@tanstack/react-query';
 import { type ComponentType } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   createHashRouter,
   matchPath,
@@ -8,10 +9,12 @@ import {
   type RouteObject,
 } from 'react-router';
 import { getNormalizedLegacyHashPath } from '@v2board/config';
+import type { UserInfo } from '@v2board/types';
 import { AppLayout } from '@/components/layout/app-layout';
 import { GuestLayout } from '@/components/layout/guest-layout';
 import { RequireAuth } from '@/components/layout/require-auth';
 import { RouteBoundaryOutlet, RouteErrorFallback } from '@/components/route-error-boundary';
+import { Spinner } from '@/components/ui/spinner';
 import { buildLoginRedirect, getAuthData } from '@/lib/auth';
 import { userQueryOptions } from '@/lib/queries';
 
@@ -122,6 +125,35 @@ export function unknownUserRouteLoader({ request }: LoaderFunctionArgs) {
   throw redirect(getUserRouteFallback());
 }
 
+// The legacy empty user record: the packaged frontend initialized its user
+// state to an empty object and kept rendering the app shell when /user/info
+// failed without a session teardown (the oracle's user-auth-401-no-redirect
+// scenario keeps the dashboard mounted on an HTTP 401). AppLayout reads the
+// info query via useSuspenseQuery, which would re-throw a cached fetch error
+// to the route errorElement and replace the whole shell — so the require-user
+// loader seeds this record instead and page-level queries surface their own
+// failures. Page observers refetch the real record as soon as one succeeds.
+const EMPTY_USER_INFO: UserInfo = {
+  email: '',
+  transfer_enable: 0,
+  device_limit: null,
+  last_login_at: null,
+  created_at: 0,
+  banned: 0,
+  auto_renewal: 0,
+  remind_expire: 0,
+  remind_traffic: 0,
+  expired_at: null,
+  balance: 0,
+  commission_balance: 0,
+  plan_id: null,
+  discount: null,
+  commission_rate: null,
+  telegram_id: null,
+  uuid: '',
+  avatar_url: '',
+};
+
 // Auth is guarded in two layers and BOTH are load-bearing:
 //   1. This route loader gates ENTRY. On navigation it redirects an
 //      unauthenticated request to /login before the page renders, and warms the
@@ -141,7 +173,21 @@ export function createRequireUserLoader(queryClient: QueryClient) {
       throw redirect(buildLoginRedirect(current));
     }
 
-    await queryClient.ensureQueryData(userQueryOptions.info()).catch(() => null);
+    try {
+      await queryClient.ensureQueryData(userQueryOptions.info());
+    } catch {
+      // A failed /user/info must not unmount the app shell (see EMPTY_USER_INFO
+      // above). Only a 403 tears the session down: redirectToLegacyLogin has
+      // already cleared the token by the time that rejection propagates here,
+      // so the getAuthData() check skips the seed and the auth gates own the
+      // redirect. A query that already holds data keeps it.
+      if (
+        getAuthData() &&
+        queryClient.getQueryData(userQueryOptions.info().queryKey) === undefined
+      ) {
+        queryClient.setQueryData(userQueryOptions.info().queryKey, EMPTY_USER_INFO);
+      }
+    }
     return null;
   };
 }
@@ -165,6 +211,24 @@ export function createDashboardPrefetchLoader(queryClient: QueryClient) {
   };
 }
 
+// Initial-hydration fallback: while the root matches' loaders/lazy chunks are
+// still pending on first load (e.g. requireUser awaiting a slow /user/info),
+// the data router would otherwise render nothing and leave #root empty — the
+// exact DOM shape the retired production white-screen watchdog keyed on.
+// Mirrors AppLayout's role=status spinner fallback.
+function RouteHydrateFallback() {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="status"
+      className="v2board-island flex min-h-screen items-center justify-center bg-background"
+    >
+      <Spinner className="size-6" />
+      <span className="sr-only">{t('common.loading')}</span>
+    </div>
+  );
+}
+
 function pageRoute(path: UserLegacyRoutePath, loader?: RouteObject['loader']): RouteObject {
   return {
     path,
@@ -184,6 +248,7 @@ export function createUserRoutes(queryClient: QueryClient): RouteObject[] {
       loader: normalizeUserRouteLoader,
       element: <RouteBoundaryOutlet />,
       errorElement: <RouteErrorFallback />,
+      hydrateFallbackElement: <RouteHydrateFallback />,
       children: [
         pageRoute('/'),
         {
