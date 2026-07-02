@@ -1,15 +1,8 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import KnowledgePage from './index';
-
-const knowledgeSource = readFileSync(`${process.cwd()}/src/pages/knowledge/index.tsx`, 'utf8');
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
 
 const mocks = vi.hoisted(() => {
   const defaultGroups: Record<
@@ -79,6 +72,7 @@ const mocks = vi.hoisted(() => {
 });
 
 const labels: Record<string, string> = {
+  'common.close_dialog': 'Close',
   'common.loading': 'Loading...',
   'common.error_title': 'Something went wrong',
   'common.retry': 'Retry',
@@ -137,170 +131,107 @@ vi.mock('@/lib/toast', () => ({
   },
 }));
 
+beforeEach(() => {
+  mocks.fetching = false;
+  mocks.detailFetching = false;
+  mocks.detailError = false;
+  mocks.searchParams = new URLSearchParams();
+  mocks.groups = mocks.defaultGroups;
+  mocks.detailById = { ...mocks.defaultDetailById };
+  mocks.knowledgeArgs = [];
+  mocks.detailArgs = [];
+  mocks.copyText.mockReset();
+  mocks.copyText.mockResolvedValue(true);
+  mocks.toastSuccess.mockClear();
+  mocks.detailRefetch.mockClear();
+});
+
 describe('KnowledgePage shadcn library surface', () => {
-  beforeEach(() => {
-    mocks.fetching = false;
-    mocks.detailFetching = false;
-    mocks.detailError = false;
-    mocks.searchParams = new URLSearchParams();
-    mocks.groups = mocks.defaultGroups;
-    mocks.detailById = { ...mocks.defaultDetailById };
-    mocks.knowledgeArgs = [];
-    mocks.detailArgs = [];
+  it('renders the search card, category groups, article rows, and dates', () => {
+    renderWithProviders(<KnowledgePage />);
+
+    expect(screen.getByTestId('knowledge-surface')).toBeInTheDocument();
+    expect(screen.getByText('使用文档')).toBeInTheDocument();
+
+    const search = within(screen.getByTestId('knowledge-search-bar')).getByRole('textbox', {
+      name: '搜索文档',
+    });
+    expect(search).toHaveAttribute('placeholder', '搜索文档');
+    expect(search).toHaveValue('');
+
+    expect(
+      screen.getAllByTestId('knowledge-category-title').map((title) => title.textContent),
+    ).toEqual(['General', 'Router']);
+    expect(screen.getAllByTestId('knowledge-item')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: /Copy Article/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Router Guide/ })).toBeInTheDocument();
+    expect(screen.getByText('最后更新: 2023/11/14')).toBeInTheDocument();
+    expect(screen.getByText('最后更新: 2023/11/15')).toBeInTheDocument();
   });
 
-  afterEach(() => {
-    document.body.innerHTML = '';
-  });
-
-  it('renders the shadcn search card, category groups, article rows, and dates', () => {
-    const html = renderToStaticMarkup(<KnowledgePage />);
-
-    expect(html).toContain('data-testid="knowledge-surface"');
-    expect(html).toContain('data-testid="knowledge-card"');
-    expect(html).toContain('bg-card');
-    expect(html).toContain('border-border');
-    expect(html).toContain('data-testid="knowledge-search-bar"');
-    expect(html).toContain('placeholder="搜索文档"');
-    expect(html).toContain('value=""');
-    expect(html).toContain('使用文档');
-    expect(html).toContain('data-testid="knowledge-category"');
-    expect(html).toContain('data-testid="knowledge-category-title"');
-    expect(html).toContain('General');
-    expect(html).toContain('Router');
-    expect(html).toContain('data-testid="knowledge-item"');
-    expect(html).not.toContain('data-testid="knowledge-item-title" class="block');
-    expect(html).not.toContain('data-testid="knowledge-item-date" class="block');
-    expect(html).toContain('Copy Article');
-    expect(html).toContain('Router Guide');
-    expect(html).toContain('最后更新: 2023/11/14');
-    expect(html).toContain('最后更新: 2023/11/15');
-  });
-
-  it('renders an explicit shadcn empty state for an empty knowledge payload', () => {
+  it('renders the locale empty description for an empty knowledge payload', () => {
     mocks.groups = {};
 
-    const html = renderToStaticMarkup(<KnowledgePage />);
+    renderWithProviders(<KnowledgePage />);
 
-    expect(html).toContain('data-testid="knowledge-empty"');
-    expect(html).not.toContain('class="ant-empty ant-empty-normal"');
-    expect(html).not.toContain('block block-rounded');
-  });
-
-  it('uses Radix sheet composition instead of legacy Ant and Bootstrap foundations', () => {
-    expect(knowledgeSource).toContain("from '@/components/ui/sheet'");
-    expect(knowledgeSource).toContain('<SheetContent');
-    expect(knowledgeSource).toContain('data-testid="knowledge-item"');
-    expect(knowledgeSource).not.toContain('AntBtn');
-    expect(knowledgeSource).not.toContain('createPortal');
-    expect(knowledgeSource).not.toContain('lockLegacyDrawerBodyScroll');
-    expect(knowledgeSource).not.toContain('ant-drawer');
-    expect(knowledgeSource).not.toContain('list-group-item');
-    expect(knowledgeSource).not.toContain('block block-rounded');
-  });
-
-  it('keeps the markdown body fallback using logical OR', () => {
-    expect(knowledgeSource).toContain("renderLegacyMarkdown(visibleDetail?.body || '')");
-    expect(knowledgeSource).not.toContain("renderLegacyMarkdown(visibleDetail?.body ?? '')");
-  });
-
-  it('uses a controlled shadcn input wired to setSearchValue', () => {
-    const searchInputSource = knowledgeSource.slice(
-      knowledgeSource.indexOf('<Input'),
-      knowledgeSource.indexOf('/>', knowledgeSource.indexOf('<Input')),
-    );
-
-    expect(searchInputSource).toContain('onChange={(event) => setSearchValue(event.target.value)}');
-    expect(searchInputSource).toContain('value={searchValue}');
-    expect(searchInputSource).not.toContain('defaultValue=""');
+    // Empty knowledge base shows the locale empty description, not the
+    // no-search-results copy.
+    expect(screen.getByTestId('knowledge-empty')).toHaveTextContent('暂无数据');
+    expect(screen.queryByText('没有匹配的文档')).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId('knowledge-item')).toHaveLength(0);
   });
 });
 
 describe('KnowledgePage redesigned interactions', () => {
-  let container: HTMLDivElement;
-  let root: Root | null;
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-    mocks.fetching = false;
-    mocks.detailFetching = false;
-    mocks.detailError = false;
-    mocks.searchParams = new URLSearchParams();
-    mocks.groups = mocks.defaultGroups;
-    mocks.detailById = { ...mocks.defaultDetailById };
-    mocks.knowledgeArgs = [];
-    mocks.detailArgs = [];
-    mocks.copyText.mockClear();
-    mocks.copyText.mockResolvedValue(true);
-    mocks.toastSuccess.mockClear();
-    mocks.detailRefetch.mockClear();
-  });
-
-  afterEach(() => {
-    if (root) {
-      act(() => root?.unmount());
-      root = null;
-    }
-    container.remove();
-    document.body.innerHTML = '';
-    vi.useRealTimers();
-  });
-
-  it('defers searches to the query and keeps the request locale', async () => {
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-    });
+  it('defers searches to the query through the controlled input and keeps the request locale', async () => {
+    const { user } = renderWithProviders(<KnowledgePage />);
 
     expect(mocks.knowledgeArgs).toContainEqual({ language: 'zh-CN', keyword: undefined });
-    expect(mocks.knowledgeArgs.some((item) => item.keyword === 'router')).toBe(false);
+    expect(mocks.knowledgeArgs.some((call) => call.keyword === 'router')).toBe(false);
 
-    const input = container.querySelector('input[placeholder="搜索文档"]') as HTMLInputElement;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        input,
-        'router',
-      );
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      await Promise.resolve();
-    });
+    const input = screen.getByRole('textbox', { name: '搜索文档' });
+    await user.type(input, 'router');
 
-    expect(mocks.knowledgeArgs).toContainEqual({ language: 'zh-CN', keyword: 'router' });
+    // The controlled input reflects the typed value and the (deferred) keyword
+    // reaches the knowledge query with the request locale.
+    expect(input).toHaveValue('router');
+    await waitFor(() =>
+      expect(mocks.knowledgeArgs).toContainEqual({ language: 'zh-CN', keyword: 'router' }),
+    );
   });
 
-  it('shows the shadcn loading card while the list fetch is pending', async () => {
+  it('shows the loading state while the list fetch is pending and keeps the search bar', () => {
     mocks.fetching = true;
 
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-    });
+    renderWithProviders(<KnowledgePage />);
 
-    expect(container.innerHTML).toContain('data-testid="knowledge-search-bar"');
-    expect(container.innerHTML).toContain('data-testid="knowledge-loading"');
-    expect(container.innerHTML).toContain('Loading...');
-    expect(container.innerHTML).not.toContain('data-testid="knowledge-category"');
+    expect(screen.getByTestId('knowledge-search-bar')).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('knowledge-loading')).getByRole('status'),
+    ).toHaveTextContent('Loading...');
+    expect(screen.queryByText('General')).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId('knowledge-item')).toHaveLength(0);
   });
 
-  it('opens the article sheet from the URL id', async () => {
+  it('opens the article in a dialog sheet from the URL id with sanitized markdown actions', async () => {
     mocks.searchParams = new URLSearchParams('id=2');
 
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    renderWithProviders(<KnowledgePage />);
 
+    const sheet = await screen.findByTestId('knowledge-sheet');
+    // The sheet is real accessible dialog composition, not a hand-rolled drawer.
+    expect(screen.getByRole('dialog')).toBe(sheet);
     expect(mocks.detailArgs).toContainEqual({ id: 2, language: 'zh-CN' });
-    expect(document.body.innerHTML).toContain('data-testid="knowledge-sheet"');
-    expect(document.body.innerHTML).toContain('data-testid="knowledge-sheet-title"');
-    expect(document.body.innerHTML).toContain('Router Guide');
-    expect(document.body.innerHTML).toContain('custom-html-style');
-    expect(document.body.innerHTML).toContain('data-v2board-markdown-action="jump"');
-    expect(document.body.innerHTML).not.toContain('onclick=');
+    await waitFor(() =>
+      expect(within(sheet).getByTestId('knowledge-sheet-title')).toHaveTextContent('Router Guide'),
+    );
+
+    // Legacy inline onclick hooks are sanitized into delegated data attributes.
+    const article = within(sheet).getByTestId('knowledge-article');
+    const jump = within(article).getByRole('button', { name: 'jump' });
+    expect(jump).toHaveAttribute('data-v2board-markdown-action', 'jump');
+    expect(jump).toHaveAttribute('data-v2board-markdown-value', '1');
+    expect(article.querySelector('[onclick]')).toBeNull();
   });
 
   it('opens an article by URL id even when it is absent from the current list', async () => {
@@ -311,248 +242,175 @@ describe('KnowledgePage redesigned interactions', () => {
       '99': { id: 99, title: 'Cross-language Doc', body: 'body', updated_at: 1_700_000_000 },
     } as Record<string, unknown>;
 
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    renderWithProviders(<KnowledgePage />);
 
+    const sheet = await screen.findByTestId('knowledge-sheet');
     expect(mocks.detailArgs).toContainEqual({ id: 99, language: 'zh-CN' });
-    expect(document.body.innerHTML).toContain('data-testid="knowledge-sheet"');
-    expect(document.body.innerHTML).toContain('Cross-language Doc');
+    await within(sheet).findByText('Cross-language Doc');
   });
 
   it('shows a retryable error state when the article detail fetch fails', async () => {
     mocks.detailById = {} as Record<string, unknown>;
     mocks.detailError = true;
 
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<KnowledgePage />);
 
-    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
-    await act(async () => {
-      item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: /Copy Article/ }));
 
     // A failed fetch surfaces the error + retry, not a blank article body.
-    expect(document.body.innerHTML).toContain('data-testid="knowledge-error"');
-    expect(document.body.innerHTML).not.toContain('data-testid="knowledge-article"');
+    const sheet = await screen.findByTestId('knowledge-sheet');
+    const error = await within(sheet).findByRole('alert');
+    expect(within(sheet).getByTestId('knowledge-sheet-title')).toHaveTextContent(
+      'Something went wrong',
+    );
+    expect(within(sheet).queryByTestId('knowledge-article')).not.toBeInTheDocument();
 
-    const retry = document.body.querySelector(
-      '[data-testid="error-state-retry"]',
-    ) as HTMLButtonElement;
-    await act(async () => {
-      retry.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(within(error).getByRole('button', { name: 'Retry' }));
 
     expect(mocks.detailRefetch).toHaveBeenCalled();
   });
 
   it('distinguishes no-search-matches from an empty knowledge base', async () => {
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<KnowledgePage />);
+
+    expect(screen.getByRole('button', { name: /Copy Article/ })).toBeInTheDocument();
 
     // Searching with no matches shows the purpose-built no-results copy...
     mocks.groups = {};
-    const input = container.querySelector('input[placeholder="搜索文档"]') as HTMLInputElement;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'zzz');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await user.type(screen.getByRole('textbox', { name: '搜索文档' }), 'zzz');
 
-    expect(container.innerHTML).toContain('没有匹配的文档');
+    await screen.findByText('没有匹配的文档');
+    // ...not the empty-knowledge-base description.
+    expect(screen.queryByText('暂无数据')).not.toBeInTheDocument();
   });
 
-  it('shows sheet loading content while fetching an article without installing global hooks', async () => {
+  it('shows sheet loading content while fetching an article and closes from the sheet', async () => {
     mocks.detailFetching = true;
 
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<KnowledgePage />);
 
-    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
-    await act(async () => {
-      item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: /Copy Article/ }));
 
-    expect(document.body.innerHTML).toContain('data-testid="knowledge-sheet"');
-    expect(document.body.innerHTML).toContain('Loading...');
-    expect(knowledgeSource).not.toContain('window.copy');
-    expect(knowledgeSource).not.toContain('window.jump');
+    const sheet = await screen.findByTestId('knowledge-sheet');
+    expect(within(sheet).getByTestId('knowledge-sheet-title')).toHaveTextContent('Loading...');
+    expect(within(sheet).getByRole('status')).toHaveTextContent('Loading...');
 
-    const closeButton = document.body.querySelector(
-      '[data-testid="knowledge-sheet"] button',
-    ) as HTMLButtonElement;
-    await act(async () => {
-      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(within(sheet).getByRole('button', { name: 'Close' }));
 
-    expect(document.body.innerHTML).not.toContain('data-testid="knowledge-sheet"');
+    await waitFor(() =>
+      expect(screen.queryByTestId('knowledge-sheet')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('renders an empty article body through the markdown fallback without crashing', async () => {
+    mocks.detailById = {
+      ...mocks.defaultDetailById,
+      1: {
+        ...(mocks.defaultDetailById[1] as Record<string, unknown>),
+        body: '',
+      },
+    };
+
+    const { user } = renderWithProviders(<KnowledgePage />);
+
+    await user.click(screen.getByRole('button', { name: /Copy Article/ }));
+
+    const sheet = await screen.findByTestId('knowledge-sheet');
+    await waitFor(() =>
+      expect(within(sheet).getByTestId('knowledge-sheet-title')).toHaveTextContent('Copy Article'),
+    );
+    expect(within(sheet).getByTestId('knowledge-article')).toBeEmptyDOMElement();
   });
 
   it('copies from sanitized markdown actions and shows the success message once', async () => {
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<KnowledgePage />);
 
-    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
-    await act(async () => {
-      item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: /Copy Article/ }));
 
-    const copyAction = document.body.querySelector(
-      '[data-v2board-markdown-action="copy"]',
-    ) as HTMLElement;
-    expect(copyAction).not.toBeNull();
+    const sheet = await screen.findByTestId('knowledge-sheet');
+    const copyAction = await within(sheet).findByRole('button', { name: 'copy' });
+    expect(copyAction).toHaveAttribute('data-v2board-markdown-value', 'token');
 
-    await act(async () => {
-      copyAction.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await user.click(copyAction);
 
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledTimes(1));
     expect(mocks.copyText).toHaveBeenCalledWith('token');
-    expect(mocks.toastSuccess).toHaveBeenCalledTimes(1);
     expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功');
   });
 
-  it('runs sanitized markdown action hooks from article clicks and keyboard activation', async () => {
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-    });
+  it('runs sanitized markdown jump hooks from keyboard activation', async () => {
+    const { user } = renderWithProviders(<KnowledgePage />);
 
-    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
-    await act(async () => {
-      item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: /Router Guide/ }));
 
-    const copyAction = document.body.querySelector(
-      '[data-v2board-markdown-action="copy"]',
-    ) as HTMLElement;
-    expect(copyAction).not.toBeNull();
+    const sheet = await screen.findByTestId('knowledge-sheet');
+    const jump = await within(sheet).findByRole('button', { name: 'jump' });
+    expect(jump).toHaveAttribute('data-v2board-markdown-action', 'jump');
 
-    await act(async () => {
-      copyAction.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    jump.focus();
+    await user.keyboard('{Enter}');
 
-    expect(mocks.copyText).toHaveBeenCalledWith('token');
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功');
-
-    const routerItem = Array.from(container.querySelectorAll('[data-testid="knowledge-item"]')).find(
-      (element) => element.textContent?.includes('Router Guide'),
-    ) as HTMLElement;
-    await act(async () => {
-      routerItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    const jumpAction = document.body.querySelector(
-      '[data-v2board-markdown-action="jump"]',
-    ) as HTMLElement;
-    expect(jumpAction).not.toBeNull();
-
-    await act(async () => {
-      jumpAction.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
-      await Promise.resolve();
-    });
-
-    expect(mocks.detailArgs).toContainEqual({ id: '1', language: 'zh-CN' });
+    await waitFor(() =>
+      expect(mocks.detailArgs).toContainEqual({ id: '1', language: 'zh-CN' }),
+    );
+    await waitFor(() =>
+      expect(within(sheet).getByTestId('knowledge-sheet-title')).toHaveTextContent('Copy Article'),
+    );
   });
 
   it('jumps between articles and refetches when jumping to the currently visible one', async () => {
     mocks.detailById = {
-      ...mocks.detailById,
+      ...mocks.defaultDetailById,
       1: {
-        ...(mocks.detailById[1] as Record<string, unknown>),
+        ...(mocks.defaultDetailById[1] as Record<string, unknown>),
         body: '<a onclick="jump(2)">jump</a>',
       },
       2: {
-        ...(mocks.detailById[2] as Record<string, unknown>),
+        ...(mocks.defaultDetailById[2] as Record<string, unknown>),
         body: '<a onclick="jump(2)">refresh</a>',
       },
     };
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-    });
 
-    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
-    await act(async () => {
-      item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<KnowledgePage />);
 
-    const jumpToRouter = document.body.querySelector(
-      '[data-v2board-markdown-action="jump"]',
-    ) as HTMLElement;
-    await act(async () => {
-      jumpToRouter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: /Copy Article/ }));
+
+    const sheet = await screen.findByTestId('knowledge-sheet');
+    await user.click(await within(sheet).findByRole('button', { name: 'jump' }));
 
     expect(mocks.detailArgs).toContainEqual({ id: '2', language: 'zh-CN' });
-    expect(document.body.innerHTML).toContain('Router Guide');
+    await waitFor(() =>
+      expect(within(sheet).getByTestId('knowledge-sheet-title')).toHaveTextContent('Router Guide'),
+    );
 
-    const refreshRouter = document.body.querySelector(
-      '[data-v2board-markdown-action="jump"]',
-    ) as HTMLElement;
-    await act(async () => {
-      refreshRouter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(within(sheet).getByRole('button', { name: 'refresh' }));
 
     expect(mocks.detailRefetch).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the previous article title while a jump fetch is loading', async () => {
     mocks.detailById = {
-      ...mocks.detailById,
+      ...mocks.defaultDetailById,
       1: {
-        ...(mocks.detailById[1] as Record<string, unknown>),
+        ...(mocks.defaultDetailById[1] as Record<string, unknown>),
         body: '<a onclick="jump(2)">jump</a>',
       },
     };
-    await act(async () => {
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-    });
 
-    const item = container.querySelector('[data-testid="knowledge-item"]') as HTMLElement;
-    await act(async () => {
-      item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<KnowledgePage />);
 
-    expect(document.body.innerHTML).toContain('Copy Article');
+    await user.click(screen.getByRole('button', { name: /Copy Article/ }));
+
+    const sheet = await screen.findByTestId('knowledge-sheet');
+    await waitFor(() =>
+      expect(within(sheet).getByTestId('knowledge-sheet-title')).toHaveTextContent('Copy Article'),
+    );
 
     mocks.detailFetching = true;
-    const jumpToRouter = document.body.querySelector(
-      '[data-v2board-markdown-action="jump"]',
-    ) as HTMLElement;
-    await act(async () => {
-      jumpToRouter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      root!.render(<KnowledgePage />);
-      await Promise.resolve();
-    });
+    await user.click(within(sheet).getByRole('button', { name: 'jump' }));
 
-    const sheetHtml = document.body.querySelector('[data-testid="knowledge-sheet"]')?.innerHTML ?? '';
-    expect(sheetHtml).toContain('Copy Article');
-    expect(sheetHtml).not.toContain('Router Guide');
-    expect(sheetHtml).toContain('Loading...');
+    expect(within(sheet).getByTestId('knowledge-sheet-title')).toHaveTextContent('Copy Article');
+    expect(within(sheet).queryByText('Router Guide')).not.toBeInTheDocument();
+    expect(within(sheet).getByRole('status')).toHaveTextContent('Loading...');
   });
 });

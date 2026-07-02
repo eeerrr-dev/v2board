@@ -1,67 +1,59 @@
-import { act, type ReactElement } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import { RouteErrorBoundary } from './route-error-boundary';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) =>
-      ({
-        'common.route_load_failed': '页面加载失败',
-        'common.route_refresh_hint': '请刷新页面后重试。',
-        'common.refresh_page': '刷新页面',
-      })[key] ?? key,
-  }),
-}));
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
-function Crash(): ReactElement {
+function Crash(): never {
   throw new Error('route crashed');
 }
 
 describe('RouteErrorBoundary white-screen guard', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-  let consoleError: ReturnType<typeof vi.spyOn>;
+  it('renders a route-local fallback and recovers after the reset key changes', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-  beforeEach(() => {
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-    consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-  });
+    const { i18n, rerender } = renderWithProviders(
+      <RouteErrorBoundary resetKey="/plan">
+        <Crash />
+      </RouteErrorBoundary>,
+      { i18n: true },
+    );
 
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
+    const failedLabel = i18n!.t('common.route_load_failed');
+    expect(screen.getByRole('alert')).toHaveTextContent(failedLabel);
+    expect(screen.getByRole('alert')).toHaveTextContent(i18n!.t('common.route_refresh_hint'));
+    expect(
+      screen.getByRole('button', { name: i18n!.t('common.refresh_page') }),
+    ).toBeInTheDocument();
+
+    rerender(
+      <RouteErrorBoundary resetKey="/dashboard">
+        <div>Recovered route</div>
+      </RouteErrorBoundary>,
+    );
+
+    expect(screen.getByText('Recovered route')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(failedLabel)).not.toBeInTheDocument();
+
     consoleError.mockRestore();
   });
 
-  it('renders a route-local fallback and recovers after the reset key changes', async () => {
-    await act(async () => {
-      root.render(
-        <RouteErrorBoundary resetKey="/plan">
-          <Crash />
-        </RouteErrorBoundary>,
-      );
-      await Promise.resolve();
-    });
+  it('reloads the page from the fallback button', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
 
-    expect(container.textContent).toContain('页面加载失败');
-    expect(container.textContent).toContain('刷新页面');
+    const { i18n, user } = renderWithProviders(
+      <RouteErrorBoundary resetKey="/plan">
+        <Crash />
+      </RouteErrorBoundary>,
+      { i18n: true },
+    );
 
-    await act(async () => {
-      root.render(
-        <RouteErrorBoundary resetKey="/dashboard">
-          <div>Recovered route</div>
-        </RouteErrorBoundary>,
-      );
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: i18n!.t('common.refresh_page') }));
 
-    expect(container.textContent).toContain('Recovered route');
-    expect(container.textContent).not.toContain('页面加载失败');
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    reload.mockRestore();
+    consoleError.mockRestore();
   });
 });

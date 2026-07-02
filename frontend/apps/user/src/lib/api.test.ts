@@ -1,11 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './api';
 import { getAuthData, registerSessionCacheClearer, setAuthData } from './auth';
-
-const apiSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'api.ts'), 'utf8');
+import { toast } from './toast';
 
 type Adapter = typeof apiClient.axios.defaults.adapter;
 type AdapterFn = Extract<NonNullable<Adapter>, (...args: never[]) => unknown>;
@@ -32,13 +28,29 @@ function adapterFor(status: number, data: unknown): AdapterFn {
   };
 }
 
+// A transport-level failure (timeout or network drop): the adapter rejects with
+// no response attached, exactly like axios' own adapters do.
+function transportErrorAdapter(message: string, code?: string): AdapterFn {
+  return async (config) => {
+    const error = new Error(message) as Error & {
+      config: unknown;
+      code?: string;
+      isAxiosError: boolean;
+    };
+    error.config = config;
+    if (code) error.code = code;
+    error.isAxiosError = true;
+    throw error;
+  };
+}
+
 describe('user api unauthorized handling', () => {
   const originalAdapter = apiClient.axios.defaults.adapter;
-  let clearSessionSpy: ReturnType<typeof vi.fn>;
+  let clearSessionSpy: ReturnType<typeof vi.fn<() => void>>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    clearSessionSpy = vi.fn();
+    clearSessionSpy = vi.fn<() => void>();
     registerSessionCacheClearer(clearSessionSpy);
     setAuthData('token-403');
     window.location.hash = '#/dashboard';
@@ -108,27 +120,49 @@ describe('user api unauthorized handling', () => {
     vi.advanceTimersByTime(50);
     expect(getAuthData()).toBe('token-403');
   });
-
-  it('never touches legacy storage keys or full-page redirects (anti-legacy pins)', () => {
-    expect(apiSource).not.toContain('logout();');
-    expect(apiSource).not.toContain('LEGACY_AUTH_STORAGE_KEY');
-    expect(apiSource).not.toContain('window.localStorage.setItem');
-    expect(apiSource).not.toContain('window.location.pathname}#/login');
-    expect(apiSource).not.toContain('window.location.href = `${window.location.origin}/#/login`;');
-    expect(apiSource).not.toContain("window.location.href = '/';");
-    expect(apiSource).not.toContain("window.location.replace('/#/login');");
-  });
 });
 
 describe('user api global error toast', () => {
-  it('stays silent on any transport failure and toasts other non-200 responses', () => {
-    // The packaged user frontend used fetch, which rejected before its toast code ran, so it
-    // surfaced nothing for transport errors (timeout or network) — not just timeouts.
-    expect(apiSource).toContain('if (error.status === 0) return;');
-    expect(apiSource).toContain(
-      "toast.error(i18nGet('请求失败'), { description: error.message });",
+  const originalAdapter = apiClient.axios.defaults.adapter;
+
+  afterEach(() => {
+    apiClient.axios.defaults.adapter = originalAdapter;
+    vi.restoreAllMocks();
+  });
+
+  it('stays silent on any transport failure, timeout or network alike', async () => {
+    // The packaged user frontend used fetch, which rejected before its toast
+    // code ran, so it surfaced nothing for ANY transport error (timeout or
+    // network drop) — not just timeouts. No timeout-message sniffing.
+    const errorToast = vi.spyOn(toast, 'error').mockReturnValue('toast-id');
+
+    apiClient.axios.defaults.adapter = transportErrorAdapter(
+      'timeout of 8000ms exceeded',
+      'ECONNABORTED',
     );
-    expect(apiSource).not.toContain('isLegacyTimeoutError');
-    expect(apiSource).not.toContain('/timeout/i.test');
+    await expect(
+      apiClient.request({ url: '/user/info', method: 'GET' }),
+    ).rejects.toMatchObject({ status: 0, message: 'timeout of 8000ms exceeded' });
+
+    apiClient.axios.defaults.adapter = transportErrorAdapter('Network Error');
+    await expect(
+      apiClient.request({ url: '/user/info', method: 'GET' }),
+    ).rejects.toMatchObject({ status: 0, message: 'Network Error' });
+
+    expect(errorToast).not.toHaveBeenCalled();
+  });
+
+  it('toasts the localized 请求失败 with the backend message for other non-200 responses', async () => {
+    const errorToast = vi.spyOn(toast, 'error').mockReturnValue('toast-id');
+
+    apiClient.axios.defaults.adapter = adapterFor(500, { message: 'server exploded' });
+
+    await expect(
+      apiClient.request({ url: '/user/info', method: 'GET' }),
+    ).rejects.toMatchObject({ status: 500, message: 'server exploded' });
+
+    expect(errorToast).toHaveBeenCalledTimes(1);
+    // zh-CN is the default error-dictionary locale in tests; '请求失败' maps to itself.
+    expect(errorToast).toHaveBeenCalledWith('请求失败', { description: 'server exploded' });
   });
 });

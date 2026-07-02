@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
-import { act } from 'react';
 import type { ReactNode } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import DashboardPage from './dashboard';
 
 const mocks = vi.hoisted(() => ({
@@ -183,11 +182,10 @@ vi.mock('@/lib/toast', () => ({
 }));
 
 vi.mock('qrcode.react', () => ({
-  QRCodeSVG: ({ value }: { value?: string }) => <svg data-qrcode={value} />,
+  QRCodeSVG: ({ value }: { value?: string }) => (
+    <svg data-testid="qrcode-svg" data-qrcode={value} />
+  ),
 }));
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
 
 function baseSubscribe(overrides: Record<string, unknown> = {}) {
   return {
@@ -230,17 +228,10 @@ function resetMocks() {
   };
 }
 
-async function flushPromises() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-}
-
-describe('DashboardPage shadcn shell markup', () => {
+describe('DashboardPage shadcn shell rendering', () => {
   beforeEach(resetMocks);
 
-  it('renders alerts, notice, subscription card, and shortcuts with redesigned structure', () => {
+  it('renders alerts, notice, subscription card, and shortcuts', () => {
     mocks.stat = { pending_orders: 2, pending_tickets: 3 };
     mocks.notices = [
       {
@@ -253,134 +244,95 @@ describe('DashboardPage shadcn shell markup', () => {
       },
     ];
 
-    const html = renderToStaticMarkup(<DashboardPage />);
+    renderWithProviders(<DashboardPage />);
 
-    expect(html).toContain('data-testid="dashboard-page"');
-    expect(html).toContain('data-alert-kind="danger"');
-    expect(html).toContain('还有没支付的订单');
-    expect(html).toContain('立即支付');
-    expect(html).toContain('data-alert-kind="warning"');
-    expect(html).toContain('<strong>3</strong>');
-    expect(html).toContain('条工单正在处理中');
-    expect(html).toContain('当前已使用流量达 85%');
-    expect(html).toContain('data-testid="dashboard-notice-card"');
-    expect(html).toContain('Notice A');
-    expect(html).toContain('我的订阅');
-    expect(html).toContain('Pro');
-    expect(html).toContain('data-testid="dashboard-progress-bar"');
-    expect(html).toContain('在线设备 2/∞');
-    expect(html).toContain('捷径');
-    expect(html).toContain('查看教程');
-    expect(html).toContain('学习如何使用 V2Board');
-    expect(html).toContain('一键订阅');
-    expect(html).toContain('续费订阅');
-    expect(html).toContain('遇到问题');
-    expect(html).not.toContain('block block-rounded');
-    expect(html).not.toContain('oneClickSubscribe___2t9Xg');
-    expect(html).not.toContain('slick-slider');
-    expect(html).not.toContain('ant-btn-primary');
+    expect(screen.getByTestId('dashboard-page')).toBeInTheDocument();
+
+    const alerts = screen.getAllByRole('alert');
+    const danger = alerts.find((alert) => alert.getAttribute('data-alert-kind') === 'danger')!;
+    expect(danger).toHaveTextContent('还有没支付的订单');
+    expect(within(danger).getByRole('button', { name: '立即支付' })).toBeInTheDocument();
+
+    const warning = alerts.find((alert) => alert.getAttribute('data-alert-kind') === 'warning')!;
+    expect(warning).toHaveTextContent('3 条工单正在处理中');
+
+    const info = alerts.find((alert) => alert.getAttribute('data-alert-kind') === 'info')!;
+    expect(info).toHaveTextContent('当前已使用流量达 85%');
+
+    expect(screen.getByTestId('dashboard-notice-card')).toHaveTextContent('Notice A');
+    // The backend `弹窗` tag auto-opens the notice dialog with its body.
+    expect(screen.getByText('Notice body')).toBeInTheDocument();
+
+    expect(screen.getByText('我的订阅')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Pro' })).toBeInTheDocument();
+    expect(screen.getByTestId('dashboard-progress-bar')).toBeInTheDocument();
+    expect(screen.getAllByText('在线设备 2/∞').length).toBeGreaterThan(0);
+
+    expect(screen.getByText('捷径')).toBeInTheDocument();
+    const shortcuts = screen.getAllByTestId('dashboard-shortcut');
+    expect(shortcuts).toHaveLength(4);
+    const tutorial = shortcuts.find((shortcut) => shortcut.textContent?.includes('查看教程'))!;
+    expect(tutorial).toHaveTextContent('学习如何使用 V2Board');
+    expect(screen.getByRole('button', { name: /一键订阅/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /续费订阅/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /遇到问题/ })).toBeInTheDocument();
   });
 
-  it('renders the buy-subscribe empty state when there is no active plan', () => {
+  it('renders the buy-subscribe empty state and routes it to the plan list', async () => {
     mocks.subscribe = baseSubscribe({ plan: null, plan_id: null });
 
-    const html = renderToStaticMarkup(<DashboardPage />);
+    const { user } = renderWithProviders(<DashboardPage />);
 
-    expect(html).toContain('data-testid="dashboard-empty-plan"');
-    expect(html).toContain('购买订阅');
-    expect(html).not.toContain('fa fa-plus');
-    expect(html).not.toContain('font-size-sm text-uppercase text-muted');
+    const emptyPlan = screen.getByTestId('dashboard-empty-plan');
+    expect(emptyPlan).toHaveTextContent('购买订阅');
+
+    await user.click(emptyPlan);
+    expect(mocks.navigate).toHaveBeenCalledWith('/plan');
   });
 
-  it('renders a shadcn loading state while subscription data is incomplete', () => {
+  it('renders a loading state without plan content while subscription data is incomplete', () => {
     mocks.subscribe = {};
 
-    const html = renderToStaticMarkup(<DashboardPage />);
+    renderWithProviders(<DashboardPage />);
 
-    expect(html).toContain('animate-spin');
-    expect(html).not.toContain('anticon-loading');
+    expect(screen.getByText('我的订阅')).toBeInTheDocument();
+    expect(screen.queryByTestId('dashboard-empty-plan')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('dashboard-progress-bar')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Pro' })).not.toBeInTheDocument();
   });
 
   it('keeps dashboard dates behind the user legacy date formatter output', () => {
-    const html = renderToStaticMarkup(<DashboardPage />);
+    renderWithProviders(<DashboardPage />);
 
-    expect(html).toContain('2100/01/01');
-    expect(html).toContain('已用流量将在 5 日后重置');
+    expect(screen.getByText(/2100\/01\/01/)).toBeInTheDocument();
+    expect(screen.getByText(/已用流量将在 5 日后重置/)).toBeInTheDocument();
   });
 });
 
 describe('DashboardPage shadcn shell actions', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    resetMocks();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
-  async function renderDashboard() {
-    await act(async () => {
-      root.render(<DashboardPage />);
-      await Promise.resolve();
-    });
-  }
+  beforeEach(resetMocks);
 
   it('opens one-click subscribe, copies the URL, and opens the QR dialog', async () => {
-    await renderDashboard();
+    const { user } = renderWithProviders(<DashboardPage />);
 
-    const shortcut = Array.from(container.querySelectorAll('[data-testid="dashboard-shortcut"]')).find(
-      (item) => item.textContent?.includes('一键订阅'),
-    )!;
+    await user.click(screen.getByRole('button', { name: /一键订阅/ }));
 
-    await act(async () => {
-      shortcut.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    const menu = screen.getByTestId('dashboard-subscribe-menu');
+    expect(screen.getByTestId('dashboard-subscribe-copy')).toHaveTextContent('复制订阅地址');
+    const hiddify = within(menu).getByRole('button', { name: /导入到 Hiddify/ });
+    expect(hiddify.querySelector('img')?.getAttribute('src')).toContain('Hiddify.png');
 
-    expect(container.innerHTML).toContain('data-testid="dashboard-subscribe-menu"');
-    expect(container.innerHTML).toContain('data-testid="dashboard-subscribe-copy"');
-    expect(container.innerHTML).toContain('复制订阅地址');
-    expect(container.innerHTML).toContain('导入到 Hiddify');
-    expect(container.querySelector('img[src*="Hiddify"]')?.getAttribute('src')).toContain(
-      'Hiddify.png',
-    );
-    expect(container.innerHTML).not.toContain('/theme/default/assets/');
-
-    const copy = Array.from(
-      container.querySelectorAll('[data-testid^="dashboard-subscribe-"]'),
-    ).find(
-      (item) => item.textContent === '复制订阅地址',
-    )!;
-    await act(async () => {
-      copy.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
+    await user.click(screen.getByTestId('dashboard-subscribe-copy'));
     expect(mocks.copyText).toHaveBeenCalledWith('https://example.test/sub');
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功');
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功'));
 
-    const qr = Array.from(
-      container.querySelectorAll('[data-testid^="dashboard-subscribe-"]'),
-    ).find(
-      (item) => item.textContent === '扫描二维码订阅',
-    )!;
-    await act(async () => {
-      qr.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('[data-qrcode]')?.getAttribute('data-qrcode')).toBe(
+    await user.click(screen.getByTestId('dashboard-subscribe-qrcode'));
+    expect(screen.getByTestId('dashboard-subscribe-qrcode-image')).toBeInTheDocument();
+    expect(screen.getByTestId('qrcode-svg')).toHaveAttribute(
+      'data-qrcode',
       'https://example.test/sub',
     );
-    expect(container.innerHTML).toContain('使用支持扫码的客户端进行订阅');
+    expect(screen.getByText('使用支持扫码的客户端进行订阅')).toBeInTheDocument();
   });
 
   it('switches notice dots and opens the notice dialog', async () => {
@@ -398,102 +350,59 @@ describe('DashboardPage shadcn shell actions', () => {
         title: 'Notice B',
       },
     ];
-    await renderDashboard();
+    const { user } = renderWithProviders(<DashboardPage />);
 
-    const secondDot = container.querySelectorAll<HTMLButtonElement>(
-      '[data-testid="dashboard-notice-dots"] button',
-    )[1]!;
-    await act(async () => {
-      secondDot.click();
-      await Promise.resolve();
-    });
+    expect(screen.getByText('Notice A')).toBeInTheDocument();
+    expect(screen.queryByText('Notice B')).not.toBeInTheDocument();
 
-    expect(
-      container.querySelector('[data-testid="dashboard-notice-slide"][data-active="true"]')
-        ?.textContent,
-    ).toContain('Notice B');
+    await user.click(screen.getByRole('button', { name: '公告 2' }));
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[data-testid="dashboard-notice-card"]')!.click();
-      await Promise.resolve();
-    });
+    const activeSlide = screen
+      .getAllByTestId('dashboard-notice-slide')
+      .find((slide) => slide.getAttribute('data-active') === 'true')!;
+    expect(activeSlide).toHaveTextContent('Notice B');
+    expect(screen.queryByText('Notice A')).not.toBeInTheDocument();
 
-    expect(container.innerHTML).toContain('Second notice');
+    await user.click(screen.getByTestId('dashboard-notice-card'));
+    expect(screen.getByText('Second notice')).toBeInTheDocument();
   });
 
   it('confirms reset package purchase and navigates to the generated order', async () => {
-    await renderDashboard();
+    const { user } = renderWithProviders(<DashboardPage />);
 
-    const reset = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent === '购买流量重置包',
-    )!;
-    await act(async () => {
-      reset.click();
-      await Promise.resolve();
-    });
+    // The label appears both in the traffic alert and on the plan card; either
+    // opens the same confirm dialog.
+    await user.click(screen.getAllByRole('button', { name: '购买流量重置包' })[0]!);
+    expect(screen.getByText('确定重置当前已用流量？')).toBeInTheDocument();
 
-    expect(container.innerHTML).toContain('确定重置当前已用流量？');
-    const confirm = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent === '确定',
-    )!;
-    await act(async () => {
-      confirm.click();
-    });
-    await flushPromises();
+    await user.click(screen.getByTestId('dashboard-confirm-primary'));
 
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123'));
     expect(mocks.saveOrder).toHaveBeenCalledWith({ period: 'reset_price', plan_id: 1 });
-    expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
   });
 
   it('confirms opening a new traffic period and refetches subscription data', async () => {
     mocks.subscribe = baseSubscribe({ allow_new_period: true, d: 1000, u: 0 });
-    await renderDashboard();
+    const { user } = renderWithProviders(<DashboardPage />);
 
-    const newPeriod = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent === '提前开启流量周期',
-    )!;
-    await act(async () => {
-      newPeriod.click();
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '提前开启流量周期' }));
+    expect(screen.getByText('确定开启下一个流量周期？')).toBeInTheDocument();
 
-    expect(container.innerHTML).toContain('确定开启下一个流量周期？');
-    const confirm = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent === '确定',
-    )!;
-    await act(async () => {
-      confirm.click();
-    });
-    await flushPromises();
+    await user.click(screen.getByTestId('dashboard-confirm-primary'));
 
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/dashboard'));
     expect(mocks.newPeriodMutateAsync).toHaveBeenCalled();
     expect(mocks.refetchSubscribe).toHaveBeenCalled();
     expect(mocks.toastSuccess).toHaveBeenCalledWith('提前开启流量周期成功');
-    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
   });
 
   it('routes alert and shortcut actions through React Router', async () => {
     mocks.stat = { pending_orders: 1, pending_tickets: 1 };
-    await renderDashboard();
+    const { user } = renderWithProviders(<DashboardPage />);
 
-    const payNow = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent === '立即支付',
-    )!;
-    const ticket = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent === '立即查看',
-    )!;
-    const tutorial = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[data-testid="dashboard-shortcut"]'),
-    ).find(
-      (button) => button.textContent?.includes('查看教程'),
-    )!;
-
-    await act(async () => {
-      payNow.click();
-      ticket.click();
-      tutorial.click();
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '立即支付' }));
+    await user.click(screen.getByRole('button', { name: '立即查看' }));
+    await user.click(screen.getByRole('button', { name: /查看教程/ }));
 
     expect(mocks.navigate).toHaveBeenCalledWith('/order');
     expect(mocks.navigate).toHaveBeenCalledWith('/ticket');

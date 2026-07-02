@@ -1,11 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import TrafficPage from './traffic';
-
-const trafficSource = readFileSync(`${process.cwd()}/src/pages/traffic.tsx`, 'utf8');
 
 const queryState = vi.hoisted(() => ({
   rows: [] as Array<{
@@ -15,7 +11,7 @@ const queryState = vi.hoisted(() => ({
     user_id: number;
     server_rate: string;
   }>,
-  fetching: true,
+  fetching: false,
   error: false,
   refetch: vi.fn(),
 }));
@@ -49,157 +45,128 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-(
-  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
+beforeEach(() => {
+  queryState.rows = [];
+  queryState.fetching = false;
+  queryState.error = false;
+  queryState.refetch.mockClear();
+});
 
-describe('TrafficPage shadcn loading state', () => {
-  let container: HTMLDivElement;
-  let root: Root | null;
-
-  beforeEach(() => {
-    queryState.rows = [];
+describe('TrafficPage loading state', () => {
+  it('shows the inline loading status while the traffic fetch is pending', () => {
     queryState.fetching = true;
-    queryState.error = false;
-    queryState.refetch.mockClear();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
 
-  afterEach(() => {
-    act(() => root?.unmount());
-    root = null;
-    container.remove();
-    document.body.innerHTML = '';
-  });
+    renderWithProviders(<TrafficPage />);
 
-  it('uses only the shadcn inline loading state while the traffic fetch is pending', async () => {
-    await act(async () => {
-      root!.render(<TrafficPage />);
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('[role="status"]')?.textContent).toContain('Loading...');
-    expect(container.innerHTML).not.toContain('ant-spin-spinning');
-    expect(container.innerHTML).not.toContain('block-mode-loading');
+    expect(screen.getByRole('status')).toHaveTextContent('Loading...');
   });
 });
 
-describe('TrafficPage shadcn service table', () => {
+describe('TrafficPage service table', () => {
   beforeEach(() => {
-    queryState.fetching = false;
-    queryState.error = false;
-    queryState.refetch.mockClear();
     queryState.rows = [
-      {
-        u: 2048,
-        d: 1024,
-        record_at: 1_705_320_000,
-        user_id: 1,
-        server_rate: '1.5',
-      },
-      {
-        u: 100,
-        d: 200,
-        record_at: 0,
-        user_id: 1,
-        server_rate: '0',
-      },
+      { u: 2048, d: 1024, record_at: 1_705_320_000, user_id: 1, server_rate: '1.5' },
+      { u: 100, d: 200, record_at: 0, user_id: 1, server_rate: '0' },
     ];
   });
 
-  it('renders the service table shell, headers, tooltip trigger, and row formatting', () => {
-    const html = renderToStaticMarkup(<TrafficPage />);
+  it('renders the parity hooks, headers, and row formatting', () => {
+    renderWithProviders(<TrafficPage />);
 
-    expect(html).toContain('data-testid="traffic-card"');
-    expect(html).toContain('data-testid="service-table-scroll"');
-    expect(html).toContain('data-scroll-position="left"');
-    expect(html).toContain('data-table-kind="service"');
-    expect(html).toContain('data-testid="traffic-table"');
-    expect(html).toContain('记录时间');
-    expect(html).toContain('实际上行');
-    expect(html).toContain('实际下行');
-    expect(html).toContain('扣费倍率');
-    expect(html).toContain('合计');
-    expect(html).toContain('cursor-help');
-    expect(html).toContain('2024/01/15');
-    expect(html).toContain('2.00 KB');
-    expect(html).toContain('1024.00 B');
-    expect(html).toContain('1.50 x');
-    expect(html).toContain('4.50 KB');
-    expect(html).toContain('>-</td>');
-    expect(html).toContain('100.00 B');
-    expect(html).toContain('200.00 B');
-    expect(html).toContain('0.00 B');
-    expect(html.match(/data-row-key="0"/g)).toHaveLength(1);
-    expect(html.match(/data-row-key="1"/g)).toHaveLength(1);
-    expect(html).not.toContain('ant-table-scroll-position');
+    expect(screen.getByTestId('traffic-card')).toBeInTheDocument();
+    const table = screen.getByTestId('traffic-table');
+    expect(table).toHaveAttribute('data-table-kind', 'service');
+    // The parity harness reads data-scroll-position off this container.
+    expect(screen.getByTestId('service-table-scroll')).toHaveAttribute('data-scroll-position');
+
+    for (const header of ['记录时间', '实际上行', '实际下行', '扣费倍率', '合计']) {
+      expect(within(table).getByRole('columnheader', { name: header })).toBeInTheDocument();
+    }
+
+    const [first, second] = within(table).getAllByRole('row').slice(1);
+    // Rows keep server order with index-based keys, not record_at-derived keys.
+    expect(first).toHaveAttribute('data-row-key', '0');
+    expect(second).toHaveAttribute('data-row-key', '1');
+
+    const firstCells = within(first!).getAllByRole('cell');
+    expect(firstCells[0]).toHaveTextContent('2024/01/15');
+    expect(firstCells[1]).toHaveTextContent('2.00 KB');
+    expect(firstCells[2]).toHaveTextContent('1024.00 B');
+    expect(firstCells[3]).toHaveTextContent('1.50 x');
+    // Charged total contract: (u + d) * server_rate = (2048 + 1024) * 1.5 = 4608.
+    expect(firstCells[4]).toHaveTextContent('4.50 KB');
+
+    const secondCells = within(second!).getAllByRole('cell');
+    expect(secondCells[0]).toHaveTextContent(/^-$/); // record_at 0 renders a dash
+    expect(secondCells[1]).toHaveTextContent('100.00 B');
+    expect(secondCells[2]).toHaveTextContent('200.00 B');
+    expect(secondCells[3]).toHaveTextContent(/^-$/); // rate 0 renders a dash
+    expect(secondCells[4]).toHaveTextContent(/^0\.00 B$/);
   });
 
-  it('uses the shared scroll-position hook without fixed-column row height shims', () => {
-    expect(trafficSource).toContain('useTableScrollPosition(rows.length)');
-    expect(trafficSource).not.toContain('useFixedColumnRowHeights');
-    expect(trafficSource).not.toContain('bodyRowHeightOffset');
-    expect(trafficSource).not.toContain('fixedBodyRowExtraPixel');
+  it('sorts rows by record time through the shared table header', async () => {
+    const { user } = renderWithProviders(<TrafficPage />);
+
+    const table = screen.getByTestId('traffic-table');
+    const recordHeader = within(table).getByRole('columnheader', { name: '记录时间' });
+    expect(recordHeader).toHaveAttribute('aria-sort', 'none');
+
+    const sortButton = within(recordHeader).getByRole('button', { name: '记录时间' });
+
+    // Numeric columns toggle descending first in the shared table.
+    await user.click(sortButton);
+    expect(recordHeader).toHaveAttribute('aria-sort', 'descending');
+
+    await user.click(sortButton);
+    expect(recordHeader).toHaveAttribute('aria-sort', 'ascending');
+    const [first] = within(table).getAllByRole('row').slice(1);
+    // Ascending record_at puts the record_at: 0 row ('-' date, 100 B upload) first.
+    expect(within(first!).getAllByRole('cell')[0]).toHaveTextContent(/^-$/);
+    expect(within(first!).getByText('100.00 B')).toBeInTheDocument();
   });
 
-  it('keeps traffic dates behind the shared legacy date formatter', () => {
-    expect(trafficSource).toContain("formatLegacyDateSlash } from '@v2board/config/format';");
-    expect(trafficSource).toContain('formatLegacyDateSlash(row.original.record_at)');
-    expect(trafficSource).not.toContain('formatDate(row.record_at).replaceAll');
-  });
+  it('opens the charged-total formula tooltip from the parity header trigger', async () => {
+    const { user } = renderWithProviders(<TrafficPage />);
 
-  it('keeps the legacy charged total coercion expression', () => {
-    expect(trafficSource).toContain(
-      '(upload + download) * (row.original.server_rate as unknown as number)',
+    const trigger = screen.getByText('合计');
+    // The parity harness hovers [data-testid="traffic-table"] .v2board-service-tooltip-trigger.
+    expect(trigger).toHaveClass('v2board-service-tooltip-trigger');
+
+    await user.hover(trigger);
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      '公式：(实际上行 + 实际下行) x 扣费倍率 = 扣除流量',
     );
-    expect(trafficSource).not.toContain('Number(row.server_rate)');
   });
 
-  it('renders traffic rows through shared TanStack DataTable columns', () => {
-    expect(trafficSource).toContain('satisfies DataTableColumn<(typeof rows)[number]>[]');
-    expect(trafficSource).not.toContain('data-row-key={row.record_at}');
-    expect(trafficSource).not.toContain('<TableRow');
+  it('coerces the whole server_rate string in the charged total (legacy behavior)', () => {
+    queryState.rows = [{ u: 300, d: 400, record_at: 1_705_320_000, user_id: 1, server_rate: '' }];
+
+    renderWithProviders(<TrafficPage />);
+
+    const [row] = within(screen.getByTestId('traffic-table')).getAllByRole('row').slice(1);
+    const cells = within(row!).getAllByRole('cell');
+    // A falsy server_rate short-circuits upload/download to a literal 0...
+    expect(cells[1]).toHaveTextContent(/^0$/);
+    expect(cells[2]).toHaveTextContent(/^0$/);
+    expect(cells[3]).toHaveTextContent(/^-$/);
+    // ...while the charged total multiplies by the whole coerced string:
+    // (300 + 400) * Number('') = 0. parseFloat semantics would render 'NaN B'.
+    expect(cells[4]).toHaveTextContent(/^0\.00 B$/);
   });
 });
 
 describe('TrafficPage error state', () => {
-  let container: HTMLDivElement;
-  let root: Root | null;
-
-  beforeEach(() => {
-    queryState.rows = [];
-    queryState.fetching = false;
-    queryState.error = true;
-    queryState.refetch.mockClear();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    act(() => root?.unmount());
-    root = null;
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
   it('renders a retryable error state instead of an empty traffic table on fetch failure', async () => {
-    await act(async () => {
-      root!.render(<TrafficPage />);
-      await Promise.resolve();
-    });
+    queryState.error = true;
+
+    const { user } = renderWithProviders(<TrafficPage />);
 
     // A failed fetch must not render as an empty "no usage" table.
-    expect(container.innerHTML).toContain('data-testid="traffic-error"');
-    expect(container.querySelector('[data-testid="traffic-table"]')).toBeNull();
+    expect(screen.getByTestId('traffic-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('traffic-table')).not.toBeInTheDocument();
 
-    const retry = container.querySelector<HTMLButtonElement>('[data-testid="error-state-retry"]');
-    await act(async () => {
-      retry!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '重试' }));
 
     expect(queryState.refetch).toHaveBeenCalled();
   });

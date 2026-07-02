@@ -1,7 +1,8 @@
 import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useForm, type UseFormReturn } from 'react-hook-form';
+import { renderWithProviders } from '@/test/render';
 import {
   Form,
   FormControl,
@@ -12,9 +13,6 @@ import {
   FormMessage,
 } from './form';
 import { Input } from './input';
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
 
 // FormMessage resolves the resolver-stashed i18n key through useTranslation.
 vi.mock('react-i18next', () => ({
@@ -50,50 +48,34 @@ function TestForm() {
 }
 
 describe('Form (shadcn RHF primitives)', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(async () => {
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-    await act(async () => {
-      root.render(<TestForm />);
-    });
+  beforeEach(() => {
+    renderWithProviders(<TestForm />);
   });
 
   afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
     form = undefined;
   });
 
   it('wires label/control/description ids in the resting state', () => {
-    const input = container.querySelector('input')!;
-    const label = container.querySelector('label')!;
-    const description = container.querySelector('[data-slot="form-description"]')!;
+    // The accessible name/description prove the label `for` and
+    // `aria-describedby` id wiring end to end.
+    const input = screen.getByRole('textbox', { name: 'Email' });
 
-    expect(input.id).not.toBe('');
-    expect(label.getAttribute('for')).toBe(input.id);
-    expect(input.getAttribute('aria-invalid')).toBe('false');
-    expect(input.getAttribute('aria-describedby')).toBe(description.id);
-    expect(container.querySelector('[data-slot="form-message"]')).toBeNull();
+    expect(input).toHaveAttribute('aria-invalid', 'false');
+    expect(input).toHaveAccessibleDescription('We never share it');
+    expect(screen.queryByText('This field is required')).not.toBeInTheDocument();
   });
 
-  it('marks the control invalid, extends aria-describedby, and renders the translated message on error', async () => {
+  it('marks the control invalid, extends the description, and renders the translated message on error', async () => {
     await act(async () => {
       form!.setError('email', { type: 'manual', message: 'errors.required' });
     });
 
-    const input = container.querySelector('input')!;
-    const description = container.querySelector('[data-slot="form-description"]')!;
-    const message = container.querySelector('[data-slot="form-message"]')!;
-
-    expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(message.id).not.toBe('');
-    expect(input.getAttribute('aria-describedby')).toBe(`${description.id} ${message.id}`);
-    expect(message.textContent).toBe('This field is required');
-    expect(container.querySelector('label')!.getAttribute('data-error')).toBe('true');
+    const input = screen.getByRole('textbox', { name: 'Email' });
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription('We never share it This field is required');
+    expect(screen.getByText('This field is required')).toBeInTheDocument();
+    expect(screen.getByText('Email')).toHaveAttribute('data-error', 'true');
   });
 
   it('clears the message and invalid state when the error is removed', async () => {
@@ -104,8 +86,8 @@ describe('Form (shadcn RHF primitives)', () => {
       form!.clearErrors('email');
     });
 
-    const input = container.querySelector('input')!;
-    expect(input.getAttribute('aria-invalid')).toBe('false');
-    expect(container.querySelector('[data-slot="form-message"]')).toBeNull();
+    const input = screen.getByRole('textbox', { name: 'Email' });
+    expect(input).toHaveAttribute('aria-invalid', 'false');
+    expect(screen.queryByText('This field is required')).not.toBeInTheDocument();
   });
 });

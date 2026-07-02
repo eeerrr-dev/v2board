@@ -1,7 +1,7 @@
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { act, cleanup, screen } from '@testing-library/react';
+import { Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import { RequireAuth } from './require-auth';
 import { logout, setAuthData } from '@/lib/auth';
 
@@ -10,39 +10,29 @@ function LocationProbe() {
   return <div data-testid="loc">{`${location.pathname}${location.search}`}</div>;
 }
 
-function renderGuarded(root: Root, entry: string) {
-  act(() => {
-    root.render(
-      <MemoryRouter initialEntries={[entry]}>
-        <Routes>
-          <Route
-            path="/dashboard"
-            element={
-              <RequireAuth>
-                <div data-testid="guarded">dashboard</div>
-              </RequireAuth>
-            }
-          />
-          <Route path="/login" element={<LocationProbe />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-  });
+function renderGuarded(entry: string) {
+  return renderWithProviders(
+    <Routes>
+      <Route
+        path="/dashboard"
+        element={
+          <RequireAuth>
+            <div>guarded dashboard</div>
+          </RequireAuth>
+        }
+      />
+      <Route path="/login" element={<LocationProbe />} />
+    </Routes>,
+    { routerEntries: [entry] },
+  );
 }
 
-let container: HTMLDivElement;
-let root: Root;
-
-beforeEach(() => {
-  setAuthData(null);
-  container = document.createElement('div');
-  document.body.appendChild(container);
-  root = createRoot(container);
-});
-
+// The localStorage stub persists per test file, so clear the token around
+// every test to keep them order-independent. Unmount before clearing: a
+// mounted RequireAuth would react to the store change outside act().
+beforeEach(() => setAuthData(null));
 afterEach(() => {
-  act(() => root.unmount());
-  container.remove();
+  cleanup();
   setAuthData(null);
 });
 
@@ -50,16 +40,16 @@ describe('RequireAuth', () => {
   it('renders the guarded children while a token is present', () => {
     setAuthData('token-123');
 
-    renderGuarded(root, '/dashboard');
+    renderGuarded('/dashboard');
 
-    expect(container.querySelector('[data-testid="guarded"]')?.textContent).toBe('dashboard');
+    expect(screen.getByText('guarded dashboard')).toBeInTheDocument();
   });
 
   it('redirects an unauthenticated visit to /login with the encoded return path', () => {
-    renderGuarded(root, '/dashboard?tab=orders');
+    renderGuarded('/dashboard?tab=orders');
 
-    expect(container.querySelector('[data-testid="guarded"]')).toBeNull();
-    expect(container.querySelector('[data-testid="loc"]')?.textContent).toBe(
+    expect(screen.queryByText('guarded dashboard')).not.toBeInTheDocument();
+    expect(screen.getByTestId('loc').textContent).toBe(
       `/login?redirect=${encodeURIComponent('/dashboard?tab=orders')}`,
     );
   });
@@ -67,15 +57,16 @@ describe('RequireAuth', () => {
   it('redirects to /login when the session is cleared mid-render (live logout)', () => {
     setAuthData('token-123');
 
-    renderGuarded(root, '/dashboard?tab=orders');
-    expect(container.querySelector('[data-testid="guarded"]')).not.toBeNull();
+    renderGuarded('/dashboard?tab=orders');
+    expect(screen.getByText('guarded dashboard')).toBeInTheDocument();
 
+    // logout() flips the external auth store outside a React event handler.
     act(() => {
       logout();
     });
 
-    expect(container.querySelector('[data-testid="guarded"]')).toBeNull();
-    expect(container.querySelector('[data-testid="loc"]')?.textContent).toBe(
+    expect(screen.queryByText('guarded dashboard')).not.toBeInTheDocument();
+    expect(screen.getByTestId('loc').textContent).toBe(
       `/login?redirect=${encodeURIComponent('/dashboard?tab=orders')}`,
     );
   });

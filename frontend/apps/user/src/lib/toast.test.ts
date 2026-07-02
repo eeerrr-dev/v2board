@@ -1,14 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { act, createElement } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { createElement } from 'react';
+import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Toaster } from '@/components/ui/toaster';
 import { toast } from './toast';
-
-const source = readFileSync(`${process.cwd()}/src/components/ui/toaster.tsx`, 'utf8');
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
 
 async function flushToasts(duration = 16) {
   await Promise.resolve();
@@ -25,26 +19,17 @@ function activeToasts(selector: string) {
 }
 
 describe('toast', () => {
-  let root: Root;
-
   beforeEach(() => {
     vi.useFakeTimers();
     act(() => {
       toast.dismiss();
     });
-    document.body.innerHTML = '';
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    root = createRoot(host);
-    act(() => {
-      root.render(createElement(Toaster));
-    });
+    render(createElement(Toaster));
   });
 
   afterEach(() => {
     act(() => {
       toast.dismiss();
-      root.unmount();
     });
     vi.useRealTimers();
   });
@@ -58,8 +43,7 @@ describe('toast', () => {
 
     const notices = activeToasts('.v2board-toast-message');
     expect(notices).toHaveLength(1);
-    expect(notices[0]?.textContent).toContain('second');
-    expect(document.body.querySelector('.ant-message')).toBeNull();
+    expect(notices[0]).toHaveTextContent('second');
   });
 
   it('destroys message toasts without closing notifications', async () => {
@@ -94,18 +78,22 @@ describe('toast', () => {
       await flushToasts();
     });
 
-    const notificationText = document.querySelector('.v2board-toast-notification')?.textContent;
-    expect(notificationText).toContain('Request failed');
-    expect(notificationText).toContain('Server Error');
+    const notification = activeToasts('.v2board-toast-notification')[0];
+    expect(notification).toHaveTextContent('Request failed');
+    expect(notification).toHaveTextContent('Server Error');
   });
 
-  it('uses Sonner instead of a self-owned Radix toast store', () => {
-    expect(source).toContain("from 'sonner'");
-    expect(source).toContain('v2board-toast-root');
-    expect(source).not.toContain("@radix-ui/react-toast");
-    expect(source).not.toContain('useSyncExternalStore');
-    expect(source).not.toContain('ant-message');
-    expect(source).not.toContain('ant-notification');
-    expect(source).not.toContain('innerHTML');
+  it('marks rendered toasts with the island hooks the parity harness selects', async () => {
+    await act(async () => {
+      toast.success('copied');
+      await flushToasts();
+    });
+
+    const [message] = activeToasts('.v2board-toast-message');
+    expect(message).toBeDefined();
+    // visual-parity.mjs waits on `.v2board-toast-root`, and `v2board-island`
+    // scopes island tokens onto toast DOM rendered outside the island root.
+    expect(message!.classList.contains('v2board-toast-root')).toBe(true);
+    expect(message!.classList.contains('v2board-island')).toBe(true);
   });
 });

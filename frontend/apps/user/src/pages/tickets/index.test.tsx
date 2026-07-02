@@ -1,18 +1,11 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { act } from 'react';
 import type { ReactNode } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { getLocaleAntdMessages } from '@v2board/i18n';
+import { VIRTUALIZE_MIN_ROWS } from '@/components/ui/table';
+import { renderWithProviders } from '@/test/render';
 import TicketsPage from './index';
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
-const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'index.tsx'), 'utf8');
 
 const mocks = vi.hoisted(() => {
   const makeTickets = () => [
@@ -113,6 +106,10 @@ vi.mock('@/components/ui/confirm-dialog', () => ({
   confirmDialog,
 }));
 
+// Radix Select does not open under happy-dom (pointer capture / scrollIntoView),
+// so the file keeps its native-select stand-in. The real trigger/content hooks
+// (`ticket-select-trigger` / `ticket-select-content`) stay covered by the
+// interaction-parity harness in a real browser.
 vi.mock('@/components/ui/select', () => ({
   Select: ({
     children,
@@ -124,6 +121,7 @@ vi.mock('@/components/ui/select', () => ({
     value?: string;
   }) => (
     <select
+      aria-label="工单等级"
       data-testid="ticket-select-native"
       value={value ?? ''}
       onChange={(event) => onValueChange(event.currentTarget.value)}
@@ -143,169 +141,148 @@ function resetMocks() {
   mocks.tickets = mocks.makeTickets();
   mocks.fetching = true;
   mocks.savePending = false;
+  mocks.saveMutateAsync.mockReset();
   mocks.closeMutateAsync.mockReset();
+  mocks.openWindow.mockClear();
   confirmDialog.mockReset();
 }
 
-function setNativeInputValue(input: HTMLInputElement, value: string) {
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  input.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-function setNativeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
-  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
-    textarea,
-    value,
-  );
-  textarea.dispatchEvent(new Event('input', { bubbles: true }));
-  textarea.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
 describe('TicketsPage shadcn surface', () => {
-  beforeEach(resetMocks);
-
-  afterEach(() => {
-    document.body.innerHTML = '';
+  beforeEach(() => {
+    resetMocks();
+    mocks.fetching = false;
   });
 
-  it('renders the shadcn ticket card, table, statuses, actions, and dates', () => {
-    const html = renderToStaticMarkup(<TicketsPage />);
+  it('renders the ticket card, table rows, level labels, statuses, actions, and dates', () => {
+    const { container } = renderWithProviders(<TicketsPage />);
 
-    expect(html).toContain('data-testid="ticket-surface"');
-    expect(html).toContain('data-testid="ticket-table"');
-    expect(html).toContain('data-testid="ticket-new-trigger"');
-    expect(html).toContain('工单历史');
-    expect(html).toContain('新的工单');
-    expect(html).toContain('Need help');
-    expect(html).toContain('Waiting reply');
-    expect(html).toContain('Closed ticket');
-    expect(html).toContain('>中<');
-    expect(html).toContain('>低<');
-    expect(html).toContain('>高<');
-    expect(html).toContain('已答复');
-    expect(html).toContain('待处理');
-    expect(html).toContain('已关闭');
-    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
-    expect(html).toContain(formatLegacyDateMinuteSlash(60));
-    expect(html).toContain('data-testid="ticket-view"');
-    expect(html).toContain('data-testid="ticket-close"');
-    expect(html.match(/data-row-key="0"/g)).toHaveLength(1);
-    expect(html.match(/data-row-key="1"/g)).toHaveLength(1);
-    expect(html.match(/data-row-key="2"/g)).toHaveLength(1);
-    expect(html).not.toContain('block block-rounded');
-    expect(html).not.toContain('ant-table-wrapper');
-    expect(html).not.toContain('ant-table-fixed-right');
+    expect(screen.getByTestId('ticket-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('ticket-table')).toBeInTheDocument();
+    expect(screen.getByText('工单历史')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '新的工单' })).toBe(
+      screen.getByTestId('ticket-new-trigger'),
+    );
+
+    expect(screen.getByText('Need help')).toBeInTheDocument();
+    expect(screen.getByText('Waiting reply')).toBeInTheDocument();
+    expect(screen.getByText('Closed ticket')).toBeInTheDocument();
+
+    // Level labels come straight from the numeric `level` field (0/1/2 -> 低/中/高).
+    expect(screen.getByText('中')).toBeInTheDocument();
+    expect(screen.getByText('低')).toBeInTheDocument();
+    expect(screen.getByText('高')).toBeInTheDocument();
+
+    expect(screen.getByText('已答复')).toBeInTheDocument();
+    expect(screen.getByText('待处理')).toBeInTheDocument();
+    expect(screen.getByText('已关闭')).toBeInTheDocument();
+
+    expect(screen.getByText(formatLegacyDateMinuteSlash(1_700_000_000))).toBeInTheDocument();
+    expect(screen.getByText(formatLegacyDateMinuteSlash(60))).toBeInTheDocument();
+
+    expect(screen.getAllByTestId('ticket-view')).toHaveLength(3);
+    expect(screen.getAllByTestId('ticket-close')).toHaveLength(3);
+
+    // Rows are keyed by index (not ticket id) — the row-key contract the
+    // parity harness reads via [data-row-key].
+    const rowKeys = Array.from(container.querySelectorAll('[data-row-key]')).map((row) =>
+      row.getAttribute('data-row-key'),
+    );
+    expect(rowKeys).toEqual(['0', '1', '2']);
+    // Small lists are not virtualized: no measurement wiring on the rows.
+    expect(container.querySelector('[data-index]')).toBeNull();
   });
 
-  it('renders ticket rows through shared TanStack DataTable columns', () => {
-    expect(source).toContain('satisfies DataTableColumn<(typeof tickets)[number]>[]');
-    expect(source).toContain('virtualizer={{ enabled: tickets.length > VIRTUALIZE_MIN_ROWS }}');
-    expect(source).not.toContain('data-row-key={ticket.id}');
-    expect(source).not.toContain('<TableRow');
-  });
-
-  it('keeps the new-ticket trigger text stable while ticket save is pending', () => {
-    mocks.savePending = true;
-
-    const html = renderToStaticMarkup(<TicketsPage />);
-
-    expect(html).toContain('data-testid="ticket-new-trigger"');
-    expect(html).toContain('新的工单</button>');
-  });
-
-  it('marks the ticket card as loading while ticket/fetch is pending', async () => {
-    mocks.fetching = true;
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
+  it('windows rows through the shared virtualizer once the list outgrows VIRTUALIZE_MIN_ROWS', () => {
+    const total = VIRTUALIZE_MIN_ROWS + 1;
+    mocks.tickets = Array.from({ length: total }, (_, index) => ({
+      id: index + 1,
+      subject: `Ticket ${index + 1}`,
+      level: 0,
+      status: 0,
+      reply_status: 0,
+      created_at: 1_700_000_000 + index * 60,
+      updated_at: 1_700_000_000 + index * 60,
+    }));
+    // happy-dom has no layout, so give the virtualizer's scroll container a
+    // real viewport size (virtual-core reads offsetWidth/offsetHeight);
+    // otherwise the visible window is empty.
+    const heightSpy = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(600);
+    const widthSpy = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1024);
 
     try {
-      await act(async () => {
-        root.render(<TicketsPage />);
-        await Promise.resolve();
-      });
+      const { container } = renderWithProviders(<TicketsPage />);
 
-      expect(container.querySelector('[data-testid="ticket-surface"]')?.className).toContain(
-        'opacity-80',
-      );
-      expect(container.innerHTML).not.toContain('block-mode-loading');
-      expect(container.innerHTML).not.toContain('ant-spin-spinning');
+      const dataRows = Array.from(container.querySelectorAll('tr[data-row-key]'));
+      // The virtualizer only mounts a window of rows plus spacer padding rather
+      // than all 151 of them, and wires each mounted row for measurement.
+      expect(dataRows.length).toBeGreaterThan(0);
+      expect(dataRows.length).toBeLessThan(total);
+      expect(dataRows[0]).toHaveAttribute('data-index');
     } finally {
-      act(() => root.unmount());
-      container.remove();
+      heightSpy.mockRestore();
+      widthSpy.mockRestore();
     }
   });
 
-  it('renders a shadcn empty row without the legacy antd empty shell', () => {
+  it('keeps the new-ticket trigger usable while a save is pending and marks the confirm busy', async () => {
+    mocks.savePending = true;
+
+    const { user } = renderWithProviders(<TicketsPage />);
+
+    const trigger = screen.getByTestId('ticket-new-trigger');
+    expect(trigger).toHaveTextContent('新的工单');
+    expect(trigger).toBeEnabled();
+
+    await user.click(trigger);
+
+    // The pending state lives on the dialog's submit button, not the trigger.
+    const confirm = screen.getByRole('button', { name: '确认' });
+    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('marks the ticket card as loading while the ticket fetch is pending', () => {
+    mocks.fetching = true;
+
+    renderWithProviders(<TicketsPage />);
+
+    expect(screen.getByTestId('ticket-surface')).toHaveClass('opacity-80');
+  });
+
+  it('renders the shared empty row with the locale antd empty copy', () => {
     mocks.tickets = [];
 
-    const html = renderToStaticMarkup(<TicketsPage />);
+    renderWithProviders(<TicketsPage />);
 
-    expect(html).toContain('data-testid="ticket-empty"');
-    expect(html).not.toContain('ant-table-placeholder');
-    expect(html).not.toContain('ant-empty');
+    expect(screen.getByTestId('ticket-empty')).toHaveTextContent(
+      getLocaleAntdMessages('zh-CN').emptyDescription,
+    );
   });
 });
 
 describe('TicketsPage shadcn interactions', () => {
-  let container: HTMLDivElement;
-  let root: Root | null;
   let originalOpen: typeof window.open;
 
   beforeEach(() => {
     resetMocks();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
+    mocks.fetching = false;
+    mocks.saveMutateAsync.mockResolvedValue(undefined);
+    mocks.closeMutateAsync.mockResolvedValue(undefined);
     originalOpen = window.open;
     window.open = mocks.openWindow as unknown as typeof window.open;
-    mocks.fetching = false;
-    mocks.saveMutateAsync.mockReset();
-    mocks.saveMutateAsync.mockResolvedValue(undefined);
-    mocks.closeMutateAsync.mockReset();
-    mocks.closeMutateAsync.mockResolvedValue(undefined);
-    mocks.openWindow.mockClear();
   });
 
   afterEach(() => {
-    if (root) {
-      act(() => root?.unmount());
-      root = null;
-    }
     window.open = originalOpen;
-    container.remove();
-    document.body.innerHTML = '';
   });
 
-  async function renderTickets() {
-    await act(async () => {
-      root!.render(<TicketsPage />);
-      await Promise.resolve();
-    });
-  }
-
-  async function openCreateDialog() {
-    const trigger = container.querySelector<HTMLButtonElement>(
-      '[data-testid="ticket-new-trigger"]',
-    )!;
-    await act(async () => {
-      trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-  }
-
   it('opens ticket detail in the legacy popup window on desktop', async () => {
-    await renderTickets();
+    const { user } = renderWithProviders(<TicketsPage />);
 
-    const viewButtons = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[data-testid="ticket-view"]'),
-    );
+    const viewButtons = screen.getAllByTestId('ticket-view');
     expect(viewButtons).toHaveLength(3);
 
-    act(() => {
-      viewButtons[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+    await user.click(viewButtons[0]!);
 
     expect(mocks.openWindow).toHaveBeenCalledWith(
       `${window.location.origin}${window.location.pathname}#/ticket/7`,
@@ -315,241 +292,143 @@ describe('TicketsPage shadcn interactions', () => {
   });
 
   it('saves a new ticket through the shadcn dialog form', async () => {
-    await renderTickets();
-    await openCreateDialog();
+    const { user } = renderWithProviders(<TicketsPage />);
 
-    expect(document.body.innerHTML).toContain('data-testid="ticket-dialog"');
-    expect(document.body.innerHTML).toContain('新的工单');
-    expect(document.body.innerHTML).toContain('请输入工单主题');
-    expect(document.body.innerHTML).toContain('请选择工单等级');
-    expect(document.body.innerHTML).toContain('请描述您遇到的问题');
+    await user.click(screen.getByTestId('ticket-new-trigger'));
 
-    const subject = document.body.querySelector<HTMLInputElement>(
-      'input[placeholder="请输入工单主题"]',
-    )!;
-    const level = document.body.querySelector<HTMLSelectElement>(
-      '[data-testid="ticket-select-native"]',
-    )!;
-    const message = document.body.querySelector<HTMLTextAreaElement>(
-      'textarea[placeholder="请描述您遇到的问题"]',
-    )!;
+    expect(screen.getByTestId('ticket-dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('ticket-dialog-title')).toHaveTextContent('新的工单');
 
-    await act(async () => {
-      setNativeInputValue(subject, 'Billing question');
-      level.value = '2';
-      level.dispatchEvent(new Event('change', { bubbles: true }));
-      setNativeTextareaValue(message, 'Please check my invoice');
-      await Promise.resolve();
-    });
+    const subject = screen.getByLabelText('主题');
+    expect(subject).toHaveAttribute('placeholder', '请输入工单主题');
+    const message = screen.getByLabelText('消息');
+    expect(message).toHaveAttribute('placeholder', '请描述您遇到的问题');
 
-    const confirm = document.body.querySelector<HTMLButtonElement>(
-      '[data-testid="ticket-dialog-footer"] button:last-child',
-    )!;
-    expect(confirm.textContent).toBe('确认');
+    await user.type(subject, 'Billing question');
+    await user.selectOptions(screen.getByTestId('ticket-select-native'), '2');
+    await user.type(message, 'Please check my invoice');
 
-    await act(async () => {
-      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    // The parity harness submits via the footer's last button, so keep the
+    // confirm button in that slot.
+    const footerButtons = within(screen.getByTestId('ticket-dialog-footer')).getAllByRole(
+      'button',
+    );
+    const confirm = footerButtons[footerButtons.length - 1]!;
+    expect(confirm).toHaveTextContent('确认');
 
+    await user.click(confirm);
+
+    // The save payload carries the numeric level exactly as selected.
     expect(mocks.saveMutateAsync).toHaveBeenCalledWith({
       level: 2,
       message: 'Please check my invoice',
       subject: 'Billing question',
     });
-    // The list refresh is now owned by useSaveTicketMutation's onSuccess (see
-    // queries.test.ts), so the page no longer invalidates at the call site.
+    // The list refresh is owned by useSaveTicketMutation's onSuccess (see
+    // queries.test.ts), so the page does not invalidate at the call site.
   });
 
   it('blocks an empty submit and surfaces the required-field errors', async () => {
-    await renderTickets();
-    await openCreateDialog();
+    const { user } = renderWithProviders(<TicketsPage />);
 
-    const confirm = document.body.querySelector<HTMLButtonElement>(
-      '[data-testid="ticket-dialog-footer"] button:last-child',
-    )!;
-
-    await act(async () => {
-      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('ticket-new-trigger'));
+    await user.click(screen.getByRole('button', { name: '确认' }));
 
     expect(mocks.saveMutateAsync).not.toHaveBeenCalled();
-    const subjectError = document.body.querySelector('[data-testid="ticket-subject-error"]');
-    const levelError = document.body.querySelector('[data-testid="ticket-level-error"]');
-    const messageError = document.body.querySelector('[data-testid="ticket-message-error"]');
-    expect(subjectError?.textContent).toBe('请输入工单主题');
-    expect(levelError?.textContent).toBe('请选择工单等级');
-    expect(messageError?.textContent).toBe('请描述您遇到的问题');
+    expect(await screen.findByTestId('ticket-subject-error')).toHaveTextContent('请输入工单主题');
+    expect(screen.getByTestId('ticket-level-error')).toHaveTextContent('请选择工单等级');
+    expect(screen.getByTestId('ticket-message-error')).toHaveTextContent('请描述您遇到的问题');
+    expect(screen.getAllByRole('alert')).toHaveLength(3);
   });
 
   it('keeps new-ticket form data after canceling because only a successful save clears state', async () => {
-    await renderTickets();
-    await openCreateDialog();
+    const { user } = renderWithProviders(<TicketsPage />);
 
-    const subject = document.body.querySelector<HTMLInputElement>(
-      'input[placeholder="请输入工单主题"]',
-    )!;
-    const level = document.body.querySelector<HTMLSelectElement>(
-      '[data-testid="ticket-select-native"]',
-    )!;
-    const message = document.body.querySelector<HTMLTextAreaElement>(
-      'textarea[placeholder="请描述您遇到的问题"]',
-    )!;
+    await user.click(screen.getByTestId('ticket-new-trigger'));
+    await user.type(screen.getByLabelText('主题'), 'Still here');
+    await user.selectOptions(screen.getByTestId('ticket-select-native'), '1');
+    await user.type(screen.getByLabelText('消息'), 'Keep this draft');
 
-    await act(async () => {
-      setNativeInputValue(subject, 'Still here');
-      level.value = '1';
-      level.dispatchEvent(new Event('change', { bubbles: true }));
-      setNativeTextareaValue(message, 'Keep this draft');
-      await Promise.resolve();
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('ticket-dialog')).not.toBeInTheDocument();
     });
 
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="ticket-dialog-footer"] button:first-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('ticket-new-trigger'));
 
-    await openCreateDialog();
-
-    expect(
-      document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!.value,
-    ).toBe('Still here');
-    expect(
-      document.body.querySelector<HTMLSelectElement>('[data-testid="ticket-select-native"]')!.value,
-    ).toBe('1');
-    expect(
-      document.body.querySelector<HTMLTextAreaElement>(
-        'textarea[placeholder="请描述您遇到的问题"]',
-      )!.value,
-    ).toBe('Keep this draft');
+    expect(screen.getByLabelText('主题')).toHaveValue('Still here');
+    expect(screen.getByTestId('ticket-select-native')).toHaveValue('1');
+    expect(screen.getByLabelText('消息')).toHaveValue('Keep this draft');
   });
 
   it('clears new-ticket state after a successful save', async () => {
-    await renderTickets();
-    await openCreateDialog();
+    const { user } = renderWithProviders(<TicketsPage />);
 
-    await act(async () => {
-      setNativeInputValue(
-        document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!,
-        'Saved subject',
-      );
-      const level = document.body.querySelector<HTMLSelectElement>(
-        '[data-testid="ticket-select-native"]',
-      )!;
-      level.value = '2';
-      level.dispatchEvent(new Event('change', { bubbles: true }));
-      setNativeTextareaValue(
-        document.body.querySelector<HTMLTextAreaElement>(
-          'textarea[placeholder="请描述您遇到的问题"]',
-        )!,
-        'Saved body',
-      );
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="ticket-dialog-footer"] button:last-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('ticket-new-trigger'));
+    await user.type(screen.getByLabelText('主题'), 'Saved subject');
+    await user.selectOptions(screen.getByTestId('ticket-select-native'), '2');
+    await user.type(screen.getByLabelText('消息'), 'Saved body');
+    await user.click(screen.getByRole('button', { name: '确认' }));
 
     expect(mocks.saveMutateAsync).toHaveBeenLastCalledWith({
       level: 2,
       message: 'Saved body',
       subject: 'Saved subject',
     });
+    await waitFor(() => {
+      expect(screen.queryByTestId('ticket-dialog')).not.toBeInTheDocument();
+    });
 
-    await openCreateDialog();
+    await user.click(screen.getByTestId('ticket-new-trigger'));
 
-    expect(
-      document.body.querySelector<HTMLInputElement>('input[placeholder="请输入工单主题"]')!.value,
-    ).toBe('');
-    expect(
-      document.body.querySelector<HTMLSelectElement>('[data-testid="ticket-select-native"]')!.value,
-    ).toBe('');
-    expect(
-      document.body.querySelector<HTMLTextAreaElement>(
-        'textarea[placeholder="请描述您遇到的问题"]',
-      )!.value,
-    ).toBe('');
+    expect(screen.getByLabelText('主题')).toHaveValue('');
+    expect(screen.getByTestId('ticket-select-native')).toHaveValue('');
+    expect(screen.getByLabelText('消息')).toHaveValue('');
 
     // Re-submitting the now-empty form is blocked by the required-field
     // validation, so the mutation is not called a second time.
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="ticket-dialog-footer"] button:last-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '确认' }));
 
     expect(mocks.saveMutateAsync).toHaveBeenCalledTimes(1);
-    expect(
-      document.body.querySelector('[data-testid="ticket-subject-error"]')?.textContent,
-    ).toBe('请输入工单主题');
+    expect(await screen.findByTestId('ticket-subject-error')).toHaveTextContent('请输入工单主题');
   });
 
-  it('keeps the ticket level select value as the direct numeric payload value', () => {
-    expect(source).toContain('const levelLabel = LEVELS[row.original.level]?.labelKey;');
-    expect(source).toContain('field.onChange(Number(nextLevel) as TicketLevel)');
-    expect(source).not.toContain('LEVELS[Number(ticket.level)]');
-  });
+  it('confirms before closing a ticket and only fires the close mutation on accept', async () => {
+    const { user } = renderWithProviders(<TicketsPage />);
 
-  it('closes an open ticket and empties ticket state on unmount', async () => {
-    await renderTickets();
-
-    const closeButtons = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[data-testid="ticket-close"]'),
-    );
+    const closeButtons = screen.getAllByTestId('ticket-close');
     expect(closeButtons).toHaveLength(3);
 
-    await act(async () => {
-      closeButtons[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(closeButtons[0]!);
 
     // Closing confirms through the shared AlertDialog first; the mutation only
     // fires once the user accepts.
     expect(confirmDialog).toHaveBeenCalledTimes(1);
     const options = confirmDialog.mock.calls[0]![0] as {
       description?: unknown;
+      title?: unknown;
       onConfirm?: () => Promise<unknown>;
     };
+    expect(options.title).toBe('注意');
     expect(options.description).toBe('确定关闭该工单吗？');
     expect(mocks.closeMutateAsync).not.toHaveBeenCalled();
 
-    await act(async () => {
-      await options.onConfirm?.();
-    });
+    await options.onConfirm?.();
+
     expect(mocks.closeMutateAsync).toHaveBeenCalledWith(7);
-    // The list refresh is now owned by useCloseTicketMutation's onSuccess.
-    expect(source).not.toContain('removeQueries');
   });
 
   it('keeps closed-ticket close action clickable for legacy API parity', async () => {
-    await renderTickets();
+    const { user } = renderWithProviders(<TicketsPage />);
 
-    const closeButtons = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[data-testid="ticket-close"]'),
-    );
-    const closed = closeButtons[2]!;
+    const closed = screen.getAllByTestId('ticket-close')[2]!;
+    expect(closed).toBeEnabled();
 
-    expect(closed.disabled).toBe(false);
-
-    await act(async () => {
-      closed.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(closed);
 
     const options = confirmDialog.mock.calls[0]![0] as { onConfirm?: () => Promise<unknown> };
-    await act(async () => {
-      await options.onConfirm?.();
-    });
+    await options.onConfirm?.();
+
     expect(mocks.closeMutateAsync).toHaveBeenCalledWith(9);
   });
 });

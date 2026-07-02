@@ -1,65 +1,12 @@
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Plan } from '@v2board/types';
+import { renderWithProviders } from '@/test/render';
 import PlansPage from './index';
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
-  plans: [
-    {
-      id: 1,
-      group_id: 1,
-      transfer_enable: 100,
-      device_limit: null,
-      speed_limit: null,
-      reset_traffic_method: null,
-      name: 'Legacy Monthly',
-      show: 1,
-      sort: 0,
-      renew: 1,
-      content: JSON.stringify([{ feature: 'Feature A', support: true }]),
-      month_price: 1000,
-      quarter_price: null,
-      half_year_price: null,
-      year_price: 9000,
-      two_year_price: null,
-      three_year_price: null,
-      onetime_price: 50000,
-      reset_price: null,
-      capacity_limit: 4,
-      created_at: 0,
-      updated_at: 0,
-    },
-    {
-      id: 2,
-      group_id: 1,
-      transfer_enable: 100,
-      device_limit: null,
-      speed_limit: null,
-      reset_traffic_method: null,
-      name: 'Legacy Traffic',
-      show: 1,
-      sort: 1,
-      renew: 1,
-      content: '<p>Raw HTML</p>',
-      month_price: null,
-      quarter_price: null,
-      half_year_price: null,
-      year_price: null,
-      two_year_price: null,
-      three_year_price: null,
-      onetime_price: 5500,
-      reset_price: null,
-      capacity_limit: 0,
-      created_at: 0,
-      updated_at: 0,
-    },
-  ] as Plan[],
+  plans: [] as Plan[],
 }));
 
 const labels: Record<string, string> = {
@@ -142,27 +89,38 @@ vi.mock('@/lib/queries', () => ({
   useCommConfig: () => ({ data: { currency_symbol: '¥' } }),
 }));
 
-describe('PlansPage shadcn commerce list markup', () => {
+describe('PlansPage shadcn commerce list rendering', () => {
   beforeEach(() => {
     resetPlans();
+    mocks.navigate.mockClear();
   });
 
-  it('renders shadcn tabs, plan cards, labels, and price priority', () => {
-    const html = renderToStaticMarkup(<PlansPage />);
+  it('renders tabs, plan cards, stock labels, and price priority', () => {
+    renderWithProviders(<PlansPage />);
 
-    expect(html).toContain('选择最适合你的计划');
-    expect(html).toContain('选择合适的订阅周期和流量包。');
-    expect(html).toContain('data-testid="plan-tabs"');
-    expect(html).toContain('data-testid="plan-card"');
-    expect(html).toContain('data-testid="plan-card-title"');
-    expect(html).toContain('data-testid="plan-stock-badge"');
-    expect(html).toContain('¥ 10.00');
-    expect(html).toContain('月付');
-    expect(html).toContain('¥ 55.00');
-    expect(html).toContain('一次性');
-    expect(html).toContain('已售罄');
-    expect(html).toContain('lucide-check');
-    expect(html).not.toContain('block block-link-pop');
+    expect(screen.getByText('选择最适合你的计划')).toBeInTheDocument();
+    expect(screen.getByText('选择合适的订阅周期和流量包。')).toBeInTheDocument();
+    expect(screen.getByTestId('plan-tabs')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: '全部' })).toBeInTheDocument();
+
+    const [monthly, traffic] = screen.getAllByTestId('plan-card');
+    expect(within(monthly!).getByTestId('plan-card-title')).toHaveTextContent('Legacy Monthly');
+    // Price priority: the earliest configured period wins (month over year/onetime).
+    expect(monthly).toHaveTextContent('¥ 10.00');
+    expect(monthly).toHaveTextContent('月付');
+    // capacity_limit 4 => almost sold out, still purchasable.
+    expect(within(monthly!).getByTestId('plan-stock-badge')).toHaveTextContent('即将售罄');
+    expect(monthly).toHaveTextContent('Feature A');
+    expect(monthly).toHaveTextContent('立即订阅');
+    expect(monthly).toBeEnabled();
+
+    expect(within(traffic!).getByTestId('plan-card-title')).toHaveTextContent('Legacy Traffic');
+    expect(traffic).toHaveTextContent('¥ 55.00');
+    expect(traffic).toHaveTextContent('一次性');
+    expect(traffic).toHaveTextContent('Raw HTML');
+    // capacity_limit 0 => sold out and blocked.
+    expect(traffic).toHaveTextContent('已售罄');
+    expect(traffic).toBeDisabled();
   });
 
   it('keeps the original all-null-price card instead of hiding it', () => {
@@ -193,88 +151,57 @@ describe('PlansPage shadcn commerce list markup', () => {
       },
     ];
 
-    const html = renderToStaticMarkup(<PlansPage />);
+    renderWithProviders(<PlansPage />);
 
-    expect(html).toContain('Legacy Empty Price');
-    expect(html).toContain('¥ NaN');
-    expect(html).toContain('立即订阅');
+    const card = screen.getByTestId('plan-card');
+    expect(card).toHaveTextContent('Legacy Empty Price');
+    expect(card).toHaveTextContent('¥ NaN');
+    expect(card).toHaveTextContent('立即订阅');
   });
 
-  it('shows a shadcn empty card for an empty plan list', () => {
+  it('shows the empty state for an empty plan list', () => {
     mocks.plans = [];
 
-    const html = renderToStaticMarkup(<PlansPage />);
+    renderWithProviders(<PlansPage />);
 
-    expect(html).toContain('data-testid="plan-empty"');
-    expect(html).toContain('暂无可用订阅');
-    expect(html).not.toContain('data-testid="plan-card"');
+    expect(screen.getByTestId('plan-empty')).toHaveTextContent('暂无可用订阅');
+    expect(screen.queryByTestId('plan-card')).not.toBeInTheDocument();
   });
 });
 
 describe('PlansPage shadcn commerce list behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
   beforeEach(() => {
     resetPlans();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
     mocks.navigate.mockClear();
   });
 
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
   it('navigates from purchasable cards and blocks sold-out card navigation', async () => {
-    await act(async () => {
-      root.render(<PlansPage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<PlansPage />);
 
-    const cards = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button[data-testid="plan-card"]'),
-    );
+    const cards = screen.getAllByTestId('plan-card');
     expect(cards).toHaveLength(2);
-    expect(cards[0]!.disabled).toBe(false);
-    expect(cards[1]!.disabled).toBe(true);
+    expect(cards[0]).toBeEnabled();
+    expect(cards[1]).toBeDisabled();
 
-    await act(async () => {
-      cards[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      cards[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
+    await user.click(cards[0]!);
     expect(mocks.navigate).toHaveBeenCalledTimes(1);
     expect(mocks.navigate).toHaveBeenCalledWith('/plan/1');
+
+    await user.click(cards[1]!);
+    expect(mocks.navigate).toHaveBeenCalledTimes(1);
   });
 
   it('filters period and traffic tabs with the commerce contract boolean checks', async () => {
-    await act(async () => {
-      root.render(<PlansPage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<PlansPage />);
 
-    const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="plan-tabs"] [role="radio"]'));
-    expect(container.querySelectorAll('[data-testid="plan-card"]')).toHaveLength(2);
+    expect(screen.getAllByTestId('plan-card')).toHaveLength(2);
 
-    await act(async () => {
-      tabs[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('radio', { name: '按周期' }));
+    expect(screen.getAllByTestId('plan-card')).toHaveLength(1);
+    expect(screen.getByTestId('plan-card')).toHaveTextContent('Legacy Monthly');
+    expect(screen.queryByText('Legacy Traffic')).not.toBeInTheDocument();
 
-    expect(container.querySelectorAll('[data-testid="plan-card"]')).toHaveLength(1);
-    expect(container.textContent).toContain('Legacy Monthly');
-    expect(container.textContent).not.toContain('Legacy Traffic');
-
-    await act(async () => {
-      tabs[2]!.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelectorAll('[data-testid="plan-card"]')).toHaveLength(2);
+    await user.click(screen.getByRole('radio', { name: '按流量' }));
+    expect(screen.getAllByTestId('plan-card')).toHaveLength(2);
   });
 });

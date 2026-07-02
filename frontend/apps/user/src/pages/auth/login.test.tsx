@@ -1,16 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import LoginPage from './login';
-
-const source = readFileSync(`${process.cwd()}/src/pages/auth/login.tsx`, 'utf8');
-const panelSource = readFileSync(`${process.cwd()}/src/pages/auth/auth-panel.tsx`, 'utf8');
-const controllerSource = readFileSync(
-  `${process.cwd()}/src/pages/auth/use-login-controller.ts`,
-  'utf8',
-);
 
 const mocks = vi.hoisted(() => ({
   ApiError: class ApiError extends Error {
@@ -108,9 +99,6 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
 function resetMocks() {
   mocks.checkLogin.mockReset();
   mocks.fetchUserInfo.mockReset();
@@ -135,118 +123,65 @@ function resetMocks() {
   mocks.tokenLoginMutateAsync.mockResolvedValue({ auth_data: 'TOKEN_AUTH' });
 }
 
-async function flushPromises() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
+/** Settle the controller's promise chains (mutation -> auth write -> navigate). */
+async function flushMicrotasks() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
-function setInputValue(input: HTMLInputElement | undefined, value: string) {
-  if (!input) throw new Error('Expected input to exist');
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  input.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-describe('LoginPage modern markup', () => {
+describe('LoginPage', () => {
   beforeEach(resetMocks);
 
-  it('renders the modern login card, translated labels, footer links, and action title', () => {
-    const html = renderToStaticMarkup(<LoginPage />);
-
-    // Pure shadcn island — auth now uses unprefixed registry-style utilities, while
-    // legacy OneUI/Bootstrap form chrome stays retired.
-    expect(html).toContain('v2board-auth-panel');
-    expect(html).toContain('rounded-xl');
-    expect(html).toContain('bg-card');
-    expect(html).toContain('border-input');
-    expect(html).toContain('text-card-foreground');
-    expect(html).not.toContain('v2board-auth-visual');
-    expect(html).not.toContain('md:grid-cols-2');
-    expect(html).not.toContain('tw:rounded-card');
-    expect(html).not.toContain('block block-rounded block-transparent');
-    expect(html).not.toContain('form-control form-control-alt');
-    expect(html).not.toContain('btn btn-block btn-primary');
-    expect(html).not.toContain('bg-gray-lighter');
-
-    // New York-style block rhythm: top chrome belongs to AuthLayout; pages own only the card.
-    expect(html).toContain('max-w-md');
-    expect(html).toContain('class="v2board-auth-title');
-    expect(html).toContain('>欢迎回来</h1>');
-    expect(html).toContain('输入邮箱和密码继续');
-    expect(html).not.toContain('>V2Board</h1>');
-    expect(html).not.toContain('v2board-auth-shell-brand');
-    expect(html).not.toContain('v2board-logo');
-    expect(html).not.toContain('size-12');
-    expect(html).not.toContain('block-title');
-
-    // Shadcn-style examples: identifier fields may show examples, passwords stay label-only.
-    expect(html).toContain('邮箱');
-    expect(html).toContain('密码');
-    expect(html).toContain('placeholder="m@example.com"');
-    expect(html).not.toContain('placeholder="请输入密码"');
-
-    // Password fields stay as plain masked inputs; the auth island avoids decorative icons.
-    expect(html).toContain('type="password"');
-    expect(html).not.toContain('aria-pressed');
-    expect(html).toContain('登录');
-    expect(html).toContain('注册');
-    expect(html).toContain('忘记密码？');
-    expect(html).toContain('还没有账号？');
-    expect(html).not.toContain('v2board-auth-language-trigger');
-    expect(source).toContain("from './auth-panel'");
-    expect(panelSource).not.toContain("from './auth-language-menu'");
-    expect(source).not.toContain("components/layout/auth-language-menu");
-    expect(source).not.toContain("components/layout/language-menu");
-  });
-
-  it('ignores operator logo and description inside the action card while login is pending', () => {
-    mocks.isPending = true;
-    mocks.settings.description = 'Legacy description';
-    mocks.settings.logo = '/theme/logo.png';
-
-    const html = renderToStaticMarkup(<LoginPage />);
-
-    expect(html).not.toContain('v2board-logo');
-    expect(html).not.toContain('src="/theme/logo.png"');
-    expect(html).toContain('>欢迎回来</h1>');
-    expect(html).not.toContain('Legacy description');
-    expect(html).toContain('disabled=""');
-    // The base Button shows its own spinner alongside the still-visible label while pending.
-    expect(html).toContain('animate-spin');
-    expect(html).toContain('登录');
-  });
-});
-
-describe('LoginPage bundled-theme behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    resetMocks();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
   afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
     window.settings = undefined;
     window.g_lang = undefined;
   });
 
-  async function renderLogin() {
-    await act(async () => {
-      root.render(<LoginPage />);
-      await Promise.resolve();
-    });
-  }
+  it('renders the login card with translated labels, shadcn examples, and footer copy', () => {
+    const view = renderWithProviders(<LoginPage />);
 
-  it('keeps the card focus order email → password → submit with no tabindex overrides', async () => {
-    await renderLogin();
+    // Interaction-parity harness hooks (visual-parity.mjs selects
+    // `.v2board-auth-card` and `.v2board-auth-title` in interactions mode).
+    expect(view.container.querySelector('.v2board-auth-card')).not.toBeNull();
+    const heading = view.getByRole('heading', { level: 1, name: '欢迎回来' });
+    expect(view.container.querySelector('.v2board-auth-title')).toBe(heading);
+    expect(view.getByText('输入邮箱和密码继续')).toBeInTheDocument();
+
+    // Shadcn-style examples: the identifier field may show an example, passwords stay label-only.
+    const email = view.getByLabelText('邮箱');
+    expect(email).toHaveAttribute('type', 'email');
+    expect(email).toHaveAttribute('placeholder', 'm@example.com');
+    const password = view.getByLabelText('密码');
+    expect(password).toHaveAttribute('type', 'password');
+    expect(password).not.toHaveAttribute('placeholder');
+
+    expect(view.getByRole('button', { name: '登录' })).toHaveAttribute('type', 'submit');
+    expect(view.getByText('还没有账号？')).toBeInTheDocument();
+    expect(view.getByRole('link', { name: '注册' })).toBeInTheDocument();
+    expect(view.getByRole('link', { name: '忘记密码？' })).toBeInTheDocument();
+  });
+
+  it('shows a busy, still-labeled submit and no operator branding while login is pending', () => {
+    mocks.isPending = true;
+    mocks.settings.description = 'Legacy description';
+    mocks.settings.logo = '/theme/logo.png';
+
+    const view = renderWithProviders(<LoginPage />);
+
+    // The base Button shows its own spinner alongside the still-visible label while pending.
+    const submit = view.getByRole('button', { name: '登录' });
+    expect(submit).toBeDisabled();
+    expect(submit.querySelector('svg')).not.toBeNull();
+
+    // Operator logo and description stay out of the action card.
+    expect(view.queryByRole('img')).toBeNull();
+    expect(view.queryByText('Legacy description')).toBeNull();
+    expect(view.getByRole('heading', { level: 1, name: '欢迎回来' })).toBeInTheDocument();
+  });
+
+  it('keeps the card focus order email → password → submit with no tabindex overrides', () => {
+    const { container } = renderWithProviders(<LoginPage />);
 
     const controls = Array.from(container.querySelectorAll<HTMLElement>('input, button'));
     const order = controls.map((element) => {
@@ -262,20 +197,13 @@ describe('LoginPage bundled-theme behavior', () => {
 
   it('submits the form values, stores auth data, fetches user info, and pushes the redirect', async () => {
     mocks.params = new URLSearchParams('redirect=order');
-    await renderLogin();
+    const view = renderWithProviders(<LoginPage />);
 
-    const [email, password] = Array.from(container.querySelectorAll('input'));
-    setInputValue(email, 'user@example.com');
-    setInputValue(password, 'secret');
+    await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
+    await view.user.type(view.getByLabelText('密码'), 'secret');
+    await view.user.click(view.getByRole('button', { name: '登录' }));
 
-    await act(async () => {
-      container
-        .querySelector('form')!
-        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order'));
     expect(mocks.loginMutateAsync).toHaveBeenCalledWith({
       email: 'user@example.com',
       password: 'secret',
@@ -285,27 +213,35 @@ describe('LoginPage bundled-theme behavior', () => {
       queryFn: mocks.fetchUserInfo,
       queryKey: ['user', 'info'],
     });
-    expect(mocks.navigate).toHaveBeenCalledWith('/order');
     expect(mocks.navigate).not.toHaveBeenCalledWith('order');
+  });
+
+  it('submits natively from the password field via Enter with no global key listener', async () => {
+    // Re-pin of the retired window keydown(keyCode===13) shortcut: the browser's implicit
+    // form submission (Enter from any field reaches the type="submit" button) does the work.
+    const view = renderWithProviders(<LoginPage />);
+
+    await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
+    await view.user.type(view.getByLabelText('密码'), 'secret{Enter}');
+
+    await waitFor(() =>
+      expect(mocks.loginMutateAsync).toHaveBeenCalledWith({
+        email: 'user@example.com',
+        password: 'secret',
+      }),
+    );
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/dashboard'));
   });
 
   it('falls back to dashboard for network-path redirect values', async () => {
     mocks.params = new URLSearchParams('redirect=//evil.example/path');
-    await renderLogin();
+    const view = renderWithProviders(<LoginPage />);
 
-    const [email, password] = Array.from(container.querySelectorAll('input'));
-    setInputValue(email, 'user@example.com');
-    setInputValue(password, 'secret');
+    await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
+    await view.user.type(view.getByLabelText('密码'), 'secret');
+    await view.user.click(view.getByRole('button', { name: '登录' }));
 
-    await act(async () => {
-      container
-        .querySelector('form')!
-        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
-    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/dashboard'));
     expect(mocks.navigate).not.toHaveBeenCalledWith('//evil.example/path');
   });
 
@@ -316,168 +252,107 @@ describe('LoginPage bundled-theme behavior', () => {
       mocks.navigate.mockClear();
       mocks.params = new URLSearchParams();
       mocks.params.set('redirect', evil);
-      await act(async () => {
-        root.render(<LoginPage />);
-        await Promise.resolve();
-      });
 
-      const [email, password] = Array.from(container.querySelectorAll('input'));
-      setInputValue(email, 'user@example.com');
-      setInputValue(password, 'secret');
+      const view = renderWithProviders(<LoginPage />);
+      await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
+      await view.user.type(view.getByLabelText('密码'), 'secret');
+      await view.user.click(view.getByRole('button', { name: '登录' }));
 
-      await act(async () => {
-        container
-          .querySelector('form')!
-          .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-        await Promise.resolve();
-      });
-      await flushPromises();
-
-      expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
+      await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/dashboard'));
       expect(mocks.navigate).not.toHaveBeenCalledWith(evil);
+      view.unmount();
     }
   });
 
   it('marks both fields invalid and ties them to the single alert when login fails', async () => {
     mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(422, '邮箱或密码错误'));
-    await renderLogin();
+    const view = renderWithProviders(<LoginPage />);
 
-    const [email, password] = Array.from(container.querySelectorAll('input'));
-    setInputValue(email, 'user@example.com');
-    setInputValue(password, 'wrong');
-    await act(async () => {
-      container
-        .querySelector('form')!
-        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
+    await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
+    await view.user.type(view.getByLabelText('密码'), 'wrong');
+    await view.user.click(view.getByRole('button', { name: '登录' }));
 
-    const alert = container.querySelector('[role="alert"]')!;
-    expect(alert.id).toBe('login-error');
+    const alert = await view.findByRole('alert');
+    expect(alert).toHaveAttribute('id', 'login-error');
     // The auth island keeps error feedback textual; no decorative alert icon is required.
     expect(alert.querySelector('svg')).toBeNull();
-    expect(alert.textContent).toContain('邮箱或密码错误');
+    expect(alert).toHaveTextContent('邮箱或密码错误');
     // Both fields are programmatically invalid and described by the one alert box.
-    for (const input of Array.from(container.querySelectorAll('input'))) {
-      expect(input.getAttribute('aria-invalid')).toBe('true');
-      expect(input.getAttribute('aria-describedby')).toBe('login-error');
+    for (const input of [view.getByLabelText('邮箱'), view.getByLabelText('密码')]) {
+      expect(input).toHaveAttribute('aria-invalid', 'true');
+      expect(input).toHaveAttribute('aria-describedby', 'login-error');
     }
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it('suppresses the inline error for transport failures (status 0)', async () => {
     mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(0, 'Network Error'));
-    await renderLogin();
+    const view = renderWithProviders(<LoginPage />);
 
-    const [email, password] = Array.from(container.querySelectorAll('input'));
-    setInputValue(email, 'user@example.com');
-    setInputValue(password, 'secret');
-    await act(async () => {
-      container
-        .querySelector('form')!
-        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
+    await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
+    await view.user.type(view.getByLabelText('密码'), 'secret');
+    await view.user.click(view.getByRole('button', { name: '登录' }));
+
+    await waitFor(() => expect(mocks.loginMutateAsync).toHaveBeenCalled());
+    await flushMicrotasks();
 
     // Transport failures surfaced nothing in the oracle: no inline alert, no auth, no navigation.
-    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(view.queryByRole('alert')).toBeNull();
     expect(mocks.setAuthData).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it('clears the inline error once the user edits a field', async () => {
     mocks.loginMutateAsync.mockRejectedValue(new mocks.ApiError(422, '邮箱或密码错误'));
-    await renderLogin();
+    const view = renderWithProviders(<LoginPage />);
 
-    const [email, password] = Array.from(container.querySelectorAll('input'));
-    setInputValue(email, 'user@example.com');
-    setInputValue(password, 'wrong');
-    await act(async () => {
-      container
-        .querySelector('form')!
-        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
-    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    await view.user.type(view.getByLabelText('邮箱'), 'user@example.com');
+    await view.user.type(view.getByLabelText('密码'), 'wrong');
+    await view.user.click(view.getByRole('button', { name: '登录' }));
+    await view.findByRole('alert');
 
     // The form-level onInput is wired to clearError, so editing any field dismisses the alert.
-    await act(async () => {
-      setInputValue(password, 'wrong-again');
-      await Promise.resolve();
-    });
+    await view.user.type(view.getByLabelText('密码'), 'x');
 
-    expect(container.querySelector('[role="alert"]')).toBeNull();
-    for (const input of Array.from(container.querySelectorAll('input'))) {
-      expect(input.getAttribute('aria-invalid')).not.toBe('true');
+    await waitFor(() => expect(view.queryByRole('alert')).toBeNull());
+    for (const input of [view.getByLabelText('邮箱'), view.getByLabelText('密码')]) {
+      expect(input).not.toHaveAttribute('aria-invalid');
     }
   });
 
-  it('keeps the password field masked without rendering an icon reveal button', async () => {
-    await renderLogin();
+  it('keeps the password field masked without rendering an icon reveal button', () => {
+    const view = renderWithProviders(<LoginPage />);
 
-    const password = container.querySelector('input[name="password"]') as HTMLInputElement;
-
-    expect(password.getAttribute('type')).toBe('password');
-    expect(container.querySelector('button[aria-pressed]')).toBeNull();
-    expect(container.querySelectorAll('button')).toHaveLength(1);
-    expect(container.querySelector('.btn')).toBeNull();
+    expect(view.getByLabelText('密码')).toHaveAttribute('type', 'password');
+    expect(view.container.querySelector('button[aria-pressed]')).toBeNull();
+    // The submit button is the only button on the surface.
+    expect(view.getAllByRole('button')).toHaveLength(1);
     expect(mocks.loginMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('submits values through react-hook-form and zod, never via retired refs', () => {
-    expect(controllerSource).toContain("from 'react-hook-form'");
-    expect(controllerSource).toContain("from 'zod'");
-    expect(controllerSource).toContain('zodResolver(loginSchema)');
-    expect(controllerSource).toContain('form.handleSubmit(login)');
-    // The request payload shape is unchanged — still exactly { email, password }.
-    expect(controllerSource).toContain('mutateAsync({ email, password })');
-    expect(controllerSource).not.toContain('new FormData');
-    expect(controllerSource).not.toContain('emailRef');
-    expect(controllerSource).not.toContain('passwordRef');
-  });
-
-  it('submits via a native <form>, retiring the global Enter-key keydown listener', () => {
-    // Re-pin: the old window keydown(keyCode===13) shortcut is replaced by native form
-    // submission (the browser submits on Enter from any field), so neither the page nor the
-    // controller registers a global key listener.
-    expect(panelSource).toContain('<form');
-    expect(source).toContain('onSubmit={');
-    expect(source).not.toContain('keyCode');
-    expect(controllerSource).not.toContain("addEventListener('keydown'");
-    expect(controllerSource).not.toContain('keyCode');
-  });
-
-  it('navigates register and forgetpassword via real hash anchors (no javascript: hrefs)', async () => {
-    await renderLogin();
-
-    const links = Array.from(container.querySelectorAll('a'));
-    const register = links.find((link) => link.textContent === '注册')!;
-    const forget = links.find((link) => link.textContent === '忘记密码？')!;
+  it('navigates register and forgetpassword via real hash anchors (no javascript: hrefs)', () => {
+    const view = renderWithProviders(<LoginPage />);
 
     // Real hash anchors — the data router navigates natively, with no JS click handler or
     // `javascript:` href. The behavior contract (lands on register/forgetpassword) is preserved.
-    expect(register.getAttribute('href')).toBe('#/register');
-    expect(forget.getAttribute('href')).toBe('#/forgetpassword');
-    expect(register.getAttribute('href')).not.toContain('javascript:');
-    expect(forget.getAttribute('href')).not.toContain('javascript:');
+    expect(view.getByRole('link', { name: '注册' })).toHaveAttribute('href', '#/register');
+    expect(view.getByRole('link', { name: '忘记密码？' })).toHaveAttribute(
+      'href',
+      '#/forgetpassword',
+    );
   });
 
   it('runs token2Login with the raw query redirect and pushes after setting auth data', async () => {
     mocks.params = new URLSearchParams('verify=verify-token&redirect=order');
-    await renderLogin();
-    await flushPromises();
+    renderWithProviders(<LoginPage />);
 
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order'));
     expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledWith({
       redirect: 'order',
       verify: 'verify-token',
     });
     expect(mocks.setAuthData).toHaveBeenCalledWith('TOKEN_AUTH');
     expect(mocks.queryClient.fetchQuery).not.toHaveBeenCalled();
-    expect(mocks.navigate).toHaveBeenCalledWith('/order');
     expect(mocks.navigate).not.toHaveBeenCalledWith('order');
   });
 
@@ -491,43 +366,56 @@ describe('LoginPage bundled-theme behavior', () => {
         }),
     );
 
-    await renderLogin();
-    expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledWith({
-      redirect: 'order',
-      verify: 'verify-token',
-    });
+    const view = renderWithProviders(<LoginPage />);
+    await waitFor(() =>
+      expect(mocks.tokenLoginMutateAsync).toHaveBeenCalledWith({
+        redirect: 'order',
+        verify: 'verify-token',
+      }),
+    );
 
+    // Dropping the verify param re-runs the bootstrap effect, cleaning up the first run.
     mocks.params = new URLSearchParams();
-    await act(async () => {
-      root.render(<LoginPage />);
-      await Promise.resolve();
-    });
+    view.rerender(<LoginPage />);
 
-    await act(async () => {
-      resolveTokenLogin?.({ auth_data: 'STALE_AUTH' });
-      await Promise.resolve();
-    });
+    resolveTokenLogin?.({ auth_data: 'STALE_AUTH' });
+    await flushMicrotasks();
 
     expect(mocks.setAuthData).not.toHaveBeenCalledWith('STALE_AUTH');
     expect(mocks.navigate).not.toHaveBeenCalledWith('/order');
   });
 
-  it('guards token2Login and checkLogin completions after bootstrap cleanup', () => {
-    expect(controllerSource).toContain('const finishLogin = (authData: string) => {');
-    expect(controllerSource).toContain('let active = true;');
-    expect(controllerSource).toContain('if (!active) return;');
-    expect(controllerSource).toContain('setAuthData(authData);');
-    expect(controllerSource).toContain('navigate(redirect);');
-    expect(controllerSource).toContain('user.checkLogin(apiClient)');
-    expect(controllerSource).toContain('if (active && result.is_login)');
-    expect(controllerSource).toContain('} else if (active) {');
-    expect(controllerSource).toContain('setAuthData(null);');
-    expect(controllerSource).toContain('active = false;');
+  it('ignores stale checkLogin completions after the bootstrap effect is cleaned up', async () => {
+    let resolveCheckLogin: ((value: { is_login: boolean }) => void) | undefined;
+    mocks.getAuthData.mockReturnValue('EXISTING_AUTH');
+    mocks.checkLogin.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCheckLogin = resolve;
+        }),
+    );
+
+    // A late is_login:true after unmount must not fetch user info or navigate.
+    const first = renderWithProviders(<LoginPage />);
+    await waitFor(() => expect(mocks.checkLogin).toHaveBeenCalledWith(mocks.apiClient));
+    first.unmount();
+    resolveCheckLogin?.({ is_login: true });
+    await flushMicrotasks();
+    expect(mocks.queryClient.fetchQuery).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+
+    // A late is_login:false after unmount must not wipe the stored auth data.
+    const second = renderWithProviders(<LoginPage />);
+    await waitFor(() => expect(mocks.checkLogin).toHaveBeenCalledTimes(2));
+    second.unmount();
+    resolveCheckLogin?.({ is_login: false });
+    await flushMicrotasks();
+    expect(mocks.setAuthData).not.toHaveBeenCalled();
   });
 
   it('keeps the original checkLogin effect auth-data guard before requesting /user/checkLogin', async () => {
-    await renderLogin();
-    await flushPromises();
+    renderWithProviders(<LoginPage />);
+    await flushMicrotasks();
 
     expect(mocks.getAuthData).toHaveBeenCalled();
     expect(mocks.checkLogin).not.toHaveBeenCalled();
@@ -539,15 +427,14 @@ describe('LoginPage bundled-theme behavior', () => {
     mocks.getAuthData.mockReturnValue('EXISTING_AUTH');
     mocks.checkLogin.mockResolvedValue({ is_login: true });
 
-    await renderLogin();
-    await flushPromises();
+    renderWithProviders(<LoginPage />);
 
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/dashboard'));
     expect(mocks.checkLogin).toHaveBeenCalledWith(mocks.apiClient);
     expect(mocks.queryClient.fetchQuery).toHaveBeenCalledWith({
       queryFn: mocks.fetchUserInfo,
       queryKey: ['user', 'info'],
     });
-    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard');
     expect(mocks.navigate).not.toHaveBeenCalledWith('dashboard');
   });
 
@@ -555,11 +442,10 @@ describe('LoginPage bundled-theme behavior', () => {
     mocks.getAuthData.mockReturnValue('STALE_AUTH');
     mocks.checkLogin.mockResolvedValue({ is_login: false });
 
-    await renderLogin();
-    await flushPromises();
+    renderWithProviders(<LoginPage />);
 
+    await waitFor(() => expect(mocks.setAuthData).toHaveBeenCalledWith(null));
     expect(mocks.checkLogin).toHaveBeenCalledWith(mocks.apiClient);
-    expect(mocks.setAuthData).toHaveBeenCalledWith(null);
     expect(mocks.navigate).not.toHaveBeenCalledWith('/dashboard');
   });
 
@@ -571,10 +457,9 @@ describe('LoginPage bundled-theme behavior', () => {
     mocks.getAuthData.mockReturnValue('EXISTING_AUTH');
     mocks.checkLogin.mockResolvedValue({ is_login: false });
 
-    await renderLogin();
-    await flushPromises();
+    renderWithProviders(<LoginPage />);
 
-    expect(mocks.setAuthData).toHaveBeenCalledWith('TOKEN_AUTH');
+    await waitFor(() => expect(mocks.setAuthData).toHaveBeenCalledWith('TOKEN_AUTH'));
     expect(mocks.checkLogin).not.toHaveBeenCalled();
     expect(mocks.setAuthData).not.toHaveBeenCalledWith(null);
   });

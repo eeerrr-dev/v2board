@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import HomePage from './home';
 
 const navigate = vi.hoisted(() => vi.fn());
@@ -11,44 +10,24 @@ vi.mock('react-router', () => ({
   useNavigate: () => navigate,
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
 describe('HomePage legacy root entry', () => {
-  let container: HTMLDivElement;
-  let root: Root | null;
-
   beforeEach(() => {
     navigate.mockReset();
     window.settings = undefined;
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
   });
 
   afterEach(() => {
-    if (root) {
-      act(() => root?.unmount());
-      root = null;
-    }
-    container.remove();
-    document.body.innerHTML = '';
     window.settings = undefined;
   });
 
-  it('renders the bundled fallback shell before redirecting to login', async () => {
-    const html = renderToStaticMarkup(<HomePage />);
+  it('renders the bundled fallback shell and redirects to login', () => {
+    renderWithProviders(<HomePage />);
 
-    expect(html).toContain('pt-12');
-    expect(html).toContain('href="https://github.com/wyx2685/v2board"');
-    expect(html).toContain('v2board');
-    expect(html).toContain(' is best.');
-
-    await act(async () => {
-      root!.render(<HomePage />);
-      await Promise.resolve();
-    });
-
+    expect(screen.getByRole('link', { name: 'v2board' })).toHaveAttribute(
+      'href',
+      'https://github.com/wyx2685/v2board',
+    );
+    expect(screen.getByText(/is best\./)).toBeInTheDocument();
     expect(navigate).toHaveBeenCalledWith('/login');
   });
 
@@ -57,9 +36,11 @@ describe('HomePage legacy root entry', () => {
       homepage: window.btoa(encodeURI('<section class="hero">欢迎回来</section>')),
     };
 
-    const html = renderToStaticMarkup(<HomePage />);
+    renderWithProviders(<HomePage />);
 
-    expect(html).toContain('<section class="hero">欢迎回来</section>');
+    const section = screen.getByText('欢迎回来');
+    expect(section.tagName).toBe('SECTION');
+    expect(section).toHaveClass('hero');
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -68,9 +49,11 @@ describe('HomePage legacy root entry', () => {
       homepage: window.btoa(encodeURI('<section onclick="alert(1)">欢迎回来</section>')),
     };
 
-    const html = renderToStaticMarkup(<HomePage />);
+    renderWithProviders(<HomePage />);
 
-    expect(html).toContain('<section>欢迎回来</section>');
-    expect(html).not.toContain('onclick');
+    const section = screen.getByText('欢迎回来');
+    expect(section.tagName).toBe('SECTION');
+    expect(section).not.toHaveAttribute('onclick');
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

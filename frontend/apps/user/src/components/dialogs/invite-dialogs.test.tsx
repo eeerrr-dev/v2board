@@ -1,14 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { act } from 'react';
 import type { ReactNode } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import { TransferDialog } from './transfer-dialog';
 import { WithdrawDialog } from './withdraw-dialog';
-
-const testDir = dirname(fileURLToPath(import.meta.url));
 
 const mocks = vi.hoisted(() => ({
   invalidateQueries: vi.fn(),
@@ -89,6 +84,7 @@ vi.mock('@/components/ui/select', () => ({
     value?: string;
   }) => (
     <select
+      aria-label="invite-select"
       data-testid="invite-select-trigger"
       value={value ?? ''}
       onChange={(event) => onValueChange(event.target.value)}
@@ -129,377 +125,161 @@ function findSelectPlaceholder(children: ReactNode): ReactNode {
   return '';
 }
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
-function resetMocks() {
-  mocks.invalidateQueries.mockReset();
-  mocks.navigate.mockReset();
-  mocks.transferMutateAsync.mockReset();
-  mocks.transferMutateAsync.mockResolvedValue(true);
-  mocks.withdrawMutateAsync.mockReset();
-  mocks.withdrawMutateAsync.mockResolvedValue(true);
+function renderTransferDialog() {
+  return renderWithProviders(
+    <TransferDialog max={12345}>
+      <button type="button">划转</button>
+    </TransferDialog>,
+  );
 }
 
-async function flushPromises() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
+function renderWithdrawDialog() {
+  return renderWithProviders(
+    <WithdrawDialog methods={['Alipay', 'Bank']}>
+      <button type="button">推广佣金提现</button>
+    </WithdrawDialog>,
+  );
 }
 
-function setNativeInputValue(input: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-  setter?.call(input, value);
-  input.dispatchEvent(new Event('input', { bubbles: true }));
+function confirmButton() {
+  return within(screen.getByTestId('invite-dialog-footer')).getByRole('button', { name: '确认' });
 }
 
 describe('invite commission dialogs shadcn behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
   beforeEach(() => {
-    resetMocks();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-    document.body.className = '';
-    document.body.removeAttribute('style');
+    mocks.invalidateQueries.mockReset();
+    mocks.navigate.mockReset();
+    mocks.transferMutateAsync.mockReset();
+    mocks.transferMutateAsync.mockResolvedValue(true);
+    mocks.withdrawMutateAsync.mockReset();
+    mocks.withdrawMutateAsync.mockResolvedValue(true);
   });
 
   it('renders the shadcn transfer dialog and submits the raw amount to the mutation', async () => {
-    await act(async () => {
-      root.render(
-        <TransferDialog max={12345}>
-          <button type="button">划转</button>
-        </TransferDialog>,
-      );
-    });
+    const { user } = renderTransferDialog();
 
-    await act(async () => {
-      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '划转' }));
 
-    expect(document.body.innerHTML).toContain('data-testid="invite-dialog"');
-    expect(document.body.innerHTML).toContain('划转后的余额仅用于V2Board消费使用');
-    expect(document.body.innerHTML).toContain('当前推广佣金余额');
+    const dialog = screen.getByTestId('invite-dialog');
     expect(
-      document.body.querySelector<HTMLButtonElement>(
-        '[data-testid="invite-dialog-footer"] button:last-child',
-      )
-        ?.textContent?.replace(/\s/g, ''),
-    ).toBe('确认');
-    expect(document.body.innerHTML).not.toContain('提交提现');
-    expect(document.body.querySelector<HTMLInputElement>('input[disabled]')!.value).toBe('123.45');
+      within(dialog).getByText('划转后的余额仅用于V2Board消费使用'),
+    ).toBeInTheDocument();
+    const balance = within(dialog).getByLabelText('当前推广佣金余额');
+    expect(balance).toBeDisabled();
+    expect(balance).toHaveValue('123.45');
 
-    const amount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
-      (input) => input.placeholder === '请输入需要划转到余额的金额',
-    )!;
-    await act(async () => {
-      setNativeInputValue(amount, '12.34');
-      await Promise.resolve();
-    });
+    await user.type(within(dialog).getByLabelText('划转金额'), '12.34');
+    await user.click(confirmButton());
 
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
-    expect(mocks.transferMutateAsync).toHaveBeenCalledWith('12.34');
+    // The dialog hands the raw yuan string to the mutation; the cents
+    // conversion (100 * amount) lives in the API layer, not here.
+    await waitFor(() => expect(mocks.transferMutateAsync).toHaveBeenCalledWith('12.34'));
+    await waitFor(() => expect(screen.queryByTestId('invite-dialog')).not.toBeInTheDocument());
     // The user-record invalidation now lives in the transfer mutation's
     // onSuccess (covered in queries.test.ts), so the dialog no longer triggers
     // it directly.
     expect(mocks.invalidateQueries).not.toHaveBeenCalled();
   });
 
-  it('validates transfer with react-hook-form and keeps amount conversion out of the dialog', () => {
-    const source = readFileSync(join(testDir, 'transfer-dialog.tsx'), 'utf8');
-
-    expect(source).toContain("from 'react-hook-form'");
-    expect(source).toContain('zodResolver(transferSchema)');
-    expect(source).toContain('form.handleSubmit');
-    expect(source).toContain('await transfer.mutateAsync(yuan);');
-    expect(source).not.toContain('Number(yuan) * 100');
-  });
-
   it('resets the shadcn transfer amount when the dialog is closed and reopened', async () => {
-    await act(async () => {
-      root.render(
-        <TransferDialog max={12345}>
-          <button type="button">划转</button>
-        </TransferDialog>,
-      );
-    });
+    const { user } = renderTransferDialog();
 
-    await act(async () => {
-      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '划转' }));
+    await user.type(screen.getByLabelText('划转金额'), '45.67');
 
-    const amount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
-      (input) => input.placeholder === '请输入需要划转到余额的金额',
-    )!;
-    await act(async () => {
-      setNativeInputValue(amount, '45.67');
-      await Promise.resolve();
-    });
+    await user.click(
+      within(screen.getByTestId('invite-dialog-footer')).getByRole('button', { name: '取消' }),
+    );
+    await waitFor(() => expect(screen.queryByTestId('invite-dialog')).not.toBeInTheDocument());
 
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:first-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '划转' }));
+    expect(screen.getByLabelText('划转金额')).toHaveValue('');
 
-    await act(async () => {
-      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(confirmButton());
 
-    const reopenedAmount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
-      (input) => input.placeholder === '请输入需要划转到余额的金额',
-    )!;
-    expect(reopenedAmount.value).toBe('');
-
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
+    expect(await screen.findByText('请输入需要划转到余额的金额')).toBeInTheDocument();
     expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('请输入需要划转到余额的金额');
   });
 
   it('rejects a non-numeric transfer amount before calling the mutation', async () => {
-    await act(async () => {
-      root.render(
-        <TransferDialog max={12345}>
-          <button type="button">划转</button>
-        </TransferDialog>,
-      );
-    });
+    const { user } = renderTransferDialog();
 
-    await act(async () => {
-      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '划转' }));
+    await user.type(screen.getByLabelText('划转金额'), 'abc');
+    await user.click(confirmButton());
 
-    const amount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
-      (input) => input.placeholder === '请输入需要划转到余额的金额',
-    )!;
-    await act(async () => {
-      setNativeInputValue(amount, 'abc');
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
+    expect(await screen.findByText('请输入有效的划转金额')).toBeInTheDocument();
     expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('请输入有效的划转金额');
   });
 
   it('rejects a transfer amount with more than two decimal places', async () => {
-    await act(async () => {
-      root.render(
-        <TransferDialog max={12345}>
-          <button type="button">划转</button>
-        </TransferDialog>,
-      );
-    });
+    const { user } = renderTransferDialog();
 
-    await act(async () => {
-      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    const amount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
-      (input) => input.placeholder === '请输入需要划转到余额的金额',
-    )!;
+    await user.click(screen.getByRole('button', { name: '划转' }));
     // 10.999 is finite, positive, and within balance, but cents cannot hold a
     // third decimal — the old path silently rounded it to 1100 cents.
-    await act(async () => {
-      setNativeInputValue(amount, '10.999');
-      await Promise.resolve();
-    });
+    await user.type(screen.getByLabelText('划转金额'), '10.999');
+    await user.click(confirmButton());
 
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
+    expect(await screen.findByText('划转金额最多支持两位小数')).toBeInTheDocument();
     expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('划转金额最多支持两位小数');
   });
 
   it('rejects a transfer amount above the available commission balance', async () => {
-    await act(async () => {
-      root.render(
-        <TransferDialog max={12345}>
-          <button type="button">划转</button>
-        </TransferDialog>,
-      );
-    });
+    const { user } = renderTransferDialog();
 
-    await act(async () => {
-      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    const amount = Array.from(document.body.querySelectorAll<HTMLInputElement>('input')).find(
-      (input) => input.placeholder === '请输入需要划转到余额的金额',
-    )!;
+    await user.click(screen.getByRole('button', { name: '划转' }));
     // max={12345} cents = 123.45 yuan; 200 yuan exceeds it.
-    await act(async () => {
-      setNativeInputValue(amount, '200');
-      await Promise.resolve();
-    });
+    await user.type(screen.getByLabelText('划转金额'), '200');
+    await user.click(confirmButton());
 
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
+    expect(await screen.findByText('划转金额不能超过当前推广佣金余额')).toBeInTheDocument();
     expect(mocks.transferMutateAsync).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('划转金额不能超过当前推广佣金余额');
   });
 
   it('renders the shadcn withdraw dialog and submits the ticket-withdraw payload', async () => {
-    await act(async () => {
-      root.render(
-        <WithdrawDialog methods={['Alipay', 'Bank']}>
-          <button type="button">推广佣金提现</button>
-        </WithdrawDialog>,
-      );
-    });
+    const { user } = renderWithdrawDialog();
 
-    await act(async () => {
-      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '推广佣金提现' }));
 
-    expect(document.body.innerHTML).toContain('申请提现');
-    expect(document.body.innerHTML).toContain('提现方式');
-    expect(document.body.innerHTML).toContain('提现账号');
-    expect(
-      document.body.querySelector<HTMLButtonElement>(
-        '[data-testid="invite-dialog-footer"] button:last-child',
-      )
-        ?.textContent?.replace(/\s/g, ''),
-    ).toBe('确认');
-    expect(document.body.innerHTML).not.toContain('提交提现');
+    const dialog = screen.getByTestId('invite-dialog');
+    expect(within(dialog).getByRole('heading', { name: '申请提现' })).toBeInTheDocument();
 
-    await act(async () => {
-      const method = document.body.querySelector<HTMLSelectElement>('select')!;
-      method.value = 'Bank';
-      method.dispatchEvent(new Event('change', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.selectOptions(within(dialog).getByTestId('invite-select-trigger'), 'Bank');
+    await user.type(within(dialog).getByLabelText('提现账号'), 'bank-account-123');
+    await user.click(confirmButton());
 
-    await act(async () => {
-      const account = document.body.querySelector<HTMLInputElement>(
-        'input[placeholder="请输入提现账号"]',
-      )!;
-      setNativeInputValue(account, 'bank-account-123');
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
-    expect(mocks.withdrawMutateAsync).toHaveBeenCalledWith({
-      withdraw_account: 'bank-account-123',
-      withdraw_method: 'Bank',
-    });
+    await waitFor(() =>
+      expect(mocks.withdrawMutateAsync).toHaveBeenCalledWith({
+        withdraw_account: 'bank-account-123',
+        withdraw_method: 'Bank',
+      }),
+    );
     expect(mocks.navigate).toHaveBeenCalledWith('/ticket');
   });
 
   it('resets the shadcn withdraw dialog fields when closed and reopened', async () => {
-    await act(async () => {
-      root.render(
-        <WithdrawDialog methods={['Alipay', 'Bank']}>
-          <button type="button">推广佣金提现</button>
-        </WithdrawDialog>,
-      );
-    });
+    const { user } = renderWithdrawDialog();
 
-    await act(async () => {
-      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '推广佣金提现' }));
+    await user.selectOptions(screen.getByTestId('invite-select-trigger'), 'Bank');
+    await user.type(screen.getByLabelText('提现账号'), 'bank-account-123');
 
-    await act(async () => {
-      const method = document.body.querySelector<HTMLSelectElement>('select')!;
-      method.value = 'Bank';
-      method.dispatchEvent(new Event('change', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(
+      within(screen.getByTestId('invite-dialog-footer')).getByRole('button', { name: '取消' }),
+    );
+    await waitFor(() => expect(screen.queryByTestId('invite-dialog')).not.toBeInTheDocument());
 
-    await act(async () => {
-      const account = document.body.querySelector<HTMLInputElement>(
-        'input[placeholder="请输入提现账号"]',
-      )!;
-      setNativeInputValue(account, 'bank-account-123');
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '推广佣金提现' }));
+    const method = screen.getByTestId('invite-select-trigger');
+    expect(method).toHaveValue('');
+    expect(within(method).getByRole('option', { name: '请选择提现方式' })).toBeInTheDocument();
+    expect(screen.getByLabelText('提现账号')).toHaveValue('');
 
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:first-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(confirmButton());
 
-    await act(async () => {
-      container.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(document.body.querySelector<HTMLSelectElement>('select')!.value).toBe('');
-    expect(
-      document.body.querySelector<HTMLInputElement>('input[placeholder="请输入提现账号"]')!.value,
-    ).toBe('');
-
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>('[data-testid="invite-dialog-footer"] button:last-child')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
-
+    expect(await screen.findByText('请输入提现账号')).toBeInTheDocument();
     expect(mocks.withdrawMutateAsync).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('请选择提现方式');
-    expect(document.body.textContent).toContain('请输入提现账号');
   });
 });

@@ -1,36 +1,28 @@
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import NodePage from './node';
 
-(
-  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
-
-const nodeSource = readFileSync(`${process.cwd()}/src/pages/node.tsx`, 'utf8');
+interface ServerRow {
+  id: number;
+  parent_id: null;
+  group_id: number[];
+  route_id: null;
+  name: string;
+  rate: string;
+  type: 'shadowsocks';
+  host: string;
+  port: number;
+  cache_key: string;
+  last_check_at: null;
+  is_online: 0 | 1;
+  tags?: string[] | null;
+}
 
 const queryState = vi.hoisted(() => ({
   navigate: vi.fn(),
-  servers: undefined as
-    | Array<{
-        id: number;
-        parent_id: null;
-        group_id: number[];
-        route_id: null;
-        name: string;
-        rate: string;
-        type: 'shadowsocks';
-        host: string;
-        port: number;
-        cache_key: string;
-        last_check_at: null;
-        is_online: 0 | 1;
-        tags?: string[] | null;
-      }>
-    | undefined,
-  serversFetching: true,
+  servers: undefined as ServerRow[] | undefined,
+  serversFetching: false,
   serversError: false,
   serversRefetch: vi.fn(),
   subscribe: undefined as { plan_id?: number | null } | undefined,
@@ -69,188 +61,150 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-describe('NodePage shadcn loading state', () => {
-  let container: HTMLDivElement;
-  let root: Root | null;
+function makeServer(overrides: Partial<ServerRow>): ServerRow {
+  return {
+    id: 1,
+    parent_id: null,
+    group_id: [1],
+    route_id: null,
+    name: 'HK 01',
+    rate: '1.5',
+    type: 'shadowsocks',
+    host: 'hk.example.test',
+    port: 443,
+    cache_key: 'hk01',
+    last_check_at: null,
+    is_online: 1,
+    tags: null,
+    ...overrides,
+  };
+}
 
-  beforeEach(() => {
-    queryState.navigate.mockClear();
-    queryState.serversRefetch.mockClear();
-    queryState.serversError = false;
-    queryState.servers = undefined;
+beforeEach(() => {
+  queryState.navigate.mockClear();
+  queryState.serversRefetch.mockClear();
+  queryState.servers = undefined;
+  queryState.serversFetching = false;
+  queryState.serversError = false;
+  queryState.subscribe = undefined;
+});
+
+describe('NodePage loading state', () => {
+  it('shows only the loading status while the servers fetch is pending', () => {
     queryState.serversFetching = true;
-    queryState.subscribe = undefined;
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
 
-  afterEach(() => {
-    act(() => root?.unmount());
-    root = null;
-    container.remove();
-    document.body.innerHTML = '';
-  });
+    renderWithProviders(<NodePage />);
 
-  it('shows only the centered shadcn loading state while the servers fetch is pending', async () => {
-    await act(async () => {
-      root!.render(<NodePage />);
-      await Promise.resolve();
-    });
-
-    expect(container.innerHTML).toContain('data-testid="node-loading"');
-    expect(container.innerHTML).toContain('Loading...');
-    expect(container.innerHTML).not.toContain('data-testid="node-table"');
-    expect(container.innerHTML).not.toContain('data-testid="node-empty"');
+    expect(screen.getByRole('status')).toBe(screen.getByTestId('node-loading'));
+    expect(screen.getByTestId('node-loading')).toHaveTextContent('Loading...');
+    expect(screen.queryByTestId('node-table')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('node-empty')).not.toBeInTheDocument();
   });
 });
 
-describe('NodePage shadcn table and empty state', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
+describe('NodePage service table', () => {
   beforeEach(() => {
-    queryState.navigate.mockClear();
-    queryState.serversRefetch.mockClear();
-    queryState.serversError = false;
-    queryState.serversFetching = false;
-    queryState.subscribe = undefined;
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
-  it('renders the shadcn service table, columns, status dots, rate tags, and tag fallback', () => {
     queryState.servers = [
-      {
-        id: 1,
-        parent_id: null,
-        group_id: [1],
-        route_id: null,
-        name: 'HK 01',
-        rate: '1.5',
-        type: 'shadowsocks',
-        host: 'hk.example.test',
-        port: 443,
-        cache_key: 'hk01',
-        last_check_at: null,
-        is_online: 1,
-        tags: ['IEPL', 'Netflix'],
-      },
-      {
+      makeServer({ id: 1, name: 'HK 01', rate: '1.5', is_online: 1, tags: ['IEPL', 'Netflix'] }),
+      makeServer({
         id: 2,
-        parent_id: null,
-        group_id: [1],
-        route_id: null,
         name: 'US 01',
         rate: '2',
-        type: 'shadowsocks',
         host: 'us.example.test',
-        port: 443,
         cache_key: 'us01',
-        last_check_at: null,
         is_online: 0,
         tags: null,
-      },
+      }),
     ];
-
-    const html = renderToStaticMarkup(<NodePage />);
-
-    expect(html).toContain('data-testid="node-card"');
-    expect(html).toContain('data-testid="service-table-scroll"');
-    expect(html).toContain('data-scroll-position="left"');
-    expect(html).toContain('data-table-kind="service"');
-    expect(html).toContain('data-testid="node-table"');
-    expect(html).toContain('名称');
-    expect(html).toContain('状态');
-    expect(html).toContain('倍率');
-    expect(html).toContain('标签');
-    expect(html).toContain('HK 01');
-    expect(html).toContain('aria-label="online"');
-    expect(html).toContain('aria-label="offline"');
-    expect(html).toContain('1.5 x');
-    expect(html).toContain('IEPL');
-    expect(html).toContain('Netflix');
-    expect(html).toContain('>-</span>');
-    expect(html).toContain('data-row-key="0"');
-    expect(html).toContain('data-row-key="1"');
-    expect(html).not.toContain('ant-table-scroll-position');
   });
 
-  it('renders service rows through shared TanStack DataTable columns', () => {
-    expect(nodeSource).toContain('satisfies DataTableColumn<(typeof servers)[number]>[]');
-    expect(nodeSource).not.toContain('data-row-key={s.id}');
-    expect(nodeSource).not.toContain('<TableRow');
+  it('renders the parity hooks, headers, status interpretation, rates, and tag fallback', () => {
+    renderWithProviders(<NodePage />);
+
+    expect(screen.getByTestId('node-card')).toBeInTheDocument();
+    const table = screen.getByTestId('node-table');
+    expect(table).toHaveAttribute('data-table-kind', 'service');
+    // The parity harness reads data-scroll-position off this container.
+    expect(screen.getByTestId('service-table-scroll')).toHaveAttribute('data-scroll-position');
+
+    for (const header of ['名称', '状态', '倍率', '标签']) {
+      expect(within(table).getByRole('columnheader', { name: header })).toBeInTheDocument();
+    }
+    // The parity harness hovers [data-testid="node-table"] .v2board-service-tooltip-trigger.
+    expect(table.querySelectorAll('.v2board-service-tooltip-trigger')).toHaveLength(2);
+
+    const [hkRow, usRow] = within(table).getAllByRole('row').slice(1);
+    // Rows keep server order with index-based keys, not server-id keys (1, 2).
+    expect(hkRow).toHaveAttribute('data-row-key', '0');
+    expect(usRow).toHaveAttribute('data-row-key', '1');
+
+    expect(within(hkRow!).getByText('HK 01')).toBeInTheDocument();
+    expect(within(hkRow!).getByLabelText('online')).toBeInTheDocument(); // is_online: 1
+    expect(within(hkRow!).getByText('1.5 x')).toBeInTheDocument();
+    expect(within(hkRow!).getByText('IEPL')).toBeInTheDocument();
+    expect(within(hkRow!).getByText('Netflix')).toBeInTheDocument();
+
+    expect(within(usRow!).getByText('US 01')).toBeInTheDocument();
+    expect(within(usRow!).getByLabelText('offline')).toBeInTheDocument(); // is_online: 0
+    expect(within(usRow!).getByText('2 x')).toBeInTheDocument();
+    const usCells = within(usRow!).getAllByRole('cell');
+    expect(usCells[3]).toHaveTextContent(/^-$/); // null tags fall back to a dash
   });
 
-  it('routes empty-state actions through the shadcn button instead of javascript href anchors', async () => {
+  it('opens the status tooltip from its parity header trigger', async () => {
+    const { user } = renderWithProviders(<NodePage />);
+
+    const trigger = screen.getByText('状态');
+    expect(trigger).toHaveClass('v2board-service-tooltip-trigger');
+
+    await user.hover(trigger);
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('节点五分钟内节点在线情况');
+  });
+});
+
+describe('NodePage empty state routing', () => {
+  it('routes the renew action to the subscribed plan', async () => {
     queryState.servers = [];
     queryState.subscribe = { plan_id: 7 };
 
-    await act(async () => {
-      root.render(<NodePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<NodePage />);
 
-    const button = container.querySelector<HTMLButtonElement>('button[data-testid="node-empty-action"]');
-    expect(button).toBeTruthy();
-    expect(container.querySelector('a[data-testid="node-empty-action"]')).toBeNull();
-    expect(button!.textContent).toBe('续费');
+    expect(screen.getByTestId('node-empty')).toBeInTheDocument();
+    const action = screen.getByRole('button', { name: '续费' });
+    expect(action).toHaveAttribute('data-testid', 'node-empty-action');
+    // The action is a real button, not a legacy javascript-href anchor.
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
 
-    await act(async () => {
-      button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(action);
 
     expect(queryState.navigate).toHaveBeenCalledWith('/plan/7');
+  });
 
-    queryState.navigate.mockClear();
-    queryState.serversRefetch.mockClear();
-    queryState.serversError = false;
+  it('routes the subscribe action to the plan list when there is no plan', async () => {
+    queryState.servers = [];
     queryState.subscribe = {};
-    await act(async () => {
-      root.render(<NodePage />);
-      await Promise.resolve();
-    });
 
-    const subscribeButton = container.querySelector<HTMLButtonElement>(
-      'button[data-testid="node-empty-action"]',
-    );
-    expect(subscribeButton!.textContent).toBe('订阅');
+    const { user } = renderWithProviders(<NodePage />);
 
-    await act(async () => {
-      subscribeButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '订阅' }));
 
     expect(queryState.navigate).toHaveBeenCalledWith('/plan');
   });
+});
 
+describe('NodePage error state', () => {
   it('shows a retryable error state instead of the subscribe prompt when the fetch fails', async () => {
-    queryState.servers = undefined;
     queryState.serversError = true;
     queryState.subscribe = { plan_id: 7 };
 
-    await act(async () => {
-      root.render(<NodePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<NodePage />);
 
     // A failed fetch must not wrongly tell a paying user to "subscribe".
-    expect(container.innerHTML).toContain('data-testid="node-error"');
-    expect(container.querySelector('[data-testid="node-empty"]')).toBeNull();
+    expect(screen.getByTestId('node-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('node-empty')).not.toBeInTheDocument();
 
-    const retry = container.querySelector<HTMLButtonElement>('[data-testid="error-state-retry"]');
-    await act(async () => {
-      retry!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '重试' }));
 
     expect(queryState.serversRefetch).toHaveBeenCalled();
   });

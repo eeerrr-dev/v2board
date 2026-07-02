@@ -1,24 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import RegisterPage from './register';
-
-const source = readFileSync(`${process.cwd()}/src/pages/auth/register.tsx`, 'utf8');
-const tosSource = readFileSync(`${process.cwd()}/src/pages/auth/auth-tos-field.tsx`, 'utf8');
-const controllerSource = readFileSync(
-  `${process.cwd()}/src/pages/auth/use-register-controller.ts`,
-  'utf8',
-);
-const countdownSource = readFileSync(
-  `${process.cwd()}/src/pages/auth/use-countdown.ts`,
-  'utf8',
-);
-const flowSource = readFileSync(
-  `${process.cwd()}/src/pages/auth/use-send-email-verify-flow.ts`,
-  'utf8',
-);
 
 const mocks = vi.hoisted(() => ({
   config: undefined as Record<string, unknown> | undefined,
@@ -32,15 +15,14 @@ const mocks = vi.hoisted(() => ({
     'auth.email_code_sent_description': '如果没有收到验证码请检查垃圾箱。',
     'auth.email_code_sent_title': '发送成功',
     'auth.email_domain': '邮箱后缀',
+    'auth.have_account': '已有账号？',
     'auth.invite_code': '邀请码',
     'auth.invite_code_optional': '邀请码(选填)',
     'auth.invite_code_required': '请输入邀请码',
     'auth.password': '密码',
     'auth.password_mismatch': '两次密码输入不同',
-    'auth.have_account': '已有账号？',
     'auth.register_description': '填写信息开始使用',
     'auth.register_title': '创建账户',
-    'auth.return_to_login': '返回登录',
     'auth.send_code': '发送',
     'auth.sign_in': '登录',
     'auth.submit_register': '注册',
@@ -52,11 +34,6 @@ const mocks = vi.hoisted(() => ({
   registerMutateAsync: vi.fn(),
   runRecaptcha: vi.fn(),
   sendCodeMutateAsync: vi.fn(),
-  settings: {
-    description: '',
-    logo: '',
-    title: 'V2Board',
-  },
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }));
@@ -91,10 +68,6 @@ vi.mock('@/lib/guest', () => ({
   }),
 }));
 
-vi.mock('@/lib/legacy-settings', () => ({
-  getLegacyTitle: () => mocks.settings.title,
-}));
-
 vi.mock('@/lib/toast', () => ({
   toast: {
     error: mocks.toastError,
@@ -105,9 +78,6 @@ vi.mock('@/lib/toast', () => ({
 vi.mock('@/lib/errors', () => ({
   i18nGet: (message: string) => message,
 }));
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
 
 function resetMocks() {
   mocks.config = {
@@ -130,35 +100,18 @@ function resetMocks() {
   });
   mocks.sendCodeMutateAsync.mockReset();
   mocks.sendCodeMutateAsync.mockResolvedValue(true);
-  mocks.settings.description = '';
-  mocks.settings.logo = '';
-  mocks.settings.title = 'V2Board';
-  window.g_lang = 'zh-CN';
-  window.settings = {
-    i18n: ['en-US', 'zh-CN'] as string[] & Record<string, Record<string, string>>,
-  };
   mocks.toastError.mockReset();
   mocks.toastSuccess.mockReset();
 }
 
-async function flushPromises() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-}
+beforeEach(resetMocks);
 
-function setInputValue(input: HTMLInputElement | null, value: string) {
-  if (!input) throw new Error('Expected input to exist');
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  input.dispatchEvent(new Event('change', { bubbles: true }));
-}
+afterEach(() => {
+  vi.useRealTimers();
+});
 
-describe('RegisterPage modern markup', () => {
-  beforeEach(resetMocks);
-
-  it('renders the reskinned register card, labels, footer link, and action title', () => {
+describe('RegisterPage rendering', () => {
+  it('renders the register card with whitelist, code, invite, TOS, and login-link contracts', () => {
     mocks.config = {
       email_whitelist_suffix: ['example.com', 'mail.test'],
       is_email_verify: true,
@@ -168,49 +121,32 @@ describe('RegisterPage modern markup', () => {
     };
     mocks.params = new URLSearchParams('code=INVITE123');
 
-    const html = renderToStaticMarkup(<RegisterPage />);
+    const { container } = renderWithProviders(<RegisterPage />);
 
-    expect(html).toContain('v2board-auth-card');
-    expect(html).toContain('max-w-md');
-    expect(html).toContain('rounded-xl');
-    expect(html).toContain('bg-card');
-    expect(html).not.toContain('v2board-auth-visual');
-    expect(html).not.toContain('md:grid-cols-2');
-    expect(html).not.toContain('v2board-auth-shell-brand');
-    expect(html).toContain('>创建账户</h1>');
-    expect(html).toContain('填写信息开始使用');
-    expect(html).not.toContain('>V2Board</h1>');
-    expect(html).toContain('邮箱');
-    expect(html).toContain('placeholder="name"');
-    expect(html).toContain('role="combobox"');
-    expect(html).toContain('@example.com');
-    expect(html).not.toContain('<option');
-    expect(html).toContain('邮箱验证码');
-    expect(html).toContain('邀请码');
-    expect(html).toContain('disabled=""');
-    expect(html).toContain('value="INVITE123"');
-    expect(html).toContain('id="register-tos"');
-    expect(html).toContain('role="checkbox"');
-    expect(html).toContain('aria-labelledby="register-tos-text"');
-    expect(html).toContain('href="https://terms.example"');
-    expect(html).toContain('已有账号？');
-    expect(html).toContain('>登录</a>');
-    expect(html).toContain('href="#/login"');
-    expect(html).not.toContain('v2board-auth-language-trigger');
-    expect(html).not.toContain('block block-rounded');
-    expect(html).not.toContain('form-control');
-    expect(html).not.toContain('btn btn-block');
-    expect(html).not.toContain('placeholder="请输入密码"');
-    expect(source).toContain("from './auth-panel'");
-    expect(source).toContain("from './auth-tos-field'");
-    // The behavior controller owns the modern toast; the view stays free of legacy toast/menu.
-    expect(controllerSource).toContain("lib/toast");
-    expect(controllerSource).toContain("from './auth-recaptcha'");
-    expect(controllerSource).not.toContain('useLegacyRecaptcha');
-    expect(source).not.toContain("components/layout/auth-language-menu");
-    expect(source).not.toContain("components/layout/language-menu");
-    expect(source).not.toContain("lib/legacy-toast");
-    expect(controllerSource).not.toContain("lib/legacy-toast");
+    // `.v2board-auth-card` is the interaction-parity harness auth-surface selector.
+    expect(container.querySelector('.v2board-auth-card')).not.toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: '创建账户' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'V2Board' })).toBeNull();
+    expect(screen.getByText('填写信息开始使用')).toBeInTheDocument();
+
+    // Whitelist mode: local-part input plus the Radix suffix combobox on the default suffix.
+    expect(screen.getByLabelText('邮箱')).toHaveAttribute('placeholder', 'name');
+    expect(screen.getByRole('combobox', { name: '邮箱后缀' })).toHaveTextContent('@example.com');
+    expect(screen.getByLabelText('邮箱验证码')).toBeInTheDocument();
+
+    // The ?code= invite prefill locks the field to the URL value.
+    const invite = screen.getByLabelText('邀请码');
+    expect(invite).toBeDisabled();
+    expect(invite).toHaveValue('INVITE123');
+
+    // TOS checkbox is named by the rendered sentence (aria-labelledby wiring).
+    expect(screen.getByRole('checkbox', { name: /服务条款/ })).not.toBeChecked();
+    const tosLink = screen.getByRole('link', { name: '服务条款' });
+    expect(tosLink).toHaveAttribute('href', 'https://terms.example');
+    expect(tosLink).toHaveAttribute('target', '_blank');
+
+    expect(screen.getByText(/已有账号？/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '登录' })).toHaveAttribute('href', '#/login');
   });
 
   it('renders unsafe ToS URLs as plain text instead of unsafe links', () => {
@@ -222,54 +158,25 @@ describe('RegisterPage modern markup', () => {
       tos_url: 'javascript:alert(1)',
     };
 
-    const html = renderToStaticMarkup(<RegisterPage />);
+    renderWithProviders(<RegisterPage />);
 
-    expect(html).toContain('服务条款');
-    expect(html).not.toContain('href="javascript:alert(1)"');
-    expect(html).not.toContain('target="_blank"');
-    expect(tosSource).toContain('function getSafeTosHref');
-    expect(tosSource).toContain("parsed.protocol === 'http:' || parsed.protocol === 'https:'");
+    expect(screen.getByText(/我已阅读并同意 服务条款/)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '服务条款' })).toBeNull();
+  });
+
+  it('shows the centered loading state while guest config is fetching', () => {
+    mocks.config = undefined;
+    mocks.isLoading = true;
+
+    renderWithProviders(<RegisterPage />);
+
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.queryByLabelText('邮箱')).toBeNull();
   });
 });
 
 describe('RegisterPage behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    resetMocks();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    act(() => root.unmount());
-    vi.useRealTimers();
-    container.remove();
-    document.body.innerHTML = '';
-    window.settings = undefined;
-    window.g_lang = undefined;
-  });
-
-  async function renderRegister() {
-    await act(async () => {
-      root.render(<RegisterPage />);
-      await Promise.resolve();
-    });
-  }
-
-  it('switches to the modern centered spinner after mount while guest config is fetching', async () => {
-    mocks.config = undefined;
-    mocks.isLoading = true;
-
-    await renderRegister();
-
-    expect(container.querySelector('[role="status"]')).not.toBeNull();
-    expect(container.querySelector('input[name="email"]')).toBeNull();
-  });
-
-  it('sends the email-verify payload and starts the 60-second countdown after success', async () => {
+  it('sends the email-verify payload and runs the 60-second countdown with timer cleanup', async () => {
     vi.useFakeTimers();
     mocks.config = {
       email_whitelist_suffix: ['mail.test'],
@@ -278,18 +185,14 @@ describe('RegisterPage behavior', () => {
       is_recaptcha: true,
     };
 
-    await renderRegister();
+    const { unmount } = renderWithProviders(<RegisterPage />);
 
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="email"]'), 'user');
-
-    const sendButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('发送'),
-    )!;
-    await act(async () => {
-      sendButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
+    // fireEvent keeps this test synchronous so the faked clock stays in control
+    // (userEvent's internal delays would deadlock against vi.useFakeTimers()).
+    fireEvent.change(screen.getByLabelText('邮箱'), { target: { value: 'user' } });
+    const sendButton = screen.getByRole('button', { name: '发送' });
+    fireEvent.click(sendButton);
+    await act(async () => {});
 
     expect(mocks.runRecaptcha).toHaveBeenCalledTimes(1);
     expect(mocks.sendCodeMutateAsync).toHaveBeenCalledWith({
@@ -301,38 +204,38 @@ describe('RegisterPage behavior', () => {
       description: '如果没有收到验证码请检查垃圾箱。',
     });
 
-    expect(sendButton.textContent).toBe('59');
-    expect(sendButton.disabled).toBe(true);
+    expect(sendButton).toBeDisabled();
+    expect(sendButton).toHaveTextContent('59');
 
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(1000);
-      await Promise.resolve();
     });
+    expect(sendButton).toHaveTextContent('58');
 
-    expect(sendButton.textContent).toBe('58');
+    // The pending 1s tick is cleared when the page unmounts mid-countdown.
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
+    unmount();
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    clearTimeoutSpy.mockRestore();
   });
 
-  it('shows the password mismatch toast without registering', async () => {
-    await renderRegister();
+  it('shows the password mismatch error without registering', async () => {
+    const { user } = renderWithProviders(<RegisterPage />);
 
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="password"]'), 'one');
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="confirm_password"]'), 'two');
+    await user.type(screen.getByLabelText('密码'), 'one');
+    await user.type(screen.getByLabelText('确认密码'), 'two');
+    await user.click(screen.getByRole('button', { name: '注册' }));
 
-    await act(async () => {
-      container.querySelector('form')!.dispatchEvent(
-        new Event('submit', { bubbles: true, cancelable: true }),
-      );
-      await Promise.resolve();
-    });
-    await flushPromises();
-
-    expect(mocks.toastError).toHaveBeenCalledWith('请求失败', {
-      description: '两次密码输入不同',
-    });
+    await waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith('请求失败', {
+        description: '两次密码输入不同',
+      }),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('两次密码输入不同');
     expect(mocks.registerMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('keeps the TOS-disabled register button until the checkbox is clicked', async () => {
+  it('gates register behind the TOS checkbox', async () => {
     mocks.config = {
       email_whitelist_suffix: undefined,
       is_email_verify: false,
@@ -341,21 +244,22 @@ describe('RegisterPage behavior', () => {
       tos_url: 'https://terms.example',
     };
 
-    await renderRegister();
+    const { user, container } = renderWithProviders(<RegisterPage />);
 
-    const submit = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '注册',
-    )!;
-    expect(submit.disabled).toBe(true);
+    const submit = screen.getByRole('button', { name: '注册' });
+    expect(submit).toBeDisabled();
 
-    await act(async () => {
-      container.querySelector<HTMLElement>('[role="checkbox"]')!.dispatchEvent(
-        new MouseEvent('click', { bubbles: true }),
-      );
-      await Promise.resolve();
-    });
+    // Submitting the form directly (e.g. implicit Enter submission) still hits the gate.
+    fireEvent.submit(container.querySelector('form')!);
+    await waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith('请求失败', {
+        description: '请同意服务条款',
+      }),
+    );
+    expect(mocks.registerMutateAsync).not.toHaveBeenCalled();
 
-    expect(submit.disabled).toBe(false);
+    await user.click(screen.getByRole('checkbox'));
+    expect(submit).toBeEnabled();
   });
 
   it('blocks submit with the invite-required toast when invite is forced and empty', async () => {
@@ -367,26 +271,18 @@ describe('RegisterPage behavior', () => {
       tos_url: undefined,
     };
 
-    await renderRegister();
+    const { user } = renderWithProviders(<RegisterPage />);
 
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="email"]'), 'new-user');
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="password"]'), 'secret');
-    setInputValue(
-      container.querySelector<HTMLInputElement>('input[name="confirm_password"]'),
-      'secret',
+    await user.type(screen.getByLabelText('邮箱'), 'new-user');
+    await user.type(screen.getByLabelText('密码'), 'secret');
+    await user.type(screen.getByLabelText('确认密码'), 'secret');
+    await user.click(screen.getByRole('button', { name: '注册' }));
+
+    await waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith('请求失败', {
+        description: '请输入邀请码',
+      }),
     );
-
-    await act(async () => {
-      container.querySelector('form')!.dispatchEvent(
-        new Event('submit', { bubbles: true, cancelable: true }),
-      );
-      await Promise.resolve();
-    });
-    await flushPromises();
-
-    expect(mocks.toastError).toHaveBeenCalledWith('请求失败', {
-      description: '请输入邀请码',
-    });
     expect(mocks.registerMutateAsync).not.toHaveBeenCalled();
   });
 
@@ -399,40 +295,26 @@ describe('RegisterPage behavior', () => {
       tos_url: 'https://terms.example',
     };
 
-    await renderRegister();
+    const { user } = renderWithProviders(<RegisterPage />);
 
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="email"]'), 'new-user');
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="email_code"]'), '123456');
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="password"]'), 'secret');
-    setInputValue(
-      container.querySelector<HTMLInputElement>('input[name="confirm_password"]'),
-      'secret',
+    await user.type(screen.getByLabelText('邮箱'), 'new-user');
+    await user.type(screen.getByLabelText('邮箱验证码'), '123456');
+    await user.type(screen.getByLabelText('密码'), 'secret');
+    await user.type(screen.getByLabelText('确认密码'), 'secret');
+    await user.type(screen.getByLabelText('邀请码(选填)'), 'INVITE');
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: '注册' }));
+
+    await waitFor(() =>
+      expect(mocks.registerMutateAsync).toHaveBeenCalledWith({
+        email: 'new-user@example.com',
+        email_code: '123456',
+        invite_code: 'INVITE',
+        password: 'secret',
+        recaptcha_data: 'recaptcha-token',
+      }),
     );
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="invite_code"]'), 'INVITE');
-
-    await act(async () => {
-      container.querySelector<HTMLElement>('[role="checkbox"]')!.dispatchEvent(
-        new MouseEvent('click', { bubbles: true }),
-      );
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      container.querySelector('form')!.dispatchEvent(
-        new Event('submit', { bubbles: true, cancelable: true }),
-      );
-      await Promise.resolve();
-    });
-    await flushPromises();
-
-    expect(mocks.registerMutateAsync).toHaveBeenCalledWith({
-      email: 'new-user@example.com',
-      email_code: '123456',
-      invite_code: 'INVITE',
-      password: 'secret',
-      recaptcha_data: 'recaptcha-token',
-    });
-    expect(mocks.navigate).toHaveBeenCalledWith('/login');
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/login'));
   });
 
   it('registers with a non-default selected email suffix', async () => {
@@ -444,48 +326,27 @@ describe('RegisterPage behavior', () => {
       tos_url: undefined,
     };
 
-    await renderRegister();
+    const { user } = renderWithProviders(<RegisterPage />);
 
-    // Open the domain select and choose the second (non-default) suffix.
-    const trigger = container.querySelector<HTMLElement>('[role="combobox"]')!;
-    await act(async () => {
-      trigger.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
-      trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    const trigger = screen.getByRole('combobox', { name: '邮箱后缀' });
+    await user.click(trigger);
+    await user.click(await screen.findByRole('option', { name: '@mail.test' }));
+    expect(trigger).toHaveTextContent('@mail.test');
 
-    const option = Array.from(
-      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
-    ).find((item) => item.textContent?.includes('mail.test'))!;
-    await act(async () => {
-      option.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
-      option.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0 }));
-      option.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.type(screen.getByLabelText('邮箱'), 'new-user');
+    await user.type(screen.getByLabelText('密码'), 'secret');
+    await user.type(screen.getByLabelText('确认密码'), 'secret');
+    await user.click(screen.getByRole('button', { name: '注册' }));
 
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="email"]'), 'new-user');
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="password"]'), 'secret');
-    setInputValue(
-      container.querySelector<HTMLInputElement>('input[name="confirm_password"]'),
-      'secret',
+    await waitFor(() =>
+      expect(mocks.registerMutateAsync).toHaveBeenCalledWith({
+        email: 'new-user@mail.test',
+        email_code: '',
+        invite_code: '',
+        password: 'secret',
+        recaptcha_data: 'recaptcha-token',
+      }),
     );
-
-    await act(async () => {
-      container.querySelector('form')!.dispatchEvent(
-        new Event('submit', { bubbles: true, cancelable: true }),
-      );
-      await Promise.resolve();
-    });
-    await flushPromises();
-
-    expect(mocks.registerMutateAsync).toHaveBeenCalledWith({
-      email: 'new-user@mail.test',
-      email_code: '',
-      invite_code: '',
-      password: 'secret',
-      recaptcha_data: 'recaptcha-token',
-    });
   });
 
   it('treats an empty email whitelist as disabled and submits the raw email', async () => {
@@ -497,59 +358,22 @@ describe('RegisterPage behavior', () => {
       tos_url: undefined,
     };
 
-    await renderRegister();
+    const { user } = renderWithProviders(<RegisterPage />);
 
-    expect(container.querySelector('select')).toBeNull();
-    setInputValue(
-      container.querySelector<HTMLInputElement>('input[name="email"]'),
-      'raw@example.com',
+    expect(screen.queryByRole('combobox')).toBeNull();
+    await user.type(screen.getByLabelText('邮箱'), 'raw@example.com');
+    await user.type(screen.getByLabelText('密码'), 'secret');
+    await user.type(screen.getByLabelText('确认密码'), 'secret');
+    await user.click(screen.getByRole('button', { name: '注册' }));
+
+    await waitFor(() =>
+      expect(mocks.registerMutateAsync).toHaveBeenCalledWith({
+        email: 'raw@example.com',
+        email_code: '',
+        invite_code: '',
+        password: 'secret',
+        recaptcha_data: 'recaptcha-token',
+      }),
     );
-    setInputValue(container.querySelector<HTMLInputElement>('input[name="password"]'), 'secret');
-    setInputValue(
-      container.querySelector<HTMLInputElement>('input[name="confirm_password"]'),
-      'secret',
-    );
-
-    await act(async () => {
-      container.querySelector('form')!.dispatchEvent(
-        new Event('submit', { bubbles: true, cancelable: true }),
-      );
-      await Promise.resolve();
-    });
-    await flushPromises();
-
-    expect(mocks.registerMutateAsync).toHaveBeenCalledWith({
-      email: 'raw@example.com',
-      email_code: '',
-      invite_code: '',
-      password: 'secret',
-      recaptcha_data: 'recaptcha-token',
-    });
-  });
-
-  it('uses react-hook-form and zod instead of retired refs or FormData readers', () => {
-    expect(controllerSource).toContain("from 'react-hook-form'");
-    expect(controllerSource).toContain("from 'zod'");
-    expect(controllerSource).toContain('zodResolver(registerSchema)');
-    expect(controllerSource).toContain('form.handleSubmit(');
-    expect(controllerSource).toContain("registerInput: form.register");
-    expect(controllerSource).not.toContain('new FormData');
-    expect(controllerSource).not.toContain('readFormValue');
-    expect(controllerSource).not.toContain('formRef');
-    expect(controllerSource).not.toContain('emailRef');
-    expect(controllerSource).not.toContain('passwordRef');
-    expect(controllerSource).not.toContain('confirmPasswordRef');
-  });
-
-  it('delegates the send-code countdown to the shared flow hook with cleanup', () => {
-    // The recaptcha-gated send + 60s cooldown is delegated to one shared hook.
-    expect(controllerSource).toContain('useSendEmailVerifyFlow(');
-    expect(controllerSource).not.toContain('useCountdown');
-    expect(controllerSource).not.toContain('startSendEmailVerifyCountdown');
-    expect(controllerSource).not.toContain('cooldownRef');
-    // The shared hook owns the countdown, which owns its own timer cleanup.
-    expect(flowSource).toContain('const cooldown = useCountdown(60);');
-    expect(flowSource).toContain('cooldown.start()');
-    expect(countdownSource).toContain('return () => window.clearTimeout(timer);');
   });
 });

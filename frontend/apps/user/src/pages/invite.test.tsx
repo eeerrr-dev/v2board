@@ -1,13 +1,9 @@
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
-import { readFileSync } from 'node:fs';
+import { screen, waitFor, within } from '@testing-library/react';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import InvitePage from './invite';
-
-const inviteSource = readFileSync(`${process.cwd()}/src/pages/invite.tsx`, 'utf8');
 
 const mocks = vi.hoisted(() => ({
   comm: {
@@ -132,9 +128,6 @@ vi.mock('@/lib/toast', () => ({
   },
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
 function resetMocks() {
   mocks.comm = {
     commission_distribution_enable: 0,
@@ -166,57 +159,83 @@ function resetMocks() {
 describe('InvitePage shadcn surface', () => {
   beforeEach(resetMocks);
 
-  it('renders the shadcn commission summary, stats, code table, and history table shell', () => {
+  it('renders the commission summary, stats, code table, and history table', () => {
     mocks.inviteCodes = [{ code: 'ABC123', created_at: 1_700_000_000 }];
     mocks.detailRows = [{ created_at: 1_700_000_600, get_amount: 1234 }];
     mocks.detailsTotal = 1;
 
-    const html = renderToStaticMarkup(<InvitePage />);
+    renderWithProviders(<InvitePage />);
 
-    expect(html).toContain('data-testid="invite-summary-card"');
-    expect(html).toContain('data-testid="invite-stats-card"');
-    expect(html).toContain('data-testid="invite-code-card"');
-    expect(html).toContain('data-testid="invite-history-card"');
-    expect(html).toContain('我的邀请');
-    expect(html).toContain('123.45');
-    expect(html).toContain('CNY');
-    expect(html).toContain('当前剩余佣金');
-    expect(html).toContain('data-testid="invite-transfer-trigger"');
-    expect(html).toContain('划转');
-    expect(html).not.toContain('推广佣金提现');
-    expect(html).toContain('已注册用户数');
-    expect(html).toContain('7人');
-    expect(html).toContain('佣金比例');
-    expect(html).toContain('12%');
-    expect(html).toContain('确认中的佣金');
-    expect(html).toContain('¥ 6.78');
-    expect(html).toContain('累计获得佣金');
-    expect(html).toContain('¥ 23.45');
-    expect(html).toContain('邀请码管理');
-    expect(html).toContain('生成邀请码');
-    expect(html).toContain('data-testid="invite-code-table"');
-    expect(html).toContain('data-testid="invite-history-table"');
-    expect(html).toContain('ABC123');
-    expect(html).toContain('复制链接');
-    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
-    expect(html).toContain('佣金发放记录');
-    expect(html).toContain('发放时间');
-    expect(html).toContain('佣金');
-    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_600));
-    expect(html).toContain('12.34');
-    expect(html.match(/data-row-key="0"/g)).toHaveLength(2);
-    expect(html).not.toContain('block block-rounded');
-    expect(html).not.toContain('ant-table-wrapper');
-  });
+    // Summary card: balance in cents rendered as plain currency text.
+    const summary = screen.getByTestId('invite-summary-card');
+    expect(within(summary).getByText('我的邀请')).toBeInTheDocument();
+    expect(within(summary).getByText('123.45')).toBeInTheDocument();
+    expect(within(summary).getByText('CNY')).toBeInTheDocument();
+    expect(within(summary).getByText('当前剩余佣金')).toBeInTheDocument();
+    const transfer = within(summary).getByRole('button', { name: '划转' });
+    expect(transfer).toHaveAttribute('data-testid', 'invite-transfer-trigger');
+    // withdraw_close hides the withdraw entry entirely.
+    expect(screen.queryByRole('button', { name: '推广佣金提现' })).toBeNull();
+    expect(screen.queryByTestId('invite-withdraw-trigger')).toBeNull();
 
-  it('renders invite tables through shared TanStack DataTable columns', () => {
-    expect(inviteSource).toContain('satisfies DataTableColumn<(typeof codes)[number]>[]');
-    expect(inviteSource).toContain('satisfies DataTableColumn<(typeof detailRows)[number]>[]');
-    expect(inviteSource).toContain('function ServiceTable<TData>');
-    expect(inviteSource).not.toContain('<TableRow');
-    expect(inviteSource).not.toContain('<TableCell');
-    expect(inviteSource).not.toContain('data-row-key={code.code}');
-    expect(inviteSource).not.toContain('data-row-key={row.created_at}');
+    // Stats card: stat tuple [registered, valid, pending, rate] read positionally.
+    const stats = screen.getByTestId('invite-stats-card');
+    expect(within(stats).getByText('已注册用户数')).toBeInTheDocument();
+    expect(within(stats).getByText('7人')).toBeInTheDocument();
+    expect(within(stats).getByText('佣金比例')).toBeInTheDocument();
+    expect(within(stats).getByText('12%')).toBeInTheDocument();
+    expect(within(stats).getByText('确认中的佣金')).toBeInTheDocument();
+    expect(within(stats).getByText('¥ 6.78')).toBeInTheDocument();
+    expect(within(stats).getByText('累计获得佣金')).toBeInTheDocument();
+    expect(within(stats).getByText('¥ 23.45')).toBeInTheDocument();
+
+    // Code management card.
+    const codeCard = screen.getByTestId('invite-code-card');
+    expect(within(codeCard).getByText('邀请码管理')).toBeInTheDocument();
+    expect(
+      within(codeCard).getByRole('button', { name: '生成邀请码' }),
+    ).toHaveAttribute('data-testid', 'invite-generate');
+
+    // Both tables render through the shared DataTable: real table semantics,
+    // shared scroll container hook, and index-based data-row-key row hooks.
+    expect(screen.getAllByTestId('invite-table-scroll')).toHaveLength(2);
+
+    const codeTable = screen.getByTestId('invite-code-table');
+    expect(codeTable).toContainElement(
+      within(codeTable).getByRole('columnheader', { name: '邀请码' }),
+    );
+    expect(
+      within(codeTable).getByRole('columnheader', { name: '创建时间' }),
+    ).toBeInTheDocument();
+    expect(within(codeTable).getByText('ABC123')).toBeInTheDocument();
+    expect(
+      within(codeTable).getByRole('button', { name: '复制链接' }),
+    ).toBeInTheDocument();
+    expect(
+      within(codeTable).getByText(formatLegacyDateMinuteSlash(1_700_000_000)),
+    ).toBeInTheDocument();
+    expect(within(codeTable).getByText('ABC123').closest('tr')).toHaveAttribute(
+      'data-row-key',
+      '0',
+    );
+
+    const historyCard = screen.getByTestId('invite-history-card');
+    expect(within(historyCard).getByText('佣金发放记录')).toBeInTheDocument();
+    const historyTable = screen.getByTestId('invite-history-table');
+    expect(
+      within(historyTable).getByRole('columnheader', { name: '发放时间' }),
+    ).toBeInTheDocument();
+    expect(
+      within(historyTable).getByRole('columnheader', { name: '佣金' }),
+    ).toBeInTheDocument();
+    expect(
+      within(historyTable).getByText(formatLegacyDateMinuteSlash(1_700_000_600)),
+    ).toBeInTheDocument();
+    expect(within(historyTable).getByText('12.34')).toBeInTheDocument();
+    expect(within(historyTable).getByText('12.34').closest('tr')).toHaveAttribute(
+      'data-row-key',
+      '0',
+    );
   });
 
   it('renders the distribution-rate branch and withdraw button when enabled', () => {
@@ -226,12 +245,14 @@ describe('InvitePage shadcn surface', () => {
       withdraw_close: 0,
     };
 
-    const html = renderToStaticMarkup(<InvitePage />);
+    renderWithProviders(<InvitePage />);
 
-    expect(html).toContain('三级分销比例');
-    expect(html).toContain('6%,3.6%,2.4%');
-    expect(html).toContain('推广佣金提现');
-    expect(html).toContain('data-testid="invite-withdraw-trigger"');
+    expect(screen.getByText('三级分销比例')).toBeInTheDocument();
+    expect(screen.getByText('6%,3.6%,2.4%')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '推广佣金提现' })).toHaveAttribute(
+      'data-testid',
+      'invite-withdraw-trigger',
+    );
   });
 
   it('does not render NaN distribution rates while invite stats are loading', () => {
@@ -241,20 +262,24 @@ describe('InvitePage shadcn surface', () => {
     };
     mocks.inviteStat = undefined;
 
-    const html = renderToStaticMarkup(<InvitePage />);
+    const { container } = renderWithProviders(<InvitePage />);
 
-    expect(html).toContain('三级分销比例');
-    expect(html).not.toContain('NaN');
+    expect(screen.getByText('三级分销比例')).toBeInTheDocument();
+    expect(container.textContent).not.toContain('NaN');
   });
 
-  it('keeps loading state in the shadcn cards while invite/fetch is pending', () => {
+  it('keeps the stats card content visible and dimmed while invite/fetch is pending', () => {
     mocks.inviteFetching = true;
 
-    const html = renderToStaticMarkup(<InvitePage />);
+    renderWithProviders(<InvitePage />);
 
-    expect(html).toContain('data-testid="invite-stats-card"');
-    expect(html).toContain('opacity-80');
-    expect(html).not.toContain('block-mode-loading');
+    const stats = screen.getByTestId('invite-stats-card');
+    // Loading dims the card instead of replacing it with a blocking loader;
+    // stat labels/values stay rendered. (The card has no accessible busy state,
+    // so the dim is pinned via its class.)
+    expect(stats).toHaveClass('opacity-80');
+    expect(within(stats).getByText('已注册用户数')).toBeInTheDocument();
+    expect(within(stats).getByText('7人')).toBeInTheDocument();
   });
 });
 
@@ -262,96 +287,56 @@ describe('InvitePage shadcn pagination', () => {
   beforeEach(resetMocks);
 
   it('omits table pagination for an empty commission history', () => {
-    const html = renderToStaticMarkup(<InvitePage />);
+    renderWithProviders(<InvitePage />);
 
-    expect(html).not.toContain('data-testid="invite-pagination"');
-    expect(html).not.toContain('data-page="0"');
-    expect(html).not.toContain('data-testid="invite-page-size"');
+    expect(screen.queryByTestId('invite-pagination')).toBeNull();
+    expect(screen.queryByTestId('invite-page-size')).toBeNull();
   });
 
   it('shows table pagination when commission history has rows', () => {
     mocks.detailRows = [{ created_at: 1, get_amount: 100 }];
     mocks.detailsTotal = 1;
 
-    const html = renderToStaticMarkup(<InvitePage />);
+    renderWithProviders(<InvitePage />);
 
-    expect(html).toContain('data-testid="invite-pagination"');
-    expect(html).toContain('data-page="1"');
-    expect(html).toContain('data-testid="invite-page-size"');
+    expect(screen.getByTestId('invite-pagination')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { current: 'page', name: '1' }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('invite-page-size')).toBeInTheDocument();
   });
 
   it('shows the commission history loading indicator while the details fetch is pending', () => {
     mocks.detailsFetching = true;
 
-    const html = renderToStaticMarkup(<InvitePage />);
+    renderWithProviders(<InvitePage />);
 
-    expect(html).toContain('Loading...');
-    expect(html).not.toContain('ant-spin-spinning');
-    expect(html).not.toContain('ant-spin-blur');
+    expect(screen.getByRole('status')).toHaveTextContent('Loading...');
   });
 });
 
 describe('InvitePage shadcn actions', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    resetMocks();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
-  async function renderInvite() {
-    await act(async () => {
-      root.render(<InvitePage />);
-      await Promise.resolve();
-    });
-  }
+  beforeEach(resetMocks);
 
   it('copies the exact legacy register URL and shows the original success toast', async () => {
     mocks.inviteCodes = [{ code: 'ABC123', created_at: 1_700_000_000 }];
-    await renderInvite();
+    const { user } = renderWithProviders(<InvitePage />);
 
-    const copy = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '复制链接',
-    )!;
-
-    await act(async () => {
-      copy.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '复制链接' }));
 
     expect(mocks.copyText).toHaveBeenCalledWith(
       `${window.location.origin}${window.location.pathname}#/register?code=ABC123`,
     );
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功');
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('复制成功'));
   });
 
   it('generates a code once, shows the old hard-coded success toast, and refetches invite data', async () => {
-    await renderInvite();
+    const { user } = renderWithProviders(<InvitePage />);
 
-    const generate = container.querySelector<HTMLButtonElement>(
-      '[data-testid="invite-generate"]',
-    )!;
-
-    await act(async () => {
-      generate.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('invite-generate'));
 
     expect(mocks.generateMutateAsync).toHaveBeenCalledTimes(1);
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('已生成');
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('已生成'));
     expect(mocks.invalidateQueries).toHaveBeenCalledWith({
       exact: true,
       queryKey: ['user', 'invite'],
@@ -360,82 +345,50 @@ describe('InvitePage shadcn actions', () => {
 
   it('does not generate another code while saveLoading is active', async () => {
     mocks.generateIsPending = true;
-    await renderInvite();
+    const { user } = renderWithProviders(<InvitePage />);
 
-    const generate = container.querySelector<HTMLButtonElement>(
-      '[data-testid="invite-generate"]',
-    )!;
+    const generate = screen.getByTestId('invite-generate');
+    expect(generate).toBeDisabled();
+    expect(generate).toHaveAttribute('aria-busy', 'true');
 
-    expect(generate.disabled).toBe(true);
-    expect(generate.getAttribute('aria-busy')).toBe('true');
-
-    await act(async () => {
-      generate.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(generate);
 
     expect(mocks.generateMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('requests invite/details with the page selected from the old table pagination', async () => {
+  it('requests invite/details with the page selected from the table pagination', async () => {
     mocks.detailRows = [{ created_at: 1_700_000_600, get_amount: 1234 }];
     mocks.detailsTotal = 25;
+    const { user } = renderWithProviders(<InvitePage />);
 
-    await renderInvite();
+    await user.click(screen.getByRole('button', { name: '2' }));
 
-    const pageTwo = container.querySelector<HTMLButtonElement>(
-      '[data-testid="invite-page"][data-page="2"]',
-    )!;
-
-    await act(async () => {
-      pageTwo.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(pageTwo.textContent).toBe('2');
     expect(
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="invite-page"][data-page="2"]')
-        ?.getAttribute('aria-current'),
-    ).toBe('page');
+      screen.getByRole('button', { current: 'page', name: '2' }),
+    ).toBeInTheDocument();
     expect(mocks.detailQueryCalls.at(-1)).toEqual({ current: 2, pageSize: 10 });
   });
 
   it('clamps the visible commission-history page like the legacy pagination helper', async () => {
     mocks.detailRows = [{ created_at: 1_700_000_600, get_amount: 1234 }];
     mocks.detailsTotal = 45;
+    const { rerender, user } = renderWithProviders(<InvitePage />);
 
-    await renderInvite();
-
-    const pageFour = container.querySelector<HTMLButtonElement>(
-      '[data-testid="invite-page"][data-page="4"]',
-    )!;
-
-    await act(async () => {
-      pageFour.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '4' }));
 
     expect(
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="invite-page"][data-page="4"]')
-        ?.getAttribute('aria-current'),
-    ).toBe('page');
+      screen.getByRole('button', { current: 'page', name: '4' }),
+    ).toBeInTheDocument();
     expect(mocks.detailQueryCalls.at(-1)).toEqual({ current: 4, pageSize: 10 });
 
+    // The total shrinks under the selected page: the raw page state stays 4,
+    // but the visible current page clamps down to the last page (3).
     mocks.detailsTotal = 25;
-
-    await renderInvite();
+    rerender(<InvitePage />);
 
     expect(
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="invite-page"][data-page="3"]')
-        ?.getAttribute('aria-current'),
-    ).toBe('page');
-    expect(
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="invite-page"][data-page="4"]')
-        ?.getAttribute('aria-current'),
-    ).toBeUndefined();
+      screen.getByRole('button', { current: 'page', name: '3' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '4' })).toBeNull();
   });
 });

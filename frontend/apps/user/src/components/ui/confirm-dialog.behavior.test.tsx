@@ -1,6 +1,6 @@
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import { ConfirmDialogProvider, confirmDialog } from './confirm-dialog';
 
 // The provider only reads i18n.language for the localized default button text.
@@ -8,140 +8,109 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ i18n: { language: 'zh-CN' } }),
 }));
 
-async function flushPromises() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-}
-
-function clickPrimary() {
-  document.body
-    .querySelector<HTMLButtonElement>('.v2board-confirm-primary')!
-    .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-}
-
-function currentTitle() {
-  return document.body.querySelector('.v2board-confirm-title')?.textContent ?? null;
-}
-
-// Characterization tests for the queued confirm-dialog store + provider. These
-// pin the OBSERVABLE contract that any future refactor (e.g. moving the store to
-// useSyncExternalStore) must preserve: queue advance, promise resolution, the
-// actionLoading reset between requests, and the closingRef guard that stops a
-// programmatic close from firing onCancel. The naive `open = Boolean(request) &&
-// !closingRef` rewrite breaks these, so this suite must stay green before any
-// migration lands.
+// Behavior tests for the queued confirm-dialog store + provider. These pin the
+// OBSERVABLE contract that any future refactor of the external store must
+// preserve: queue advance, promise resolution, the actionLoading reset between
+// requests, and the closingRef guard that stops a programmatic close from
+// firing onCancel. The naive `open = Boolean(request) && !closingRef` rewrite
+// breaks these, so this suite must stay green before any migration lands.
 describe('confirm dialog queued behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
   it('advances to the next queued request after the current one resolves', async () => {
-    await act(async () => {
-      root.render(<ConfirmDialogProvider />);
-    });
+    const { user } = renderWithProviders(<ConfirmDialogProvider />);
 
     let resolvedA: boolean | undefined;
     let resolvedB: boolean | undefined;
-    await act(async () => {
+    act(() => {
       void confirmDialog({ title: 'First' }).then((value) => {
         resolvedA = value;
       });
       void confirmDialog({ title: 'Second' }).then((value) => {
         resolvedB = value;
       });
-      await Promise.resolve();
     });
 
-    expect(currentTitle()).toBe('First');
+    expect(await screen.findByRole('alertdialog', { name: 'First' })).toBeInTheDocument();
 
-    await act(async () => {
-      clickPrimary();
-      await Promise.resolve();
-    });
-    await flushPromises();
+    await user.click(screen.getByRole('button', { name: '确 定' }));
 
     // First resolved true; the queue advanced to the second request without
     // resolving it yet, and its primary button is interactive again (the
     // actionLoading reset fired on the request id change).
-    expect(resolvedA).toBe(true);
+    await waitFor(() => expect(resolvedA).toBe(true));
     expect(resolvedB).toBeUndefined();
-    expect(currentTitle()).toBe('Second');
+    const second = screen.getByRole('alertdialog', { name: 'Second' });
+    const secondPrimary = within(second).getByRole('button', { name: '确 定' });
+    expect(secondPrimary).toBeEnabled();
 
-    await act(async () => {
-      clickPrimary();
-      await Promise.resolve();
-    });
-    await flushPromises();
+    await user.click(secondPrimary);
 
-    expect(resolvedB).toBe(true);
-    expect(currentTitle()).toBeNull();
+    await waitFor(() => expect(resolvedB).toBe(true));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
   it('resolves false and runs onCancel when the cancel button is clicked', async () => {
     const onCancel = vi.fn();
-    await act(async () => {
-      root.render(<ConfirmDialogProvider />);
-    });
+    const { user } = renderWithProviders(<ConfirmDialogProvider />);
 
     let resolved: boolean | undefined;
-    await act(async () => {
+    act(() => {
       void confirmDialog({ title: 'Cancel me', onCancel, cancelText: 'Nope' }).then((value) => {
         resolved = value;
       });
-      await Promise.resolve();
     });
 
-    await act(async () => {
-      const cancelButton = Array.from(
-        document.body.querySelectorAll<HTMLButtonElement>('.v2board-confirm-footer button'),
-      ).find((button) => button.textContent?.includes('Nope'))!;
-      cancelButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await flushPromises();
+    await user.click(await screen.findByRole('button', { name: 'Nope' }));
 
+    await waitFor(() => expect(resolved).toBe(false));
     expect(onCancel).toHaveBeenCalledTimes(1);
-    expect(resolved).toBe(false);
   });
 
   it('does not invoke onCancel when a confirm programmatically closes the dialog', async () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
-    await act(async () => {
-      root.render(<ConfirmDialogProvider />);
-    });
+    const { user } = renderWithProviders(<ConfirmDialogProvider />);
 
     let resolved: boolean | undefined;
-    await act(async () => {
+    act(() => {
       void confirmDialog({ title: 'Confirm me', onConfirm, onCancel }).then((value) => {
         resolved = value;
       });
-      await Promise.resolve();
     });
 
-    await act(async () => {
-      clickPrimary();
-      await Promise.resolve();
-    });
-    await flushPromises();
+    await user.click(await screen.findByRole('button', { name: '确 定' }));
 
     // The programmatic close flips Radix open -> false; the closingRef guard must
     // stop that transition from being treated as a user cancel.
+    await waitFor(() => expect(resolved).toBe(true));
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
-    expect(resolved).toBe(true);
+  });
+
+  it('renders an accessible alert dialog carrying the parity selector hooks and localized defaults', async () => {
+    const { user } = renderWithProviders(<ConfirmDialogProvider />);
+
+    let resolved: boolean | undefined;
+    act(() => {
+      void confirmDialog({ title: 'Hooked', description: 'Body copy' }).then((value) => {
+        resolved = value;
+      });
+    });
+
+    // The shell is a real alert dialog labelled by its title (shadcn/Radix
+    // alert-dialog semantics rather than an Ant modal shim).
+    const dialog = await screen.findByRole('alertdialog', { name: 'Hooked' });
+    // frontend/scripts/visual-parity.mjs selects these v2board-* hooks, so they
+    // must stay addressable on the rendered dialog.
+    expect(dialog).toHaveClass('v2board-confirm-dialog');
+    expect(within(dialog).getByText('Hooked')).toHaveClass('v2board-confirm-title');
+    expect(within(dialog).getByText('Body copy')).toHaveClass('v2board-confirm-content');
+    const confirm = within(dialog).getByRole('button', { name: '确 定' });
+    expect(confirm).toHaveClass('v2board-confirm-primary');
+    expect(confirm.closest('.v2board-confirm-footer')).not.toBeNull();
+    // Default button text is localized through getConfirmDialogDefaultText.
+    expect(within(dialog).getByRole('button', { name: '取 消' })).toBeInTheDocument();
+
+    await user.click(confirm);
+    await waitFor(() => expect(resolved).toBe(true));
   });
 });

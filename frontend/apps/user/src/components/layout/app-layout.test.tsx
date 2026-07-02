@@ -1,7 +1,7 @@
-import { act, type ComponentProps } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { type ComponentProps } from 'react';
+import { fireEvent, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import { AppLayout } from './app-layout';
 
 const mocks = vi.hoisted(() => ({
@@ -142,9 +142,6 @@ vi.mock('@/lib/legacy-settings', () => ({
   getLegacyTitle: () => mocks.title,
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
 function resetMocks() {
   mocks.darkMode = false;
   mocks.themePreference = 'system';
@@ -161,88 +158,106 @@ function resetMocks() {
   mocks.user = { email: 'user@example.com' };
 }
 
-describe('AppLayout shadcn app shell markup', () => {
-  beforeEach(resetMocks);
+// The Sidebar primitive persists expanded/collapsed in the sidebar_state
+// cookie, which survives across tests within this file; clear it and pin a
+// desktop viewport so a toggle in one test cannot leak into the next. The
+// mobile-sheet test overrides innerWidth locally.
+function resetShellEnvironment() {
+  resetMocks();
+  document.cookie = 'sidebar_state=; path=/; max-age=0';
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: 1024,
+  });
+}
+
+describe('AppLayout shadcn app shell structure', () => {
+  beforeEach(resetShellEnvironment);
 
   it('renders the redesigned shell, navigation, header controls, and outlet', () => {
-    const html = renderToStaticMarkup(<AppLayout />);
+    const { container } = renderWithProviders(<AppLayout />);
 
-    expect(html).toContain('id="page-container"');
-    expect(html).toContain('v2board-app-shell');
-    expect(html).toContain('id="sidebar"');
-    // Nav items are real links (asChild), and exactly one of them — the
-    // /dashboard item matching the mocked location — carries aria-current.
-    expect(html).toContain('href="/knowledge"');
-    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
-    const dashboardAnchors = html.match(/<a [^>]*href="\/dashboard"[^>]*>/g) ?? [];
-    expect(dashboardAnchors.some((anchor) => anchor.includes('aria-current="page"'))).toBe(true);
-    expect(html).toContain('V2Board');
-    expect(html).toContain('仪表盘');
-    expect(html).toContain('使用文档');
-    expect(html).toContain('购买订阅');
-    expect(html).toContain('节点状态');
-    expect(html).toContain('我的订单');
-    expect(html).toContain('个人中心');
-    expect(html).toContain('id="page-header"');
-    expect(html).toContain('v2board-container-title');
-    // The language switcher moved into the account menu's submenu; the header
-    // must no longer carry a standalone trigger for it.
-    expect(html).not.toContain('data-testid="app-language-trigger"');
-    expect(html).toContain('data-testid="app-avatar-trigger"');
-    expect(html).toContain('user@example.com');
-    expect(html).toContain('id="main-container"');
-    expect(html).toContain('v2board-app-main');
-    expect(html).toContain('Outlet content');
-    expect(html).not.toContain('nav-main-link');
-    expect(html).not.toContain('content content-full');
+    // Parity-harness hooks: #page-container/#main-container are ready
+    // selectors, #sidebar and #page-header anchor interaction scenarios.
+    expect(container.querySelector('#page-container')).not.toBeNull();
+    expect(container.querySelector('#sidebar')).not.toBeNull();
+    expect(container.querySelector('#page-header')).not.toBeNull();
+    expect(container.querySelector('#main-container')).not.toBeNull();
+
+    // The sidebar exposes a labelled navigation landmark of real links.
+    const nav = screen.getByRole('navigation', { name: 'Primary navigation' });
+    expect(within(nav).getByRole('link', { name: '仪表盘' })).toHaveAttribute(
+      'href',
+      '/dashboard',
+    );
+    expect(within(nav).getByRole('link', { name: '使用文档' })).toHaveAttribute(
+      'href',
+      '/knowledge',
+    );
+    for (const name of ['购买订阅', '节点状态', '我的订单', '个人中心']) {
+      expect(within(nav).getByRole('link', { name })).toBeInTheDocument();
+    }
+    // Exactly one item — the one matching the mocked /dashboard location —
+    // carries aria-current.
+    expect(within(nav).getByRole('link', { name: '仪表盘' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(container.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+
+    // Brand wordmark links back to the dashboard.
+    expect(screen.getByRole('link', { name: 'V2Board' })).toHaveAttribute('href', '/dashboard');
+
+    // Header: the page title (visual-parity reads .v2board-container-title),
+    // and the account chip with the user's email. The language switcher moved
+    // into the account menu's submenu, so the header must no longer carry a
+    // standalone trigger for it.
+    const title = screen.getByRole('heading', { level: 1 });
+    expect(title).toHaveTextContent('仪表盘');
+    expect(title).toHaveClass('v2board-container-title');
+    expect(screen.queryByTestId('app-language-trigger')).not.toBeInTheDocument();
+    expect(screen.getByTestId('app-avatar-trigger')).toHaveTextContent('user@example.com');
+
+    // The routed page renders inside the shell.
+    expect(screen.getByText('Outlet content')).toBeInTheDocument();
   });
 
-  it('uses detail route titles without marking sidebar structure as legacy nav', () => {
+  it('uses detail route titles while keeping the parent nav item current', () => {
     mocks.location = { pathname: '/order/TRADE123', search: '' };
 
-    const html = renderToStaticMarkup(<AppLayout />);
+    renderWithProviders(<AppLayout />);
 
-    expect(html).toContain('订单详情');
-    expect(html).not.toContain('nav-main-link active');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('订单详情');
+    expect(screen.getByRole('link', { name: '我的订单' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
-  it('renders a centered shadcn loading state', () => {
-    const html = renderToStaticMarkup(<AppLayout loading />);
+  it('renders a centered loading state instead of the outlet', () => {
+    const { container } = renderWithProviders(<AppLayout loading />);
 
-    expect(html).toContain('id="main-container"');
-    expect(html).toContain('v2board-app-main');
-    expect(html).toContain('animate-spin');
-    expect(html).not.toContain('data-outlet="true"');
+    expect(container.querySelector('#main-container')).not.toBeNull();
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.queryByText('Outlet content')).not.toBeInTheDocument();
   });
 
   it('shows the route pending bar only while the router navigation is in flight', () => {
-    expect(renderToStaticMarkup(<AppLayout />)).not.toContain('data-testid="route-pending-bar"');
+    const { rerender } = renderWithProviders(<AppLayout />);
+    expect(screen.queryByTestId('route-pending-bar')).not.toBeInTheDocument();
 
     mocks.navigationState = 'loading';
-    expect(renderToStaticMarkup(<AppLayout />)).toContain('data-testid="route-pending-bar"');
+    rerender(<AppLayout />);
+    expect(screen.getByTestId('route-pending-bar')).toBeInTheDocument();
   });
 });
 
 describe('AppLayout shadcn app shell behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root;
   let scrollTo: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    resetMocks();
-    // The primitive persists expanded/collapsed in the sidebar_state cookie;
-    // clear it so a toggle in one test cannot leak into the next.
-    document.cookie = 'sidebar_state=; path=/; max-age=0';
-    // Pin a desktop viewport by default so useIsMobile resolves to the
-    // collapsible rail; the mobile-sheet test overrides innerWidth locally.
-    Object.defineProperty(window, 'innerWidth', {
-      configurable: true,
-      writable: true,
-      value: 1024,
-    });
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
+    resetShellEnvironment();
     scrollTo = vi.fn();
     Object.defineProperty(window, 'scrollTo', {
       configurable: true,
@@ -250,21 +265,8 @@ describe('AppLayout shadcn app shell behavior', () => {
     });
   });
 
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
-  async function renderLayout(props?: Parameters<typeof AppLayout>[0]) {
-    await act(async () => {
-      root.render(<AppLayout {...props} />);
-      await Promise.resolve();
-    });
-  }
-
   it('scrolls on route changes and toggles the collapsible desktop rail', async () => {
-    await renderLayout();
+    const { container, user } = renderWithProviders(<AppLayout />);
 
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
     // The desktop rail keeps the #sidebar hook and renders no mobile Sheet.
@@ -274,40 +276,38 @@ describe('AppLayout shadcn app shell behavior', () => {
     ).toBeNull();
 
     const rail = container.querySelector<HTMLElement>('[data-slot="sidebar"]')!;
-    expect(rail.getAttribute('data-state')).toBe('expanded');
+    expect(rail).toHaveAttribute('data-state', 'expanded');
 
     // On desktop the collapse control lives inside the sidebar header itself
     // and collapses the icon rail (backed by the sidebar_state cookie).
-    const trigger = container.querySelector<HTMLButtonElement>('#sidebar [data-sidebar="trigger"]')!;
-    expect(trigger.getAttribute('aria-label')).toBe('Toggle navigation');
-    await act(async () => {
-      trigger.click();
-      await Promise.resolve();
-    });
-    expect(rail.getAttribute('data-state')).toBe('collapsed');
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '#sidebar [data-sidebar="trigger"]',
+    )!;
+    expect(trigger).toHaveAttribute('aria-label', 'Toggle navigation');
+    await user.click(trigger);
+    expect(rail).toHaveAttribute('data-state', 'collapsed');
     // The collapse is persisted under the same cookie name the restore path
     // reads back — the write half of the sidebar_state round trip.
     expect(document.cookie).toContain('sidebar_state=false');
 
     // Nav items stay reachable in the rail as real links (middle-click/a11y)
     // inside the navigation landmark, and route through the router.
-    const knowledge = Array.from(
-      container.querySelectorAll<HTMLAnchorElement>('[data-sidebar="content"] a'),
-    ).find((link) => link.textContent?.includes('使用文档'))!;
-    expect(knowledge.getAttribute('href')).toBe('/knowledge');
-    await act(async () => {
-      knowledge.click();
-      await Promise.resolve();
-    });
+    const nav = screen.getByRole('navigation', { name: 'Primary navigation' });
+    const knowledge = within(nav).getByRole('link', { name: '使用文档' });
+    expect(knowledge).toHaveAttribute('href', '/knowledge');
+    await user.click(knowledge);
     expect(mocks.navigate).toHaveBeenCalledWith('/knowledge');
   });
 
-  it('restores the collapsed rail from the sidebar_state cookie', async () => {
+  it('restores the collapsed rail from the sidebar_state cookie', () => {
     document.cookie = 'sidebar_state=false; path=/';
-    await renderLayout();
 
-    const rail = container.querySelector<HTMLElement>('[data-slot="sidebar"]')!;
-    expect(rail.getAttribute('data-state')).toBe('collapsed');
+    const { container } = renderWithProviders(<AppLayout />);
+
+    expect(container.querySelector('[data-slot="sidebar"]')).toHaveAttribute(
+      'data-state',
+      'collapsed',
+    );
   });
 
   it('opens the mobile nav sheet and closes it after navigation', async () => {
@@ -317,35 +317,26 @@ describe('AppLayout shadcn app shell behavior', () => {
       writable: true,
       value: 500,
     });
-    await renderLayout();
+    const { container, user } = renderWithProviders(<AppLayout />);
 
     const sheet = () =>
-      document.body.querySelector('[data-slot="sidebar"][data-mobile="true"]');
+      document.body.querySelector<HTMLElement>('[data-slot="sidebar"][data-mobile="true"]');
     expect(sheet()).toBeNull();
 
-    // On mobile the drawer opener is the header trigger (the sidebar and its
-    // own trigger are inside the not-yet-open Sheet).
+    // On mobile the drawer opener is the header trigger (the same
+    // '#page-header [data-sidebar="trigger"]' selector visual-parity clicks;
+    // the sidebar and its own trigger are inside the not-yet-open Sheet).
     const openButton = container.querySelector<HTMLButtonElement>(
       '#page-header [data-sidebar="trigger"]',
     )!;
-    await act(async () => {
-      openButton.click();
-      await Promise.resolve();
-    });
+    await user.click(openButton);
 
     // The mobile drawer is a Radix Sheet portaled to the document body
     // (focus trap, Esc-dismiss, aria-modal) instead of a hand-rolled transform.
     expect(sheet()).not.toBeNull();
 
-    const knowledge = Array.from(
-      document.body.querySelectorAll<HTMLAnchorElement>(
-        '[data-slot="sidebar"][data-mobile="true"] [data-sidebar="content"] a',
-      ),
-    ).find((link) => link.textContent?.includes('使用文档'))!;
-    await act(async () => {
-      knowledge.click();
-      await Promise.resolve();
-    });
+    const knowledge = within(sheet()!).getByRole('link', { name: '使用文档' });
+    await user.click(knowledge);
 
     expect(mocks.navigate).toHaveBeenCalledWith('/knowledge');
     // Navigating closes the controlled Sheet.
@@ -353,104 +344,59 @@ describe('AppLayout shadcn app shell behavior', () => {
   });
 
   it('changes the theme through the header menu', async () => {
-    await renderLayout();
+    const { user } = renderWithProviders(<AppLayout />);
 
-    const trigger = container.querySelector<HTMLButtonElement>('button[data-dark-mode-trigger]')!;
+    const trigger = screen.getByRole('button', { name: 'Toggle theme' });
+    expect(trigger).toHaveAttribute('data-dark-mode-trigger');
     expect(trigger.querySelector('svg')).not.toBeNull();
-    await act(async () => {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
-      );
-      await Promise.resolve();
-    });
+    await user.click(trigger);
 
-    const darkOption = document.body.querySelector<HTMLElement>('[data-theme-option="dark"]')!;
-    expect(darkOption).not.toBeNull();
-    await act(async () => {
-      darkOption.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      darkOption.click();
-      await Promise.resolve();
-    });
+    // The menu exposes the three preferences as radio items; picking one
+    // routes through the dark-mode store.
+    await user.click(screen.getByRole('menuitemradio', { name: 'Dark' }));
 
     expect(mocks.setThemePreference).toHaveBeenCalledWith('dark');
   });
 
   it('opens the user menu and logs out through the shadcn dropdown', async () => {
-    await renderLayout();
+    const { user } = renderWithProviders(<AppLayout />);
 
-    const trigger = container.querySelector<HTMLButtonElement>(
-      '[data-testid="app-avatar-trigger"]',
-    )!;
-    await act(async () => {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
-      );
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('app-avatar-trigger'));
 
     // On desktop the account menu pops upward from the sidebar-footer card,
     // never sideways into the content area.
-    const menu = document.body.querySelector<HTMLElement>('[data-testid="app-avatar-menu"]')!;
-    expect(menu.getAttribute('data-side')).toBe('top');
+    expect(screen.getByTestId('app-avatar-menu')).toHaveAttribute('data-side', 'top');
 
     // Both entries must be actual menu items — the sidebar nav also renders
-    // 个人中心, so body-text alone cannot pin the dropdown's contents.
-    const menuItems = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'));
-    expect(menuItems.some((item) => item.textContent?.includes('个人中心'))).toBe(true);
+    // 个人中心 as a link, so body-text alone cannot pin the dropdown's contents.
+    expect(screen.getByRole('menuitem', { name: '个人中心' })).toBeInTheDocument();
 
-    const logoutItem = menuItems.find((item) => item.textContent?.includes('登出'))!;
-    await act(async () => {
-      logoutItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      logoutItem.click();
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('menuitem', { name: '登出' }));
 
     expect(mocks.logout).toHaveBeenCalled();
     expect(mocks.navigate).toHaveBeenCalledWith('/login');
   });
 
   it('switches the language through the user-menu submenu', async () => {
-    await renderLayout();
+    const { user } = renderWithProviders(<AppLayout />);
 
-    const trigger = container.querySelector<HTMLButtonElement>(
-      '[data-testid="app-avatar-trigger"]',
-    )!;
-    await act(async () => {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
-      );
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('app-avatar-trigger'));
 
     // The language switcher lives inside the account menu as a Radix submenu.
-    const subTrigger = document.body.querySelector<HTMLElement>(
-      '[data-testid="app-language-trigger"]',
-    )!;
-    expect(subTrigger.getAttribute('data-slot')).toBe('dropdown-menu-sub-trigger');
-    await act(async () => {
-      subTrigger.click();
-      await Promise.resolve();
-    });
+    const subTrigger = screen.getByTestId('app-language-trigger');
+    expect(subTrigger).toHaveAttribute('data-slot', 'dropdown-menu-sub-trigger');
+    await user.click(subTrigger);
 
-    const submenu = document.body.querySelector<HTMLElement>(
-      '[data-testid="app-language-menu"]',
-    )!;
-    expect(submenu).not.toBeNull();
+    const submenu = await screen.findByTestId('app-language-menu');
     // The sub-content must be portaled out of the parent menu: rendered
     // inline, the parent's overflow-hidden clips the whole panel away.
-    const parentMenu = document.body.querySelector<HTMLElement>(
-      '[data-testid="app-avatar-menu"]',
-    )!;
-    expect(parentMenu.contains(submenu)).toBe(false);
+    expect(screen.getByTestId('app-avatar-menu').contains(submenu)).toBe(false);
+
     // Locale items expose radio semantics so SRs announce the active locale.
-    const english = Array.from(
-      submenu.querySelectorAll<HTMLElement>('[role="menuitemradio"]'),
-    ).find((item) => item.textContent?.includes('English'))!;
-    await act(async () => {
-      english.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      english.click();
-      await Promise.resolve();
-    });
+    // fireEvent, not user.click: userEvent's pointer-leave on the sub-trigger
+    // hits Radix's grace-area math, which under happy-dom's zero-size rects
+    // closes the submenu before the click would land.
+    fireEvent.click(within(submenu).getByRole('menuitemradio', { name: 'English' }));
 
     // Selecting persists the locale and switches i18n — the language
     // persistence contract, now routed through the profile menu.
@@ -459,26 +405,10 @@ describe('AppLayout shadcn app shell behavior', () => {
   });
 
   it('navigates to the profile page from the user menu', async () => {
-    await renderLayout();
+    const { user } = renderWithProviders(<AppLayout />);
 
-    const trigger = container.querySelector<HTMLButtonElement>(
-      '[data-testid="app-avatar-trigger"]',
-    )!;
-    await act(async () => {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
-      );
-      await Promise.resolve();
-    });
-
-    const profileItem = Array.from(
-      document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent?.includes('个人中心'))!;
-    await act(async () => {
-      profileItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      profileItem.click();
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('app-avatar-trigger'));
+    await user.click(screen.getByRole('menuitem', { name: '个人中心' }));
 
     expect(mocks.navigate).toHaveBeenCalledWith('/profile');
   });

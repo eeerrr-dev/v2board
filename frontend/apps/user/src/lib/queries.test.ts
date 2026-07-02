@@ -1,15 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PlaceholderDataFunction, UseQueryOptions } from '@tanstack/react-query';
 import type { KnowledgeCategory, SubscribeInfo, UserInfo } from '@v2board/types';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const queriesSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'queries.ts'), 'utf8');
 
 const useMutation = vi.hoisted(() => vi.fn((options: unknown) => options));
 const useQuery = vi.hoisted(() => vi.fn((options: UseQueryOptions) => options));
 const invalidateQueries = vi.hoisted(() => vi.fn());
+const apiUser = vi.hoisted(() => ({
+  info: vi.fn(),
+  getSubscribe: vi.fn(),
+  fetchKnowledge: vi.fn(),
+  knowledgeDetail: vi.fn(),
+  getStripePublicKey: vi.fn(),
+}));
 
 vi.mock('@tanstack/react-query', () => ({
   queryOptions: (options: unknown) => options,
@@ -26,19 +28,34 @@ vi.mock('./api', () => ({
 }));
 
 vi.mock('@v2board/api-client', () => ({
-  user: {
-    fetchKnowledge: vi.fn(),
-    knowledgeDetail: vi.fn(),
-    getStripePublicKey: vi.fn(),
-  },
+  user: apiUser,
 }));
 
+type QueryFn = (context?: unknown) => Promise<unknown>;
+
 describe('user query state behavior', () => {
-  it('centralizes query definitions behind TanStack Query queryOptions', () => {
-    expect(queriesSource).toContain(
-      'queryOptions({ queryKey: userKeys.info, queryFn: fetchUserInfo })',
-    );
-    expect(queriesSource).toContain('export const userQueryOptions = {');
+  it('centralizes the user/info and subscribe queries behind shared queryOptions definitions', async () => {
+    const { userQueryOptions, useUserInfo, useSubscribe } = await import('./queries');
+
+    apiUser.info.mockReset().mockResolvedValue({ email: 'user@example.test' });
+    apiUser.getSubscribe.mockReset().mockResolvedValue({ subscribe_url: 'https://s.test/sub' });
+
+    const info = userQueryOptions.info() as unknown as UseQueryOptions;
+    expect(info.queryKey).toEqual(['user', 'info']);
+    await expect((info.queryFn as QueryFn)()).resolves.toEqual({ email: 'user@example.test' });
+    const { apiClient } = await import('./api');
+    expect(apiUser.info).toHaveBeenCalledWith(apiClient);
+
+    const subscribe = userQueryOptions.subscribe() as unknown as UseQueryOptions;
+    expect(subscribe.queryKey).toEqual(['user', 'subscribe']);
+    await expect((subscribe.queryFn as QueryFn)()).resolves.toEqual({
+      subscribe_url: 'https://s.test/sub',
+    });
+    expect(apiUser.getSubscribe).toHaveBeenCalledWith(apiClient);
+
+    // The hooks consume the same centralized definitions instead of redefining keys.
+    expect((useUserInfo() as unknown as UseQueryOptions).queryKey).toEqual(['user', 'info']);
+    expect((useSubscribe() as unknown as UseQueryOptions).queryKey).toEqual(['user', 'subscribe']);
   });
 
   it('keeps the previous knowledge list while a new search request is pending', async () => {
@@ -95,8 +112,6 @@ describe('user query state behavior', () => {
 
     const optedOut = useStripePublicKey('9', { enabled: false }) as unknown as UseQueryOptions;
     expect(optedOut.enabled).toBe(false);
-
-    expect(queriesSource).not.toContain('useStripePublicKeyMutation');
   });
 
   it('exposes the active-session query keyed under the user namespace', async () => {
@@ -120,26 +135,69 @@ describe('user query state behavior', () => {
     expect(options.queryKey).toEqual(['user', 'sessions']);
   });
 
-  it('keeps route-id query keys aligned with the old direct route params', () => {
-    // The key factories now take the route id honestly (`| undefined`), so the query
-    // key holds the raw param with no `as string` lie and no `?? ''` sentinel.
-    expect(queriesSource).toContain('queryKey: userKeys.orderDetail(tradeNo)');
-    expect(queriesSource).toContain('queryKey: userKeys.plan(id)');
-    expect(queriesSource).toContain('queryKey: userKeys.ticketDetail(id)');
-    expect(queriesSource).toContain('queryKey: userKeys.knowledgeDetail(id, language)');
-    expect(queriesSource).not.toContain("userKeys.orderDetail(tradeNo ?? '')");
-    expect(queriesSource).not.toContain("userKeys.plan(id ?? '')");
-    expect(queriesSource).not.toContain("userKeys.ticketDetail(id ?? '')");
-    expect(queriesSource).not.toContain("userKeys.knowledgeDetail(id ?? '', language)");
+  it('keeps route-id query keys aligned with the raw route params and gates fetching on presence', async () => {
+    const { userQueryOptions, useOrder, usePlan, useTicket, useKnowledgeDetail } = await import(
+      './queries'
+    );
+
+    // An unset route id lands a literal `undefined` in the key — never a `?? ''`
+    // sentinel, which would be a distinct, request-reaching cache key.
+    expect(userQueryOptions.orderDetail(undefined).queryKey).toStrictEqual([
+      'user',
+      'orders',
+      'detail',
+      undefined,
+    ]);
+    expect(userQueryOptions.plan(undefined).queryKey).toStrictEqual(['user', 'plan', undefined]);
+    expect(userQueryOptions.ticketDetail(undefined).queryKey).toStrictEqual([
+      'user',
+      'ticket',
+      undefined,
+    ]);
+    expect(userQueryOptions.knowledgeDetail(undefined, 'zh-CN').queryKey).toStrictEqual([
+      'user',
+      'knowledge',
+      'detail',
+      undefined,
+      'zh-CN',
+    ]);
+
+    // Present ids pass through raw, matching the old direct route params.
+    expect(userQueryOptions.orderDetail('T123').queryKey).toStrictEqual([
+      'user',
+      'orders',
+      'detail',
+      'T123',
+    ]);
+    expect(userQueryOptions.plan(7).queryKey).toStrictEqual(['user', 'plan', 7]);
+    expect(userQueryOptions.ticketDetail(3).queryKey).toStrictEqual(['user', 'ticket', 3]);
+
+    // The undefined keys stay inert because each wrapper hook gates `enabled`.
+    expect((useOrder(undefined) as unknown as UseQueryOptions).enabled).toBe(false);
+    expect((usePlan(undefined) as unknown as UseQueryOptions).enabled).toBe(false);
+    expect((useTicket(undefined) as unknown as UseQueryOptions).enabled).toBe(false);
+    expect((useKnowledgeDetail(undefined, 'zh-CN') as unknown as UseQueryOptions).enabled).toBe(
+      false,
+    );
+    expect((useOrder('T123') as unknown as UseQueryOptions).enabled).toBe(true);
   });
 
-  it('keeps the user/info and subscribe queryFns pure (chat reporting moved to QueryCache)', () => {
-    expect(queriesSource).toContain('export function fetchUserInfo() {\n  return user.info(apiClient);\n}');
-    expect(queriesSource).toContain('return user.getSubscribe(apiClient);');
-    // The reporters must not run inside the queryFns anymore — main.tsx wires them
-    // through QueryCache onSuccess instead.
-    expect(queriesSource).not.toContain('reportUserInfoToChat(info)');
-    expect(queriesSource).not.toContain('reportSubscribeToChat(data)');
+  it('keeps the user/info and subscribe queryFns pure (chat reporting moved to QueryCache)', async () => {
+    const { userQueryOptions } = await import('./queries');
+
+    const push = vi.fn();
+    window.Tawk_API = {};
+    window.$crisp = { push };
+    apiUser.info.mockReset().mockResolvedValue({ email: 'user@example.test', balance: 100 });
+    apiUser.getSubscribe.mockReset().mockResolvedValue({ u: 1, d: 2, transfer_enable: 3 });
+
+    await (userQueryOptions.info().queryFn as QueryFn)();
+    await (userQueryOptions.subscribe().queryFn as QueryFn)();
+
+    // The reporters must not run inside the queryFns anymore — main.tsx wires
+    // them through QueryCache onSuccess instead.
+    expect(push).not.toHaveBeenCalled();
+    expect(window.Tawk_API).toEqual({});
   });
 
   it('reports the user to Tawk and Crisp after a successful user/info fetch', async () => {
@@ -188,13 +246,9 @@ describe('user query state behavior', () => {
     expect(mutation.onSuccess()).toBeUndefined();
 
     expect(invalidateQueries).toHaveBeenCalledTimes(1);
-    const options = invalidateQueries.mock.calls[0]![0] as {
-      queryKey: readonly unknown[];
-    };
-    expect(options.queryKey).toEqual(['user', 'orders']);
-    expect(queriesSource).toContain("void queryClient.invalidateQueries({ queryKey: ['user', 'orders'] });");
-    expect(queriesSource).toContain("queryKey: ['user', 'orders']");
-    expect(queriesSource).not.toContain("query.queryKey[2] !== 'detail'");
+    // Exactly the whole orders prefix (list + detail + status) — no predicate
+    // filtering that would keep detail entries stale after a cancel.
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['user', 'orders'] });
   });
 
   it('invalidates the ticket list from the ticket mutations, not the call sites', async () => {
@@ -249,12 +303,22 @@ describe('user query state behavior', () => {
     expect(plans.staleTime).toBeUndefined();
   });
 
-  it('owns the order-status 3s self-stopping poll cadence inside useOrderStatus', () => {
+  it('owns the order-status 3s self-stopping poll cadence inside useOrderStatus', async () => {
+    const { useOrderStatus } = await import('./queries');
+
+    // The caller only decides whether to poll at all, via enabled.
+    const disabled = useOrderStatus(undefined) as unknown as UseQueryOptions;
+    expect(disabled.enabled).toBe(false);
+
     // The stop condition (leave pending status 0, or error) is intrinsic to the
-    // /user/order/check poll, so it lives on the hook and the page only toggles
-    // enabled. The callback is typed against the concrete number query here.
-    expect(queriesSource).toContain(
-      "query.state.status === 'error' || (query.state.data ?? 0) !== 0 ? false : 3000",
-    );
+    // /user/order/check poll, so it lives on the hook.
+    const options = useOrderStatus('T123') as unknown as UseQueryOptions & {
+      refetchInterval: (query: { state: { status: string; data?: number } }) => number | false;
+    };
+    expect(options.enabled).toBe(true);
+    expect(options.refetchInterval({ state: { status: 'pending', data: undefined } })).toBe(3000);
+    expect(options.refetchInterval({ state: { status: 'success', data: 0 } })).toBe(3000);
+    expect(options.refetchInterval({ state: { status: 'success', data: 3 } })).toBe(false);
+    expect(options.refetchInterval({ state: { status: 'error', data: 0 } })).toBe(false);
   });
 });

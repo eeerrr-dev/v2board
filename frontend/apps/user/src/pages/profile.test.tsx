@@ -1,16 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { act } from 'react';
 import type { ReactNode } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@v2board/api-client';
+import { renderWithProviders } from '@/test/render';
 import ProfilePage from './profile';
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
-const source = readFileSync(`${process.cwd()}/src/pages/profile.tsx`, 'utf8');
-const componentSource = readFileSync(`${process.cwd()}/src/pages/profile-components.tsx`, 'utf8');
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -29,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   removeSession: vi.fn(),
   confirmDialog: vi.fn(),
   getAuthData: vi.fn(),
+  logout: vi.fn(),
   sessions: {
     data: undefined as Record<
       string,
@@ -238,6 +232,7 @@ vi.mock('@/lib/legacy-settings', () => ({
 
 vi.mock('@/lib/auth', () => ({
   getAuthData: mocks.getAuthData,
+  logout: mocks.logout,
 }));
 
 vi.mock('@/components/ui/confirm-dialog', () => ({
@@ -252,13 +247,7 @@ vi.mock('@/lib/toast', () => ({
 }));
 
 describe('ProfilePage shadcn account surface', () => {
-  let container: HTMLDivElement;
-  let root: Root | null;
-
   beforeEach(() => {
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
     mocks.navigate.mockClear();
     mocks.refetchInfo.mockReset();
     mocks.refetchSubscribe.mockReset();
@@ -277,6 +266,7 @@ describe('ProfilePage shadcn account surface', () => {
     mocks.removeSession.mockResolvedValue(true);
     mocks.getAuthData.mockReset();
     mocks.getAuthData.mockReturnValue('token-current');
+    mocks.logout.mockClear();
     mocks.confirmDialog.mockReset();
     // The imperative confirm dialog is exercised elsewhere; here we auto-confirm
     // so the revoke flow's onConfirm runs synchronously.
@@ -324,13 +314,6 @@ describe('ProfilePage shadcn account surface', () => {
     mocks.botInfo = undefined;
   });
 
-  afterEach(() => {
-    if (root) act(() => root?.unmount());
-    root = null;
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
   it('shows the redeem success toast only after the mutation resolves, leaving the refresh to the mutation', async () => {
     let resolveRedeem!: () => void;
     mocks.redeem.mockImplementation(
@@ -340,40 +323,23 @@ describe('ProfilePage shadcn account surface', () => {
         }),
     );
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    const giftCardInput = container.querySelector<HTMLInputElement>(
-      'input[placeholder="请输入礼品卡"]',
-    );
-    expect(giftCardInput).toBeTruthy();
+    await user.type(screen.getByLabelText('礼品卡'), 'CARD-123');
+    await user.click(screen.getByTestId('profile-redeem-button'));
 
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        giftCardInput,
-        'CARD-123',
-      );
-      giftCardInput!.dispatchEvent(new Event('input', { bubbles: true }));
-      container.querySelector<HTMLButtonElement>('[data-testid="profile-redeem-button"]')!.click();
-      await Promise.resolve();
-    });
-
-    expect(mocks.redeem).toHaveBeenCalledWith('CARD-123');
+    await waitFor(() => expect(mocks.redeem).toHaveBeenCalledWith('CARD-123'));
     // The success toast must wait for the mutation to resolve, not fire on submit.
     expect(mocks.toastSuccess).not.toHaveBeenCalled();
 
-    await act(async () => {
-      resolveRedeem();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    resolveRedeem();
 
+    await waitFor(() =>
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('兑换成功: 账户余额 12.34'),
+    );
     // The user-record refresh is now the mutation's onSuccess job (see
     // queries.test.ts), so the component no longer refetches here directly.
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('兑换成功: 账户余额 12.34');
   });
 
   it('keeps the stuck loading state when gift card redeem times out', async () => {
@@ -381,34 +347,26 @@ describe('ProfilePage shadcn account surface', () => {
     // (the api-client's transport-failure signal), not a plain Error.
     mocks.redeem.mockRejectedValue(new ApiError(0, 'timeout exceeded'));
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    const giftCardInput = container.querySelector<HTMLInputElement>(
-      'input[placeholder="请输入礼品卡"]',
-    );
-    expect(giftCardInput).toBeTruthy();
+    await user.type(screen.getByLabelText('礼品卡'), 'CARD-FAIL');
+    await user.click(screen.getByTestId('profile-redeem-button'));
 
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        giftCardInput,
-        'CARD-FAIL',
-      );
-      giftCardInput!.dispatchEvent(new Event('input', { bubbles: true }));
-      container.querySelector<HTMLButtonElement>('[data-testid="profile-redeem-button"]')!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    const redeemButton = container.querySelector<HTMLButtonElement>(
-      '[data-testid="profile-redeem-button"]',
-    );
-    expect(mocks.redeem).toHaveBeenCalledWith('CARD-FAIL');
+    await waitFor(() => expect(mocks.redeem).toHaveBeenCalledWith('CARD-FAIL'));
+    const redeemButton = screen.getByTestId('profile-redeem-button');
+    await waitFor(() => expect(redeemButton).toBeDisabled());
+    expect(redeemButton).toHaveAttribute('aria-busy', 'true');
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
-    expect(redeemButton?.getAttribute('aria-busy')).toBe('true');
-    expect(redeemButton?.disabled).toBe(true);
+  });
+
+  it('rejects an empty gift card inline without calling the redeem API', async () => {
+    const { user } = renderWithProviders(<ProfilePage />);
+
+    await user.click(screen.getByTestId('profile-redeem-button'));
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('请输入礼品卡'));
+    expect(mocks.redeem).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('礼品卡')).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('renders the shadcn profile cards and telegram binding dialog content', async () => {
@@ -419,175 +377,123 @@ describe('ProfilePage shadcn account surface', () => {
     };
     mocks.botInfo = { username: 'legacy_bot' };
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    expect(container.querySelector('[data-testid="profile-page"]')).toBeTruthy();
-    expect(container.querySelectorAll('[data-testid="profile-card-title"]').length).toBeGreaterThan(3);
-    expect(container.textContent).toContain(
-      '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
+    expect(screen.getByTestId('profile-page')).toBeInTheDocument();
+    expect(screen.getAllByTestId('profile-card-title').length).toBeGreaterThan(3);
+    expect(
+      screen.getByText(
+        '当你的订阅地址或账户发生泄漏被他人滥用时，可以在此重置订阅信息。避免带来不必要的损失。',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('绑定Telegram')).toBeInTheDocument();
+    expect(screen.getByText('Telegram 讨论组')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '立即加入' })).toHaveAttribute(
+      'href',
+      'https://t.me/discuss',
     );
-    expect(container.textContent).toContain('绑定Telegram');
-    expect(container.textContent).toContain('Telegram 讨论组');
 
-    const startButton = container.querySelector<HTMLButtonElement>(
-      '[data-testid="profile-telegram-start"]',
+    await user.click(screen.getByRole('button', { name: '立即开始' }));
+
+    expect(screen.getByText('第一步')).toBeInTheDocument();
+    expect(screen.getByText(/打开Telegram搜索/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '@legacy_bot' })).toHaveAttribute(
+      'href',
+      'https://t.me/legacy_bot',
     );
-    expect(startButton).toBeTruthy();
+    expect(screen.getByText('向机器人发送您的')).toBeInTheDocument();
+    const copyCode = screen.getByTestId('profile-copy-code');
+    expect(copyCode).toHaveTextContent('/bind https://example.test/sub');
 
-    await act(async () => {
-      startButton!.click();
-      await Promise.resolve();
-    });
-
-    expect(container.textContent).toContain('第一步');
-    expect(container.textContent).toContain('打开Telegram搜索');
-    expect(container.querySelector('a[href="https://t.me/legacy_bot"]')?.textContent).toBe(
-      '@legacy_bot',
-    );
-    expect(container.textContent).toContain('向机器人发送您的');
-    expect(container.querySelector('[data-testid="profile-copy-code"]')?.textContent).toBe('/bind https://example.test/sub');
-
-    await act(async () => {
-      container.querySelector('[data-testid="profile-copy-code"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(copyCode);
 
     expect(mocks.copyText).toHaveBeenCalledWith('/bind https://example.test/sub');
   });
 
   it('surfaces the account identity fields and copies the uuid', async () => {
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
     // The backend already returns these on info(); the card must surface them
     // instead of leaving the email/uuid/last_login/created_at keys dead.
-    expect(container.querySelector('[data-testid="profile-account-card"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="profile-account-email"]')?.textContent).toBe(
-      'user@example.test',
+    expect(screen.getByTestId('profile-account-card')).toBeInTheDocument();
+    expect(screen.getByTestId('profile-account-email')).toHaveTextContent(
+      /^user@example\.test$/,
     );
-    expect(container.querySelector('[data-testid="profile-account-uuid"]')?.textContent).toBe(
-      'uuid-abc-123',
-    );
+    expect(screen.getByTestId('profile-account-uuid')).toHaveTextContent(/^uuid-abc-123$/);
     // Registration + last login render through the shared legacy datetime formatter.
-    expect(container.querySelector('[data-testid="profile-account-created"]')?.textContent).not.toBe(
-      '—',
-    );
-    expect(
-      container.querySelector('[data-testid="profile-account-last-login"]')?.textContent,
-    ).not.toBe('—');
+    expect(screen.getByTestId('profile-account-created')).not.toHaveTextContent('—');
+    expect(screen.getByTestId('profile-account-last-login')).not.toHaveTextContent('—');
 
-    const copyButton = container.querySelector<HTMLButtonElement>(
-      '[data-testid="profile-account-uuid-copy"]',
-    );
-    expect(copyButton).toBeTruthy();
-    await act(async () => {
-      copyButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '复制' }));
+
     expect(mocks.copyText).toHaveBeenCalledWith('uuid-abc-123');
-    expect(mocks.toastSuccess).toHaveBeenCalled();
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalled());
   });
 
-  it('falls back to an em dash when a last login timestamp is absent', async () => {
+  it('falls back to an em dash when a last login timestamp is absent', () => {
     mocks.userInfo = { ...mocks.userInfo, last_login_at: null };
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    renderWithProviders(<ProfilePage />);
 
-    expect(
-      container.querySelector('[data-testid="profile-account-last-login"]')?.textContent,
-    ).toBe('—');
+    expect(screen.getByTestId('profile-account-last-login')).toHaveTextContent(/^—$/);
   });
 
-  it('lists active sessions, badges the current device, and blocks self-revocation', async () => {
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+  it('lists active sessions, badges the current device, and blocks self-revocation', () => {
+    renderWithProviders(<ProfilePage />);
 
-    expect(container.querySelector('[data-testid="profile-sessions-card"]')).toBeTruthy();
-    const rows = container.querySelectorAll('[data-testid="profile-session-row"]');
+    expect(screen.getByTestId('profile-sessions-card')).toBeInTheDocument();
+    const rows = screen.getAllByTestId('profile-session-row');
     expect(rows).toHaveLength(2);
     // Both devices surface their UA + IP so an unfamiliar device is recognizable.
-    expect(container.textContent).toContain('Firefox on Windows');
-    expect(container.textContent).toContain('203.0.113.9');
-    expect(container.textContent).toContain('Chrome on macOS');
+    expect(screen.getByText('Firefox on Windows')).toBeInTheDocument();
+    expect(screen.getByText('203.0.113.9')).toBeInTheDocument();
+    expect(screen.getByText('Chrome on macOS')).toBeInTheDocument();
 
     // Rows sort newest-first, so the current (older) device is the second row.
-    const badges = container.querySelectorAll('[data-testid="profile-session-current"]');
-    expect(badges).toHaveLength(1);
-    expect(rows[1]!.contains(badges[0]!)).toBe(true);
+    const badge = screen.getByTestId('profile-session-current');
+    expect(rows[1]).toContainElement(badge);
 
-    const revokeButtons = container.querySelectorAll<HTMLButtonElement>(
-      '[data-testid="profile-session-revoke"]',
-    );
+    const revokeButtons = screen.getAllByRole('button', { name: '注销' });
     expect(revokeButtons).toHaveLength(2);
     // The other device can be signed out; the current device cannot revoke itself.
-    expect(revokeButtons[0]!.disabled).toBe(false);
-    expect(revokeButtons[1]!.disabled).toBe(true);
+    expect(revokeButtons[0]).toBeEnabled();
+    expect(revokeButtons[1]).toBeDisabled();
   });
 
   it('revokes another device through the confirm dialog and toasts on success', async () => {
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    const revokeButtons = container.querySelectorAll<HTMLButtonElement>(
-      '[data-testid="profile-session-revoke"]',
-    );
-
-    await act(async () => {
-      revokeButtons[0]!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    const revokeButtons = screen.getAllByRole('button', { name: '注销' });
+    await user.click(revokeButtons[0]!);
 
     expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
     // The revoke posts the guid of the other device, not the current one.
-    expect(mocks.removeSession).toHaveBeenCalledWith('guid-other');
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('已注销该设备');
+    await waitFor(() => expect(mocks.removeSession).toHaveBeenCalledWith('guid-other'));
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('已注销该设备'));
   });
 
   it('shows a retryable error state when the session fetch fails', async () => {
     mocks.sessions = { data: undefined, isLoading: false, isError: true };
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    expect(container.querySelector('[data-testid="profile-sessions-error"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="profile-session-row"]')).toBeNull();
+    expect(screen.getByTestId('profile-sessions-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('profile-session-row')).not.toBeInTheDocument();
 
-    const retry = container.querySelector<HTMLButtonElement>('[data-testid="error-state-retry"]');
-    expect(retry).toBeTruthy();
-    await act(async () => {
-      retry!.click();
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: '重试' }));
+
     expect(mocks.refetchSessions).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a loading state while the session list is fetching', async () => {
+  it('shows a loading state while the session list is fetching', () => {
     mocks.sessions = { data: undefined, isLoading: true, isError: false };
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    renderWithProviders(<ProfilePage />);
 
-    expect(container.querySelector('[data-testid="profile-sessions-card"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="profile-session-row"]')).toBeNull();
-    expect(container.querySelector('[data-testid="profile-sessions-error"]')).toBeNull();
-    expect(container.textContent).toContain('加载中');
+    expect(screen.getByTestId('profile-sessions-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('profile-session-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('profile-sessions-error')).not.toBeInTheDocument();
+    expect(screen.getByText('加载中')).toBeInTheDocument();
   });
 
   it('uses the legacy bare Telegram bind command when no subscribe url is cached', async () => {
@@ -599,73 +505,41 @@ describe('ProfilePage shadcn account surface', () => {
     mocks.botInfo = { username: 'legacy_bot' };
     mocks.subscribe = undefined;
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    const startButton = container.querySelector<HTMLButtonElement>(
-      '[data-testid="profile-telegram-start"]',
-    );
-    expect(startButton).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '立即开始' }));
 
-    await act(async () => {
-      startButton!.click();
-      await Promise.resolve();
-    });
+    // The command the user pastes to the bot must be exactly `/bind` — never
+    // `/bind undefined` — both as rendered and as copied to the clipboard.
+    const copyCode = screen.getByTestId('profile-copy-code');
+    expect(copyCode).toHaveTextContent(/^\/bind$/);
 
-    expect(container.querySelector('[data-testid="profile-copy-code"]')?.textContent).toBe('/bind');
-    expect(container.textContent).not.toContain('undefined');
-  });
+    await user.click(copyCode);
 
-  it('keeps direct source values for profile switches and omits empty Telegram bind urls', () => {
-    expect(source).toContain('checked={data?.auto_renewal}');
-    expect(source).toContain('checked={data?.remind_expire}');
-    expect(source).toContain('checked={data?.remind_traffic}');
-    expect(componentSource).toContain(
-      "const bindCommand = subscribeUrl ? `/bind ${subscribeUrl}` : '/bind';",
-    );
-    expect(source).not.toContain('checked={Boolean(data?.auto_renewal)}');
-    expect(source).not.toContain('checked={Boolean(data?.remind_expire)}');
-    expect(source).not.toContain('checked={Boolean(data?.remind_traffic)}');
-    expect(componentSource).not.toContain('/bind undefined');
+    expect(mocks.copyText).toHaveBeenCalledWith('/bind');
   });
 
   it('updates profile switches with the original 0/1 payload and leaves the refresh to the mutation', async () => {
     mocks.updateProfile.mockResolvedValue(true);
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    const switches = container.querySelectorAll<HTMLButtonElement>(
-      '[data-testid="profile-switch"]',
-    );
-    expect(switches).toHaveLength(3);
-    expect(switches[0]!.getAttribute('aria-checked')).toBe('false');
-    expect(switches[0]!.getAttribute('aria-label')).toBe('自动续费');
-    expect(switches[1]!.getAttribute('aria-label')).toBe('到期邮件提醒');
-    expect(switches[2]!.getAttribute('aria-label')).toBe('流量邮件提醒');
+    expect(screen.getAllByTestId('profile-switch')).toHaveLength(3);
+    const autoRenewal = screen.getByRole('switch', { name: '自动续费' });
+    expect(autoRenewal).toHaveAttribute('aria-checked', 'false');
+    const remindExpire = screen.getByRole('switch', { name: '到期邮件提醒' });
+    expect(screen.getByRole('switch', { name: '流量邮件提醒' })).toBeInTheDocument();
 
-    await act(async () => {
-      switches[0]!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await user.click(autoRenewal);
 
-    expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: 1 });
+    await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: 1 }));
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
 
     mocks.updateProfile.mockRejectedValue(new Error('failed'));
 
-    await act(async () => {
-      switches[1]!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await user.click(remindExpire);
 
-    expect(mocks.updateProfile).toHaveBeenCalledWith({ remind_expire: 1 });
+    await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ remind_expire: 1 }));
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
   });
 
@@ -679,89 +553,68 @@ describe('ProfilePage shadcn account surface', () => {
       telegram_id: null,
     };
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    const switches = container.querySelectorAll<HTMLButtonElement>(
-      '[data-testid="profile-switch"]',
-    );
+    // The backend sends 0/1 numbers; the switches must normalize them into a
+    // real Radix boolean checked state instead of leaking raw values.
+    const switches = screen.getAllByTestId('profile-switch');
     expect(switches).toHaveLength(3);
-    expect(switches[0]!.getAttribute('aria-checked')).toBe('true');
-    expect(switches[0]!.dataset.state).toBe('checked');
-    expect(switches[1]!.getAttribute('aria-checked')).toBe('false');
-    expect(switches[1]!.dataset.state).toBe('unchecked');
-    expect(switches[2]!.getAttribute('aria-checked')).toBe('true');
-    expect(switches[2]!.dataset.state).toBe('checked');
+    expect(switches[0]).toHaveAttribute('aria-checked', 'true');
+    expect(switches[0]).toHaveAttribute('data-state', 'checked');
+    expect(switches[1]).toHaveAttribute('aria-checked', 'false');
+    expect(switches[1]).toHaveAttribute('data-state', 'unchecked');
+    expect(switches[2]).toHaveAttribute('aria-checked', 'true');
+    expect(switches[2]).toHaveAttribute('data-state', 'checked');
 
-    await act(async () => {
-      switches[0]!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await user.click(switches[0]!);
 
-    expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: 0 });
+    await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ auto_renewal: 0 }));
   });
 
-  it('keeps profile form values in react-hook-form schemas instead of imperative refs', () => {
-    expect(source).toContain("from 'react-hook-form'");
-    expect(source).toContain("from 'zod'");
-    expect(source).toContain('zodResolver(passwordSchema)');
-    expect(source).toContain('zodResolver(giftCardSchema)');
-    expect(source).toContain("passwordForm.register('oldPassword')");
-    expect(source).toContain("giftCardForm.register('code')");
-    expect(source).not.toContain('setPasswordForm');
-    expect(source).not.toContain('setGiftCard');
-    expect(source).not.toContain('oldPasswordRef.current!.value');
-    expect(source).not.toContain('newPasswordRef.current!.value');
-    expect(source).not.toContain('confirmPasswordRef.current!.value');
-    expect(source).not.toContain('giftCardRef.current!.value');
+  it('blocks a mismatched confirm password with an inline error instead of calling the API', async () => {
+    const { user } = renderWithProviders(<ProfilePage />);
+
+    await user.type(screen.getByLabelText('旧密码'), 'old-password');
+    const newPasswordInputs = screen.getAllByLabelText('新密码');
+    expect(newPasswordInputs).toHaveLength(2);
+    await user.type(newPasswordInputs[0]!, 'new-password');
+    await user.type(newPasswordInputs[1]!, 'different-password');
+    await user.click(screen.getByTestId('profile-password-save'));
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('两次新密码输入不同'));
+    // The mismatch also surfaces inline at the confirm field (toast is mocked,
+    // so this text can only come from the form error).
+    expect(screen.getByText('两次新密码输入不同')).toBeInTheDocument();
+    expect(newPasswordInputs[1]).toHaveAttribute('aria-invalid', 'true');
+    expect(mocks.changePassword).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it('keeps the old password-change success flow without clearing local auth', async () => {
     mocks.changePassword.mockResolvedValue(true);
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    const passwordInputs = container.querySelectorAll<HTMLInputElement>('input[type="password"]');
-    expect(passwordInputs).toHaveLength(3);
+    await user.type(screen.getByLabelText('旧密码'), 'old-password');
+    const newPasswordInputs = screen.getAllByLabelText('新密码');
+    await user.type(newPasswordInputs[0]!, 'new-password');
+    await user.type(newPasswordInputs[1]!, 'new-password');
+    await user.click(screen.getByTestId('profile-password-save'));
 
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        passwordInputs[0],
-        'old-password',
-      );
-      passwordInputs[0]!.dispatchEvent(new Event('input', { bubbles: true }));
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        passwordInputs[1],
-        'new-password',
-      );
-      passwordInputs[1]!.dispatchEvent(new Event('input', { bubbles: true }));
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        passwordInputs[2],
-        'new-password',
-      );
-      passwordInputs[2]!.dispatchEvent(new Event('input', { bubbles: true }));
-      container.querySelector<HTMLButtonElement>('[data-testid="profile-password-save"]')!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mocks.changePassword).toHaveBeenCalledWith({
-      oldPassword: 'old-password',
-      newPassword: 'new-password',
-    });
+    await waitFor(() =>
+      expect(mocks.changePassword).toHaveBeenCalledWith({
+        oldPassword: 'old-password',
+        newPassword: 'new-password',
+      }),
+    );
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/login'));
     expect(mocks.toastSuccess).toHaveBeenCalledWith('修改成功，请重新登陆');
-    expect(mocks.navigate).toHaveBeenCalledWith('/login');
     expect(mocks.toastSuccess.mock.invocationCallOrder[0]!).toBeLessThan(
       mocks.navigate.mock.invocationCallOrder[0]!,
     );
-    expect(source).not.toContain("import { logout } from '@/lib/auth';");
-    expect(source).not.toContain('logout();');
+    // Legacy behavior: the redirect happens with the token intact — the page
+    // must not clear local auth on its way to /login.
+    expect(mocks.logout).not.toHaveBeenCalled();
   });
 
   it('submits the deposit order payload from the shadcn recharge dialog', async () => {
@@ -772,52 +625,23 @@ describe('ProfilePage shadcn account surface', () => {
     };
     mocks.saveOrder.mockResolvedValue('DEPOSIT123');
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    const rechargeButton = container.querySelector<HTMLButtonElement>(
-      '[data-testid="profile-recharge"]',
+    await user.click(screen.getByTestId('profile-recharge'));
+
+    const amountInput = screen.getByTestId('profile-deposit-input');
+    expect(amountInput).toHaveAttribute('placeholder', '请输入充值金额CNY');
+    await user.type(amountInput, '12.34');
+    await user.click(screen.getByTestId('profile-deposit-confirm'));
+
+    await waitFor(() =>
+      expect(mocks.saveOrder).toHaveBeenCalledWith({
+        plan_id: 0,
+        period: 'deposit',
+        deposit_amount: 1234,
+      }),
     );
-    expect(rechargeButton).toBeTruthy();
-
-    await act(async () => {
-      rechargeButton!.click();
-      await Promise.resolve();
-    });
-
-    const amountInput = container.querySelector<HTMLInputElement>(
-      'input[placeholder="请输入充值金额CNY"]',
-    );
-    expect(amountInput).toBeTruthy();
-
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        amountInput,
-        '12.34',
-      );
-      amountInput!.dispatchEvent(new Event('input', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    const confirmButton = container.querySelector<HTMLButtonElement>(
-      '[data-testid="profile-deposit-confirm"]',
-    );
-    expect(confirmButton).toBeTruthy();
-
-    await act(async () => {
-      confirmButton!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mocks.saveOrder).toHaveBeenCalledWith({
-      plan_id: 0,
-      period: 'deposit',
-      deposit_amount: 1234,
-    });
-    expect(mocks.navigate).toHaveBeenCalledWith('/order/DEPOSIT123');
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/DEPOSIT123'));
   });
 
   it('rejects a deposit amount with more than two decimals inline instead of closing', async () => {
@@ -827,42 +651,21 @@ describe('ProfilePage shadcn account surface', () => {
       telegram_discuss_link: '',
     };
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[data-testid="profile-recharge"]')!.click();
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('profile-recharge'));
 
-    const amountInput = container.querySelector<HTMLInputElement>(
-      'input[placeholder="请输入充值金额CNY"]',
-    );
     // 19.999 is finite and positive but cannot be represented in cents; the old
     // path silently rounded it to 2000 cents and closed the dialog.
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        amountInput,
-        '19.999',
-      );
-      amountInput!.dispatchEvent(new Event('input', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.type(screen.getByTestId('profile-deposit-input'), '19.999');
+    await user.click(screen.getByTestId('profile-deposit-confirm'));
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[data-testid="profile-deposit-confirm"]')!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mocks.saveOrder).not.toHaveBeenCalled();
     // The dialog stays open with an inline error rather than silently closing.
-    expect(container.querySelector('[data-testid="profile-deposit-error"]')?.textContent).toBe(
+    expect(await screen.findByTestId('profile-deposit-error')).toHaveTextContent(
       '充值金额最多支持两位小数',
     );
-    expect(container.querySelector('[data-testid="profile-deposit-confirm"]')).toBeTruthy();
+    expect(mocks.saveOrder).not.toHaveBeenCalled();
+    expect(screen.getByTestId('profile-deposit-confirm')).toBeInTheDocument();
   });
 
   it('uses shadcn confirmation dialogs for reset and telegram unbind behavior', async () => {
@@ -881,61 +684,36 @@ describe('ProfilePage shadcn account surface', () => {
     mocks.resetSub.mockResolvedValue(true);
     mocks.unbindTelegram.mockResolvedValue(true);
 
-    await act(async () => {
-      root!.render(<ProfilePage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<ProfilePage />);
 
-    const resetButton = container.querySelector<HTMLButtonElement>(
-      '[data-testid="profile-reset-button"]',
-    );
-    expect(resetButton).toBeTruthy();
+    await user.click(screen.getByTestId('profile-reset-button'));
 
-    await act(async () => {
-      resetButton!.click();
-      await Promise.resolve();
-    });
+    expect(screen.getByText('确定要重置订阅信息？')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '如果您的订阅地址或信息发生泄露可以执行此操作。重置后您的 UUID 及订阅将会变更，需要重新导入订阅。',
+      ),
+    ).toBeInTheDocument();
 
-    expect(container.textContent).toContain('确定要重置订阅信息？');
-    expect(container.textContent).toContain(
-      '如果您的订阅地址或信息发生泄露可以执行此操作。重置后您的 UUID 及订阅将会变更，需要重新导入订阅。',
-    );
+    await user.click(screen.getByTestId('profile-confirm-primary'));
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[data-testid="profile-confirm-primary"]')!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mocks.resetSub).toHaveBeenCalledTimes(1);
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('重置成功');
+    await waitFor(() => expect(mocks.resetSub).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('重置成功'));
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
 
-    const unbindButton = container.querySelector<HTMLButtonElement>(
-      '[data-testid="profile-telegram-unbind-button"]',
-    );
-    expect(unbindButton).toBeTruthy();
+    await user.click(screen.getByTestId('profile-telegram-unbind-button'));
 
-    await act(async () => {
-      unbindButton!.click();
-      await Promise.resolve();
-    });
+    expect(screen.getByText('确定要解除绑定Telegram？')).toBeInTheDocument();
+    expect(
+      screen.getByText('如果你的Telegram ID已失效可以进行此操作。重置后你需要重新进行绑定。'),
+    ).toBeInTheDocument();
 
-    expect(container.textContent).toContain('确定要解除绑定Telegram？');
-    expect(container.textContent).toContain(
-      '如果你的Telegram ID已失效可以进行此操作。重置后你需要重新进行绑定。',
-    );
+    await user.click(screen.getByTestId('profile-confirm-primary'));
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[data-testid="profile-confirm-primary"]')!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mocks.unbindTelegram).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mocks.unbindTelegram).toHaveBeenCalledTimes(1));
     // Unbinding's user-record refresh now lives in the mutation's onSuccess; the
     // disabled subscribe query still needs the explicit call-site refetch.
     expect(mocks.refetchInfo).not.toHaveBeenCalled();
-    expect(mocks.refetchSubscribe).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mocks.refetchSubscribe).toHaveBeenCalledTimes(1));
   });
 });

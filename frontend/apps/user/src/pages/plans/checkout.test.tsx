@@ -1,20 +1,15 @@
-import { readFileSync } from 'node:fs';
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Plan } from '@v2board/types';
+import { renderWithProviders } from '@/test/render';
 import PlanCheckoutPage from './checkout';
-
-const checkoutSource = readFileSync(`${process.cwd()}/src/pages/plans/checkout.tsx`, 'utf8');
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   invalidateQueries: vi.fn(),
+  removeQueries: vi.fn(),
   confirmDialog: vi.fn(),
+  usePlan: vi.fn(),
   checkCoupon: vi.fn(),
   saveOrder: vi.fn(),
   cancelOrder: vi.fn(),
@@ -114,6 +109,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     invalidateQueries: mocks.invalidateQueries,
+    removeQueries: mocks.removeQueries,
   }),
 }));
 
@@ -122,16 +118,11 @@ vi.mock('@/components/ui/confirm-dialog', () => ({
 }));
 
 vi.mock('@/lib/queries', () => ({
-  userKeys: {
-    orderDetail: (tradeNo: string) => ['user', 'orders', 'detail', tradeNo],
-    plans: ['user', 'plans'],
-    plan: (id: string) => ['user', 'plan', id],
-  },
-  usePlan: () => ({
+  usePlan: mocks.usePlan.mockImplementation(() => ({
     data: mocks.plan,
     error: mocks.planError,
     isFetching: mocks.planFetching,
-  }),
+  })),
   useCommConfig: () => ({
     data: {
       currency: 'CNY',
@@ -162,43 +153,78 @@ vi.mock('@/lib/queries', () => ({
   }),
 }));
 
-describe('PlanCheckoutPage shadcn commerce markup', () => {
-  beforeEach(() => {
-    resetPlan();
-    mocks.plan.renew = 1;
-    mocks.info = { plan_id: 1 };
-    mocks.orders = [];
-  });
+beforeEach(() => {
+  resetPlan();
+  mocks.navigate.mockClear();
+  mocks.invalidateQueries.mockClear();
+  mocks.removeQueries.mockClear();
+  mocks.confirmDialog.mockClear();
+  mocks.usePlan.mockClear();
+  mocks.checkCoupon.mockReset();
+  mocks.saveOrder.mockReset();
+  mocks.cancelOrder.mockReset();
+  mocks.refetchOrders.mockClear();
+  mocks.info = { plan_id: 1 };
+  mocks.subscribe = { expired_at: 4_102_444_800 };
+  mocks.orders = [];
+});
 
+describe('PlanCheckoutPage rendering', () => {
   it('renders the cashier shell, default period, coupon input, and summary card', () => {
-    const html = renderToStaticMarkup(<PlanCheckoutPage />);
+    const { container } = renderWithProviders(<PlanCheckoutPage />);
 
-    expect(html).toContain('id="cashier"');
-    expect(html).toContain('Feature A');
-    expect(html).toContain('lucide-check');
-    expect(html).toContain('付款周期');
-    expect(html).toContain('data-testid="checkout-period-option"');
-    expect(html).toContain('data-state="checked"');
-    expect(html).toContain('Legacy Plan x 月付');
-    expect(html).toContain('¥10.00');
-    expect(html).toContain('¥ 10.00 CNY');
-    expect(html).toContain('data-testid="checkout-summary"');
-    expect(html).toContain('data-testid="commerce-submit"');
-    expect(html).toContain('data-testid="coupon-input"');
-    expect(html).toContain('placeholder="有优惠券？"');
-    expect(checkoutSource).not.toContain('btn-block btn-primary');
-    expect(html).not.toContain('block block-link-pop');
+    // #cashier is a Tier-1 interaction-parity hook.
+    expect(container.querySelector('#cashier')).toBeInTheDocument();
+
+    // The route plan id feeds the plan query untouched.
+    expect(mocks.usePlan).toHaveBeenCalledWith('1');
+
+    // Plan feature content renders with the supported check icon. The icon has
+    // no accessible name, so the lucide class is the only queryable hook.
+    expect(screen.getByText('Feature A')).toBeInTheDocument();
+    expect(container.querySelector('.lucide-check')).toBeInTheDocument();
+
+    // Every priced period is selectable; the first priced one is pre-checked.
+    expect(screen.getByText('付款周期')).toBeInTheDocument();
+    expect(screen.getAllByTestId('checkout-period-option')).toHaveLength(3);
+    const monthOption = screen.getByRole('radio', { name: /月付/, checked: true });
+    // The parity harness selects [data-testid="checkout-period-option"][data-state="checked"].
+    expect(monthOption).toHaveAttribute('data-testid', 'checkout-period-option');
+    expect(monthOption).toHaveAttribute('data-state', 'checked');
+    expect(monthOption).toHaveTextContent('¥10.00');
+
+    const summary = screen.getByTestId('checkout-summary');
+    expect(summary).toHaveTextContent('Legacy Plan x 月付');
+    expect(summary).toHaveTextContent('¥10.00');
+    expect(summary).toHaveTextContent('¥ 10.00 CNY');
+
+    // coupon-input and commerce-submit are Tier-1 hooks (AGENTS.md).
+    expect(screen.getByPlaceholderText('有优惠券？')).toHaveAttribute(
+      'data-testid',
+      'coupon-input',
+    );
+    expect(screen.getByTestId('commerce-submit')).toBeInTheDocument();
   });
 
-  it('renders the shadcn non-renewable branch', () => {
+  it('renders the non-renewable branch and routes back to the plan list', async () => {
     mocks.plan.renew = 0;
     mocks.info = { plan_id: 1 };
 
-    const html = renderToStaticMarkup(<PlanCheckoutPage />);
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
 
-    expect(html).toContain('data-testid="plan-non-renewable"');
-    expect(html).toContain('该订阅无法续费，仅允许新用户购买');
-    expect(html).toContain('选择其它订阅');
+    const card = screen.getByTestId('plan-non-renewable');
+    expect(card).toHaveTextContent('该订阅无法续费，仅允许新用户购买');
+
+    await user.click(within(card).getByRole('button', { name: '选择其它订阅' }));
+    expect(mocks.navigate).toHaveBeenCalledWith('/plan');
+  });
+
+  it('renders markdown/html plan content through the direct content handoff', () => {
+    mocks.plan.content = '<p>HTML plan body</p>';
+
+    renderWithProviders(<PlanCheckoutPage />);
+
+    expect(screen.getByText('HTML plan body')).toBeInTheDocument();
   });
 
   it('keeps reset_price as the old default period without rendering it as a selectable period', () => {
@@ -208,94 +234,47 @@ describe('PlanCheckoutPage shadcn commerce markup', () => {
     plan.onetime_price = null;
     plan.reset_price = 300;
 
-    const html = renderToStaticMarkup(<PlanCheckoutPage />);
+    renderWithProviders(<PlanCheckoutPage />);
 
-    expect(html).toContain('Legacy Plan x 流量重置包');
-    expect(html).toContain('¥3.00');
-    expect(html).toContain('¥ 3.00 CNY');
-    expect(html).not.toContain('data-testid="checkout-period-option"');
+    const summary = screen.getByTestId('checkout-summary');
+    expect(summary).toHaveTextContent('Legacy Plan x 流量重置包');
+    expect(summary).toHaveTextContent('¥3.00');
+    expect(summary).toHaveTextContent('¥ 3.00 CNY');
+    expect(screen.queryByTestId('checkout-period-option')).not.toBeInTheDocument();
   });
 
-  it('uses stable period select keys without random remounts', () => {
-    const periodSource = checkoutSource.slice(
-      checkoutSource.indexOf('periods.map((item) => {'),
-      checkoutSource.indexOf('</div>', checkoutSource.indexOf('periods.map((item) => {')),
-    );
+  it('selects a period without remounting it and submits the selected period', async () => {
+    mocks.saveOrder.mockResolvedValue('TRADE-YEAR');
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
 
-    expect(periodSource).toContain('periods.map((item) => {');
-    expect(periodSource).toContain('key={item.period}');
-    expect(periodSource).not.toContain('key={Math.random()}');
-  });
+    const yearOption = screen.getByRole('radio', { name: /年付/ });
+    await user.click(yearOption);
 
-  it('keeps the direct plan content handoff on checkout', () => {
-    expect(checkoutSource).toContain('content={plan.content}');
-    expect(checkoutSource).not.toContain("content={plan.content ?? ''}");
-  });
+    expect(yearOption).toHaveAttribute('data-state', 'checked');
+    // Stable keys: the clicked option must survive the re-render (a random key
+    // would remount the node and drop focus).
+    expect(yearOption).toHaveFocus();
+    const summary = screen.getByTestId('checkout-summary');
+    expect(summary).toHaveTextContent('Legacy Plan x 年付');
+    expect(summary).toHaveTextContent('¥ 90.00 CNY');
 
-  it('keeps the route plan id as the checkout API input', () => {
-    expect(checkoutSource).toContain('const planId = plan_id;');
-    expect(checkoutSource).toContain('usePlan(planId)');
-    expect(checkoutSource).toContain('planId as string');
-    expect(checkoutSource).not.toContain("const planId = plan_id ?? ''");
-    expect(checkoutSource).not.toContain("usePlan(planId ?? '')");
-  });
+    await user.click(screen.getByTestId('commerce-submit'));
 
-  it('keeps the direct selected period in the order payload', () => {
-    expect(checkoutSource).toContain('period: currentPeriod,');
-    expect(checkoutSource).toContain("if (appliedCoupon?.name) payload.coupon_code = appliedCoupon.code;");
-    expect(checkoutSource).toContain('useState<PlanPeriod | undefined>()');
-    expect(checkoutSource).toContain('function getDefaultPeriod(plan: Plan): PlanPeriod | undefined');
-    expect(checkoutSource).not.toContain('period: currentPeriod ?? undefined');
-    expect(checkoutSource).not.toContain('coupon_code: appliedCoupon?.name ? appliedCoupon.code : undefined');
-    expect(checkoutSource).not.toContain('useState<PlanPeriod | null>');
-    expect(checkoutSource).not.toContain(
-      'const currentPeriod = (period ?? getDefaultPeriod(planQuery.data)) as PlanPeriod;',
-    );
-  });
-
-  it('keeps coupon checks on controlled state instead of imperative input refs', () => {
-    expect(checkoutSource).toContain("const [couponCode, setCouponCode] = useState('');");
-    expect(checkoutSource).toContain('code: couponCode');
-    expect(checkoutSource).not.toContain('couponRef.current!.value');
-    expect(checkoutSource).not.toContain("couponRef.current?.value ?? ''");
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-YEAR'));
+    expect(mocks.saveOrder).toHaveBeenCalledWith({ plan_id: 1, period: 'year_price' });
   });
 
   it('lets TanStack Query retain checkout cache instead of clearing it on unmount', () => {
-    expect(checkoutSource).not.toContain('removeQueries');
-    expect(checkoutSource).not.toContain('useQueryClient');
+    const { unmount } = renderWithProviders(<PlanCheckoutPage />);
+
+    unmount();
+
+    expect(mocks.invalidateQueries).not.toHaveBeenCalled();
+    expect(mocks.removeQueries).not.toHaveBeenCalled();
   });
 });
 
 describe('PlanCheckoutPage commerce behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    resetPlan();
-    mocks.navigate.mockClear();
-    mocks.invalidateQueries.mockClear();
-    mocks.confirmDialog.mockClear();
-    mocks.checkCoupon.mockReset();
-    mocks.saveOrder.mockReset();
-    mocks.cancelOrder.mockReset();
-    mocks.refetchOrders.mockClear();
-    mocks.plan.renew = 1;
-    mocks.info = { plan_id: 1 };
-    mocks.subscribe = { expired_at: 4_102_444_800 };
-    mocks.orders = [];
-    mocks.planError = null;
-    mocks.planFetching = false;
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
   it('applies coupon values through the original cents math and saves the order', async () => {
     mocks.checkCoupon.mockResolvedValue({
       id: 1,
@@ -315,51 +294,25 @@ describe('PlanCheckoutPage commerce behavior', () => {
     });
     mocks.saveOrder.mockResolvedValue('TRADE123');
 
-    await act(async () => {
-      root.render(<PlanCheckoutPage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
 
-    const couponInput = container.querySelector<HTMLInputElement>('[data-testid="coupon-input"]')!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        couponInput,
-        'SAVE',
-      );
-      couponInput.dispatchEvent(new Event('input', { bubbles: true }));
-      await Promise.resolve();
-    });
-    const verifyButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('验证'),
-    )!;
-
-    await act(async () => {
-      verifyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await user.type(screen.getByTestId('coupon-input'), 'SAVE');
+    await user.click(screen.getByRole('button', { name: '验证' }));
 
     expect(mocks.checkCoupon).toHaveBeenCalledWith({ code: 'SAVE', planId: '1' });
-    expect(container.textContent).toContain('Legacy Coupon');
-    expect(container.textContent).toContain('-¥2.50');
-    expect(container.textContent).toContain('¥ 7.50 CNY');
+    const summary = screen.getByTestId('checkout-summary');
+    expect(await within(summary).findByText('Legacy Coupon')).toBeInTheDocument();
+    expect(summary).toHaveTextContent('-¥2.50');
+    expect(summary).toHaveTextContent('¥ 7.50 CNY');
 
-    const submitButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('下单'),
-    )!;
+    await user.click(screen.getByTestId('commerce-submit'));
 
-    await act(async () => {
-      submitButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE123'));
     expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
       period: 'month_price',
       coupon_code: 'SAVE',
     });
-    expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE123');
   });
 
   it('drops a previously applied coupon when a re-verify fails, so no stale discount is submitted', async () => {
@@ -383,59 +336,33 @@ describe('PlanCheckoutPage commerce behavior', () => {
       .mockRejectedValueOnce(new Error('invalid'));
     mocks.saveOrder.mockResolvedValue('TRADE-NO-COUPON');
 
-    await act(async () => {
-      root.render(<PlanCheckoutPage />);
-      await Promise.resolve();
-    });
-
-    const couponInput = container.querySelector<HTMLInputElement>('[data-testid="coupon-input"]')!;
-    const setCoupon = (value: string) => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        couponInput,
-        value,
-      );
-      couponInput.dispatchEvent(new Event('input', { bubbles: true }));
-    };
-    const clickVerify = async () => {
-      const verifyButton = [...container.querySelectorAll('button')].find((button) =>
-        button.textContent?.includes('验证'),
-      )!;
-      await act(async () => {
-        verifyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-    };
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
+    const couponInput = screen.getByTestId('coupon-input');
+    const verifyButton = screen.getByRole('button', { name: '验证' });
+    const summary = screen.getByTestId('checkout-summary');
 
     // Apply a valid coupon: the discount and reduced total appear.
-    await act(async () => {
-      setCoupon('SAVE');
-      await Promise.resolve();
-    });
-    await clickVerify();
-    expect(container.textContent).toContain('Legacy Coupon');
-    expect(container.textContent).toContain('¥ 7.50 CNY');
+    await user.type(couponInput, 'SAVE');
+    await user.click(verifyButton);
+    expect(await within(summary).findByText('Legacy Coupon')).toBeInTheDocument();
+    expect(summary).toHaveTextContent('¥ 7.50 CNY');
 
     // Re-verify a different, now-invalid code: the previously applied coupon
     // must be dropped rather than left silently in place.
-    await act(async () => {
-      setCoupon('BAD');
-      await Promise.resolve();
-    });
-    await clickVerify();
-    expect(container.textContent).not.toContain('Legacy Coupon');
-    expect(container.textContent).toContain('¥ 10.00 CNY');
+    await user.clear(couponInput);
+    await user.type(couponInput, 'BAD');
+    await user.click(verifyButton);
+    expect(mocks.checkCoupon).toHaveBeenLastCalledWith({ code: 'BAD', planId: '1' });
+    await waitFor(() =>
+      expect(within(summary).queryByText('Legacy Coupon')).not.toBeInTheDocument(),
+    );
+    expect(summary).toHaveTextContent('¥ 10.00 CNY');
 
     // The order is then placed with no stale coupon_code.
-    const submitButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('下单'),
-    )!;
-    await act(async () => {
-      submitButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(mocks.saveOrder).toHaveBeenCalledWith({ plan_id: 1, period: 'month_price' });
+    await user.click(screen.getByTestId('commerce-submit'));
+    await waitFor(() =>
+      expect(mocks.saveOrder).toHaveBeenCalledWith({ plan_id: 1, period: 'month_price' }),
+    );
   });
 
   it('keeps the undefined period payload when no price period exists', async () => {
@@ -446,30 +373,20 @@ describe('PlanCheckoutPage commerce behavior', () => {
     plan.reset_price = null;
     mocks.saveOrder.mockResolvedValue('TRADE-NO-PERIOD');
 
-    await act(async () => {
-      root.render(<PlanCheckoutPage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
 
-    expect(container.textContent).toContain('Legacy Plan x ');
-    expect(container.textContent).toContain('¥NaN');
-    expect(container.textContent).toContain('¥ NaN CNY');
+    const summary = screen.getByTestId('checkout-summary');
+    expect(summary).toHaveTextContent('Legacy Plan x');
+    expect(summary).toHaveTextContent('¥NaN');
+    expect(summary).toHaveTextContent('¥ NaN CNY');
 
-    const submitButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('下单'),
-    )!;
+    await user.click(screen.getByTestId('commerce-submit'));
 
-    await act(async () => {
-      submitButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-NO-PERIOD'));
     expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
       period: undefined,
     });
-    expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE-NO-PERIOD');
   });
 
   it('confirms and cancels the first unfinished order before creating a new one', async () => {
@@ -477,19 +394,9 @@ describe('PlanCheckoutPage commerce behavior', () => {
     mocks.cancelOrder.mockResolvedValue(true);
     mocks.saveOrder.mockResolvedValue('TRADE456');
 
-    await act(async () => {
-      root.render(<PlanCheckoutPage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
 
-    const submitButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('下单'),
-    )!;
-
-    await act(async () => {
-      submitButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('commerce-submit'));
 
     expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
     const options = mocks.confirmDialog.mock.calls[0]![0] as {
@@ -506,17 +413,12 @@ describe('PlanCheckoutPage commerce behavior', () => {
     options.onCancel();
     expect(mocks.navigate).toHaveBeenCalledWith('/order');
 
-    await act(async () => {
-      await options.onConfirm();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await options.onConfirm();
 
     expect(mocks.cancelOrder).toHaveBeenCalledWith('PENDING123');
+    // Cancelling the stale order must not trigger refetch/invalidation churn.
     expect(mocks.refetchOrders).not.toHaveBeenCalled();
     expect(mocks.invalidateQueries).not.toHaveBeenCalled();
-    expect(checkoutSource).not.toContain('userKeys.orderDetail(unfinishedOrder.trade_no)');
-    expect(checkoutSource).not.toContain('orders.refetch()');
     expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
       period: 'month_price',
@@ -529,19 +431,9 @@ describe('PlanCheckoutPage commerce behavior', () => {
     mocks.subscribe = { expired_at: 4_102_444_800 };
     mocks.saveOrder.mockResolvedValue('TRADE789');
 
-    await act(async () => {
-      root.render(<PlanCheckoutPage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
 
-    const submitButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('下单'),
-    )!;
-
-    await act(async () => {
-      submitButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('commerce-submit'));
 
     expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
     const options = mocks.confirmDialog.mock.calls[0]![0] as {
@@ -550,11 +442,7 @@ describe('PlanCheckoutPage commerce behavior', () => {
     };
     expect(options.description).toBe('请注意，变更订阅会导致当前订阅被新订阅覆盖。');
 
-    await act(async () => {
-      await options.onConfirm();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await options.onConfirm();
 
     expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
@@ -568,26 +456,15 @@ describe('PlanCheckoutPage commerce behavior', () => {
     mocks.subscribe = { expired_at: 1 };
     mocks.saveOrder.mockResolvedValue('TRADE999');
 
-    await act(async () => {
-      root.render(<PlanCheckoutPage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<PlanCheckoutPage />);
 
-    const submitButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('下单'),
-    )!;
+    await user.click(screen.getByTestId('commerce-submit'));
 
-    await act(async () => {
-      submitButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE999'));
     expect(mocks.confirmDialog).not.toHaveBeenCalled();
     expect(mocks.saveOrder).toHaveBeenCalledWith({
       plan_id: 1,
       period: 'month_price',
     });
-    expect(mocks.navigate).toHaveBeenCalledWith('/order/TRADE999');
   });
 });

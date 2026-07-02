@@ -1,62 +1,70 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import { PlanContent } from './plan-content';
 
-const planContentSource = readFileSync(`${process.cwd()}/src/components/plan-content.tsx`, 'utf8');
+const featureContent = JSON.stringify([
+  { feature: 'Supported', support: true },
+  { feature: 'Unsupported', support: false },
+]);
 
 describe('PlanContent shadcn feature rendering', () => {
-  it('renders parsed feature rows with lucide icons and shadcn text treatment', () => {
-    const html = renderToStaticMarkup(
-      <PlanContent
-        content={JSON.stringify([
-          { feature: 'Supported', support: true },
-          { feature: 'Unsupported', support: false },
-        ])}
-        className="mb-3"
-      />,
+  it('renders parsed feature rows with check/x icons split by support', () => {
+    const { container } = renderWithProviders(
+      <PlanContent content={featureContent} className="mb-3" />,
     );
 
-    expect(html).toContain('grid gap-2.5 text-sm mb-3');
-    expect(html).toContain('lucide-check');
-    expect(html).toContain('lucide-x');
-    expect(html).toContain('text-primary');
-    expect(html).toContain('Supported');
-    expect(html).toContain('Unsupported');
-    expect(html).toContain('opacity-70');
-    expect(html).not.toContain('si si-check');
+    const supportedRow = screen.getByText('Supported').closest('div')!;
+    const unsupportedRow = screen.getByText('Unsupported').closest('div')!;
+
+    // The lucide icons are aria-hidden, so the class token is the only stable
+    // handle distinguishing the supported check from the unsupported x.
+    expect(supportedRow.querySelector('svg[class*="lucide-check"]')).not.toBeNull();
+    expect(supportedRow.querySelector('svg[class*="lucide-x"]')).toBeNull();
+    expect(unsupportedRow.querySelector('svg[class*="lucide-x"]')).not.toBeNull();
+    expect(unsupportedRow.querySelector('svg[class*="lucide-check"]')).toBeNull();
+
+    // className is merged onto the feature-list wrapper.
+    expect(container.firstElementChild).toHaveClass('mb-3');
   });
 
-  it('uses stable feature row keys without random remounts', () => {
-    const featureSource = planContentSource.slice(
-      planContentSource.indexOf('features.map((item, index) => {'),
-      planContentSource.indexOf('</div>', planContentSource.indexOf('features.map((item, index) => {')),
+  it('reuses feature row DOM nodes across rerenders (stable keys, no random remounts)', () => {
+    const { rerender } = renderWithProviders(
+      <PlanContent content={featureContent} className="mb-3" />,
     );
 
-    expect(featureSource).toContain('features.map((item, index) => {');
-    expect(featureSource).toContain('key={index}');
-    expect(featureSource).not.toContain('key={Math.random()}');
+    const supportedBefore = screen.getByText('Supported');
+    const unsupportedBefore = screen.getByText('Unsupported');
+
+    rerender(<PlanContent content={featureContent} className="mb-3" />);
+
+    // Random keys (key={Math.random()}) would remount every row and hand back
+    // fresh DOM nodes; stable keys keep the exact same elements alive.
+    expect(screen.getByText('Supported')).toBe(supportedBefore);
+    expect(screen.getByText('Unsupported')).toBe(unsupportedBefore);
   });
 
   it('falls back to raw HTML for non-JSON content', () => {
-    const html = renderToStaticMarkup(
+    const { container } = renderWithProviders(
       <PlanContent content="<p>Raw HTML</p>" className="mb-3" />,
     );
 
-    expect(html).toContain('class="mb-3"');
-    expect(html).toContain('<p>Raw HTML</p>');
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper).toHaveClass('mb-3');
+    expect(within(wrapper).getByText('Raw HTML').tagName).toBe('P');
   });
 
   it('falls back to raw HTML for JSON null in plan lists instead of crashing', () => {
-    const html = renderToStaticMarkup(<PlanContent content="null" className="mb-3" />);
+    const { container } = renderWithProviders(<PlanContent content="null" className="mb-3" />);
 
-    expect(html).toContain('class="mb-3"');
-    expect(html).toContain('>null</div>');
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper).toHaveClass('mb-3');
+    expect(wrapper).toHaveTextContent('null');
   });
 
-  it('keeps the checkout JSON null fallback as raw HTML', () => {
-    const html = renderToStaticMarkup(
+  it('keeps the checkout JSON null fallback as raw HTML with htmlClassName precedence', () => {
+    const { container } = renderWithProviders(
       <PlanContent
         content="null"
         className="v2board-plan-content px-3"
@@ -64,24 +72,23 @@ describe('PlanContent shadcn feature rendering', () => {
       />,
     );
 
-    expect(html).toContain('class="v2board-plan-content"');
-    expect(html).not.toContain('class="v2board-plan-content px-3"');
-    expect(html).toContain('>null</div>');
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper).toHaveClass('v2board-plan-content');
+    expect(wrapper).not.toHaveClass('px-3');
+    expect(wrapper).toHaveTextContent('null');
   });
 
-  it('sanitizes the direct raw HTML handoff without an empty-string fallback', () => {
-    expect(planContentSource).toContain(
-      'dangerouslySetInnerHTML={{ __html: sanitizeLegacyHtml(content as string) }}',
-    );
-    expect(planContentSource).not.toContain("dangerouslySetInnerHTML={{ __html: content ?? '' }}");
-  });
-
-  it('removes unsafe attributes from non-JSON plan HTML', () => {
-    const html = renderToStaticMarkup(
-      <PlanContent content={'<p onclick="alert(1)">Raw HTML</p>'} className="mb-3" />,
+  it('sanitizes the raw HTML handoff, stripping scripts and event handlers', () => {
+    const { container } = renderWithProviders(
+      <PlanContent
+        content={'<p onclick="alert(1)">Raw HTML</p><script>window.pwned = true;</script>'}
+        className="mb-3"
+      />,
     );
 
-    expect(html).toContain('<p>Raw HTML</p>');
-    expect(html).not.toContain('onclick');
+    const paragraph = within(container.firstElementChild as HTMLElement).getByText('Raw HTML');
+    expect(paragraph.tagName).toBe('P');
+    expect(paragraph).not.toHaveAttribute('onclick');
+    expect(container.querySelector('script')).toBeNull();
   });
 });

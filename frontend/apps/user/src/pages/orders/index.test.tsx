@@ -1,15 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { VIRTUALIZE_MIN_ROWS } from '@/components/ui/table';
+import { renderWithProviders } from '@/test/render';
 import OrdersPage from './index';
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
-const ordersSource = readFileSync(`${process.cwd()}/src/pages/orders/index.tsx`, 'utf8');
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -35,7 +29,14 @@ const mocks = vi.hoisted(() => ({
       created_at: 0,
       plan: { name: 'Reset Pack' },
     },
-  ],
+  ] as Array<{
+    trade_no: string;
+    period: string | null;
+    total_amount: number;
+    status: number;
+    created_at: number;
+    plan: { name: string } | null;
+  }>,
 }));
 
 const labels: Record<string, string> = {
@@ -84,7 +85,11 @@ vi.mock('react-router', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => labels[key] ?? key }),
+  // Empty-key sentinel: a regression to a `t('')` fallback in the period cell
+  // would leak this marker into the DOM instead of leaving the badge empty.
+  useTranslation: () => ({
+    t: (key: string) => (key === '' ? 'EMPTY_KEY_TRANSLATED' : (labels[key] ?? key)),
+  }),
 }));
 
 vi.mock('@/lib/queries', () => ({
@@ -104,140 +109,191 @@ vi.mock('@/components/ui/confirm-dialog', () => ({
   confirmDialog: mocks.confirmDialog,
 }));
 
+beforeEach(() => {
+  mocks.navigate.mockClear();
+  mocks.cancelMutateAsync.mockReset();
+  mocks.cancelMutateAsync.mockResolvedValue(true);
+  mocks.confirmDialog.mockClear();
+  mocks.refetchOrders.mockClear();
+  mocks.orderError = undefined;
+  mocks.fetching = false;
+  mocks.orders = defaultOrders();
+});
+
+function bodyRowKeys(table: HTMLElement) {
+  return Array.from(table.querySelectorAll('tbody tr[data-row-key]')).map((row) =>
+    row.getAttribute('data-row-key'),
+  );
+}
+
 describe('OrdersPage shadcn commerce table', () => {
-  afterEach(() => {
-    document.body.innerHTML = '';
-    mocks.orderError = undefined;
-    mocks.fetching = false;
-    mocks.orders = defaultOrders();
-  });
+  it('renders the harness-pinned table hooks, columns, status pills, and row formatting', () => {
+    renderWithProviders(<OrdersPage />);
 
-  it('renders the shadcn table shell, columns, status pills, actions, and row formatting', () => {
-    const html = renderToStaticMarkup(<OrdersPage />);
+    expect(screen.getByTestId('orders-card')).toBeInTheDocument();
+    const table = screen.getByTestId('orders-table');
+    for (const header of ['# 订单号', '周期', '订单金额', '订单状态', '创建时间', '操作']) {
+      expect(within(table).getByRole('columnheader', { name: header })).toBeInTheDocument();
+    }
 
-    expect(html).toContain('data-testid="orders-card"');
-    expect(html).toContain('data-testid="orders-table"');
-    expect(html).toContain('# 订单号');
-    expect(html).toContain('周期');
-    expect(html).toContain('订单金额');
-    expect(html).toContain('订单状态');
-    expect(html).toContain('创建时间');
-    expect(html).toContain('操作');
-    expect(html).toContain('ORDER123');
-    expect(html).toContain('月付');
-    expect(html).toContain('10.00');
-    expect(html).toContain('待支付');
-    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
-    expect(html).toContain('流量重置包');
-    expect(html).toContain('2.50');
-    expect(html).toContain('已完成');
-    expect(html).toContain(formatLegacyDateMinuteSlash(0));
-    expect(html).toContain('查看详情');
-    expect(html).toContain('取消');
-    expect(html).not.toContain('ant-table-wrapper');
-    expect(html).not.toContain('ant-table-column-title');
-    expect(html).not.toContain('ant-table-tbody');
-    expect(html).not.toContain('ant-badge-status');
-    expect(html).not.toContain('am-list');
+    const rows = within(table).getAllByRole('row');
+    const unpaidRow = rows[1]!;
+    expect(within(unpaidRow).getByRole('button', { name: 'ORDER123' })).toBeInTheDocument();
+    expect(within(unpaidRow).getByText('月付')).toBeInTheDocument();
+    expect(within(unpaidRow).getByText('10.00')).toBeInTheDocument();
+    expect(within(unpaidRow).getByText('待支付')).toBeInTheDocument();
+    expect(
+      within(unpaidRow).getByText(formatLegacyDateMinuteSlash(1_700_000_000)),
+    ).toBeInTheDocument();
+    expect(within(unpaidRow).getByRole('button', { name: '查看详情' })).toBeInTheDocument();
+    expect(within(unpaidRow).getByRole('button', { name: '取消' })).toBeInTheDocument();
+
+    const completedRow = rows[2]!;
+    expect(within(completedRow).getByRole('button', { name: 'ORDER456' })).toBeInTheDocument();
+    expect(within(completedRow).getByText('流量重置包')).toBeInTheDocument();
+    expect(within(completedRow).getByText('2.50')).toBeInTheDocument();
+    expect(within(completedRow).getByText('已完成')).toBeInTheDocument();
+    expect(within(completedRow).getByText(formatLegacyDateMinuteSlash(0))).toBeInTheDocument();
   });
 
   it('renders a shadcn empty state when there are no orders', () => {
     mocks.orders = [];
 
-    const html = renderToStaticMarkup(<OrdersPage />);
+    renderWithProviders(<OrdersPage />);
 
-    expect(html).toContain('data-testid="orders-empty"');
-    expect(html).toContain('暂无订单');
-    expect(html).not.toContain('data-testid="orders-table"');
+    expect(screen.getByTestId('orders-empty')).toHaveTextContent('暂无订单');
+    expect(screen.queryByTestId('orders-table')).not.toBeInTheDocument();
   });
 
-  it('keeps the order-period short-circuit without an empty-key fallback', () => {
-    expect(ordersSource).toContain('PERIOD_LABEL[row.original.period]');
-    expect(ordersSource).toContain('periodLabelKey ? t(periodLabelKey) : undefined');
-    expect(ordersSource).not.toContain("periodKey ? t(periodKey) : ''");
-    expect(ordersSource).not.toContain("PERIOD_LABEL[row.original.period] ?? ''");
-    expect(ordersSource).not.toContain('<span className="ant-tag">{periodLabel}</span>');
+  it('leaves the period badge empty for unknown or missing periods instead of translating a fallback key', () => {
+    mocks.orders = [
+      {
+        trade_no: 'ORDER-UNKNOWN',
+        period: 'lifetime_price',
+        total_amount: 100,
+        status: 2,
+        created_at: 1,
+        plan: null,
+      },
+      {
+        trade_no: 'ORDER-NOPERIOD',
+        period: null,
+        total_amount: 200,
+        status: 2,
+        created_at: 2,
+        plan: null,
+      },
+    ];
+
+    renderWithProviders(<OrdersPage />);
+
+    const table = screen.getByTestId('orders-table');
+    const rows = within(table).getAllByRole('row');
+    for (const row of [rows[1]!, rows[2]!]) {
+      const periodCell = within(row).getAllByRole('cell')[1]!;
+      expect(periodCell.textContent?.trim()).toBe('');
+    }
+    // No empty-key translation and no raw period key may leak into the table.
+    expect(within(table).queryByText('EMPTY_KEY_TRANSLATED')).not.toBeInTheDocument();
+    expect(within(table).queryByText('lifetime_price')).not.toBeInTheDocument();
   });
 
   it('keys table rows by trade number now that the shadcn table owns the DOM', () => {
-    expect(ordersSource).toContain('satisfies DataTableColumn<(typeof orders)[number]>[]');
-    expect(ordersSource).toContain('virtualizer={{ enabled: orders.length > VIRTUALIZE_MIN_ROWS }}');
-    expect(ordersSource).not.toContain('data-row-key={index}');
-    expect(ordersSource).not.toContain('data-row-key={order.trade_no}');
+    renderWithProviders(<OrdersPage />);
+
+    expect(bodyRowKeys(screen.getByTestId('orders-table'))).toEqual(['ORDER123', 'ORDER456']);
   });
 
-  it('opts the amount and created-at columns into client-side sorting', () => {
-    expect(ordersSource).toContain("accessorKey: 'total_amount'");
-    expect(ordersSource).toContain("accessorKey: 'created_at'");
-    expect(ordersSource).toContain("sortingFn: 'basic'");
+  it('virtualizes rows only above the shared threshold', () => {
+    const { unmount } = renderWithProviders(<OrdersPage />);
+
+    // Below the threshold every order renders as a plain row without
+    // virtualizer spacer rows or measurement attributes.
+    let table = screen.getByTestId('orders-table');
+    expect(bodyRowKeys(table)).toHaveLength(2);
+    expect(table.querySelectorAll('tbody tr[data-index]')).toHaveLength(0);
+    expect(table.querySelectorAll('tbody tr[aria-hidden="true"]')).toHaveLength(0);
+
+    unmount();
+    mocks.orders = Array.from({ length: VIRTUALIZE_MIN_ROWS + 1 }, (_, index) => ({
+      trade_no: `TRADE${index}`,
+      period: 'month_price',
+      total_amount: 100,
+      status: 0,
+      created_at: index,
+      plan: { name: 'Bulk Plan' },
+    }));
+    renderWithProviders(<OrdersPage />);
+
+    // Above the threshold the virtualizer windows the rows: only a slice of the
+    // data renders (none in happy-dom's zero-height viewport) and an aria-hidden
+    // spacer row keeps the scroll height in place of the culled rows.
+    table = screen.getByTestId('orders-table');
+    const virtualRows = table.querySelectorAll('tbody tr[data-row-key]');
+    expect(virtualRows.length).toBeLessThan(VIRTUALIZE_MIN_ROWS + 1);
+    for (const row of virtualRows) {
+      expect(row).toHaveAttribute('data-index');
+    }
+    expect(
+      table.querySelectorAll('tbody tr[aria-hidden="true"]').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('sorts by the amount and created-at columns on header click while other columns stay inert', async () => {
+    const { user } = renderWithProviders(<OrdersPage />);
+
+    const table = screen.getByTestId('orders-table');
+    const amountHeader = within(table).getByRole('columnheader', { name: '订单金额' });
+    const createdHeader = within(table).getByRole('columnheader', { name: '创建时间' });
+    expect(amountHeader).toHaveAttribute('aria-sort', 'none');
+    expect(createdHeader).toHaveAttribute('aria-sort', 'none');
+    expect(within(table).getByRole('columnheader', { name: '# 订单号' })).not.toHaveAttribute(
+      'aria-sort',
+    );
+
+    // Default preserves the server's row order.
+    expect(bodyRowKeys(table)).toEqual(['ORDER123', 'ORDER456']);
+
+    // Numeric columns sort descending first (TanStack auto sort direction).
+    await user.click(within(amountHeader).getByRole('button'));
+    expect(amountHeader).toHaveAttribute('aria-sort', 'descending');
+    expect(bodyRowKeys(table)).toEqual(['ORDER123', 'ORDER456']);
+
+    await user.click(within(amountHeader).getByRole('button'));
+    expect(amountHeader).toHaveAttribute('aria-sort', 'ascending');
+    expect(bodyRowKeys(table)).toEqual(['ORDER456', 'ORDER123']);
+
+    // Sorting created-at replaces the amount sort and reorders the rows again.
+    await user.click(within(createdHeader).getByRole('button'));
+    expect(createdHeader).toHaveAttribute('aria-sort', 'descending');
+    expect(amountHeader).toHaveAttribute('aria-sort', 'none');
+    expect(bodyRowKeys(table)).toEqual(['ORDER123', 'ORDER456']);
   });
 });
 
 describe('OrdersPage commerce behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-    mocks.navigate.mockClear();
-    mocks.cancelMutateAsync.mockReset();
-    mocks.cancelMutateAsync.mockResolvedValue(true);
-    mocks.confirmDialog.mockClear();
-    mocks.refetchOrders.mockClear();
-    mocks.orderError = undefined;
-    mocks.fetching = false;
-    mocks.orders = defaultOrders();
-  });
-
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
   it('navigates from both the trade number and detail action', async () => {
-    await act(async () => {
-      root.render(<OrdersPage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<OrdersPage />);
 
-    const tradeButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
-      (button) => button.textContent === 'ORDER123',
-    )!;
-    await act(async () => {
-      tradeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('button', { name: 'ORDER123' }));
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
 
-    const detailButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
-      (button) => button.textContent === '查看详情',
-    )!;
-    await act(async () => {
-      detailButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    mocks.navigate.mockClear();
+    const table = screen.getByTestId('orders-table');
+    const firstRow = within(table).getAllByRole('row')[1]!;
+    await user.click(within(firstRow).getByRole('button', { name: '查看详情' }));
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER123');
   });
 
   it('fires cancel through the confirm dialog action for unpaid orders', async () => {
-    await act(async () => {
-      root.render(<OrdersPage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<OrdersPage />);
 
-    const cancelButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(
-      (button) => button.textContent === '取消',
-    );
+    const table = screen.getByTestId('orders-table');
+    const cancelButtons = within(table).getAllByRole('button', { name: '取消' });
     expect(cancelButtons).toHaveLength(2);
-    expect(cancelButtons[0]!.disabled).toBe(false);
+    expect(cancelButtons[0]!).toBeEnabled();
 
-    await act(async () => {
-      cancelButtons[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(cancelButtons[0]!);
 
     expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
     const options = mocks.confirmDialog.mock.calls[0]![0] as {
@@ -249,76 +305,49 @@ describe('OrdersPage commerce behavior', () => {
     expect(options.title).toBe('注意');
     expect(options.description).toBe('如果您已经付款，取消订单可能会导致支付失败，确定要取消订单吗？');
     expect(options.confirmText).toBe('关闭订单');
-    await options.onConfirm();
+    expect(mocks.cancelMutateAsync).not.toHaveBeenCalled();
 
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await options.onConfirm();
 
     expect(mocks.cancelMutateAsync).toHaveBeenCalledWith('ORDER123');
     expect(mocks.refetchOrders).not.toHaveBeenCalled();
-    expect(ordersSource).not.toContain('ordersQuery.refetch()');
   });
 
   it('disables cancel for non-unpaid orders while keeping detail navigation available', async () => {
-    await act(async () => {
-      root.render(<OrdersPage />);
-      await Promise.resolve();
-    });
+    const { user } = renderWithProviders(<OrdersPage />);
 
-    const detailButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(
-      (button) => button.textContent === '查看详情',
-    );
-    await act(async () => {
-      detailButtons[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    const table = screen.getByTestId('orders-table');
+    const detailButtons = within(table).getAllByRole('button', { name: '查看详情' });
+    await user.click(detailButtons[1]!);
     expect(mocks.navigate).toHaveBeenCalledWith('/order/ORDER456');
 
-    const cancelButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(
-      (button) => button.textContent === '取消',
-    );
-    expect(cancelButtons[1]!.disabled).toBe(true);
+    const cancelButtons = within(table).getAllByRole('button', { name: '取消' });
+    expect(cancelButtons[1]!).toBeDisabled();
 
-    await act(async () => {
-      cancelButtons[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(cancelButtons[1]!);
 
     expect(mocks.confirmDialog).not.toHaveBeenCalled();
     expect(mocks.cancelMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('shows the loading strip while fetching but not after a settled fetch error', async () => {
+  it('shows the loading strip while fetching but not after a settled fetch error', () => {
     mocks.fetching = true;
 
-    await act(async () => {
-      root.render(<OrdersPage />);
-      await Promise.resolve();
-    });
+    const { rerender } = renderWithProviders(<OrdersPage />);
 
-    expect(container.textContent).toContain('正在加载');
+    expect(screen.getByText('正在加载')).toBeInTheDocument();
 
     // A settled transport failure (status 0) no longer pins a perpetual spinner —
     // loading tracks the query's isFetching, so it clears like any other error.
     mocks.fetching = false;
     mocks.orderError = { status: 0, message: 'timeout of 30000ms exceeded' };
+    rerender(<OrdersPage />);
 
-    await act(async () => {
-      root.render(<OrdersPage />);
-      await Promise.resolve();
-    });
-
-    expect(container.textContent).not.toContain('正在加载');
+    expect(screen.queryByText('正在加载')).not.toBeInTheDocument();
 
     mocks.orderError = { status: 500, message: 'Server Error' };
+    rerender(<OrdersPage />);
 
-    await act(async () => {
-      root.render(<OrdersPage />);
-      await Promise.resolve();
-    });
-
-    expect(container.textContent).not.toContain('正在加载');
+    expect(screen.queryByText('正在加载')).not.toBeInTheDocument();
   });
 });

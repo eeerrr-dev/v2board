@@ -1,9 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { renderWithProviders } from '@/test/render';
 import TicketDetailPage from './detail';
 
 const state = vi.hoisted(() => {
@@ -37,6 +35,7 @@ const state = vi.hoisted(() => {
     refetch: vi.fn(),
     replyMutateAsync: vi.fn(),
     replyPending: false,
+    routeTicketId: '7' as string | undefined,
     ticket: makeTicket() as ReturnType<typeof makeTicket> | undefined,
     ticketCalls: [] as Array<{ id: number | string | undefined; options?: unknown }>,
     ticketError: false,
@@ -59,7 +58,7 @@ const labels: Record<string, string> = {
 };
 
 vi.mock('react-router', () => ({
-  useParams: () => ({ ticket_id: '7' }),
+  useParams: () => ({ ticket_id: state.routeTicketId }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -89,95 +88,88 @@ vi.mock('@/lib/toast', () => ({
   toast: toastMocks,
 }));
 
-(
-  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
+let scrollTo: ReturnType<typeof vi.fn>;
 
-afterEach(() => {
+beforeEach(() => {
+  state.routeTicketId = '7';
   state.ticket = state.makeTicket();
   state.ticketError = false;
+  state.ticketCalls = [];
+  state.replyPending = false;
+  state.refetch.mockReset();
+  state.replyMutateAsync.mockReset();
+  state.replyMutateAsync.mockResolvedValue(undefined);
+  toastMocks.destroy.mockReset();
+  toastMocks.loading.mockReset();
+  toastMocks.success.mockReset();
+  scrollTo = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+    configurable: true,
+    value: scrollTo,
+  });
+  Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+    configurable: true,
+    get: () => 480,
+  });
 });
 
 describe('TicketDetailPage shadcn chat surface', () => {
-  it('keeps the route ticket id as the fetch and reply input', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
+  it('renders the subject header, message bubbles in order, dates, and reply composer', () => {
+    renderWithProviders(<TicketDetailPage />);
 
-    expect(source).toContain('const ticketId = ticket_id;');
-    expect(source).toContain('id: ticketId as string');
-    expect(source).not.toContain("const ticketId = ticket_id ?? ''");
-  });
+    expect(screen.getByTestId('ticket-detail-header')).toHaveTextContent('#7');
+    expect(screen.getByRole('heading', { name: 'Need help' })).toBeInTheDocument();
 
-  it('keys ticket messages by the legacy list index without introducing a message id fallback', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
-    const messageSource = source.slice(
-      source.indexOf('{data?.message.map((item, index) =>'),
-      source.indexOf('<div className="js-chat-form'),
-    );
+    // .js-chat-messages / .js-chat-form / .js-chat-input and the
+    // ticket-reply-send testid are interaction-parity harness selectors.
+    const chat = screen.getByTestId('ticket-chat');
+    expect(chat).toHaveClass('js-chat-messages');
+    expect(screen.getByText('My message')).toBeInTheDocument();
+    expect(screen.getByText('Support reply')).toBeInTheDocument();
+    const chatText = chat.textContent ?? '';
+    expect(chatText.indexOf('My message')).toBeLessThan(chatText.indexOf('Support reply'));
+    expect(screen.getByText(formatLegacyDateMinuteSlash(1_700_000_000))).toBeInTheDocument();
+    expect(screen.getByText(formatLegacyDateMinuteSlash(1_700_000_060))).toBeInTheDocument();
 
-    expect(messageSource).toContain('{data?.message.map((item, index) =>');
-    expect(messageSource).toContain('key={index}');
-    expect(messageSource).not.toContain('key={item.id}');
-    expect(source).toContain('const messages = ticket.data?.message ?? [];');
-    expect(source).toContain('}, [messages.length]);');
-  });
-
-  it('renders the shadcn subject header, message bubbles, dates, and reply form', () => {
-    const html = renderToStaticMarkup(<TicketDetailPage />);
-
-    expect(html).toContain('data-testid="ticket-detail"');
-    expect(html).toContain('data-testid="ticket-detail-header"');
-    expect(html).toContain('#7');
-    expect(html).toContain('Need help');
-    expect(html).toContain('js-chat-messages');
-    expect(html).toContain('data-testid="ticket-chat"');
-    expect(html).toContain('My message');
-    expect(html).toContain('Support reply');
-    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_000));
-    expect(html).toContain(formatLegacyDateMinuteSlash(1_700_000_060));
-    expect(html).toContain('js-chat-form');
-    expect(html).toContain('data-testid="ticket-reply-form"');
-    expect(html).toContain('js-chat-input');
-    expect(html).toContain('data-testid="ticket-reply-input"');
-    expect(html).toContain('data-testid="ticket-reply-send"');
-    expect(html).toContain('placeholder="输入内容回复工单..."');
-    expect(html).not.toContain('content___DW5w1');
-    expect(html).not.toContain('input___1j_ND');
-    expect(html).not.toContain('tag___12_9H');
+    expect(screen.getByTestId('ticket-reply-form')).toHaveClass('js-chat-form');
+    const input = screen.getByPlaceholderText('输入内容回复工单...');
+    expect(input).toBe(screen.getByTestId('ticket-reply-input'));
+    expect(input).toHaveClass('js-chat-input');
+    expect(screen.getByTestId('ticket-reply-send')).toBeEnabled();
   });
 
   it('marks the standalone route root as a v2board-island so its shadcn tokens resolve', () => {
     // /ticket/:ticket_id renders OUTSIDE AppLayout (App.tsx), so the page root must
     // carry .v2board-island itself — otherwise --background/--foreground/--primary are
     // undefined, bg-background/bg-primary collapse, and dark mode cannot flip.
-    const html = renderToStaticMarkup(<TicketDetailPage />);
+    renderWithProviders(<TicketDetailPage />);
 
-    expect(html).toMatch(/<div class="v2board-island [^"]*" data-testid="ticket-detail"/);
+    expect(screen.getByTestId('ticket-detail')).toHaveClass('v2board-island');
   });
 
   it('keeps the chat shell visible when the ticket fetch fails', () => {
     state.ticket = undefined;
     state.ticketError = true;
 
-    const html = renderToStaticMarkup(<TicketDetailPage />);
+    renderWithProviders(<TicketDetailPage />);
 
-    expect(html).toContain('工单不存在');
-    expect(html).toContain('data-testid="ticket-chat"');
-    expect(html).toContain('data-testid="ticket-reply-form"');
-    expect(html).toContain('placeholder="输入内容回复工单..."');
-    expect(html).not.toContain('页面加载失败');
-    expect(html).not.toContain('刷新页面');
-    expect(html).not.toContain('Need help');
+    expect(screen.getAllByText('工单不存在').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('ticket-chat')).toBeInTheDocument();
+    expect(screen.getByTestId('ticket-reply-form')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('输入内容回复工单...')).toBeInTheDocument();
+    expect(screen.queryByText('页面加载失败')).not.toBeInTheDocument();
+    expect(screen.queryByText('刷新页面')).not.toBeInTheDocument();
+    expect(screen.queryByText('Need help')).not.toBeInTheDocument();
   });
 
   it('renders visible loading text before the ticket fetch resolves', () => {
     state.ticket = undefined;
     state.ticketError = false;
 
-    const html = renderToStaticMarkup(<TicketDetailPage />);
+    renderWithProviders(<TicketDetailPage />);
 
-    expect(html).toContain('加载中...');
-    expect(html).toContain('data-testid="ticket-detail-header"');
-    expect(html).toContain('text-center text-sm text-muted-foreground');
+    expect(screen.getAllByText('加载中...').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('ticket-detail-header')).toBeInTheDocument();
   });
 
   it('replaces the reply composer with a closed notice for a closed ticket', () => {
@@ -185,168 +177,106 @@ describe('TicketDetailPage shadcn chat surface', () => {
     // be offered — show why instead of letting the user hit a silent failure.
     state.ticket = { ...state.makeTicket(), status: 1 };
 
-    const html = renderToStaticMarkup(<TicketDetailPage />);
+    renderWithProviders(<TicketDetailPage />);
 
-    expect(html).toContain('data-testid="ticket-closed-notice"');
-    expect(html).toContain('工单已关闭，无法回复。');
-    expect(html).not.toContain('data-testid="ticket-reply-form"');
-    expect(html).not.toContain('data-testid="ticket-reply-input"');
+    expect(screen.getByTestId('ticket-closed-notice')).toHaveTextContent('工单已关闭，无法回复。');
+    expect(screen.queryByTestId('ticket-reply-form')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ticket-reply-input')).not.toBeInTheDocument();
   });
 });
 
 describe('TicketDetailPage query polling and reply behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root | null;
-  let scrollTo: ReturnType<typeof vi.fn>;
+  it('polls the ticket through React Query options and scrolls chat to bottom on mount', () => {
+    renderWithProviders(<TicketDetailPage />);
 
-  beforeEach(() => {
-    vi.useFakeTimers();
-    state.refetch.mockReset();
-    state.ticketCalls = [];
-    state.replyMutateAsync.mockReset();
-    state.replyMutateAsync.mockResolvedValue(undefined);
-    state.replyPending = false;
-    toastMocks.destroy.mockReset();
-    toastMocks.loading.mockReset();
-    toastMocks.success.mockReset();
-    scrollTo = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
-      configurable: true,
-      value: scrollTo,
-    });
-    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
-      configurable: true,
-      get: () => 480,
-    });
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    if (root) {
-      act(() => root?.unmount());
-      root = null;
-    }
-    container.remove();
-    document.body.innerHTML = '';
-    vi.useRealTimers();
-  });
-
-  it('uses React Query polling and scrolls chat to bottom on mount', () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
-
-    expect(source).toContain('useTicket(ticketId, { refetchInterval: 5000 })');
-    expect(source).not.toContain('window.setTimeout');
-
-    act(() => {
-      root!.render(<TicketDetailPage />);
-    });
-
-    expect(scrollTo).toHaveBeenCalledWith(0, 480);
     expect(state.ticketCalls.at(-1)).toEqual({
       id: '7',
+      options: { refetchInterval: 5000 },
+    });
+    expect(scrollTo).toHaveBeenCalledWith(0, 480);
+  });
+
+  it('scrolls the chat to the bottom again only when a new message arrives', () => {
+    const { rerender } = renderWithProviders(<TicketDetailPage />);
+    scrollTo.mockClear();
+
+    // A poll returning the same messages must not yank the scroll position.
+    state.ticket = state.makeTicket();
+    rerender(<TicketDetailPage />);
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    const next = state.makeTicket();
+    next.message.push({
+      id: 3,
+      user_id: 0,
+      ticket_id: 7,
+      is_me: false,
+      message: 'One more reply',
+      created_at: 1_700_000_120,
+      updated_at: 1_700_000_120,
+    });
+    state.ticket = next;
+    rerender(<TicketDetailPage />);
+    expect(scrollTo).toHaveBeenCalledWith(0, 480);
+  });
+
+  it('passes the raw route ticket id to the query without coercing a missing id', () => {
+    state.routeTicketId = undefined;
+
+    renderWithProviders(<TicketDetailPage />);
+
+    // Missing param stays undefined — never coerced to '' for the fetch.
+    expect(state.ticketCalls.at(-1)).toEqual({
+      id: undefined,
       options: { refetchInterval: 5000 },
     });
   });
 
   it('sends a reply through the native form with the toast sequence and clears the input', async () => {
-    const source = readFileSync(`${process.cwd()}/src/pages/tickets/detail.tsx`, 'utf8');
-    const submitSource = source.slice(
-      source.indexOf('const submitReply = async (event?: SyntheticEvent<HTMLFormElement>) => {'),
-      source.indexOf('const data = {'),
-    );
+    const { user } = renderWithProviders(<TicketDetailPage />);
+    const input = screen.getByTestId('ticket-reply-input');
 
-    expect(submitSource).toContain("toast.success(t('ticket.reply_success'));");
-    expect(submitSource).toContain("setMessage('');");
-    expect(submitSource.indexOf("toast.success(t('ticket.reply_success'));")).toBeLessThan(
-      submitSource.indexOf("setMessage('');"),
-    );
-    expect(submitSource).not.toContain('ticket.refetch');
-    expect(source).not.toContain('keyCode');
-    expect(source).not.toContain('inputRef');
-
-    await act(async () => {
-      root!.render(<TicketDetailPage />);
-      await Promise.resolve();
-    });
-
-    const input = container.querySelector('.js-chat-input') as HTMLInputElement;
-
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        input,
-        'Please help me',
-      );
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      container
-        .querySelector<HTMLFormElement>('[data-testid="ticket-reply-form"]')!
-        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await user.type(input, 'Please help me');
+    await user.click(screen.getByTestId('ticket-reply-send'));
 
     expect(toastMocks.loading).toHaveBeenCalledWith('发送中');
     expect(state.replyMutateAsync).toHaveBeenCalledWith({
       id: '7',
       message: 'Please help me',
     });
+    await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith('发送成功'));
     expect(toastMocks.destroy).toHaveBeenCalledTimes(1);
-    expect(toastMocks.success).toHaveBeenCalledWith('发送成功');
-    expect(input.value).toBe('');
+    expect(input).toHaveValue('');
     expect(state.refetch).not.toHaveBeenCalled();
   });
 
   it('keeps failed replies in the input while only clearing the loading toast', async () => {
     state.replyMutateAsync.mockRejectedValue(new Error('failed'));
+    const { user } = renderWithProviders(<TicketDetailPage />);
+    const input = screen.getByTestId('ticket-reply-input');
 
-    await act(async () => {
-      root!.render(<TicketDetailPage />);
-      await Promise.resolve();
-    });
-
-    const input = container.querySelector('.js-chat-input') as HTMLInputElement;
-
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        input,
-        'Please keep this',
-      );
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      container
-        .querySelector<HTMLFormElement>('[data-testid="ticket-reply-form"]')!
-        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    // Enter in the input mirrors the interaction-parity harness reply flow.
+    await user.type(input, 'Please keep this{Enter}');
 
     expect(toastMocks.loading).toHaveBeenCalledWith('发送中');
     expect(state.replyMutateAsync).toHaveBeenCalledWith({
       id: '7',
       message: 'Please keep this',
     });
-    expect(toastMocks.destroy).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(toastMocks.destroy).toHaveBeenCalledTimes(1));
     expect(toastMocks.success).not.toHaveBeenCalled();
-    expect(input.value).toBe('Please keep this');
+    expect(input).toHaveValue('Please keep this');
     expect(state.refetch).not.toHaveBeenCalled();
   });
 
-  it('does not reply while replyLoading is active', async () => {
+  it('does not send a reply while a previous reply is pending', () => {
     state.replyPending = true;
 
-    await act(async () => {
-      root!.render(<TicketDetailPage />);
-      await Promise.resolve();
-    });
+    renderWithProviders(<TicketDetailPage />);
 
-    const input = container.querySelector('.js-chat-input') as HTMLInputElement;
-
-    await act(async () => {
-      input
-        .closest('form')!
-        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await Promise.resolve();
-    });
+    expect(screen.getByTestId('ticket-reply-send')).toBeDisabled();
+    // Force a raw submit past the disabled button to exercise the isPending guard.
+    fireEvent.submit(screen.getByTestId('ticket-reply-form'));
 
     expect(toastMocks.loading).not.toHaveBeenCalled();
     expect(state.replyMutateAsync).not.toHaveBeenCalled();

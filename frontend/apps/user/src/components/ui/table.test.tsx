@@ -1,7 +1,6 @@
-import { act } from 'react';
-import { createRoot } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import {
   DataTable,
   Table,
@@ -12,17 +11,12 @@ import {
   TableHeader,
   TableRow,
   TableScroll,
+  VIRTUALIZE_MIN_ROWS,
 } from './table';
-import { readFileSync } from 'node:fs';
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
-const source = readFileSync(`${process.cwd()}/src/components/ui/table.tsx`, 'utf8');
 
 describe('Table', () => {
-  it('renders shadcn-style table primitives with local hooks preserved', () => {
-    const html = renderToStaticMarkup(
+  it('composes table primitives and passes caller hook classes and data attributes through', () => {
+    renderWithProviders(
       <TableScroll className="v2board-table-scroll">
         <Table className="v2board-table min-w-[640px]">
           <TableHeader className="border-y">
@@ -41,17 +35,22 @@ describe('Table', () => {
       </TableScroll>,
     );
 
-    expect(html).toContain('overflow-x-auto');
-    expect(html).toContain('v2board-table-scroll');
-    expect(html).toContain('v2board-table');
-    expect(html).toContain('bg-muted/50');
-    expect(html).toContain('divide-y');
-    expect(html).toContain('data-row-key="0"');
-    expect(html).toContain('text-right');
+    const table = screen.getByRole('table');
+    // Caller-supplied stable-selector hooks must land on the rendered elements.
+    expect(table).toHaveClass('v2board-table');
+    expect(table.parentElement).toHaveClass('v2board-table-scroll');
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Amount' })).toHaveClass('text-right');
+    expect(screen.getByRole('cell', { name: '12.00' })).toHaveClass('text-right');
+    // Data attributes pass through so row-level hooks stay addressable.
+    expect(screen.getByRole('cell', { name: 'Alpha' }).closest('tr')).toHaveAttribute(
+      'data-row-key',
+      '0',
+    );
   });
 
-  it('renders a reusable empty row without an antd empty shell', () => {
-    const html = renderToStaticMarkup(
+  it('renders a reusable empty row spanning the table columns', () => {
+    renderWithProviders(
       <Table>
         <TableBody>
           <TableEmpty colSpan={3} rowClassName="v2board-empty">
@@ -61,14 +60,13 @@ describe('Table', () => {
       </Table>,
     );
 
-    expect(html).toContain('v2board-empty');
-    expect(html).toContain('colSpan="3"');
-    expect(html).toContain('Empty');
-    expect(html).not.toContain('ant-empty');
+    const cell = screen.getByRole('cell', { name: 'Empty' });
+    expect(cell).toHaveAttribute('colspan', '3');
+    expect(cell.closest('tr')).toHaveClass('v2board-empty');
   });
 
-  it('renders DataTable through TanStack row and column models', () => {
-    const html = renderToStaticMarkup(
+  it('renders DataTable rows, cells, and row keys from column definitions', () => {
+    renderWithProviders(
       <DataTable
         columns={[
           { header: 'Name', cell: ({ row }) => row.original.name },
@@ -83,21 +81,45 @@ describe('Table', () => {
       />,
     );
 
-    expect(html).toContain('Name');
-    expect(html).toContain('Alpha');
-    expect(html).toContain('12.00');
-    expect(html).toContain('data-row-key="Alpha"');
-    expect(source).toContain("from '@tanstack/react-table'");
-    expect(source).toContain("from '@tanstack/react-virtual'");
-    expect(source).toContain('useReactTable');
-    expect(source).toContain('getRowId: getRowKey');
-    expect(source).toContain('useVirtualizer');
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'Alpha' })).toBeInTheDocument();
+    // meta.align drives cell alignment through the column definition API.
+    expect(screen.getByRole('cell', { name: '12.00' })).toHaveClass('text-right');
+    // getRowKey feeds the row identity exposed as data-row-key.
+    expect(screen.getByRole('cell', { name: 'Alpha' }).closest('tr')).toHaveAttribute(
+      'data-row-key',
+      'Alpha',
+    );
+  });
+
+  it('virtualizes large datasets behind aria-hidden spacer rows', () => {
+    const data = Array.from({ length: 300 }, (_, index) => ({ name: `row-${index}` }));
+    const { container } = renderWithProviders(
+      <DataTable
+        columns={[{ accessorKey: 'name', header: 'Name', cell: ({ row }) => row.original.name }]}
+        data={data}
+        getRowKey={(row) => row.name}
+        virtualizer={{ enabled: data.length >= VIRTUALIZE_MIN_ROWS, estimateSize: 50 }}
+      />,
+    );
+
+    // The virtualizer must window the DOM instead of materializing every row
+    // (in this zero-height test viewport the visible window is empty)...
+    const materialized = container.querySelectorAll('tbody tr[data-row-key]');
+    expect(materialized.length).toBeLessThan(data.length);
+    // ...while aria-hidden spacer rows preserve the total scroll height.
+    const spacers = [...container.querySelectorAll('tbody tr[aria-hidden="true"] td')];
+    const spacerHeight = spacers.reduce(
+      (total, cell) => total + Number.parseFloat((cell as HTMLElement).style.height || '0'),
+      0,
+    );
+    expect(spacerHeight + materialized.length * 50).toBe(data.length * 50);
   });
 });
 
 describe('DataTable sorting', () => {
   it('makes accessor columns sortable and leaves display-only columns inert', () => {
-    const html = renderToStaticMarkup(
+    renderWithProviders(
       <DataTable
         columns={[
           { accessorKey: 'name', header: 'Name', cell: ({ row }) => row.original.name },
@@ -109,56 +131,42 @@ describe('DataTable sorting', () => {
     );
 
     // The accessor column exposes a sort toggle and an aria-sort affordance...
-    expect(html).toContain('data-slot="table-sort"');
-    expect(html).toContain('aria-sort="none"');
+    const nameHeader = screen.getByRole('columnheader', { name: 'Name' });
+    expect(nameHeader).toHaveAttribute('aria-sort', 'none');
+    expect(within(nameHeader).getByRole('button')).toBeInTheDocument();
     // ...while the display-only "Action" header stays a plain, non-interactive cell.
-    expect(html.match(/data-slot="table-sort"/g)).toHaveLength(1);
-    expect(source).toContain('getSortedRowModel');
+    const actionHeader = screen.getByRole('columnheader', { name: 'Action' });
+    expect(actionHeader).not.toHaveAttribute('aria-sort');
+    expect(within(actionHeader).queryByRole('button')).toBeNull();
   });
 
   it('reorders rows and updates aria-sort when a sortable header is toggled', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <DataTable
-          columns={[{ accessorKey: 'name', header: 'Name', cell: ({ row }) => row.original.name }]}
-          data={[{ name: 'Beta' }, { name: 'Alpha' }]}
-          getRowKey={(row) => row.name}
-        />,
-      );
-      await Promise.resolve();
-    });
+    const { container, user } = renderWithProviders(
+      <DataTable
+        columns={[{ accessorKey: 'name', header: 'Name', cell: ({ row }) => row.original.name }]}
+        data={[{ name: 'Beta' }, { name: 'Alpha' }]}
+        getRowKey={(row) => row.name}
+      />,
+    );
 
     const rowKeys = () =>
       [...container.querySelectorAll('[data-row-key]')].map((row) =>
         row.getAttribute('data-row-key'),
       );
-    const sortButton = container.querySelector<HTMLButtonElement>('[data-slot="table-sort"]')!;
-    const headerCell = sortButton.closest('th')!;
+    const headerCell = screen.getByRole('columnheader', { name: 'Name' });
+    const sortButton = within(headerCell).getByRole('button');
 
     expect(rowKeys()).toEqual(['Beta', 'Alpha']);
-    expect(headerCell.getAttribute('aria-sort')).toBe('none');
+    expect(headerCell).toHaveAttribute('aria-sort', 'none');
 
     // Strings sort ascending on the first toggle.
-    await act(async () => {
-      sortButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(sortButton);
     expect(rowKeys()).toEqual(['Alpha', 'Beta']);
-    expect(headerCell.getAttribute('aria-sort')).toBe('ascending');
+    expect(headerCell).toHaveAttribute('aria-sort', 'ascending');
 
     // A second toggle flips to descending.
-    await act(async () => {
-      sortButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(sortButton);
     expect(rowKeys()).toEqual(['Beta', 'Alpha']);
-    expect(headerCell.getAttribute('aria-sort')).toBe('descending');
-
-    act(() => root.unmount());
-    container.remove();
+    expect(headerCell).toHaveAttribute('aria-sort', 'descending');
   });
 });

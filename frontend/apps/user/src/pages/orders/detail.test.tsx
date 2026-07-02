@@ -1,20 +1,25 @@
-import { readFileSync } from 'node:fs';
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { act, type Ref } from 'react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import OrderDetailPage from './detail';
-
-const orderDetailSource = readFileSync(`${process.cwd()}/src/pages/orders/detail.tsx`, 'utf8');
 
 const orderRefetch = vi.hoisted(() => vi.fn());
 const checkoutOrder = vi.hoisted(() => vi.fn());
 const checkOrder = vi.hoisted(() => vi.fn());
 const stripePublicKey = vi.hoisted(() => ({ value: undefined as string | undefined }));
+const stripeTokenize = vi.hoisted(() => vi.fn());
+const stripeMounts = vi.hoisted(() => ({ count: 0 }));
 const confirmDialog = vi.hoisted(() => vi.fn());
 const cancelMutateAsync = vi.hoisted(() => vi.fn());
 const cancelState = vi.hoisted(() => ({ isPending: false }));
 const invalidateQueries = vi.hoisted(() => vi.fn());
+const toastSpies = vi.hoisted(() => ({
+  error: vi.fn(),
+  info: vi.fn(),
+  loading: vi.fn(),
+  success: vi.fn(),
+}));
 const labels = vi.hoisted(() => ({
   'order.deposit': '充值',
 }));
@@ -83,7 +88,9 @@ vi.mock('react-i18next', () => ({
 vi.mock('@tanstack/react-query', () => {
   // Return a stable client reference so the page's useCallback memoizes the way
   // a real QueryClient would; a fresh object each render would defeat that and
-  // make the payment-refresh effect re-run on every render.
+  // make the payment-refresh effect re-run on every render. The client only
+  // exposes invalidateQueries: any cache teardown call (removeQueries,
+  // cancelQueries, ...) would throw and fail the unmount test below.
   const client = { invalidateQueries };
   return { useQueryClient: () => client };
 });
@@ -91,6 +98,43 @@ vi.mock('@tanstack/react-query', () => {
 vi.mock('@/components/ui/confirm-dialog', () => ({
   confirmDialog,
 }));
+
+vi.mock('@/lib/toast', () => ({
+  toast: toastSpies,
+}));
+
+// The QR value prop is what the user's payment app scans; surface it as a DOM
+// attribute so the payUrl wiring stays observable (same stub as dashboard.test).
+vi.mock('qrcode.react', () => ({
+  QRCodeSVG: ({ value }: { value?: string }) => <svg data-qrcode={value} />,
+}));
+
+// Stub the Stripe card form at the module boundary: it exposes the same
+// submit-time tokenize() handle the page consumes, reports the public key it
+// was mounted with, and immediately signals a complete card so the checkout
+// button un-gates.
+vi.mock('@/components/stripe-card-form', async () => {
+  const { useEffect, useImperativeHandle } = await import('react');
+  return {
+    StripeCardForm: ({
+      publicKey,
+      onCompleteChange,
+      ref,
+    }: {
+      publicKey: string;
+      onCompleteChange?: (complete: boolean) => void;
+      ref?: Ref<{ tokenize: () => Promise<{ id: string } | null> }>;
+    }) => {
+      useImperativeHandle(ref, () => ({ tokenize: () => stripeTokenize() }), []);
+      useEffect(() => {
+        stripeMounts.count += 1;
+        onCompleteChange?.(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+      return <div data-testid="stripe-card-form" data-public-key={publicKey} />;
+    },
+  };
+});
 
 vi.mock('@/lib/queries', () => ({
   userKeys: {
@@ -136,15 +180,16 @@ vi.mock('@/lib/queries', () => ({
   useUserInfo: () => ({}),
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+/** Flush the microtask chain of an in-flight onPay inside act. */
+async function flushCheckout() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
 
 describe('OrderDetailPage shadcn commerce behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
   beforeEach(() => {
-    vi.useFakeTimers();
     orderRefetch.mockReset();
     checkoutOrder.mockReset();
     checkOrder.mockReset();
@@ -152,11 +197,17 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     orderStatusState.isError = false;
     orderStatusState.calls = [];
     stripePublicKey.value = undefined;
+    stripeTokenize.mockReset();
+    stripeMounts.count = 0;
     confirmDialog.mockReset();
     cancelMutateAsync.mockReset();
     cancelMutateAsync.mockResolvedValue(true);
     cancelState.isPending = false;
     invalidateQueries.mockReset();
+    toastSpies.error.mockReset();
+    toastSpies.info.mockReset();
+    toastSpies.loading.mockReset();
+    toastSpies.success.mockReset();
     paymentState.data = [{ id: 1, name: 'Legacy Pay', payment: 'LegacyPay' }];
     orderState.isFetching = false;
     orderState.data = {
@@ -176,28 +227,31 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
         month_price: 1000,
       },
     };
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
   });
 
   afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
     vi.useRealTimers();
   });
 
-  it('renders the three-row product-info card for non-deposit orders', () => {
-    const html = renderToStaticMarkup(<OrderDetailPage />);
+  it('renders the product-info rows and the commerce hooks for a pending non-deposit order', () => {
+    const { container } = renderWithProviders(<OrderDetailPage />);
 
-    expect(html).toContain('order.product_info');
-    expect(html).toContain('order.product_name');
-    expect(html).toContain('Legacy Plan</span>');
-    expect(html).toContain('order.product_period');
-    expect(html).toContain('plan.monthly</span>');
-    expect(html).toContain('order.product_traffic');
-    expect(html).toContain('123 GB');
+    // Interaction/visual parity selects these hooks; keep them stable.
+    expect(container.querySelector('#cashier')).not.toBeNull();
+    expect(screen.getAllByTestId('order-info')).toHaveLength(2);
+    expect(screen.getAllByTestId('order-info-title').map((el) => el.textContent)).toEqual([
+      'order.product_info',
+      'order.info',
+    ]);
+    expect(screen.getByTestId('order-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('commerce-submit')).toHaveTextContent('order.checkout');
+
+    expect(screen.getByText('order.product_name')).toBeInTheDocument();
+    expect(screen.getByText('Legacy Plan')).toBeInTheDocument();
+    expect(screen.getByText('order.product_period')).toBeInTheDocument();
+    expect(screen.getByText('plan.monthly')).toBeInTheDocument();
+    expect(screen.getByText('order.product_traffic')).toBeInTheDocument();
+    expect(screen.getByText('123 GB')).toBeInTheDocument();
   });
 
   it('keeps the deposit product-name row', () => {
@@ -212,33 +266,35 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       },
     };
 
-    const html = renderToStaticMarkup(<OrderDetailPage />);
+    renderWithProviders(<OrderDetailPage />);
 
-    expect(html).toContain('order.product_info');
-    expect(html).toContain('order.product_name');
-    expect(html).toContain('充值');
-    expect(html).not.toContain('order.product_period');
-    expect(html).not.toContain('order.product_traffic');
-    expect(html).not.toContain(' GB');
+    expect(screen.getByText('order.product_name')).toBeInTheDocument();
+    expect(screen.getByText('充值')).toBeInTheDocument();
+    expect(screen.queryByText('order.product_period')).toBeNull();
+    expect(screen.queryByText('order.product_traffic')).toBeNull();
+    expect(screen.queryByText(/GB/)).toBeNull();
   });
 
-  it('keeps the period label short-circuit without an empty-key fallback', () => {
-    expect(orderDetailSource).toContain('PERIOD_LABEL_KEY[order.period]');
-    expect(orderDetailSource).not.toContain("PERIOD_LABEL_KEY[order.period] ?? ''");
-    expect(orderDetailSource).not.toContain("t(PERIOD_LABEL_KEY[order.period] ?? '')");
+  it('renders an empty period value for an unknown period key instead of a raw i18n fallback', () => {
+    orderState.data = { ...orderState.data!, period: 'mystery_price' };
+
+    renderWithProviders(<OrderDetailPage />);
+
+    const periodLabel = screen.getByText('order.product_period');
+    expect(periodLabel.nextElementSibling).toBeEmptyDOMElement();
   });
 
   it('shows the centered detail spinner while the order detail fetch is pending', () => {
     orderState.data = undefined;
     orderState.isFetching = true;
 
-    const html = renderToStaticMarkup(<OrderDetailPage />);
+    const { container } = renderWithProviders(<OrderDetailPage />);
 
-    expect(html).toContain('role="status"');
-    expect(html).not.toContain('id="cashier"');
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(container.querySelector('#cashier')).toBeNull();
   });
 
-  it('selects the first payment method and precomputes its pre-handling amount in the first rendered pass', () => {
+  it('preselects the first payment method and derives its handling fee from the method config', () => {
     paymentState.data = [
       {
         id: 9,
@@ -250,17 +306,25 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       { id: 10, name: 'Backup Pay', payment: 'LegacyPay' },
     ];
 
-    const html = renderToStaticMarkup(<OrderDetailPage />);
+    renderWithProviders(<OrderDetailPage />);
 
-    expect(html).toContain('data-testid="payment-option"');
-    expect(html).toContain('data-state="checked"');
-    expect(html).toContain('Fee Pay');
-    expect(html).toContain('order.handling_fee');
-    expect(html).toContain('2.50');
-    expect(html).toContain('¥ 12.50 CNY');
+    const options = screen.getAllByTestId('payment-option');
+    expect(options).toHaveLength(2);
+    // The parity harness selects [data-state="checked"] on payment-option.
+    expect(options[0]).toHaveAttribute('data-state', 'checked');
+    expect(options[0]).toHaveTextContent('Fee Pay');
+    expect(options[1]).toHaveAttribute('data-state', 'unchecked');
+    // The Radix indicator (harness hook payment-option-radio) renders on the
+    // checked option only.
+    expect(within(options[0]!).getByTestId('payment-option-radio')).toBeInTheDocument();
+
+    // 1000 * 10% + 150 = 250 cents on top of the 1000-cent order.
+    expect(screen.getAllByText('order.handling_fee').length).toBeGreaterThan(0);
+    expect(screen.getByText('2.50')).toBeInTheDocument();
+    expect(screen.getByText('¥ 12.50 CNY')).toBeInTheDocument();
   });
 
-  it('updates the pre-handling amount when the payment method changes', async () => {
+  it('updates the handling fee when the payment method changes', async () => {
     paymentState.data = [
       {
         id: 9,
@@ -278,136 +342,139 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       },
     ];
 
-    await act(async () => {
-      root.render(<OrderDetailPage />);
+    const { user } = renderWithProviders(<OrderDetailPage />);
+
+    expect(screen.getAllByText('order.handling_fee').length).toBeGreaterThan(0);
+    expect(screen.getByText('¥ 12.50 CNY')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: 'Backup Pay' }));
+
+    expect(screen.getByRole('radio', { name: 'Backup Pay' })).toHaveAttribute(
+      'data-state',
+      'checked',
+    );
+    expect(screen.queryByText('order.handling_fee')).toBeNull();
+    expect(screen.getByText('¥ 10.00 CNY')).toBeInTheDocument();
+  });
+
+  it('prefers the server pre_handling_amount over the locally derived method fee', () => {
+    paymentState.data = [
+      {
+        id: 9,
+        name: 'Fee Pay',
+        payment: 'LegacyPay',
+        handling_fee_fixed: 150,
+        handling_fee_percent: 10,
+      },
+    ];
+    orderState.data = { ...orderState.data!, pre_handling_amount: 300 };
+
+    renderWithProviders(<OrderDetailPage />);
+
+    // Server value (300) wins over the locally computed 250.
+    expect(screen.getByText('3.00')).toBeInTheDocument();
+    expect(screen.queryByText('2.50')).toBeNull();
+    expect(screen.getByText('¥ 13.00 CNY')).toBeInTheDocument();
+  });
+
+  it('tokenizes the card once at submit and sends the Stripe token in the checkout payload', async () => {
+    paymentState.data = [{ id: 5, name: 'Stripe Pay', payment: 'StripeCredit' }];
+    stripePublicKey.value = 'pk_test_live';
+    stripeTokenize.mockResolvedValue({ id: 'tok_test_123' });
+    checkoutOrder.mockResolvedValue({ type: 1, data: undefined });
+
+    const { user } = renderWithProviders(<OrderDetailPage />);
+
+    // The card form mounts with the fetched public key and no eager tokenization.
+    expect(screen.getByTestId('stripe-card-form')).toHaveAttribute(
+      'data-public-key',
+      'pk_test_live',
+    );
+    expect(stripeTokenize).not.toHaveBeenCalled();
+
+    const submit = screen.getByTestId('commerce-submit');
+    expect(submit).toBeEnabled();
+    await user.click(submit);
+    await flushCheckout();
+
+    expect(stripeTokenize).toHaveBeenCalledTimes(1);
+    // Tier-1: the Stripe card token rides the /payment checkout payload.
+    expect(checkoutOrder).toHaveBeenCalledWith({
+      trade_no: 'ORDER123',
+      method: 5,
+      token: 'tok_test_123',
+    });
+    // The verification message stays behind i18n (key, not hardcoded Chinese).
+    expect(toastSpies.loading).toHaveBeenCalledWith('order.stripe_verifying', { duration: 5000 });
+    expect(screen.queryByTestId('payment-qrcode')).toBeNull();
+  });
+
+  it('remounts the Stripe card form when the public key changes', () => {
+    paymentState.data = [{ id: 5, name: 'Stripe Pay', payment: 'StripeCredit' }];
+    stripePublicKey.value = 'pk_a';
+
+    const { rerender } = renderWithProviders(<OrderDetailPage />);
+    expect(stripeMounts.count).toBe(1);
+
+    stripePublicKey.value = 'pk_b';
+    rerender(<OrderDetailPage />);
+
+    // A new key must recreate the Stripe Elements instance, not update in place.
+    expect(screen.getByTestId('stripe-card-form')).toHaveAttribute('data-public-key', 'pk_b');
+    expect(stripeMounts.count).toBe(2);
+  });
+
+  it('opens an accessible QR dialog encoding the checkout pay URL', async () => {
+    checkoutOrder.mockResolvedValue({ type: 0, data: 'https://pay.example.test/order' });
+
+    const { user } = renderWithProviders(<OrderDetailPage />);
+
+    await user.click(screen.getByTestId('commerce-submit'));
+
+    // Tier-1: the non-Stripe checkout payload carries the trade_no and method.
+    expect(checkoutOrder).toHaveBeenCalledWith({
+      trade_no: 'ORDER123',
+      method: 1,
+      token: undefined,
     });
 
-    expect(document.body.textContent).toContain('order.handling_fee');
-    expect(document.body.textContent).toContain('¥ 12.50 CNY');
-
-    const backupMethod = [
-      ...document.querySelectorAll('[data-testid="payment-option"]'),
-    ].find((item) => item.textContent?.includes('Backup Pay'));
-    expect(backupMethod).toBeDefined();
-
-    await act(async () => {
-      backupMethod?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(document.body.textContent).not.toContain('order.handling_fee');
-    expect(document.body.textContent).toContain('¥ 10.00 CNY');
-  });
-
-  it('renders payment fees through the pre_handling_amount path', () => {
-    expect(orderDetailSource).toContain('effectivePreHandlingAmount');
-    expect(orderDetailSource).toContain('pre_handling_amount');
-    expect(orderDetailSource).toContain('calculatePreHandlingAmount(currentOrder, selectedPayment)');
-    expect(orderDetailSource).toContain(
-      'order.total_amount * ((method.handling_fee_percent as number) / 100) +',
+    const dialog = await screen.findByRole('dialog', { name: 'order.checkout' });
+    expect(dialog).toHaveAttribute('data-testid', 'payment-qrcode');
+    expect(dialog).toHaveAccessibleDescription('order.waiting_pay');
+    // The QR encodes the gateway payUrl the user's payment app scans.
+    expect(dialog.querySelector('svg')).toHaveAttribute(
+      'data-qrcode',
+      'https://pay.example.test/order',
     );
-    expect(orderDetailSource).toContain('(method.handling_fee_fixed as number)');
-    expect(orderDetailSource).not.toContain('selectedPayment.handling_fee_fixed');
-    expect(orderDetailSource).not.toContain('selectedPayment.handling_fee_percent');
-    expect(orderDetailSource).not.toContain('method?.handling_fee_percent ?? 0');
-    expect(orderDetailSource).not.toContain('method?.handling_fee_fixed ?? 0');
-  });
-
-  it('keeps payment method items keyed by their method id without index fallback', () => {
-    const paymentMethodSource = orderDetailSource.slice(
-      orderDetailSource.indexOf('paymentMethods?.map((method) => ('),
-      orderDetailSource.indexOf('{isStripePayment && stripePk', orderDetailSource.indexOf('paymentMethods?.map')),
+    expect(within(dialog).getByTestId('payment-qrcode-status')).toHaveTextContent(
+      'order.waiting_pay',
     );
-
-    expect(paymentMethodSource).toContain('paymentMethods?.map((method) => (');
-    expect(paymentMethodSource).toContain('RadioGroupItem');
-    expect(paymentMethodSource).toContain('RadioGroupIndicator');
-    expect(paymentMethodSource).toContain('data-testid="payment-option"');
-    expect(paymentMethodSource).not.toContain("'false'");
-    expect(paymentMethodSource).not.toContain('key={index}');
-    expect(paymentMethodSource).toContain('key={method.id}');
-  });
-
-  it('keeps the Stripe form keyed by public key and tokenizes at submit via a ref', () => {
-    expect(orderDetailSource).toContain('<StripeCardForm');
-    expect(orderDetailSource).toContain('key={stripePk}');
-    expect(orderDetailSource).toContain('publicKey={stripePk}');
-    expect(orderDetailSource).toContain('ref={stripeCardRef}');
-    // Tokenization moved off the per-keystroke onChange onto a submit-time ref call.
-    expect(orderDetailSource).toContain('await stripeCardRef.current?.tokenize()');
-    expect(orderDetailSource).not.toContain('onToken={handleStripeToken}');
-  });
-
-  it('keeps the Stripe verification loading message behind i18n', () => {
-    expect(orderDetailSource).toContain(
-      "toast.loading(t('order.stripe_verifying'), { duration: 5000 })",
-    );
-    expect(orderDetailSource).not.toContain("toast.loading('请稍等，我们正在验证该笔支付'");
-  });
-
-  it('keeps the QR code props for payment polling', () => {
-    const modalSource = orderDetailSource.slice(
-      orderDetailSource.indexOf('<DialogContent'),
-      orderDetailSource.indexOf('</DialogContent>', orderDetailSource.indexOf('<DialogContent')),
-    );
-    const qrSource = orderDetailSource.slice(
-      orderDetailSource.indexOf('<QRCodeSVG'),
-      orderDetailSource.indexOf('/>', orderDetailSource.indexOf('<QRCodeSVG')) + 2,
-    );
-
-    expect(orderDetailSource).toContain("from '@/components/ui/shadcn-dialog'");
-    expect(orderDetailSource).not.toContain("from '@/components/ui/dialog'");
-    expect(modalSource).toContain('className="w-[min(calc(100vw-2rem),20rem)]"');
-    expect(modalSource).toContain('data-testid="payment-qrcode"');
-    expect(modalSource).toContain('showCloseButton={false}');
-    expect(modalSource).toContain('<DialogHeader className="sr-only">');
-    expect(modalSource).toContain('<DialogTitle>{t(\'order.checkout\')}</DialogTitle>');
-    expect(modalSource).toContain('<DialogDescription>{t(\'order.waiting_pay\')}</DialogDescription>');
-    expect(modalSource).toContain('<DialogFooter className="justify-center sm:justify-center">');
-    expect(modalSource).toContain('data-testid="payment-qrcode-status"');
-    expect(modalSource).not.toContain('closable=');
-    expect(modalSource).not.toContain('maskClosable');
-    expect(modalSource).not.toContain('width={300}');
-    expect(modalSource).not.toContain('centered');
-    expect(modalSource).not.toContain('footer=');
-    expect(qrSource).toContain('value={payUrl}');
-    expect(qrSource).toContain('size={250}');
-    expect(qrSource).not.toContain('renderAs=');
-    expect(qrSource).not.toContain('level=');
-    expect(qrSource).not.toContain('bgColor=');
-    expect(qrSource).not.toContain('fgColor=');
-    expect(qrSource).not.toContain('includeMargin=');
+    // showCloseButton={false}: waiting-pay dialog exposes no close control.
+    expect(within(dialog).queryByRole('button')).toBeNull();
   });
 
   it('hides the QR dialog after paid polling', async () => {
+    vi.useFakeTimers();
     checkoutOrder.mockResolvedValue({ type: 0, data: 'https://pay.example.test/order' });
     orderStatusState.data = 1;
 
-    await act(async () => {
-      root.render(<OrderDetailPage />);
-    });
+    renderWithProviders(<OrderDetailPage />);
 
-    const checkoutButton = [...document.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('order.checkout'),
-    );
-    expect(checkoutButton).toBeDefined();
+    // fireEvent (sync act) instead of userEvent: under vitest fake timers,
+    // RTL's asyncWrapper awaits a setTimeout(0) that only Jest auto-advances.
+    fireEvent.click(screen.getByTestId('commerce-submit'));
+    await flushCheckout();
 
-    await act(async () => {
-      checkoutButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(document.querySelector('[data-testid="payment-qrcode"] svg')).not.toBeNull();
+    expect(screen.getByTestId('payment-qrcode').querySelector('svg')).not.toBeNull();
 
     await act(async () => {
       vi.advanceTimersByTime(3000);
-      await Promise.resolve();
       await Promise.resolve();
     });
 
     expect(checkOrder).toHaveBeenCalledWith('ORDER123');
     expect(orderRefetch).toHaveBeenCalledTimes(1);
-    expect(document.querySelector('[data-testid="payment-qrcode"] svg')).toBeNull();
+    expect(screen.queryByTestId('payment-qrcode')).toBeNull();
   });
 
   it('settles a free / balance-covered order (type -1) instead of falling through silently', async () => {
@@ -416,22 +483,13 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
     // plus the balance (info) and subscription (subscribe) it just consumed.
     checkoutOrder.mockResolvedValue({ type: -1, data: undefined });
 
-    await act(async () => {
-      root.render(<OrderDetailPage />);
-    });
+    const { user } = renderWithProviders(<OrderDetailPage />);
 
-    const checkoutButton = [...document.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('order.checkout'),
-    );
-    expect(checkoutButton).toBeDefined();
+    await user.click(screen.getByTestId('commerce-submit'));
+    await flushCheckout();
 
-    await act(async () => {
-      checkoutButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(document.querySelector('[data-testid="payment-qrcode"] svg')).toBeNull();
+    expect(screen.queryByTestId('payment-qrcode')).toBeNull();
+    expect(toastSpies.success).toHaveBeenCalledWith('order.success');
     expect(orderRefetch).toHaveBeenCalledTimes(1);
     const invalidatedKeys = invalidateQueries.mock.calls.map(
       (call) => (call[0] as { queryKey: readonly unknown[] }).queryKey,
@@ -443,50 +501,30 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
   it('restores the checkout button after a status-0 transport failure', async () => {
     checkoutOrder.mockRejectedValue({ status: 0, message: 'Network Error' });
 
-    await act(async () => {
-      root.render(<OrderDetailPage />);
-    });
+    const { user } = renderWithProviders(<OrderDetailPage />);
 
-    const checkoutButton = [...document.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('order.checkout'),
-    ) as HTMLButtonElement | undefined;
-    expect(checkoutButton).toBeDefined();
+    const submit = screen.getByTestId('commerce-submit');
+    await user.click(submit);
+    await flushCheckout();
 
-    await act(async () => {
-      checkoutButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(checkoutButton?.disabled).toBe(false);
-    expect(checkoutButton?.textContent).toContain('order.checkout');
-    expect(orderDetailSource).not.toContain('isLegacyCheckoutNetworkError');
-    expect(orderDetailSource).not.toContain('keepLegacyLoading');
+    expect(submit).toBeEnabled();
+    expect(submit).toHaveTextContent('order.checkout');
   });
 
   it('restores the checkout button after a non-transport checkout failure', async () => {
     checkoutOrder.mockRejectedValue({ status: 500, message: '支付失败' });
 
-    await act(async () => {
-      root.render(<OrderDetailPage />);
-    });
+    const { user } = renderWithProviders(<OrderDetailPage />);
 
-    const checkoutButton = [...document.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('order.checkout'),
-    ) as HTMLButtonElement | undefined;
-    expect(checkoutButton).toBeDefined();
+    const submit = screen.getByTestId('commerce-submit');
+    await user.click(submit);
+    await flushCheckout();
 
-    await act(async () => {
-      checkoutButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(checkoutButton?.disabled).toBe(false);
-    expect(checkoutButton?.textContent).toContain('order.checkout');
+    expect(submit).toBeEnabled();
+    expect(submit).toHaveTextContent('order.checkout');
   });
 
-  it('drops the locally injected payment fee after the paid poll detail refresh replaces the order', async () => {
+  it('drops the locally injected payment fee after the paid poll detail refresh replaces the order', () => {
     paymentState.data = [
       {
         id: 9,
@@ -497,122 +535,82 @@ describe('OrderDetailPage shadcn commerce behavior', () => {
       },
     ];
 
-    await act(async () => {
-      root.render(<OrderDetailPage />);
-    });
+    const { rerender } = renderWithProviders(<OrderDetailPage />);
 
-    expect(document.body.textContent).toContain('order.handling_fee');
-    expect(document.body.textContent).toContain('2.50');
+    expect(screen.getAllByText('order.handling_fee').length).toBeGreaterThan(0);
+    expect(screen.getByText('2.50')).toBeInTheDocument();
 
-    orderState.data = {
-      ...orderState.data!,
-      status: 3,
-    };
+    // The bundled poll-success refetch replaces the order detail without
+    // re-running getPaymentMethod, so a paid (non-pending) order must carry no
+    // locally derived fee.
+    orderState.data = { ...orderState.data!, status: 3 };
+    rerender(<OrderDetailPage />);
 
-    await act(async () => {
-      root.render(<OrderDetailPage />);
-      await Promise.resolve();
-    });
-
-    expect(document.body.textContent).not.toContain('order.handling_fee');
-    expect(orderDetailSource).toContain('currentOrder.status === 0 ? calculatePreHandlingAmount');
-    expect(orderDetailSource).not.toContain('setPreHandlingAmount');
-    expect(orderDetailSource).not.toContain('previousOrderStatusRef');
+    expect(screen.queryByText('order.handling_fee')).toBeNull();
   });
 
   it('keeps polling after the pending order detail object refreshes', async () => {
+    // This page only decides whether to poll (enabled); the 3s self-stopping
+    // cadence is owned by useOrderStatus (queries.ts).
+    vi.useFakeTimers();
     orderStatusState.data = 0;
 
-    // This page only decides whether to poll (enabled); the 3s self-stopping
-    // cadence is owned by useOrderStatus (queries.ts), so the call site carries
-    // no refetchInterval and no effect mirrors query state into the polling flag.
-    expect(orderDetailSource).toContain('useOrderStatus(tradeNo, { enabled: pollOrderStatus })');
-    expect(orderDetailSource).not.toContain('refetchInterval:');
-    expect(orderDetailSource).not.toContain('if (orderStatusQuery.isError) setPollOrderStatus(false)');
-
-    await act(async () => {
-      root.render(<OrderDetailPage />);
-    });
+    const { rerender } = renderWithProviders(<OrderDetailPage />);
 
     await act(async () => {
       vi.advanceTimersByTime(3000);
       await Promise.resolve();
-      await Promise.resolve();
     });
     expect(checkOrder).toHaveBeenCalledTimes(1);
+    expect(checkOrder).toHaveBeenCalledWith('ORDER123');
     expect(orderStatusState.calls.some((call) => call.options?.enabled)).toBe(true);
 
     orderState.data = {
       ...orderState.data!,
       created_at: orderState.data!.created_at + 1,
     };
-    await act(async () => {
-      root.render(<OrderDetailPage />);
-    });
+    rerender(<OrderDetailPage />);
 
     expect(checkOrder).toHaveBeenCalledTimes(2);
   });
 
-  it('cancels with the loaded trade number without the missing legacy detail refresh', async () => {
-    orderState.data = {
-      ...orderState.data!,
-      trade_no: 'DETAIL123',
-    };
+  it('cancels with the loaded trade number without invalidating or refetching the detail', async () => {
+    orderState.data = { ...orderState.data!, trade_no: 'DETAIL123' };
 
-    await act(async () => {
-      root.render(<OrderDetailPage />);
-    });
+    const { user } = renderWithProviders(<OrderDetailPage />);
 
-    const cancelButton = [...document.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('order.cancel'),
-    );
-    expect(cancelButton).toBeDefined();
-
-    await act(async () => {
-      cancelButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+    await user.click(screen.getByRole('button', { name: 'order.cancel' }));
 
     expect(confirmDialog).toHaveBeenCalledTimes(1);
     const confirmOptions = confirmDialog.mock.calls[0]?.[0] as { onConfirm?: () => Promise<void> };
     await confirmOptions.onConfirm?.();
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await flushCheckout();
 
     expect(cancelMutateAsync).toHaveBeenCalledWith('DETAIL123');
     // The cancel path itself neither invalidates nor refetches (the cancel
     // mutation owns the order-list invalidation); only payment settlement does.
     expect(invalidateQueries).not.toHaveBeenCalled();
     expect(orderRefetch).not.toHaveBeenCalled();
-    expect(orderDetailSource).not.toContain('queryClient.invalidateQueries({ queryKey: userKeys.orders() })');
   });
 
   it('lets TanStack Query retain order detail cache on unmount', () => {
-    // No manual cache teardown on unmount. useQueryClient is still used, but only
-    // to refresh account state after a payment settles, never to remove queries.
-    expect(orderDetailSource).not.toContain('removeQueries');
-    expect(orderDetailSource).not.toContain('cancelQueries');
+    // The mocked query client only exposes invalidateQueries, so any cache
+    // teardown (removeQueries/cancelQueries) on unmount would throw here.
+    const { unmount } = renderWithProviders(<OrderDetailPage />);
+
+    unmount();
+
+    expect(invalidateQueries).not.toHaveBeenCalled();
+    expect(orderRefetch).not.toHaveBeenCalled();
   });
 
   it('renders cancel loading through the shadcn Button busy state', () => {
     cancelState.isPending = true;
 
-    const html = renderToStaticMarkup(<OrderDetailPage />);
+    renderWithProviders(<OrderDetailPage />);
 
-    expect(html).toContain('aria-busy="true"');
-    expect(html).toContain('order.cancel');
-    expect(orderDetailSource).toContain('loading={cancel.isPending}');
-    expect(orderDetailSource).not.toContain('<LegacyLoadingIcon />');
-  });
-
-  it('does not keep Bootstrap or OneUI presentation classes on redesigned commerce controls', () => {
-    const html = renderToStaticMarkup(<OrderDetailPage />);
-
-    expect(html).toContain('data-testid="commerce-submit"');
-    expect(html).toContain('data-testid="order-info-title"');
-    expect(orderDetailSource).not.toContain('btn-block btn-primary');
-    expect(orderDetailSource).not.toContain('block-title');
+    const cancelButton = screen.getByRole('button', { name: 'order.cancel' });
+    expect(cancelButton).toHaveAttribute('aria-busy', 'true');
+    expect(cancelButton).toBeDisabled();
   });
 });

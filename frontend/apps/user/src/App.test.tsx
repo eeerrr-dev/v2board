@@ -1,20 +1,23 @@
-import { describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isValidElement, type ReactElement } from 'react';
 import { QueryClient } from '@tanstack/react-query';
-import type { LoaderFunctionArgs } from 'react-router';
-import {
-  USER_APP_LAYOUT_ROUTE_PATHS,
-  USER_LEGACY_ROUTE_PATHS,
-  createDashboardPrefetchLoader,
-  createRequireUserLoader,
-  createUserRouter,
-} from './App';
+import { screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryRouter, type LoaderFunctionArgs, type RouteObject } from 'react-router';
+import { AppLayout } from '@/components/layout/app-layout';
+import { GuestLayout } from '@/components/layout/guest-layout';
+import { RequireAuth } from '@/components/layout/require-auth';
+import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 import { setAuthData } from '@/lib/auth';
 import { userQueryOptions } from '@/lib/queries';
-
-const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf8');
+import { renderRoutes } from '@/test/render';
+import {
+  USER_APP_LAYOUT_ROUTE_PATHS,
+  USER_LEGACY_ROUTE_OPTIONS,
+  USER_LEGACY_ROUTE_PATHS,
+  createRequireUserLoader,
+  createUserRouter,
+  createUserRoutes,
+} from './App';
 
 function loaderArgs(routePath: string): LoaderFunctionArgs {
   return {
@@ -23,6 +26,53 @@ function loaderArgs(routePath: string): LoaderFunctionArgs {
     context: {},
   } as unknown as LoaderFunctionArgs;
 }
+
+type SyncLoader = (args: LoaderFunctionArgs) => unknown;
+
+/** Runs a loader expected to throw a 302 redirect Response and returns it. */
+function catchRedirect(run: () => unknown): Response {
+  let thrown: unknown;
+  try {
+    run();
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(Response);
+  const response = thrown as Response;
+  expect(response.status).toBe(302);
+  return response;
+}
+
+function elementType(route: RouteObject | undefined): unknown {
+  return route && isValidElement(route.element) ? route.element.type : undefined;
+}
+
+/** The component a <RequireAuth> gate wraps, or undefined when not gated. */
+function authGatedChildType(route: RouteObject | undefined): unknown {
+  if (!route || !isValidElement(route.element) || route.element.type !== RequireAuth) {
+    return undefined;
+  }
+  const child = (route.element.props as { children?: unknown }).children;
+  return isValidElement(child) ? child.type : undefined;
+}
+
+function userRouteTree(queryClient = new QueryClient()) {
+  const [root] = createUserRoutes(queryClient);
+  if (!root) throw new Error('user route tree has no root route');
+  const children = root.children ?? [];
+  return {
+    root,
+    children,
+    guestLayout: children.find((route) => elementType(route) === GuestLayout),
+    appLayout: children.find((route) => authGatedChildType(route) === AppLayout),
+    ticketDetail: children.find((route) => route.path === '/ticket/:ticket_id'),
+    catchAll: children.find((route) => route.path === '*'),
+  };
+}
+
+afterEach(() => {
+  setAuthData(null);
+});
 
 describe('user legacy route table', () => {
   it('matches the bundled user route list exactly', () => {
@@ -55,74 +105,153 @@ describe('user legacy route table', () => {
     expect(USER_LEGACY_ROUTE_PATHS).not.toContain('/home');
   });
 
-  it('keeps ticket details as the original standalone chat route', () => {
+  it('wires the legacy hash-normalization options for this app', () => {
+    expect(USER_LEGACY_ROUTE_OPTIONS.authenticatedFallback).toBe('/dashboard');
+    expect(USER_LEGACY_ROUTE_OPTIONS.guestFallback).toBe('/login');
+    // Empty on purpose: an authenticated session may stay on /login etc.
+    // instead of being force-bounced to the dashboard (legacy behavior).
+    expect(USER_LEGACY_ROUTE_OPTIONS.authenticatedPublicFallbackRoutes).toEqual([]);
+    // Nested legacy paths like /dashboard/plan recover against the full table.
+    expect(USER_LEGACY_ROUTE_OPTIONS.nestedPrefixes).toEqual([...USER_LEGACY_ROUTE_PATHS]);
+    expect(USER_LEGACY_ROUTE_OPTIONS.publicRoutes).toEqual([
+      '/',
+      '/login',
+      '/register',
+      '/forgetpassword',
+    ]);
+    expect(USER_LEGACY_ROUTE_OPTIONS.routes).toEqual([...USER_LEGACY_ROUTE_PATHS]);
+  });
+});
+
+describe('user route tree', () => {
+  it('mounts guest pages under one shared GuestLayout element', () => {
+    const { children, guestLayout } = userRouteTree();
+
+    expect(guestLayout).toBeDefined();
+    // A single unkeyed layout element keeps the layout mounted across
+    // sibling navigation instead of remounting per route.
+    expect(children.filter((route) => elementType(route) === GuestLayout)).toHaveLength(1);
+    expect((guestLayout!.element as ReactElement).key).toBeNull();
+    expect(guestLayout!.children?.map((route) => route.path)).toEqual([
+      '/login',
+      '/register',
+      '/forgetpassword',
+    ]);
+  });
+
+  it('mounts app pages under one shared RequireAuth-gated AppLayout with the entry loader', () => {
+    const { children, appLayout } = userRouteTree();
+
+    expect(appLayout).toBeDefined();
+    expect(children.filter((route) => authGatedChildType(route) === AppLayout)).toHaveLength(1);
+    expect((appLayout!.element as ReactElement).key).toBeNull();
+    // Layer 1 of the auth gate: the entry loader (behavior covered below).
+    expect(typeof appLayout!.loader).toBe('function');
+    expect(appLayout!.children?.map((route) => route.path)).toEqual([
+      ...USER_APP_LAYOUT_ROUTE_PATHS,
+    ]);
+  });
+
+  it('keeps ticket details as a standalone auth-gated chat route outside the app shell', () => {
+    const { appLayout, ticketDetail } = userRouteTree();
+
     expect(USER_APP_LAYOUT_ROUTE_PATHS).not.toContain('/ticket/:ticket_id');
-    expect(source).toContain("path: '/ticket/:ticket_id'");
-    expect(source).toContain("lazy: lazyPage('/ticket/:ticket_id')");
-    expect(source).toContain('<RouteBoundaryOutlet />');
-    expect(source).toContain('<RequireAuth>');
+    expect(appLayout!.children?.some((route) => route.path === '/ticket/:ticket_id')).toBe(false);
+    expect(ticketDetail).toBeDefined();
+    // Auth-gated like app pages, but rendered through a bare outlet — the
+    // original standalone chat window, not the shared shell.
+    expect(authGatedChildType(ticketDetail)).toBe(RouteBoundaryOutlet);
+    expect(typeof ticketDetail!.loader).toBe('function');
+    const detailIndex = ticketDetail!.children?.[0];
+    expect(detailIndex?.index).toBe(true);
+    expect(typeof detailIndex?.lazy).toBe('function');
   });
 
-  it('normalizes unmatched legacy hashes in route loaders before rendering pages', () => {
-    expect(source).toContain("path: '*'");
-    expect(source).toContain('export function normalizeUserRouteLoader');
-    expect(source).toContain('export function unknownUserRouteLoader');
-    expect(source).toContain('authenticatedPublicFallbackRoutes: []');
-    expect(source).toContain('nestedPrefixes: USER_LEGACY_ROUTE_PATHS');
-    expect(source).toContain('getNormalizedLegacyHashPath(current, USER_LEGACY_ROUTE_OPTIONS)');
-    expect(source).toContain('if (normalized !== current) throw redirect(normalized);');
-    expect(source).toContain("import { buildLoginRedirect, getAuthData } from '@/lib/auth';");
-    expect(source).toContain('function matchesUserLegacyRoute(pathname: string): boolean');
-    expect(source).toContain('matchPath({ path, end: true }, pathname)');
-    expect(source).toContain('function getUserRouteFallback(): string');
-    expect(source).toContain('throw redirect(getUserRouteFallback())');
-    expect(source).not.toContain('<Routes>');
-    expect(source).not.toContain('LegacyUnknownRouteRedirect');
+  it('gives every legacy page a lazy route module with its own error boundary', async () => {
+    const { root, children, guestLayout, appLayout, ticketDetail } = userRouteTree();
+    const home = children.find((route) => route.path === '/');
+    const pageRoutes = [
+      home!,
+      ...(guestLayout!.children ?? []),
+      ...(appLayout!.children ?? []),
+      ...(ticketDetail!.children ?? []),
+    ];
+
+    expect(pageRoutes).toHaveLength(USER_LEGACY_ROUTE_PATHS.length);
+    for (const route of pageRoutes) {
+      expect(typeof route.lazy).toBe('function');
+      expect(route.errorElement).toBeTruthy();
+    }
+    for (const route of [root, guestLayout!, appLayout!, ticketDetail!]) {
+      expect(route.errorElement).toBeTruthy();
+    }
+
+    // A lazy module resolves to a renderable route Component.
+    const homeModule = await (home!.lazy as () => Promise<{ Component: unknown }>)();
+    expect(typeof homeModule.Component).toBe('function');
+  });
+});
+
+describe('legacy hash normalization loaders (root + catch-all wiring)', () => {
+  const { root, catchAll } = userRouteTree();
+  const normalize = root.loader as SyncLoader;
+  const unknown = catchAll!.loader as SyncLoader;
+
+  it('passes canonical paths through without redirecting', () => {
+    setAuthData(null);
+    expect(normalize(loaderArgs('/login'))).toBeNull();
+
+    setAuthData('token-xyz');
+    expect(normalize(loaderArgs('/dashboard?tab=orders'))).toBeNull();
   });
 
-  it('uses React Router data APIs with lazy route modules and route error boundaries', () => {
-    expect(source).toContain('createHashRouter');
-    expect(source).toContain('export function createUserRoutes(queryClient: QueryClient)');
-    expect(source).toContain('export function createRequireUserLoader(queryClient: QueryClient)');
-    expect(source).toContain('await queryClient.ensureQueryData(userQueryOptions.info())');
-    expect(source).toContain('function lazyPage(path: UserLegacyRoutePath)');
-    expect(source).toContain('lazy: lazyPage(path)');
-    expect(source).toContain('errorElement: <RouteErrorFallback />');
-    expect(source).not.toContain('USER_ROUTE_ELEMENTS');
-    expect(source).not.toContain('<Suspense');
+  it('lets an authenticated session stay on public auth routes (no forced dashboard bounce)', () => {
+    setAuthData('token-xyz');
+    expect(normalize(loaderArgs('/login'))).toBeNull();
+    expect(normalize(loaderArgs('/register'))).toBeNull();
   });
 
-  it('paints a role=status spinner while pending initial loaders hydrate the root', () => {
-    // Without a hydrate fallback the data router leaves #root empty while the
-    // first navigation's loaders run — the DOM shape the retired production
-    // white-screen watchdog keyed on.
-    expect(source).toContain('function RouteHydrateFallback()');
-    expect(source).toContain('hydrateFallbackElement: <RouteHydrateFallback />');
-    expect(source).toContain('role="status"');
+  it('recovers nested legacy paths onto their canonical route, keeping the query', () => {
+    setAuthData('token-xyz');
+    const response = catchRedirect(() => normalize(loaderArgs('/dashboard/plan?from=email')));
+    expect(response.headers.get('Location')).toBe('/plan?from=email');
   });
 
-  it('prefetches the dashboard queries from its route loader', () => {
-    expect(source).toContain(
-      'export function createDashboardPrefetchLoader(queryClient: QueryClient)',
+  it('normalizes the production #/ hash form of the request URL', () => {
+    setAuthData('token-xyz');
+    const response = catchRedirect(() =>
+      normalize({
+        request: new Request('https://v2board.local/#/dashboard/knowledge'),
+        params: {},
+        context: {},
+      } as unknown as LoaderFunctionArgs),
     );
-    expect(source).toContain(
-      "path === '/dashboard' ? pageRoute(path, prefetchDashboard) : pageRoute(path)",
+    expect(response.headers.get('Location')).toBe('/knowledge');
+  });
+
+  it('bounces a guest requesting a guarded path to /login', () => {
+    setAuthData(null);
+    const response = catchRedirect(() => normalize(loaderArgs('/knowledge')));
+    expect(response.headers.get('Location')).toBe('/login');
+  });
+
+  it('sends unknown routes to the session fallback: guests to /login, authenticated to /dashboard', () => {
+    setAuthData(null);
+    expect(catchRedirect(() => unknown(loaderArgs('/bogus'))).headers.get('Location')).toBe(
+      '/login',
+    );
+
+    setAuthData('token-xyz');
+    expect(catchRedirect(() => unknown(loaderArgs('/bogus'))).headers.get('Location')).toBe(
+      '/dashboard',
     );
   });
 
-  it('builds the hash router with the dashboard static loader alongside its lazy component', () => {
-    const router = createUserRouter(new QueryClient());
-    expect(router.routes.length).toBeGreaterThan(0);
-    router.dispose();
-  });
-
-  it('keeps the shared layout mounted while switching routes', () => {
-    expect(source).toContain('element: <GuestLayout />');
-    expect(source).toContain('<RequireAuth>');
-    expect(source).toContain('<AppLayout />');
-    expect(source).not.toContain('key={routeComponentKey');
-    expect(source).not.toContain('function KeyedAppLayout');
-    expect(source).not.toContain('function KeyedGuestLayout');
+  it('recovers a nested legacy path from the catch-all before falling back', () => {
+    setAuthData('token-xyz');
+    expect(
+      catchRedirect(() => unknown(loaderArgs('/dashboard/traffic'))).headers.get('Location'),
+    ).toBe('/traffic');
   });
 });
 
@@ -146,16 +275,19 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
     );
   });
 
-  it('lets an authenticated entry through without redirecting', async () => {
+  it('lets an authenticated entry through and warms the user info query', async () => {
     setAuthData('token-xyz');
     const queryClient = new QueryClient();
     // Pre-seed so ensureQueryData resolves from cache instead of hitting the network.
     queryClient.setQueryData(userQueryOptions.info().queryKey, {} as never);
+    const ensureSpy = vi.spyOn(queryClient, 'ensureQueryData');
     const loader = createRequireUserLoader(queryClient);
 
     const result = await loader(loaderArgs('/dashboard'));
 
     expect(result).toBeNull();
+    expect(ensureSpy).toHaveBeenCalledTimes(1);
+    expect(ensureSpy.mock.calls[0]?.[0]?.queryKey).toEqual(userQueryOptions.info().queryKey);
     setAuthData(null);
   });
 
@@ -211,22 +343,30 @@ describe('user route auth entry gate (layer 1: route loader)', () => {
 });
 
 describe('user route dashboard prefetch loader', () => {
-  it('warms subscribe/stat/notices/comm for an authenticated entry and skips them otherwise', () => {
+  it('wires a dashboard-only loader that warms subscribe/stat/notices/comm when authenticated', () => {
     const queryClient = new QueryClient();
-    // Pre-seed so ensureQueryData resolves from cache instead of hitting the network.
-    queryClient.setQueryData(userQueryOptions.subscribe().queryKey, {} as never);
-    queryClient.setQueryData(userQueryOptions.stat().queryKey, {} as never);
-    queryClient.setQueryData(userQueryOptions.notices().queryKey, {} as never);
-    queryClient.setQueryData(userQueryOptions.commConfig().queryKey, {} as never);
-    const ensureSpy = vi.spyOn(queryClient, 'ensureQueryData');
-    const prefetch = createDashboardPrefetchLoader(queryClient);
+    const ensureSpy = vi
+      .spyOn(queryClient, 'ensureQueryData')
+      .mockResolvedValue(null as never);
+    const { appLayout } = userRouteTree(queryClient);
+    const dashboard = appLayout!.children?.find((route) => route.path === '/dashboard');
+
+    expect(typeof dashboard?.loader).toBe('function');
+    // Only the dashboard entry warms queries; sibling pages have no loader.
+    expect(
+      appLayout!.children
+        ?.filter((route) => route.path !== '/dashboard')
+        .every((route) => route.loader === undefined),
+    ).toBe(true);
+
+    const prefetch = dashboard!.loader as SyncLoader;
 
     setAuthData(null);
-    expect(prefetch()).toBeNull();
+    expect(prefetch(loaderArgs('/dashboard'))).toBeNull();
     expect(ensureSpy).not.toHaveBeenCalled();
 
     setAuthData('token-xyz');
-    expect(prefetch()).toBeNull();
+    expect(prefetch(loaderArgs('/dashboard'))).toBeNull();
     const warmedKeys = ensureSpy.mock.calls.map(([options]) => options.queryKey);
     expect(warmedKeys).toEqual([
       userQueryOptions.subscribe().queryKey,
@@ -235,5 +375,78 @@ describe('user route dashboard prefetch loader', () => {
       userQueryOptions.commConfig().queryKey,
     ]);
     setAuthData(null);
+  });
+});
+
+describe('user router behavior', () => {
+  it('reads the legacy #/ hash entry location (hash router contract)', () => {
+    setAuthData(null);
+    window.location.hash = '#/login';
+    const router = createUserRouter(new QueryClient());
+    try {
+      expect(router.routes.length).toBeGreaterThan(0);
+      expect(router.state.location.pathname).toBe('/login');
+    } finally {
+      router.dispose();
+      window.location.hash = '';
+    }
+  });
+
+  it('redirects an unauthenticated ticket-detail entry to /login with the return path', async () => {
+    setAuthData(null);
+    const router = createMemoryRouter(createUserRoutes(new QueryClient()), {
+      initialEntries: ['/ticket/123'],
+    });
+    try {
+      await waitFor(() => expect(router.state.location.pathname).toBe('/login'), {
+        timeout: 5000,
+      });
+      expect(router.state.location.search).toBe(
+        `?redirect=${encodeURIComponent('/ticket/123')}`,
+      );
+    } finally {
+      router.dispose();
+    }
+  });
+
+  it('lands unknown hashes on the session fallback route', async () => {
+    setAuthData(null);
+    const guestRouter = createMemoryRouter(createUserRoutes(new QueryClient()), {
+      initialEntries: ['/definitely/not/a/route'],
+    });
+    try {
+      await waitFor(() => expect(guestRouter.state.location.pathname).toBe('/login'), {
+        timeout: 5000,
+      });
+    } finally {
+      guestRouter.dispose();
+    }
+
+    setAuthData('token-xyz');
+    const queryClient = new QueryClient();
+    vi.spyOn(queryClient, 'ensureQueryData').mockResolvedValue(null as never);
+    const authedRouter = createMemoryRouter(createUserRoutes(queryClient), {
+      initialEntries: ['/definitely/not/a/route'],
+    });
+    try {
+      await waitFor(() => expect(authedRouter.state.location.pathname).toBe('/dashboard'), {
+        timeout: 5000,
+      });
+    } finally {
+      authedRouter.dispose();
+    }
+  });
+
+  it('paints a role=status spinner while pending initial loaders hydrate the root', async () => {
+    // Without a hydrate fallback the data router leaves #root empty while the
+    // first navigation's loaders run — the DOM shape the retired production
+    // white-screen watchdog keyed on.
+    setAuthData('token-xyz');
+    const queryClient = new QueryClient();
+    vi.spyOn(queryClient, 'ensureQueryData').mockReturnValue(new Promise<never>(() => {}));
+
+    renderRoutes(createUserRoutes(queryClient), { i18n: true, initialEntries: ['/dashboard'] });
+
+    expect(await screen.findByRole('status')).toBeInTheDocument();
   });
 });

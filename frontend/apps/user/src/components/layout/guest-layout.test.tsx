@@ -1,100 +1,84 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { MemoryRouter, Route, Routes } from 'react-router';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { screen, within } from '@testing-library/react';
+import { Route, Routes } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '@/test/render';
 import { GuestLayout } from './guest-layout';
 
-const guestLayoutSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), 'guest-layout.tsx'),
-  'utf8',
-);
-const authLayoutSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../../pages/auth/auth-layout.tsx'),
-  'utf8',
-);
-
-const mocks = vi.hoisted(() => ({
-  backgroundUrl: 'https://cdn.example.test/bg.jpg',
-}));
-
+// The operator background_url is always configured in these tests: the
+// redesigned auth shell must ignore it, so every render doubles as proof the
+// legacy backdrop never reaches the DOM.
 vi.mock('@/lib/legacy-settings', () => ({
   getLegacySettings: () => ({
-    background_url: mocks.backgroundUrl,
+    background_url: 'https://cdn.example.test/bg.jpg',
   }),
   getLegacyTitle: () => 'V2Board',
 }));
 
 function renderGuest(path: string) {
-  window.g_lang = 'zh-CN';
   window.settings = {
     i18n: ['en-US', 'zh-CN'] as string[] & Record<string, Record<string, string>>,
   };
 
-  return renderToStaticMarkup(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route element={<GuestLayout />}>
-          <Route path="/login" element={<div className="guest-probe">login</div>} />
-          <Route path="/register" element={<div className="guest-probe">register</div>} />
-          <Route path="/forgetpassword" element={<div className="guest-probe">forget</div>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+  return renderWithProviders(
+    <Routes>
+      <Route element={<GuestLayout />}>
+        <Route path="/login" element={<div>login probe</div>} />
+        <Route path="/register" element={<div>register probe</div>} />
+        <Route path="/forgetpassword" element={<div>forget probe</div>} />
+      </Route>
+    </Routes>,
+    { i18n: true, routerEntries: [path] },
   );
 }
 
-describe('GuestLayout auth shell', () => {
-  it('delegates the background-free auth shell to AuthLayout', () => {
-    expect(guestLayoutSource).toContain("import { AuthLayout } from '@/pages/auth/auth-layout';");
-    expect(guestLayoutSource).toContain('return <AuthLayout />;');
-    expect(guestLayoutSource).not.toContain('backgroundUrl');
-    expect(guestLayoutSource).not.toContain('background_url');
-    expect(authLayoutSource).not.toContain('backgroundUrl');
-    expect(authLayoutSource).not.toContain('background_url');
+function hasInlineBackground(container: HTMLElement): boolean {
+  return Array.from(container.querySelectorAll<HTMLElement>('*')).some(
+    (element) => element.style.backgroundImage || element.style.background,
+  );
+}
+
+describe('GuestLayout auth shell (route-isolated 2026 reskin)', () => {
+  it('renders the shadcn auth shell around the routed page and ignores the operator background', () => {
+    const { container } = renderGuest('/login');
+
+    // #page-container / #main-container are visual-parity ready-selectors.
+    expect(container.querySelector('#page-container')).not.toBeNull();
+    const main = container.querySelector('#main-container');
+    expect(main).not.toBeNull();
+    // The v2board-auth-surface/-frame hooks mark AuthLayout's island shell —
+    // their presence is the behavior twin of the retired "GuestLayout
+    // delegates to AuthLayout" source pin.
+    expect(main).toHaveClass('v2board-auth-surface');
+    const frame = container.querySelector<HTMLElement>('.v2board-auth-frame');
+    expect(frame).not.toBeNull();
+    expect(within(frame!).getByText('login probe')).toBeInTheDocument();
+
+    // Shell chrome: brand wordmark plus the language menu trigger
+    // (visual-parity clicks .v2board-auth-language-trigger).
+    expect(screen.getByText('V2Board')).toBeInTheDocument();
+    expect(container.querySelector('.v2board-auth-language-trigger')).not.toBeNull();
+
+    // The configured background_url never renders: no inline background style
+    // anywhere in the shell.
+    expect(hasInlineBackground(container)).toBe(false);
   });
 
-  describe('redesigned auth chrome (route-isolated 2026 reskin)', () => {
-    it('renders the shadcn auth surface and drops the legacy background + operator image', () => {
-      mocks.backgroundUrl = 'https://cdn.example.test/bg.jpg';
-      const html = renderGuest('/login');
+  it('uses the same auth shell for register and forgetpassword', () => {
+    const cases: Array<[string, string]> = [
+      ['/register', 'register probe'],
+      ['/forgetpassword', 'forget probe'],
+    ];
 
-      expect(html).toContain('id="page-container"');
-      expect(html).toContain('id="main-container"');
-      expect(html).toContain('bg-muted');
-      expect(html).toContain('v2board-auth-frame');
-      expect(html).toContain('class="guest-probe"');
-      expect(html).toContain('v2board-auth-surface');
-      expect(html).not.toContain('v2board-auth-backdrop');
-      expect(html).not.toContain('v2board-auth-box');
-      expect(html).not.toContain('class="v2board-background"');
-      expect(html).not.toContain('background-image');
-      expect(guestLayoutSource).not.toContain('tw:fixed tw:inset-0');
-      expect(guestLayoutSource).not.toContain('tw:p-4');
-    });
+    for (const [path, probe] of cases) {
+      const { container, unmount } = renderGuest(path);
 
-    it('uses the same 2026 presentation hooks for register and forgetpassword', () => {
-      for (const path of ['/login', '/register', '/forgetpassword']) {
-        const html = renderGuest(path);
-        expect(html).toContain('v2board-auth-surface');
-        expect(html).toContain('v2board-auth-frame');
-        expect(html).not.toContain('v2board-auth-backdrop');
-        expect(html).not.toContain('v2board-auth-box');
-        expect(html).not.toContain('class="v2board-background"');
-        expect(html).not.toContain('background-image');
-      }
-    });
+      expect(container.querySelector('#main-container')).toHaveClass('v2board-auth-surface');
+      const frame = container.querySelector<HTMLElement>('.v2board-auth-frame');
+      expect(frame).not.toBeNull();
+      expect(within(frame!).getByText(probe)).toBeInTheDocument();
+      expect(hasInlineBackground(container)).toBe(false);
 
-    it('keeps the centered auth shell free of page-level legacy chrome', () => {
-      const html = renderGuest('/login');
-      expect(html).toContain('v2board-auth-shell-brand');
-      expect(html).toContain('>V2Board</div>');
-      expect(html).toContain('v2board-auth-language-trigger');
-      expect(html).not.toContain('v2board-auth-chrome');
-      expect(html).not.toContain('v2board-auth-box');
-      expect(html).not.toContain('class="btn');
-      expect(html).not.toContain('href="#/login"');
-    });
+      unmount();
+    }
   });
 });
