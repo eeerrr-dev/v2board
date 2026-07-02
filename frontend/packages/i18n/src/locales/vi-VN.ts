@@ -242,6 +242,7 @@ const viVNDictionary = {
   "浅色": "Sáng",
   "跟随系统": "Theo hệ thống",
   "切换主题": "Đổi giao diện",
+  "关闭弹窗": "Đóng hộp thoại",
   "到期邮件提醒": "Mail nhắc đến hạn",
   "流量邮件提醒": "Mail nhắc dung lượng",
   "绑定Telegram": "Liên kết Telegram",

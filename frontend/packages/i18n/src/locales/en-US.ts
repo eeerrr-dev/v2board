@@ -3,8 +3,8 @@ import type { Translations } from './zh-CN';
 const enUS: Translations = {
   common: {
     submit: 'Submit',
-    dark_mode_enable: 'Enable dark mode',
-    dark_mode_disable: 'Disable dark mode',
+    toggle_theme: 'Toggle theme',
+    close_dialog: 'Close dialog',
     scan_qrcode: 'Scan QR code',
     cancel: 'Cancel',
     confirm: 'Confirm',

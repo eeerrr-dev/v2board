@@ -9,8 +9,8 @@ const mocks = vi.hoisted(() => ({
   themePreference: 'system' as 'system' | 'light' | 'dark',
   labels: {
     'common.cancel': '取消',
-    'common.dark_mode_disable': 'Disable dark mode',
-    'common.dark_mode_enable': 'Enable dark mode',
+    'common.close_dialog': 'Close dialog',
+    'common.toggle_theme': 'Toggle theme',
     'common.theme_system': 'System',
     'common.theme_light': 'Light',
     'common.theme_dark': 'Dark',
@@ -436,8 +436,15 @@ describe('AppLayout shadcn app shell behavior', () => {
       '[data-testid="app-language-menu"]',
     )!;
     expect(submenu).not.toBeNull();
+    // The sub-content must be portaled out of the parent menu: rendered
+    // inline, the parent's overflow-hidden clips the whole panel away.
+    const parentMenu = document.body.querySelector<HTMLElement>(
+      '[data-testid="app-avatar-menu"]',
+    )!;
+    expect(parentMenu.contains(submenu)).toBe(false);
+    // Locale items expose radio semantics so SRs announce the active locale.
     const english = Array.from(
-      submenu.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      submenu.querySelectorAll<HTMLElement>('[role="menuitemradio"]'),
     ).find((item) => item.textContent?.includes('English'))!;
     await act(async () => {
       english.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));

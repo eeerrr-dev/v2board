@@ -1,8 +1,8 @@
 const zhCN = {
   common: {
     submit: '提交',
-    dark_mode_enable: '开启深色模式',
-    dark_mode_disable: '关闭深色模式',
+    toggle_theme: '切换主题',
+    close_dialog: '关闭弹窗',
     scan_qrcode: '扫描二维码',
     cancel: '取消',
     confirm: '确定',

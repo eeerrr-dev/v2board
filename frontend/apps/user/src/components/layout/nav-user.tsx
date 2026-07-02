@@ -37,7 +37,7 @@ interface NavUserProps {
 export function NavUser({ email }: NavUserProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, state, setOpenMobile } = useSidebar();
   const initials = getInitials(email);
   const accountLabel = getAccountLabel(email);
 
@@ -69,14 +69,16 @@ export function NavUser({ email }: NavUserProps) {
               </Avatar>
               <span className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{accountLabel}</span>
-                <span className="truncate text-xs text-muted-foreground">{email}</span>
+                {/* sidebar-foreground/70, not muted-foreground: the muted token
+                    misses AA contrast on the sidebar rail background. */}
+                <span className="truncate text-xs text-sidebar-foreground/70">{email}</span>
               </span>
               <ChevronsUpDown className="ml-auto size-4 text-muted-foreground" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
-            side={isMobile ? 'bottom' : 'top'}
+            side={isMobile ? 'bottom' : state === 'collapsed' ? 'right' : 'top'}
             sideOffset={4}
             className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 rounded-lg"
             data-testid="app-avatar-menu"
@@ -115,7 +117,7 @@ export function NavUser({ email }: NavUserProps) {
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
+              variant="destructive"
               onSelect={() => {
                 logout();
                 navigate('/login');

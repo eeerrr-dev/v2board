@@ -247,9 +247,9 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
   const siteTitle = getLegacyTitle();
   const title = titleProp ?? (activeLabel ? t(activeLabel) : '');
   const localeClass = getLegacyLocaleClassName(i18n.language);
-  const themeControlLabel = darkMode
-    ? t('common.dark_mode_disable')
-    : t('common.dark_mode_enable');
+  // Static: the trigger opens a three-option theme menu, so a state-dependent
+  // enable/disable label would misdescribe it.
+  const themeControlLabel = t('common.toggle_theme');
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -278,7 +278,9 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
           id="page-header"
           className="flex h-12 shrink-0 items-center gap-2 border-b border-border"
         >
-          <div className="flex w-full items-center gap-1 px-4 sm:px-6 lg:gap-2">
+          {/* Same mx-auto/max-w cap as the content wrapper below so the page
+              title and the page body share a left edge at every width. */}
+          <div className="mx-auto flex w-full max-w-6xl items-center gap-1 px-4 sm:px-6 lg:gap-2">
             {/* The desktop collapse control lives in the sidebar header; this
                 trigger only opens the mobile drawer. */}
             <SidebarTrigger className="-ml-1 md:hidden" aria-label={t('nav.toggle_nav')} />
@@ -333,13 +335,17 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
 
         {loading ? (
           <div id="main-container" className="v2board-app-main flex flex-1">
-            <div className="flex w-full flex-1 items-center justify-center px-4 py-10">
+            <div
+              role="status"
+              className="flex w-full flex-1 items-center justify-center px-4 py-10"
+            >
               <Spinner className="size-6" />
+              <span className="sr-only">{t('common.loading')}</span>
             </div>
           </div>
         ) : (
           <div id="main-container" className="v2board-app-main flex-1">
-            <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 md:py-6">
+            <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 md:py-6">
               <RouteBoundaryOutlet />
             </div>
           </div>
@@ -350,11 +356,16 @@ function AppLayoutContent({ loading, title: titleProp }: AppLayoutProps = {}) {
 }
 
 function AppLayoutFallback() {
+  const { t } = useTranslation();
   // Renders before the shell (and its island wrapper) exists, so it must carry
   // v2board-island itself for the token background to resolve.
   return (
-    <div className="v2board-island flex min-h-screen items-center justify-center bg-background">
+    <div
+      role="status"
+      className="v2board-island flex min-h-screen items-center justify-center bg-background"
+    >
       <Spinner className="size-6" />
+      <span className="sr-only">{t('common.loading')}</span>
     </div>
   );
 }

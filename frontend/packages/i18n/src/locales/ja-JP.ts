@@ -18,6 +18,8 @@ const jaJP: Translations = {
     search: '検索',
     refresh: '更新',
     loading: '読み込み中...',
+    toggle_theme: 'テーマを切り替える',
+    close_dialog: 'ダイアログを閉じる',
     empty: 'データがありません',
     error_title: 'エラーが発生しました',
     retry: '再試行',

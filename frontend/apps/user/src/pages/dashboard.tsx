@@ -94,75 +94,77 @@ export default function DashboardPage() {
 
   return (
     <PageShell data-testid="dashboard-page">
-      <div data-testid="dashboard-alerts" className="grid gap-3">
-        {pendingOrderCount > 0 && (
-          <Alert
-            data-testid="dashboard-alert"
-            data-alert-kind="danger"
-            className="border-destructive/25 bg-destructive/5 text-foreground"
-            role="alert"
-          >
-            <AlertCircle className="size-4 text-destructive" />
-            <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
-              <span>{t('dashboard.alert_pending_order')}</span>
-              <button
-                type="button"
-                data-testid="dashboard-alert-link"
-                className="font-medium text-foreground underline-offset-4 hover:underline"
-                onClick={() => navigate('/order')}
-              >
-                {t('order.pay_now')}
-              </button>
-            </AlertDescription>
-          </Alert>
-        )}
-        {openTicketCount > 0 && (
-          <Alert
-            data-testid="dashboard-alert"
-            data-alert-kind="warning"
-            className="border-amber-200 bg-amber-50 text-foreground dark:border-amber-900 dark:bg-amber-950"
-            role="alert"
-          >
-            <Bell className="size-4 text-amber-600 dark:text-amber-300" />
-            <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
-              <span>
-                <strong>{openTicketCount}</strong> {t('dashboard.alert_open_ticket_suffix')}
-              </span>
-              <button
-                type="button"
-                data-testid="dashboard-alert-link"
-                className="font-medium text-foreground underline-offset-4 hover:underline"
-                onClick={() => navigate('/ticket')}
-              >
-                {t('dashboard.alert_view')}
-              </button>
-            </AlertDescription>
-          </Alert>
-        )}
-        {vm.shouldShowTrafficAlert && (
-          <Alert
-            data-testid="dashboard-alert"
-            data-alert-kind="info"
-            className="border-sky-200 bg-sky-50 text-foreground dark:border-sky-900 dark:bg-sky-950"
-            role="alert"
-          >
-            <AlertCircle className="size-4 text-sky-600 dark:text-sky-300" />
-            <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
-              <span>{t('dashboard.alert_traffic_rate', { rate: vm.usedPctRounded })}</span>
-              {vm.trafficAlertResetAvailable ? (
+      {(pendingOrderCount > 0 || openTicketCount > 0 || vm.shouldShowTrafficAlert) && (
+        <div data-testid="dashboard-alerts" className="grid gap-3">
+          {pendingOrderCount > 0 && (
+            <Alert
+              data-testid="dashboard-alert"
+              data-alert-kind="danger"
+              className="border-destructive/25 bg-destructive/5 text-foreground"
+              role="alert"
+            >
+              <AlertCircle className="size-4 text-destructive" />
+              <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
+                <span>{t('dashboard.alert_pending_order')}</span>
                 <button
                   type="button"
                   data-testid="dashboard-alert-link"
                   className="font-medium text-foreground underline-offset-4 hover:underline"
-                  onClick={requestResetPackage}
+                  onClick={() => navigate('/order')}
                 >
-                  {t('dashboard.buy_reset_package')}
+                  {t('order.pay_now')}
                 </button>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        )}
-      </div>
+              </AlertDescription>
+            </Alert>
+          )}
+          {openTicketCount > 0 && (
+            <Alert
+              data-testid="dashboard-alert"
+              data-alert-kind="warning"
+              className="border-amber-200 bg-amber-50 text-foreground dark:border-amber-900 dark:bg-amber-950"
+              role="alert"
+            >
+              <Bell className="size-4 text-amber-600 dark:text-amber-300" />
+              <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
+                <span>
+                  <strong>{openTicketCount}</strong> {t('dashboard.alert_open_ticket_suffix')}
+                </span>
+                <button
+                  type="button"
+                  data-testid="dashboard-alert-link"
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                  onClick={() => navigate('/ticket')}
+                >
+                  {t('dashboard.alert_view')}
+                </button>
+              </AlertDescription>
+            </Alert>
+          )}
+          {vm.shouldShowTrafficAlert && (
+            <Alert
+              data-testid="dashboard-alert"
+              data-alert-kind="info"
+              className="border-sky-200 bg-sky-50 text-foreground dark:border-sky-900 dark:bg-sky-950"
+              role="alert"
+            >
+              <AlertCircle className="size-4 text-sky-600 dark:text-sky-300" />
+              <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
+                <span>{t('dashboard.alert_traffic_rate', { rate: vm.usedPctRounded })}</span>
+                {vm.trafficAlertResetAvailable ? (
+                  <button
+                    type="button"
+                    data-testid="dashboard-alert-link"
+                    className="font-medium text-foreground underline-offset-4 hover:underline"
+                    onClick={requestResetPackage}
+                  >
+                    {t('dashboard.buy_reset_package')}
+                  </button>
+                ) : null}
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
+      )}
 
       <DashboardNoticeCarousel notices={noticeList} />
 
@@ -178,7 +180,7 @@ export default function DashboardPage() {
               <Package className="size-4" />
             </span>
           </CardHeader>
-          <CardContent className="pt-6">
+          <CardContent>
             {subscribe.isLoading || !hasSubscribeData ? (
               <div className="flex min-h-36 items-center justify-center">
                 <Spinner className="size-6" />
@@ -252,7 +254,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <div className="rounded-lg border border-border bg-muted/30 p-3">
-                      <p className="text-sm font-medium text-muted-foreground">
+                      <p className="text-sm font-medium">
                         {t('dashboard.devices_online', {
                           alive_ip: legacySub.alive_ip,
                           device_limit: legacySub.device_limit ?? '∞',
@@ -320,7 +322,7 @@ export default function DashboardPage() {
               <Smartphone className="size-4" />
             </span>
           </CardHeader>
-          <CardContent className="grid gap-3 pt-6">
+          <CardContent className="grid gap-3">
             {shortcuts.map((shortcut) => {
               const Icon = shortcut.icon;
               return (
@@ -328,15 +330,15 @@ export default function DashboardPage() {
                   type="button"
                   key={shortcut.titleKey}
                   data-testid="dashboard-shortcut"
-                  className="group flex min-h-[4.5rem] items-center gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="group flex min-h-[4.5rem] min-w-0 items-center gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   onClick={shortcut.onClick ?? (() => navigate(shortcut.to))}
                 >
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:bg-background group-hover:text-foreground">
                     <Icon className="size-4" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex text-sm font-medium">{t(shortcut.titleKey)}</span>
-                    <span className="flex overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-6 text-muted-foreground">
+                    <span className="block truncate text-sm font-medium">{t(shortcut.titleKey)}</span>
+                    <span className="block truncate text-sm leading-6 text-muted-foreground">
                       {t(shortcut.descKey)}
                       {shortcut.descKey === 'dashboard.shortcut_tutorial_desc' ? (
                         <> {window.settings?.title}</>

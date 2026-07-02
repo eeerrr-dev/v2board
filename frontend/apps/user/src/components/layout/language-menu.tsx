@@ -22,10 +22,11 @@ interface LanguageMenuProps {
   contentClassName?: string;
   itemClassName?: string;
   /**
-   * Mark the active locale with a check. The shell trigger is icon-only, so the
-   * current language is no longer shown as trigger text and the menu carries it
-   * instead. Opt-in so the auth trigger (which still renders its label) keeps its
-   * plain item markup. Adds no item text, so exact-textContent assertions hold.
+   * Mark the active locale with a check and expose the items as menuitemradio.
+   * The shell's account-menu submenu trigger reads "Language" without the
+   * current locale, so the menu itself carries the selection. Opt-in so the
+   * auth trigger (which still renders its label) keeps its plain item markup.
+   * Adds no item text, so exact-textContent assertions hold.
    */
   activeIndicator?: boolean;
 }
@@ -48,6 +49,8 @@ export function LanguageMenuItems({
       {locales.map((locale) => (
         <DropdownMenuItem
           key={locale.code}
+          role={activeIndicator ? 'menuitemradio' : undefined}
+          aria-checked={activeIndicator ? locale.label === currentLabel : undefined}
           className={cn(activeIndicator && 'justify-between gap-4', itemClassName)}
           onSelect={(event) => {
             event.preventDefault();

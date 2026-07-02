@@ -5121,7 +5121,7 @@ async function runDashboardHeaderLanguageDropdownInteraction(page) {
   }
   await waitForVisibleText(
     page,
-    '[data-testid="app-language-menu"] [role="menuitem"], .ant-dropdown-menu-item',
+    '[data-testid="app-language-menu"] [role="menuitem"], [data-testid="app-language-menu"] [role="menuitemradio"], .ant-dropdown-menu-item',
     'English',
   );
   await page.waitForTimeout(150);
@@ -10667,9 +10667,10 @@ function isDarkModeReadyState(state) {
 }
 
 function isDarkModeActiveControlState(state) {
+  // Legacy oracle: fa-moon icon. Shadcn shell: static "Toggle theme" trigger,
+  // so active state is witnessed by shadcnDarkReady + a visible svg icon.
   return Boolean(
     state?.iconClass?.includes('fa-moon') ||
-      state?.triggerLabel === 'Disable dark mode' ||
       (state?.shadcnDarkReady && state?.visibleSvgIcon),
   );
 }
@@ -13512,7 +13513,7 @@ async function languageDropdownPlacementState(page) {
           : undefined,
       items: Array.from(
         document.querySelectorAll(
-          '[data-testid="app-language-menu"] [role="menuitem"], .ant-dropdown-menu-item',
+          '[data-testid="app-language-menu"] [role="menuitem"], [data-testid="app-language-menu"] [role="menuitemradio"], .ant-dropdown-menu-item',
         ),
       )
         .filter(isVisible)

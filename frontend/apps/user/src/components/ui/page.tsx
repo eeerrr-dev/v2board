@@ -6,11 +6,13 @@ export function PageShell({
   ref,
   ...props
 }: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement> }) {
+  // No width cap here: the app-layout content wrapper owns the shared
+  // mx-auto/max-w-6xl column so the header and every page align.
   return (
     <div
       ref={ref}
       data-slot="page-shell"
-      className={cn('v2board-page-shell mx-auto flex w-full max-w-6xl flex-col gap-6', className)}
+      className={cn('v2board-page-shell flex w-full flex-col gap-6', className)}
       {...props}
     />
   );
