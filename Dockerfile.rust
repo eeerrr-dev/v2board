@@ -1,0 +1,15 @@
+FROM rust:1.96.1-bookworm
+
+ENV CARGO_HOME=/usr/local/cargo \
+    RUST_BACKTRACE=1 \
+    PATH=/usr/local/cargo/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl default-mysql-client pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && . /usr/local/cargo/env \
+    && rustup component add rustfmt clippy
+
+WORKDIR /app/backend/rust
+
+EXPOSE 8080

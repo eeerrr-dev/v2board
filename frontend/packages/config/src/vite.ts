@@ -62,7 +62,13 @@ export function localHorizonStatsPlugin(): Plugin {
   };
 }
 
-export function legacyNavigationRedirectPlugin(): Plugin {
+export interface LegacyNavigationRedirectOptions {
+  passthroughPaths?: string[];
+}
+
+export function legacyNavigationRedirectPlugin(options: LegacyNavigationRedirectOptions = {}): Plugin {
+  const passthroughPaths = new Set(options.passthroughPaths ?? []);
+
   return {
     name: 'legacy-navigation-redirect',
     configureServer(server) {
@@ -83,6 +89,7 @@ export function legacyNavigationRedirectPlugin(): Plugin {
         const pathname = url.pathname;
         const isAssetOrApi =
           pathname === '/' ||
+          passthroughPaths.has(pathname) ||
           pathname === '/api' ||
           pathname.includes('.') ||
           pathname.startsWith('/@') ||
@@ -202,6 +209,7 @@ export function buildAppViteConfig(options: AppViteOptions): UserConfig {
     server: {
       port: options.port,
       host: '0.0.0.0',
+      allowedHosts: ['frontend', 'host.docker.internal', 'localhost', '127.0.0.1'],
       // The packaged theme never had Vite's HMR/React Refresh runtime. Disable
       // it in local dev so an open legacy page is not half-updated while code is
       // changing or the container recompiles; manual refreshes still load the

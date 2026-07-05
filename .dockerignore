@@ -25,6 +25,7 @@ frontend/packages/*/.cache
 frontend/packages/*/coverage
 node_modules
 backend/laravel/vendor
+backend/rust/target
 backend/laravel/storage/logs/*.log
 backend/laravel/storage/framework/cache/*
 backend/laravel/storage/framework/sessions/*

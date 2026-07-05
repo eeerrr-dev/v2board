@@ -10,11 +10,14 @@ import {
   stripViteClientPlugin,
 } from '@v2board/config/vite';
 
+const adminDevPath = (process.env.VITE_DEV_ADMIN_PATH ?? 'admin').replace(/^\/+|\/+$/g, '');
+const adminPassthroughPaths = adminDevPath ? [`/${adminDevPath}`] : [];
+
 export default defineConfig({
   ...buildAppViteConfig({ port: 5174 }),
   cacheDir: '../../node_modules/.vite/admin-white-screen-recovery-37',
   plugins: [
-    legacyNavigationRedirectPlugin(),
+    legacyNavigationRedirectPlugin({ passthroughPaths: adminPassthroughPaths }),
     legacyViteClientStubPlugin(),
     rejectPackagedAdminAssetsPlugin(),
     react(),

@@ -15,3 +15,4 @@ yarn.lock
 docker-compose.yml
 !.devcontainer/docker-compose.yml
 .DS_Store
+backend/rust/target

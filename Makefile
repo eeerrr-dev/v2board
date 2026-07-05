@@ -1,4 +1,4 @@
-.PHONY: up down logs shell reset sync ps doctor public-bundle-audit replica-audit parity-config-audit legacy-oracle-check legacy-oracle-up legacy-oracle-serve legacy-oracle-down deploy-smoke deploy-public-sync deploy-public-check deploy-public-ensure visual-smoke visual-parity browser-parity interaction-parity behavior-parity clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
+.PHONY: up down logs shell reset sync ps doctor rust-check rust-up rust-dev rust-api-up rust-api-logs rust-worker-logs rust-contract rust-worker-reconcile rust-target-gate rust-interaction-parity public-bundle-audit replica-audit parity-config-audit legacy-oracle-check legacy-oracle-up legacy-oracle-serve legacy-oracle-down deploy-smoke deploy-public-sync deploy-public-check deploy-public-ensure visual-smoke visual-parity browser-parity interaction-parity behavior-parity clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
 
 DC := $(shell \
 	if docker compose version >/dev/null 2>&1; then echo "docker compose"; \
@@ -9,6 +9,21 @@ DC := $(shell \
 COMPOSE_FILE ?= docker-compose.local.yml
 COMPOSE_PROJECT ?= v2board
 DCF := $(DC) -p $(COMPOSE_PROJECT) -f $(COMPOSE_FILE)
+RUST_DCF := $(DCF) --profile rust
+RUST_CONTRACT_LARAVEL_BASE_URL ?= http://app:8000
+RUST_CONTRACT_RUST_BASE_URL ?= http://127.0.0.1:8080
+RUST_CONTRACT_ADMIN_EMAIL ?= admin@local
+RUST_CONTRACT_ADMIN_PASSWORD ?= 12345678
+RUST_WORKER_RECONCILE_WAIT_SECONDS ?= 75
+RUST_WORKER_RECONCILE_STRICT ?= 1
+RUST_FRONTEND_API_BASE ?= http://rust-api:8080
+RUST_INTERACTION_USER_SOURCE_BASE_URL ?= http://frontend:5173
+RUST_INTERACTION_ADMIN_SOURCE_BASE_URL ?= http://frontend:5174
+RUST_INTERACTION_FRONTEND_WAIT_SECONDS ?= 25
+RUST_INTERACTION_USER_SCENARIOS ?= user-login-form-language user-dashboard-subscribe-import-links user-plan-checkout-coupon user-order-payment-method user-ticket-reply-send
+RUST_INTERACTION_ADMIN_SCENARIOS ?= admin-system-queue-state admin-plan-create-drawer
+RUST_INTERACTION_PARITY_VIEWPORTS ?= desktop
+RUST_LARAVEL_BOOTSTRAP := set -e; if [ ! -f /app/artisan ]; then mkdir -p /app; tar --exclude=.env --exclude=node_modules --exclude=vendor -C /src/backend/laravel -cf - . | tar -C /app -xf -; fi; /app/docker/entrypoint.sh true
 FRONTEND_RUN := $(DCF) run --rm -T --no-deps --entrypoint sh
 FRONTEND_SERVE_RUN = $(DCF) run --rm -T --no-deps --entrypoint sh -p $(LEGACY_ORACLE_PORT):$(LEGACY_ORACLE_PORT)
 FRONTEND_WORKSPACE_BOOTSTRAP := if [ ! -f /app/frontend/package.json ]; then mkdir -p /app/frontend && tar --exclude=node_modules --exclude=.pnpm-store --exclude=dist --exclude=dist-deploy -C /src/frontend -cf - . | tar -C /app/frontend -xf -; fi
@@ -194,8 +209,8 @@ sync:
 		fi; \
 		sleep 1; \
 	done
-	@docker volume rm $(COMPOSE_PROJECT)_app-workspace $(COMPOSE_PROJECT)_frontend-workspace >/dev/null 2>&1 || true
-	@for volume in $(COMPOSE_PROJECT)_app-workspace $(COMPOSE_PROJECT)_frontend-workspace; do \
+	@docker volume rm $(COMPOSE_PROJECT)_app-workspace $(COMPOSE_PROJECT)_frontend-workspace $(COMPOSE_PROJECT)_rust-workspace >/dev/null 2>&1 || true
+	@for volume in $(COMPOSE_PROJECT)_app-workspace $(COMPOSE_PROJECT)_frontend-workspace $(COMPOSE_PROJECT)_rust-workspace; do \
 		if docker volume inspect $$volume >/dev/null 2>&1; then \
 			echo "Failed to remove Docker volume $$volume; stop/remove containers that still use it."; \
 			exit 1; \
@@ -203,6 +218,84 @@ sync:
 	done
 	$(MAKE) --no-print-directory deploy-smoke
 	$(DCF) up -d --build
+
+rust-check:
+	$(RUST_DCF) build rust-api
+	$(RUST_DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc 'set -e; . /usr/local/cargo/env; mkdir -p /app/backend/rust; find /app/backend/rust -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +; tar --exclude=target -C /src/backend/rust -cf - . | tar -C /app/backend/rust -xf -; cargo fmt --all --check; cargo clippy --workspace --all-targets --locked -- -D warnings'
+
+rust-up:
+	$(RUST_DCF) up -d --build mysql redis rust-api rust-worker
+	@echo "  rust api     http://localhost:8080/healthz"
+	@echo "  rust worker  $(RUST_DCF) logs -f --tail=100 rust-worker"
+
+rust-dev:
+	@$(RUST_DCF) stop app horizon scheduler >/dev/null 2>&1 || true
+	$(RUST_DCF) up -d --build mysql redis mailpit
+	$(DCF) build app
+	$(DCF) run --rm -T --no-deps --entrypoint bash app -lc '$(RUST_LARAVEL_BOOTSTRAP)'
+	@$(RUST_DCF) stop app horizon scheduler >/dev/null 2>&1 || true
+	$(RUST_DCF) up -d --build rust-api rust-worker
+	VITE_API_BASE=$(RUST_FRONTEND_API_BASE) $(DCF) up -d --build --force-recreate --no-deps frontend
+	@$(RUST_DCF) stop app horizon scheduler >/dev/null 2>&1 || true
+	@echo ""
+	@echo "  user      http://localhost:5173            (new frontend -> Rust API)"
+	@echo "  admin     http://localhost:5174            (new admin -> Rust API)"
+	@echo "  rust api  http://localhost:8080/healthz"
+	@echo "  laravel   stopped on :8000                 (use make up / rust-contract when oracle is needed)"
+	@echo ""
+
+rust-api-up:
+	$(RUST_DCF) up -d --build mysql redis rust-api
+	@echo "  rust api  http://localhost:8080/healthz"
+
+rust-api-logs:
+	$(RUST_DCF) logs -f --tail=100 rust-api
+
+rust-worker-logs:
+	$(RUST_DCF) logs -f --tail=100 rust-worker
+
+rust-contract:
+	@$(RUST_DCF) stop horizon scheduler rust-worker >/dev/null 2>&1 || true
+	$(RUST_DCF) up -d --build mysql redis app rust-api
+	$(RUST_DCF) exec -T \
+		-e CONTRACT_LARAVEL_BASE_URL=$(RUST_CONTRACT_LARAVEL_BASE_URL) \
+		-e CONTRACT_RUST_BASE_URL=$(RUST_CONTRACT_RUST_BASE_URL) \
+		-e CONTRACT_ADMIN_EMAIL=$(RUST_CONTRACT_ADMIN_EMAIL) \
+		-e CONTRACT_ADMIN_PASSWORD=$(RUST_CONTRACT_ADMIN_PASSWORD) \
+		rust-api bash -lc 'set -e; . /usr/local/cargo/env; cargo run -p v2board-contract --locked -- contract'
+
+rust-worker-reconcile:
+	@$(RUST_DCF) stop horizon scheduler >/dev/null 2>&1 || true
+	$(RUST_DCF) up -d --build mysql redis rust-api rust-worker
+	@sleep $(RUST_WORKER_RECONCILE_WAIT_SECONDS)
+	$(RUST_DCF) exec -T \
+		-e DATABASE_URL=mysql://v2board:v2board@mysql:3306/v2board \
+		-e REDIS_URL=redis://redis:6379/1 \
+		-e WORKER_RECONCILE_STRICT=$(RUST_WORKER_RECONCILE_STRICT) \
+		rust-api bash -lc 'set -e; . /usr/local/cargo/env; cargo run -p v2board-contract --locked -- worker-reconcile'
+
+rust-target-gate: rust-contract rust-worker-reconcile
+	@echo "Rust target gate OK: contract parity and worker reconciliation passed for the configured target data."
+
+rust-interaction-parity:
+	@$(RUST_DCF) stop horizon scheduler >/dev/null 2>&1 || true
+	$(RUST_DCF) up -d --build mysql redis rust-api rust-worker
+	VITE_API_BASE=$(RUST_FRONTEND_API_BASE) $(DCF) up -d --build --force-recreate frontend
+	@sleep $(RUST_INTERACTION_FRONTEND_WAIT_SECONDS)
+	VISUAL_SOURCE_BASE_URL=$(RUST_INTERACTION_USER_SOURCE_BASE_URL) \
+	VISUAL_PARITY_ADMIN_PATH=__rust_source_settings \
+	VISUAL_PARITY_VIEWPORTS="$(RUST_INTERACTION_PARITY_VIEWPORTS)" \
+	INTERACTION_PARITY_SCENARIOS="$(RUST_INTERACTION_USER_SCENARIOS)" \
+	INTERACTION_PARITY_PAUSE_SERVICES="horizon scheduler" \
+	INTERACTION_PARITY_RESUME_SERVICES="mysql redis mailpit app rust-api rust-worker frontend" \
+	$(MAKE) --no-print-directory interaction-parity
+	VISUAL_SOURCE_BASE_URL=$(RUST_INTERACTION_ADMIN_SOURCE_BASE_URL) \
+	VISUAL_PARITY_ADMIN_PATH=admin \
+	VISUAL_PARITY_VIEWPORTS="$(RUST_INTERACTION_PARITY_VIEWPORTS)" \
+	INTERACTION_PARITY_SCENARIOS="$(RUST_INTERACTION_ADMIN_SCENARIOS)" \
+	INTERACTION_PARITY_PAUSE_SERVICES="horizon scheduler" \
+	INTERACTION_PARITY_RESUME_SERVICES="mysql redis mailpit app rust-api rust-worker frontend" \
+	$(MAKE) --no-print-directory interaction-parity
 
 doctor:
 	@$(DCF) config >/dev/null

@@ -124,7 +124,8 @@ services:
     environment:
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
       PLAYWRIGHT_BROWSERS_PATH: /app/frontend/.cache/ms-playwright
-      VITE_API_BASE: http://app:8000
+      VITE_API_BASE: ${VITE_API_BASE:-http://app:8000}
+      VITE_DEV_ADMIN_PATH: ${VITE_DEV_ADMIN_PATH:-admin}
     depends_on:
       app:
         condition: service_started
@@ -148,6 +149,83 @@ services:
       - frontend-config-node_modules:/app/frontend/packages/config/node_modules
       - frontend-i18n-node_modules:/app/frontend/packages/i18n/node_modules
       - frontend-types-node_modules:/app/frontend/packages/types/node_modules
+
+  rust-api:
+    profiles: ["rust"]
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+    image: v2board-rust
+    working_dir: /app/backend/rust
+    entrypoint:
+      - bash
+      - -lc
+      - |
+        set -e
+        . /usr/local/cargo/env
+        mkdir -p /app/backend/rust
+        find /app/backend/rust -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +
+        tar \
+          --exclude=target \
+          -C /src/backend/rust -cf - . | tar -C /app/backend/rust -xf -
+        cargo run -p v2board-api --locked
+    environment:
+      RUST_LOG: info
+      RUST_BIND_ADDR: 0.0.0.0:8080
+      DATABASE_URL: mysql://v2board:v2board@mysql:3306/v2board
+      REDIS_URL: redis://redis:6379/1
+      LARAVEL_ENV_PATH: /laravel/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend/rust:/src/backend/rust:ro
+      - rust-workspace:/app/backend/rust
+      - rust-cargo-registry:/usr/local/cargo/registry
+      - rust-cargo-git:/usr/local/cargo/git
+      - rust-target:/app/backend/rust/target
+      - app-workspace:/laravel
+
+  rust-worker:
+    profiles: ["rust"]
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+    image: v2board-rust
+    working_dir: /app/backend/rust
+    entrypoint:
+      - bash
+      - -lc
+      - |
+        set -e
+        . /usr/local/cargo/env
+        mkdir -p /app/backend/rust
+        find /app/backend/rust -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +
+        tar \
+          --exclude=target \
+          -C /src/backend/rust -cf - . | tar -C /app/backend/rust -xf -
+        cargo run -p v2board-workers --locked
+    environment:
+      RUST_LOG: v2board_workers=info
+      DATABASE_URL: mysql://v2board:v2board@mysql:3306/v2board
+      REDIS_URL: redis://redis:6379/1
+      LARAVEL_ENV_PATH: /laravel/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/rust:/src/backend/rust:ro
+      - rust-worker-workspace:/app/backend/rust
+      - rust-cargo-registry:/usr/local/cargo/registry
+      - rust-cargo-git:/usr/local/cargo/git
+      - rust-target:/app/backend/rust/target
+      - app-workspace:/laravel:ro
 
   mysql:
     image: mysql:8.0
@@ -206,3 +284,8 @@ volumes:
   frontend-config-node_modules:
   frontend-i18n-node_modules:
   frontend-types-node_modules:
+  rust-workspace:
+  rust-worker-workspace:
+  rust-cargo-registry:
+  rust-cargo-git:
+  rust-target:
