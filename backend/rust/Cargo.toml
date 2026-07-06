@@ -38,7 +38,11 @@ redis = { version = "1", features = ["tokio-comp"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 rmp-serde = "1"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order makes serde_json Maps keep insertion order (IndexMap-backed),
+# matching PHP's json_encode, which preserves associative-array insertion order.
+# Every dynamic Value/Map response and MySQL JSON_OBJECT we parse then serializes in
+# the order Laravel emits, instead of serde's default alphabetical (BTreeMap) sort.
+serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = "0.7"
 sha1 = "0.11"
 sha2 = "0.11"
