@@ -411,7 +411,17 @@ async fn server_push(
     .await?;
     server_cache_timestamp(&state.redis, "LAST_PUSH_AT", &node_type, node.id).await?;
     if !entries.is_empty() {
-        persist_traffic_fetch(state, &node, &node_type, &entries).await?;
+        // UserService::trafficFetch (UserService.php:224-229) only *dispatches*
+        // TrafficFetchJob/StatUserJob/StatServerJob onto async queues; the HTTP push returns its
+        // success payload immediately and never surfaces a persistence failure to the node. Any
+        // abort(500) inside those jobs (StatUserJob:97 / StatServerJob:84) happens later in a queue
+        // worker and cannot reach the response. Mirror that decoupling: a transient Redis/DB error
+        // must NOT become a 5xx here, or the node would retry the push and re-run the Redis HINCRBY
+        // (persist_traffic_fetch), double-counting traffic. Log and swallow to keep the wire
+        // contract (200 + success body) identical to Laravel.
+        if let Err(error) = persist_traffic_fetch(state, &node, &node_type, &entries).await {
+            tracing::warn!(node_id = node.id, %error, "server push traffic persistence failed");
+        }
     }
 
     if uniproxy {
@@ -1095,15 +1105,19 @@ async fn server_available_users(
         .await?)
 }
 
+/// Build the trojan/vmess (TrojanTidalab / Deepbwork) per-user object.
+///
+/// UniProxyController::user `array_filter`s null keys away, but TrojanTidalabController :46-52 and
+/// DeepbworkController :46-55 serialize the RAW user model, so `speed_limit` / `device_limit` are
+/// ALWAYS present there — emitted as JSON `null` when the column is null (both are uncast on the
+/// User model, so null stays null). Match that: keep the keys instead of dropping them when None.
+/// (ShadowsocksTidalab is different: it emits only id/port/cipher/secret and never carries these
+/// two keys, so it does not use this helper.)
 fn server_user_without_uuid(user: &ServerUserRow) -> serde_json::Map<String, serde_json::Value> {
     let mut item = serde_json::Map::new();
     item.insert("id".to_string(), json!(user.id));
-    if let Some(speed_limit) = user.speed_limit {
-        item.insert("speed_limit".to_string(), json!(speed_limit));
-    }
-    if let Some(device_limit) = user.device_limit {
-        item.insert("device_limit".to_string(), json!(device_limit));
-    }
+    item.insert("speed_limit".to_string(), json!(user.speed_limit));
+    item.insert("device_limit".to_string(), json!(user.device_limit));
     item
 }
 
@@ -1654,6 +1668,51 @@ mod tests {
         assert!(!php_truthy(&json!("")));
         assert!(!php_truthy(&json!("0")));
         assert!(!php_truthy(&serde_json::Value::Null));
+    }
+
+    #[test]
+    fn tidalab_user_keeps_null_speed_and_device_limit() {
+        // TrojanTidalab/Deepbwork serialize the raw user model, so both keys stay present and are
+        // emitted as JSON null when the column is null (they are NOT array_filtered like UniProxy).
+        let user = ServerUserRow {
+            id: 7,
+            uuid: "uuid-7".to_string(),
+            speed_limit: None,
+            device_limit: None,
+        };
+        let item = server_user_without_uuid(&user);
+        assert_eq!(item.get("id"), Some(&json!(7)));
+        assert_eq!(item.get("speed_limit"), Some(&serde_json::Value::Null));
+        assert_eq!(item.get("device_limit"), Some(&serde_json::Value::Null));
+        assert!(!item.contains_key("uuid"));
+
+        let user = ServerUserRow {
+            id: 8,
+            uuid: "uuid-8".to_string(),
+            speed_limit: Some(100),
+            device_limit: Some(3),
+        };
+        let item = server_user_without_uuid(&user);
+        assert_eq!(item.get("speed_limit"), Some(&json!(100)));
+        assert_eq!(item.get("device_limit"), Some(&json!(3)));
+    }
+
+    #[test]
+    fn uniproxy_user_drops_null_speed_and_device_limit() {
+        // UniProxyController::user array_filters null attributes away, so the struct serialization
+        // (used only by the uniproxy user endpoint) must keep skipping None. Guard against a
+        // regression that would leak null keys onto the uniproxy path.
+        let user = ServerUserRow {
+            id: 1,
+            uuid: "uuid-1".to_string(),
+            speed_limit: None,
+            device_limit: None,
+        };
+        let value = serde_json::to_value(&user).unwrap();
+        let object = value.as_object().unwrap();
+        assert_eq!(object.get("uuid"), Some(&json!("uuid-1")));
+        assert!(!object.contains_key("speed_limit"));
+        assert!(!object.contains_key("device_limit"));
     }
 
     #[test]

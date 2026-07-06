@@ -225,16 +225,6 @@ pub async fn find_user_access_by_token(
     .await
 }
 
-pub async fn touch_last_login(pool: &MySqlPool, id: i64, now: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE v2_user SET last_login_at = ?, updated_at = ? WHERE id = ?")
-        .bind(now)
-        .bind(now)
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 pub async fn update_preferences(
     pool: &MySqlPool,
     id: i64,

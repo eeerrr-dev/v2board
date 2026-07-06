@@ -10,7 +10,7 @@ use axum::{
     extract::{ConnectInfo, Form, OriginalUri, Path, Query, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     middleware::Next,
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, Response},
 };
 use chrono::{Datelike, Duration, Local, TimeZone, Utc};
 use hmac::{Hmac, KeyInit, Mac};
@@ -221,9 +221,8 @@ fn localize_legacy_message(message: &str, locale: &str) -> String {
     if locale.starts_with("zh") {
         return localize_zh_cn_message(message).unwrap_or_else(|| message.to_string());
     }
-    if locale.starts_with("en") && message == "未登录或登陆已过期" {
-        return "You are not logged in or login has expired".to_string();
-    }
+    // Laravel `abort(403, '未登录或登陆已过期')` passes the literal (never wrapped in
+    // `__()`), so every non-zh locale receives the Chinese literal unchanged.
     message.to_string()
 }
 
@@ -348,48 +347,178 @@ async fn client_subscribe_response(
         .to_owned();
     let subscription =
         subscription::build_subscription_document(&config, &user, &servers, &flag, &host)?;
+    let profile = subscription_header_profile(&flag);
     let mut response = subscription.body.into_response();
     let headers = response.headers_mut();
     headers.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static(subscription.content_type),
     );
-    headers.insert(
-        header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&subscription.content_disposition)
-            .map_err(|_| ApiError::internal("invalid subscription filename"))?,
-    );
-    if let Some(app_url) = config.app_url.as_deref() {
+
+    use SubscriptionHeaderProfile as Profile;
+
+    // Content-Disposition: only the protocols whose handle() sets it. v2RayTun uses a
+    // plain quoted filename rather than the RFC 5987 form the shared document builds.
+    let content_disposition = match profile {
+        Profile::Surge | Profile::Clash | Profile::ClashMeta | Profile::SingBox => {
+            Some(subscription.content_disposition)
+        }
+        Profile::V2RayTun => Some(format!("attachment; filename=\"{}\"", config.app_name)),
+        Profile::None | Profile::QuantumultX | Profile::Loon => None,
+    };
+    if let Some(content_disposition) = content_disposition {
         headers.insert(
-            header::HeaderName::from_static("profile-web-page-url"),
-            HeaderValue::from_str(app_url)
-                .map_err(|_| ApiError::internal("invalid profile web page url"))?,
+            header::CONTENT_DISPOSITION,
+            HeaderValue::from_str(&content_disposition)
+                .map_err(|_| ApiError::internal("invalid subscription filename"))?,
         );
     }
-    headers.insert(
-        header::HeaderName::from_static("profile-title"),
-        HeaderValue::from_str(&format!(
-            "base64:{}",
-            standard_base64_encode(config.app_name.as_bytes())
-        ))
-        .map_err(|_| ApiError::internal("invalid profile title"))?,
-    );
-    headers.insert(
-        header::HeaderName::from_static("subscription-userinfo"),
-        HeaderValue::from_str(&format!(
+
+    // subscription-userinfo. The `expire=` token differs per family: Clash/Meta/Stash/Loon
+    // /Sing-box render an empty string for a null (lifetime) expired_at, QuantumultX
+    // renders 0, and v2RayTun omits the token entirely (`isset($user['expired_at'])`).
+    let expire_or_empty = user
+        .expired_at
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    let userinfo = match profile {
+        Profile::Clash | Profile::ClashMeta | Profile::Loon | Profile::SingBox => Some(format!(
+            "upload={}; download={}; total={}; expire={}",
+            user.u, user.d, user.transfer_enable, expire_or_empty
+        )),
+        Profile::QuantumultX => Some(format!(
             "upload={}; download={}; total={}; expire={}",
             user.u,
             user.d,
             user.transfer_enable,
-            user.expired_at.unwrap_or_default()
-        ))
-        .map_err(|_| ApiError::internal("invalid subscription userinfo header"))?,
-    );
-    headers.insert(
-        header::HeaderName::from_static("profile-update-interval"),
-        HeaderValue::from_static("24"),
-    );
+            user.expired_at.unwrap_or(0)
+        )),
+        Profile::V2RayTun => Some(match user.expired_at {
+            Some(expired_at) => format!(
+                "upload={}; download={}; total={}; expire={}",
+                user.u, user.d, user.transfer_enable, expired_at
+            ),
+            None => format!(
+                "upload={}; download={}; total={}",
+                user.u, user.d, user.transfer_enable
+            ),
+        }),
+        Profile::None | Profile::Surge => None,
+    };
+    if let Some(userinfo) = userinfo {
+        headers.insert(
+            header::HeaderName::from_static("subscription-userinfo"),
+            HeaderValue::from_str(&userinfo)
+                .map_err(|_| ApiError::internal("invalid subscription userinfo header"))?,
+        );
+    }
+
+    // profile-title: Sing-box emits a base64 title; v2RayTun emits the plain app name.
+    let profile_title = match profile {
+        Profile::SingBox => Some(format!(
+            "base64:{}",
+            standard_base64_encode(config.app_name.as_bytes())
+        )),
+        Profile::V2RayTun => Some(config.app_name.clone()),
+        _ => None,
+    };
+    if let Some(profile_title) = profile_title {
+        headers.insert(
+            header::HeaderName::from_static("profile-title"),
+            HeaderValue::from_str(&profile_title)
+                .map_err(|_| ApiError::internal("invalid profile title"))?,
+        );
+    }
+
+    // profile-web-page-url: only base Clash.php sets it, always (even when app_url is empty).
+    if profile == Profile::Clash {
+        headers.insert(
+            header::HeaderName::from_static("profile-web-page-url"),
+            HeaderValue::from_str(config.app_url.as_deref().unwrap_or_default())
+                .map_err(|_| ApiError::internal("invalid profile web page url"))?,
+        );
+    }
+
+    // profile-update-interval: 24 — Clash family, Sing-box, and v2RayTun only.
+    if matches!(
+        profile,
+        Profile::Clash | Profile::ClashMeta | Profile::SingBox | Profile::V2RayTun
+    ) {
+        headers.insert(
+            header::HeaderName::from_static("profile-update-interval"),
+            HeaderValue::from_static("24"),
+        );
+    }
     Ok(response)
+}
+
+/// Per-protocol subscription response header set. Laravel emits Subscription-Userinfo,
+/// Content-Disposition, profile-title, profile-web-page-url, and profile-update-interval
+/// differently in each `App\Protocols\*::handle()`; this mirrors exactly which each sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SubscriptionHeaderProfile {
+    /// General/V2rayN/V2rayNG/Passwall/SSRPlus/SagerNet/Shadowsocks/Shadowrocket: none.
+    None,
+    /// v2RayTun.php: profile-title (plain), userinfo (expire omitted when null), interval,
+    /// plain-filename content-disposition.
+    V2RayTun,
+    /// QuantumultX.php: subscription-userinfo only, expire=0 when null.
+    QuantumultX,
+    /// Loon.php: subscription-userinfo only, expire empty when null.
+    Loon,
+    /// Surge.php / Surfboard.php: content-disposition only.
+    Surge,
+    /// Clash.php: userinfo + interval + content-disposition + profile-web-page-url.
+    Clash,
+    /// ClashMeta/ClashVerge/ClashNyanpasu/Stash: userinfo + interval + content-disposition.
+    ClashMeta,
+    /// Singbox + SingboxOld: userinfo + interval + base64 profile-title + content-disposition.
+    SingBox,
+}
+
+/// Classify a subscribe flag into its header profile, mirroring the renderer selection in
+/// `subscription::SubscriptionFormat::detect` so the headers always match the emitted body.
+fn subscription_header_profile(flag: &str) -> SubscriptionHeaderProfile {
+    use SubscriptionHeaderProfile as Profile;
+    let normalized = flag
+        .replace("%20", " ")
+        .replace(['_', '-', '/'], " ")
+        .to_lowercase();
+    if normalized.contains("sing") {
+        Profile::SingBox
+    } else if normalized.contains("surfboard") || normalized.contains("surge") {
+        Profile::Surge
+    } else if normalized.contains("loon") {
+        Profile::Loon
+    } else if normalized.contains("shadowrocket")
+        || normalized.contains("shadowsocks")
+        || normalized.contains("sagernet")
+    {
+        Profile::None
+    } else if normalized.contains("quantumult x") {
+        // QuantumultX::$flag is the literal `quantumult%20x` (from the app's
+        // `Quantumult%20X/…` UA), normalized here to `quantumult x`. Plain
+        // `Quantumult/…` (the original, non-X app) does not match and falls through.
+        Profile::QuantumultX
+    } else if normalized.contains("v2raytun") {
+        Profile::V2RayTun
+    } else if normalized.contains("v2rayn")
+        || normalized.contains("v2rayng")
+        || normalized.contains("passwall")
+        || normalized.contains("ssrplus")
+    {
+        Profile::None
+    } else if normalized.contains("stash")
+        || normalized.contains("meta")
+        || normalized.contains("nyanpasu")
+        || normalized.contains("verge")
+    {
+        Profile::ClashMeta
+    } else if normalized.contains("clash") {
+        Profile::Clash
+    } else {
+        Profile::None
+    }
 }
 
 async fn client_app_config(
@@ -493,7 +622,44 @@ async fn payment_notify(
     let service =
         v2board_domain::order::OrderService::new(state.db.clone(), state.config_snapshot());
     let result = service.handle_payment_notify(&method, &uuid, input).await?;
+    // Laravel `PaymentController::handle` sends the `成功收款` admin Telegram message only
+    // inside the `$order->status !== 0` guard, i.e. exactly on the fresh paid transition
+    // (`paid_notice` is `Some`). A gateway replay leaves it `None` and stays silent. The
+    // send is best-effort: a Telegram failure must not fail an already-recorded payment.
+    if let Some(notice) = &result.paid_notice
+        && let Some(bot_token) = state.config_snapshot().telegram_bot_token.clone()
+    {
+        let message = format!(
+            "💰成功收款{}元\n———————————————\n订单号：{}",
+            format_paid_amount_yuan(notice.total_amount),
+            notice.trade_no
+        );
+        if let Err(error) =
+            send_telegram_message_with_admin(&state, &bot_token, &message, false).await
+        {
+            tracing::warn!(?error, "payment success telegram notify failed");
+        }
+    }
     Ok(result.body.into_response())
+}
+
+/// Render an amount in cents as Laravel's `total_amount / 100` string does: the integer
+/// yuan value with no decimals when it divides evenly (`1000 -> "10"`), a single decimal
+/// when the cents end in a zero (`1050 -> "10.5"`), otherwise two decimals
+/// (`1035 -> "10.35"`, `1 -> "0.01"`). Uses integer math to avoid float-repr drift.
+fn format_paid_amount_yuan(cents: i64) -> String {
+    let negative = cents < 0;
+    let cents = cents.unsigned_abs();
+    let yuan = cents / 100;
+    let frac = cents % 100;
+    let body = if frac == 0 {
+        format!("{yuan}")
+    } else if frac.is_multiple_of(10) {
+        format!("{yuan}.{}", frac / 10)
+    } else {
+        format!("{yuan}.{frac:02}")
+    };
+    if negative { format!("-{body}") } else { body }
 }
 
 async fn admin_get(
@@ -743,6 +909,21 @@ async fn handle_telegram_message(
         return Ok(());
     };
 
+    // Laravel formatMessage marks a message carrying `reply_to_message.text` as
+    // `message_type = 'reply_message'` and dispatches it ONLY through the reply-ticket
+    // regex path; a plain message dispatches ONLY through the command table. The two
+    // paths are mutually exclusive.
+    if let Some(reply_text) = message
+        .reply_to_message
+        .as_ref()
+        .and_then(|reply| reply.text.as_deref())
+    {
+        if let Some(ticket_id) = telegram_reply_ticket_id(reply_text) {
+            telegram_reply_ticket(state, bot_token, &message, ticket_id).await?;
+        }
+        return Ok(());
+    }
+
     if let Some((command, args)) = telegram_command_parts(text) {
         let command = normalize_telegram_command(bot_token, command).await?;
         match command.as_str() {
@@ -753,15 +934,6 @@ async fn handle_telegram_message(
             _ => {}
         }
     }
-
-    if let Some(reply_text) = message
-        .reply_to_message
-        .as_ref()
-        .and_then(|reply| reply.text.as_deref())
-        && let Some(ticket_id) = telegram_reply_ticket_id(reply_text)
-    {
-        telegram_reply_ticket(state, bot_token, &message, ticket_id).await?;
-    }
     Ok(())
 }
 
@@ -769,13 +941,16 @@ async fn normalize_telegram_command(
     bot_token: &str,
     command: &str,
 ) -> Result<String, TelegramCommandError> {
+    // Laravel compares the command and the `@bot` suffix case-sensitively
+    // (`$msg->command !== $instance->command`, `$commandName[1] === $botName`), so the
+    // raw casing must be preserved rather than lowercased.
     let (command, bot_name) = command.split_once('@').unwrap_or((command, ""));
     if bot_name.is_empty() {
-        return Ok(command.to_ascii_lowercase());
+        return Ok(command.to_string());
     }
     let current_bot = telegram_bot_username(bot_token).await?;
-    if bot_name.eq_ignore_ascii_case(&current_bot) {
-        Ok(command.to_ascii_lowercase())
+    if bot_name == current_bot {
+        Ok(command.to_string())
     } else {
         Ok(String::new())
     }
@@ -1321,7 +1496,16 @@ async fn token2_login(
     );
     if let Some(token) = query.token.as_deref().filter(|value| !value.is_empty()) {
         let url = auth.login_redirect_url(token, query.redirect.as_deref());
-        return Ok(Redirect::temporary(&url).into_response());
+        // Laravel `redirect()->to($location)` issues a 302 Found (not a 307); match it so
+        // the emitted Location is byte-identical.
+        let mut response = Response::new(Body::empty());
+        *response.status_mut() = StatusCode::FOUND;
+        response.headers_mut().insert(
+            header::LOCATION,
+            HeaderValue::from_str(&url)
+                .map_err(|_| ApiError::internal("invalid redirect location"))?,
+        );
+        return Ok(response);
     }
     if let Some(verify) = query.verify.as_deref().filter(|value| !value.is_empty()) {
         let user_agent = headers
@@ -1333,7 +1517,9 @@ async fn token2_login(
             .await?;
         return Ok(legacy_data(data).into_response());
     }
-    Err(ApiError::bad_request("Token error"))
+    // Laravel token2Login has no `else`; a request with neither token nor verify falls
+    // through to an empty 200 response.
+    Ok(StatusCode::OK.into_response())
 }
 
 async fn forget_password(
@@ -1768,7 +1954,7 @@ async fn user_new_period(
 
 #[derive(Debug, Deserialize)]
 struct RedeemGiftcardRequest {
-    giftcard: String,
+    giftcard: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -1801,6 +1987,12 @@ async fn redeem_giftcard(
     Form(payload): Form<RedeemGiftcardRequest>,
 ) -> Result<Response, ApiError> {
     let auth_user = require_user(&state, &headers, query.auth_data).await?;
+    // UserRedeemGiftCard FormRequest: giftcard required.
+    let giftcard_code = required_field(
+        payload.giftcard.as_deref(),
+        "giftcard",
+        "Giftcard cannot be empty",
+    )?;
     let now = Utc::now().timestamp();
     let mut tx = state.db.begin().await?;
     let mut user = sqlx::query_as::<_, GiftUserRow>(
@@ -1819,7 +2011,7 @@ async fn redeem_giftcard(
         FOR UPDATE
         "#,
     )
-    .bind(payload.giftcard.trim())
+    .bind(giftcard_code)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::legacy("The gift card does not exist"))?;
@@ -1844,7 +2036,10 @@ async fn redeem_giftcard(
     let value = giftcard.value.unwrap_or_default();
     let mut group_id = None::<i32>;
     let mut device_limit = None::<i32>;
-    let mut speed_limit = None::<i32>;
+    // Laravel case 5 assigns device_limit unconditionally (including NULL) and never
+    // touches speed_limit; `apply_plan_card` drives the IF() in the UPDATE so a NULL plan
+    // device_limit overwrites the user's value instead of being swallowed by COALESCE.
+    let mut apply_plan_card = false;
     match giftcard.r#type {
         1 => user.balance += value,
         2 => {
@@ -1877,7 +2072,7 @@ async fn redeem_giftcard(
             user.plan_id = Some(plan.id);
             group_id = Some(plan.group_id);
             device_limit = plan.device_limit;
-            speed_limit = plan.speed_limit;
+            apply_plan_card = true;
             user.transfer_enable = plan.transfer_enable * 1_073_741_824;
             user.u = 0;
             user.d = 0;
@@ -1894,8 +2089,8 @@ async fn redeem_giftcard(
         r#"
         UPDATE v2_user
         SET balance = ?, expired_at = ?, transfer_enable = ?, u = ?, d = ?,
-            plan_id = ?, group_id = COALESCE(?, group_id), device_limit = COALESCE(?, device_limit),
-            speed_limit = COALESCE(?, speed_limit), updated_at = ?
+            plan_id = ?, group_id = COALESCE(?, group_id),
+            device_limit = IF(?, ?, device_limit), updated_at = ?
         WHERE id = ?
         "#,
     )
@@ -1906,8 +2101,8 @@ async fn redeem_giftcard(
     .bind(user.d)
     .bind(user.plan_id)
     .bind(group_id)
+    .bind(apply_plan_card as i32)
     .bind(device_limit)
-    .bind(speed_limit)
     .bind(now)
     .bind(user.id)
     .execute(&mut *tx)
@@ -1937,6 +2132,18 @@ struct TransferRequest {
     transfer_amount: i32,
 }
 
+#[derive(sqlx::FromRow)]
+struct TransferUserRow {
+    commission_balance: i32,
+    invite_user_id: Option<i32>,
+}
+
+#[derive(sqlx::FromRow)]
+struct TransferInviterRow {
+    commission_type: i8,
+    commission_rate: Option<i32>,
+}
+
 async fn user_transfer(
     State(state): State<AppState>,
     Query(query): Query<AuthQuery>,
@@ -1944,18 +2151,24 @@ async fn user_transfer(
     Form(payload): Form<TransferRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
+    // UserTransfer FormRequest: transfer_amount required|integer|min:1.
     if payload.transfer_amount <= 0 {
-        return Err(ApiError::legacy("Invalid transfer amount"));
+        return Err(field_validation(
+            "transfer_amount",
+            "The transfer amount parameter is wrong",
+        ));
     }
+    let config = state.config_snapshot();
     let now = Utc::now().timestamp();
     let mut tx = state.db.begin().await?;
-    let commission_balance: i32 =
-        sqlx::query_scalar("SELECT commission_balance FROM v2_user WHERE id = ? FOR UPDATE")
-            .bind(user.id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
-    if payload.transfer_amount > commission_balance {
+    let current = sqlx::query_as::<_, TransferUserRow>(
+        "SELECT commission_balance, invite_user_id FROM v2_user WHERE id = ? LIMIT 1 FOR UPDATE",
+    )
+    .bind(user.id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
+    if payload.transfer_amount > current.commission_balance {
         return Err(ApiError::legacy("Insufficient commission balance"));
     }
     sqlx::query(
@@ -1967,18 +2180,56 @@ async fn user_transfer(
     .bind(user.id)
     .execute(&mut *tx)
     .await?;
+
+    // OrderService::setInvite for this deposit order. Laravel only zeroes total_amount
+    // AFTER setInvite runs, so the order carries the user's invite_user_id and the
+    // inviter's commission is computed against the pre-zero transfer amount.
+    let mut order_commission_balance = 0i32;
+    if let Some(invite_user_id) = current.invite_user_id {
+        let inviter = sqlx::query_as::<_, TransferInviterRow>(
+            "SELECT commission_type, commission_rate FROM v2_user WHERE id = ? LIMIT 1",
+        )
+        .bind(invite_user_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if let Some(inviter) = inviter {
+            let has_valid_order: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM v2_order WHERE user_id = ? AND status NOT IN (0, 2)",
+            )
+            .bind(user.id)
+            .fetch_one(&mut *tx)
+            .await?;
+            let is_commission = match inviter.commission_type {
+                0 => !config.commission_first_time_enable || has_valid_order == 0,
+                1 => true,
+                2 => has_valid_order == 0,
+                _ => false,
+            };
+            if is_commission {
+                let rate = inviter
+                    .commission_rate
+                    .filter(|rate| *rate > 0)
+                    .unwrap_or(config.invite_commission);
+                order_commission_balance =
+                    ((payload.transfer_amount as f64) * (rate as f64 / 100.0)).round() as i32;
+            }
+        }
+    }
+
     sqlx::query(
         r#"
         INSERT INTO v2_order (
-            user_id, plan_id, period, trade_no, total_amount, surplus_amount, type, status,
-            callback_no, commission_status, commission_balance, created_at, updated_at
+            user_id, invite_user_id, plan_id, period, trade_no, total_amount, surplus_amount,
+            type, status, callback_no, commission_status, commission_balance, created_at, updated_at
         )
-        VALUES (?, 0, 'deposit', ?, 0, ?, 9, 3, '佣金划转 Commission transfer', 0, 0, ?, ?)
+        VALUES (?, ?, 0, 'deposit', ?, 0, ?, 9, 3, '佣金划转 Commission transfer', 0, ?, ?, ?)
         "#,
     )
     .bind(user.id)
+    .bind(current.invite_user_id)
     .bind(generate_trade_no())
     .bind(payload.transfer_amount)
+    .bind(order_commission_balance)
     .bind(now)
     .bind(now)
     .execute(&mut *tx)
@@ -2308,14 +2559,23 @@ async fn ticket_save(
     Form(payload): Form<TicketSaveRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    let subject = required_trimmed(payload.subject.as_deref(), "Ticket subject cannot be empty")?;
+    // TicketSave FormRequest: subject required, level required|in:0,1,2, message required.
+    let subject = required_field(
+        payload.subject.as_deref(),
+        "subject",
+        "Ticket subject cannot be empty",
+    )?;
     let level = payload
         .level
-        .ok_or_else(|| ApiError::legacy("Ticket level cannot be empty"))?;
+        .ok_or_else(|| field_validation("level", "Ticket level cannot be empty"))?;
     if !matches!(level, 0..=2) {
-        return Err(ApiError::legacy("Incorrect ticket level format"));
+        return Err(field_validation("level", "Incorrect ticket level format"));
     }
-    let message = required_trimmed(payload.message.as_deref(), "Message cannot be empty")?;
+    let message = required_field(
+        payload.message.as_deref(),
+        "message",
+        "Message cannot be empty",
+    )?;
     if v2board_db::ticket::count_open_tickets(&state.db, user.id).await? > 0 {
         return Err(ApiError::legacy("There are other unresolved tickets"));
     }
@@ -2414,20 +2674,24 @@ async fn ticket_withdraw(
     Form(payload): Form<TicketWithdrawRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
+    // TicketWithdraw FormRequest: withdraw_method + withdraw_account required. FormRequest
+    // validation runs before the controller body, so it precedes the close-enable gate.
+    let method = required_field(
+        payload.withdraw_method.as_deref(),
+        "withdraw_method",
+        "The withdrawal method cannot be empty",
+    )?;
+    let account = required_field(
+        payload.withdraw_account.as_deref(),
+        "withdraw_account",
+        "The withdrawal account cannot be empty",
+    )?;
     let config = state.config_snapshot();
     if config.withdraw_close_enable {
         return Err(ApiError::legacy(
             "user.ticket.withdraw.not_support_withdraw",
         ));
     }
-    let method = required_trimmed(
-        payload.withdraw_method.as_deref(),
-        "The withdrawal method cannot be empty",
-    )?;
-    let account = required_trimmed(
-        payload.withdraw_account.as_deref(),
-        "The withdrawal account cannot be empty",
-    )?;
     if !config
         .commission_withdraw_method
         .iter()
@@ -3152,6 +3416,28 @@ fn required_trimmed<'a>(value: Option<&'a str>, message: &str) -> Result<&'a str
         .ok_or_else(|| ApiError::legacy(message))
 }
 
+/// Laravel FormRequest 422 body: `{message, errors:{field:[message]}}`. The top-level
+/// `message` mirrors Laravel's first failing-rule message.
+fn field_validation(field: &str, message: &str) -> ApiError {
+    ApiError::validation(
+        message,
+        HashMap::from([(field.to_string(), vec![message.to_string()])]),
+    )
+}
+
+/// Laravel `required` rule (a string is empty when it trims to ""); on failure returns a
+/// 422 keyed on `field` instead of a 500.
+fn required_field<'a>(
+    value: Option<&'a str>,
+    field: &str,
+    message: &str,
+) -> Result<&'a str, ApiError> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| field_validation(field, message))
+}
+
 fn forbidden(message: impl Into<String>) -> ApiError {
     ApiError::Http {
         status: StatusCode::FORBIDDEN,
@@ -3305,5 +3591,71 @@ mod tests {
     #[test]
     fn telegram_markdown_escape_matches_legacy_underscore_escape() {
         assert_eq!(escape_telegram_markdown("hello_world"), "hello\\_world");
+    }
+
+    #[test]
+    fn subscription_header_profile_matches_each_protocol() {
+        use SubscriptionHeaderProfile as P;
+        // base64 family (and an unknown flag → General): no extra headers.
+        for flag in [
+            "general",
+            "v2rayn",
+            "v2rayng",
+            "passwall",
+            "ssrplus",
+            "shadowrocket",
+            "shadowsocks",
+            "sagernet",
+            "",
+        ] {
+            assert_eq!(subscription_header_profile(flag), P::None, "flag={flag}");
+        }
+        // v2RayTun is split out of the base64 bucket even though its body is base64.
+        assert_eq!(subscription_header_profile("v2raytun"), P::V2RayTun);
+        assert_eq!(
+            subscription_header_profile("quantumult%20x"),
+            P::QuantumultX
+        );
+        assert_eq!(
+            subscription_header_profile("Quantumult%20X/1.0.5"),
+            P::QuantumultX
+        );
+        // The original non-X Quantumult app must fall through to General (no headers),
+        // matching Laravel's literal `quantumult%20x` flag.
+        assert_eq!(subscription_header_profile("Quantumult/1.0.0"), P::None);
+        assert_eq!(subscription_header_profile("loon"), P::Loon);
+        assert_eq!(subscription_header_profile("surge"), P::Surge);
+        assert_eq!(subscription_header_profile("surfboard"), P::Surge);
+        assert_eq!(subscription_header_profile("clash"), P::Clash);
+        // Meta/Verge/Nyanpasu/Stash share the Clash-without-web-page-url header set.
+        for flag in [
+            "clash.meta",
+            "clashmeta",
+            "clash-verge",
+            "clash.nyanpasu",
+            "stash",
+        ] {
+            assert_eq!(
+                subscription_header_profile(flag),
+                P::ClashMeta,
+                "flag={flag}"
+            );
+        }
+        // Sing-box (modern + legacy) both emit the same headers.
+        assert_eq!(subscription_header_profile("sing-box 1.12.0"), P::SingBox);
+        assert_eq!(subscription_header_profile("sing-box"), P::SingBox);
+    }
+
+    #[test]
+    fn paid_amount_yuan_matches_php_total_amount_div_100() {
+        // Mirrors PHP `$order->total_amount / 100` string coercion used in the
+        // `成功收款` admin Telegram message.
+        assert_eq!(format_paid_amount_yuan(1035), "10.35");
+        assert_eq!(format_paid_amount_yuan(1000), "10");
+        assert_eq!(format_paid_amount_yuan(1050), "10.5");
+        assert_eq!(format_paid_amount_yuan(10), "0.1");
+        assert_eq!(format_paid_amount_yuan(1), "0.01");
+        assert_eq!(format_paid_amount_yuan(0), "0");
+        assert_eq!(format_paid_amount_yuan(9_999_999), "99999.99");
     }
 }

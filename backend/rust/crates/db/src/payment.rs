@@ -8,7 +8,10 @@ pub struct PaymentMethodRow {
     pub payment: String,
     pub icon: Option<String>,
     pub handling_fee_fixed: Option<i32>,
-    pub handling_fee_percent: Option<f64>,
+    // Eloquent returns the `decimal(5,2)` column verbatim as its string form
+    // (e.g. "0.50"), never as a JSON number. `CAST(... AS CHAR)` preserves that
+    // scale so the emitted value matches Laravel's PaymentController::getPaymentMethod.
+    pub handling_fee_percent: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -27,7 +30,7 @@ pub async fn fetch_enabled_payment_methods(
             payment,
             icon,
             handling_fee_fixed,
-            CAST(handling_fee_percent AS DOUBLE) AS handling_fee_percent
+            CAST(handling_fee_percent AS CHAR) AS handling_fee_percent
         FROM v2_payment
         WHERE enable = 1
         ORDER BY sort ASC
@@ -63,4 +66,37 @@ pub async fn find_stripe_public_key(
                     .map(ToOwned::to_owned)
             })
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handling_fee_percent_serializes_as_decimal_string() {
+        let row = PaymentMethodRow {
+            id: 1,
+            name: "Alipay".into(),
+            payment: "AlipayF2F".into(),
+            icon: None,
+            handling_fee_fixed: None,
+            handling_fee_percent: Some("0.50".into()),
+        };
+        let value = serde_json::to_value(&row).unwrap();
+        assert_eq!(value["handling_fee_percent"], serde_json::json!("0.50"));
+    }
+
+    #[test]
+    fn handling_fee_percent_null_serializes_as_null() {
+        let row = PaymentMethodRow {
+            id: 1,
+            name: "Alipay".into(),
+            payment: "AlipayF2F".into(),
+            icon: None,
+            handling_fee_fixed: None,
+            handling_fee_percent: None,
+        };
+        let value = serde_json::to_value(&row).unwrap();
+        assert!(value["handling_fee_percent"].is_null());
+    }
 }

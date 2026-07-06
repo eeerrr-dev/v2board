@@ -193,7 +193,18 @@ impl AppConfig {
                 &file_config,
                 "email_whitelist_suffix",
                 "V2BOARD_EMAIL_WHITELIST_SUFFIX",
-                &["gmail.com"],
+                // Laravel `Dict::EMAIL_WHITELIST_SUFFIX_DEFAULT` (order-preserving).
+                &[
+                    "gmail.com",
+                    "qq.com",
+                    "163.com",
+                    "yahoo.com",
+                    "sina.com",
+                    "126.com",
+                    "outlook.com",
+                    "yeah.net",
+                    "foxmail.com",
+                ],
             ),
             email_gmail_limit_enable: config_bool(
                 &file_config,

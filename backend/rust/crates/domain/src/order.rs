@@ -55,14 +55,18 @@ struct DraftOrder {
     r#type: i32,
     period: String,
     trade_no: String,
-    total_amount: i32,
-    discount_amount: Option<i32>,
-    surplus_amount: Option<i32>,
-    refund_amount: Option<i32>,
-    balance_amount: Option<i32>,
+    // Amounts stay floats through the whole build so coupon/VIP/surplus/balance/
+    // commission math is never rounded mid-pipeline; insert_order rounds once when
+    // binding to the int amount columns, mirroring Laravel (which lets MySQL round
+    // the persisted float). See round_cents / apply_vip_discount.
+    total_amount: f64,
+    discount_amount: Option<f64>,
+    surplus_amount: Option<f64>,
+    refund_amount: Option<f64>,
+    balance_amount: Option<f64>,
     surplus_order_ids: Option<Vec<i64>>,
     invite_user_id: Option<i32>,
-    commission_balance: i32,
+    commission_balance: f64,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -147,6 +151,19 @@ struct PaymentOrder {
 #[derive(Debug, Clone)]
 pub struct PaymentNotifyResponse {
     pub body: String,
+    /// Set only when this callback made the fresh `status 0 -> 1` paid transition,
+    /// so the HTTP layer can send Laravel's `成功收款` admin Telegram message exactly
+    /// once (a gateway replay leaves this `None`). Mirrors `PaymentController::handle`,
+    /// which sends the message only inside the `status !== 0` guard.
+    pub paid_notice: Option<PaidOrderNotice>,
+}
+
+/// The order fields Laravel's `PaymentController::handle` reads to build the admin
+/// `💰成功收款` Telegram message after a fresh paid transition.
+#[derive(Debug, Clone)]
+pub struct PaidOrderNotice {
+    pub trade_no: String,
+    pub total_amount: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -174,16 +191,20 @@ impl OrderService {
     }
 
     pub async fn save(&self, user_id: i64, input: SaveOrderInput) -> Result<String, ApiError> {
+        // Laravel OrderSave FormRequest: plan_id `required`, period
+        // `required|in:<period list>`. A failed FormRequest is a 422
+        // `{message, errors:{field:[msg]}}`, not the 500 these pre-logic checks
+        // used to return.
         let plan_id = input
             .plan_id
-            .ok_or_else(|| ApiError::legacy("Plan ID cannot be empty"))?;
+            .ok_or_else(|| order_validation("plan_id", "Plan ID cannot be empty"))?;
         let period = input
             .period
             .as_deref()
             .filter(|period| !period.trim().is_empty())
-            .ok_or_else(|| ApiError::legacy("Plan period cannot be empty"))?;
+            .ok_or_else(|| order_validation("period", "Plan period cannot be empty"))?;
         if !is_valid_period(period) {
-            return Err(ApiError::legacy("Wrong plan period"));
+            return Err(order_validation("period", "Wrong plan period"));
         }
 
         let mut tx = self.db.begin().await?;
@@ -322,6 +343,26 @@ impl OrderService {
         uuid: &str,
         input: PaymentNotifyInput,
     ) -> Result<PaymentNotifyResponse, ApiError> {
+        // Laravel PaymentController::notify wraps the whole flow in try/catch and
+        // re-aborts ANY failure (gate lookup, gateway verify, order handling, DB
+        // errors) as a uniform `abort(500, 'fail')`, never leaking the internal
+        // reason. Only the gateway's own direct response (Ignored) or the verified
+        // custom_result/'success' escape the catch.
+        match self.run_payment_notify(method, uuid, input).await {
+            Ok(response) => Ok(response),
+            Err(error) => {
+                tracing::warn!(method, uuid, ?error, "payment notify failed");
+                Err(ApiError::legacy("fail"))
+            }
+        }
+    }
+
+    async fn run_payment_notify(
+        &self,
+        method: &str,
+        uuid: &str,
+        input: PaymentNotifyInput,
+    ) -> Result<PaymentNotifyResponse, ApiError> {
         let payment = sqlx::query_as::<_, PaymentForCheckout>(
             r#"
             SELECT
@@ -354,14 +395,17 @@ impl OrderService {
                     PaymentNotifyOutcome::Ignored(body) => body,
                     PaymentNotifyOutcome::Verified(_) => unreachable!(),
                 },
+                paid_notice: None,
             });
         };
-        self.paid_by_trade_no(&verified.trade_no, &verified.callback_no)
+        let paid_notice = self
+            .paid_by_trade_no(&verified.trade_no, &verified.callback_no)
             .await?;
         Ok(PaymentNotifyResponse {
             body: verified
                 .custom_result
                 .unwrap_or_else(|| "success".to_string()),
+            paid_notice,
         })
     }
 
@@ -531,34 +575,39 @@ impl OrderService {
         Ok(())
     }
 
-    async fn paid_by_trade_no(&self, trade_no: &str, callback_no: &str) -> Result<(), ApiError> {
+    async fn paid_by_trade_no(
+        &self,
+        trade_no: &str,
+        callback_no: &str,
+    ) -> Result<Option<PaidOrderNotice>, ApiError> {
         // Commit the paid mark in its OWN transaction first, mirroring Laravel's
         // OrderService::paid() which save()s status=1 before dispatching OrderHandleJob.
         // A gateway-confirmed payment must be durable even if opening the order later
         // fails; folding the open into the same transaction (as before) meant a transient
         // error while granting the plan would roll back real, already-received money.
+        let total_amount;
         {
             let mut tx = self.db.begin().await?;
-            let Some(order_id) = sqlx::query_scalar::<_, i64>(
-                "SELECT id FROM v2_order WHERE trade_no = ? LIMIT 1 FOR UPDATE",
-            )
-            .bind(trade_no)
-            .fetch_optional(&mut *tx)
-            .await?
+            let Some((order_id, status, amount)) =
+                sqlx::query_as::<_, (i64, i8, i64)>(
+                    "SELECT id, status, total_amount FROM v2_order WHERE trade_no = ? LIMIT 1 FOR UPDATE",
+                )
+                .bind(trade_no)
+                .fetch_optional(&mut *tx)
+                .await?
             else {
                 return Err(ApiError::legacy("Order does not exist"));
             };
-            let status: i8 = sqlx::query_scalar("SELECT status FROM v2_order WHERE id = ?")
-                .bind(order_id)
-                .fetch_one(&mut *tx)
-                .await?;
             if status != 0 {
                 // Already paid/opened/cancelled: idempotent no-op, safe on gateway replay.
+                // Laravel's `handle()` returns early here without the `成功收款` message, so
+                // report `None` and the caller suppresses the admin notification.
                 tx.commit().await?;
-                return Ok(());
+                return Ok(None);
             }
             mark_order_paid(&mut tx, order_id, callback_no, Utc::now().timestamp()).await?;
             tx.commit().await?;
+            total_amount = amount;
         }
 
         // Best-effort immediate open for responsiveness. On failure the order stays
@@ -572,7 +621,10 @@ impl OrderService {
                 "order marked paid but opening failed; check_order will retry"
             );
         }
-        Ok(())
+        Ok(Some(PaidOrderNotice {
+            trade_no: trade_no.to_string(),
+            total_amount,
+        }))
     }
 
     async fn build_deposit_order(
@@ -604,14 +656,14 @@ impl OrderService {
             r#type: 9,
             period: "deposit".to_string(),
             trade_no,
-            total_amount: amount,
+            total_amount: amount as f64,
             discount_amount: None,
             surplus_amount: None,
             refund_amount: None,
             balance_amount: None,
             surplus_order_ids: None,
             invite_user_id: None,
-            commission_balance: 0,
+            commission_balance: 0.0,
         };
         self.set_invite(tx, &user, &mut draft).await?;
         Ok(draft)
@@ -669,14 +721,14 @@ impl OrderService {
             r#type: 1,
             period: period.to_string(),
             trade_no,
-            total_amount: price,
+            total_amount: price as f64,
             discount_amount: None,
             surplus_amount: None,
             refund_amount: None,
             balance_amount: None,
             surplus_order_ids: None,
             invite_user_id: None,
-            commission_balance: 0,
+            commission_balance: 0.0,
         };
 
         if let Some(code) = coupon_code.filter(|code| !code.trim().is_empty()) {
@@ -726,9 +778,9 @@ impl OrderService {
         // apply_vip_discount so the VIP percentage is computed on the original
         // (pre-coupon) total, matching OrderService::setVipDiscount.
         let discount = match coupon.r#type {
-            1 => coupon.value,
-            2 => percent_amount(draft.total_amount, coupon.value),
-            _ => 0,
+            1 => coupon.value as f64,
+            2 => draft.total_amount * (coupon.value as f64 / 100.0),
+            _ => 0.0,
         }
         .min(draft.total_amount);
         draft.discount_amount = Some(discount);
@@ -777,7 +829,7 @@ impl OrderService {
             let surplus = draft.surplus_amount.unwrap_or_default();
             if surplus >= draft.total_amount {
                 draft.refund_amount = Some(surplus - draft.total_amount);
-                draft.total_amount = 0;
+                draft.total_amount = 0.0;
             } else {
                 draft.total_amount -= surplus;
             }
@@ -824,8 +876,7 @@ impl OrderService {
             }
             let unused_traffic_gib = (user.transfer_enable - (user.u + user.d)) as f64 / GIB as f64;
             let remaining_ratio = unused_traffic_gib / total_traffic_gib;
-            draft.surplus_amount =
-                Some(((paid_total as f64) * remaining_ratio).max(0.0).round() as i32);
+            draft.surplus_amount = Some(((paid_total as f64) * remaining_ratio).max(0.0));
             draft.surplus_order_ids = fetch_surplus_order_ids(tx, user.id, true).await?;
             return Ok(());
         }
@@ -900,7 +951,7 @@ impl OrderService {
             avg_price_per_second * month_seconds as f64 * surplus_ratio
                 + avg_price_per_second * later_months_seconds as f64
         };
-        draft.surplus_amount = Some(surplus.max(0.0).round() as i32);
+        draft.surplus_amount = Some(surplus.max(0.0));
         draft.surplus_order_ids = Some(rows.into_iter().map(|row| row.id).collect());
         Ok(())
     }
@@ -911,10 +962,17 @@ impl OrderService {
         user: &mut UserForOrder,
         draft: &mut DraftOrder,
     ) -> Result<(), ApiError> {
-        if user.balance <= 0 || draft.total_amount <= 0 {
+        if user.balance <= 0 || draft.total_amount <= 0.0 {
             return Ok(());
         }
-        let use_balance = user.balance.min(draft.total_amount);
+        let use_balance = (user.balance as f64).min(draft.total_amount);
+        // Laravel passes the (still-float) deduction to `UserService::addBalance(int $balance)`,
+        // whose `int` parameter coerces the float by TRUNCATION toward zero before subtracting
+        // it from the balance column. So the actual balance deduction is `trunc(use_balance)`,
+        // NOT a round — e.g. a 0.5-cent total leaves the balance untouched. The recorded
+        // `balance_amount` field, by contrast, is stored via Eloquent save() and DOES get
+        // MySQL-rounded (round_cents at insert), so the two can legitimately differ by a cent.
+        let use_balance_cents = use_balance.trunc() as i32;
         let result = sqlx::query(
             r#"
             UPDATE v2_user
@@ -922,16 +980,16 @@ impl OrderService {
             WHERE id = ? AND balance >= ?
             "#,
         )
-        .bind(use_balance)
+        .bind(use_balance_cents)
         .bind(Utc::now().timestamp())
         .bind(user.id)
-        .bind(use_balance)
+        .bind(use_balance_cents)
         .execute(&mut **tx)
         .await?;
         if result.rows_affected() == 0 {
             return Err(ApiError::legacy("Insufficient balance"));
         }
-        user.balance -= use_balance;
+        user.balance -= use_balance_cents;
         draft.balance_amount = Some(use_balance);
         draft.total_amount -= use_balance;
         Ok(())
@@ -946,7 +1004,7 @@ impl OrderService {
         let Some(invite_user_id) = user.invite_user_id else {
             return Ok(());
         };
-        if draft.total_amount <= 0 {
+        if draft.total_amount <= 0.0 {
             return Ok(());
         }
         draft.invite_user_id = Some(invite_user_id);
@@ -971,7 +1029,7 @@ impl OrderService {
             .commission_rate
             .filter(|rate| *rate > 0)
             .unwrap_or(self.config.invite_commission);
-        draft.commission_balance = percent_amount(draft.total_amount, rate);
+        draft.commission_balance = draft.total_amount * (rate as f64 / 100.0);
         Ok(())
     }
 
@@ -1250,13 +1308,13 @@ async fn insert_order(
     .bind(draft.r#type)
     .bind(&draft.period)
     .bind(&draft.trade_no)
-    .bind(draft.total_amount)
-    .bind(draft.discount_amount)
-    .bind(draft.surplus_amount)
-    .bind(draft.refund_amount)
-    .bind(draft.balance_amount)
+    .bind(round_cents(draft.total_amount))
+    .bind(draft.discount_amount.map(round_cents))
+    .bind(draft.surplus_amount.map(round_cents))
+    .bind(draft.refund_amount.map(round_cents))
+    .bind(draft.balance_amount.map(round_cents))
     .bind(surplus_order_ids)
-    .bind(draft.commission_balance)
+    .bind(round_cents(draft.commission_balance))
     .bind(now)
     .bind(now)
     .execute(&mut **tx)
@@ -3012,8 +3070,13 @@ fn apply_vip_discount(discount: Option<i32>, draft: &mut DraftOrder) {
     // discount_amount is subtracted from the total exactly once. When neither a
     // coupon nor a VIP discount applies, discount_amount stays None and the
     // total is left untouched, matching Laravel's null discount_amount.
+    //
+    // Laravel keeps this as float math (discount_amount + total * vip/100) and only
+    // rounds when the value lands in the int column at save() time. Rounding the
+    // coupon and VIP portions separately before summing drifted by a cent from
+    // Laravel's persisted result, so the rounding is deferred to insert_order.
     if let Some(discount) = discount.filter(|discount| *discount > 0) {
-        let value = percent_amount(draft.total_amount, discount);
+        let value = draft.total_amount * (discount as f64 / 100.0);
         draft.discount_amount = Some(draft.discount_amount.unwrap_or_default() + value);
     }
     if let Some(discount_amount) = draft.discount_amount {
@@ -3107,6 +3170,15 @@ fn plan_period_price(plan: &PlanRow, period: &str) -> Option<i32> {
     }
 }
 
+/// Laravel FormRequest validation failure: HTTP 422 `{message, errors:{field:[msg]}}`.
+/// The top-level message mirrors Laravel's first validation error message.
+fn order_validation(field: &str, message: &str) -> ApiError {
+    ApiError::validation(
+        message,
+        HashMap::from([(field.to_string(), vec![message.to_string()])]),
+    )
+}
+
 fn is_valid_period(period: &str) -> bool {
     matches!(
         period,
@@ -3161,8 +3233,12 @@ fn is_same_local_month_day(left: i64, right: i64) -> bool {
     left.month() == right.month() && left.day() == right.day()
 }
 
-fn percent_amount(amount: i32, percent: i32) -> i32 {
-    ((amount as f64) * (percent as f64 / 100.0)).round() as i32
+/// Round a float cents amount to the integer stored in the DB's int amount
+/// columns. Mirrors MySQL's implicit float->int rounding (half away from zero),
+/// which is how Laravel's un-cast Order amounts land in `int(11)` columns, so the
+/// Rust pipeline can defer all rounding to persist time.
+fn round_cents(amount: f64) -> i32 {
+    amount.round() as i32
 }
 
 fn generate_order_no() -> String {
@@ -3435,5 +3511,47 @@ mod tests {
                 .as_slice(),
         )
         .unwrap()
+    }
+
+    fn draft_fixture(total_amount: f64) -> DraftOrder {
+        DraftOrder {
+            user_id: 1,
+            plan_id: 1,
+            coupon_id: None,
+            r#type: 1,
+            period: "month_price".to_string(),
+            trade_no: "test".to_string(),
+            total_amount,
+            discount_amount: None,
+            surplus_amount: None,
+            refund_amount: None,
+            balance_amount: None,
+            surplus_order_ids: None,
+            invite_user_id: None,
+            commission_balance: 0.0,
+        }
+    }
+
+    #[test]
+    fn vip_and_coupon_discount_defer_rounding_to_persist() {
+        // total=1990, coupon 33% (656.7) then VIP 15% (298.5). Laravel keeps floats:
+        // discount_amount = 656.7 + 298.5 = 955.2 -> persist 955; total = 1990 -
+        // 955.2 = 1034.8 -> persist 1035. Rounding each portion first would drift to
+        // 956 / 1034, so the rounding must be deferred to persist time.
+        let mut draft = draft_fixture(1990.0);
+        draft.discount_amount = Some(1990.0 * (33.0 / 100.0)); // coupon step, pre-VIP
+        apply_vip_discount(Some(15), &mut draft);
+        assert_eq!(round_cents(draft.discount_amount.unwrap()), 955);
+        assert_eq!(round_cents(draft.total_amount), 1035);
+    }
+
+    #[test]
+    fn no_coupon_no_vip_leaves_total_untouched_and_discount_null() {
+        // Laravel's setVipDiscount leaves discount_amount NULL and total unchanged
+        // when neither a coupon nor a VIP discount applies.
+        let mut draft = draft_fixture(1990.0);
+        apply_vip_discount(None, &mut draft);
+        assert!(draft.discount_amount.is_none());
+        assert_eq!(round_cents(draft.total_amount), 1990);
     }
 }

@@ -87,13 +87,15 @@ impl MailSettings {
     }
 }
 
+// Order matches ServerService::getAllServers() array_merge concatenation, so the
+// getNodes list (before its stable sort by `sort`) preserves Laravel tie order.
 pub(super) const SERVER_TABLES: &[(&str, &str)] = &[
     ("shadowsocks", "v2_server_shadowsocks"),
     ("vmess", "v2_server_vmess"),
     ("trojan", "v2_server_trojan"),
     ("tuic", "v2_server_tuic"),
-    ("vless", "v2_server_vless"),
     ("hysteria", "v2_server_hysteria"),
+    ("vless", "v2_server_vless"),
     ("anytls", "v2_server_anytls"),
     ("v2node", "v2_server_v2node"),
 ];
@@ -265,6 +267,246 @@ const SERVER_V2NODE_COLUMNS: &[&str] = &[
     "obfs_password",
     "padding_scheme",
 ];
+
+/// How a node column is serialized in the getNodes full-row output. `Json`
+/// mirrors an Eloquent `array` cast (decoded JSON); `Padding` mirrors the
+/// re-encoded padding_scheme (a JSON string) in getAllAnyTLS/getAllV2node.
+#[derive(Clone, Copy)]
+enum NodeCast {
+    Plain,
+    Json,
+    Padding,
+}
+
+use NodeCast::{Json as J, Padding as P, Plain as X};
+
+const SHADOWSOCKS_NODE_COLS: &[(&str, NodeCast)] = &[
+    ("id", X),
+    ("group_id", J),
+    ("route_id", J),
+    ("parent_id", X),
+    ("tags", J),
+    ("name", X),
+    ("rate", X),
+    ("host", X),
+    ("port", X),
+    ("server_port", X),
+    ("cipher", X),
+    ("obfs", X),
+    ("obfs_settings", J),
+    ("show", X),
+    ("sort", X),
+    ("created_at", X),
+    ("updated_at", X),
+];
+
+const VMESS_NODE_COLS: &[(&str, NodeCast)] = &[
+    ("id", X),
+    ("group_id", J),
+    ("route_id", J),
+    ("name", X),
+    ("parent_id", X),
+    ("host", X),
+    ("port", X),
+    ("server_port", X),
+    ("tls", X),
+    ("tags", J),
+    ("rate", X),
+    ("network", X),
+    ("rules", X),
+    ("networkSettings", J),
+    ("tlsSettings", J),
+    ("ruleSettings", J),
+    ("dnsSettings", J),
+    ("show", X),
+    ("sort", X),
+    ("created_at", X),
+    ("updated_at", X),
+];
+
+const TROJAN_NODE_COLS: &[(&str, NodeCast)] = &[
+    ("id", X),
+    ("group_id", J),
+    ("route_id", J),
+    ("parent_id", X),
+    ("tags", J),
+    ("name", X),
+    ("rate", X),
+    ("host", X),
+    ("port", X),
+    ("server_port", X),
+    ("network", X),
+    ("network_settings", J),
+    ("allow_insecure", X),
+    ("server_name", X),
+    ("show", X),
+    ("sort", X),
+    ("created_at", X),
+    ("updated_at", X),
+];
+
+const TUIC_NODE_COLS: &[(&str, NodeCast)] = &[
+    ("id", X),
+    ("group_id", J),
+    ("route_id", J),
+    ("name", X),
+    ("parent_id", X),
+    ("host", X),
+    ("port", X),
+    ("server_port", X),
+    ("tags", J),
+    ("rate", X),
+    ("show", X),
+    ("sort", X),
+    ("server_name", X),
+    ("insecure", X),
+    ("disable_sni", X),
+    ("udp_relay_mode", X),
+    ("zero_rtt_handshake", X),
+    ("congestion_control", X),
+    ("created_at", X),
+    ("updated_at", X),
+];
+
+const HYSTERIA_NODE_COLS: &[(&str, NodeCast)] = &[
+    ("id", X),
+    ("version", X),
+    ("group_id", J),
+    ("route_id", J),
+    ("name", X),
+    ("parent_id", X),
+    ("host", X),
+    ("port", X),
+    ("server_port", X),
+    ("tags", J),
+    ("rate", X),
+    ("show", X),
+    ("sort", X),
+    ("up_mbps", X),
+    ("down_mbps", X),
+    ("obfs", X),
+    ("obfs_password", X),
+    ("server_name", X),
+    ("insecure", X),
+    ("created_at", X),
+    ("updated_at", X),
+];
+
+const VLESS_NODE_COLS: &[(&str, NodeCast)] = &[
+    ("id", X),
+    ("group_id", J),
+    ("route_id", J),
+    ("name", X),
+    ("parent_id", X),
+    ("host", X),
+    ("port", X),
+    ("server_port", X),
+    ("tls", X),
+    ("tls_settings", J),
+    ("flow", X),
+    ("network", X),
+    ("network_settings", J),
+    ("encryption", X),
+    ("encryption_settings", J),
+    ("tags", J),
+    ("rate", X),
+    ("show", X),
+    ("sort", X),
+    ("created_at", X),
+    ("updated_at", X),
+];
+
+const ANYTLS_NODE_COLS: &[(&str, NodeCast)] = &[
+    ("id", X),
+    ("group_id", J),
+    ("route_id", J),
+    ("name", X),
+    ("parent_id", X),
+    ("host", X),
+    ("port", X),
+    ("server_port", X),
+    ("tags", J),
+    ("rate", X),
+    ("show", X),
+    ("sort", X),
+    ("server_name", X),
+    ("insecure", X),
+    ("padding_scheme", P),
+    ("created_at", X),
+    ("updated_at", X),
+];
+
+const V2NODE_NODE_COLS: &[(&str, NodeCast)] = &[
+    ("id", X),
+    ("group_id", J),
+    ("route_id", J),
+    ("name", X),
+    ("parent_id", X),
+    ("host", X),
+    ("listen_ip", X),
+    ("port", X),
+    ("server_port", X),
+    ("tags", J),
+    ("rate", X),
+    ("show", X),
+    ("sort", X),
+    ("protocol", X),
+    ("tls", X),
+    ("tls_settings", J),
+    ("flow", X),
+    ("network", X),
+    ("network_settings", J),
+    ("encryption", X),
+    ("encryption_settings", J),
+    ("disable_sni", X),
+    ("udp_relay_mode", X),
+    ("zero_rtt_handshake", X),
+    ("congestion_control", X),
+    ("cipher", X),
+    ("up_mbps", X),
+    ("down_mbps", X),
+    ("obfs", X),
+    ("obfs_password", X),
+    ("padding_scheme", P),
+    ("created_at", X),
+    ("updated_at", X),
+];
+
+fn node_columns(kind: &str) -> &'static [(&'static str, NodeCast)] {
+    match kind {
+        "shadowsocks" => SHADOWSOCKS_NODE_COLS,
+        "vmess" => VMESS_NODE_COLS,
+        "trojan" => TROJAN_NODE_COLS,
+        "tuic" => TUIC_NODE_COLS,
+        "hysteria" => HYSTERIA_NODE_COLS,
+        "vless" => VLESS_NODE_COLS,
+        "anytls" => ANYTLS_NODE_COLS,
+        "v2node" => V2NODE_NODE_COLS,
+        _ => &[],
+    }
+}
+
+/// Builds the getNodes SELECT for one protocol table: every DB column (with the
+/// same JSON casts Eloquent's toArray() applies) plus the `type` label. Ports the
+/// getAll<Protocol> getters in ServerService. `kind`/`table`/column names are all
+/// compile-time literals, so the assembled SQL is injection-safe.
+pub(super) fn server_node_select(kind: &str, table: &str) -> String {
+    let mut pairs = String::new();
+    for (name, cast) in node_columns(kind) {
+        let expr = match cast {
+            NodeCast::Plain => format!("`{name}`"),
+            NodeCast::Json => format!("CAST(`{name}` AS JSON)"),
+            NodeCast::Padding => format!("CAST(`{name}` AS CHAR)"),
+        };
+        pairs.push_str(&format!("'{name}', {expr}, "));
+    }
+    format!("SELECT JSON_OBJECT({pairs}'type', '{kind}') FROM {table} ORDER BY sort ASC")
+}
+
+/// PHP escapeshellarg(): wraps in single quotes, escaping embedded quotes.
+pub(super) fn escapeshellarg(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
 
 #[derive(Debug, Clone)]
 pub(super) enum AdminSqlValue {
@@ -652,6 +894,42 @@ pub(super) fn optional_int_or_null_value(
     optional_i64(params, key)
         .map(AdminSqlValue::Integer)
         .unwrap_or(AdminSqlValue::Null)
+}
+
+/// Builds a Laravel-style 422 validation error for a single field: the message
+/// doubles as the top-level message and the field's first error.
+pub(super) fn validation_error(field: &str, message: &str) -> ApiError {
+    ApiError::validation(
+        message,
+        HashMap::from([(field.to_string(), vec![message.to_string()])]),
+    )
+}
+
+/// True when `key` (scalar or bracketed array) appears in the request params.
+/// Mirrors Laravel's `required` presence check for nested inputs.
+pub(super) fn param_present(params: &HashMap<String, String>, key: &str) -> bool {
+    params
+        .keys()
+        .any(|param| param == key || param.starts_with(&format!("{key}[")))
+}
+
+/// Approximates Laravel's `url` rule (filter_var FILTER_VALIDATE_URL): requires a
+/// `scheme://host` shape with an alphabetic-led scheme and a non-empty host.
+pub(super) fn is_valid_url(value: &str) -> bool {
+    let Some((scheme, rest)) = value.split_once("://") else {
+        return false;
+    };
+    let scheme_bytes = scheme.as_bytes();
+    if scheme_bytes.is_empty()
+        || !scheme_bytes[0].is_ascii_alphabetic()
+        || !scheme
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+    {
+        return false;
+    }
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    !host.is_empty()
 }
 
 pub(super) fn optional_string(params: &HashMap<String, String>, key: &str) -> Option<String> {
@@ -1231,19 +1509,6 @@ pub(super) fn json_array_param(params: &HashMap<String, String>, key: &str) -> V
     values.into_values().collect()
 }
 
-pub(super) fn optional_json_array_string(
-    params: &HashMap<String, String>,
-    key: &str,
-) -> Option<String> {
-    if let Some(value) = params.get(key)
-        && serde_json::from_str::<Value>(value).is_ok()
-    {
-        return Some(value.clone());
-    }
-    let values = json_array_param(params, key);
-    (!values.is_empty()).then(|| json_string(&Value::Array(values)))
-}
-
 pub(super) fn bracket_index(raw_key: &str, key: &str) -> Option<usize> {
     raw_key
         .strip_prefix(&format!("{key}["))
@@ -1550,6 +1815,194 @@ pub(super) fn config_save_whitelisted(base: &str) -> bool {
     KEYS.contains(&base)
 }
 
+/// Validates a config/save payload against ConfigSave::RULES before it is
+/// written. Ports the enum (`in:...`), integer/numeric, url, regex and length
+/// rules that guard against corrupt config; only present, non-empty values are
+/// checked, matching Laravel's implicit skipping of empty optional inputs.
+/// Returns the first failure as a Laravel-style 422.
+pub(super) fn validate_config_params(params: &HashMap<String, String>) -> Result<(), ApiError> {
+    let value = |key: &str| -> Option<&str> {
+        params
+            .get(key)
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+    };
+
+    const IN_0_1: &[&str] = &[
+        "invite_force",
+        "invite_never_expire",
+        "commission_first_time_enable",
+        "commission_auto_check_enable",
+        "withdraw_close_enable",
+        "commission_distribution_enable",
+        "force_https",
+        "stop_register",
+        "try_out_enable",
+        "plan_change_enable",
+        "surplus_enable",
+        "allow_new_period",
+        "new_order_event_id",
+        "renew_order_event_id",
+        "change_order_event_id",
+        "show_info_to_server_enable",
+        "device_limit_mode",
+        "telegram_bot_enable",
+        "email_whitelist_enable",
+        "email_gmail_limit_enable",
+        "recaptcha_enable",
+        "email_verify",
+        "safe_mode_enable",
+        "register_limit_by_ip_enable",
+        "password_limit_enable",
+    ];
+    for key in IN_0_1 {
+        if let Some(value) = value(key)
+            && value != "0"
+            && value != "1"
+        {
+            return Err(validation_error(key, "参数格式有误"));
+        }
+    }
+    for key in ["ticket_status", "show_subscribe_method"] {
+        if let Some(value) = value(key)
+            && !matches!(value, "0" | "1" | "2")
+        {
+            return Err(validation_error(key, "参数格式有误"));
+        }
+    }
+    if let Some(value) = value("reset_traffic_method")
+        && !matches!(value, "0" | "1" | "2" | "3" | "4")
+    {
+        return Err(validation_error("reset_traffic_method", "参数格式有误"));
+    }
+    for key in ["frontend_theme_sidebar", "frontend_theme_header"] {
+        if let Some(value) = value(key)
+            && !matches!(value, "dark" | "light")
+        {
+            return Err(validation_error(key, "参数格式有误"));
+        }
+    }
+    if let Some(value) = value("frontend_theme_color")
+        && !matches!(value, "default" | "darkblue" | "black" | "green")
+    {
+        return Err(validation_error("frontend_theme_color", "参数格式有误"));
+    }
+
+    for (key, message) in [
+        ("logo", "LOGO URL格式不正确，必须携带https(s)://"),
+        ("app_url", "站点URL格式不正确，必须携带http(s)://"),
+        ("tos_url", "服务条款URL格式不正确，必须携带http(s)://"),
+        (
+            "telegram_discuss_link",
+            "Telegram群组地址必须为URL格式，必须携带http(s)://",
+        ),
+        ("frontend_background_url", "参数格式有误"),
+    ] {
+        if let Some(value) = value(key)
+            && !is_valid_url(value)
+        {
+            return Err(validation_error(key, message));
+        }
+    }
+
+    if let Some(value) = value("subscribe_path")
+        && !value.starts_with('/')
+    {
+        return Err(validation_error("subscribe_path", "订阅路径必须以/开头"));
+    }
+    if let Some(value) = value("server_token")
+        && value.chars().count() < 16
+    {
+        return Err(validation_error("server_token", "通讯密钥长度必须大于16位"));
+    }
+    if let Some(value) = value("secure_path") {
+        if value.chars().count() < 8 {
+            return Err(validation_error("secure_path", "后台路径长度最小为8位"));
+        }
+        if !value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+        {
+            return Err(validation_error("secure_path", "后台路径只能为字母或数字"));
+        }
+    }
+
+    const INTEGERS: &[&str] = &[
+        "invite_commission",
+        "invite_gen_limit",
+        "try_out_plan_id",
+        "show_subscribe_expire",
+        "server_pull_interval",
+        "server_push_interval",
+        "server_node_report_min_traffic",
+        "server_device_online_min_traffic",
+        "register_limit_count",
+        "register_limit_expire",
+        "password_limit_count",
+        "password_limit_expire",
+    ];
+    for key in INTEGERS {
+        if let Some(value) = value(key)
+            && value.parse::<i64>().is_err()
+        {
+            return Err(validation_error(key, "参数格式有误"));
+        }
+    }
+    const NUMERICS: &[&str] = &[
+        "try_out_hour",
+        "commission_withdraw_limit",
+        "commission_distribution_l1",
+        "commission_distribution_l2",
+        "commission_distribution_l3",
+    ];
+    for key in NUMERICS {
+        if let Some(value) = value(key)
+            && value.parse::<f64>().is_err()
+        {
+            return Err(validation_error(key, "参数格式有误"));
+        }
+    }
+
+    // deposit_bounus[] tiers must match `<amount>:<bounus>` (empty tiers allowed).
+    for tier in json_array_param(params, "deposit_bounus") {
+        let Value::String(tier) = tier else {
+            continue;
+        };
+        if tier.is_empty() {
+            continue;
+        }
+        if !is_deposit_bounus_tier(&tier) {
+            return Err(validation_error(
+                "deposit_bounus",
+                "充值奖励格式不正确，必须为充值金额:奖励金额",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Matches ConfigSave's deposit_bounus regex `^\d+(\.\d+)?:\d+(\.\d+)?$`.
+fn is_deposit_bounus_tier(tier: &str) -> bool {
+    let Some((amount, bounus)) = tier.split_once(':') else {
+        return false;
+    };
+    is_unsigned_decimal(amount) && is_unsigned_decimal(bounus)
+}
+
+fn is_unsigned_decimal(value: &str) -> bool {
+    let (int_part, frac_part) = match value.split_once('.') {
+        Some((int_part, frac_part)) => (int_part, Some(frac_part)),
+        None => (value, None),
+    };
+    if int_part.is_empty() || !int_part.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    match frac_part {
+        Some(frac) => !frac.is_empty() && frac.bytes().all(|byte| byte.is_ascii_digit()),
+        None => true,
+    }
+}
+
 pub(super) fn merge_config_params(
     config: &mut Map<String, Value>,
     params: &HashMap<String, String>,
@@ -1691,6 +2144,31 @@ pub(super) fn base64_value(byte: u8) -> Option<u8> {
         b'/' => Some(63),
         _ => None,
     }
+}
+
+/// PHP `array_filter()` (no callback) drops falsy scalars: '', '0', 0, 0.0,
+/// false, null, and empty arrays/objects.
+pub(super) fn php_falsy(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::Bool(value) => !value,
+        Value::Number(value) => value.as_f64().map(|value| value == 0.0).unwrap_or(false),
+        Value::String(value) => value.is_empty() || value == "0",
+        Value::Array(items) => items.is_empty(),
+        Value::Object(object) => object.is_empty(),
+    }
+}
+
+/// Reconstructs the route `match` values from either a raw JSON-array string or
+/// bracketed `match[i]` params. Mirrors the `(array)($params['match'] ?? [])`
+/// cast in RouteController::save.
+pub(super) fn route_match_values(params: &HashMap<String, String>) -> Vec<Value> {
+    if let Some(raw) = params.get("match")
+        && let Ok(Value::Array(items)) = serde_json::from_str::<Value>(raw)
+    {
+        return items;
+    }
+    json_array_param(params, "match")
 }
 
 pub(super) fn is_server_path(path: &str, action: &str) -> bool {
@@ -1866,6 +2344,67 @@ pub(super) fn push_user_where(builder: &mut QueryBuilder<MySql>, clauses: &[User
     }
 }
 
+/// A single WHERE comparison for an order filter[]. Values are bound as strings,
+/// matching Laravel's default PDO parameter binding.
+#[derive(Debug)]
+pub(super) enum OrderFilterClause {
+    Compare {
+        column: &'static str,
+        op: &'static str,
+        value: String,
+    },
+}
+
+/// Whitelisted v2_order columns usable in a filter[] key. Guards the dynamically
+/// built WHERE clause (OrderController::filter trusts the raw request key).
+pub(super) fn order_column(key: &str) -> Option<&'static str> {
+    const COLUMNS: &[&str] = &[
+        "id",
+        "invite_user_id",
+        "user_id",
+        "plan_id",
+        "coupon_id",
+        "payment_id",
+        "type",
+        "period",
+        "trade_no",
+        "callback_no",
+        "total_amount",
+        "handling_amount",
+        "discount_amount",
+        "surplus_amount",
+        "refund_amount",
+        "balance_amount",
+        "status",
+        "commission_status",
+        "commission_balance",
+        "actual_commission_balance",
+        "paid_at",
+        "created_at",
+        "updated_at",
+    ];
+    COLUMNS.iter().copied().find(|column| *column == key)
+}
+
+/// Applies the is_commission scope and filter[] clauses to an order builder whose
+/// order table is aliased `o`. Ports OrderController::fetch (:58-63) + filter().
+pub(super) fn push_order_where(
+    builder: &mut QueryBuilder<MySql>,
+    is_commission: bool,
+    clauses: &[OrderFilterClause],
+) {
+    if is_commission {
+        builder.push(
+            " AND o.invite_user_id IS NOT NULL AND o.status NOT IN (0, 2) AND o.commission_balance > 0",
+        );
+    }
+    for clause in clauses {
+        let OrderFilterClause::Compare { column, op, value } = clause;
+        builder.push(format!(" AND o.`{column}` {op} "));
+        builder.push_bind(value.clone());
+    }
+}
+
 /// Reconstructs `filter[<i>][<field>]` request keys into per-index maps of raw
 /// string values, ordered by index. Kept as raw strings (not `json_scalar`d) so
 /// the literal `plan_id == 'null'` sentinel survives.
@@ -1895,6 +2434,48 @@ pub(super) fn collect_filter_entries(
             .insert(field.to_string(), value.clone());
     }
     entries.into_values().collect()
+}
+
+/// Conditions accepted by FilterScope::scopeSetFilterAllowKeys.
+pub(super) const LOG_FILTER_CONDITIONS: &[&str] = &["in", "is", "not", "like", "lt", "gt"];
+
+/// Applies system-log filter[] entries to a builder. `key` is validated to
+/// `level`, so the column is fixed. Ports FilterScope's condition mapping
+/// (App\Scope\FilterScope): in/is → equality, not → <>, gt/lt → >/<, like → %v%.
+pub(super) fn push_log_filters(
+    builder: &mut QueryBuilder<MySql>,
+    entries: &[BTreeMap<String, String>],
+) {
+    for entry in entries {
+        let condition = entry
+            .get("condition")
+            .map(String::as_str)
+            .unwrap_or_default();
+        let value = entry.get("value").cloned().unwrap_or_default();
+        match condition {
+            "in" | "is" => {
+                builder.push(" AND level = ");
+                builder.push_bind(value);
+            }
+            "not" => {
+                builder.push(" AND level <> ");
+                builder.push_bind(value);
+            }
+            "gt" => {
+                builder.push(" AND level > ");
+                builder.push_bind(value);
+            }
+            "lt" => {
+                builder.push(" AND level < ");
+                builder.push_bind(value);
+            }
+            "like" => {
+                builder.push(" AND level LIKE ");
+                builder.push_bind(format!("%{value}%"));
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Debug, FromRow)]

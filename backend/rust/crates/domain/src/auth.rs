@@ -79,6 +79,12 @@ impl AuthService {
         ip: Option<String>,
         user_agent: Option<String>,
     ) -> Result<AuthData, ApiError> {
+        // Laravel `AuthLogin` FormRequest validates email (required|email:strict) and
+        // password (required|min:8) with 422 field errors before the controller body runs,
+        // i.e. before the password-error rate limiter is touched.
+        validate_email(email)?;
+        validate_password(password)?;
+
         let password_error_limit = if self.config.password_limit_enable {
             let key = cache_key("PASSWORD_ERROR_LIMIT", email);
             let mut conn = self.redis.get_multiplexed_async_connection().await?;
@@ -134,7 +140,11 @@ impl AuthService {
         // email whitelist/gmail, stop_register, invite_force, email verification code.
         validate_email(&input.email)?;
         validate_password(&input.password)?;
-        let email = input.email.trim().to_ascii_lowercase();
+        // Laravel stores the TrimStrings-trimmed email in original case; the uniqueness lookup
+        // (`User::where('email', ...)`) relies on the column collation. Only the
+        // EMAIL_VERIFY_CODE cache key is lowercased (`strtolower(trim($email))`).
+        let email = input.email.trim();
+        let cache_email = email.to_ascii_lowercase();
 
         if let Some(ip) = ip.as_deref()
             && self.config.register_limit_by_ip_enable
@@ -151,7 +161,7 @@ impl AuthService {
         }
         self.verify_recaptcha(input.recaptcha_data.as_deref())
             .await?;
-        self.validate_register_email(&email).await?;
+        self.validate_register_email(email).await?;
         if self.config.stop_register {
             return Err(ApiError::legacy("Registration has closed"));
         }
@@ -168,7 +178,7 @@ impl AuthService {
             ));
         }
         if self.config.email_verify {
-            self.verify_email_code(&email, input.email_code.as_deref())
+            self.verify_email_code(&cache_email, input.email_code.as_deref())
                 .await?;
         }
 
@@ -178,7 +188,7 @@ impl AuthService {
         let now = Utc::now().timestamp();
         let mut tx = self.db.begin().await?;
 
-        if email_exists_for_update(&mut tx, &email).await? {
+        if email_exists_for_update(&mut tx, email).await? {
             return Err(ApiError::legacy("Email already exists"));
         }
 
@@ -197,7 +207,7 @@ impl AuthService {
             "#,
         )
         .bind(invite_user_id)
-        .bind(&email)
+        .bind(email)
         .bind(password_hash)
         .bind(uuid)
         .bind(token)
@@ -217,7 +227,7 @@ impl AuthService {
 
         if self.config.email_verify {
             let mut conn = self.redis.get_multiplexed_async_connection().await?;
-            conn.del::<_, ()>(cache_key("EMAIL_VERIFY_CODE", &email))
+            conn.del::<_, ()>(cache_key("EMAIL_VERIFY_CODE", &cache_email))
                 .await?;
         }
         if let Some(ip) = ip.as_deref()
@@ -238,25 +248,31 @@ impl AuthService {
     }
 
     pub async fn forget(&self, input: ForgetInput) -> Result<bool, ApiError> {
-        let email = input.email.trim().to_ascii_lowercase();
-        if input.password.len() < 8 {
-            return Err(ApiError::legacy("Password must be greater than 8 digits"));
-        }
-        let limit_key = cache_key("FORGET_REQUEST_LIMIT", &email);
+        // Laravel `AuthForget` FormRequest validates email (email:strict, max 64),
+        // password (min 8, max 64 — character counts) and email_code (digits:6) with 422
+        // field errors before the controller body runs.
+        validate_forget(&input.email, &input.password, &input.email_code)?;
+        // Laravel lowercases only the cache-key email (`strtolower(trim($email))`) for
+        // FORGET_REQUEST_LIMIT / EMAIL_VERIFY_CODE, but looks the user up with the raw,
+        // original-case `$request->input('email')`. Registration now stores the trimmed
+        // original-case email, so the reset lookup must match that case exactly.
+        let email = input.email.trim();
+        let cache_email = email.to_ascii_lowercase();
+        let limit_key = cache_key("FORGET_REQUEST_LIMIT", &cache_email);
         let mut conn = self.redis.get_multiplexed_async_connection().await?;
         let count: i64 = conn.get(&limit_key).await.unwrap_or(0);
         if count >= 3 {
             return Err(ApiError::legacy("Reset failed, Please try again later"));
         }
         if self
-            .verify_email_code(&email, Some(input.email_code.as_str()))
+            .verify_email_code(&cache_email, Some(input.email_code.as_str()))
             .await
             .is_err()
         {
             conn.set_ex::<_, _, ()>(&limit_key, count + 1, 300).await?;
             return Err(ApiError::legacy("Incorrect email verification code"));
         }
-        let user = db::user::find_user_for_auth(&self.db, &email)
+        let user = db::user::find_user_for_auth(&self.db, email)
             .await?
             .ok_or_else(|| ApiError::legacy("This email is not registered in the system"))?;
         let password_hash = hash_password(&input.password)?;
@@ -266,7 +282,7 @@ impl AuthService {
         if !updated {
             return Err(ApiError::legacy("Reset failed"));
         }
-        conn.del::<_, ()>(cache_key("EMAIL_VERIFY_CODE", &email))
+        conn.del::<_, ()>(cache_key("EMAIL_VERIFY_CODE", &cache_email))
             .await?;
         self.remove_all_sessions(user.id).await?;
         Ok(true)
@@ -280,7 +296,11 @@ impl AuthService {
         // FormRequest validates `email => required|email:strict` (422) before the controller body,
         // which then runs: per-IP rate limit (429), recaptcha, whitelist/gmail, isforget, resend.
         validate_email(&input.email)?;
-        let email = input.email.trim().to_ascii_lowercase();
+        // Laravel uses the raw, original-case `$email` for the whitelist check, the
+        // `User::where('email', ...)` existence probe and the `SendEmailJob` recipient, and
+        // only `strtolower(trim($email))` for the EMAIL_VERIFY_CODE / LAST_SEND cache keys.
+        let email = input.email.trim();
+        let cache_email = email.to_ascii_lowercase();
 
         // Laravel RateLimiter: 3 attempts per IP in a fixed 60s window, `abort(429)` on exceed
         // (CommController:33-36). INCR + expire-on-first mirrors `Cache::add` + `increment`.
@@ -301,8 +321,8 @@ impl AuthService {
 
         self.verify_recaptcha(input.recaptcha_data.as_deref())
             .await?;
-        self.validate_register_email(&email).await?;
-        let exists = db::user::find_user_for_auth(&self.db, &email)
+        self.validate_register_email(email).await?;
+        let exists = db::user::find_user_for_auth(&self.db, email)
             .await?
             .is_some();
         match input.isforget {
@@ -314,7 +334,7 @@ impl AuthService {
             }
             _ => {}
         }
-        let last_key = cache_key("LAST_SEND_EMAIL_VERIFY_TIMESTAMP", &email);
+        let last_key = cache_key("LAST_SEND_EMAIL_VERIFY_TIMESTAMP", &cache_email);
         let mut conn = self.redis.get_multiplexed_async_connection().await?;
         let recently_sent: Option<i64> = conn.get(&last_key).await?;
         if recently_sent.is_some() {
@@ -329,8 +349,8 @@ impl AuthService {
             self.config.app_url.as_deref().unwrap_or_default(),
             &code,
         );
-        self.send_mail(&email, &subject, &body).await?;
-        conn.set_ex::<_, _, ()>(cache_key("EMAIL_VERIFY_CODE", &email), code, 300)
+        self.send_mail(email, &subject, &body).await?;
+        conn.set_ex::<_, _, ()>(cache_key("EMAIL_VERIFY_CODE", &cache_email), code, 300)
             .await?;
         conn.set_ex::<_, _, ()>(last_key, Utc::now().timestamp(), 60)
             .await?;
@@ -404,8 +424,9 @@ impl AuthService {
         if user.banned != 0 {
             return Err(ApiError::legacy("Your account has been suspended"));
         }
+        // Laravel `generateAuthData` does not write `last_login_at`; only registration sets it
+        // once (Rust seeds it in the register INSERT). Do not touch it on login/token2Login.
         let now = Utc::now().timestamp();
-        db::user::touch_last_login(&self.db, user.id, now).await?;
 
         let session = Uuid::new_v4().simple().to_string();
         let auth_data = self.encode_auth_data(user.id, &session)?;
@@ -892,6 +913,37 @@ fn validate_password(password: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// Laravel `AuthForget` validates email (`required|string|email:strict|max:64`),
+/// password (`required|string|min:8|max:64`) and email_code (`required|string|digits:6`).
+/// Lengths are character counts (`mb_strlen`), not bytes. Fires before the controller body,
+/// returning HTTP 422 with the field message.
+fn validate_forget(email: &str, password: &str, email_code: &str) -> Result<(), ApiError> {
+    validate_email(email)?;
+    if email.trim().chars().count() > 64 {
+        return Err(field_validation("email", "Email format is incorrect"));
+    }
+    validate_password(password)?;
+    if password.chars().count() > 64 {
+        return Err(field_validation(
+            "password",
+            "Password must be greater than 8 digits",
+        ));
+    }
+    if email_code.trim().is_empty() {
+        return Err(field_validation(
+            "email_code",
+            "Email verification code cannot be empty",
+        ));
+    }
+    if email_code.chars().count() != 6 || !email_code.chars().all(|ch| ch.is_ascii_digit()) {
+        return Err(field_validation(
+            "email_code",
+            "Incorrect email verification code",
+        ));
+    }
+    Ok(())
+}
+
 /// Structural `local@host` check — the practical subset of `email:strict` that avoids
 /// false-rejecting any address Laravel's RFC validator would accept in real registrations.
 fn is_valid_email(email: &str) -> bool {
@@ -922,6 +974,13 @@ fn legacy_guid(format: bool) -> String {
     )
 }
 
+// Laravel's `CacheKey::get()` returns the bare `KEY_unique` name; the Redis/cache
+// key prefix (`REDIS_PREFIX` + `CACHE_PREFIX`) is applied by Laravel's cache layer, not
+// here. The Rust backend reads and writes these keys consistently WITHOUT that prefix,
+// which is intentional: the cutover is a cold switch where forced re-authentication is
+// acceptable, so Rust does not need to read Laravel's still-live prefixed session/JWT
+// entries. If a shared-Redis hot migration is ever required, prefix every key here with
+// Laravel's effective prefix (or run Laravel with CACHE_PREFIX='' / REDIS_PREFIX='').
 fn user_sessions_key(user_id: i64) -> String {
     format!("USER_SESSIONS_{user_id}")
 }
@@ -1032,6 +1091,63 @@ mod tests {
         assert_eq!(
             validate_password("").unwrap_err().to_string(),
             "Password can not be empty"
+        );
+    }
+
+    #[test]
+    fn validate_forget_mirrors_authforget_rules() {
+        assert!(validate_forget("user@example.com", "password", "123456").is_ok());
+
+        // email: required -> format -> max:64 (character count)
+        let empty_email = validate_forget("", "password", "123456").unwrap_err();
+        assert_eq!(empty_email.to_string(), "Email can not be empty");
+        assert!(matches!(empty_email, ApiError::Validation { .. }));
+        assert_eq!(
+            validate_forget("bad", "password", "123456")
+                .unwrap_err()
+                .to_string(),
+            "Email format is incorrect"
+        );
+        let long_email = format!("{}@example.com", "a".repeat(60)); // 72 chars > 64
+        assert_eq!(
+            validate_forget(&long_email, "password", "123456")
+                .unwrap_err()
+                .to_string(),
+            "Email format is incorrect"
+        );
+
+        // password: min:8 and max:64 are character counts, not bytes
+        assert_eq!(
+            validate_forget("user@example.com", "七个中文密码", "123456")
+                .unwrap_err()
+                .to_string(),
+            "Password must be greater than 8 digits"
+        );
+        assert_eq!(
+            validate_forget("user@example.com", &"a".repeat(65), "123456")
+                .unwrap_err()
+                .to_string(),
+            "Password must be greater than 8 digits"
+        );
+
+        // email_code: required (distinct message) then digits:6
+        let empty_code = validate_forget("user@example.com", "password", "  ").unwrap_err();
+        assert_eq!(
+            empty_code.to_string(),
+            "Email verification code cannot be empty"
+        );
+        assert!(matches!(empty_code, ApiError::Validation { .. }));
+        assert_eq!(
+            validate_forget("user@example.com", "password", "12345")
+                .unwrap_err()
+                .to_string(),
+            "Incorrect email verification code"
+        );
+        assert_eq!(
+            validate_forget("user@example.com", "password", "12345a")
+                .unwrap_err()
+                .to_string(),
+            "Incorrect email verification code"
         );
     }
 }

@@ -15,9 +15,7 @@ use v2board_compat::ApiError;
 use v2board_config::AppConfig;
 
 use crate::order::OrderService;
-use crate::payment_provider::{
-    payment_provider_codes, payment_provider_form, payment_provider_manifest,
-};
+use crate::payment_provider::{payment_provider_codes, payment_provider_form};
 
 mod support;
 
@@ -119,7 +117,7 @@ impl AdminService {
             "user/getUserInfoById" => self.user_detail(required_i64(&params, "id")?).await,
             "order/fetch" => self.order_fetch(&params).await,
             "notice/fetch" => self.notice_fetch().await,
-            "ticket/fetch" => self.ticket_fetch(&params).await,
+            "ticket/fetch" => self.ticket_fetch(&params, false).await,
             "coupon/fetch" => self.coupon_fetch(&params).await,
             "giftcard/fetch" => self.giftcard_fetch(&params).await,
             "knowledge/fetch" => self.knowledge_fetch(&params).await,
@@ -169,10 +167,7 @@ impl AdminService {
                 self.delete_by_id("v2_payment", required_i64(&params, "id")?)
                     .await
             }
-            "payment/show" => {
-                self.toggle("v2_payment", "enable", required_i64(&params, "id")?)
-                    .await
-            }
+            "payment/show" => self.payment_show(required_i64(&params, "id")?).await,
             "payment/sort" => {
                 self.sort_ids("v2_payment", &array_param(&params, "ids")?)
                     .await
@@ -265,7 +260,7 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let path = normalize_admin_path(path);
         match path.as_str() {
-            "ticket/fetch" => self.ticket_fetch(&params).await,
+            "ticket/fetch" => self.ticket_fetch(&params, true).await,
             "user/getUserInfoById" => self.staff_user_detail(required_i64(&params, "id")?).await,
             "plan/fetch" => self.plan_fetch().await,
             "notice/fetch" => self.notice_fetch().await,
@@ -408,6 +403,9 @@ impl AdminService {
     }
 
     async fn config_save(&self, params: &HashMap<String, String>) -> Result<AdminOutput, ApiError> {
+        // ConfigSave validates the payload (enums, urls, secure_path/server_token
+        // length, deposit_bounus format) and 422s before anything is written.
+        validate_config_params(params)?;
         let path = &self.config.runtime_paths.v2board_config;
         let mut config = read_php_config(path);
         merge_config_params(&mut config, params);
@@ -577,11 +575,12 @@ impl AdminService {
         let now = Utc::now().timestamp();
         let id = optional_i64(params, "id");
         if let Some(id) = id {
+            // PlanSave excludes show/renew/sort, so edit never touches them.
             sqlx::query(
                 r#"
                 UPDATE v2_plan
                 SET group_id = ?, transfer_enable = ?, device_limit = ?, name = ?,
-                    speed_limit = ?, `show` = ?, renew = ?, content = ?,
+                    speed_limit = ?, content = ?,
                     month_price = ?, quarter_price = ?, half_year_price = ?, year_price = ?,
                     two_year_price = ?, three_year_price = ?, onetime_price = ?, reset_price = ?,
                     reset_traffic_method = ?, capacity_limit = ?, updated_at = ?
@@ -593,8 +592,6 @@ impl AdminService {
             .bind(optional_i64(params, "device_limit"))
             .bind(required_string(params, "name")?)
             .bind(optional_i64(params, "speed_limit"))
-            .bind(optional_i64(params, "show").unwrap_or(1))
-            .bind(optional_i64(params, "renew").unwrap_or(1))
             .bind(params.get("content"))
             .bind(optional_i64(params, "month_price"))
             .bind(optional_i64(params, "quarter_price"))
@@ -628,15 +625,17 @@ impl AdminService {
                 .await?;
             }
         } else {
+            // PlanSave excludes show/renew/sort, so create leaves the DB defaults
+            // (show = 0, renew = 1, sort = NULL).
             sqlx::query(
                 r#"
                 INSERT INTO v2_plan (
-                    group_id, transfer_enable, device_limit, name, speed_limit, `show`, sort,
-                    renew, content, month_price, quarter_price, half_year_price, year_price,
+                    group_id, transfer_enable, device_limit, name, speed_limit,
+                    content, month_price, quarter_price, half_year_price, year_price,
                     two_year_price, three_year_price, onetime_price, reset_price,
                     reset_traffic_method, capacity_limit, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(required_i64(params, "group_id")?)
@@ -644,9 +643,6 @@ impl AdminService {
             .bind(optional_i64(params, "device_limit"))
             .bind(required_string(params, "name")?)
             .bind(optional_i64(params, "speed_limit"))
-            .bind(optional_i64(params, "show").unwrap_or(1))
-            .bind(optional_i64(params, "sort"))
-            .bind(optional_i64(params, "renew").unwrap_or(1))
             .bind(params.get("content"))
             .bind(optional_i64(params, "month_price"))
             .bind(optional_i64(params, "quarter_price"))
@@ -668,6 +664,26 @@ impl AdminService {
 
     async fn plan_update(&self, params: &HashMap<String, String>) -> Result<AdminOutput, ApiError> {
         let id = required_i64(params, "id")?;
+        // PlanUpdate validates show/renew as in:0,1 before the controller runs.
+        for (field, message) in [
+            ("show", "销售状态格式不正确"),
+            ("renew", "续费状态格式不正确"),
+        ] {
+            if let Some(value) = params.get(field).map(|value| value.trim())
+                && value != "0"
+                && value != "1"
+            {
+                return Err(validation_error(field, message));
+            }
+        }
+        // PlanController::update aborts 500 when the plan id does not exist.
+        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM v2_plan WHERE id = ? LIMIT 1")
+            .bind(id)
+            .fetch_optional(&self.db)
+            .await?;
+        if exists.is_none() {
+            return Err(ApiError::legacy("该订阅不存在"));
+        }
         if let Some(show) = optional_i64(params, "show") {
             sqlx::query("UPDATE v2_plan SET `show` = ?, updated_at = ? WHERE id = ?")
                 .bind(show)
@@ -778,15 +794,50 @@ impl AdminService {
         {
             return Err(ApiError::legacy("请在站点配置中配置站点地址"));
         }
-        let payment = required_string(params, "payment")?;
-        if payment_provider_manifest(&payment).is_none() {
-            return Err(ApiError::legacy("gate is not found"));
+        // PaymentController::save validates name/payment/config plus the optional
+        // notify_domain url and handling fee formats. It does NOT check that the
+        // gateway manifest exists, so no "gate is not found" gate here.
+        let name = required_string(params, "name")
+            .map_err(|_| validation_error("name", "显示名称不能为空"))?;
+        let payment = required_string(params, "payment")
+            .map_err(|_| validation_error("payment", "网关参数不能为空"))?;
+        if !param_present(params, "config") {
+            return Err(validation_error("config", "配置参数不能为空"));
+        }
+        if let Some(domain) = optional_string(params, "notify_domain")
+            && !is_valid_url(&domain)
+        {
+            return Err(validation_error("notify_domain", "自定义通知域名格式有误"));
+        }
+        if let Some(value) = optional_string(params, "handling_fee_fixed")
+            && value.parse::<i64>().is_err()
+        {
+            return Err(validation_error("handling_fee_fixed", "固定手续费格式有误"));
+        }
+        if let Some(value) = optional_string(params, "handling_fee_percent") {
+            match value.parse::<f64>() {
+                Ok(number) if (0.1..=100.0).contains(&number) => {}
+                _ => {
+                    return Err(validation_error(
+                        "handling_fee_percent",
+                        "百分比手续费范围须在0.1-100之间",
+                    ));
+                }
+            }
         }
         let config = nested_json(params, "config");
         let config = serde_json::to_string(&config)
             .map_err(|_| ApiError::internal("failed to encode payment config"))?;
         let now = Utc::now().timestamp();
         if let Some(id) = optional_i64(params, "id") {
+            let exists: Option<i64> =
+                sqlx::query_scalar("SELECT id FROM v2_payment WHERE id = ? LIMIT 1")
+                    .bind(id)
+                    .fetch_optional(&self.db)
+                    .await?;
+            if exists.is_none() {
+                return Err(ApiError::legacy("支付方式不存在"));
+            }
             sqlx::query(
                 r#"
                 UPDATE v2_payment
@@ -795,11 +846,11 @@ impl AdminService {
                 WHERE id = ?
                 "#,
             )
-            .bind(required_string(params, "name")?)
-            .bind(params.get("icon"))
+            .bind(&name)
+            .bind(optional_string(params, "icon"))
             .bind(&payment)
             .bind(config)
-            .bind(params.get("notify_domain"))
+            .bind(optional_string(params, "notify_domain"))
             .bind(optional_i64(params, "handling_fee_fixed"))
             .bind(optional_f64(params, "handling_fee_percent"))
             .bind(now)
@@ -816,7 +867,7 @@ impl AdminService {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
                 "#,
             )
-            .bind(required_string(params, "name")?)
+            .bind(&name)
             .bind(params.get("icon"))
             .bind(&payment)
             .bind(random_short())
@@ -831,6 +882,20 @@ impl AdminService {
             .await?;
         }
         Ok(AdminOutput::Data(json!(true)))
+    }
+
+    async fn payment_show(&self, id: i64) -> Result<AdminOutput, ApiError> {
+        // PaymentController::show aborts 500 when the id does not exist before
+        // flipping the enable flag.
+        let exists: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM v2_payment WHERE id = ? LIMIT 1")
+                .bind(id)
+                .fetch_optional(&self.db)
+                .await?;
+        if exists.is_none() {
+            return Err(ApiError::legacy("支付方式不存在"));
+        }
+        self.toggle("v2_payment", "enable", id).await
     }
 
     async fn notice_fetch(&self) -> Result<AdminOutput, ApiError> {
@@ -978,12 +1043,15 @@ impl AdminService {
         &self,
         params: &HashMap<String, String>,
     ) -> Result<AdminOutput, ApiError> {
+        // KnowledgeSave only validates category/language/title/body, so create/update
+        // never touch `show` or `sort`: create leaves the DB defaults (show = 0,
+        // sort = NULL) and update leaves those columns as-is.
         let now = Utc::now().timestamp();
         if let Some(id) = optional_i64(params, "id") {
             sqlx::query(
                 r#"
                 UPDATE v2_knowledge
-                SET language = ?, category = ?, title = ?, body = ?, sort = ?, `show` = ?, updated_at = ?
+                SET language = ?, category = ?, title = ?, body = ?, updated_at = ?
                 WHERE id = ?
                 "#,
             )
@@ -991,8 +1059,6 @@ impl AdminService {
             .bind(required_string(params, "category")?)
             .bind(required_string(params, "title")?)
             .bind(required_string(params, "body")?)
-            .bind(optional_i64(params, "sort"))
-            .bind(optional_i64(params, "show").unwrap_or(1))
             .bind(now)
             .bind(id)
             .execute(&self.db)
@@ -1000,16 +1066,14 @@ impl AdminService {
         } else {
             sqlx::query(
                 r#"
-                INSERT INTO v2_knowledge (language, category, title, body, sort, `show`, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO v2_knowledge (language, category, title, body, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(required_string(params, "language")?)
             .bind(required_string(params, "category")?)
             .bind(required_string(params, "title")?)
             .bind(required_string(params, "body")?)
-            .bind(optional_i64(params, "sort"))
-            .bind(optional_i64(params, "show").unwrap_or(1))
             .bind(now)
             .bind(now)
             .execute(&self.db)
@@ -1021,6 +1085,7 @@ impl AdminService {
     async fn ticket_fetch(
         &self,
         params: &HashMap<String, String>,
+        staff: bool,
     ) -> Result<AdminOutput, ApiError> {
         if let Some(id) = optional_i64(params, "id") {
             let ticket = fetch_json_one(
@@ -1067,7 +1132,9 @@ impl AdminService {
             return Ok(AdminOutput::Data(Value::Object(ticket)));
         }
 
-        // List honors the status / reply_status[] / email filters (:37-48).
+        // Admin list honors the status / reply_status[] / email filters (:37-48)
+        // and orders by updated_at. Staff\TicketController::fetch only filters by
+        // status and orders by created_at.
         fn apply_filters(
             builder: &mut QueryBuilder<MySql>,
             status: Option<i64>,
@@ -1097,13 +1164,18 @@ impl AdminService {
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
             .and_then(|value| value.parse::<i64>().ok());
-        let reply_statuses: Vec<i64> = json_array_param(params, "reply_status")
-            .iter()
-            .filter_map(Value::as_i64)
-            .collect();
+        // Staff has no reply_status / email filters.
+        let reply_statuses: Vec<i64> = if staff {
+            Vec::new()
+        } else {
+            json_array_param(params, "reply_status")
+                .iter()
+                .filter_map(Value::as_i64)
+                .collect()
+        };
         // email present + user found → scope to that user; present-but-unknown or
         // absent → no scope, matching the Laravel `if ($user)` guard.
-        let user_id = if params.contains_key("email") {
+        let user_id = if !staff && params.contains_key("email") {
             let email = params.get("email").cloned().unwrap_or_default();
             sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
                 .bind(email)
@@ -1137,7 +1209,8 @@ impl AdminService {
             "#,
         );
         apply_filters(&mut builder, status, &reply_statuses, user_id);
-        builder.push(" ORDER BY updated_at DESC LIMIT ");
+        let order_column = if staff { "created_at" } else { "updated_at" };
+        builder.push(format!(" ORDER BY {order_column} DESC LIMIT "));
         builder.push_bind(page_size);
         builder.push(" OFFSET ");
         builder.push_bind(offset(current, page_size));
@@ -1748,7 +1821,12 @@ impl AdminService {
                 'token', u.token, 'subscribe_url', '', 'banned', u.banned,
                 'is_admin', u.is_admin, 'is_staff', u.is_staff,
                 'invite_user_id', u.invite_user_id, 'discount', u.discount,
-                'commission_rate', u.commission_rate, 'telegram_id', u.telegram_id,
+                'commission_type', u.commission_type, 'commission_rate', u.commission_rate,
+                't', u.t, 'speed_limit', u.speed_limit, 'auto_renewal', u.auto_renewal,
+                'remind_expire', u.remind_expire, 'remind_traffic', u.remind_traffic,
+                'remarks', u.remarks, 'last_login_ip', u.last_login_ip,
+                'password_algo', u.password_algo, 'password_salt', u.password_salt,
+                'telegram_id', u.telegram_id,
                 'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at
             )
             FROM v2_user u
@@ -1784,7 +1862,12 @@ impl AdminService {
                 'token', u.token, 'subscribe_url', '', 'banned', u.banned,
                 'is_admin', u.is_admin, 'is_staff', u.is_staff,
                 'invite_user_id', u.invite_user_id, 'discount', u.discount,
-                'commission_rate', u.commission_rate, 'telegram_id', u.telegram_id,
+                'commission_type', u.commission_type, 'commission_rate', u.commission_rate,
+                't', u.t, 'speed_limit', u.speed_limit, 'auto_renewal', u.auto_renewal,
+                'remind_expire', u.remind_expire, 'remind_traffic', u.remind_traffic,
+                'remarks', u.remarks, 'last_login_ip', u.last_login_ip,
+                'password_algo', u.password_algo, 'password_salt', u.password_salt,
+                'telegram_id', u.telegram_id,
                 'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at,
                 'invite_user', IF(i.id IS NULL, NULL, JSON_OBJECT('id', i.id, 'email', i.email))
             )
@@ -1814,7 +1897,12 @@ impl AdminService {
                 'token', u.token, 'subscribe_url', '', 'banned', u.banned,
                 'is_admin', u.is_admin, 'is_staff', u.is_staff,
                 'invite_user_id', u.invite_user_id, 'discount', u.discount,
-                'commission_rate', u.commission_rate, 'telegram_id', u.telegram_id,
+                'commission_type', u.commission_type, 'commission_rate', u.commission_rate,
+                't', u.t, 'speed_limit', u.speed_limit, 'auto_renewal', u.auto_renewal,
+                'remind_expire', u.remind_expire, 'remind_traffic', u.remind_traffic,
+                'remarks', u.remarks, 'last_login_ip', u.last_login_ip,
+                'password_algo', u.password_algo, 'password_salt', u.password_salt,
+                'telegram_id', u.telegram_id,
                 'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at
             )
             FROM v2_user u
@@ -2376,11 +2464,18 @@ impl AdminService {
 
     async fn order_fetch(&self, params: &HashMap<String, String>) -> Result<AdminOutput, ApiError> {
         let (current, page_size) = page(params);
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_order")
+        let is_commission = truthy(params.get("is_commission"));
+        let clauses = self.order_filter_clauses(params).await?;
+
+        let mut count_builder =
+            QueryBuilder::<MySql>::new("SELECT COUNT(*) FROM v2_order o WHERE 1 = 1");
+        push_order_where(&mut count_builder, is_commission, &clauses);
+        let total: i64 = count_builder
+            .build_query_scalar()
             .fetch_one(&self.db)
             .await?;
-        let data = fetch_json_list_page(
-            &self.db,
+
+        let mut builder = QueryBuilder::<MySql>::new(
             r#"
             SELECT JSON_OBJECT(
                 'id', o.id, 'invite_user_id', o.invite_user_id, 'user_id', o.user_id,
@@ -2397,14 +2492,69 @@ impl AdminService {
             FROM v2_order o
             LEFT JOIN v2_user u ON u.id = o.user_id
             LEFT JOIN v2_plan p ON p.id = o.plan_id
-            ORDER BY o.created_at DESC
-            LIMIT ? OFFSET ?
+            WHERE 1 = 1
             "#,
-            page_size,
-            offset(current, page_size),
-        )
-        .await?;
+        );
+        push_order_where(&mut builder, is_commission, &clauses);
+        builder.push(" ORDER BY o.created_at DESC LIMIT ");
+        builder.push_bind(page_size);
+        builder.push(" OFFSET ");
+        builder.push_bind(offset(current, page_size));
+        let rows = builder
+            .build_query_scalar::<Json<Value>>()
+            .fetch_all(&self.db)
+            .await?;
+        let data = rows.into_iter().map(|row| row.0).collect();
         Ok(AdminOutput::Page { data, total })
+    }
+
+    /// Ports OrderController::filter (:21-38): reconstructs filter[] into
+    /// injection-safe WHERE clauses. The `email` key looks a user up by the
+    /// literal `%value%` (reproducing the Laravel bug — it is an exact match, not
+    /// a LIKE) and scopes to that user's id, skipping the filter when no user
+    /// matches; `模糊` becomes LIKE %value%. Unknown columns/operators are dropped
+    /// rather than interpolated.
+    async fn order_filter_clauses(
+        &self,
+        params: &HashMap<String, String>,
+    ) -> Result<Vec<OrderFilterClause>, ApiError> {
+        let mut clauses = Vec::new();
+        for entry in collect_filter_entries(params) {
+            let Some(key) = entry.get("key").map(String::as_str) else {
+                continue;
+            };
+            let mut condition = entry
+                .get("condition")
+                .map(String::as_str)
+                .unwrap_or("=")
+                .to_string();
+            let mut value = entry.get("value").cloned().unwrap_or_default();
+            if key == "email" {
+                let user_id: Option<i64> =
+                    sqlx::query_scalar("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
+                        .bind(format!("%{value}%"))
+                        .fetch_optional(&self.db)
+                        .await?;
+                if let Some(user_id) = user_id {
+                    clauses.push(OrderFilterClause::Compare {
+                        column: "user_id",
+                        op: "=",
+                        value: user_id.to_string(),
+                    });
+                }
+                continue;
+            }
+            if condition == "模糊" {
+                condition = "like".to_string();
+                value = format!("%{value}%");
+            }
+            let (Some(column), Some(op)) = (order_column(key), user_filter_operator(&condition))
+            else {
+                continue;
+            };
+            clauses.push(OrderFilterClause::Compare { column, op, value });
+        }
+        Ok(clauses)
     }
 
     async fn order_detail(&self, id: i64) -> Result<AdminOutput, ApiError> {
@@ -2509,11 +2659,17 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         let email = required_string(params, "email")?;
         let plan_id = required_i64(params, "plan_id")?;
-        let user_id: i64 = sqlx::query_scalar("SELECT id FROM v2_user WHERE email = ? LIMIT 1")
-            .bind(email)
-            .fetch_optional(&self.db)
-            .await?
-            .ok_or_else(|| ApiError::legacy("该用户不存在"))?;
+        // Load the fields setInvite / setOrderType need alongside the id:
+        // (id, plan_id, expired_at, invite_user_id).
+        type AssignUserRow = (i64, Option<i64>, Option<i64>, Option<i64>);
+        let user: Option<AssignUserRow> = sqlx::query_as(
+            "SELECT id, plan_id, expired_at, invite_user_id FROM v2_user WHERE email = ? LIMIT 1",
+        )
+        .bind(email)
+        .fetch_optional(&self.db)
+        .await?;
+        let (user_id, user_plan_id, user_expired_at, user_invite_user_id) =
+            user.ok_or_else(|| ApiError::legacy("该用户不存在"))?;
         let plan_exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v2_plan WHERE id = ?")
             .bind(plan_id)
             .fetch_one(&self.db)
@@ -2521,27 +2677,121 @@ impl AdminService {
         if plan_exists == 0 {
             return Err(ApiError::legacy("该订阅不存在"));
         }
+        // UserService::isNotCompleteOrderByUserId: a pending/opening order blocks assign.
+        let has_incomplete: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM v2_order WHERE user_id = ? AND status IN (0, 1) LIMIT 1",
+        )
+        .bind(user_id)
+        .fetch_optional(&self.db)
+        .await?;
+        if has_incomplete.is_some() {
+            return Err(ApiError::legacy("该用户还有待支付的订单，无法分配"));
+        }
         let now = Utc::now().timestamp();
+        let period = required_string(params, "period")?;
+        let total_amount = optional_i64(params, "total_amount").unwrap_or_default();
+        // OrderController::assign order-type branches (:167-175).
+        let order_type: i64 = if period == "reset_price" {
+            4
+        } else if user_plan_id.is_some() && user_plan_id != Some(plan_id) {
+            3
+        } else if user_expired_at.is_some_and(|value| value > now) && user_plan_id == Some(plan_id)
+        {
+            2
+        } else {
+            1
+        };
+        // OrderService::setInvite (:138-165): resolve invite_user_id + commission_balance.
+        let (invite_user_id, commission_balance) = self
+            .assign_invite(user_id, user_invite_user_id, total_amount)
+            .await?;
         let trade_no = format!("{}{}", now, Uuid::new_v4().simple());
         sqlx::query(
             r#"
             INSERT INTO v2_order (
-                user_id, plan_id, period, trade_no, total_amount, type, status,
-                commission_status, commission_balance, created_at, updated_at
+                user_id, invite_user_id, plan_id, period, trade_no, total_amount, type,
+                status, commission_status, commission_balance, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, 1, 0, 0, 0, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)
             "#,
         )
         .bind(user_id)
+        .bind(invite_user_id)
         .bind(plan_id)
-        .bind(required_string(params, "period")?)
+        .bind(period)
         .bind(&trade_no)
-        .bind(optional_i64(params, "total_amount").unwrap_or_default())
+        .bind(total_amount)
+        .bind(order_type)
+        .bind(commission_balance)
         .bind(now)
         .bind(now)
         .execute(&self.db)
         .await?;
         Ok(AdminOutput::Data(json!(trade_no)))
+    }
+
+    /// Ports OrderService::setInvite (:138-165) for the assign flow. Returns the
+    /// order's `(invite_user_id, commission_balance)`. A referred user whose order
+    /// is free keeps no invite link; otherwise the inviter's commission_type and
+    /// commission_rate (falling back to config invite_commission) decide the cut.
+    async fn assign_invite(
+        &self,
+        user_id: i64,
+        user_invite_user_id: Option<i64>,
+        total_amount: i64,
+    ) -> Result<(Option<i64>, i64), ApiError> {
+        // Laravel `setInvite`: `if ($user->invite_user_id && $order->total_amount <= 0) return;`
+        // — invite_user_id is PHP-truthy only when non-null AND non-zero, so a stored 0 does
+        // NOT short-circuit; it flows through and is recorded on the order (the inviter lookup
+        // for id 0 then finds nothing), matching the missing-inviter branch below.
+        if user_invite_user_id.is_some_and(|value| value != 0) && total_amount <= 0 {
+            return Ok((None, 0));
+        }
+        let Some(inviter_id) = user_invite_user_id else {
+            return Ok((None, 0));
+        };
+        let inviter: Option<(i64, Option<i64>)> = sqlx::query_as(
+            "SELECT commission_type, commission_rate FROM v2_user WHERE id = ? LIMIT 1",
+        )
+        .bind(inviter_id)
+        .fetch_optional(&self.db)
+        .await?;
+        let Some((commission_type, commission_rate)) = inviter else {
+            // invite_user_id is still recorded even when the inviter is gone.
+            return Ok((Some(inviter_id), 0));
+        };
+        let is_commission = match commission_type {
+            0 => {
+                !self.config.commission_first_time_enable
+                    || !self.user_have_valid_order(user_id).await?
+            }
+            1 => true,
+            2 => !self.user_have_valid_order(user_id).await?,
+            _ => false,
+        };
+        if !is_commission {
+            return Ok((Some(inviter_id), 0));
+        }
+        // commission_rate is truthy in PHP only when non-null and non-zero.
+        let commission_balance = match commission_rate {
+            Some(rate) if rate != 0 => (total_amount as f64 * rate as f64 / 100.0).round() as i64,
+            _ => {
+                (total_amount as f64 * self.config.invite_commission as f64 / 100.0).round() as i64
+            }
+        };
+        Ok((Some(inviter_id), commission_balance))
+    }
+
+    /// OrderService::haveValidOrder: the user has any order whose status is not in
+    /// {0 pending, 2 cancelled}.
+    async fn user_have_valid_order(&self, user_id: i64) -> Result<bool, ApiError> {
+        let found: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM v2_order WHERE user_id = ? AND status NOT IN (0, 2) LIMIT 1",
+        )
+        .bind(user_id)
+        .fetch_optional(&self.db)
+        .await?;
+        Ok(found.is_some())
     }
 
     async fn plan_drop(&self, params: &HashMap<String, String>) -> Result<AdminOutput, ApiError> {
@@ -2722,16 +2972,26 @@ impl AdminService {
         params: &HashMap<String, String>,
     ) -> Result<AdminOutput, ApiError> {
         let now = Utc::now().timestamp();
-        let matches = optional_json_array_string(params, "match")
-            .unwrap_or_else(|| json_string(&Value::Array(json_array_param(params, "match"))));
+        // RouteController::save: `default_out` forces an empty match set, everything
+        // else array_filter()s out empty match entries before json_encode.
+        let action = required_string(params, "action")?;
+        let matches = if action == "default_out" {
+            "[]".to_string()
+        } else {
+            let filtered = route_match_values(params)
+                .into_iter()
+                .filter(|value| !php_falsy(value))
+                .collect::<Vec<_>>();
+            json_string(&Value::Array(filtered))
+        };
         if let Some(id) = optional_i64(params, "id") {
             sqlx::query(
                 "UPDATE v2_server_route SET remarks = ?, `match` = ?, action = ?, action_value = ?, updated_at = ? WHERE id = ?",
             )
             .bind(required_string(params, "remarks")?)
             .bind(matches)
-            .bind(required_string(params, "action")?)
-            .bind(params.get("action_value"))
+            .bind(&action)
+            .bind(optional_string(params, "action_value"))
             .bind(now)
             .bind(id)
             .execute(&self.db)
@@ -2742,8 +3002,8 @@ impl AdminService {
             )
             .bind(required_string(params, "remarks")?)
             .bind(matches)
-            .bind(required_string(params, "action")?)
-            .bind(params.get("action_value"))
+            .bind(&action)
+            .bind(optional_string(params, "action_value"))
             .bind(now)
             .bind(now)
             .execute(&self.db)
@@ -2753,29 +3013,25 @@ impl AdminService {
     }
 
     async fn server_nodes(&self) -> Result<AdminOutput, ApiError> {
+        // Ports ServerService::getAllServers (:424-440): each getAll<Protocol> getter
+        // returns every model column (with array casts applied) plus `type`, ordered by
+        // sort; the tables are concatenated in SERVER_TABLES order and later stable-sorted.
         let mut nodes = Vec::new();
         for (kind, table) in SERVER_TABLES {
-            let rows = fetch_json_list(
-                &self.db,
-                &format!(
-                    r#"
-                    SELECT JSON_OBJECT(
-                        'id', id, 'name', name, 'group_id', CAST(group_id AS JSON),
-                        'route_id', CAST(route_id AS JSON), 'type', '{kind}', 'host', host,
-                        'port', port, 'server_port', server_port, 'show', `show`, 'rate', rate,
-                        'parent_id', parent_id, 'online', 0, 'last_check_at', NULL,
-                        'last_push_at', NULL, 'available_status', 0, 'sort', sort,
-                        'created_at', created_at, 'updated_at', updated_at
-                    )
-                    FROM {table}
-                    ORDER BY sort ASC
-                    "#
-                ),
-            )
-            .await
-            .unwrap_or_default();
+            let rows = fetch_json_list(&self.db, &server_node_select(kind, table))
+                .await
+                .unwrap_or_default();
             nodes.extend(rows);
         }
+        // getAllV2node (:381-405) appends a node install script per v2node using the
+        // node API host (server_api_url ?? app_url) and token, shell-escaped.
+        let install_api_host = self
+            .config
+            .server_api_url
+            .clone()
+            .or_else(|| self.config.app_url.clone())
+            .unwrap_or_default();
+        let install_api_key = self.config.server_token.clone().unwrap_or_default();
         // Hydrate node health from the cache keys the node API writes, keyed on
         // `parent_id ?? id`. Ports ServerService::mergeData (:407-421); the read is
         // best-effort so a Redis outage still returns the node list.
@@ -2820,7 +3076,20 @@ impl AdminService {
             object.insert("last_check_at".to_string(), json!(last_check_at));
             object.insert("last_push_at".to_string(), json!(last_push_at));
             object.insert("available_status".to_string(), json!(available_status));
+            if node_type == "V2NODE" {
+                let install_command = format!(
+                    "wget -N https://raw.githubusercontent.com/wyx2685/v2node/master/script/install.sh && bash install.sh --api-host {} --node-id {} --api-key {}",
+                    escapeshellarg(&install_api_host),
+                    id,
+                    escapeshellarg(&install_api_key)
+                );
+                object.insert("install_command".to_string(), json!(install_command));
+            }
         }
+        // array_multisort($tmp, SORT_ASC, $servers) over the `sort` column; PHP 8's
+        // sort is stable and treats a null sort as 0, so key null -> 0 and rely on the
+        // stable sort to preserve the concatenation tie order.
+        nodes.sort_by_key(|node| node.get("sort").and_then(Value::as_i64).unwrap_or(0));
         Ok(AdminOutput::Data(json!(nodes)))
     }
 
@@ -2898,8 +3167,12 @@ impl AdminService {
                 select_columns.push(format!("`{column}`"));
             }
         }
-        select_columns.push("UNIX_TIMESTAMP()");
-        select_columns.push("UNIX_TIMESTAMP()");
+        // Laravel's copy replicates the row via create($server->toArray()): because
+        // created_at/updated_at are fillable (guarded = ['id']) they are set from the
+        // source row, so updateTimestamps() leaves them untouched. Preserve the
+        // original timestamps rather than stamping now().
+        select_columns.push("`created_at`");
+        select_columns.push("`updated_at`");
         builder.push(format!(" FROM {table} WHERE id = "));
         builder.push_bind(id);
         let result = builder.build().execute(&self.db).await?;
@@ -3390,62 +3663,62 @@ impl AdminService {
 
     async fn system_log(&self, params: &HashMap<String, String>) -> Result<AdminOutput, ApiError> {
         let (current, page_size) = page(params);
-        let level = params
-            .get("level")
-            .map(String::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let total: i64 = if let Some(level) = level {
-            sqlx::query_scalar("SELECT COUNT(*) FROM v2_log WHERE level = ?")
-                .bind(level)
-                .fetch_one(&self.db)
-                .await
-                .unwrap_or_default()
-        } else {
-            sqlx::query_scalar("SELECT COUNT(*) FROM v2_log")
-                .fetch_one(&self.db)
-                .await
-                .unwrap_or_default()
-        };
-        let data = if let Some(level) = level {
-            fetch_json_list_page_bind_text(
-                &self.db,
-                r#"
-                SELECT JSON_OBJECT(
-                    'id', id, 'title', title, 'level', level, 'host', host, 'uri', uri,
-                    'method', method, 'data', data, 'ip', ip, 'context', context,
-                    'created_at', created_at, 'updated_at', updated_at
-                )
-                FROM v2_log
-                WHERE level = ?
-                ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
-                "#,
-                level,
-                page_size,
-                offset(current, page_size),
-            )
+        // SystemController::getSystemLog reads the ProTable filter[] scope via
+        // setFilterAllowKeys('level'): each entry must be key=level, a supported
+        // condition, and a non-empty value.
+        let entries = collect_filter_entries(params);
+        for entry in &entries {
+            let key = entry.get("key").map(String::as_str).unwrap_or_default();
+            let condition = entry
+                .get("condition")
+                .map(String::as_str)
+                .unwrap_or_default();
+            let value = entry.get("value").map(String::as_str).unwrap_or_default();
+            if key != "level" {
+                return Err(validation_error("filter.key", "选择的 filter.key 不存在"));
+            }
+            if !LOG_FILTER_CONDITIONS.contains(&condition) {
+                return Err(validation_error(
+                    "filter.condition",
+                    "选择的 filter.condition 不存在",
+                ));
+            }
+            if value.is_empty() {
+                return Err(validation_error("filter.value", "filter.value 不能为空"));
+            }
+        }
+
+        let mut count_builder =
+            QueryBuilder::<MySql>::new("SELECT COUNT(*) FROM v2_log WHERE 1 = 1");
+        push_log_filters(&mut count_builder, &entries);
+        let total: i64 = count_builder
+            .build_query_scalar()
+            .fetch_one(&self.db)
             .await
-            .unwrap_or_default()
-        } else {
-            fetch_json_list_page(
-                &self.db,
-                r#"
-                SELECT JSON_OBJECT(
-                    'id', id, 'title', title, 'level', level, 'host', host, 'uri', uri,
-                    'method', method, 'data', data, 'ip', ip, 'context', context,
-                    'created_at', created_at, 'updated_at', updated_at
-                )
-                FROM v2_log
-                ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
-                "#,
-                page_size,
-                offset(current, page_size),
+            .unwrap_or_default();
+
+        let mut builder = QueryBuilder::<MySql>::new(
+            r#"
+            SELECT JSON_OBJECT(
+                'id', id, 'title', title, 'level', level, 'host', host, 'uri', uri,
+                'method', method, 'data', data, 'ip', ip, 'context', context,
+                'created_at', created_at, 'updated_at', updated_at
             )
+            FROM v2_log
+            WHERE 1 = 1
+            "#,
+        );
+        push_log_filters(&mut builder, &entries);
+        builder.push(" ORDER BY created_at DESC LIMIT ");
+        builder.push_bind(page_size);
+        builder.push(" OFFSET ");
+        builder.push_bind(offset(current, page_size));
+        let data = builder
+            .build_query_scalar::<Json<Value>>()
+            .fetch_all(&self.db)
             .await
-            .unwrap_or_default()
-        };
+            .map(|rows| rows.into_iter().map(|row| row.0).collect())
+            .unwrap_or_default();
         Ok(AdminOutput::Page { data, total })
     }
 
@@ -3468,9 +3741,10 @@ impl AdminService {
                 }
             }
         }
+        // ThemeController::getThemes returns config('v2board.frontend_theme','v2board').
         Ok(AdminOutput::Data(json!({
             "themes": themes,
-            "active": "default",
+            "active": self.config.frontend_theme,
         })))
     }
 
@@ -3490,27 +3764,49 @@ impl AdminService {
         let config = required_string(params, "config")?;
         let decoded =
             standard_base64_decode(&config).ok_or_else(|| ApiError::legacy("参数有误"))?;
-        let config =
+        let parsed =
             serde_json::from_slice::<Value>(&decoded).map_err(|_| ApiError::legacy("参数有误"))?;
-        if !config.is_object() {
-            return Err(ApiError::legacy("参数有误"));
-        }
+        // Laravel: abort when the decoded config is not a (non-empty) array.
+        let payload = match parsed {
+            Value::Object(map) if !map.is_empty() => map,
+            _ => return Err(ApiError::legacy("参数有误")),
+        };
         let theme_config_file = self
             .config
             .runtime_paths
             .themes
             .join(&name)
             .join("config.json");
-        if !theme_config_file.exists() {
-            return Err(ApiError::legacy("主题不存在"));
+        // saveThemeConfig loads the theme's config.json and writes back ONLY the
+        // declared configs[].field_name values (missing -> '').
+        let content = std::fs::read_to_string(&theme_config_file)
+            .map_err(|_| ApiError::legacy("主题不存在"))?;
+        let theme_config = serde_json::from_str::<Value>(&content)
+            .map_err(|_| ApiError::legacy("主题配置文件有误"))?;
+        let Some(configs) = theme_config.get("configs").and_then(Value::as_array) else {
+            return Err(ApiError::legacy("主题配置文件有误"));
+        };
+        let mut projected = Map::new();
+        for item in configs {
+            let Some(field) = item.get("field_name").and_then(Value::as_str) else {
+                continue;
+            };
+            // Laravel keys this on isset(), so a present-but-null value is '' too.
+            let value = payload
+                .get(field)
+                .filter(|value| !value.is_null())
+                .cloned()
+                .unwrap_or_else(|| Value::String(String::new()));
+            projected.insert(field.to_string(), value);
         }
+        let projected = Value::Object(projected);
         let path = self
             .config
             .runtime_paths
             .theme_configs
             .join(format!("{name}.php"));
-        write_php_config(&path, &config)?;
-        Ok(AdminOutput::Data(config))
+        write_php_config(&path, &projected)?;
+        Ok(AdminOutput::Data(projected))
     }
 
     async fn delete_by_id(&self, table: &str, id: i64) -> Result<AdminOutput, ApiError> {

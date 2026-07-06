@@ -28,7 +28,7 @@ pub struct OrderRow {
     pub created_at: i64,
     pub updated_at: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub plan: Option<PlanRow>,
+    pub plan: Option<OrderPlan>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub try_out_plan_id: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -37,6 +37,22 @@ pub struct OrderRow {
     pub bounus: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub get_amount: Option<i32>,
+}
+
+/// The order's `plan` payload. A real order carries the full `PlanRow`; a deposit order
+/// (`plan_id == 0`) carries only `{id:0, name:"deposit"}`, matching Laravel's
+/// OrderController::detail. Serialized untagged so the emitted JSON is the inner shape.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum OrderPlan {
+    Full(Box<PlanRow>),
+    Deposit(DepositPlan),
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DepositPlan {
+    pub id: i32,
+    pub name: &'static str,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -117,10 +133,15 @@ pub async fn find_user_order(
     };
 
     if row.plan_id == 0 {
-        // Deposit order: synthesize the `deposit` plan and reserve the reward fields. The tier
-        // amount depends on config, so the API layer fills the real `bounus`/`get_amount`.
+        // Deposit order: Laravel emits a minimal `{id:0, name:'deposit'}` plan and reserves the
+        // reward fields. The tier amount depends on config, so the API layer fills the real
+        // `bounus`/`get_amount`.
         let total_amount = row.total_amount;
-        let mut order = to_order(row, Some(deposit_plan()));
+        let mut order = to_order(row, None);
+        order.plan = Some(OrderPlan::Deposit(DepositPlan {
+            id: 0,
+            name: "deposit",
+        }));
         order.bounus = Some(0);
         order.get_amount = Some(total_amount);
         return Ok(Some(order));
@@ -272,7 +293,7 @@ fn to_order(row: RawOrderRow, plan: Option<PlanRow>) -> OrderRow {
         paid_at: row.paid_at,
         created_at: row.created_at,
         updated_at: row.updated_at,
-        plan,
+        plan: plan.map(|plan| OrderPlan::Full(Box::new(plan))),
         try_out_plan_id: None,
         surplus_orders: None,
         bounus: None,
@@ -440,3 +461,29 @@ FROM v2_order
 WHERE user_id = ? AND id = ?
 LIMIT 1
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deposit_plan_serializes_as_minimal_object() {
+        let plan = OrderPlan::Deposit(DepositPlan {
+            id: 0,
+            name: "deposit",
+        });
+        let value = serde_json::to_value(&plan).unwrap();
+        assert_eq!(value, serde_json::json!({ "id": 0, "name": "deposit" }));
+    }
+
+    #[test]
+    fn full_plan_serializes_untagged_with_all_fields() {
+        let value = serde_json::to_value(OrderPlan::Full(Box::new(deposit_plan()))).unwrap();
+        // Untagged: the variant wrapper is dropped and the full `PlanRow` fields are emitted,
+        // so keys absent from the minimal deposit shape (e.g. `group_id`) are present.
+        assert_eq!(value["id"], serde_json::json!(0));
+        assert_eq!(value["name"], serde_json::json!("deposit"));
+        assert!(value.get("group_id").is_some());
+        assert!(value.get("transfer_enable").is_some());
+    }
+}

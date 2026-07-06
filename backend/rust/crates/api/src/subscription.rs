@@ -20,6 +20,7 @@ pub(super) struct SubscriptionDocument {
 enum SubscriptionFormat {
     General,
     Base64Uri,
+    V2RayTun,
     Clash,
     ClashMeta,
     Stash,
@@ -68,11 +69,17 @@ impl SubscriptionFormat {
             Self::Shadowsocks
         } else if normalized.contains("sagernet") {
             Self::SagerNet
-        } else if normalized.contains("quantumult") {
+        } else if normalized.contains("quantumult x") {
+            // QuantumultX::$flag is the literal `quantumult%20x` (normalized here to
+            // `quantumult x`); the original non-X `Quantumult/…` app must fall through.
             Self::QuantumultX
+        } else if normalized.contains("v2raytun") {
+            // v2RayTun reuses V2rayN's base64-URI body but has its own
+            // quoted-filename content-disposition (v2RayTun.php:58), so it gets a
+            // dedicated format instead of the shared Base64Uri disposition.
+            Self::V2RayTun
         } else if normalized.contains("v2rayn")
             || normalized.contains("v2rayng")
-            || normalized.contains("v2raytun")
             || normalized.contains("passwall")
             || normalized.contains("ssrplus")
         {
@@ -151,7 +158,9 @@ pub(super) fn build_subscription_document(
     let format = SubscriptionFormat::detect(flag);
     let body = match format {
         SubscriptionFormat::General => build_general_subscription(&user.uuid, servers),
-        SubscriptionFormat::Base64Uri => build_base64_uri_subscription(&user.uuid, servers),
+        SubscriptionFormat::Base64Uri | SubscriptionFormat::V2RayTun => {
+            build_base64_uri_subscription(&user.uuid, servers)
+        }
         SubscriptionFormat::Clash => {
             build_clash_subscription(config, &user.uuid, servers, ClashKind::Clash, host)
         }
@@ -192,8 +201,11 @@ pub(super) fn build_subscription_document(
         SubscriptionFormat::Surge | SubscriptionFormat::Surfboard => {
             format!("attachment;filename*=UTF-8''{encoded_name}.conf")
         }
-        // Sing-box uses a plain quoted filename (Singbox.php:33).
-        SubscriptionFormat::SingBox | SubscriptionFormat::SingBoxLegacy => {
+        // Sing-box and v2RayTun use a plain quoted, non-encoded filename
+        // (Singbox.php:33, v2RayTun.php:58).
+        SubscriptionFormat::SingBox
+        | SubscriptionFormat::SingBoxLegacy
+        | SubscriptionFormat::V2RayTun => {
             format!("attachment; filename=\"{}\"", config.app_name)
         }
         // Clash/Meta and the base64 formats (Clash.php:27).
@@ -268,8 +280,9 @@ fn traffic_convert(byte: i64) -> String {
 // (~516 rules + regionalised proxy-groups) and Stash uses `default.stash.yaml`.
 // No YAML parser is available to this crate, so the DEFAULT templates were
 // converted to JSON offline and are embedded here; the rendered output is YAML
-// via `render_yaml`. Operator `custom.clash.yaml` overrides are not supported
-// (they would require a runtime YAML parser) — see report.
+// via `render_yaml`. Operator `custom.clash.yaml`/`custom.stash.yaml` overrides
+// are honoured by `load_clash_template` when JSON-encoded; genuine YAML custom
+// files still need a YAML dependency — see report.
 const CLASH_TEMPLATE: &str = include_str!("../resources/rules/default.clash.json");
 const STASH_TEMPLATE: &str = include_str!("../resources/rules/default.stash.json");
 
@@ -286,23 +299,44 @@ fn build_clash_subscription(
         .iter()
         .filter_map(|server| build_clash_proxy(uuid, server, meta))
         .collect::<Vec<_>>();
-    let template = match kind {
-        ClashKind::Stash => STASH_TEMPLATE,
-        _ => CLASH_TEMPLATE,
+    // Operator custom templates override the embedded default: Clash/Meta share
+    // `custom.clash.yaml`, Stash uses `custom.stash.yaml` (Clash.php:29-35,
+    // ClashMeta.php:28-34, Stash.php:29-35). The dir mirrors Laravel's
+    // `resources/rules` via `runtime_paths.rules`, the same source the sing-box
+    // loader reads.
+    let (custom_name, embedded) = match kind {
+        ClashKind::Stash => ("custom.stash.yaml", STASH_TEMPLATE),
+        _ => ("custom.clash.yaml", CLASH_TEMPLATE),
     };
+    let template = load_clash_template(config, custom_name, embedded);
     // Only Stash keeps the forced-DIRECT rule active (Stash.php:100-103); Clash
     // and ClashMeta leave it commented out.
     let forced_direct_host = matches!(kind, ClashKind::Stash).then_some(host);
     render_clash_document(template, proxies, &config.app_name, forced_direct_host)
 }
 
+// Load the Clash/Stash template, preferring an operator custom file over the
+// embedded default (Clash.php:31-35 `\File::exists($customConfig)`). NOTE: no YAML
+// parser is linked into this crate, so the custom file is read as JSON — this
+// covers JSON-encoded custom templates, but a genuine YAML `custom.clash.yaml`
+// cannot be parsed here and falls back to the embedded default. Full YAML custom
+// support needs a YAML dependency (see report).
+fn load_clash_template(config: &AppConfig, custom_name: &str, embedded: &str) -> Value {
+    let custom_path = config.runtime_paths.rules.join(custom_name);
+    if let Ok(body) = fs::read_to_string(&custom_path)
+        && let Ok(value) = serde_json::from_str::<Value>(&body)
+    {
+        return value;
+    }
+    serde_json::from_str(embedded).unwrap_or_else(|_| json!({}))
+}
+
 fn render_clash_document(
-    template: &str,
+    mut config: Value,
     proxies: Vec<Value>,
     app_name: &str,
     forced_direct_host: Option<&str>,
 ) -> String {
-    let mut config: Value = serde_json::from_str(template).unwrap_or_else(|_| json!({}));
     let proxy_names = proxies
         .iter()
         .filter_map(|proxy| {
@@ -789,7 +823,18 @@ fn build_clash_proxy(
     meta: bool,
 ) -> Option<Value> {
     match server_protocol(server).as_str() {
-        "shadowsocks" => build_clash_shadowsocks(uuid, server),
+        // Clash (non-meta) only accepts the four basic ciphers (Clash.php:43-49);
+        // Meta/Stash accept every cipher, including ss2022 (ClashMeta.php:44-47,
+        // Stash.php:43-46).
+        "shadowsocks"
+            if meta
+                || extra_string(server, "cipher")
+                    .as_deref()
+                    .map(is_basic_shadowsocks_cipher)
+                    .unwrap_or(false) =>
+        {
+            build_clash_shadowsocks(uuid, server)
+        }
         "vmess" => build_clash_vmess(uuid, server),
         "vless" if meta => build_clash_vless(uuid, server),
         "trojan" => build_clash_trojan(uuid, server),
@@ -2022,19 +2067,72 @@ fn build_quantumultx_proxy(
     // QuantumultX.php only handles ss/vmess/vless/trojan — there is no anytls
     // (nor hysteria) case, so those protocols emit nothing.
     match server_protocol(server).as_str() {
-        "shadowsocks" => Some(format!(
-            "shadowsocks={}:{},method={},password={},fast-open=false,udp-relay=true,tag={}\r\n",
-            server.host,
-            first_port(server),
-            extra_string(server, "cipher")?,
-            shadowsocks_password(uuid, server)?,
-            server.name
-        )),
+        "shadowsocks" => build_quantumultx_shadowsocks(uuid, server),
         "vmess" => Some(build_quantumultx_vmess(uuid, server)),
         "vless" => build_quantumultx_vless(uuid, server),
         "trojan" => Some(build_quantumultx_trojan(uuid, server)),
         _ => None,
     }
+}
+
+// QuantumultX.php:62-117. Laravel first standardizes a legacy `v2_server_shadowsocks`
+// row (which carries an `obfs` column) into the v2node shape: `network = obfs` and
+// `obfs_settings.host/path` are folded into `network_settings.headers.Host` / `.path`.
+// It then reads `network = server['network'] ?? 'tcp'` and, when it is `http`, emits the
+// http obfs transport (`obfs=http` plus obfs-host/obfs-uri). A v2node ss node reaches the
+// http case via its own `network` column with an empty `obfs`, so gating on the `obfs`
+// column alone (as before) dropped obfs for those nodes.
+fn build_quantumultx_shadowsocks(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    let cipher = extra_string(server, "cipher")?;
+    let password = shadowsocks_password(uuid, server)?;
+    let mut config = vec![
+        format!("shadowsocks={}:{}", server.host, first_port(server)),
+        format!("method={cipher}"),
+        format!("password={password}"),
+    ];
+
+    let obfs = extra_string(server, "obfs").filter(|value| !value.is_empty());
+    let network = match &obfs {
+        // Legacy node: `network = obfs` (QuantumultX.php:66).
+        Some(obfs) => obfs.clone(),
+        // v2node: the `network` column, defaulting to tcp (QuantumultX.php:95).
+        None => extra_string(server, "network").unwrap_or_else(|| "tcp".to_string()),
+    };
+    if network == "http" {
+        config.push("obfs=http".to_string());
+        let net_settings = extra_json(server, "network_settings");
+        // network_settings host/path (`headers.Host ?? Host`, `path`).
+        let net_host = json_path_string(&net_settings, &["headers", "Host"])
+            .or_else(|| json_path_string(&net_settings, &["Host"]));
+        let net_path = json_path_string(&net_settings, &["path"]);
+        // Legacy obfs_settings.host/path take precedence when present (the fold at :70-74).
+        let (host, path) = if obfs.is_some() {
+            let obfs_settings = extra_json(server, "obfs_settings");
+            (
+                json_path_string(&obfs_settings, &["host"])
+                    .filter(|value| !value.is_empty())
+                    .or(net_host),
+                json_path_string(&obfs_settings, &["path"])
+                    .filter(|value| !value.is_empty())
+                    .or(net_path),
+            )
+        } else {
+            (net_host, net_path)
+        };
+        if let Some(host) = host.filter(|value| !value.is_empty()) {
+            config.push(format!("obfs-host={host}"));
+        }
+        if let Some(path) = path.filter(|value| !value.is_empty()) {
+            config.push(format!("obfs-uri={path}"));
+        }
+    }
+    config.push("fast-open=false".to_string());
+    config.push("udp-relay=true".to_string());
+    config.push(format!("tag={}", server.name));
+    Some(format!("{}\r\n", config.join(",")))
 }
 
 // QuantumultX.php:119-219
@@ -3874,5 +3972,85 @@ mod tests {
             json!({ "version": 2, "up_mbps": 100 }),
         );
         assert!(build_loon_proxy("uuid", &server).is_none());
+    }
+
+    #[test]
+    fn detect_v2raytun_is_its_own_format() {
+        assert_eq!(
+            SubscriptionFormat::detect("v2raytun"),
+            SubscriptionFormat::V2RayTun
+        );
+        assert_eq!(
+            SubscriptionFormat::detect("V2rayTun/1.0"),
+            SubscriptionFormat::V2RayTun
+        );
+        // V2rayN/NG and the other base64 clients keep the shared Base64Uri format.
+        assert_eq!(
+            SubscriptionFormat::detect("v2rayng"),
+            SubscriptionFormat::Base64Uri
+        );
+        assert_eq!(
+            SubscriptionFormat::detect("v2rayn"),
+            SubscriptionFormat::Base64Uri
+        );
+    }
+
+    #[test]
+    fn quantumultx_shadowsocks_emits_http_obfs_fields() {
+        // QuantumultX.php:97-106 emits obfs=http + obfs-host/obfs-uri for an http
+        // obfs shadowsocks node, ahead of the trailing fast-open/udp-relay/tag.
+        let server = server_row(
+            "shadowsocks",
+            json!(8388),
+            json!({
+                "cipher": "aes-128-gcm",
+                "obfs": "http",
+                "obfs_settings": { "host": "bing.com", "path": "/ray" }
+            }),
+        );
+        let line = build_quantumultx_proxy("pwd", &server).unwrap();
+        assert!(line.starts_with("shadowsocks=example.com:8388,method=aes-128-gcm,password=pwd,"));
+        assert!(line.contains(",obfs=http,"));
+        assert!(line.contains("obfs-host=bing.com"));
+        assert!(line.contains("obfs-uri=/ray"));
+        let obfs_pos = line.find("obfs=http").unwrap();
+        let fast_open_pos = line.find("fast-open=false").unwrap();
+        assert!(obfs_pos < fast_open_pos);
+        assert!(line.trim_end().ends_with("tag=node"));
+    }
+
+    #[test]
+    fn quantumultx_shadowsocks_without_obfs_has_no_transport() {
+        let server = server_row(
+            "shadowsocks",
+            json!(8388),
+            json!({ "cipher": "aes-256-gcm" }),
+        );
+        let line = build_quantumultx_proxy("pwd", &server).unwrap();
+        assert!(!line.contains("obfs="));
+        assert_eq!(
+            line,
+            "shadowsocks=example.com:8388,method=aes-256-gcm,password=pwd,fast-open=false,udp-relay=true,tag=node\r\n"
+        );
+    }
+
+    #[test]
+    fn clash_shadowsocks_cipher_filter_is_meta_only() {
+        // Clash.php:43-49 only builds ss for the four basic ciphers; Meta/Stash
+        // (meta=true) accept every cipher, including ss2022.
+        let basic = server_row(
+            "shadowsocks",
+            json!(8388),
+            json!({ "cipher": "aes-128-gcm" }),
+        );
+        let ss2022 = server_row(
+            "shadowsocks",
+            json!(8388),
+            json!({ "cipher": "2022-blake3-aes-128-gcm", "created_at": "1700000000" }),
+        );
+        assert!(build_clash_proxy("uuid", &basic, false).is_some());
+        assert!(build_clash_proxy("uuid", &ss2022, false).is_none());
+        assert!(build_clash_proxy("uuid", &basic, true).is_some());
+        assert!(build_clash_proxy("uuid", &ss2022, true).is_some());
     }
 }
