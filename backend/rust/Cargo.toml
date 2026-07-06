@@ -18,14 +18,15 @@ rust-version = "1.96.1"
 
 [workspace.dependencies]
 anyhow = "1"
-apalis = "0.7.4"
-apalis-cron = "0.7.4"
-apalis-redis = "0.7.4"
+apalis = "1.0.0-rc.9"
+apalis-cron = "1.0.0-rc.8"
+apalis-redis = "1.0.0-rc.8"
 argon2 = "0.5"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
 bcrypt = "0.19"
 chrono = { version = "0.4", features = ["serde"] }
+cron = "0.16"
 dotenvy = "0.15"
 hex = "0.4"
 hmac = "0.13"

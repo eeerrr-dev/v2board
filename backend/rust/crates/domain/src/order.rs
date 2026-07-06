@@ -3275,6 +3275,26 @@ FOR UPDATE
 mod tests {
     use super::*;
 
+    fn fixture_payment(method: &str, config: Value) -> PaymentForCheckout {
+        PaymentForCheckout {
+            id: 1,
+            payment: method.to_string(),
+            enable: 1,
+            uuid: "payment-uuid".to_string(),
+            config: config.to_string(),
+            notify_domain: None,
+            handling_fee_fixed: None,
+            handling_fee_percent: None,
+        }
+    }
+
+    fn unwrap_verified(outcome: PaymentNotifyOutcome) -> VerifiedPaymentNotify {
+        match outcome {
+            PaymentNotifyOutcome::Verified(verified) => verified,
+            PaymentNotifyOutcome::Ignored(body) => panic!("expected verified notify, got {body}"),
+        }
+    }
+
     #[test]
     fn built_in_payment_gateway_matrix_matches_laravel_plugins() {
         assert_eq!(
@@ -3309,5 +3329,122 @@ mod tests {
                 "{method} is listed but notify is not implemented"
             );
         }
+    }
+
+    #[test]
+    fn epay_notify_fixture_verifies_signature_and_extracts_trade_numbers() {
+        let payment = fixture_payment("EPay", json!({ "key": "epay-secret" }));
+        let mut signed = BTreeMap::from([
+            ("money".to_string(), "12.34".to_string()),
+            ("out_trade_no".to_string(), "T202607060001".to_string()),
+            ("trade_no".to_string(), "EPAY-CALLBACK-1".to_string()),
+            ("trade_status".to_string(), "TRADE_SUCCESS".to_string()),
+        ]);
+        let sign = format!(
+            "{:x}",
+            md5::compute(format!("{}{}", canonical_query(&signed), "epay-secret"))
+        );
+        signed.insert("sign".to_string(), sign);
+        signed.insert("sign_type".to_string(), "MD5".to_string());
+        let params = signed.into_iter().collect::<HashMap<_, _>>();
+
+        let verified = unwrap_verified(epay_notify(&payment, &params).unwrap());
+
+        assert_eq!(verified.trade_no, "T202607060001");
+        assert_eq!(verified.callback_no, "EPAY-CALLBACK-1");
+    }
+
+    #[test]
+    fn mgate_notify_fixture_verifies_signature_and_extracts_trade_numbers() {
+        let payment = fixture_payment("MGate", json!({ "mgate_app_secret": "mgate-secret" }));
+        let mut signed = BTreeMap::from([
+            ("out_trade_no".to_string(), "T202607060002".to_string()),
+            ("trade_no".to_string(), "MGATE-CALLBACK-1".to_string()),
+        ]);
+        let sign = format!(
+            "{:x}",
+            md5::compute(format!(
+                "{}{}",
+                form_query(&signed).unwrap(),
+                "mgate-secret"
+            ))
+        );
+        signed.insert("sign".to_string(), sign);
+        let params = signed.into_iter().collect::<HashMap<_, _>>();
+
+        let verified = unwrap_verified(mgate_notify(&payment, &params).unwrap());
+
+        assert_eq!(verified.trade_no, "T202607060002");
+        assert_eq!(verified.callback_no, "MGATE-CALLBACK-1");
+    }
+
+    #[test]
+    fn bepusdt_notify_fixture_verifies_signature_and_returns_custom_ok_body() {
+        let payment = fixture_payment(
+            "BEasyPaymentUSDT",
+            json!({ "bepusdt_apitoken": "bepusdt-secret" }),
+        );
+        let mut signed = BTreeMap::from([
+            ("order_id".to_string(), "T202607060003".to_string()),
+            ("status".to_string(), "2".to_string()),
+            ("trade_id".to_string(), "BEPUSDT-CALLBACK-1".to_string()),
+        ]);
+        let signature = format!(
+            "{:x}",
+            md5::compute(format!("{}{}", canonical_query(&signed), "bepusdt-secret"))
+        );
+        signed.insert("signature".to_string(), signature);
+        let params = signed.into_iter().collect::<HashMap<_, _>>();
+
+        let verified = unwrap_verified(bepusdt_notify(&payment, &params).unwrap());
+
+        assert_eq!(verified.trade_no, "T202607060003");
+        assert_eq!(verified.callback_no, "BEPUSDT-CALLBACK-1");
+        assert_eq!(verified.custom_result.as_deref(), Some("ok"));
+    }
+
+    #[test]
+    fn stripe_checkout_notify_fixture_verifies_webhook_hmac() {
+        let payment = fixture_payment(
+            "StripeCheckout",
+            json!({ "stripe_webhook_key": "whsec_test" }),
+        );
+        let body = json!({
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "payment_status": "paid",
+                    "client_reference_id": "T202607060004",
+                    "payment_intent": "pi_callback_1"
+                }
+            }
+        })
+        .to_string()
+        .into_bytes();
+        let timestamp = "1783311600";
+        let signature = hmac_sha256_hex(
+            b"whsec_test",
+            format!("{timestamp}.")
+                .as_bytes()
+                .iter()
+                .copied()
+                .chain(body.iter().copied())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .unwrap();
+        let input = PaymentNotifyInput {
+            params: HashMap::new(),
+            body,
+            headers: HashMap::from([(
+                "stripe-signature".to_string(),
+                format!("t={timestamp},v1={signature}"),
+            )]),
+        };
+
+        let verified = unwrap_verified(stripe_checkout_notify(&payment, &input).unwrap());
+
+        assert_eq!(verified.trade_no, "T202607060004");
+        assert_eq!(verified.callback_no, "pi_callback_1");
     }
 }

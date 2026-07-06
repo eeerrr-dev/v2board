@@ -1,8 +1,9 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, env, str::FromStr};
 
 use apalis::prelude::*;
-use apalis_cron::{CronContext, CronStream, Schedule};
+use apalis_cron::{CronStream, Tick};
 use chrono::{Datelike, Local, Months, TimeZone, Utc};
+use cron::Schedule;
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
     transport::smtp::authentication::Credentials,
@@ -88,9 +89,6 @@ struct SchedulerLock {
     token: String,
 }
 
-#[derive(Default, Debug, Clone)]
-struct CronTick;
-
 #[derive(Debug, Clone, FromRow)]
 struct CommissionOrderRow {
     id: i64,
@@ -154,9 +152,21 @@ async fn main() -> anyhow::Result<()> {
     let config = AppConfig::from_env();
     let db = v2board_db::connect_mysql(&config.database_url).await?;
     let redis = redis::Client::open(config.redis_url.clone())?;
-    let conn = apalis_redis::connect(config.redis_url.clone()).await?;
-    let storage = apalis_redis::RedisStorage::new(conn);
     let state = WorkerState { config, db, redis };
+    let args = env::args().skip(1).collect::<Vec<_>>();
+    if !args.is_empty() {
+        return run_command(&args, &state).await;
+    }
+
+    let conn = apalis_redis::connect(state.config.redis_url.clone()).await?;
+    let storage = apalis_redis::RedisStorage::new(conn);
+    run_worker_runtime(state, storage).await
+}
+
+async fn run_worker_runtime(
+    state: WorkerState,
+    storage: apalis_redis::RedisStorage<QueueJob>,
+) -> anyhow::Result<()> {
     let traffic_update_schedule = Schedule::from_str("0 * * * * * *")?;
     let statistics_schedule = Schedule::from_str("0 10 0 * * * *")?;
     let check_order_schedule = Schedule::from_str("0 * * * * * *")?;
@@ -166,108 +176,104 @@ async fn main() -> anyhow::Result<()> {
     let reset_traffic_schedule = Schedule::from_str("0 0 0 * * * *")?;
     let reset_log_schedule = Schedule::from_str("0 0 0 * * * *")?;
     let send_remind_mail_schedule = Schedule::from_str("0 30 11 * * * *")?;
+    let scheduled_jobs = [
+        (
+            "scheduler-traffic-update",
+            traffic_update_schedule,
+            ScheduledJob {
+                name: "traffic_update",
+                task: ScheduledTask::TrafficUpdate,
+            },
+        ),
+        (
+            "scheduler-statistics",
+            statistics_schedule,
+            ScheduledJob {
+                name: "statistics",
+                task: ScheduledTask::Statistics,
+            },
+        ),
+        (
+            "scheduler-check-order",
+            check_order_schedule,
+            ScheduledJob {
+                name: "check_order",
+                task: ScheduledTask::CheckOrder,
+            },
+        ),
+        (
+            "scheduler-check-commission",
+            check_commission_schedule,
+            ScheduledJob {
+                name: "check_commission",
+                task: ScheduledTask::CheckCommission,
+            },
+        ),
+        (
+            "scheduler-check-ticket",
+            check_ticket_schedule,
+            ScheduledJob {
+                name: "check_ticket",
+                task: ScheduledTask::CheckTicket,
+            },
+        ),
+        (
+            "scheduler-check-renewal",
+            check_renewal_schedule,
+            ScheduledJob {
+                name: "check_renewal",
+                task: ScheduledTask::CheckRenewal,
+            },
+        ),
+        (
+            "scheduler-reset-traffic",
+            reset_traffic_schedule,
+            ScheduledJob {
+                name: "reset_traffic",
+                task: ScheduledTask::ResetTraffic,
+            },
+        ),
+        (
+            "scheduler-reset-log",
+            reset_log_schedule,
+            ScheduledJob {
+                name: "reset_log",
+                task: ScheduledTask::ResetLog,
+            },
+        ),
+        (
+            "scheduler-send-remind-mail",
+            send_remind_mail_schedule,
+            ScheduledJob {
+                name: "send_remind_mail",
+                task: ScheduledTask::SendRemindMail,
+            },
+        ),
+    ];
 
     tracing::info!("v2board rust worker starting");
 
-    Monitor::new()
-        .register(
+    let mut monitor = Monitor::new().register({
+        let storage = storage.clone();
+        let state = state.clone();
+        move |_| {
             WorkerBuilder::new("v2board-redis-worker")
+                .backend(storage.clone())
                 .data(state.clone())
-                .backend(storage)
-                .build_fn(handle_queue_job),
-        )
-        .register(
-            WorkerBuilder::new("scheduler-traffic-update")
-                .data(ScheduledJob {
-                    name: "traffic_update",
-                    task: ScheduledTask::TrafficUpdate,
-                })
+                .build(handle_queue_job)
+        }
+    });
+    for (worker_name, schedule, job) in scheduled_jobs {
+        let state = state.clone();
+        monitor = monitor.register(move |_| {
+            WorkerBuilder::new(worker_name)
+                .backend(CronStream::new(schedule.clone()))
+                .data(job.clone())
                 .data(state.clone())
-                .backend(CronStream::new(traffic_update_schedule))
-                .build_fn(handle_cron_tick),
-        )
-        .register(
-            WorkerBuilder::new("scheduler-statistics")
-                .data(ScheduledJob {
-                    name: "statistics",
-                    task: ScheduledTask::Statistics,
-                })
-                .data(state.clone())
-                .backend(CronStream::new(statistics_schedule))
-                .build_fn(handle_cron_tick),
-        )
-        .register(
-            WorkerBuilder::new("scheduler-check-order")
-                .data(ScheduledJob {
-                    name: "check_order",
-                    task: ScheduledTask::CheckOrder,
-                })
-                .data(state.clone())
-                .backend(CronStream::new(check_order_schedule))
-                .build_fn(handle_cron_tick),
-        )
-        .register(
-            WorkerBuilder::new("scheduler-check-commission")
-                .data(ScheduledJob {
-                    name: "check_commission",
-                    task: ScheduledTask::CheckCommission,
-                })
-                .data(state.clone())
-                .backend(CronStream::new(check_commission_schedule))
-                .build_fn(handle_cron_tick),
-        )
-        .register(
-            WorkerBuilder::new("scheduler-check-ticket")
-                .data(ScheduledJob {
-                    name: "check_ticket",
-                    task: ScheduledTask::CheckTicket,
-                })
-                .data(state.clone())
-                .backend(CronStream::new(check_ticket_schedule))
-                .build_fn(handle_cron_tick),
-        )
-        .register(
-            WorkerBuilder::new("scheduler-check-renewal")
-                .data(ScheduledJob {
-                    name: "check_renewal",
-                    task: ScheduledTask::CheckRenewal,
-                })
-                .data(state.clone())
-                .backend(CronStream::new(check_renewal_schedule))
-                .build_fn(handle_cron_tick),
-        )
-        .register(
-            WorkerBuilder::new("scheduler-reset-traffic")
-                .data(ScheduledJob {
-                    name: "reset_traffic",
-                    task: ScheduledTask::ResetTraffic,
-                })
-                .data(state.clone())
-                .backend(CronStream::new(reset_traffic_schedule))
-                .build_fn(handle_cron_tick),
-        )
-        .register(
-            WorkerBuilder::new("scheduler-reset-log")
-                .data(ScheduledJob {
-                    name: "reset_log",
-                    task: ScheduledTask::ResetLog,
-                })
-                .data(state.clone())
-                .backend(CronStream::new(reset_log_schedule))
-                .build_fn(handle_cron_tick),
-        )
-        .register(
-            WorkerBuilder::new("scheduler-send-remind-mail")
-                .data(ScheduledJob {
-                    name: "send_remind_mail",
-                    task: ScheduledTask::SendRemindMail,
-                })
-                .data(state)
-                .backend(CronStream::new(send_remind_mail_schedule))
-                .build_fn(handle_cron_tick),
-        )
-        .run()
-        .await?;
+                .build(handle_cron_tick)
+        });
+    }
+    monitor.run().await?;
 
     Ok(())
 }
@@ -281,7 +287,51 @@ fn init_tracing() {
         .init();
 }
 
-async fn handle_queue_job(job: QueueJob, state: Data<WorkerState>) -> Result<(), Error> {
+async fn run_command(args: &[String], state: &WorkerState) -> anyhow::Result<()> {
+    match args {
+        [command, name] if command == "run-once" => run_scheduled_job_once(name, state).await,
+        _ => anyhow::bail!("unknown worker command; expected `run-once <scheduled-job-name>`"),
+    }
+}
+
+async fn run_scheduled_job_once(name: &str, state: &WorkerState) -> anyhow::Result<()> {
+    let task = scheduled_task_by_name(name)
+        .ok_or_else(|| anyhow::anyhow!("unknown scheduled job `{name}`"))?;
+    mark_scheduler_alive(state).await?;
+    let scheduler_lock = acquire_scheduler_lock(state, name)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("scheduled job `{name}` is already locked"))?;
+
+    let result = run_scheduled_job(task, state).await;
+    let metric_result = if let Err(error) = &result {
+        tracing::error!(job = name, ?error, "one-shot scheduled job failed");
+        let _ = record_worker_metric(state, name, false).await;
+        Ok(())
+    } else {
+        record_worker_metric(state, name, true).await
+    };
+    let release_result = release_scheduler_lock(state, scheduler_lock).await;
+    metric_result?;
+    release_result?;
+    result
+}
+
+fn scheduled_task_by_name(name: &str) -> Option<ScheduledTask> {
+    match name {
+        "traffic_update" => Some(ScheduledTask::TrafficUpdate),
+        "statistics" => Some(ScheduledTask::Statistics),
+        "check_order" => Some(ScheduledTask::CheckOrder),
+        "check_commission" => Some(ScheduledTask::CheckCommission),
+        "check_ticket" => Some(ScheduledTask::CheckTicket),
+        "check_renewal" => Some(ScheduledTask::CheckRenewal),
+        "reset_traffic" => Some(ScheduledTask::ResetTraffic),
+        "reset_log" => Some(ScheduledTask::ResetLog),
+        "send_remind_mail" => Some(ScheduledTask::SendRemindMail),
+        _ => None,
+    }
+}
+
+async fn handle_queue_job(job: QueueJob, state: Data<WorkerState>) -> Result<(), BoxDynError> {
     let name = queue_job_name(&job);
     if let Err(error) = run_queue_job(job, &state).await {
         tracing::error!(job = name, ?error, "queued job failed");
@@ -293,14 +343,13 @@ async fn handle_queue_job(job: QueueJob, state: Data<WorkerState>) -> Result<(),
 }
 
 async fn handle_cron_tick(
-    _tick: CronTick,
-    ctx: CronContext<Utc>,
+    tick: Tick,
     job: Data<ScheduledJob>,
     state: Data<WorkerState>,
-) -> Result<(), Error> {
+) -> Result<(), BoxDynError> {
     tracing::info!(
         job = job.name,
-        tick = %ctx.get_timestamp(),
+        tick = %tick.get_timestamp(),
         "received scheduled job"
     );
     if let Err(error) = mark_scheduler_alive(&state).await {
@@ -1098,7 +1147,7 @@ async fn statistics(state: &WorkerState) -> anyhow::Result<()> {
     .fetch_one(&state.db)
     .await?;
     let order_total: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(total_amount), 0) FROM v2_order WHERE created_at >= ? AND created_at < ?",
+        "SELECT CAST(COALESCE(SUM(total_amount), 0) AS SIGNED) FROM v2_order WHERE created_at >= ? AND created_at < ?",
     )
     .bind(start_at)
     .bind(end_at)
@@ -1112,7 +1161,7 @@ async fn statistics(state: &WorkerState) -> anyhow::Result<()> {
     .fetch_one(&state.db)
     .await?;
     let paid_total: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(total_amount), 0) FROM v2_order WHERE paid_at >= ? AND paid_at < ? AND status NOT IN (0, 2)",
+        "SELECT CAST(COALESCE(SUM(total_amount), 0) AS SIGNED) FROM v2_order WHERE paid_at >= ? AND paid_at < ? AND status NOT IN (0, 2)",
     )
     .bind(start_at)
     .bind(end_at)
@@ -1126,7 +1175,7 @@ async fn statistics(state: &WorkerState) -> anyhow::Result<()> {
     .fetch_one(&state.db)
     .await?;
     let commission_total: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(get_amount), 0) FROM v2_commission_log WHERE created_at >= ? AND created_at < ?",
+        "SELECT CAST(COALESCE(SUM(get_amount), 0) AS SIGNED) FROM v2_commission_log WHERE created_at >= ? AND created_at < ?",
     )
     .bind(start_at)
     .bind(end_at)
@@ -1146,7 +1195,7 @@ async fn statistics(state: &WorkerState) -> anyhow::Result<()> {
     .fetch_one(&state.db)
     .await?;
     let transfer_used_total: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(u) + SUM(d), 0) FROM v2_stat_server WHERE created_at >= ? AND created_at < ?",
+        "SELECT CAST(COALESCE(SUM(u) + SUM(d), 0) AS SIGNED) FROM v2_stat_server WHERE created_at >= ? AND created_at < ?",
     )
     .bind(start_at)
     .bind(end_at)
@@ -1265,6 +1314,17 @@ mod tests {
                 "send_remind_mail",
             ]
         );
+    }
+
+    #[test]
+    fn scheduled_task_lookup_covers_the_scheduler_matrix() {
+        for name in SCHEDULED_TASK_NAMES {
+            assert!(
+                scheduled_task_by_name(name).is_some(),
+                "{name} is scheduled but cannot be run once"
+            );
+        }
+        assert!(scheduled_task_by_name("missing").is_none());
     }
 
     #[test]

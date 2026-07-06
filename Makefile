@@ -1,4 +1,4 @@
-.PHONY: up down logs shell reset sync ps doctor rust-check rust-up rust-dev rust-api-up rust-api-logs rust-worker-logs rust-contract rust-worker-reconcile rust-target-gate rust-interaction-parity public-bundle-audit replica-audit parity-config-audit legacy-oracle-check legacy-oracle-up legacy-oracle-serve legacy-oracle-down deploy-smoke deploy-public-sync deploy-public-check deploy-public-ensure visual-smoke visual-parity browser-parity interaction-parity behavior-parity clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
+.PHONY: up down logs shell reset sync ps doctor rust-check rust-up rust-dev rust-api-up rust-api-logs rust-worker-logs rust-contract rust-route-audit rust-worker-reconcile rust-target-gate rust-interaction-parity public-bundle-audit replica-audit parity-config-audit legacy-oracle-check legacy-oracle-up legacy-oracle-serve legacy-oracle-down deploy-smoke deploy-public-sync deploy-public-check deploy-public-ensure visual-smoke visual-parity browser-parity interaction-parity behavior-parity clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
 
 DC := $(shell \
 	if docker compose version >/dev/null 2>&1; then echo "docker compose"; \
@@ -14,6 +14,8 @@ RUST_CONTRACT_LARAVEL_BASE_URL ?= http://app:8000
 RUST_CONTRACT_RUST_BASE_URL ?= http://127.0.0.1:8080
 RUST_CONTRACT_ADMIN_EMAIL ?= admin@local
 RUST_CONTRACT_ADMIN_PASSWORD ?= 12345678
+RUST_CONTRACT_ADMIN_PATH ?= admin
+RUST_CONTRACT_READY_WAIT_SECONDS ?= 60
 RUST_WORKER_RECONCILE_WAIT_SECONDS ?= 75
 RUST_WORKER_RECONCILE_STRICT ?= 1
 RUST_FRONTEND_API_BASE ?= http://rust-api:8080
@@ -260,9 +262,32 @@ rust-contract:
 	$(RUST_DCF) exec -T \
 		-e CONTRACT_LARAVEL_BASE_URL=$(RUST_CONTRACT_LARAVEL_BASE_URL) \
 		-e CONTRACT_RUST_BASE_URL=$(RUST_CONTRACT_RUST_BASE_URL) \
+		-e CONTRACT_ADMIN_PATH=$(RUST_CONTRACT_ADMIN_PATH) \
+		rust-api bash -lc 'set -e; \
+			for url in "$${CONTRACT_LARAVEL_BASE_URL}/api/v1/guest/comm/config" "$${CONTRACT_RUST_BASE_URL}/healthz"; do \
+				ok=0; \
+				for attempt in $$(seq 1 $(RUST_CONTRACT_READY_WAIT_SECONDS)); do \
+					code=$$(curl -sS -o /tmp/rust-contract-ready.out -w "%{http_code}" "$$url" 2>/dev/null || true); \
+					if [ "$$code" = "200" ]; then ok=1; break; fi; \
+					sleep 1; \
+				done; \
+				if [ "$$ok" != "1" ]; then \
+					echo "Rust contract readiness failed: $$url did not return HTTP 200 within $(RUST_CONTRACT_READY_WAIT_SECONDS)s."; \
+					cat /tmp/rust-contract-ready.out 2>/dev/null || true; \
+					exit 1; \
+				fi; \
+			done'
+	$(RUST_DCF) exec -T \
+		-e CONTRACT_LARAVEL_BASE_URL=$(RUST_CONTRACT_LARAVEL_BASE_URL) \
+		-e CONTRACT_RUST_BASE_URL=$(RUST_CONTRACT_RUST_BASE_URL) \
 		-e CONTRACT_ADMIN_EMAIL=$(RUST_CONTRACT_ADMIN_EMAIL) \
 		-e CONTRACT_ADMIN_PASSWORD=$(RUST_CONTRACT_ADMIN_PASSWORD) \
+		-e CONTRACT_ADMIN_PATH=$(RUST_CONTRACT_ADMIN_PATH) \
 		rust-api bash -lc 'set -e; . /usr/local/cargo/env; cargo run -p v2board-contract --locked -- contract'
+
+rust-route-audit:
+	$(RUST_DCF) build rust-api
+	$(RUST_DCF) run --rm -T --no-deps --entrypoint bash rust-api -lc 'set -e; . /usr/local/cargo/env; mkdir -p /app/backend/rust; find /app/backend/rust -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +; tar --exclude=target -C /src/backend/rust -cf - . | tar -C /app/backend/rust -xf -; CONTRACT_ADMIN_PATH=$(RUST_CONTRACT_ADMIN_PATH) cargo run -p v2board-contract --locked -- route-audit'
 
 rust-worker-reconcile:
 	@$(RUST_DCF) stop horizon scheduler >/dev/null 2>&1 || true
@@ -271,11 +296,15 @@ rust-worker-reconcile:
 	$(RUST_DCF) exec -T \
 		-e DATABASE_URL=mysql://v2board:v2board@mysql:3306/v2board \
 		-e REDIS_URL=redis://redis:6379/1 \
+		rust-api bash -lc 'set -e; . /usr/local/cargo/env; cargo run -p v2board-workers --locked -- run-once statistics'
+	$(RUST_DCF) exec -T \
+		-e DATABASE_URL=mysql://v2board:v2board@mysql:3306/v2board \
+		-e REDIS_URL=redis://redis:6379/1 \
 		-e WORKER_RECONCILE_STRICT=$(RUST_WORKER_RECONCILE_STRICT) \
 		rust-api bash -lc 'set -e; . /usr/local/cargo/env; cargo run -p v2board-contract --locked -- worker-reconcile'
 
-rust-target-gate: rust-contract rust-worker-reconcile
-	@echo "Rust target gate OK: contract parity and worker reconciliation passed for the configured target data."
+rust-target-gate: rust-route-audit rust-contract rust-worker-reconcile
+	@echo "Rust target gate OK: route audit, contract parity, and worker reconciliation passed for the configured target data."
 
 rust-interaction-parity:
 	@$(RUST_DCF) stop horizon scheduler >/dev/null 2>&1 || true

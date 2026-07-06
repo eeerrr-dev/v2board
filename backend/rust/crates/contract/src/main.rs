@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    env,
+    env, fs,
+    path::Path,
     time::Duration,
 };
 
@@ -15,8 +16,11 @@ use sqlx::MySqlPool;
 async fn main() -> Result<()> {
     match env::args().nth(1).as_deref().unwrap_or("contract") {
         "contract" => run_contract().await,
+        "route-audit" => run_route_audit(),
         "worker-reconcile" => run_worker_reconcile().await,
-        command => bail!("unknown command `{command}`; expected `contract` or `worker-reconcile`"),
+        command => bail!(
+            "unknown command `{command}`; expected `contract`, `route-audit`, or `worker-reconcile`"
+        ),
     }
 }
 
@@ -42,7 +46,7 @@ async fn run_contract() -> Result<()> {
         ));
     }
 
-    for scenario in scenarios() {
+    for scenario in scenarios(&config) {
         if !scenario_selected(&selected, scenario.name) {
             continue;
         }
@@ -233,22 +237,352 @@ async fn run_worker_reconcile() -> Result<()> {
     Ok(())
 }
 
+fn run_route_audit() -> Result<()> {
+    let config = ContractConfig::from_env();
+    let laravel_root = env_or("ROUTE_AUDIT_LARAVEL_ROOT", "/src/backend/laravel");
+    let rust_root = env_or("ROUTE_AUDIT_RUST_ROOT", "/src/backend/rust");
+    let laravel = collect_laravel_routes(Path::new(&laravel_root), &config.admin_path)?;
+    let rust = collect_rust_routes(Path::new(&rust_root), &config.admin_path)?;
+    let missing = laravel.difference(&rust).cloned().collect::<Vec<_>>();
+
+    if !missing.is_empty() {
+        println!("Laravel routes missing in Rust:");
+        for route in &missing {
+            println!("MISSING {} {}", route.method, route.path);
+        }
+        bail!(
+            "route audit failed: {} Laravel routes are missing",
+            missing.len()
+        );
+    }
+    println!(
+        "Route audit OK: {} Laravel routes are represented in Rust.",
+        laravel.len()
+    );
+    Ok(())
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct RouteKey {
+    method: String,
+    path: String,
+}
+
+fn route_key(method: impl AsRef<str>, path: impl AsRef<str>) -> RouteKey {
+    RouteKey {
+        method: method.as_ref().to_ascii_uppercase(),
+        path: normalize_route_path(path.as_ref()),
+    }
+}
+
+fn collect_laravel_routes(root: &Path, admin_path: &str) -> Result<BTreeSet<RouteKey>> {
+    let v1 = root.join("app/Http/Routes/V1");
+    let v2 = root.join("app/Http/Routes/V2");
+    let mut routes = BTreeSet::new();
+    for (file, prefix, root_segment) in [
+        ("GuestRoute.php", "/api/v1/guest", "guest"),
+        ("ClientRoute.php", "/api/v1/client", "client"),
+        ("PassportRoute.php", "/api/v1/passport", "passport"),
+        ("UserRoute.php", "/api/v1/user", "user"),
+        ("StaffRoute.php", "/api/v1/staff", "staff"),
+        ("AdminRoute.php", "", ""),
+        ("ServerRoute.php", "/api/v1/server", "server"),
+    ] {
+        let prefix = if file == "AdminRoute.php" {
+            format!("/api/v1/{admin_path}")
+        } else {
+            prefix.to_string()
+        };
+        routes.extend(parse_laravel_route_file(
+            &v1.join(file),
+            &prefix,
+            root_segment,
+        )?);
+    }
+    routes.extend(parse_laravel_route_file(
+        &v2.join("ServerRoute.php"),
+        "/api/v2/server",
+        "server",
+    )?);
+    Ok(routes)
+}
+
+fn parse_laravel_route_file(
+    path: &Path,
+    root_prefix: &str,
+    root_segment: &str,
+) -> Result<BTreeSet<RouteKey>> {
+    let content =
+        fs::read_to_string(path).with_context(|| format!("read Laravel route file {path:?}"))?;
+    let mut routes = BTreeSet::new();
+    let mut prefixes = vec![normalize_route_path(root_prefix)];
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("});") && prefixes.len() > 1 {
+            prefixes.pop();
+            continue;
+        }
+        if let Some(prefix) = extract_laravel_group_prefix(trimmed) {
+            if prefixes.len() == 1 && prefix.trim_matches('/') == root_segment {
+                continue;
+            }
+            prefixes.push(prefix);
+            continue;
+        }
+        let Some((methods, route_path)) = extract_laravel_route(trimmed) else {
+            continue;
+        };
+        let full_path = join_route_parts(
+            prefixes
+                .iter()
+                .map(String::as_str)
+                .chain([route_path.as_str()]),
+        );
+        for method in methods {
+            routes.insert(route_key(method, &full_path));
+        }
+    }
+    Ok(routes)
+}
+
+fn collect_rust_routes(root: &Path, admin_path: &str) -> Result<BTreeSet<RouteKey>> {
+    let api_main = fs::read_to_string(root.join("crates/api/src/main.rs"))?;
+    let admin = fs::read_to_string(root.join("crates/domain/src/admin.rs"))?;
+    let mut routes = collect_rust_axum_routes(&api_main);
+    routes.retain(|route| {
+        !route.path.contains("{*admin_path}") && !route.path.contains("{*staff_path}")
+    });
+
+    for path in rust_admin_match_paths(&admin, "get") {
+        routes.insert(route_key("GET", format!("/api/v1/{admin_path}/{path}")));
+    }
+    for path in rust_admin_match_paths(&admin, "post") {
+        routes.insert(route_key("POST", format!("/api/v1/{admin_path}/{path}")));
+    }
+    for path in rust_admin_match_paths(&admin, "staff_get") {
+        routes.insert(route_key("GET", format!("/api/v1/staff/{path}")));
+    }
+    for path in rust_admin_match_paths(&admin, "staff_post") {
+        routes.insert(route_key("POST", format!("/api/v1/staff/{path}")));
+    }
+    for kind in [
+        "shadowsocks",
+        "vmess",
+        "trojan",
+        "tuic",
+        "hysteria",
+        "vless",
+        "anytls",
+        "v2node",
+    ] {
+        for action in ["save", "drop", "update", "copy"] {
+            routes.insert(route_key(
+                "POST",
+                format!("/api/v1/{admin_path}/server/{kind}/{action}"),
+            ));
+        }
+    }
+    Ok(routes)
+}
+
+fn collect_rust_axum_routes(content: &str) -> BTreeSet<RouteKey> {
+    let lines = content.lines().collect::<Vec<_>>();
+    let mut routes = BTreeSet::new();
+    let mut index = 0;
+    while index < lines.len() {
+        if !lines[index].contains(".route(") {
+            index += 1;
+            continue;
+        }
+        let (block, next_index) = rust_route_block(&lines, index);
+        index = next_index;
+        let Some(path) = quoted_strings(&block)
+            .into_iter()
+            .find(|value| value.starts_with('/'))
+        else {
+            continue;
+        };
+        if path.contains("{*") {
+            continue;
+        }
+        if block.contains("get(") {
+            routes.insert(route_key("GET", &path));
+        }
+        if block.contains("post(") || block.contains(".post(") {
+            routes.insert(route_key("POST", &path));
+        }
+    }
+    routes
+}
+
+fn rust_route_block(lines: &[&str], start: usize) -> (String, usize) {
+    let mut block = String::new();
+    let mut depth = 0_i32;
+    for (index, line) in lines.iter().enumerate().skip(start) {
+        let segment = if index == start {
+            line.split_once(".route(")
+                .map(|(_, right)| format!(".route({right}"))
+                .unwrap_or_else(|| (*line).to_string())
+        } else {
+            (*line).to_string()
+        };
+        for ch in segment.chars() {
+            match ch {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+        }
+        block.push_str(&segment);
+        block.push(' ');
+        if depth <= 0 {
+            return (block, index + 1);
+        }
+    }
+    (block, lines.len())
+}
+
+fn rust_admin_match_paths(content: &str, function_name: &str) -> Vec<String> {
+    let start_marker = format!("pub async fn {function_name}");
+    let mut in_function = false;
+    let mut in_match = false;
+    let mut paths = Vec::new();
+    for line in content.lines() {
+        if line.contains(&start_marker) {
+            in_function = true;
+            continue;
+        }
+        if !in_function {
+            continue;
+        }
+        if line.contains("match path.as_str()") {
+            in_match = true;
+            continue;
+        }
+        if !in_match {
+            continue;
+        }
+        if line.contains("_ =>") {
+            break;
+        }
+        let Some((left, _)) = line.split_once("=>") else {
+            continue;
+        };
+        if left.trim_start().starts_with('_') {
+            continue;
+        }
+        paths.extend(quoted_strings(left));
+    }
+    paths
+}
+
+fn extract_laravel_group_prefix(line: &str) -> Option<String> {
+    let (left, right) = line.split_once("=>")?;
+    if !left.contains("'prefix'") && !left.contains("\"prefix\"") {
+        return None;
+    }
+    let right = right.trim();
+    if !(right.starts_with('\'') || right.starts_with('"')) {
+        return None;
+    }
+    quoted_strings(right).into_iter().next()
+}
+
+fn extract_laravel_route(line: &str) -> Option<(Vec<&'static str>, String)> {
+    let router = line.find("$router->")?;
+    let rest = &line[router + "$router->".len()..];
+    let method = rest.split_once('(')?.0.trim().to_ascii_lowercase();
+    let methods = match method.as_str() {
+        "get" => vec!["GET"],
+        "post" => vec!["POST"],
+        "any" => vec!["GET", "POST"],
+        "match" => vec!["GET", "POST"],
+        _ => return None,
+    };
+    let route_path = quoted_strings(rest).into_iter().find(|value| {
+        !matches!(value.as_str(), "get" | "post" | "put" | "patch" | "delete")
+            && !value.contains('\\')
+    })?;
+    Some((methods, route_path))
+}
+
+fn quoted_strings(input: &str) -> Vec<String> {
+    let mut output = Vec::new();
+    let mut chars = input.char_indices().peekable();
+    while let Some((_, ch)) = chars.next() {
+        if ch != '\'' && ch != '"' {
+            continue;
+        }
+        let quote = ch;
+        let mut value = String::new();
+        let mut escaped = false;
+        for (_, ch) in chars.by_ref() {
+            if escaped {
+                value.push(ch);
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == quote {
+                break;
+            }
+            value.push(ch);
+        }
+        output.push(value);
+    }
+    output
+}
+
+fn join_route_parts<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
+    let body = parts
+        .into_iter()
+        .flat_map(|part| part.split('/'))
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("/{body}")
+}
+
+fn normalize_route_path(path: &str) -> String {
+    join_route_parts([path])
+}
+
 #[derive(Clone)]
 struct ContractConfig {
     laravel_base_url: String,
     rust_base_url: String,
     email: String,
     password: String,
+    admin_path: String,
 }
 
 impl ContractConfig {
     fn from_env() -> Self {
+        let admin_path = env_or("CONTRACT_ADMIN_PATH", "admin")
+            .trim_matches('/')
+            .to_string();
         Self {
             laravel_base_url: env_or("CONTRACT_LARAVEL_BASE_URL", "http://app:8000"),
             rust_base_url: env_or("CONTRACT_RUST_BASE_URL", "http://rust-api:8080"),
             email: env_or("CONTRACT_ADMIN_EMAIL", "admin@local"),
             password: env_or("CONTRACT_ADMIN_PASSWORD", "12345678"),
+            admin_path: if admin_path.is_empty() {
+                "admin".to_string()
+            } else {
+                admin_path
+            },
         }
+    }
+
+    fn admin_api_path(&self, path: &str) -> String {
+        format!(
+            "/api/v1/{}/{}",
+            self.admin_path,
+            path.trim_start_matches('/')
+        )
     }
 }
 
@@ -313,7 +647,7 @@ async fn login(target: &Target, config: &ContractConfig) -> Result<LoginOutput> 
     let scenario = Scenario {
         name: "auth.login",
         method: Method::POST,
-        path: "/api/v1/passport/auth/login",
+        path: "/api/v1/passport/auth/login".to_string(),
         auth_header: false,
         token_query: false,
         form: vec![
@@ -361,7 +695,7 @@ async fn login(target: &Target, config: &ContractConfig) -> Result<LoginOutput> 
 struct Scenario {
     name: &'static str,
     method: Method,
-    path: &'static str,
+    path: String,
     auth_header: bool,
     token_query: bool,
     form: Vec<(&'static str, String)>,
@@ -380,11 +714,12 @@ enum Mode {
     },
     RustContentType(&'static str),
     RustShape(Vec<&'static str>),
+    ErrorMessage,
     StatusOnly,
     RustMayImproveLegacy5xx,
 }
 
-fn scenarios() -> Vec<Scenario> {
+fn scenarios(config: &ContractConfig) -> Vec<Scenario> {
     vec![
         get(
             "guest.config",
@@ -541,6 +876,26 @@ fn scenarios() -> Vec<Scenario> {
             Mode::Shape(vec!["data"]),
         ),
         get(
+            "user.order.check_missing",
+            "/api/v1/user/order/check?trade_no=rust-contract-missing-order",
+            true,
+            Mode::ErrorMessage,
+        ),
+        post(
+            "user.order.cancel_empty",
+            "/api/v1/user/order/cancel",
+            true,
+            vec![("trade_no", "")],
+            Mode::ErrorMessage,
+        ),
+        post(
+            "user.coupon.empty",
+            "/api/v1/user/coupon/check",
+            true,
+            vec![("code", ""), ("plan_id", "1")],
+            Mode::ErrorMessage,
+        ),
+        get(
             "user.invite.fetch",
             "/api/v1/user/invite/fetch",
             true,
@@ -596,139 +951,159 @@ fn scenarios() -> Vec<Scenario> {
         ),
         get(
             "admin.config.fetch",
-            "/api/v1/admin/config/fetch",
+            config.admin_api_path("config/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
+            "admin.config.safe_path",
+            config.admin_api_path("config/fetch?key=safe"),
+            true,
+            Mode::Selected(vec!["data.safe.secure_path"]),
+        ),
+        get(
             "admin.plan.fetch",
-            "/api/v1/admin/plan/fetch",
+            config.admin_api_path("plan/fetch"),
             true,
             Mode::Exact,
         ),
         get(
             "admin.user.fetch",
-            "/api/v1/admin/user/fetch",
+            config.admin_api_path("user/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.order.fetch",
-            "/api/v1/admin/order/fetch",
+            config.admin_api_path("order/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.notice.fetch",
-            "/api/v1/admin/notice/fetch",
+            config.admin_api_path("notice/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.ticket.fetch",
-            "/api/v1/admin/ticket/fetch",
+            config.admin_api_path("ticket/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.coupon.fetch",
-            "/api/v1/admin/coupon/fetch",
+            config.admin_api_path("coupon/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.giftcard.fetch",
-            "/api/v1/admin/giftcard/fetch",
+            config.admin_api_path("giftcard/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.knowledge.fetch",
-            "/api/v1/admin/knowledge/fetch",
+            config.admin_api_path("knowledge/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.payment.fetch",
-            "/api/v1/admin/payment/fetch",
+            config.admin_api_path("payment/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.payment.methods",
-            "/api/v1/admin/payment/getPaymentMethods",
+            config.admin_api_path("payment/getPaymentMethods"),
             true,
             Mode::Shape(vec!["data"]),
         ),
+        post(
+            "admin.payment.form",
+            config.admin_api_path("payment/getPaymentForm"),
+            true,
+            vec![("payment", "StripeCredit")],
+            Mode::Shape(vec!["data"]),
+        ),
+        post(
+            "admin.order.detail_missing",
+            config.admin_api_path("order/detail"),
+            true,
+            vec![("id", "0")],
+            Mode::ErrorMessage,
+        ),
         get(
             "admin.server.groups",
-            "/api/v1/admin/server/group/fetch",
+            config.admin_api_path("server/group/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.server.routes",
-            "/api/v1/admin/server/route/fetch",
+            config.admin_api_path("server/route/fetch"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.server.nodes",
-            "/api/v1/admin/server/manage/getNodes",
+            config.admin_api_path("server/manage/getNodes"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.stat.summary",
-            "/api/v1/admin/stat/getStat",
+            config.admin_api_path("stat/getStat"),
             true,
             Mode::RustMayImproveLegacy5xx,
         ),
         get(
             "admin.stat.override",
-            "/api/v1/admin/stat/getOverride",
+            config.admin_api_path("stat/getOverride"),
             true,
             Mode::StatusOnly,
         ),
         get(
             "admin.stat.ranking",
-            "/api/v1/admin/stat/getRanking",
+            config.admin_api_path("stat/getRanking"),
             true,
             Mode::RustMayImproveLegacy5xx,
         ),
         get(
             "admin.stat.records",
-            "/api/v1/admin/stat/getStatRecord",
+            config.admin_api_path("stat/getStatRecord"),
             true,
             Mode::RustShape(vec!["data", "total"]),
         ),
         get(
             "admin.system.status",
-            "/api/v1/admin/system/getSystemStatus",
+            config.admin_api_path("system/getSystemStatus"),
             true,
             Mode::Shape(vec!["data.schedule", "data.horizon"]),
         ),
         get(
             "admin.queue.stats",
-            "/api/v1/admin/system/getQueueStats",
+            config.admin_api_path("system/getQueueStats"),
             true,
             Mode::Shape(vec!["data.status", "data.recentJobs"]),
         ),
         get(
             "admin.queue.workload",
-            "/api/v1/admin/system/getQueueWorkload",
+            config.admin_api_path("system/getQueueWorkload"),
             true,
             Mode::Shape(vec!["data"]),
         ),
         get(
             "admin.queue.masters",
-            "/api/v1/admin/system/getQueueMasters",
+            config.admin_api_path("system/getQueueMasters"),
             true,
             Mode::RustShape(vec!["data"]),
         ),
         get(
             "admin.system.logs",
-            "/api/v1/admin/system/getSystemLog",
+            config.admin_api_path("system/getSystemLog"),
             true,
             Mode::Shape(vec!["data", "total"]),
         ),
@@ -753,11 +1128,11 @@ fn scenarios() -> Vec<Scenario> {
     ]
 }
 
-fn get(name: &'static str, path: &'static str, auth: bool, mode: Mode) -> Scenario {
+fn get(name: &'static str, path: impl Into<String>, auth: bool, mode: Mode) -> Scenario {
     Scenario {
         name,
         method: Method::GET,
-        path,
+        path: path.into(),
         auth_header: auth,
         token_query: false,
         form: Vec::new(),
@@ -765,11 +1140,32 @@ fn get(name: &'static str, path: &'static str, auth: bool, mode: Mode) -> Scenar
     }
 }
 
-fn client_get(name: &'static str, path: &'static str, mode: Mode) -> Scenario {
+fn post(
+    name: &'static str,
+    path: impl Into<String>,
+    auth: bool,
+    form: Vec<(&'static str, &'static str)>,
+    mode: Mode,
+) -> Scenario {
+    Scenario {
+        name,
+        method: Method::POST,
+        path: path.into(),
+        auth_header: auth,
+        token_query: false,
+        form: form
+            .into_iter()
+            .map(|(key, value)| (key, value.to_string()))
+            .collect(),
+        mode,
+    }
+}
+
+fn client_get(name: &'static str, path: impl Into<String>, mode: Mode) -> Scenario {
     Scenario {
         name,
         method: Method::GET,
-        path,
+        path: path.into(),
         auth_header: false,
         token_query: true,
         form: Vec::new(),
@@ -869,9 +1265,26 @@ fn compare_pair(name: &str, laravel: &Snapshot, rust: &Snapshot, mode: &Mode) ->
         Mode::RustBodyContains { .. } => unreachable!("handled before status comparison"),
         Mode::RustContentType(_) => unreachable!("handled before status comparison"),
         Mode::RustShape(_) => unreachable!("handled before status comparison"),
+        Mode::ErrorMessage => compare_error_message(name, laravel, rust),
         Mode::StatusOnly => pass(name),
         Mode::RustMayImproveLegacy5xx => unreachable!("handled before status comparison"),
     }
+}
+
+fn compare_error_message(name: &str, laravel: &Snapshot, rust: &Snapshot) -> ContractResult {
+    for (target, snapshot) in [("laravel", laravel), ("rust", rust)] {
+        let has_message = snapshot
+            .json
+            .as_ref()
+            .and_then(|json| json_at(json, "message"))
+            .and_then(Value::as_str)
+            .filter(|message| !message.trim().is_empty())
+            .is_some();
+        if !has_message {
+            return fail(name, format!("{target} error response is missing message"));
+        }
+    }
+    pass(name)
 }
 
 fn compare_rust_shape(name: &str, rust: &Snapshot, paths: &[&'static str]) -> ContractResult {

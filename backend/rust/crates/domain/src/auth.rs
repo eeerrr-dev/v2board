@@ -8,6 +8,7 @@ use lettre::{
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sqlx::{MySql, Transaction};
 use uuid::Uuid;
 use v2board_compat::ApiError;
 use v2board_config::AppConfig;
@@ -142,19 +143,20 @@ impl AuthService {
             }
         }
 
-        let exists = db::user::find_user_for_auth(&self.db, &email).await?;
-        if exists.is_some() {
-            return Err(ApiError::legacy("Email already exists"));
-        }
-
-        let invite_user_id = self
-            .consume_invite_code(input.invite_code.as_deref())
-            .await?;
         let password_hash = hash_password(&input.password)?;
         let uuid = legacy_guid(true);
         let token = legacy_guid(false);
         let now = Utc::now().timestamp();
-        let trial = self.trial_plan().await?;
+        let mut tx = self.db.begin().await?;
+
+        if email_exists_for_update(&mut tx, &email).await? {
+            return Err(ApiError::legacy("Email already exists"));
+        }
+
+        let invite_user_id = self
+            .consume_invite_code(&mut tx, input.invite_code.as_deref())
+            .await?;
+        let trial = self.trial_plan(&mut tx).await?;
 
         let result = sqlx::query(
             r#"
@@ -179,9 +181,10 @@ impl AuthService {
         .bind(now)
         .bind(now)
         .bind(now)
-        .execute(&self.db)
+        .execute(&mut *tx)
         .await?;
         let user_id = result.last_insert_id() as i64;
+        tx.commit().await?;
 
         if self.config.email_verify {
             let mut conn = self.redis.get_multiplexed_async_connection().await?;
@@ -606,6 +609,7 @@ impl AuthService {
 
     async fn consume_invite_code(
         &self,
+        tx: &mut Transaction<'_, MySql>,
         invite_code: Option<&str>,
     ) -> Result<Option<i64>, ApiError> {
         let Some(code) = invite_code.map(str::trim).filter(|value| !value.is_empty()) else {
@@ -615,7 +619,7 @@ impl AuthService {
             "SELECT id, user_id FROM v2_invite_code WHERE code = ? AND status = 0 LIMIT 1",
         )
         .bind(code)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut **tx)
         .await?;
         let Some(row) = row else {
             if self.config.invite_force {
@@ -627,17 +631,28 @@ impl AuthService {
             sqlx::query("UPDATE v2_invite_code SET status = 1, updated_at = ? WHERE id = ?")
                 .bind(Utc::now().timestamp())
                 .bind(row.id)
-                .execute(&self.db)
+                .execute(&mut **tx)
                 .await?;
         }
         Ok(Some(row.user_id))
     }
 
-    async fn trial_plan(&self) -> Result<TrialPlan, ApiError> {
+    async fn trial_plan(&self, tx: &mut Transaction<'_, MySql>) -> Result<TrialPlan, ApiError> {
         if self.config.try_out_plan_id <= 0 {
             return Ok(TrialPlan::default());
         }
-        let Some(plan) = db::plan::find_plan(&self.db, self.config.try_out_plan_id).await? else {
+        let Some(plan) = sqlx::query_as::<_, TrialPlanRow>(
+            r#"
+            SELECT id, group_id, transfer_enable, device_limit, speed_limit
+            FROM v2_plan
+            WHERE id = ?
+            LIMIT 1
+            "#,
+        )
+        .bind(self.config.try_out_plan_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        else {
             return Ok(TrialPlan::default());
         };
         Ok(TrialPlan {
@@ -689,10 +704,31 @@ impl AuthService {
     }
 }
 
+async fn email_exists_for_update(
+    tx: &mut Transaction<'_, MySql>,
+    email: &str,
+) -> Result<bool, sqlx::Error> {
+    let id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM v2_user WHERE email = ? LIMIT 1 FOR UPDATE")
+            .bind(email)
+            .fetch_optional(&mut **tx)
+            .await?;
+    Ok(id.is_some())
+}
+
 #[derive(Debug, sqlx::FromRow)]
 struct InviteCodeRow {
     id: i64,
     user_id: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct TrialPlanRow {
+    id: i32,
+    group_id: i32,
+    transfer_enable: i64,
+    device_limit: Option<i32>,
+    speed_limit: Option<i32>,
 }
 
 #[derive(Debug, Default)]

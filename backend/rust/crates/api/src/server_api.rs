@@ -1,0 +1,1314 @@
+use std::collections::HashMap;
+
+use axum::{
+    Json,
+    body::to_bytes,
+    extract::{Path, Request, State},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
+    response::{IntoResponse, Response},
+};
+use chrono::{Datelike, Local, TimeZone, Utc};
+use redis::AsyncCommands;
+use serde::Serialize;
+use serde_json::json;
+use sha1::{Digest, Sha1};
+use sqlx::{AssertSqlSafe, FromRow, MySql, QueryBuilder};
+use v2board_compat::ApiError;
+use v2board_config::AppConfig;
+use v2board_db::DbPool;
+
+use super::codec::{prefix_bytes, standard_base64_encode};
+use super::json_value::value_to_i64;
+use super::{AppState, flatten_admin_json, parse_urlencoded_params};
+
+pub(super) async fn server_v1(
+    State(state): State<AppState>,
+    Path((class, action)): Path<(String, String)>,
+    headers: HeaderMap,
+    request: Request,
+) -> Result<Response, ApiError> {
+    let input = server_request_input(request).await?;
+    validate_server_token(&state.config, &input.params)?;
+    let class = class.to_ascii_lowercase();
+    let action = action.to_ascii_lowercase();
+
+    match (class.as_str(), action.as_str()) {
+        ("uniproxy", "user") => server_uniproxy_user(&state, &headers, &input.params).await,
+        ("uniproxy", "push") => {
+            server_push(&state, &input.params, input.body.as_ref(), true, None).await
+        }
+        ("uniproxy", "alivelist") => server_alive_list(&state).await,
+        ("uniproxy", "alive") => server_alive(&state, &input.params, input.body.as_ref()).await,
+        ("uniproxy", "config") => server_uniproxy_config(&state, &headers, &input.params).await,
+        ("shadowsockstidalab", "user") => {
+            server_tidalab_user(&state, &headers, "shadowsocks", &input.params).await
+        }
+        ("shadowsockstidalab", "submit") => {
+            server_push(
+                &state,
+                &input.params,
+                input.body.as_ref(),
+                false,
+                Some("shadowsocks"),
+            )
+            .await
+        }
+        ("trojantidalab", "user") => {
+            server_tidalab_user(&state, &headers, "trojan", &input.params).await
+        }
+        ("trojantidalab", "submit") => {
+            server_push(
+                &state,
+                &input.params,
+                input.body.as_ref(),
+                false,
+                Some("trojan"),
+            )
+            .await
+        }
+        ("trojantidalab", "config") => server_trojan_tidalab_config(&state, &input.params).await,
+        ("deepbwork", "user") => {
+            server_tidalab_user(&state, &headers, "vmess", &input.params).await
+        }
+        ("deepbwork", "submit") => {
+            server_push(
+                &state,
+                &input.params,
+                input.body.as_ref(),
+                false,
+                Some("vmess"),
+            )
+            .await
+        }
+        ("deepbwork", "config") => server_deepbwork_config(&state, &input.params).await,
+        _ => Err(ApiError::not_found("Server route not found")),
+    }
+}
+
+pub(super) async fn server_v2_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    request: Request,
+) -> Result<Response, ApiError> {
+    let input = server_request_input(request).await?;
+    if let Err(error) = validate_server_token(&state.config, &input.params) {
+        return Ok(server_fail_response(error.to_string()));
+    }
+    let node_id = match required_i32_param(&input.params, "node_id") {
+        Ok(node_id) => node_id,
+        Err(error) => return Ok(server_fail_response(error.to_string())),
+    };
+    let Some(node) = load_server_node(&state.db, "v2node", node_id).await? else {
+        return Ok(server_fail_response("server is not exist"));
+    };
+    let value = server_v2_config_value(&state, &node).await?;
+    raw_value_response(value, &headers, false)
+}
+
+#[derive(Debug)]
+struct ServerRequestInput {
+    params: HashMap<String, String>,
+    body: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+struct ServerNodeRow {
+    id: i32,
+    group_id: String,
+    route_id: Option<String>,
+    rate: String,
+    host: String,
+    server_port: i32,
+    created_at: i64,
+    listen_ip: Option<String>,
+    protocol: Option<String>,
+    version: Option<i32>,
+    tls: Option<i8>,
+    tls_settings: Option<String>,
+    flow: Option<String>,
+    network: Option<String>,
+    network_settings: Option<String>,
+    encryption: Option<String>,
+    encryption_settings: Option<String>,
+    zero_rtt_handshake: Option<i8>,
+    congestion_control: Option<String>,
+    cipher: Option<String>,
+    obfs: Option<String>,
+    obfs_settings: Option<String>,
+    obfs_password: Option<String>,
+    padding_scheme: Option<String>,
+    server_name: Option<String>,
+    up_mbps: Option<i32>,
+    down_mbps: Option<i32>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize)]
+struct ServerUserRow {
+    id: i64,
+    uuid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    speed_limit: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_limit: Option<i32>,
+}
+
+#[derive(Debug, Clone)]
+struct TrafficEntry {
+    user_id: i64,
+    u: i64,
+    d: i64,
+}
+
+#[derive(Debug, Clone, FromRow)]
+struct ServerRouteRow {
+    id: i32,
+    match_text: String,
+    action: String,
+    action_value: Option<String>,
+}
+
+async fn server_request_input(request: Request) -> Result<ServerRequestInput, ApiError> {
+    let mut params = HashMap::new();
+    if let Some(query) = request.uri().query().filter(|query| !query.is_empty()) {
+        params.extend(parse_urlencoded_params(query)?);
+    }
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    let body = to_bytes(request.into_body(), 8 * 1024 * 1024)
+        .await
+        .map_err(|_| ApiError::bad_request("Invalid server request body"))?;
+    if body.is_empty() {
+        return Ok(ServerRequestInput { params, body: None });
+    }
+    if content_type.contains("application/json")
+        || body.first() == Some(&b'{')
+        || body.first() == Some(&b'[')
+    {
+        let value = serde_json::from_slice::<serde_json::Value>(&body)
+            .map_err(|_| ApiError::bad_request("Invalid server request body"))?;
+        flatten_admin_json(None, &value, &mut params);
+        return Ok(ServerRequestInput {
+            params,
+            body: Some(value),
+        });
+    }
+    let body = std::str::from_utf8(&body)
+        .map_err(|_| ApiError::bad_request("Invalid server request body"))?;
+    params.extend(parse_urlencoded_params(body)?);
+    Ok(ServerRequestInput { params, body: None })
+}
+
+fn validate_server_token(
+    config: &AppConfig,
+    params: &HashMap<String, String>,
+) -> Result<(), ApiError> {
+    let token = params
+        .get("token")
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| ApiError::legacy("token is null"))?;
+    if config.server_token.as_deref() != Some(token) {
+        return Err(ApiError::legacy("token is error"));
+    }
+    Ok(())
+}
+
+async fn server_uniproxy_user(
+    state: &AppState,
+    headers: &HeaderMap,
+    params: &HashMap<String, String>,
+) -> Result<Response, ApiError> {
+    let (node_type, node) = load_uniproxy_node(state, params).await?;
+    server_cache_timestamp(&state.redis, "LAST_CHECK_AT", &node_type, node.id).await?;
+    let users =
+        server_available_users(&state.db, parse_i32_json_list(Some(&node.group_id))).await?;
+    raw_value_response(
+        json!({ "users": users }),
+        headers,
+        response_wants_msgpack(headers),
+    )
+}
+
+async fn server_tidalab_user(
+    state: &AppState,
+    headers: &HeaderMap,
+    node_type: &str,
+    params: &HashMap<String, String>,
+) -> Result<Response, ApiError> {
+    let node_id = required_i32_param(params, "node_id")?;
+    let Some(node) = load_server_node(&state.db, node_type, node_id).await? else {
+        return Err(ApiError::legacy("fail"));
+    };
+    server_cache_timestamp(&state.redis, "LAST_CHECK_AT", node_type, node.id).await?;
+    let users =
+        server_available_users(&state.db, parse_i32_json_list(Some(&node.group_id))).await?;
+    let value = match node_type {
+        "shadowsocks" => {
+            let data = users
+                .iter()
+                .map(|user| {
+                    json!({
+                        "id": user.id,
+                        "port": node.server_port,
+                        "cipher": node.cipher,
+                        "secret": user.uuid,
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({ "data": data })
+        }
+        "trojan" => {
+            let data = users
+                .iter()
+                .map(|user| {
+                    let mut item = server_user_without_uuid(user);
+                    item.insert("trojan_user".to_string(), json!({ "password": user.uuid }));
+                    serde_json::Value::Object(item)
+                })
+                .collect::<Vec<_>>();
+            json!({ "msg": "ok", "data": data })
+        }
+        "vmess" => {
+            let data = users
+                .iter()
+                .map(|user| {
+                    let mut item = server_user_without_uuid(user);
+                    item.insert(
+                        "v2ray_user".to_string(),
+                        json!({
+                            "uuid": user.uuid,
+                            "email": format!("{}@v2board.user", user.uuid),
+                            "alter_id": 0,
+                            "level": 0,
+                        }),
+                    );
+                    serde_json::Value::Object(item)
+                })
+                .collect::<Vec<_>>();
+            json!({ "msg": "ok", "data": data })
+        }
+        _ => json!({ "msg": "ok", "data": users }),
+    };
+    raw_value_response(value, headers, false)
+}
+
+async fn server_push(
+    state: &AppState,
+    params: &HashMap<String, String>,
+    body: Option<&serde_json::Value>,
+    uniproxy: bool,
+    fallback_node_type: Option<&str>,
+) -> Result<Response, ApiError> {
+    let (node_type, node) = if uniproxy {
+        load_uniproxy_node(state, params).await?
+    } else {
+        let node_type = match params
+            .get("node_type")
+            .map(String::as_str)
+            .map(normalize_server_node_type)
+        {
+            Some(node_type) => node_type,
+            None => fallback_node_type.unwrap_or("shadowsocks").to_string(),
+        };
+        let node_id = required_i32_param(params, "node_id")?;
+        let Some(node) = load_server_node(&state.db, &node_type, node_id).await? else {
+            return Ok(Json(json!({ "ret": 0, "msg": "server is not found" })).into_response());
+        };
+        (node_type, node)
+    };
+
+    let entries = parse_traffic_entries(body, params);
+    server_cache_count(
+        &state.redis,
+        "ONLINE_USER",
+        &node_type,
+        node.id,
+        entries.len() as i64,
+    )
+    .await?;
+    server_cache_timestamp(&state.redis, "LAST_PUSH_AT", &node_type, node.id).await?;
+    if !entries.is_empty() {
+        persist_traffic_fetch(state, &node, &node_type, &entries).await?;
+    }
+
+    if uniproxy {
+        Ok(Json(json!({ "data": true })).into_response())
+    } else {
+        Ok(Json(json!({ "ret": 1, "msg": "ok" })).into_response())
+    }
+}
+
+async fn server_alive_list(state: &AppState) -> Result<Response, ApiError> {
+    let user_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT id
+        FROM v2_user
+        WHERE u + d < transfer_enable
+          AND (expired_at >= ? OR expired_at IS NULL)
+          AND banned = 0
+          AND device_limit > 0
+        "#,
+    )
+    .bind(Utc::now().timestamp())
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut conn = state.redis.get_multiplexed_async_connection().await?;
+    let mut alive = serde_json::Map::new();
+    for user_id in user_ids {
+        let key = format!("ALIVE_IP_USER_{user_id}");
+        if let Some(value) = conn.get::<_, Option<String>>(&key).await?
+            && let Ok(value) = serde_json::from_str::<serde_json::Value>(&value)
+            && let Some(alive_ip) = value.get("alive_ip").and_then(value_to_i64)
+        {
+            alive.insert(user_id.to_string(), json!(alive_ip));
+        }
+    }
+    Ok(Json(json!({ "alive": alive })).into_response())
+}
+
+async fn server_alive(
+    state: &AppState,
+    params: &HashMap<String, String>,
+    body: Option<&serde_json::Value>,
+) -> Result<Response, ApiError> {
+    let (node_type, node) = load_uniproxy_node(state, params).await?;
+    let Some(object) = body.and_then(serde_json::Value::as_object) else {
+        return Ok(Json(json!({ "data": true })).into_response());
+    };
+
+    let mut conn = state.redis.get_multiplexed_async_connection().await?;
+    let now = Utc::now().timestamp();
+    for (uid, ips) in object {
+        let Some(user_id) = uid.parse::<i64>().ok() else {
+            continue;
+        };
+        let Some(ips) = ips.as_array() else {
+            continue;
+        };
+        let key = format!("ALIVE_IP_USER_{user_id}");
+        let mut value = conn
+            .get::<_, Option<String>>(&key)
+            .await?
+            .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_default();
+        value.insert(
+            format!("{node_type}{}", node.id),
+            json!({
+                "aliveips": ips,
+                "lastupdateAt": now,
+            }),
+        );
+        let stale_keys = value
+            .iter()
+            .filter_map(|(key, value)| {
+                if key == "alive_ip" {
+                    return None;
+                }
+                let last = value
+                    .get("lastupdateAt")
+                    .and_then(value_to_i64)
+                    .unwrap_or(0);
+                (now - last > 100).then_some(key.clone())
+            })
+            .collect::<Vec<_>>();
+        for key in stale_keys {
+            value.remove(&key);
+        }
+        let alive_ip = value
+            .iter()
+            .filter(|(key, _)| key.as_str() != "alive_ip")
+            .filter_map(|(_, value)| value.get("aliveips").and_then(serde_json::Value::as_array))
+            .map(Vec::len)
+            .sum::<usize>();
+        value.insert("alive_ip".to_string(), json!(alive_ip));
+        let _: () = conn
+            .set_ex(key, serde_json::Value::Object(value).to_string(), 120)
+            .await?;
+    }
+    Ok(Json(json!({ "data": true })).into_response())
+}
+
+async fn server_uniproxy_config(
+    state: &AppState,
+    headers: &HeaderMap,
+    params: &HashMap<String, String>,
+) -> Result<Response, ApiError> {
+    let (node_type, node) = load_uniproxy_node(state, params).await?;
+    let value = server_v1_config_value(state, &node_type, &node).await?;
+    raw_value_response(value, headers, false)
+}
+
+async fn server_trojan_tidalab_config(
+    state: &AppState,
+    params: &HashMap<String, String>,
+) -> Result<Response, ApiError> {
+    let node_id = required_i32_param(params, "node_id")?;
+    let local_port = params
+        .get("local_port")
+        .and_then(|value| value.parse::<i32>().ok())
+        .ok_or_else(|| ApiError::legacy("参数错误"))?;
+    let node = load_server_node(&state.db, "trojan", node_id)
+        .await?
+        .ok_or_else(|| ApiError::legacy("节点不存在"))?;
+    Ok(Json(json!({
+        "run_type": "server",
+        "local_addr": "0.0.0.0",
+        "local_port": node.server_port,
+        "remote_addr": "www.taobao.com",
+        "remote_port": 80,
+        "password": [],
+        "ssl": {
+            "cert": "/root/.cert/server.crt",
+            "key": "/root/.cert/server.key",
+            "sni": node.server_name.as_deref().unwrap_or(&node.host),
+        },
+        "api": {
+            "enabled": true,
+            "api_addr": "127.0.0.1",
+            "api_port": local_port,
+        }
+    }))
+    .into_response())
+}
+
+async fn server_deepbwork_config(
+    state: &AppState,
+    params: &HashMap<String, String>,
+) -> Result<Response, ApiError> {
+    let node_id = required_i32_param(params, "node_id")?;
+    let local_port = params
+        .get("local_port")
+        .and_then(|value| value.parse::<i32>().ok())
+        .ok_or_else(|| ApiError::legacy("参数错误"))?;
+    let node = load_server_node(&state.db, "vmess", node_id)
+        .await?
+        .ok_or_else(|| ApiError::legacy("节点不存在"))?;
+    let network = node.network.as_deref().unwrap_or("tcp");
+    let mut stream_settings = serde_json::Map::new();
+    stream_settings.insert("network".to_string(), json!(network));
+    if let Some(settings) = json_text(node.network_settings.as_deref())
+        .as_object()
+        .cloned()
+    {
+        let key = match network {
+            "kcp" => "kcpSettings",
+            "ws" => "wsSettings",
+            "http" => "httpSettings",
+            "domainsocket" => "dsSettings",
+            "quic" => "quicSettings",
+            "grpc" => "grpcSettings",
+            _ => "tcpSettings",
+        };
+        stream_settings.insert(key.to_string(), serde_json::Value::Object(settings));
+    }
+    if node.tls.unwrap_or_default() != 0 {
+        stream_settings.insert("security".to_string(), json!("tls"));
+        stream_settings.insert(
+            "tlsSettings".to_string(),
+            json!({
+                "certificates": [{
+                    "certificateFile": "/root/.cert/server.crt",
+                    "keyFile": "/root/.cert/server.key",
+                }]
+            }),
+        );
+    }
+    Ok(Json(json!({
+        "log": { "loglevel": "none", "access": "access.log", "error": "error.log" },
+        "api": { "services": ["HandlerService", "StatsService"], "tag": "api" },
+        "dns": {},
+        "stats": {},
+        "inbounds": [
+            {
+                "port": node.server_port,
+                "protocol": "vmess",
+                "settings": { "clients": [] },
+                "sniffing": { "enabled": true, "destOverride": ["http", "tls"] },
+                "streamSettings": serde_json::Value::Object(stream_settings),
+                "tag": "proxy",
+            },
+            {
+                "listen": "127.0.0.1",
+                "port": local_port,
+                "protocol": "dokodemo-door",
+                "settings": { "address": "0.0.0.0" },
+                "tag": "api",
+            }
+        ],
+        "outbounds": [
+            { "protocol": "freedom", "settings": {} },
+            { "protocol": "blackhole", "settings": {}, "tag": "block" }
+        ],
+        "routing": { "rules": [{ "type": "field", "inboundTag": "api", "outboundTag": "api" }] },
+        "policy": {
+            "levels": {
+                "0": {
+                    "handshake": 4,
+                    "connIdle": 300,
+                    "uplinkOnly": 5,
+                    "downlinkOnly": 30,
+                    "statsUserUplink": true,
+                    "statsUserDownlink": true,
+                }
+            }
+        }
+    }))
+    .into_response())
+}
+fn response_wants_msgpack(headers: &HeaderMap) -> bool {
+    headers
+        .get("x-response-format")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.contains("msgpack"))
+}
+
+fn raw_value_response(
+    value: serde_json::Value,
+    headers: &HeaderMap,
+    msgpack: bool,
+) -> Result<Response, ApiError> {
+    if msgpack {
+        let body = rmp_serde::to_vec_named(&value)
+            .map_err(|_| ApiError::internal("msgpack encode failed"))?;
+        let etag = sha1_hex(&body);
+        if etag_matches(headers, &etag) {
+            return not_modified_response(&etag);
+        }
+        let mut response = body.into_response();
+        response.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/x-msgpack"),
+        );
+        insert_etag(response.headers_mut(), &etag)?;
+        return Ok(response);
+    }
+
+    let body = serde_json::to_vec(&value).map_err(|_| ApiError::internal("json encode failed"))?;
+    let etag = sha1_hex(&body);
+    if etag_matches(headers, &etag) {
+        return not_modified_response(&etag);
+    }
+    let mut response = Json(value).into_response();
+    insert_etag(response.headers_mut(), &etag)?;
+    Ok(response)
+}
+
+fn server_fail_response(message: impl Into<String>) -> Response {
+    Json(json!({
+        "status": "fail",
+        "message": message.into(),
+    }))
+    .into_response()
+}
+
+fn sha1_hex(bytes: &[u8]) -> String {
+    Sha1::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn etag_matches(headers: &HeaderMap, etag: &str) -> bool {
+    headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.contains(etag))
+}
+
+fn not_modified_response(etag: &str) -> Result<Response, ApiError> {
+    let mut response = StatusCode::NOT_MODIFIED.into_response();
+    insert_etag(response.headers_mut(), etag)?;
+    Ok(response)
+}
+
+fn insert_etag(headers: &mut HeaderMap, etag: &str) -> Result<(), ApiError> {
+    headers.insert(
+        header::ETAG,
+        HeaderValue::from_str(&format!("\"{etag}\""))
+            .map_err(|_| ApiError::internal("invalid etag"))?,
+    );
+    Ok(())
+}
+fn required_i32_param(params: &HashMap<String, String>, key: &str) -> Result<i32, ApiError> {
+    params
+        .get(key)
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<i32>().ok())
+        .ok_or_else(|| ApiError::legacy("参数错误"))
+}
+
+fn normalize_server_node_type(value: &str) -> String {
+    match value.to_ascii_lowercase().as_str() {
+        "v2ray" => "vmess".to_string(),
+        "hysteria2" => "hysteria".to_string(),
+        value => value.to_string(),
+    }
+}
+
+async fn load_uniproxy_node(
+    state: &AppState,
+    params: &HashMap<String, String>,
+) -> Result<(String, ServerNodeRow), ApiError> {
+    let node_type = params
+        .get("node_type")
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(normalize_server_node_type)
+        .ok_or_else(|| ApiError::legacy("server is not exist"))?;
+    let node_id = required_i32_param(params, "node_id")?;
+    let node = load_server_node(&state.db, &node_type, node_id)
+        .await?
+        .ok_or_else(|| ApiError::legacy("server is not exist"))?;
+    Ok((node_type, node))
+}
+
+async fn load_server_node(
+    db: &DbPool,
+    node_type: &str,
+    node_id: i32,
+) -> Result<Option<ServerNodeRow>, ApiError> {
+    let Some(sql) = server_node_sql(node_type) else {
+        return Ok(None);
+    };
+    Ok(
+        sqlx::query_as::<_, ServerNodeRow>(AssertSqlSafe(sql.to_string()))
+            .bind(node_id)
+            .fetch_optional(db)
+            .await?,
+    )
+}
+
+fn server_node_sql(node_type: &str) -> Option<&'static str> {
+    match node_type {
+        "shadowsocks" => Some(
+            r#"
+            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+                   server_port, created_at,
+                   NULL AS listen_ip, NULL AS protocol, NULL AS version, NULL AS tls,
+                   NULL AS tls_settings, NULL AS flow, NULL AS network, NULL AS network_settings,
+                   NULL AS encryption, NULL AS encryption_settings, NULL AS disable_sni,
+                   NULL AS udp_relay_mode, NULL AS zero_rtt_handshake, NULL AS congestion_control,
+                   cipher, obfs, obfs_settings, NULL AS obfs_password, NULL AS padding_scheme,
+                   NULL AS allow_insecure, NULL AS server_name, NULL AS up_mbps, NULL AS down_mbps
+            FROM v2_server_shadowsocks
+            WHERE id = ?
+            LIMIT 1
+            "#,
+        ),
+        "vmess" => Some(
+            r#"
+            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+                   server_port, created_at,
+                   NULL AS listen_ip, NULL AS protocol, NULL AS version, tls,
+                   tlsSettings AS tls_settings, NULL AS flow, network,
+                   networkSettings AS network_settings, NULL AS encryption,
+                   NULL AS encryption_settings, NULL AS disable_sni, NULL AS udp_relay_mode,
+                   NULL AS zero_rtt_handshake, NULL AS congestion_control, NULL AS cipher,
+                   NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
+                   NULL AS padding_scheme, NULL AS allow_insecure, NULL AS server_name,
+                   NULL AS up_mbps, NULL AS down_mbps
+            FROM v2_server_vmess
+            WHERE id = ?
+            LIMIT 1
+            "#,
+        ),
+        "trojan" => Some(
+            r#"
+            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+                   server_port, created_at,
+                   NULL AS listen_ip, NULL AS protocol, NULL AS version, NULL AS tls,
+                   NULL AS tls_settings, NULL AS flow, network,
+                   network_settings, NULL AS encryption, NULL AS encryption_settings,
+                   NULL AS disable_sni, NULL AS udp_relay_mode, NULL AS zero_rtt_handshake,
+                   NULL AS congestion_control, NULL AS cipher, NULL AS obfs,
+                   NULL AS obfs_settings, NULL AS obfs_password, NULL AS padding_scheme,
+                   allow_insecure, server_name, NULL AS up_mbps, NULL AS down_mbps
+            FROM v2_server_trojan
+            WHERE id = ?
+            LIMIT 1
+            "#,
+        ),
+        "vless" => Some(
+            r#"
+            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+                   server_port, created_at,
+                   NULL AS listen_ip, NULL AS protocol, NULL AS version, tls,
+                   tls_settings, flow, network, network_settings, encryption,
+                   encryption_settings, NULL AS disable_sni, NULL AS udp_relay_mode,
+                   NULL AS zero_rtt_handshake, NULL AS congestion_control, NULL AS cipher,
+                   NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
+                   NULL AS padding_scheme, NULL AS allow_insecure, NULL AS server_name,
+                   NULL AS up_mbps, NULL AS down_mbps
+            FROM v2_server_vless
+            WHERE id = ?
+            LIMIT 1
+            "#,
+        ),
+        "tuic" => Some(
+            r#"
+            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+                   server_port, created_at,
+                   NULL AS listen_ip, NULL AS protocol, NULL AS version, NULL AS tls,
+                   NULL AS tls_settings, NULL AS flow, NULL AS network, NULL AS network_settings,
+                   NULL AS encryption, NULL AS encryption_settings, disable_sni,
+                   udp_relay_mode, zero_rtt_handshake, congestion_control, NULL AS cipher,
+                   NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
+                   NULL AS padding_scheme, insecure AS allow_insecure, server_name,
+                   NULL AS up_mbps, NULL AS down_mbps
+            FROM v2_server_tuic
+            WHERE id = ?
+            LIMIT 1
+            "#,
+        ),
+        "hysteria" => Some(
+            r#"
+            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+                   server_port, created_at,
+                   NULL AS listen_ip, NULL AS protocol, version, NULL AS tls,
+                   NULL AS tls_settings, NULL AS flow, NULL AS network, NULL AS network_settings,
+                   NULL AS encryption, NULL AS encryption_settings, NULL AS disable_sni,
+                   NULL AS udp_relay_mode, NULL AS zero_rtt_handshake, NULL AS congestion_control,
+                   NULL AS cipher, obfs, NULL AS obfs_settings, obfs_password,
+                   NULL AS padding_scheme, insecure AS allow_insecure, server_name,
+                   up_mbps, down_mbps
+            FROM v2_server_hysteria
+            WHERE id = ?
+            LIMIT 1
+            "#,
+        ),
+        "anytls" => Some(
+            r#"
+            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+                   server_port, created_at,
+                   NULL AS listen_ip, NULL AS protocol, NULL AS version, NULL AS tls,
+                   NULL AS tls_settings, NULL AS flow, NULL AS network, NULL AS network_settings,
+                   NULL AS encryption, NULL AS encryption_settings, NULL AS disable_sni,
+                   NULL AS udp_relay_mode, NULL AS zero_rtt_handshake, NULL AS congestion_control,
+                   NULL AS cipher, NULL AS obfs, NULL AS obfs_settings, NULL AS obfs_password,
+                   padding_scheme, insecure AS allow_insecure, server_name,
+                   NULL AS up_mbps, NULL AS down_mbps
+            FROM v2_server_anytls
+            WHERE id = ?
+            LIMIT 1
+            "#,
+        ),
+        "v2node" => Some(
+            r#"
+            SELECT id, group_id, route_id, name, rate, host, CAST(port AS CHAR) AS port,
+                   server_port, created_at, listen_ip, protocol, NULL AS version, tls,
+                   tls_settings, flow, network, network_settings, encryption,
+                   encryption_settings, disable_sni, udp_relay_mode, zero_rtt_handshake,
+                   congestion_control, cipher, obfs, NULL AS obfs_settings, obfs_password,
+                   padding_scheme, NULL AS allow_insecure, NULL AS server_name,
+                   up_mbps, down_mbps
+            FROM v2_server_v2node
+            WHERE id = ?
+            LIMIT 1
+            "#,
+        ),
+        _ => None,
+    }
+}
+
+async fn server_available_users(
+    db: &DbPool,
+    group_ids: Vec<i32>,
+) -> Result<Vec<ServerUserRow>, ApiError> {
+    if group_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut builder = QueryBuilder::<MySql>::new(
+        "SELECT id, uuid, speed_limit, device_limit FROM v2_user WHERE group_id IN (",
+    );
+    {
+        let mut separated = builder.separated(", ");
+        for group_id in group_ids {
+            separated.push_bind(group_id);
+        }
+    }
+    builder.push(") AND u + d < transfer_enable AND (expired_at >= ");
+    builder.push_bind(Utc::now().timestamp());
+    builder.push(" OR expired_at IS NULL) AND banned = 0");
+    Ok(builder
+        .build_query_as::<ServerUserRow>()
+        .fetch_all(db)
+        .await?)
+}
+
+fn server_user_without_uuid(user: &ServerUserRow) -> serde_json::Map<String, serde_json::Value> {
+    let mut item = serde_json::Map::new();
+    item.insert("id".to_string(), json!(user.id));
+    if let Some(speed_limit) = user.speed_limit {
+        item.insert("speed_limit".to_string(), json!(speed_limit));
+    }
+    if let Some(device_limit) = user.device_limit {
+        item.insert("device_limit".to_string(), json!(device_limit));
+    }
+    item
+}
+
+async fn server_cache_timestamp(
+    redis: &redis::Client,
+    suffix: &str,
+    node_type: &str,
+    node_id: i32,
+) -> Result<(), ApiError> {
+    server_cache_count(redis, suffix, node_type, node_id, Utc::now().timestamp()).await
+}
+
+async fn server_cache_count(
+    redis: &redis::Client,
+    suffix: &str,
+    node_type: &str,
+    node_id: i32,
+    value: i64,
+) -> Result<(), ApiError> {
+    let key = format!(
+        "SERVER_{}_{}_{node_id}",
+        node_type.to_ascii_uppercase(),
+        suffix
+    );
+    let mut conn = redis.get_multiplexed_async_connection().await?;
+    let _: () = conn.set_ex(key, value, 3600).await?;
+    Ok(())
+}
+
+fn parse_traffic_entries(
+    body: Option<&serde_json::Value>,
+    params: &HashMap<String, String>,
+) -> Vec<TrafficEntry> {
+    if let Some(value) = body {
+        let entries = traffic_entries_from_value(value);
+        if !entries.is_empty() {
+            return entries;
+        }
+    }
+    match (
+        params
+            .get("user_id")
+            .and_then(|value| value.parse::<i64>().ok()),
+        params.get("u").and_then(|value| value.parse::<i64>().ok()),
+        params.get("d").and_then(|value| value.parse::<i64>().ok()),
+    ) {
+        (Some(user_id), Some(u), Some(d)) => vec![TrafficEntry { user_id, u, d }],
+        _ => Vec::new(),
+    }
+}
+
+fn traffic_entries_from_value(value: &serde_json::Value) -> Vec<TrafficEntry> {
+    match value {
+        serde_json::Value::Array(items) => items
+            .iter()
+            .filter_map(|item| {
+                let object = item.as_object()?;
+                Some(TrafficEntry {
+                    user_id: object.get("user_id").and_then(value_to_i64)?,
+                    u: object.get("u").and_then(value_to_i64).unwrap_or_default(),
+                    d: object.get("d").and_then(value_to_i64).unwrap_or_default(),
+                })
+            })
+            .collect(),
+        serde_json::Value::Object(object) => {
+            if let Some(user_id) = object.get("user_id").and_then(value_to_i64) {
+                return vec![TrafficEntry {
+                    user_id,
+                    u: object.get("u").and_then(value_to_i64).unwrap_or_default(),
+                    d: object.get("d").and_then(value_to_i64).unwrap_or_default(),
+                }];
+            }
+            object
+                .iter()
+                .filter_map(|(user_id, value)| {
+                    let user_id = user_id.parse::<i64>().ok()?;
+                    let (u, d) = traffic_pair_from_value(value)?;
+                    Some(TrafficEntry { user_id, u, d })
+                })
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn traffic_pair_from_value(value: &serde_json::Value) -> Option<(i64, i64)> {
+    match value {
+        serde_json::Value::Array(items) => Some((
+            items.first().and_then(value_to_i64).unwrap_or_default(),
+            items.get(1).and_then(value_to_i64).unwrap_or_default(),
+        )),
+        serde_json::Value::Object(object) => Some((
+            object.get("u").and_then(value_to_i64).unwrap_or_default(),
+            object.get("d").and_then(value_to_i64).unwrap_or_default(),
+        )),
+        _ => None,
+    }
+}
+
+async fn persist_traffic_fetch(
+    state: &AppState,
+    node: &ServerNodeRow,
+    node_type: &str,
+    entries: &[TrafficEntry],
+) -> Result<(), ApiError> {
+    let rate = node.rate.parse::<f64>().unwrap_or(1.0);
+    let mut conn = state.redis.get_multiplexed_async_connection().await?;
+    for entry in entries {
+        let upload = (entry.u as f64 * rate).round() as i64;
+        let download = (entry.d as f64 * rate).round() as i64;
+        let _: () = redis::cmd("HINCRBY")
+            .arg("v2board_upload_traffic")
+            .arg(entry.user_id)
+            .arg(upload)
+            .query_async(&mut conn)
+            .await?;
+        let _: () = redis::cmd("HINCRBY")
+            .arg("v2board_download_traffic")
+            .arg(entry.user_id)
+            .arg(download)
+            .query_async(&mut conn)
+            .await?;
+    }
+
+    let record_at = today_start_timestamp();
+    let now = Utc::now().timestamp();
+    let mut total_u = 0_i64;
+    let mut total_d = 0_i64;
+    for entry in entries {
+        total_u += entry.u;
+        total_d += entry.d;
+        sqlx::query(
+            r#"
+            INSERT INTO v2_stat_user
+                (user_id, server_rate, u, d, record_type, record_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'd', ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                u = u + VALUES(u),
+                d = d + VALUES(d),
+                updated_at = VALUES(updated_at)
+            "#,
+        )
+        .bind(entry.user_id)
+        .bind(rate)
+        .bind(entry.u)
+        .bind(entry.d)
+        .bind(record_at)
+        .bind(now)
+        .bind(now)
+        .execute(&state.db)
+        .await?;
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO v2_stat_server
+            (server_id, server_type, u, d, record_type, record_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'd', ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+            u = u + VALUES(u),
+            d = d + VALUES(d),
+            updated_at = VALUES(updated_at)
+        "#,
+    )
+    .bind(node.id)
+    .bind(node_type)
+    .bind(total_u)
+    .bind(total_d)
+    .bind(record_at)
+    .bind(now)
+    .bind(now)
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
+async fn server_v1_config_value(
+    state: &AppState,
+    node_type: &str,
+    node: &ServerNodeRow,
+) -> Result<serde_json::Value, ApiError> {
+    let mut response = serde_json::Map::new();
+    match node_type {
+        "shadowsocks" => {
+            response.insert("server_port".to_string(), json!(node.server_port));
+            response.insert("cipher".to_string(), json!(node.cipher));
+            response.insert("obfs".to_string(), json!(node.obfs));
+            response.insert(
+                "obfs_settings".to_string(),
+                json_text(node.obfs_settings.as_deref()),
+            );
+            if let Some(cipher) = node.cipher.as_deref() {
+                if cipher == "2022-blake3-aes-128-gcm" {
+                    response.insert(
+                        "server_key".to_string(),
+                        json!(server_key(node.created_at, 16)),
+                    );
+                } else if cipher == "2022-blake3-aes-256-gcm" {
+                    response.insert(
+                        "server_key".to_string(),
+                        json!(server_key(node.created_at, 32)),
+                    );
+                }
+            }
+        }
+        "vmess" => {
+            response.insert("server_port".to_string(), json!(node.server_port));
+            response.insert("network".to_string(), json!(node.network));
+            response.insert(
+                "networkSettings".to_string(),
+                json_text(node.network_settings.as_deref()),
+            );
+            response.insert("tls".to_string(), json!(node.tls.unwrap_or_default()));
+        }
+        "vless" => {
+            response.insert("server_port".to_string(), json!(node.server_port));
+            response.insert("network".to_string(), json!(node.network));
+            response.insert(
+                "networkSettings".to_string(),
+                json_text(node.network_settings.as_deref()),
+            );
+            response.insert("tls".to_string(), json!(node.tls.unwrap_or_default()));
+            response.insert("flow".to_string(), json!(node.flow));
+            response.insert(
+                "tls_settings".to_string(),
+                json_text(node.tls_settings.as_deref()),
+            );
+            response.insert("encryption".to_string(), json!(node.encryption));
+            response.insert(
+                "encryption_settings".to_string(),
+                json_text(node.encryption_settings.as_deref()),
+            );
+        }
+        "trojan" => {
+            response.insert("host".to_string(), json!(node.host));
+            response.insert("network".to_string(), json!(node.network));
+            response.insert(
+                "networkSettings".to_string(),
+                json_text(node.network_settings.as_deref()),
+            );
+            response.insert("server_port".to_string(), json!(node.server_port));
+            response.insert("server_name".to_string(), json!(node.server_name));
+        }
+        "tuic" => {
+            response.insert("server_port".to_string(), json!(node.server_port));
+            response.insert("server_name".to_string(), json!(node.server_name));
+            response.insert(
+                "congestion_control".to_string(),
+                json!(node.congestion_control),
+            );
+            response.insert(
+                "zero_rtt_handshake".to_string(),
+                json!(node.zero_rtt_handshake.unwrap_or_default() != 0),
+            );
+        }
+        "hysteria" => {
+            let version = node.version.unwrap_or(2);
+            response.insert("version".to_string(), json!(version));
+            response.insert("host".to_string(), json!(node.host));
+            response.insert("server_port".to_string(), json!(node.server_port));
+            response.insert("server_name".to_string(), json!(node.server_name));
+            response.insert(
+                "up_mbps".to_string(),
+                json!(node.up_mbps.unwrap_or_default()),
+            );
+            response.insert(
+                "down_mbps".to_string(),
+                json!(node.down_mbps.unwrap_or_default()),
+            );
+            if version == 1 {
+                response.insert("obfs".to_string(), json!(node.obfs_password));
+            } else {
+                let ignore = node.up_mbps.unwrap_or_default() == 0
+                    && node.down_mbps.unwrap_or_default() == 0;
+                response.insert("ignore_client_bandwidth".to_string(), json!(ignore));
+                response.insert("obfs".to_string(), json!(node.obfs));
+                response.insert("obfs-password".to_string(), json!(node.obfs_password));
+            }
+        }
+        "anytls" => {
+            response.insert("server_port".to_string(), json!(node.server_port));
+            response.insert("server_name".to_string(), json!(node.server_name));
+            response.insert(
+                "padding_scheme".to_string(),
+                json_text(node.padding_scheme.as_deref()),
+            );
+        }
+        _ => {}
+    }
+    response.insert(
+        "base_config".to_string(),
+        json!({
+            "push_interval": state.config.server_push_interval,
+            "pull_interval": state.config.server_pull_interval,
+        }),
+    );
+    let routes = server_routes(&state.db, parse_i32_json_list(node.route_id.as_ref())).await?;
+    if !routes.is_empty() {
+        response.insert("routes".to_string(), json!(routes));
+    }
+    Ok(serde_json::Value::Object(response))
+}
+
+async fn server_v2_config_value(
+    state: &AppState,
+    node: &ServerNodeRow,
+) -> Result<serde_json::Value, ApiError> {
+    let mut response = serde_json::Map::new();
+    response.insert("listen_ip".to_string(), json!(node.listen_ip));
+    response.insert("server_port".to_string(), json!(node.server_port));
+    response.insert("network".to_string(), json!(node.network));
+    response.insert(
+        "network_settings".to_string(),
+        json_text(node.network_settings.as_deref()),
+    );
+    response.insert("protocol".to_string(), json!(node.protocol));
+    response.insert("tls".to_string(), json!(node.tls.unwrap_or_default()));
+    response.insert(
+        "tls_settings".to_string(),
+        json_text(node.tls_settings.as_deref()),
+    );
+    response.insert("encryption".to_string(), json!(node.encryption));
+    response.insert(
+        "encryption_settings".to_string(),
+        json_text(node.encryption_settings.as_deref()),
+    );
+    response.insert("flow".to_string(), json!(node.flow));
+    response.insert("cipher".to_string(), json!(node.cipher));
+    response.insert(
+        "congestion_control".to_string(),
+        json!(node.congestion_control),
+    );
+    response.insert(
+        "zero_rtt_handshake".to_string(),
+        json!(node.zero_rtt_handshake.unwrap_or_default() != 0),
+    );
+    response.insert(
+        "up_mbps".to_string(),
+        json!(node.up_mbps.unwrap_or_default()),
+    );
+    response.insert(
+        "down_mbps".to_string(),
+        json!(node.down_mbps.unwrap_or_default()),
+    );
+    response.insert("obfs".to_string(), json!(node.obfs));
+    response.insert("obfs_password".to_string(), json!(node.obfs_password));
+    response.insert(
+        "padding_scheme".to_string(),
+        json_text(node.padding_scheme.as_deref()),
+    );
+    if let Some(cipher) = node.cipher.as_deref() {
+        if cipher == "2022-blake3-aes-128-gcm" {
+            response.insert(
+                "server_key".to_string(),
+                json!(server_key(node.created_at, 16)),
+            );
+        } else if cipher == "2022-blake3-aes-256-gcm" {
+            response.insert(
+                "server_key".to_string(),
+                json!(server_key(node.created_at, 32)),
+            );
+        }
+    }
+    response.insert(
+        "ignore_client_bandwidth".to_string(),
+        json!(node.up_mbps.unwrap_or_default() == 0 && node.down_mbps.unwrap_or_default() == 0),
+    );
+    response.insert(
+        "base_config".to_string(),
+        json!({
+            "push_interval": state.config.server_push_interval,
+            "pull_interval": state.config.server_pull_interval,
+            "node_report_min_traffic": state.config.server_node_report_min_traffic,
+            "device_online_min_traffic": state.config.server_device_online_min_traffic,
+        }),
+    );
+    let routes = server_routes(&state.db, parse_i32_json_list(node.route_id.as_ref())).await?;
+    if !routes.is_empty() {
+        response.insert("routes".to_string(), json!(routes));
+    }
+    Ok(serde_json::Value::Object(response))
+}
+
+async fn server_routes(
+    db: &DbPool,
+    route_ids: Vec<i32>,
+) -> Result<Vec<serde_json::Value>, ApiError> {
+    if route_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut builder = QueryBuilder::<MySql>::new(
+        "SELECT id, `match` AS match_text, action, action_value FROM v2_server_route WHERE id IN (",
+    );
+    {
+        let mut separated = builder.separated(", ");
+        for route_id in &route_ids {
+            separated.push_bind(*route_id);
+        }
+    }
+    builder.push(") ORDER BY FIELD(id, ");
+    {
+        let mut separated = builder.separated(", ");
+        for route_id in &route_ids {
+            separated.push_bind(*route_id);
+        }
+    }
+    builder.push(")");
+    let rows = builder
+        .build_query_as::<ServerRouteRow>()
+        .fetch_all(db)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            json!({
+                "id": row.id,
+                "match": json_text(Some(&row.match_text)),
+                "action": row.action,
+                "action_value": row.action_value,
+            })
+        })
+        .collect())
+}
+
+fn json_text(value: Option<&str>) -> serde_json::Value {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("null"))
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+        .unwrap_or(serde_json::Value::Null)
+}
+
+fn server_key(created_at: i64, length: usize) -> String {
+    let seed = format!("{:x}", md5::compute(created_at.to_string().as_bytes()));
+    standard_base64_encode(prefix_bytes(&seed, length))
+}
+
+fn parse_i32_json_list(value: Option<&String>) -> Vec<i32> {
+    let Some(value) = value
+        .map(String::as_str)
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<i32>>(value)
+        .ok()
+        .or_else(|| value.parse::<i32>().ok().map(|value| vec![value]))
+        .unwrap_or_default()
+}
+
+fn today_start_timestamp() -> i64 {
+    let now = Local::now();
+    Local
+        .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
+        .single()
+        .map(|date| date.timestamp())
+        .unwrap_or_else(|| Utc::now().timestamp())
+}

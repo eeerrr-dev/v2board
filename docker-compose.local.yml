@@ -184,6 +184,7 @@ services:
       - "8080:8080"
     volumes:
       - ./backend/rust:/src/backend/rust:ro
+      - ./backend/laravel:/src/backend/laravel:ro
       - rust-workspace:/app/backend/rust
       - rust-cargo-registry:/usr/local/cargo/registry
       - rust-cargo-git:/usr/local/cargo/git

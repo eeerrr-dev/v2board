@@ -15,6 +15,7 @@ pub struct AppConfig {
     pub app_description: Option<String>,
     pub logo: Option<String>,
     pub tos_url: Option<String>,
+    pub force_https: bool,
     pub email_verify: bool,
     pub email_template: Option<String>,
     pub email_host: Option<String>,
@@ -52,6 +53,7 @@ pub struct AppConfig {
     pub subscribe_path: String,
     pub show_subscribe_method: i32,
     pub show_subscribe_expire: i64,
+    pub show_info_to_server_enable: bool,
     pub allow_new_period: i32,
     pub reset_traffic_method: i32,
     pub try_out_plan_id: i32,
@@ -68,10 +70,23 @@ pub struct AppConfig {
     pub ticket_status: i32,
     pub commission_withdraw_limit: i32,
     pub server_token: Option<String>,
+    pub server_api_url: Option<String>,
     pub server_push_interval: i32,
     pub server_pull_interval: i32,
     pub server_node_report_min_traffic: i32,
     pub server_device_online_min_traffic: i32,
+    pub device_limit_mode: i32,
+    pub frontend_theme: String,
+    pub frontend_theme_sidebar: Option<String>,
+    pub frontend_theme_header: Option<String>,
+    pub frontend_theme_color: Option<String>,
+    pub frontend_background_url: Option<String>,
+    pub frontend_admin_path: Option<String>,
+    pub secure_path: Option<String>,
+    pub safe_mode_enable: bool,
+    pub password_limit_enable: bool,
+    pub password_limit_count: i64,
+    pub password_limit_expire: i64,
     pub windows_version: Option<String>,
     pub windows_download_url: Option<String>,
     pub macos_version: Option<String>,
@@ -106,6 +121,7 @@ impl AppConfig {
             .or_else(|| Some("V2Board is best".to_string())),
             logo: config_or_env(&laravel_config, "logo", "V2BOARD_LOGO"),
             tos_url: config_or_env(&laravel_config, "tos_url", "V2BOARD_TOS_URL"),
+            force_https: config_bool(&laravel_config, "force_https", "V2BOARD_FORCE_HTTPS", false),
             email_verify: config_bool(
                 &laravel_config,
                 "email_verify",
@@ -294,6 +310,12 @@ impl AppConfig {
                 "V2BOARD_SHOW_SUBSCRIBE_EXPIRE",
                 5,
             ),
+            show_info_to_server_enable: config_bool(
+                &laravel_config,
+                "show_info_to_server_enable",
+                "V2BOARD_SHOW_INFO_TO_SERVER_ENABLE",
+                false,
+            ),
             allow_new_period: config_i32(
                 &laravel_config,
                 "allow_new_period",
@@ -375,6 +397,11 @@ impl AppConfig {
                 100,
             ),
             server_token: config_or_env(&laravel_config, "server_token", "V2BOARD_SERVER_TOKEN"),
+            server_api_url: config_or_env(
+                &laravel_config,
+                "server_api_url",
+                "V2BOARD_SERVER_API_URL",
+            ),
             server_push_interval: config_i32(
                 &laravel_config,
                 "server_push_interval",
@@ -398,6 +425,71 @@ impl AppConfig {
                 "server_device_online_min_traffic",
                 "V2BOARD_SERVER_DEVICE_ONLINE_MIN_TRAFFIC",
                 0,
+            ),
+            device_limit_mode: config_i32(
+                &laravel_config,
+                "device_limit_mode",
+                "V2BOARD_DEVICE_LIMIT_MODE",
+                0,
+            ),
+            frontend_theme: config_or_env(
+                &laravel_config,
+                "frontend_theme",
+                "V2BOARD_FRONTEND_THEME",
+            )
+            .unwrap_or_else(|| "v2board".to_string()),
+            frontend_theme_sidebar: config_or_env(
+                &laravel_config,
+                "frontend_theme_sidebar",
+                "V2BOARD_FRONTEND_THEME_SIDEBAR",
+            )
+            .or_else(|| Some("light".to_string())),
+            frontend_theme_header: config_or_env(
+                &laravel_config,
+                "frontend_theme_header",
+                "V2BOARD_FRONTEND_THEME_HEADER",
+            )
+            .or_else(|| Some("dark".to_string())),
+            frontend_theme_color: config_or_env(
+                &laravel_config,
+                "frontend_theme_color",
+                "V2BOARD_FRONTEND_THEME_COLOR",
+            )
+            .or_else(|| Some("default".to_string())),
+            frontend_background_url: config_or_env(
+                &laravel_config,
+                "frontend_background_url",
+                "V2BOARD_FRONTEND_BACKGROUND_URL",
+            ),
+            frontend_admin_path: config_or_env(
+                &laravel_config,
+                "frontend_admin_path",
+                "V2BOARD_FRONTEND_ADMIN_PATH",
+            ),
+            secure_path: config_or_env(&laravel_config, "secure_path", "V2BOARD_SECURE_PATH"),
+            safe_mode_enable: config_bool(
+                &laravel_config,
+                "safe_mode_enable",
+                "V2BOARD_SAFE_MODE_ENABLE",
+                false,
+            ),
+            password_limit_enable: config_bool(
+                &laravel_config,
+                "password_limit_enable",
+                "V2BOARD_PASSWORD_LIMIT_ENABLE",
+                true,
+            ),
+            password_limit_count: config_i64(
+                &laravel_config,
+                "password_limit_count",
+                "V2BOARD_PASSWORD_LIMIT_COUNT",
+                5,
+            ),
+            password_limit_expire: config_i64(
+                &laravel_config,
+                "password_limit_expire",
+                "V2BOARD_PASSWORD_LIMIT_EXPIRE",
+                60,
             ),
             windows_version: config_or_env(
                 &laravel_config,
@@ -453,6 +545,21 @@ impl AppConfig {
 
         path_with_token
     }
+
+    pub fn admin_path(&self) -> String {
+        self.secure_path
+            .as_deref()
+            .or(self.frontend_admin_path.as_deref())
+            .map(str::trim)
+            .map(|path| path.trim_matches('/'))
+            .filter(|path| !path.is_empty())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| crc32b_hex(self.app_key.as_bytes()))
+    }
+
+    pub fn admin_api_route(&self) -> String {
+        format!("/api/v1/{}/{{*admin_path}}", self.admin_path())
+    }
 }
 
 fn env_or(key: &str, default: &str) -> String {
@@ -477,9 +584,12 @@ fn load_laravel_config() -> HashMap<String, String> {
         return HashMap::new();
     };
 
+    let lines = content.lines().collect::<Vec<_>>();
     let mut values = HashMap::new();
-    for line in content.lines() {
-        let line = line.trim();
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index].trim();
+        index += 1;
         if !line.starts_with('\'') || !line.contains("=>") {
             continue;
         }
@@ -490,12 +600,76 @@ fn load_laravel_config() -> HashMap<String, String> {
         if key.is_empty() {
             continue;
         }
-        let value = parse_php_scalar(raw_value.trim().trim_end_matches(','));
+        let raw_value = raw_value.trim().trim_end_matches(',');
+        if raw_value.is_empty() || raw_value.starts_with("array") {
+            let (items, next_index) = parse_php_array_lines(&lines, index, raw_value);
+            index = next_index;
+            values.insert(key.to_string(), items.join(","));
+            continue;
+        }
+        let value = parse_php_scalar(raw_value);
         if let Some(value) = value {
             values.insert(key.to_string(), value);
         }
     }
     values
+}
+
+fn parse_php_array_lines(
+    lines: &[&str],
+    mut index: usize,
+    first_value: &str,
+) -> (Vec<String>, usize) {
+    let mut depth = usize::from(first_value.starts_with("array"));
+    if depth == 0 {
+        while index < lines.len() {
+            let line = lines[index].trim();
+            index += 1;
+            if line.starts_with("array") {
+                depth = 1;
+                break;
+            }
+            if !line.is_empty() {
+                return (Vec::new(), index);
+            }
+        }
+    }
+
+    let mut items = Vec::new();
+    while index < lines.len() && depth > 0 {
+        let line = lines[index].trim().trim_end_matches(',');
+        index += 1;
+        if line.starts_with("array") {
+            depth += 1;
+            continue;
+        }
+        if line.starts_with(')') {
+            depth = depth.saturating_sub(1);
+            continue;
+        }
+        if depth == 1 {
+            let raw_value = line
+                .split_once("=>")
+                .map(|(_, value)| value.trim())
+                .unwrap_or(line);
+            if let Some(value) = parse_php_scalar(raw_value) {
+                items.push(value);
+            }
+        }
+    }
+    (items, index)
+}
+
+fn crc32b_hex(bytes: &[u8]) -> String {
+    let mut crc = 0xffff_ffff_u32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            let mask = 0_u32.wrapping_sub(crc & 1);
+            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+        }
+    }
+    format!("{:08x}", !crc)
 }
 
 fn laravel_config_path() -> Option<PathBuf> {
@@ -614,4 +788,27 @@ fn parse_list(value: &str) -> Vec<String> {
         .filter(|item| !item.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admin_path_fallback_matches_php_crc32b() {
+        assert_eq!(crc32b_hex(b"test"), "d87f7e0c");
+    }
+
+    #[test]
+    fn php_var_export_arrays_parse_as_lists() {
+        let lines = [
+            "array (",
+            "  0 => 'gmail.com',",
+            "  1 => 'example.com',",
+            "),",
+        ];
+        let (items, index) = parse_php_array_lines(&lines, 1, "array (");
+        assert_eq!(items, vec!["gmail.com", "example.com"]);
+        assert_eq!(index, lines.len());
+    }
 }

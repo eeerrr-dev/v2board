@@ -1,6 +1,6 @@
 # Rust Backend Rewrite Plan
 
-Updated: 2026-07-05
+Updated: 2026-07-06
 
 ## Goal
 
@@ -40,11 +40,11 @@ Rust backend is stable.
 - Passwords: `bcrypt` for new hashes, with legacy fallback for existing bcrypt,
   argon2id, md5, sha256, and md5salt
 - JWT: `jsonwebtoken`
-- Worker queue: `apalis` + Redis. Use the latest non-prerelease line
-  (`0.7.4` as of 2026-07-05); do not adopt `1.0.0-rc.*` until it becomes a
-  stable release.
-- Scheduler: `apalis-cron` on the same latest non-prerelease line (`0.7.4` as
-  of 2026-07-05)
+- Worker queue: `apalis` `1.0.0-rc.9` + Redis. The rewrite uses the rc line to
+  avoid the `apalis-redis` `0.7.4` future-incompat warning while keeping the
+  dependency locked and covered by worker reconciliation.
+- Scheduler: `apalis-cron` `1.0.0-rc.8` with `cron` `0.16`, on the same worker
+  runtime and reconciliation gate.
 - Observability: `tracing` + `tower-http`
 - OpenAPI: `utoipa`
 - Testing: `rstest`, `insta`, `testcontainers`
@@ -241,7 +241,7 @@ deploys, lock expiration, or manual replay.
 
 ## Current Rewrite Status
 
-Status as of 2026-07-05:
+Status as of 2026-07-06:
 
 Completed in the Rust tree:
 
@@ -276,7 +276,9 @@ Completed in the Rust tree:
 - Admin/staff route surface through the Rust admin service, including users,
   plans, payments, coupons, giftcards, notices, knowledge, tickets, stats,
   server management, theme config, mail test/send, Telegram webhook setup, and
-  config save.
+  config save. The admin API prefix now follows Laravel-compatible
+  `secure_path` / `frontend_admin_path` configuration, with the Laravel CRC32B
+  app-key fallback when no explicit admin path is configured.
 - Rust worker runtime with Apalis Redis queue and Apalis cron scheduler,
   including `traffic:update`, `check:order`, `check:commission`,
   `check:ticket`, `check:renewal`, `reset:traffic`, `reset:log`,
@@ -289,9 +291,12 @@ Completed in the Rust tree:
   and statistics record endpoints now return Rust worker/database-backed data
   instead of static placeholders.
 - Contract/parity runner in `crates/contract`, with Docker Make targets for
-  Laravel-vs-Rust HTTP contract checks and worker DB/Redis reconciliation.
+  Laravel-vs-Rust HTTP contract checks, static Laravel/Rust route-surface
+  audit, and worker DB/Redis reconciliation.
 - Payment gateway registration is centralized in Rust and guarded by tests so
   admin payment methods, checkout, and notify support cannot drift silently.
+- Built-in payment notify parsing is guarded by signed callback fixtures for
+  EPay, MGate, BEasyPaymentUSDT, and Stripe Checkout.
 
 Verified in Docker on 2026-07-06:
 
@@ -317,21 +322,25 @@ Verified in Docker on 2026-07-06:
   (`SCHEDULE_LAST_CHECK_AT_`, `RUST_WORKER_JOBS_TOTAL`,
   `RUST_WORKER_JOBS_FAILED`, and `RUST_WORKER_LAST_*`) instead of returning
   static Horizon placeholders.
-- `make rust-contract` passes 60 Laravel-vs-Rust black-box contract scenarios
+- `make rust-route-audit` passes: 183 Laravel routes are represented in the
+  Rust route surface, including the configured admin secure path.
+- `make rust-contract` passes 66 Laravel-vs-Rust black-box contract scenarios
   across auth, guest config, client app endpoints, user profile/order/invite/
   ticket/server/knowledge/notice/traffic surfaces, admin config/users/orders/
   plans/servers/payments/knowledge/system queues, legacy-compatible status
   behavior, staff routing boundaries, and Rust subscription renderer flags,
-  including legacy Sing-box and Sing-box 1.12+ user agents.
+  including legacy Sing-box and Sing-box 1.12+ user agents. The suite includes
+  admin secure-path config, representative admin POST/error paths, and payment
+  form shape checks.
 - `make rust-worker-reconcile` passes all strict worker reconciliation checks:
   scheduler heartbeat, recent worker metrics, released scheduler locks, drained
   traffic Redis buffers, absent reset lock, opened paid orders, cancelled
   expired unpaid orders, closed stale answered tickets, and drained commission
-  queue. The local seed run warns when yesterday's daily statistics row is
-  absent, because the daily statistics cron may not have elapsed in the local
-  fixture.
+  queue. The target now runs the Rust `statistics` scheduled job once before
+  reconciliation so the yesterday `v2_stat` row is produced deterministically
+  instead of depending on the daily 00:10 cron window.
 - `make rust-target-gate` passes for the configured Docker target data:
-  Laravel-vs-Rust contract parity plus Rust worker reconciliation.
+  route audit, Laravel-vs-Rust contract parity, plus Rust worker reconciliation.
 - `make rust-interaction-parity` passes with the frontend rebuilt against
   `VITE_API_BASE=http://rust-api:8080`, covering the configured focused user
   and admin desktop interaction shards.
@@ -431,6 +440,7 @@ Cutover should happen during a maintenance window:
 
 Before Rust can replace Laravel:
 
+- Static Laravel/Rust route audit is green for the configured admin secure path.
 - Contract tests are green.
 - Focused frontend behavior/interaction parity is green.
 - Auth, order, payment, subscription, node, and admin smoke checks pass.
