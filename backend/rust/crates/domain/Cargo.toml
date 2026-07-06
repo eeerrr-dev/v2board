@@ -27,3 +27,7 @@ uuid.workspace = true
 v2board-compat = { path = "../compat" }
 v2board-config = { path = "../config" }
 v2board-db = { path = "../db" }
+
+[dev-dependencies]
+# Runtime for the async payment-notify verifier tests (#[tokio::test]).
+tokio.workspace = true

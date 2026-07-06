@@ -3330,6 +3330,7 @@ dependencies = [
  "serde_urlencoded",
  "sha2 0.11.0",
  "sqlx",
+ "tokio",
  "tracing",
  "uuid",
  "v2board-compat",

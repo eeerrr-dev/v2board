@@ -3554,4 +3554,478 @@ mod tests {
         assert!(draft.discount_amount.is_none());
         assert_eq!(round_cents(draft.total_amount), 1990);
     }
+
+    fn unwrap_ignored(outcome: PaymentNotifyOutcome) -> String {
+        match outcome {
+            PaymentNotifyOutcome::Ignored(body) => body,
+            PaymentNotifyOutcome::Verified(verified) => {
+                panic!("expected ignored notify, got verified {verified:?}")
+            }
+        }
+    }
+
+    // A freshly generated RSA keypair (PKCS#8 private, SPKI public) for exercising
+    // the AlipayF2F RSA2 verify path without shipping a fixed private key.
+    fn alipay_test_keypair() -> (String, String) {
+        let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
+        let pkey = PKey::from_rsa(rsa).unwrap();
+        let private_pem = String::from_utf8(pkey.private_key_to_pem_pkcs8().unwrap()).unwrap();
+        let public_pem = String::from_utf8(pkey.public_key_to_pem().unwrap()).unwrap();
+        (private_pem, public_pem)
+    }
+
+    // --- MD5 gateways: a tampered payload must be rejected (no forged callback
+    //     may mark an order paid). EPay/MGate reject hard; bepusdt soft-fails to
+    //     the Laravel 'cannot pass verification' body. ---
+
+    #[test]
+    fn epay_notify_rejects_tampered_payload() {
+        let payment = fixture_payment("EPay", json!({ "key": "epay-secret" }));
+        let mut signed = BTreeMap::from([
+            ("money".to_string(), "12.34".to_string()),
+            ("out_trade_no".to_string(), "T202607060001".to_string()),
+            ("trade_no".to_string(), "EPAY-CALLBACK-1".to_string()),
+            ("trade_status".to_string(), "TRADE_SUCCESS".to_string()),
+        ]);
+        let sign = format!(
+            "{:x}",
+            md5::compute(format!("{}{}", canonical_query(&signed), "epay-secret"))
+        );
+        signed.insert("sign".to_string(), sign);
+        signed.insert("sign_type".to_string(), "MD5".to_string());
+        // Attacker inflates the amount after the merchant signed the callback.
+        signed.insert("money".to_string(), "9999.00".to_string());
+        let params = signed.into_iter().collect::<HashMap<_, _>>();
+
+        assert!(epay_notify(&payment, &params).is_err());
+    }
+
+    #[test]
+    fn epay_notify_rejects_blank_signature() {
+        let payment = fixture_payment("EPay", json!({ "key": "epay-secret" }));
+        let params = HashMap::from([
+            ("out_trade_no".to_string(), "T202607060001".to_string()),
+            ("trade_no".to_string(), "EPAY-CALLBACK-1".to_string()),
+            ("trade_status".to_string(), "TRADE_SUCCESS".to_string()),
+            ("sign".to_string(), String::new()),
+        ]);
+
+        assert!(epay_notify(&payment, &params).is_err());
+    }
+
+    #[test]
+    fn mgate_notify_rejects_tampered_payload() {
+        let payment = fixture_payment("MGate", json!({ "mgate_app_secret": "mgate-secret" }));
+        let mut signed = BTreeMap::from([
+            ("out_trade_no".to_string(), "T202607060002".to_string()),
+            ("trade_no".to_string(), "MGATE-CALLBACK-1".to_string()),
+        ]);
+        let sign = format!(
+            "{:x}",
+            md5::compute(format!(
+                "{}{}",
+                form_query(&signed).unwrap(),
+                "mgate-secret"
+            ))
+        );
+        signed.insert("sign".to_string(), sign);
+        signed.insert("out_trade_no".to_string(), "T-INJECTED".to_string());
+        let params = signed.into_iter().collect::<HashMap<_, _>>();
+
+        assert!(mgate_notify(&payment, &params).is_err());
+    }
+
+    #[test]
+    fn bepusdt_notify_soft_fails_on_bad_signature() {
+        let payment = fixture_payment(
+            "BEasyPaymentUSDT",
+            json!({ "bepusdt_apitoken": "bepusdt-secret" }),
+        );
+        let params = HashMap::from([
+            ("order_id".to_string(), "T202607060003".to_string()),
+            ("status".to_string(), "2".to_string()),
+            ("trade_id".to_string(), "BEPUSDT-CALLBACK-1".to_string()),
+            ("signature".to_string(), "deadbeef".to_string()),
+        ]);
+
+        // Laravel returns the body 'cannot pass verification' (HTTP 200) rather
+        // than erroring, so a mismatched signature must not mark the order paid.
+        assert_eq!(
+            unwrap_ignored(bepusdt_notify(&payment, &params).unwrap()),
+            "cannot pass verification"
+        );
+    }
+
+    // --- Alipay F2F (RSA2): verify the real OpenSSL sign/verify round-trip and
+    //     that a tampered payload fails verification. ---
+
+    #[test]
+    fn alipay_f2f_notify_verifies_rsa_signed_callback() {
+        let (private_pem, public_pem) = alipay_test_keypair();
+        let payment = fixture_payment("AlipayF2F", json!({ "public_key": public_pem }));
+        let signed = BTreeMap::from([
+            ("out_trade_no".to_string(), "T202607060020".to_string()),
+            ("trade_no".to_string(), "ALIPAY-CALLBACK-1".to_string()),
+            ("trade_status".to_string(), "TRADE_SUCCESS".to_string()),
+            ("total_amount".to_string(), "12.34".to_string()),
+        ]);
+        let sign = alipay_sign(&private_pem, &canonical_query(&signed)).unwrap();
+        let mut params = signed.into_iter().collect::<HashMap<_, _>>();
+        params.insert("sign".to_string(), sign);
+        params.insert("sign_type".to_string(), "RSA2".to_string());
+
+        let verified = unwrap_verified(alipay_f2f_notify(&payment, &params).unwrap());
+
+        assert_eq!(verified.trade_no, "T202607060020");
+        assert_eq!(verified.callback_no, "ALIPAY-CALLBACK-1");
+    }
+
+    #[test]
+    fn alipay_f2f_notify_rejects_tampered_payload() {
+        let (private_pem, public_pem) = alipay_test_keypair();
+        let payment = fixture_payment("AlipayF2F", json!({ "public_key": public_pem }));
+        let signed = BTreeMap::from([
+            ("out_trade_no".to_string(), "T202607060020".to_string()),
+            ("trade_no".to_string(), "ALIPAY-CALLBACK-1".to_string()),
+            ("trade_status".to_string(), "TRADE_SUCCESS".to_string()),
+            ("total_amount".to_string(), "12.34".to_string()),
+        ]);
+        let sign = alipay_sign(&private_pem, &canonical_query(&signed)).unwrap();
+        let mut params = signed.into_iter().collect::<HashMap<_, _>>();
+        params.insert("sign".to_string(), sign);
+        params.insert("sign_type".to_string(), "RSA2".to_string());
+        // Attacker rewrites the amount after Alipay signed the notification.
+        params.insert("total_amount".to_string(), "9999.00".to_string());
+
+        assert!(alipay_f2f_notify(&payment, &params).is_err());
+    }
+
+    #[test]
+    fn alipay_f2f_notify_ignores_non_success_trade_status() {
+        // The TRADE_SUCCESS gate runs before signature verification, matching
+        // Laravel, so a WAIT_BUYER_PAY callback is ignored without a key.
+        let payment = fixture_payment("AlipayF2F", json!({ "public_key": "unused" }));
+        let params = HashMap::from([
+            ("out_trade_no".to_string(), "T202607060020".to_string()),
+            ("trade_status".to_string(), "WAIT_BUYER_PAY".to_string()),
+        ]);
+
+        assert_eq!(
+            unwrap_ignored(alipay_f2f_notify(&payment, &params).unwrap()),
+            "success"
+        );
+    }
+
+    // --- WeChat Pay Native (MD5 over sorted key=value pairs). ---
+
+    #[test]
+    fn wechat_pay_native_notify_verifies_signed_callback() {
+        let payment = fixture_payment("WechatPayNative", json!({ "api_key": "wechat-secret" }));
+        let signed = BTreeMap::from([
+            ("return_code".to_string(), "SUCCESS".to_string()),
+            ("result_code".to_string(), "SUCCESS".to_string()),
+            ("out_trade_no".to_string(), "T202607060030".to_string()),
+            ("transaction_id".to_string(), "WX-CALLBACK-1".to_string()),
+        ]);
+        let sign = wechat_sign(&signed, "wechat-secret");
+        let mut params = signed.into_iter().collect::<HashMap<_, _>>();
+        params.insert("sign".to_string(), sign);
+        let input = PaymentNotifyInput {
+            params,
+            body: Vec::new(),
+            headers: HashMap::new(),
+        };
+
+        let verified = unwrap_verified(wechat_pay_native_notify(&payment, &input).unwrap());
+
+        assert_eq!(verified.trade_no, "T202607060030");
+        assert_eq!(verified.callback_no, "WX-CALLBACK-1");
+    }
+
+    #[test]
+    fn wechat_pay_native_notify_rejects_tampered_payload() {
+        let payment = fixture_payment("WechatPayNative", json!({ "api_key": "wechat-secret" }));
+        let signed = BTreeMap::from([
+            ("return_code".to_string(), "SUCCESS".to_string()),
+            ("result_code".to_string(), "SUCCESS".to_string()),
+            ("out_trade_no".to_string(), "T202607060030".to_string()),
+            ("transaction_id".to_string(), "WX-CALLBACK-1".to_string()),
+        ]);
+        let sign = wechat_sign(&signed, "wechat-secret");
+        let mut params = signed.into_iter().collect::<HashMap<_, _>>();
+        params.insert("sign".to_string(), sign);
+        params.insert("out_trade_no".to_string(), "T-INJECTED".to_string());
+        let input = PaymentNotifyInput {
+            params,
+            body: Vec::new(),
+            headers: HashMap::new(),
+        };
+
+        assert!(wechat_pay_native_notify(&payment, &input).is_err());
+    }
+
+    // --- CoinPayments (HMAC-SHA512 over the form-encoded body, header 'hmac'). ---
+
+    #[test]
+    fn coinpayments_notify_verifies_signed_ipn() {
+        let payment = fixture_payment(
+            "CoinPayments",
+            json!({
+                "coinpayments_merchant_id": "MID",
+                "coinpayments_ipn_secret": "ipn-secret",
+            }),
+        );
+        let signed = BTreeMap::from([
+            ("merchant".to_string(), "MID".to_string()),
+            ("status".to_string(), "100".to_string()),
+            ("item_number".to_string(), "T202607060040".to_string()),
+            ("txn_id".to_string(), "CP-CALLBACK-1".to_string()),
+        ]);
+        let hmac = hmac_sha512_hex(b"ipn-secret", form_query(&signed).unwrap().as_bytes()).unwrap();
+        let input = PaymentNotifyInput {
+            params: signed.into_iter().collect(),
+            body: Vec::new(),
+            headers: HashMap::from([("hmac".to_string(), hmac)]),
+        };
+
+        let verified = unwrap_verified(coinpayments_notify(&payment, &input).unwrap());
+
+        assert_eq!(verified.trade_no, "T202607060040");
+        assert_eq!(verified.callback_no, "CP-CALLBACK-1");
+        assert_eq!(verified.custom_result.as_deref(), Some("IPN OK"));
+    }
+
+    #[test]
+    fn coinpayments_notify_rejects_tampered_hmac() {
+        let payment = fixture_payment(
+            "CoinPayments",
+            json!({
+                "coinpayments_merchant_id": "MID",
+                "coinpayments_ipn_secret": "ipn-secret",
+            }),
+        );
+        let input = PaymentNotifyInput {
+            params: HashMap::from([
+                ("merchant".to_string(), "MID".to_string()),
+                ("status".to_string(), "100".to_string()),
+                ("item_number".to_string(), "T202607060040".to_string()),
+                ("txn_id".to_string(), "CP-CALLBACK-1".to_string()),
+            ]),
+            body: Vec::new(),
+            headers: HashMap::from([("hmac".to_string(), "deadbeef".to_string())]),
+        };
+
+        assert!(coinpayments_notify(&payment, &input).is_err());
+    }
+
+    #[test]
+    fn coinpayments_notify_rejects_wrong_merchant() {
+        let payment = fixture_payment(
+            "CoinPayments",
+            json!({
+                "coinpayments_merchant_id": "MID",
+                "coinpayments_ipn_secret": "ipn-secret",
+            }),
+        );
+        let input = PaymentNotifyInput {
+            params: HashMap::from([("merchant".to_string(), "OTHER".to_string())]),
+            body: Vec::new(),
+            headers: HashMap::new(),
+        };
+
+        assert!(coinpayments_notify(&payment, &input).is_err());
+    }
+
+    // --- Coinbase Commerce (HMAC-SHA256 over the raw body, header
+    //     'x-cc-webhook-signature'). ---
+
+    #[test]
+    fn coinbase_notify_verifies_signed_webhook() {
+        let payment = fixture_payment("Coinbase", json!({ "coinbase_webhook_key": "cb-secret" }));
+        let body = json!({
+            "event": {
+                "id": "CB-EVENT-1",
+                "data": { "metadata": { "outTradeNo": "T202607060050" } }
+            }
+        })
+        .to_string()
+        .into_bytes();
+        let signature = hmac_sha256_hex(b"cb-secret", &body).unwrap();
+        let input = PaymentNotifyInput {
+            params: HashMap::new(),
+            body,
+            headers: HashMap::from([("x-cc-webhook-signature".to_string(), signature)]),
+        };
+
+        let verified = unwrap_verified(coinbase_notify(&payment, &input).unwrap());
+
+        assert_eq!(verified.trade_no, "T202607060050");
+        assert_eq!(verified.callback_no, "CB-EVENT-1");
+    }
+
+    #[test]
+    fn coinbase_notify_rejects_tampered_signature() {
+        let payment = fixture_payment("Coinbase", json!({ "coinbase_webhook_key": "cb-secret" }));
+        let body = json!({
+            "event": { "id": "CB-EVENT-1", "data": { "metadata": { "outTradeNo": "T1" } } }
+        })
+        .to_string()
+        .into_bytes();
+        let input = PaymentNotifyInput {
+            params: HashMap::new(),
+            body,
+            headers: HashMap::from([(
+                "x-cc-webhook-signature".to_string(),
+                "deadbeef".to_string(),
+            )]),
+        };
+
+        assert!(coinbase_notify(&payment, &input).is_err());
+    }
+
+    // --- Stripe (all-cards / payment_intents) webhook HMAC. ---
+
+    #[test]
+    fn stripe_all_notify_verifies_payment_intent_succeeded() {
+        let payment = fixture_payment("StripeALL", json!({ "stripe_webhook_key": "whsec_test" }));
+        let body = json!({
+            "type": "payment_intent.succeeded",
+            "data": {
+                "object": {
+                    "status": "succeeded",
+                    "id": "pi_callback_1",
+                    "metadata": { "out_trade_no": "T202607060060" }
+                }
+            }
+        })
+        .to_string()
+        .into_bytes();
+        let timestamp = Utc::now().timestamp().to_string();
+        let signature = stripe_test_signature(&timestamp, &body);
+        let input = PaymentNotifyInput {
+            params: HashMap::new(),
+            body,
+            headers: HashMap::from([(
+                "stripe-signature".to_string(),
+                format!("t={timestamp},v1={signature}"),
+            )]),
+        };
+
+        let verified = unwrap_verified(stripe_all_notify(&payment, &input).unwrap());
+
+        assert_eq!(verified.trade_no, "T202607060060");
+        assert_eq!(verified.callback_no, "pi_callback_1");
+    }
+
+    #[test]
+    fn stripe_all_notify_rejects_tampered_signature() {
+        let payment = fixture_payment("StripeALL", json!({ "stripe_webhook_key": "whsec_test" }));
+        let body = json!({
+            "type": "payment_intent.succeeded",
+            "data": { "object": { "status": "succeeded", "id": "pi_1", "metadata": { "out_trade_no": "T1" } } }
+        })
+        .to_string()
+        .into_bytes();
+        let timestamp = Utc::now().timestamp().to_string();
+        let input = PaymentNotifyInput {
+            params: HashMap::new(),
+            body,
+            headers: HashMap::from([(
+                "stripe-signature".to_string(),
+                format!("t={timestamp},v1=deadbeef"),
+            )]),
+        };
+
+        assert!(stripe_all_notify(&payment, &input).is_err());
+    }
+
+    // --- Stripe source webhook (charge.succeeded path is signature-checked but
+    //     needs no network). ---
+
+    #[tokio::test]
+    async fn stripe_source_notify_verifies_charge_succeeded() {
+        let payment = fixture_payment(
+            "StripeAlipay",
+            json!({ "stripe_webhook_key": "whsec_test" }),
+        );
+        let body = json!({
+            "type": "charge.succeeded",
+            "data": {
+                "object": {
+                    "status": "succeeded",
+                    "id": "ch_callback_1",
+                    "metadata": { "out_trade_no": "T202607060070" }
+                }
+            }
+        })
+        .to_string()
+        .into_bytes();
+        let timestamp = Utc::now().timestamp().to_string();
+        let signature = stripe_test_signature(&timestamp, &body);
+        let input = PaymentNotifyInput {
+            params: HashMap::new(),
+            body,
+            headers: HashMap::from([(
+                "stripe-signature".to_string(),
+                format!("t={timestamp},v1={signature}"),
+            )]),
+        };
+
+        let verified = unwrap_verified(stripe_source_notify(&payment, &input).await.unwrap());
+
+        assert_eq!(verified.trade_no, "T202607060070");
+        assert_eq!(verified.callback_no, "ch_callback_1");
+    }
+
+    #[tokio::test]
+    async fn stripe_source_notify_rejects_tampered_signature() {
+        let payment = fixture_payment(
+            "StripeAlipay",
+            json!({ "stripe_webhook_key": "whsec_test" }),
+        );
+        let body = json!({
+            "type": "charge.succeeded",
+            "data": { "object": { "status": "succeeded", "id": "ch_1", "metadata": { "out_trade_no": "T1" } } }
+        })
+        .to_string()
+        .into_bytes();
+        let timestamp = Utc::now().timestamp().to_string();
+        let input = PaymentNotifyInput {
+            params: HashMap::new(),
+            body,
+            headers: HashMap::from([(
+                "stripe-signature".to_string(),
+                format!("t={timestamp},v1=deadbeef"),
+            )]),
+        };
+
+        assert!(stripe_source_notify(&payment, &input).await.is_err());
+    }
+
+    // --- BTCPay (HMAC-SHA256 with a 'sha256=' prefix, header 'btcpay-sig'). The
+    //     happy path fetches the invoice over HTTP, so only the pre-network
+    //     signature rejection is unit-testable. ---
+
+    #[tokio::test]
+    async fn btcpay_notify_rejects_tampered_signature() {
+        let payment = fixture_payment(
+            "BTCPay",
+            json!({
+                "btcpay_webhook_key": "bp-secret",
+                "btcpay_url": "https://btcpay.example/",
+                "btcpay_storeId": "store1",
+                "btcpay_api_key": "apikey",
+            }),
+        );
+        let body = json!({ "invoiceId": "INV-1", "metadata": { "orderId": "T1" } })
+            .to_string()
+            .into_bytes();
+        let input = PaymentNotifyInput {
+            params: HashMap::new(),
+            body,
+            headers: HashMap::from([("btcpay-sig".to_string(), "sha256=deadbeef".to_string())]),
+        };
+
+        assert!(btcpay_notify(&payment, &input).await.is_err());
+    }
 }
