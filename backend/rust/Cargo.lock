@@ -47,17 +47,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "apalis-codec"
-version = "0.1.0-rc.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c506e7f00c7c9c38eeb02290b3ec6328695f0614a257faefaeb8e8286746a665"
-dependencies = [
- "apalis-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "apalis-core"
 version = "1.0.0-rc.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -88,36 +77,6 @@ dependencies = [
  "futures-util",
  "serde",
  "ulid",
-]
-
-[[package]]
-name = "apalis-redis"
-version = "1.0.0-rc.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10742f1eee3a77f221537f81304a881a695f853c015e61fe301bfd3da27756c8"
-dependencies = [
- "apalis-codec",
- "apalis-core",
- "chrono",
- "event-listener",
- "futures",
- "log",
- "redis",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tower",
- "ulid",
-]
-
-[[package]]
-name = "arc-swap"
-version = "1.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c049c0be4daef0b145cb3555416b3b8ef5b7888a38aea1a3a155801fe7b0810b"
-dependencies = [
- "rustversion",
 ]
 
 [[package]]
@@ -266,15 +225,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "backon"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cffb0e931875b666fc4fcb20fee52e9bbd1ef836fd9e9e04ec21555f9f85f7ef"
-dependencies = [
- "fastrand",
 ]
 
 [[package]]
@@ -895,21 +845,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
-name = "futures"
-version = "0.3.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b147ee9d1f6d097cef9ce628cd2ee62288d963e16fb287bd9286455b241382d"
-dependencies = [
- "futures-channel",
- "futures-core",
- "futures-executor",
- "futures-io",
- "futures-sink",
- "futures-task",
- "futures-util",
-]
-
-[[package]]
 name = "futures-channel"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -988,7 +923,6 @@ version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "389ca41296e6190b48053de0321d02a77f32f8a5d2461dd38762c0593805c6d6"
 dependencies = [
- "futures-channel",
  "futures-core",
  "futures-io",
  "futures-macro",
@@ -2168,14 +2102,11 @@ version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fa6f8e4b491d7a8ef3a9550a4d71969bd0064f46e32b8dbbcc7fc60dad94fed"
 dependencies = [
- "arc-swap",
  "arcstr",
  "async-lock",
- "backon",
  "bytes",
  "cfg-if",
  "combine",
- "futures-channel",
  "futures-util",
  "itoa",
  "num-bigint",
@@ -3239,7 +3170,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "470dbf6591da1b39d43c14523b2b469c86879a53e8b758c8e090a470fe7b1fbe"
 dependencies = [
  "rand 0.9.4",
- "serde",
  "web-time",
 ]
 
@@ -3411,15 +3341,10 @@ dependencies = [
  "anyhow",
  "apalis",
  "apalis-cron",
- "apalis-redis",
  "chrono",
  "cron",
  "lettre",
  "redis",
- "reqwest",
- "serde",
- "serde_json",
- "serde_urlencoded",
  "sqlx",
  "tokio",
  "tracing",

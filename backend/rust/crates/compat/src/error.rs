@@ -1,10 +1,23 @@
+use std::collections::HashMap;
+
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
+
+/// Laravel's exception handler returns this translated string for any non-HTTP
+/// (internal) exception (app/Exceptions/Handler.php:74). i18n of the Rust side is a
+/// follow-up; for now match the English source text so bodies line up.
+const GENERIC_ERROR_MESSAGE: &str = "Uh-oh, we've had some problems, we're working on it.";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
     #[error("{message}")]
     Http { status: StatusCode, message: String },
+    /// Laravel validation failure body: HTTP 422 with `{message, errors:{field:[...]}}`.
+    #[error("{message}")]
+    Validation {
+        message: String,
+        errors: HashMap<String, Vec<String>>,
+    },
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
     #[error("redis error: {0}")]
@@ -18,6 +31,12 @@ pub enum ApiError {
 #[derive(Serialize)]
 struct ErrorBody<'a> {
     message: &'a str,
+}
+
+#[derive(Serialize)]
+struct ValidationBody {
+    message: String,
+    errors: HashMap<String, Vec<String>>,
 }
 
 impl ApiError {
@@ -49,13 +68,30 @@ impl ApiError {
         }
     }
 
+    /// Laravel `abort(429, ...)` (e.g. the sendEmailVerify per-IP rate limiter).
+    pub fn too_many_requests(message: impl Into<String>) -> Self {
+        Self::Http {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            message: message.into(),
+        }
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal(message.into())
+    }
+
+    /// Laravel 422 validation error: `{message, errors:{field:[...]}}`.
+    pub fn validation(message: impl Into<String>, errors: HashMap<String, Vec<String>>) -> Self {
+        Self::Validation {
+            message: message.into(),
+            errors,
+        }
     }
 
     fn status(&self) -> StatusCode {
         match self {
             Self::Http { status, .. } => *status,
+            Self::Validation { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Database(_) | Self::Redis(_) | Self::Jwt(_) | Self::Internal(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -64,9 +100,9 @@ impl ApiError {
 
     fn public_message(&self) -> String {
         match self {
-            Self::Http { message, .. } => message.clone(),
+            Self::Http { message, .. } | Self::Validation { message, .. } => message.clone(),
             Self::Database(_) | Self::Redis(_) | Self::Jwt(_) | Self::Internal(_) => {
-                "Request failed, please try again later".to_string()
+                GENERIC_ERROR_MESSAGE.to_string()
             }
         }
     }
@@ -75,11 +111,18 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         match &self {
-            Self::Http { .. } => {}
+            Self::Http { .. } | Self::Validation { .. } => {}
             error => tracing::error!(?error, "internal api error"),
         }
         let status = self.status();
-        let message = self.public_message();
-        (status, Json(ErrorBody { message: &message })).into_response()
+        match self {
+            Self::Validation { message, errors } => {
+                (status, Json(ValidationBody { message, errors })).into_response()
+            }
+            other => {
+                let message = other.public_message();
+                (status, Json(ErrorBody { message: &message })).into_response()
+            }
+        }
     }
 }

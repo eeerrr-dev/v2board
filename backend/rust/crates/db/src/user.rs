@@ -76,6 +76,7 @@ pub struct UserAccessRow {
     pub token: String,
     pub uuid: String,
     pub group_id: Option<i32>,
+    pub plan_id: Option<i32>,
     pub banned: i8,
     pub u: i64,
     pub d: i64,
@@ -196,7 +197,7 @@ pub async fn find_user_access(
 ) -> Result<Option<UserAccessRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAccessRow>(
         r#"
-        SELECT id, token, uuid, group_id, banned, u, d, transfer_enable, expired_at, commission_balance
+        SELECT id, token, uuid, group_id, plan_id, banned, u, d, transfer_enable, expired_at, commission_balance
         FROM v2_user
         WHERE id = ?
         LIMIT 1
@@ -213,7 +214,7 @@ pub async fn find_user_access_by_token(
 ) -> Result<Option<UserAccessRow>, sqlx::Error> {
     sqlx::query_as::<_, UserAccessRow>(
         r#"
-        SELECT id, token, uuid, group_id, banned, u, d, transfer_enable, expired_at, commission_balance
+        SELECT id, token, uuid, group_id, plan_id, banned, u, d, transfer_enable, expired_at, commission_balance
         FROM v2_user
         WHERE token = ?
         LIMIT 1

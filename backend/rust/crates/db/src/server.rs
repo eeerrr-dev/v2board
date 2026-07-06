@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::Serialize;
 use sqlx::{FromRow, MySqlPool};
 
@@ -45,6 +47,21 @@ pub async fn fetch_available_servers(
     let rows = sqlx::query_as::<_, RawServerRow>(AVAILABLE_SERVERS_SQL)
         .fetch_all(pool)
         .await?;
+
+    // ServerService::getAvailableShadowsocks (ServerService.php:157-160) copies the PARENT
+    // node's created_at onto a child (relay) node so the 2022-blake3 server-key derivation
+    // matches the parent. Only shadowsocks carries created_at in `extra`, so build a
+    // parent-lookup keyed by id over the full (pre group-filter) shadowsocks node set,
+    // mirroring the `keyBy('id')` collection Laravel indexes before filtering by group.
+    let created_at_by_id: HashMap<i32, serde_json::Value> = rows
+        .iter()
+        .filter(|row| row.r#type == "shadowsocks")
+        .filter_map(|row| {
+            let extra = serde_json::from_str::<serde_json::Value>(&row.extra).ok()?;
+            Some((row.id, extra.get("created_at")?.clone()))
+        })
+        .collect();
+
     let mut servers = Vec::new();
     for row in rows {
         let group_id = parse_i32_list(&row.group_id);
@@ -62,6 +79,8 @@ pub async fn fetch_available_servers(
             .parse::<i64>()
             .map(serde_json::Value::from)
             .unwrap_or_else(|_| serde_json::Value::String(row.port));
+        let mut extra = serde_json::from_str(&row.extra).unwrap_or(serde_json::Value::Null);
+        apply_parent_created_at(&row.r#type, row.parent_id, &mut extra, &created_at_by_id);
         servers.push(AvailableServerRow {
             id: row.id,
             parent_id: row.parent_id,
@@ -77,11 +96,33 @@ pub async fn fetch_available_servers(
             is_online,
             tags: row.tags.as_deref().and_then(parse_string_list_optional),
             sort: row.sort,
-            extra: serde_json::from_str(&row.extra).unwrap_or(serde_json::Value::Null),
+            extra,
         });
     }
     servers.sort_by_key(|server| server.sort.unwrap_or_default());
     Ok(servers)
+}
+
+/// Copy the parent shadowsocks node's `created_at` onto a child (relay) node so the
+/// 2022-blake3 server-key matches the parent (ServerService.php:157-160).
+fn apply_parent_created_at(
+    node_type: &str,
+    parent_id: Option<i32>,
+    extra: &mut serde_json::Value,
+    created_at_by_id: &HashMap<i32, serde_json::Value>,
+) {
+    if node_type != "shadowsocks" {
+        return;
+    }
+    let Some(parent_id) = parent_id else {
+        return;
+    };
+    let Some(parent_created_at) = created_at_by_id.get(&parent_id) else {
+        return;
+    };
+    if let Some(object) = extra.as_object_mut() {
+        object.insert("created_at".to_string(), parent_created_at.clone());
+    }
 }
 
 fn parse_i32_list(value: &str) -> Vec<i32> {
@@ -184,3 +225,43 @@ SELECT
 FROM v2_server_v2node
 WHERE `show` = 1
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn child_shadowsocks_inherits_parent_created_at() {
+        let created_at_by_id: HashMap<i32, serde_json::Value> =
+            HashMap::from([(1, json!(1_600_000_000_i64))]);
+        // Child relay (parent_id = 1) with its own, different created_at.
+        let mut extra =
+            json!({ "cipher": "2022-blake3-aes-128-gcm", "created_at": 1_700_000_000_i64 });
+        apply_parent_created_at("shadowsocks", Some(1), &mut extra, &created_at_by_id);
+        assert_eq!(extra["created_at"], json!(1_600_000_000_i64));
+    }
+
+    #[test]
+    fn root_shadowsocks_keeps_its_own_created_at() {
+        let created_at_by_id: HashMap<i32, serde_json::Value> =
+            HashMap::from([(1, json!(1_600_000_000_i64))]);
+        let mut extra = json!({ "created_at": 1_700_000_000_i64 });
+        // No parent -> untouched.
+        apply_parent_created_at("shadowsocks", None, &mut extra, &created_at_by_id);
+        assert_eq!(extra["created_at"], json!(1_700_000_000_i64));
+        // Unknown parent -> untouched.
+        apply_parent_created_at("shadowsocks", Some(99), &mut extra, &created_at_by_id);
+        assert_eq!(extra["created_at"], json!(1_700_000_000_i64));
+    }
+
+    #[test]
+    fn non_shadowsocks_created_at_is_not_rewritten() {
+        let created_at_by_id: HashMap<i32, serde_json::Value> =
+            HashMap::from([(1, json!(1_600_000_000_i64))]);
+        // hysteria never carries created_at in extra and must not be touched.
+        let mut extra = json!({ "server_name": "example.com" });
+        apply_parent_created_at("hysteria", Some(1), &mut extra, &created_at_by_id);
+        assert_eq!(extra.get("created_at"), None);
+    }
+}

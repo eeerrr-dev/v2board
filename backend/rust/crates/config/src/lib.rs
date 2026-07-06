@@ -86,6 +86,9 @@ pub struct AppConfig {
     pub server_node_report_min_traffic: i32,
     pub server_device_online_min_traffic: i32,
     pub device_limit_mode: i32,
+    pub server_log_enable: bool,
+    pub server_v2ray_domain: Option<String>,
+    pub server_v2ray_protocol: Option<String>,
     pub frontend_theme: String,
     pub frontend_theme_sidebar: Option<String>,
     pub frontend_theme_header: Option<String>,
@@ -410,6 +413,22 @@ impl AppConfig {
                 "V2BOARD_DEVICE_LIMIT_MODE",
                 0,
             ),
+            server_log_enable: config_bool(
+                &file_config,
+                "server_log_enable",
+                "V2BOARD_SERVER_LOG_ENABLE",
+                false,
+            ),
+            server_v2ray_domain: config_or_env(
+                &file_config,
+                "server_v2ray_domain",
+                "V2BOARD_SERVER_V2RAY_DOMAIN",
+            ),
+            server_v2ray_protocol: config_or_env(
+                &file_config,
+                "server_v2ray_protocol",
+                "V2BOARD_SERVER_V2RAY_PROTOCOL",
+            ),
             frontend_theme: config_or_env(&file_config, "frontend_theme", "V2BOARD_FRONTEND_THEME")
                 .unwrap_or_else(|| "v2board".to_string()),
             frontend_theme_sidebar: config_or_env(
@@ -518,6 +537,12 @@ impl AppConfig {
         }
 
         path_with_token
+    }
+
+    /// Laravel `OrderService::getbounus` / `OrderController::getbounus`: the deposit reward for a
+    /// cents amount. Tiers are `"amount:bonus"` yuan strings; the best-matching tier wins.
+    pub fn deposit_bonus(&self, total_amount: i32) -> i32 {
+        deposit_bonus_from_tiers(&self.deposit_bounus, total_amount)
     }
 
     pub fn admin_path(&self) -> String {
@@ -776,9 +801,36 @@ fn parse_list(value: &str) -> Vec<String> {
         .collect()
 }
 
+/// `"amount:bonus"` yuan tiers → the best reward (in cents) whose threshold `total_amount`
+/// (cents) has reached. Matches Laravel's `(int)((float)$x * 100)` truncation.
+fn deposit_bonus_from_tiers(tiers: &[String], total_amount: i32) -> i32 {
+    let mut bonus = 0;
+    for tier in tiers {
+        let Some((amount, value)) = tier.split_once(':') else {
+            continue;
+        };
+        let amount = amount.parse::<f64>().unwrap_or_default() * 100.0;
+        let value = value.parse::<f64>().unwrap_or_default() * 100.0;
+        if total_amount >= amount as i32 {
+            bonus = bonus.max(value as i32);
+        }
+    }
+    bonus
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deposit_bonus_picks_the_best_reached_tier() {
+        let tiers = vec!["10:1".to_string(), "50:8".to_string(), "100:20".to_string()];
+        assert_eq!(deposit_bonus_from_tiers(&tiers, 999), 0);
+        assert_eq!(deposit_bonus_from_tiers(&tiers, 1000), 100);
+        assert_eq!(deposit_bonus_from_tiers(&tiers, 5000), 800);
+        assert_eq!(deposit_bonus_from_tiers(&tiers, 20000), 2000);
+        assert_eq!(deposit_bonus_from_tiers(&[], 20000), 0);
+    }
 
     #[test]
     fn admin_path_fallback_matches_php_crc32b() {

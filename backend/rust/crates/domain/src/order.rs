@@ -717,6 +717,11 @@ impl OrderService {
         .ok_or_else(|| ApiError::legacy("Invalid coupon"))?;
         validate_coupon(tx, &coupon, draft).await?;
 
+        // Mirror Laravel CouponService::use: set discount_amount (capped at the
+        // order total) but do NOT reduce total_amount here. The single
+        // total_amount -= discount_amount subtraction happens in
+        // apply_vip_discount so the VIP percentage is computed on the original
+        // (pre-coupon) total, matching OrderService::setVipDiscount.
         let discount = match coupon.r#type {
             1 => coupon.value,
             2 => percent_amount(draft.total_amount, coupon.value),
@@ -724,7 +729,6 @@ impl OrderService {
         }
         .min(draft.total_amount);
         draft.discount_amount = Some(discount);
-        draft.total_amount -= discount;
         draft.coupon_id = Some(coupon.id);
 
         if let Some(limit_use) = coupon.limit_use {
@@ -974,7 +978,7 @@ impl OrderService {
         order: OrderForCheckout,
     ) -> Result<(), ApiError> {
         if order.r#type == 9 {
-            let bonus = deposit_bonus(&self.config.deposit_bounus, order.total_amount);
+            let bonus = self.config.deposit_bonus(order.total_amount);
             sqlx::query(
                 r#"
                 UPDATE v2_user
@@ -2653,9 +2657,21 @@ fn stripe_event(
     if !verified {
         return Err(ApiError::legacy("HMAC signature does not match"));
     }
+    // Enforce Stripe's default 300s replay tolerance (matching
+    // \Stripe\Webhook::constructEvent). Without this a validly-signed event can
+    // be replayed indefinitely.
+    let signed_at = timestamp
+        .parse::<i64>()
+        .map_err(|_| ApiError::legacy("HMAC signature does not match"))?;
+    if Utc::now().timestamp() - signed_at > STRIPE_WEBHOOK_TOLERANCE_SECS {
+        return Err(ApiError::legacy("HMAC signature does not match"));
+    }
     serde_json::from_slice::<Value>(&input.body)
         .map_err(|_| ApiError::legacy("Payment notify body is invalid"))
 }
+
+/// Stripe's default webhook timestamp tolerance, in seconds.
+const STRIPE_WEBHOOK_TOLERANCE_SECS: i64 = 300;
 
 fn add_metadata_params(
     params: &mut BTreeMap<String, String>,
@@ -2987,12 +3003,19 @@ fn payment_gateway_message(value: &serde_json::Value, default: &str) -> String {
 }
 
 fn apply_vip_discount(discount: Option<i32>, draft: &mut DraftOrder) {
-    let Some(discount) = discount.filter(|discount| *discount > 0) else {
-        return;
-    };
-    let value = percent_amount(draft.total_amount, discount).min(draft.total_amount);
-    draft.discount_amount = Some(draft.discount_amount.unwrap_or_default() + value);
-    draft.total_amount -= value;
+    // Port of OrderService::setVipDiscount. The VIP percentage is applied to the
+    // still-original total_amount (the coupon step only recorded discount_amount
+    // without reducing the total), then the accumulated coupon+VIP
+    // discount_amount is subtracted from the total exactly once. When neither a
+    // coupon nor a VIP discount applies, discount_amount stays None and the
+    // total is left untouched, matching Laravel's null discount_amount.
+    if let Some(discount) = discount.filter(|discount| *discount > 0) {
+        let value = percent_amount(draft.total_amount, discount);
+        draft.discount_amount = Some(draft.discount_amount.unwrap_or_default() + value);
+    }
+    if let Some(discount_amount) = draft.discount_amount {
+        draft.total_amount -= discount_amount;
+    }
 }
 
 fn calculate_handling_amount(
@@ -3034,16 +3057,20 @@ fn buy_by_one_time(
     plan: &PlanRow,
     has_surplus_orders: bool,
 ) {
-    let mut transfer_enable = plan.transfer_enable;
+    // Work in bytes so fractional leftover GiB is preserved. Laravel computes
+    // (plan_gib + leftover_bytes/GiB) * GiB, which is algebraically
+    // plan_bytes + leftover_bytes; the earlier integer division here truncated
+    // the fractional GiB (OrderService::buyByOneTime, :331-337).
+    let mut transfer_enable = plan.transfer_enable * GIB;
     if !has_surplus_orders {
-        let not_used_traffic = (user.transfer_enable - (user.u + user.d)) / GIB;
+        let not_used_traffic = user.transfer_enable - (user.u + user.d);
         if not_used_traffic > 0 && user.expired_at.is_none() {
             transfer_enable += not_used_traffic;
         }
     }
     let _ = order;
     reset_traffic(user);
-    user.transfer_enable = transfer_enable * GIB;
+    user.transfer_enable = transfer_enable;
     user.device_limit = plan.device_limit;
     user.plan_id = Some(plan.id);
     user.group_id = Some(plan.group_id);
@@ -3133,21 +3160,6 @@ fn is_same_local_month_day(left: i64, right: i64) -> bool {
 
 fn percent_amount(amount: i32, percent: i32) -> i32 {
     ((amount as f64) * (percent as f64 / 100.0)).round() as i32
-}
-
-fn deposit_bonus(tiers: &[String], total_amount: i32) -> i32 {
-    let mut bonus = 0;
-    for tier in tiers {
-        let Some((amount, value)) = tier.split_once(':') else {
-            continue;
-        };
-        let amount = amount.parse::<f64>().unwrap_or_default() * 100.0;
-        let value = value.parse::<f64>().unwrap_or_default() * 100.0;
-        if total_amount >= amount as i32 {
-            bonus = bonus.max(value as i32);
-        }
-    }
-    bonus
 }
 
 fn generate_order_no() -> String {
@@ -3361,18 +3373,10 @@ mod tests {
         })
         .to_string()
         .into_bytes();
-        let timestamp = "1783311600";
-        let signature = hmac_sha256_hex(
-            b"whsec_test",
-            format!("{timestamp}.")
-                .as_bytes()
-                .iter()
-                .copied()
-                .chain(body.iter().copied())
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .unwrap();
+        // Use a fresh timestamp so the webhook falls inside Stripe's 300s
+        // replay tolerance regardless of when the suite runs.
+        let timestamp = Utc::now().timestamp().to_string();
+        let signature = stripe_test_signature(&timestamp, &body);
         let input = PaymentNotifyInput {
             params: HashMap::new(),
             body,
@@ -3386,5 +3390,47 @@ mod tests {
 
         assert_eq!(verified.trade_no, "T202607060004");
         assert_eq!(verified.callback_no, "pi_callback_1");
+    }
+
+    #[test]
+    fn stripe_checkout_notify_rejects_replayed_stale_webhook() {
+        let payment = fixture_payment(
+            "StripeCheckout",
+            json!({ "stripe_webhook_key": "whsec_test" }),
+        );
+        let body = json!({
+            "type": "checkout.session.completed",
+            "data": { "object": { "payment_status": "paid", "client_reference_id": "T1" } }
+        })
+        .to_string()
+        .into_bytes();
+        // A correctly-signed event whose timestamp is older than the tolerance
+        // must be rejected as a replay.
+        let stale = (Utc::now().timestamp() - STRIPE_WEBHOOK_TOLERANCE_SECS - 60).to_string();
+        let signature = stripe_test_signature(&stale, &body);
+        let input = PaymentNotifyInput {
+            params: HashMap::new(),
+            body,
+            headers: HashMap::from([(
+                "stripe-signature".to_string(),
+                format!("t={stale},v1={signature}"),
+            )]),
+        };
+
+        assert!(stripe_checkout_notify(&payment, &input).is_err());
+    }
+
+    fn stripe_test_signature(timestamp: &str, body: &[u8]) -> String {
+        hmac_sha256_hex(
+            b"whsec_test",
+            format!("{timestamp}.")
+                .as_bytes()
+                .iter()
+                .copied()
+                .chain(body.iter().copied())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .unwrap()
     }
 }

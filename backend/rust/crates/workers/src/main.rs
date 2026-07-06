@@ -1,17 +1,25 @@
-use std::{collections::HashMap, env, str::FromStr};
+//! v2board background worker.
+//!
+//! Job side-effects (traffic accounting, order settlement, commission payout,
+//! reminder mail, log/traffic resets, statistics) run **synchronously by design**
+//! in this release. There is no Horizon-style asynchronous queue: the API request
+//! path performs its own work inline, and everything the Laravel scheduler drove
+//! (`app/Console/Kernel.php`) is executed here by an in-process
+//! [`apalis_cron::CronStream`] scheduler, guarded by a distributed Redis lock and
+//! reporting per-job metrics to Redis. Because nothing enqueues Apalis Redis jobs,
+//! the vestigial Redis queue consumer has been removed rather than kept as
+//! misleading dead code.
+use std::{collections::HashMap, env, str::FromStr, time::Duration};
 
 use apalis::prelude::*;
 use apalis_cron::{CronStream, Tick};
-use chrono::{Datelike, Local, Months, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Local, Months, TimeZone, Utc};
 use cron::Schedule;
 use lettre::{
-    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::header::ContentType,
     transport::smtp::authentication::Credentials,
 };
 use redis::AsyncCommands;
-use reqwest::header;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sqlx::{FromRow, MySql, MySqlPool, QueryBuilder};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
@@ -23,37 +31,6 @@ struct WorkerState {
     config: AppConfig,
     db: MySqlPool,
     redis: redis::Client,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "job", rename_all = "snake_case")]
-enum QueueJob {
-    TrafficUpdate {
-        user_id: Option<i64>,
-    },
-    CheckOrder {
-        trade_no: Option<String>,
-    },
-    OrderHandle {
-        trade_no: String,
-    },
-    CheckCommission,
-    CheckTicket,
-    CheckRenewal,
-    ResetTraffic,
-    ResetLog,
-    SendRemindMail,
-    Statistics,
-    SendEmail {
-        email: String,
-        subject: String,
-        template_name: Option<String>,
-        template_value: Option<Value>,
-    },
-    SendTelegram {
-        telegram_id: i64,
-        text: String,
-    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -163,15 +140,10 @@ async fn main() -> anyhow::Result<()> {
         return run_command(&args, &state).await;
     }
 
-    let conn = apalis_redis::connect(state.config.redis_url.clone()).await?;
-    let storage = apalis_redis::RedisStorage::new(conn);
-    run_worker_runtime(state, storage).await
+    run_worker_runtime(state).await
 }
 
-async fn run_worker_runtime(
-    state: WorkerState,
-    storage: apalis_redis::RedisStorage<QueueJob>,
-) -> anyhow::Result<()> {
+async fn run_worker_runtime(state: WorkerState) -> anyhow::Result<()> {
     let traffic_update_schedule = Schedule::from_str("0 * * * * * *")?;
     let statistics_schedule = Schedule::from_str("0 10 0 * * * *")?;
     let check_order_schedule = Schedule::from_str("0 * * * * * *")?;
@@ -258,16 +230,7 @@ async fn run_worker_runtime(
 
     tracing::info!("v2board rust worker starting");
 
-    let mut monitor = Monitor::new().register({
-        let storage = storage.clone();
-        let state = state.clone();
-        move |_| {
-            WorkerBuilder::new("v2board-redis-worker")
-                .backend(storage.clone())
-                .data(state.clone())
-                .build(handle_queue_job)
-        }
-    });
+    let mut monitor = Monitor::new();
     for (worker_name, schedule, job) in scheduled_jobs {
         let state = state.clone();
         monitor = monitor.register(move |_| {
@@ -336,17 +299,6 @@ fn scheduled_task_by_name(name: &str) -> Option<ScheduledTask> {
     }
 }
 
-async fn handle_queue_job(job: QueueJob, state: Data<WorkerState>) -> Result<(), BoxDynError> {
-    let name = queue_job_name(&job);
-    if let Err(error) = run_queue_job(job, &state).await {
-        tracing::error!(job = name, ?error, "queued job failed");
-        let _ = record_worker_metric(&state, name, false).await;
-    } else if let Err(error) = record_worker_metric(&state, name, true).await {
-        tracing::warn!(job = name, ?error, "failed to record queued job metric");
-    }
-    Ok(())
-}
-
 async fn handle_cron_tick(
     tick: Tick,
     job: Data<ScheduledJob>,
@@ -401,63 +353,11 @@ async fn handle_cron_tick(
     Ok(())
 }
 
-fn queue_job_name(job: &QueueJob) -> &'static str {
-    match job {
-        QueueJob::TrafficUpdate { .. } => "traffic_update",
-        QueueJob::CheckOrder { .. } => "check_order",
-        QueueJob::OrderHandle { .. } => "order_handle",
-        QueueJob::CheckCommission => "check_commission",
-        QueueJob::CheckTicket => "check_ticket",
-        QueueJob::CheckRenewal => "check_renewal",
-        QueueJob::ResetTraffic => "reset_traffic",
-        QueueJob::ResetLog => "reset_log",
-        QueueJob::SendRemindMail => "send_remind_mail",
-        QueueJob::Statistics => "statistics",
-        QueueJob::SendEmail { .. } => "send_email",
-        QueueJob::SendTelegram { .. } => "send_telegram",
-    }
-}
-
-async fn run_queue_job(job: QueueJob, state: &WorkerState) -> anyhow::Result<()> {
-    match job {
-        QueueJob::TrafficUpdate { user_id } => traffic_update(state, user_id).await,
-        QueueJob::CheckOrder { trade_no } => check_order(state, trade_no).await,
-        QueueJob::OrderHandle { trade_no } => handle_order(state, &trade_no).await,
-        QueueJob::CheckCommission => check_commission(state).await,
-        QueueJob::CheckTicket => check_ticket(state).await,
-        QueueJob::CheckRenewal => check_renewal(state).await,
-        QueueJob::ResetTraffic => reset_traffic(state).await,
-        QueueJob::ResetLog => reset_log(state).await,
-        QueueJob::SendRemindMail => send_remind_mail(state).await,
-        QueueJob::Statistics => statistics(state).await,
-        QueueJob::SendEmail {
-            email,
-            subject,
-            template_name,
-            template_value,
-        } => {
-            send_email(
-                state,
-                &email,
-                &subject,
-                template_name
-                    .as_deref()
-                    .unwrap_or("mail.default.notification"),
-                &mail_body(&state.config, &subject, template_value.as_ref()),
-            )
-            .await
-        }
-        QueueJob::SendTelegram { telegram_id, text } => {
-            send_telegram(state, telegram_id, &text).await
-        }
-    }
-}
-
 async fn run_scheduled_job(task: ScheduledTask, state: &WorkerState) -> anyhow::Result<()> {
     match task {
-        ScheduledTask::TrafficUpdate => traffic_update(state, None).await,
+        ScheduledTask::TrafficUpdate => traffic_update(state).await,
         ScheduledTask::Statistics => statistics(state).await,
-        ScheduledTask::CheckOrder => check_order(state, None).await,
+        ScheduledTask::CheckOrder => check_order(state).await,
         ScheduledTask::CheckCommission => check_commission(state).await,
         ScheduledTask::CheckTicket => check_ticket(state).await,
         ScheduledTask::CheckRenewal => check_renewal(state).await,
@@ -531,7 +431,7 @@ async fn record_worker_metric(
     Ok(())
 }
 
-async fn traffic_update(state: &WorkerState, only_user_id: Option<i64>) -> anyhow::Result<()> {
+async fn traffic_update(state: &WorkerState) -> anyhow::Result<()> {
     let mut conn = state.redis.get_multiplexed_async_connection().await?;
     if conn.exists::<_, bool>("traffic_reset_lock").await? {
         return Ok(());
@@ -557,9 +457,6 @@ async fn traffic_update(state: &WorkerState, only_user_id: Option<i64>) -> anyho
         .collect::<Vec<_>>();
     user_ids.sort_unstable();
     user_ids.dedup();
-    if let Some(only_user_id) = only_user_id {
-        user_ids.retain(|id| *id == only_user_id);
-    }
     if user_ids.is_empty() {
         return Ok(());
     }
@@ -588,10 +485,7 @@ async fn traffic_update(state: &WorkerState, only_user_id: Option<i64>) -> anyho
     Ok(())
 }
 
-async fn check_order(state: &WorkerState, trade_no: Option<String>) -> anyhow::Result<()> {
-    if let Some(trade_no) = trade_no {
-        return handle_order(state, &trade_no).await;
-    }
+async fn check_order(state: &WorkerState) -> anyhow::Result<()> {
     let trade_nos = sqlx::query_scalar::<_, String>(
         "SELECT trade_no FROM v2_order WHERE status IN (0, 1) ORDER BY created_at ASC",
     )
@@ -660,45 +554,57 @@ async fn pay_commission_order(
 ) -> anyhow::Result<()> {
     let shares = commission_shares(&state.config);
     let mut tx = state.db.begin().await?;
-    let mut invite_user_id = Some(order.invite_user_id);
-    let mut actual_commission_balance = order.actual_commission_balance.unwrap_or_default();
-    for share in shares {
-        let Some(current_inviter_id) = invite_user_id else {
+
+    // Prefetch the invite chain (bounded by the number of share levels) so the payout
+    // walk itself is decided by the pure `plan_commission_payouts` port of payHandle.
+    // The linear chain is a superset of the inviters the walk can reach, because the
+    // pointer only advances after a real payout.
+    let mut chain: HashMap<i64, InviterRow> = HashMap::new();
+    let mut cursor = Some(order.invite_user_id);
+    for _ in 0..shares.len() {
+        let Some(id) = cursor else {
             break;
         };
-        let Some(inviter) = sqlx::query_as::<_, InviterRow>(
+        if chain.contains_key(&id) {
+            break;
+        }
+        let Some(row) = sqlx::query_as::<_, InviterRow>(
             "SELECT id, invite_user_id FROM v2_user WHERE id = ? LIMIT 1",
         )
-        .bind(current_inviter_id)
+        .bind(id)
         .fetch_optional(&mut *tx)
         .await?
         else {
-            invite_user_id = None;
-            continue;
+            break;
         };
-        if share <= 0 {
-            invite_user_id = inviter.invite_user_id;
-            continue;
-        }
-        let commission_balance = order.commission_balance * share / 100;
-        if commission_balance <= 0 {
-            invite_user_id = inviter.invite_user_id;
-            continue;
-        }
+        cursor = row.invite_user_id;
+        chain.insert(id, row);
+    }
+
+    let payouts = plan_commission_payouts(
+        &shares,
+        order.commission_balance,
+        order.invite_user_id,
+        |id| chain.get(&id).cloned(),
+    );
+
+    let mut actual_commission_balance = order.actual_commission_balance.unwrap_or_default();
+    for payout in &payouts {
+        let now = Utc::now().timestamp();
         if state.config.withdraw_close_enable {
             sqlx::query("UPDATE v2_user SET balance = balance + ?, updated_at = ? WHERE id = ?")
-                .bind(commission_balance)
-                .bind(Utc::now().timestamp())
-                .bind(inviter.id)
+                .bind(payout.amount)
+                .bind(now)
+                .bind(payout.inviter_id)
                 .execute(&mut *tx)
                 .await?;
         } else {
             sqlx::query(
                 "UPDATE v2_user SET commission_balance = commission_balance + ?, updated_at = ? WHERE id = ?",
             )
-            .bind(commission_balance)
-            .bind(Utc::now().timestamp())
-            .bind(inviter.id)
+            .bind(payout.amount)
+            .bind(now)
+            .bind(payout.inviter_id)
             .execute(&mut *tx)
             .await?;
         }
@@ -709,17 +615,16 @@ async fn pay_commission_order(
             VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
-        .bind(inviter.id)
+        .bind(payout.inviter_id)
         .bind(order.user_id)
         .bind(&order.trade_no)
         .bind(order.total_amount)
-        .bind(commission_balance)
-        .bind(Utc::now().timestamp())
-        .bind(Utc::now().timestamp())
+        .bind(payout.amount)
+        .bind(now)
+        .bind(now)
         .execute(&mut *tx)
         .await?;
-        actual_commission_balance += commission_balance;
-        invite_user_id = inviter.invite_user_id;
+        actual_commission_balance += payout.amount;
     }
     sqlx::query(
         "UPDATE v2_order SET commission_status = 2, actual_commission_balance = ?, updated_at = ? WHERE id = ?",
@@ -733,19 +638,73 @@ async fn pay_commission_order(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommissionPayout {
+    inviter_id: i64,
+    amount: i32,
+}
+
+/// Pure port of `CheckCommission::payHandle` (CheckCommission.php:95-123): walk the
+/// invite chain and, for each configured share level, pay the CURRENT inviter. A zero
+/// share (or a computed amount of zero) `continue`s WITHOUT advancing the chain pointer
+/// (CheckCommission.php:98-100), so the SAME inviter is re-evaluated at the next level;
+/// the pointer only advances after a real payout (CheckCommission.php:120).
+fn plan_commission_payouts<F>(
+    shares: &[i32],
+    commission_balance: i32,
+    first_inviter: i64,
+    mut lookup: F,
+) -> Vec<CommissionPayout>
+where
+    F: FnMut(i64) -> Option<InviterRow>,
+{
+    let mut invite_user_id = Some(first_inviter);
+    let mut payouts = Vec::new();
+    for &share in shares {
+        let Some(current) = invite_user_id else {
+            break;
+        };
+        // Laravel `if (!$inviter) continue;` (CheckCommission.php:97) leaves the pointer
+        // unchanged; a missing user never becomes found on a later level, so no further
+        // payout is possible and we can stop.
+        let Some(inviter) = lookup(current) else {
+            break;
+        };
+        if share <= 0 {
+            continue;
+        }
+        let amount = commission_balance * share / 100;
+        if amount <= 0 {
+            continue;
+        }
+        payouts.push(CommissionPayout {
+            inviter_id: inviter.id,
+            amount,
+        });
+        invite_user_id = inviter.invite_user_id;
+    }
+    payouts
+}
+
 fn commission_shares(config: &AppConfig) -> Vec<i32> {
     if !config.commission_distribution_enable {
         return vec![100];
     }
-    [
-        config.commission_distribution_l1.as_deref(),
-        config.commission_distribution_l2.as_deref(),
-        config.commission_distribution_l3.as_deref(),
+    // CheckCommission.php:85-93 builds a fixed 3-level array with `(int)` casts, so an
+    // unset/NULL/non-numeric level becomes 0 while still occupying its slot. Dropping it
+    // (as a filter would) would shift later shares onto the wrong inviter.
+    vec![
+        parse_share(config.commission_distribution_l1.as_deref()),
+        parse_share(config.commission_distribution_l2.as_deref()),
+        parse_share(config.commission_distribution_l3.as_deref()),
     ]
-    .into_iter()
-    .flatten()
-    .filter_map(|value| value.parse::<i32>().ok())
-    .collect()
+}
+
+fn parse_share(value: Option<&str>) -> i32 {
+    value
+        .map(str::trim)
+        .and_then(|value| value.parse::<i32>().ok())
+        .unwrap_or(0)
 }
 
 async fn check_ticket(state: &WorkerState) -> anyhow::Result<()> {
@@ -932,7 +891,7 @@ async fn reset_traffic(state: &WorkerState) -> anyhow::Result<()> {
     .await?;
     let ids = users
         .into_iter()
-        .filter(|user| should_reset_user(user, &state.config))
+        .filter(|user| should_reset_user(user, state.config.reset_traffic_method))
         .map(|user| user.id)
         .collect::<Vec<_>>();
     if !ids.is_empty() {
@@ -952,26 +911,48 @@ async fn reset_traffic(state: &WorkerState) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn should_reset_user(user: &ResetUserRow, config: &AppConfig) -> bool {
-    let method = user
-        .reset_traffic_method
-        .map(i32::from)
-        .unwrap_or(config.reset_traffic_method);
+fn should_reset_user(user: &ResetUserRow, default_method: i32) -> bool {
     let now = Local::now();
     let Some(expired) = Local.timestamp_opt(user.expired_at, 0).single() else {
         return false;
     };
+    match user.reset_traffic_method {
+        // A plan with an explicit reset_traffic_method uses exactly that branch
+        // (ResetTraffic.php:84-106, each `case` has a `break`).
+        Some(method) => reset_matches(i32::from(method), &now, &expired, user.expired_at),
+        // A plan whose reset_traffic_method is NULL uses the config default, but the
+        // NULL branch's inner switch omits the `break` after `case 3`
+        // (ResetTraffic.php:76-80), so a default of 3 ALSO runs resetByExpireYear
+        // (case 4). Mirror that fall-through: reset timing is a billing contract.
+        None => {
+            reset_matches(default_method, &now, &expired, user.expired_at)
+                || (default_method == 3 && reset_matches(4, &now, &expired, user.expired_at))
+        }
+    }
+}
+
+fn reset_matches(
+    method: i32,
+    now: &DateTime<Local>,
+    expired: &DateTime<Local>,
+    expired_at: i64,
+) -> bool {
     match method {
+        // resetByMonthFirstDay (ResetTraffic.php:142-152)
         0 => now.day() == 1,
+        // resetByExpireDay (ResetTraffic.php:154-175)
         1 => {
             let last_day = last_day_of_current_month();
             let today = now.day();
             let expire_day = expired.day();
             (expire_day == today || (today == last_day && expire_day >= last_day))
-                && Utc::now().timestamp() < user.expired_at - 2_160_000
+                && Utc::now().timestamp() < expired_at - 2_160_000
         }
+        // no action (ResetTraffic.php:73-74/94-96)
         2 => false,
+        // resetByYearFirstDay (ResetTraffic.php:130-140)
         3 => now.month() == 1 && now.day() == 1,
+        // resetByExpireYear (ResetTraffic.php:112-128)
         4 => now.month() == expired.month() && now.day() == expired.day(),
         _ => false,
     }
@@ -1016,14 +997,7 @@ async fn send_remind_mail(state: &WorkerState) -> anyhow::Result<()> {
                 "The service in {} is about to expire",
                 state.config.app_name
             );
-            send_email(
-                state,
-                &user.email,
-                &subject,
-                "remindExpire",
-                &default_mail_body(&state.config, &subject),
-            )
-            .await?;
+            send_email(state, &user.email, &subject, "remindExpire").await?;
         }
         if user.remind_traffic.unwrap_or_default() != 0
             && user
@@ -1039,14 +1013,7 @@ async fn send_remind_mail(state: &WorkerState) -> anyhow::Result<()> {
                     "The traffic usage in {} has reached 95%",
                     state.config.app_name
                 );
-                send_email(
-                    state,
-                    &user.email,
-                    &subject,
-                    "remindTraffic",
-                    &default_mail_body(&state.config, &subject),
-                )
-                .await?;
+                send_email(state, &user.email, &subject, "remindTraffic").await?;
             }
         }
     }
@@ -1063,17 +1030,45 @@ async fn send_email(
     email: &str,
     subject: &str,
     template_name: &str,
-    body: &str,
 ) -> anyhow::Result<()> {
+    // Keep v2_mail_log.template_name identical to Laravel (SendEmailJob.php:51),
+    // e.g. `mail.default.remindTraffic`.
     let template = format!(
         "mail.{}.{}",
         state.config.email_template.as_deref().unwrap_or("default"),
         template_name
     );
-    let error = match send_email_inner(&state.config, email, subject, body).await {
-        Ok(()) => None,
-        Err(error) => Some(error.to_string()),
+    let body = v2board_domain::mail::render_reminder(
+        template_name,
+        &state.config.app_name,
+        state.config.app_url.as_deref().unwrap_or_default(),
+        subject,
+    );
+
+    // Laravel SendEmailJob has tries=3 (SendEmailJob.php:19) and paces sends with a 2s
+    // sleep (SendEmailJob.php:53). Ported synchronously: retry up to 3 attempts with a
+    // short backoff between attempts for transient SMTP failures, then record the final
+    // outcome once into v2_mail_log. The happy path is NOT throttled (the 2s sleep only
+    // existed to pace the async queue), and unlike the Laravel job — which swallows the
+    // exception before its queue can ever retry — this actually retries.
+    //
+    // The backoff is a std sleep (this cold failure path runs on the multi-thread
+    // runtime) rather than `tokio::time::sleep`, so it does not rely on tokio's optional
+    // `time` feature, which the workers crate does not declare.
+    let max_attempts = 3;
+    let mut attempt = 0;
+    let error = loop {
+        attempt += 1;
+        match send_email_inner(&state.config, email, subject, &body).await {
+            Ok(()) => break None,
+            Err(error) if attempt < max_attempts => {
+                tracing::warn!(email, attempt, ?error, "mail send failed, retrying");
+                std::thread::sleep(Duration::from_secs(2));
+            }
+            Err(error) => break Some(error.to_string()),
+        }
     };
+
     sqlx::query(
         r#"
         INSERT INTO v2_mail_log
@@ -1092,34 +1087,6 @@ async fn send_email(
     Ok(())
 }
 
-async fn send_telegram(state: &WorkerState, telegram_id: i64, text: &str) -> anyhow::Result<()> {
-    let token = state
-        .config
-        .telegram_bot_token
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("Telegram bot token is not configured"))?;
-    let body = serde_urlencoded::to_string([
-        ("chat_id", telegram_id.to_string()),
-        ("text", escape_telegram_markdown(text)),
-        ("parse_mode", "markdown".to_string()),
-    ])?;
-    let response = reqwest::Client::new()
-        .post(format!("https://api.telegram.org/bot{token}/sendMessage"))
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
-        .await?;
-    if !response.status().is_success() {
-        anyhow::bail!("Telegram request failed");
-    }
-    Ok(())
-}
-
-fn escape_telegram_markdown(text: &str) -> String {
-    text.replace('_', "\\_")
-}
-
 async fn send_email_inner(
     config: &AppConfig,
     email: &str,
@@ -1136,10 +1103,13 @@ async fn send_email_inner(
         .as_deref()
         .or(config.email_username.as_deref())
         .ok_or_else(|| anyhow::anyhow!("Email sender is not configured"))?;
+    // Laravel renders Blade HTML mail (SendEmailJob.php:54, MailService.php), so the
+    // delivered body is text/html rather than plaintext.
     let builder = Message::builder()
         .from(from.parse()?)
         .to(email.parse()?)
-        .subject(subject);
+        .subject(subject)
+        .header(ContentType::TEXT_HTML);
     let message = builder.body(body.to_string())?;
     let mut transport = match config
         .email_encryption
@@ -1159,18 +1129,6 @@ async fn send_email_inner(
     }
     transport.build().send(message).await?;
     Ok(())
-}
-
-fn mail_body(config: &AppConfig, subject: &str, value: Option<&Value>) -> String {
-    match value {
-        Some(value) => format!("{subject}\n\n{value}"),
-        None => default_mail_body(config, subject),
-    }
-}
-
-fn default_mail_body(config: &AppConfig, subject: &str) -> String {
-    let url = config.app_url.as_deref().unwrap_or_default();
-    format!("{}\n\n{}\n{}", config.app_name, subject, url)
 }
 
 async fn statistics(state: &WorkerState) -> anyhow::Result<()> {
@@ -1364,49 +1322,114 @@ mod tests {
         assert!(scheduled_task_by_name("missing").is_none());
     }
 
+    fn inviter(id: i64, invited_by: Option<i64>) -> InviterRow {
+        InviterRow {
+            id,
+            invite_user_id: invited_by,
+        }
+    }
+
+    fn three_level_chain() -> HashMap<i64, InviterRow> {
+        // 1 (invited by 2) -> 2 (invited by 3) -> 3 (top of the chain).
+        [
+            (1, inviter(1, Some(2))),
+            (2, inviter(2, Some(3))),
+            (3, inviter(3, None)),
+        ]
+        .into_iter()
+        .collect()
+    }
+
     #[test]
-    fn queue_job_names_cover_all_worker_jobs() {
-        let jobs = [
-            QueueJob::TrafficUpdate { user_id: None },
-            QueueJob::CheckOrder { trade_no: None },
-            QueueJob::OrderHandle {
-                trade_no: "T".to_string(),
-            },
-            QueueJob::CheckCommission,
-            QueueJob::CheckTicket,
-            QueueJob::CheckRenewal,
-            QueueJob::ResetTraffic,
-            QueueJob::ResetLog,
-            QueueJob::SendRemindMail,
-            QueueJob::Statistics,
-            QueueJob::SendEmail {
-                email: "user@example.test".to_string(),
-                subject: "subject".to_string(),
-                template_name: None,
-                template_value: None,
-            },
-            QueueJob::SendTelegram {
-                telegram_id: 1,
-                text: "message".to_string(),
-            },
-        ];
-        let names = jobs.iter().map(queue_job_name).collect::<Vec<_>>();
+    fn commission_zero_share_does_not_advance_invite_chain() {
+        let chain = three_level_chain();
+        // shares [0, 50, 0]: level 0 pays nobody but must NOT advance the pointer, so the
+        // direct inviter (id 1) is the one paid at level 1's 50% share. Level 2's 0 share
+        // again does not advance. Mirrors CheckCommission::payHandle.
+        let payouts = plan_commission_payouts(&[0, 50, 0], 100, 1, |id| chain.get(&id).cloned());
         assert_eq!(
-            names,
+            payouts,
+            vec![CommissionPayout {
+                inviter_id: 1,
+                amount: 50,
+            }]
+        );
+    }
+
+    #[test]
+    fn commission_positive_shares_walk_up_the_chain() {
+        let chain = three_level_chain();
+        let payouts = plan_commission_payouts(&[50, 30, 20], 100, 1, |id| chain.get(&id).cloned());
+        assert_eq!(
+            payouts,
             vec![
-                "traffic_update",
-                "check_order",
-                "order_handle",
-                "check_commission",
-                "check_ticket",
-                "check_renewal",
-                "reset_traffic",
-                "reset_log",
-                "send_remind_mail",
-                "statistics",
-                "send_email",
-                "send_telegram",
+                CommissionPayout {
+                    inviter_id: 1,
+                    amount: 50,
+                },
+                CommissionPayout {
+                    inviter_id: 2,
+                    amount: 30,
+                },
+                CommissionPayout {
+                    inviter_id: 3,
+                    amount: 20,
+                },
             ]
         );
+    }
+
+    #[test]
+    fn commission_single_full_share_pays_direct_inviter() {
+        // The distribution-disabled path produces shares = [100].
+        let chain = three_level_chain();
+        let payouts = plan_commission_payouts(&[100], 250, 1, |id| chain.get(&id).cloned());
+        assert_eq!(
+            payouts,
+            vec![CommissionPayout {
+                inviter_id: 1,
+                amount: 250,
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_share_coerces_missing_and_non_numeric_to_zero() {
+        // Matches PHP `(int)config(...)`: NULL/absent and unparseable become 0, and the
+        // slot is preserved so later levels are not shifted.
+        assert_eq!(parse_share(None), 0);
+        assert_eq!(parse_share(Some("")), 0);
+        assert_eq!(parse_share(Some("abc")), 0);
+        assert_eq!(parse_share(Some(" 40 ")), 40);
+    }
+
+    #[test]
+    fn null_reset_method_default_three_falls_through_to_expire_year() {
+        // A plan with reset_traffic_method = NULL whose expiry anniversary (m-d) is today.
+        let now_ts = Local::now().timestamp();
+        let user = ResetUserRow {
+            id: 1,
+            expired_at: now_ts,
+            reset_traffic_method: None,
+        };
+        // Config default 3: Laravel's NULL branch omits the `break` after case 3, so it
+        // also runs resetByExpireYear (case 4) -> an anniversary-today user resets even
+        // when it is not Jan 1. This holds every day the test runs.
+        assert!(should_reset_user(&user, 3));
+        // Config default 2 ("no action") does not fall through, so the same user is left
+        // alone.
+        assert!(!should_reset_user(&user, 2));
+    }
+
+    #[test]
+    fn explicit_reset_method_ignores_config_default_fall_through() {
+        let now_ts = Local::now().timestamp();
+        // Explicit method 2 ("no action") must never reset, regardless of config default.
+        let user = ResetUserRow {
+            id: 1,
+            expired_at: now_ts,
+            reset_traffic_method: Some(2),
+        };
+        assert!(!should_reset_user(&user, 3));
     }
 }

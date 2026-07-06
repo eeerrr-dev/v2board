@@ -117,11 +117,12 @@ pub async fn find_user_order(
     };
 
     if row.plan_id == 0 {
-        let bounus = 0;
-        let get_amount = row.total_amount + bounus;
+        // Deposit order: synthesize the `deposit` plan and reserve the reward fields. The tier
+        // amount depends on config, so the API layer fills the real `bounus`/`get_amount`.
+        let total_amount = row.total_amount;
         let mut order = to_order(row, Some(deposit_plan()));
-        order.bounus = Some(bounus);
-        order.get_amount = Some(get_amount);
+        order.bounus = Some(0);
+        order.get_amount = Some(total_amount);
         return Ok(Some(order));
     }
 

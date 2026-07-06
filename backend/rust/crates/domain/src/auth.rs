@@ -4,7 +4,7 @@ use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use lettre::{
-    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::header::ContentType,
     transport::smtp::authentication::Credentials,
 };
 use redis::AsyncCommands;
@@ -129,13 +129,29 @@ impl AuthService {
         ip: Option<String>,
         user_agent: Option<String>,
     ) -> Result<AuthData, ApiError> {
+        // Laravel validates the AuthRegister FormRequest (email/password) before the controller
+        // body, then runs the controller checks in this order: IP rate limit, recaptcha,
+        // email whitelist/gmail, stop_register, invite_force, email verification code.
+        validate_email(&input.email)?;
+        validate_password(&input.password)?;
         let email = input.email.trim().to_ascii_lowercase();
-        if email.is_empty() || input.password.len() < 8 {
-            return Err(ApiError::legacy("Invalid email or password"));
+
+        if let Some(ip) = ip.as_deref()
+            && self.config.register_limit_by_ip_enable
+        {
+            let key = cache_key("REGISTER_IP_RATE_LIMIT", ip);
+            let mut conn = self.redis.get_multiplexed_async_connection().await?;
+            let count: i64 = conn.get(&key).await.unwrap_or(0);
+            if count >= self.config.register_limit_count {
+                return Err(ApiError::legacy(format!(
+                    "Register frequently, please try again after {} minute",
+                    self.config.register_limit_expire
+                )));
+            }
         }
-        self.validate_register_email(&email).await?;
         self.verify_recaptcha(input.recaptcha_data.as_deref())
             .await?;
+        self.validate_register_email(&email).await?;
         if self.config.stop_register {
             return Err(ApiError::legacy("Registration has closed"));
         }
@@ -154,19 +170,6 @@ impl AuthService {
         if self.config.email_verify {
             self.verify_email_code(&email, input.email_code.as_deref())
                 .await?;
-        }
-        if let Some(ip) = ip.as_deref()
-            && self.config.register_limit_by_ip_enable
-        {
-            let key = cache_key("REGISTER_IP_RATE_LIMIT", ip);
-            let mut conn = self.redis.get_multiplexed_async_connection().await?;
-            let count: i64 = conn.get(&key).await.unwrap_or(0);
-            if count >= self.config.register_limit_count {
-                return Err(ApiError::legacy(format!(
-                    "Register frequently, please try again after {} minute",
-                    self.config.register_limit_expire
-                )));
-            }
         }
 
         let password_hash = hash_password(&input.password)?;
@@ -269,14 +272,36 @@ impl AuthService {
         Ok(true)
     }
 
-    pub async fn send_email_verify(&self, input: EmailVerifyInput) -> Result<bool, ApiError> {
+    pub async fn send_email_verify(
+        &self,
+        input: EmailVerifyInput,
+        ip: Option<String>,
+    ) -> Result<bool, ApiError> {
+        // FormRequest validates `email => required|email:strict` (422) before the controller body,
+        // which then runs: per-IP rate limit (429), recaptcha, whitelist/gmail, isforget, resend.
+        validate_email(&input.email)?;
         let email = input.email.trim().to_ascii_lowercase();
-        if email.is_empty() {
-            return Err(ApiError::legacy("Email cannot be empty"));
+
+        // Laravel RateLimiter: 3 attempts per IP in a fixed 60s window, `abort(429)` on exceed
+        // (CommController:33-36). INCR + expire-on-first mirrors `Cache::add` + `increment`.
+        if let Some(ip) = ip.as_deref() {
+            let key = cache_key("SEND_EMAIL_VERIFY_LIMIT", ip);
+            let mut conn = self.redis.get_multiplexed_async_connection().await?;
+            let attempts: i64 = conn.get::<_, Option<i64>>(&key).await?.unwrap_or(0);
+            if attempts >= 3 {
+                return Err(ApiError::too_many_requests(
+                    "Too many requests, please try again later.",
+                ));
+            }
+            let hits: i64 = conn.incr(&key, 1).await?;
+            if hits == 1 {
+                conn.expire::<_, ()>(&key, 60).await?;
+            }
         }
-        self.validate_register_email(&email).await?;
+
         self.verify_recaptcha(input.recaptcha_data.as_deref())
             .await?;
+        self.validate_register_email(&email).await?;
         let exists = db::user::find_user_for_auth(&self.db, &email)
             .await?
             .is_some();
@@ -299,17 +324,12 @@ impl AuthService {
         }
         let code = six_digit_code();
         let subject = format!("{}Email verification code", self.config.app_name);
-        self.send_mail(
-            &email,
-            &subject,
-            &format!(
-                "Your {} verification code is: {}\n\n{}",
-                self.config.app_name,
-                code,
-                self.config.app_url.as_deref().unwrap_or_default()
-            ),
-        )
-        .await?;
+        let body = crate::mail::render_verify(
+            &self.config.app_name,
+            self.config.app_url.as_deref().unwrap_or_default(),
+            &code,
+        );
+        self.send_mail(&email, &subject, &body).await?;
         conn.set_ex::<_, _, ()>(cache_key("EMAIL_VERIFY_CODE", &email), code, 300)
             .await?;
         conn.set_ex::<_, _, ()>(last_key, Utc::now().timestamp(), 60)
@@ -707,6 +727,7 @@ impl AuthService {
                 .parse()
                 .map_err(|_| ApiError::legacy("Invalid recipient email"))?)
             .subject(subject)
+            .header(ContentType::TEXT_HTML)
             .body(body.to_string())
             .map_err(|error| ApiError::legacy(format!("Build mail failed: {error}")))?;
         let mut builder = if matches!(settings.encryption.as_deref(), Some("ssl" | "smtps")) {
@@ -844,6 +865,52 @@ fn hash_password(password: &str) -> Result<String, ApiError> {
         .map_err(|error| ApiError::internal(format!("password hash error: {error}")))
 }
 
+/// Laravel `AuthRegister`/`CommSendEmailVerify` validate `email => required|email:strict`.
+/// The FormRequest fires before the controller body, returning HTTP 422 with the field message.
+fn validate_email(email: &str) -> Result<(), ApiError> {
+    let email = email.trim();
+    if email.is_empty() {
+        return Err(field_validation("email", "Email can not be empty"));
+    }
+    if !is_valid_email(email) {
+        return Err(field_validation("email", "Email format is incorrect"));
+    }
+    Ok(())
+}
+
+/// Laravel `AuthRegister` validates `password => required|min:8` (character count, not bytes).
+fn validate_password(password: &str) -> Result<(), ApiError> {
+    if password.is_empty() {
+        return Err(field_validation("password", "Password can not be empty"));
+    }
+    if password.chars().count() < 8 {
+        return Err(field_validation(
+            "password",
+            "Password must be greater than 8 digits",
+        ));
+    }
+    Ok(())
+}
+
+/// Structural `local@host` check — the practical subset of `email:strict` that avoids
+/// false-rejecting any address Laravel's RFC validator would accept in real registrations.
+fn is_valid_email(email: &str) -> bool {
+    if email.chars().any(char::is_whitespace) {
+        return false;
+    }
+    match email.split_once('@') {
+        Some((local, host)) => !local.is_empty() && !host.is_empty() && !host.contains('@'),
+        None => false,
+    }
+}
+
+fn field_validation(field: &str, message: &str) -> ApiError {
+    ApiError::validation(
+        message,
+        std::collections::HashMap::from([(field.to_string(), vec![message.to_string()])]),
+    )
+}
+
 fn legacy_guid(format: bool) -> String {
     let uuid = Uuid::new_v4();
     if format {
@@ -926,4 +993,45 @@ fn parse_php_scalar(raw: &str) -> Option<String> {
         );
     }
     raw.parse::<i64>().ok().map(|_| raw.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_valid_email_accepts_structural_addresses_and_rejects_malformed() {
+        assert!(is_valid_email("user@example.com"));
+        assert!(is_valid_email("user@localhost"));
+        assert!(!is_valid_email("notanemail"));
+        assert!(!is_valid_email("@example.com"));
+        assert!(!is_valid_email("user@"));
+        assert!(!is_valid_email("a@b@c"));
+        assert!(!is_valid_email("user name@example.com"));
+    }
+
+    #[test]
+    fn validate_email_reports_validation_error_with_laravel_messages() {
+        assert!(validate_email("user@example.com").is_ok());
+        let empty = validate_email("   ").unwrap_err();
+        assert_eq!(empty.to_string(), "Email can not be empty");
+        assert!(matches!(empty, ApiError::Validation { .. }));
+        let malformed = validate_email("bad").unwrap_err();
+        assert_eq!(malformed.to_string(), "Email format is incorrect");
+        assert!(matches!(malformed, ApiError::Validation { .. }));
+    }
+
+    #[test]
+    fn validate_password_counts_characters_not_bytes() {
+        assert!(validate_password("password").is_ok());
+        // Six multibyte characters (18 bytes): a byte-length check would pass, char count fails.
+        assert_eq!(
+            validate_password("七个中文密码").unwrap_err().to_string(),
+            "Password must be greater than 8 digits"
+        );
+        assert_eq!(
+            validate_password("").unwrap_err().to_string(),
+            "Password can not be empty"
+        );
+    }
 }

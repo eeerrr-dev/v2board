@@ -11,6 +11,9 @@ use super::json_value::{value_to_i64, value_to_string};
 pub(super) struct SubscriptionDocument {
     pub(super) body: String,
     pub(super) content_type: &'static str,
+    // content-disposition header value; per-format so main.rs can emit it verbatim
+    // (Clash.php:27, Stash.php:27, Surge.php:25, Singbox.php:33).
+    pub(super) content_disposition: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +22,7 @@ enum SubscriptionFormat {
     Base64Uri,
     Clash,
     ClashMeta,
+    Stash,
     SingBox,
     SingBoxLegacy,
     Surge,
@@ -28,6 +32,16 @@ enum SubscriptionFormat {
     Shadowrocket,
     SagerNet,
     QuantumultX,
+}
+
+// Clash-family template variants. Clash uses the ss/vmess/trojan subset; Meta
+// (also Verge/Nyanpasu) adds vless/tuic/anytls/hysteria; Stash uses its own
+// template plus the forced-DIRECT rule (Stash.php:100-103).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClashKind {
+    Clash,
+    Meta,
+    Stash,
 }
 
 impl SubscriptionFormat {
@@ -63,12 +77,17 @@ impl SubscriptionFormat {
             || normalized.contains("ssrplus")
         {
             Self::Base64Uri
+        } else if normalized.contains("stash") {
+            // Stash has its own protocol handler in Laravel (Stash.php) — own
+            // template, own content-disposition, and an active forced-DIRECT rule.
+            Self::Stash
         } else if normalized.contains("meta")
-            || normalized.contains("mihomo")
-            || normalized.contains("stash")
             || normalized.contains("nyanpasu")
             || normalized.contains("verge")
         {
+            // `mihomo` intentionally dropped: Laravel has no `mihomo` flag, so a
+            // mihomo UA falls through to General (base64). ClashVerge/ClashNyanpasu
+            // are ClashMeta clones (identical build path), so route them to Meta.
             Self::ClashMeta
         } else if normalized.contains("clash") {
             Self::Clash
@@ -125,14 +144,22 @@ pub(super) fn build_subscription_document(
     user: &v2board_db::user::UserAccessRow,
     servers: &[v2board_db::server::AvailableServerRow],
     flag: &str,
+    // Request Host header, used for Surge/Surfboard `$subs_domain` and Stash's
+    // forced-DIRECT rule (`$_SERVER['HTTP_HOST']` in Laravel). Pass "" if absent.
+    host: &str,
 ) -> Result<SubscriptionDocument, ApiError> {
     let format = SubscriptionFormat::detect(flag);
     let body = match format {
         SubscriptionFormat::General => build_general_subscription(&user.uuid, servers),
         SubscriptionFormat::Base64Uri => build_base64_uri_subscription(&user.uuid, servers),
-        SubscriptionFormat::Clash => build_clash_subscription(config, &user.uuid, servers, false),
+        SubscriptionFormat::Clash => {
+            build_clash_subscription(config, &user.uuid, servers, ClashKind::Clash, host)
+        }
         SubscriptionFormat::ClashMeta => {
-            build_clash_subscription(config, &user.uuid, servers, true)
+            build_clash_subscription(config, &user.uuid, servers, ClashKind::Meta, host)
+        }
+        SubscriptionFormat::Stash => {
+            build_clash_subscription(config, &user.uuid, servers, ClashKind::Stash, host)
         }
         SubscriptionFormat::SingBox => {
             build_singbox_subscription(config, &user.uuid, servers, true)?
@@ -140,8 +167,8 @@ pub(super) fn build_subscription_document(
         SubscriptionFormat::SingBoxLegacy => {
             build_singbox_subscription(config, &user.uuid, servers, false)?
         }
-        SubscriptionFormat::Surge => build_surge_subscription(config, user, servers),
-        SubscriptionFormat::Surfboard => build_surfboard_subscription(config, user, servers),
+        SubscriptionFormat::Surge => build_surge_subscription(config, user, servers, host),
+        SubscriptionFormat::Surfboard => build_surfboard_subscription(config, user, servers, host),
         SubscriptionFormat::Loon => build_loon_subscription(&user.uuid, servers),
         SubscriptionFormat::Shadowsocks => build_shadowsocks_sip008_subscription(user, servers)?,
         SubscriptionFormat::Shadowrocket => build_shadowrocket_subscription(user, servers),
@@ -149,7 +176,7 @@ pub(super) fn build_subscription_document(
         SubscriptionFormat::QuantumultX => build_quantumultx_subscription(&user.uuid, servers),
     };
     let content_type = match format {
-        SubscriptionFormat::Clash | SubscriptionFormat::ClashMeta => {
+        SubscriptionFormat::Clash | SubscriptionFormat::ClashMeta | SubscriptionFormat::Stash => {
             "application/yaml; charset=utf-8"
         }
         SubscriptionFormat::SingBox
@@ -157,19 +184,125 @@ pub(super) fn build_subscription_document(
         | SubscriptionFormat::Shadowsocks => "application/json; charset=utf-8",
         _ => "text/plain; charset=utf-8",
     };
-    Ok(SubscriptionDocument { body, content_type })
+    let encoded_name = percent_encode(&config.app_name);
+    let content_disposition = match format {
+        // Stash omits the `attachment` disposition (Stash.php:27).
+        SubscriptionFormat::Stash => format!("filename*=UTF-8''{encoded_name}"),
+        // Surge/Surfboard append a `.conf` suffix (Surge.php:25).
+        SubscriptionFormat::Surge | SubscriptionFormat::Surfboard => {
+            format!("attachment;filename*=UTF-8''{encoded_name}.conf")
+        }
+        // Sing-box uses a plain quoted filename (Singbox.php:33).
+        SubscriptionFormat::SingBox | SubscriptionFormat::SingBoxLegacy => {
+            format!("attachment; filename=\"{}\"", config.app_name)
+        }
+        // Clash/Meta and the base64 formats (Clash.php:27).
+        _ => format!("attachment;filename*=UTF-8''{encoded_name}"),
+    };
+    Ok(SubscriptionDocument {
+        body,
+        content_type,
+        content_disposition,
+    })
 }
+
+/// Build the `show_info_to_server_enable` pseudo-nodes
+/// (ClientController::setSubscribeInfoToServers). Each row clones the first
+/// server (so it renders as a working node) and overrides only its display name
+/// with the remaining-traffic / next-reset / plan-expiry banners. The returned
+/// rows are already in prepend order (front-to-back); main.rs must splice them
+/// in front of the real server list before rendering. `reset_day` is computed by
+/// main.rs from the user's plan (`UserService::getResetDay`); pass `None` to omit
+/// the reset banner.
+pub(super) fn build_info_servers(
+    user: &v2board_db::user::UserAccessRow,
+    servers: &[v2board_db::server::AvailableServerRow],
+    reset_day: Option<i64>,
+    config: &AppConfig,
+) -> Vec<v2board_db::server::AvailableServerRow> {
+    // Laravel returns early when there are no servers or the feature is off.
+    if servers.is_empty() || !config.show_info_to_server_enable {
+        return Vec::new();
+    }
+    let base = &servers[0];
+    let use_traffic = user.u + user.d;
+    let remaining = traffic_convert(user.transfer_enable - use_traffic);
+    // `$user['expired_at'] ? date('Y-m-d', ...) : '长期有效'` — 0/null are falsy.
+    let expired = user
+        .expired_at
+        .filter(|&timestamp| timestamp != 0)
+        .map(format_date_timestamp)
+        .unwrap_or_else(|| "长期有效".to_string());
+    let named = |name: String| {
+        let mut row = base.clone();
+        row.name = name;
+        row
+    };
+    // array_unshift stacking yields front-to-back: remaining, [reset], expiry.
+    let mut rows = vec![named(format!("剩余流量：{remaining}"))];
+    if let Some(days) = reset_day {
+        rows.push(named(format!("距离下次重置剩余：{days} 天")));
+    }
+    rows.push(named(format!("套餐到期：{expired}")));
+    rows
+}
+
+// Helper::trafficConvert — byte formatter with a `< 0 => "0"` branch that is
+// deliberately checked after the KB branch (Helper.php:82-98).
+fn traffic_convert(byte: i64) -> String {
+    let value = byte as f64;
+    if value > GIB {
+        format!("{} GB", php_round2(value / GIB))
+    } else if value > MIB {
+        format!("{} MB", php_round2(value / MIB))
+    } else if value > KIB {
+        format!("{} KB", php_round2(value / KIB))
+    } else if byte < 0 {
+        "0".to_string()
+    } else {
+        format!("{} B", php_round2(value))
+    }
+}
+
+// Embedded Clash/Stash templates. Laravel parses `resources/rules/default.clash.yaml`
+// (~516 rules + regionalised proxy-groups) and Stash uses `default.stash.yaml`.
+// No YAML parser is available to this crate, so the DEFAULT templates were
+// converted to JSON offline and are embedded here; the rendered output is YAML
+// via `render_yaml`. Operator `custom.clash.yaml` overrides are not supported
+// (they would require a runtime YAML parser) — see report.
+const CLASH_TEMPLATE: &str = include_str!("../resources/rules/default.clash.json");
+const STASH_TEMPLATE: &str = include_str!("../resources/rules/default.stash.json");
 
 fn build_clash_subscription(
     config: &AppConfig,
     uuid: &str,
     servers: &[v2board_db::server::AvailableServerRow],
-    meta: bool,
+    kind: ClashKind,
+    host: &str,
 ) -> String {
+    // Clash only emits ss/vmess/trojan; Meta/Stash add the extended protocols.
+    let meta = !matches!(kind, ClashKind::Clash);
     let proxies = servers
         .iter()
         .filter_map(|server| build_clash_proxy(uuid, server, meta))
         .collect::<Vec<_>>();
+    let template = match kind {
+        ClashKind::Stash => STASH_TEMPLATE,
+        _ => CLASH_TEMPLATE,
+    };
+    // Only Stash keeps the forced-DIRECT rule active (Stash.php:100-103); Clash
+    // and ClashMeta leave it commented out.
+    let forced_direct_host = matches!(kind, ClashKind::Stash).then_some(host);
+    render_clash_document(template, proxies, &config.app_name, forced_direct_host)
+}
+
+fn render_clash_document(
+    template: &str,
+    proxies: Vec<Value>,
+    app_name: &str,
+    forced_direct_host: Option<&str>,
+) -> String {
+    let mut config: Value = serde_json::from_str(template).unwrap_or_else(|_| json!({}));
     let proxy_names = proxies
         .iter()
         .filter_map(|proxy| {
@@ -179,52 +312,23 @@ fn build_clash_subscription(
                 .map(ToOwned::to_owned)
         })
         .collect::<Vec<_>>();
-    let selector_name = config.app_name.clone();
-    let mut config = json!({
-        "mixed-port": 7890,
-        "allow-lan": true,
-        "bind-address": "*",
-        "mode": "rule",
-        "log-level": "info",
-        "external-controller": "127.0.0.1:9090",
-        "dns": {
-            "enable": true,
-            "ipv6": false,
-            "enhanced-mode": "fake-ip",
-            "fake-ip-range": "198.18.0.1/16",
-            "default-nameserver": ["223.5.5.5", "119.29.29.29", "114.114.114.114"],
-            "nameserver": ["223.5.5.5", "119.29.29.29", "114.114.114.114"],
-            "fallback": ["1.1.1.1", "8.8.8.8"]
-        },
-        "proxies": proxies,
-        "proxy-groups": [
-            {
-                "name": selector_name,
-                "type": "select",
-                "proxies": ["自动选择", "故障转移"]
-            },
-            {
-                "name": "自动选择",
-                "type": "url-test",
-                "proxies": [],
-                "url": "http://www.gstatic.com/generate_204",
-                "interval": 86400
-            },
-            {
-                "name": "故障转移",
-                "type": "fallback",
-                "proxies": [],
-                "url": "http://www.gstatic.com/generate_204",
-                "interval": 7200
-            }
-        ],
-        "rules": [
-            format!("MATCH,{}", config.app_name)
-        ]
-    });
 
+    // $config['proxies'] = array_merge($config['proxies'] ?: [], $proxy)
+    let mut merged = match config.get("proxies") {
+        Some(Value::Array(existing)) => existing.clone(),
+        _ => Vec::new(),
+    };
+    merged.extend(proxies);
+    config["proxies"] = Value::Array(merged);
+
+    // The default templates use no regex filters, so every proxy-group receives
+    // all generated proxy names (Clash.php:65-86 array_merge branch); groups that
+    // stay empty are dropped.
     if let Some(groups) = config.get_mut("proxy-groups").and_then(Value::as_array_mut) {
         for group in groups.iter_mut() {
+            if !group.get("proxies").is_some_and(Value::is_array) {
+                group["proxies"] = json!([]);
+            }
             if let Some(values) = group.get_mut("proxies").and_then(Value::as_array_mut) {
                 values.extend(proxy_names.iter().cloned().map(Value::String));
             }
@@ -238,7 +342,15 @@ fn build_clash_subscription(
         });
     }
 
-    render_yaml(&config)
+    // Stash prepends `DOMAIN,<HTTP_HOST>,DIRECT` (Stash.php:100-103).
+    if let Some(host) = forced_direct_host.filter(|host| !host.is_empty())
+        && let Some(rules) = config.get_mut("rules").and_then(Value::as_array_mut)
+    {
+        rules.insert(0, Value::String(format!("DOMAIN,{host},DIRECT")));
+    }
+
+    // Laravel str_replace('$app_name', ...) after dumping the YAML.
+    render_yaml(&config).replace("$app_name", app_name)
 }
 
 fn build_singbox_subscription(
@@ -250,7 +362,7 @@ fn build_singbox_subscription(
     let proxies = servers
         .iter()
         .filter(|server| modern || server_protocol(server) != "anytls")
-        .filter_map(|server| build_singbox_proxy(uuid, server))
+        .filter_map(|server| build_singbox_proxy(uuid, server, modern))
         .collect::<Vec<_>>();
     let proxy_tags = proxies
         .iter()
@@ -444,61 +556,91 @@ fn fallback_singbox_template(modern: bool) -> Value {
     }
 }
 
+// Embedded managed-config templates (~500 rules, DoH, [Replica], [URL Rewrite]).
+// These are plain-text with `$subs_link` / `$subs_domain` / `$proxies` /
+// `$proxy_group` / `$subscribe_info` placeholders (Surge.php:62-88).
+const SURGE_TEMPLATE: &str = include_str!("../resources/rules/default.surge.conf");
+const SURFBOARD_TEMPLATE: &str = include_str!("../resources/rules/default.surfboard.conf");
+
 fn build_surge_subscription(
     config: &AppConfig,
     user: &v2board_db::user::UserAccessRow,
     servers: &[v2board_db::server::AvailableServerRow],
+    host: &str,
 ) -> String {
     let proxies = servers
         .iter()
         .filter_map(|server| build_surge_proxy(&user.uuid, server))
-        .collect::<Vec<_>>();
-    let proxy_names = servers
+        .collect::<String>();
+    let proxy_group = servers
         .iter()
         .filter(|server| supports_surge(server))
         .map(|server| server.name.clone())
-        .collect::<Vec<_>>();
-    let proxy_group = proxy_names.join(", ");
-    let upload = bytes_to_gib(user.u);
-    let download = bytes_to_gib(user.d);
-    let total = bytes_to_gib(user.transfer_enable);
+        .collect::<Vec<_>>()
+        .join(", ");
+    render_managed_config(SURGE_TEMPLATE, config, user, host, &proxies, &proxy_group)
+}
+
+fn build_surfboard_subscription(
+    config: &AppConfig,
+    user: &v2board_db::user::UserAccessRow,
+    servers: &[v2board_db::server::AvailableServerRow],
+    host: &str,
+) -> String {
+    let proxies = servers
+        .iter()
+        .filter_map(|server| build_surfboard_proxy(&user.uuid, server))
+        .collect::<String>();
+    let proxy_group = servers
+        .iter()
+        .filter(|server| supports_surfboard(server))
+        .map(|server| server.name.clone())
+        .collect::<Vec<_>>()
+        .join(", ");
+    render_managed_config(
+        SURFBOARD_TEMPLATE,
+        config,
+        user,
+        host,
+        &proxies,
+        &proxy_group,
+    )
+}
+
+// Shared Surge/Surfboard placeholder substitution (Surge.php:70-87).
+fn render_managed_config(
+    template: &str,
+    config: &AppConfig,
+    user: &v2board_db::user::UserAccessRow,
+    host: &str,
+    proxies: &str,
+    proxy_group: &str,
+) -> String {
+    let upload = round2(user.u as f64 / GIB);
+    let download = round2(user.d as f64 / GIB);
+    let use_traffic = upload + download;
+    let total = round2(user.transfer_enable as f64 / GIB);
     let expire = user
         .expired_at
-        .map(|expired_at| expired_at.to_string())
+        .filter(|&timestamp| timestamp != 0)
+        .map(format_datetime_timestamp)
         .unwrap_or_else(|| "长期有效".to_string());
-    format!(
-        r#"#!MANAGED-CONFIG {subscribe_url} interval=43200 strict=true
-[General]
-loglevel = notify
-dns-server = 223.5.5.5, 114.114.114.114
-allow-wifi-access = true
-http-listen = 0.0.0.0:6152
-socks5-listen = 0.0.0.0:6153
-proxy-test-url = http://www.gstatic.com/generate_204
-
-[Panel]
-SubscribeInfo = title={app_name}订阅信息, content=上传流量：{upload:.2}GB\n下载流量：{download:.2}GB\n套餐流量：{total:.2}GB\n到期时间：{expire}, style=info
-
-[Proxy]
-{proxies}
-
-[Proxy Group]
-Proxy = select, auto, fallback, {proxy_group}
-auto = url-test, {proxy_group}, url=http://www.gstatic.com/generate_204, interval=43200
-fallback = fallback, {proxy_group}, url=http://www.gstatic.com/generate_204, interval=43200
-
-[Rule]
-FINAL,Proxy
-"#,
-        subscribe_url = config.subscribe_url_for_token(&user.token),
+    // Note the literal `\n` sequences (PHP `\\n`) inside the info banner.
+    let subscribe_info = format!(
+        "title={app_name}订阅信息, content=上传流量：{upload}GB\\n下载流量：{download}GB\\n剩余流量：{use}GB\\n套餐流量：{total}GB\\n到期时间：{expire}",
         app_name = config.app_name,
-        upload = upload,
-        download = download,
-        total = total,
+        upload = php_round2(upload),
+        download = php_round2(download),
+        use = php_round2(use_traffic),
+        total = php_round2(total),
         expire = expire,
-        proxies = proxies.join(""),
-        proxy_group = proxy_group
-    )
+    );
+    template
+        .replace("$subs_link", &config.subscribe_url_for_token(&user.token))
+        .replace("$subs_domain", host)
+        .replace("$proxies", proxies)
+        .replace("$proxy_group", proxy_group)
+        .replace("$subscribe_info", &subscribe_info)
 }
 
 fn build_quantumultx_subscription(
@@ -516,60 +658,6 @@ fn build_quantumultx_subscription(
         .filter_map(|server| build_quantumultx_proxy(uuid, server))
         .collect::<String>();
     standard_base64_encode(lines.as_bytes())
-}
-
-fn build_surfboard_subscription(
-    config: &AppConfig,
-    user: &v2board_db::user::UserAccessRow,
-    servers: &[v2board_db::server::AvailableServerRow],
-) -> String {
-    let proxies = servers
-        .iter()
-        .filter_map(|server| build_surfboard_proxy(&user.uuid, server))
-        .collect::<Vec<_>>();
-    let proxy_names = servers
-        .iter()
-        .filter(|server| supports_surfboard(server))
-        .map(|server| server.name.clone())
-        .collect::<Vec<_>>();
-    let proxy_group = proxy_names.join(", ");
-    let upload = bytes_to_gib(user.u);
-    let download = bytes_to_gib(user.d);
-    let total = bytes_to_gib(user.transfer_enable);
-    let expire = user
-        .expired_at
-        .map(|expired_at| expired_at.to_string())
-        .unwrap_or_else(|| "长期有效".to_string());
-    format!(
-        r#"#!MANAGED-CONFIG {subscribe_url} interval=43200 strict=true
-[General]
-loglevel = notify
-dns-server = 223.5.5.5, 114.114.114.114
-proxy-test-url = http://www.gstatic.com/generate_204
-
-[Panel]
-SubscribeInfo = title={app_name}订阅信息, content=上传流量：{upload:.2}GB\n下载流量：{download:.2}GB\n套餐流量：{total:.2}GB\n到期时间：{expire}, style=info
-
-[Proxy]
-{proxies}
-
-[Proxy Group]
-Proxy = select, auto, fallback, {proxy_group}
-auto = url-test, {proxy_group}, url=http://www.gstatic.com/generate_204, interval=43200
-fallback = fallback, {proxy_group}, url=http://www.gstatic.com/generate_204, interval=43200
-
-[Rule]
-FINAL,Proxy
-"#,
-        subscribe_url = config.subscribe_url_for_token(&user.token),
-        app_name = config.app_name,
-        upload = upload,
-        download = download,
-        total = total,
-        expire = expire,
-        proxies = proxies.join(""),
-        proxy_group = proxy_group
-    )
 }
 
 fn build_loon_subscription(
@@ -619,15 +707,18 @@ fn build_shadowrocket_subscription(
     user: &v2board_db::user::UserAccessRow,
     servers: &[v2board_db::server::AvailableServerRow],
 ) -> String {
-    let upload = bytes_to_gib(user.u);
-    let download = bytes_to_gib(user.d);
-    let total = bytes_to_gib(user.transfer_enable);
+    let upload = php_round2(round2(user.u as f64 / GIB));
+    let download = php_round2(round2(user.d as f64 / GIB));
+    let total = php_round2(round2(user.transfer_enable as f64 / GIB));
+    // Shadowrocket.php:28 has no null guard: `date('Y-m-d', $user['expired_at'])`.
+    // A null timestamp coerces to time() (today), not 长期有效.
     let expire = user
         .expired_at
         .map(format_date_timestamp)
-        .unwrap_or_else(|| "长期有效".to_string());
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d").to_string());
+    // Restore the 🚀 / 💡 emojis and trailing-zero-trimmed numbers (Shadowrocket.php:29).
     let mut lines =
-        format!("STATUS=↑:{upload:.2}GB,↓:{download:.2}GB,TOT:{total:.2}GB Expires:{expire}\r\n");
+        format!("STATUS=🚀↑:{upload}GB,↓:{download}GB,TOT:{total}GB💡Expires:{expire}\r\n");
     for server in servers {
         if server_protocol(server) == "vmess" {
             if let Some(uri) = build_shadowrocket_vmess_uri(&user.uuid, server) {
@@ -646,7 +737,9 @@ fn build_sagernet_subscription(
 ) -> String {
     let mut uris = String::new();
     for server in servers {
-        if server_protocol(server) == "hysteria" {
+        // SagerNet.php:24-26 skips only the raw `type === 'hysteria'`, so a
+        // v2node-wrapped hysteria (type `v2node`, protocol `hysteria`) is kept.
+        if server.r#type == "hysteria" {
             continue;
         }
         if let Some(uri) = build_server_uri(uuid, server) {
@@ -1001,23 +1094,37 @@ fn build_clash_hysteria2(
 fn build_singbox_proxy(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
+    modern: bool,
 ) -> Option<Value> {
     match server_protocol(server).as_str() {
-        "shadowsocks" => build_singbox_shadowsocks(uuid, server),
-        "vmess" => build_singbox_vmess(uuid, server),
-        "vless" => build_singbox_vless(uuid, server),
-        "trojan" => build_singbox_trojan(uuid, server),
-        "tuic" => build_singbox_tuic(uuid, server),
-        "anytls" => build_singbox_anytls(uuid, server),
-        "hysteria" => build_singbox_hysteria(uuid, server),
-        "hysteria2" => build_singbox_hysteria2(uuid, server),
+        "shadowsocks" => build_singbox_shadowsocks(uuid, server, modern),
+        "vmess" => build_singbox_vmess(uuid, server, modern),
+        "vless" => build_singbox_vless(uuid, server, modern),
+        "trojan" => build_singbox_trojan(uuid, server, modern),
+        "tuic" => build_singbox_tuic(uuid, server, modern),
+        // anytls has no legacy (SingboxOld) builder, so legacy clients skip it.
+        "anytls" if modern => build_singbox_anytls(uuid, server),
+        "hysteria" => build_singbox_hysteria(uuid, server, modern),
+        "hysteria2" => build_singbox_hysteria2(uuid, server, modern),
         _ => None,
+    }
+}
+
+// Modern sing-box (>= 1.12) tags every outbound with `domain_resolver: local`;
+// the legacy builder (SingboxOld.php) omits it entirely.
+fn insert_singbox_domain_resolver(object: &mut Map<String, Value>, modern: bool) {
+    if modern {
+        object.insert(
+            "domain_resolver".to_string(),
+            Value::String("local".to_string()),
+        );
     }
 }
 
 fn build_singbox_shadowsocks(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
+    modern: bool,
 ) -> Option<Value> {
     let cipher = extra_string(server, "cipher")?;
     let mut object = singbox_base(server, "shadowsocks");
@@ -1026,10 +1133,7 @@ fn build_singbox_shadowsocks(
         "password".to_string(),
         Value::String(shadowsocks_password(uuid, server)?),
     );
-    object.insert(
-        "domain_resolver".to_string(),
-        Value::String("local".to_string()),
-    );
+    insert_singbox_domain_resolver(&mut object, modern);
     if extra_string(server, "obfs").as_deref() == Some("http") {
         let settings = extra_json(server, "obfs_settings");
         object.insert(
@@ -1044,6 +1148,21 @@ fn build_singbox_shadowsocks(
                 json_path_string(&settings, &["path"]),
             )),
         );
+    } else if extra_string(server, "network").as_deref() == Some("http") {
+        // network==http obfs fallback (Singbox.php:131-140 / SingboxOld:124-133):
+        // only when network_settings.Host is present.
+        let settings = extra_json(server, "network_settings");
+        if let Some(host) = json_path_string(&settings, &["Host"]) {
+            let path = json_path_string(&settings, &["path"]).unwrap_or_else(|| "/".to_string());
+            object.insert(
+                "plugin".to_string(),
+                Value::String("obfs-local".to_string()),
+            );
+            object.insert(
+                "plugin_opts".to_string(),
+                Value::String(format!("obfs=http;obfs-host={host};path={path}")),
+            );
+        }
     }
     Some(Value::Object(object))
 }
@@ -1051,6 +1170,7 @@ fn build_singbox_shadowsocks(
 fn build_singbox_vmess(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
+    modern: bool,
 ) -> Option<Value> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls = extra_i64(server, "tls").unwrap_or_default();
@@ -1059,14 +1179,11 @@ fn build_singbox_vmess(
     object.insert("uuid".to_string(), Value::String(uuid.to_string()));
     object.insert("security".to_string(), Value::String("auto".to_string()));
     object.insert("alter_id".to_string(), Value::from(0));
-    object.insert(
-        "domain_resolver".to_string(),
-        Value::String("local".to_string()),
-    );
+    insert_singbox_domain_resolver(&mut object, modern);
     if tls != 0 {
         object.insert(
             "tls".to_string(),
-            singbox_tls(server, &tls_settings, tls, false),
+            singbox_tls(server, &tls_settings, tls, false, modern),
         );
     }
     add_singbox_transport(
@@ -1080,16 +1197,14 @@ fn build_singbox_vmess(
 fn build_singbox_vless(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
+    modern: bool,
 ) -> Option<Value> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls = extra_i64(server, "tls").unwrap_or_default();
     let tls_settings = extra_json(server, "tls_settings");
     let mut object = singbox_base(server, "vless");
     object.insert("uuid".to_string(), Value::String(uuid.to_string()));
-    object.insert(
-        "domain_resolver".to_string(),
-        Value::String("local".to_string()),
-    );
+    insert_singbox_domain_resolver(&mut object, modern);
     object.insert(
         "packet_encoding".to_string(),
         Value::String("xudp".to_string()),
@@ -1098,7 +1213,7 @@ fn build_singbox_vless(
     if tls != 0 {
         object.insert(
             "tls".to_string(),
-            singbox_tls(server, &tls_settings, tls, true),
+            singbox_tls(server, &tls_settings, tls, true, modern),
         );
     }
     add_singbox_transport(
@@ -1112,18 +1227,16 @@ fn build_singbox_vless(
 fn build_singbox_trojan(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
+    modern: bool,
 ) -> Option<Value> {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls_settings = extra_json(server, "tls_settings");
     let mut object = singbox_base(server, "trojan");
     object.insert("password".to_string(), Value::String(uuid.to_string()));
-    object.insert(
-        "domain_resolver".to_string(),
-        Value::String("local".to_string()),
-    );
+    insert_singbox_domain_resolver(&mut object, modern);
     object.insert(
         "tls".to_string(),
-        singbox_tls(server, &tls_settings, 1, false),
+        singbox_tls(server, &tls_settings, 1, false, modern),
     );
     add_singbox_transport(
         &mut object,
@@ -1136,33 +1249,61 @@ fn build_singbox_trojan(
 fn build_singbox_tuic(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
+    modern: bool,
 ) -> Option<Value> {
+    // Singbox.php:333-357 (modern) / SingboxOld.php:281-304 (legacy). The two
+    // builders are identical apart from the modern `domain_resolver` tag.
     let tls_settings = extra_json(server, "tls_settings");
     let mut object = singbox_base(server, "tuic");
     object.insert("uuid".to_string(), Value::String(uuid.to_string()));
     object.insert("password".to_string(), Value::String(uuid.to_string()));
+    // `?? 'cubic'` / `?? 'native'` only substitute an unset value, so keep an
+    // explicit (even empty) column value rather than dropping it.
     object.insert(
-        "domain_resolver".to_string(),
-        Value::String("local".to_string()),
+        "congestion_control".to_string(),
+        Value::String(
+            extra_string(server, "congestion_control").unwrap_or_else(|| "cubic".to_string()),
+        ),
     );
-    insert_opt_string(
-        &mut object,
-        "congestion_control",
-        extra_string(server, "congestion_control").or_else(|| Some("cubic".to_string())),
-    );
-    insert_opt_string(
-        &mut object,
-        "udp_relay_mode",
-        extra_string(server, "udp_relay_mode").or_else(|| Some("native".to_string())),
+    object.insert(
+        "udp_relay_mode".to_string(),
+        Value::String(
+            extra_string(server, "udp_relay_mode").unwrap_or_else(|| "native".to_string()),
+        ),
     );
     object.insert(
         "zero_rtt_handshake".to_string(),
         Value::Bool(extra_i64(server, "zero_rtt_handshake").unwrap_or_default() == 1),
     );
-    object.insert(
-        "tls".to_string(),
-        singbox_tls(server, &tls_settings, 1, false),
+    insert_singbox_domain_resolver(&mut object, modern);
+    // Fixed inline TLS block: alpn ['h3'] + disable_sni, never ECH/reality/utls.
+    let mut tls = Map::new();
+    tls.insert("enabled".to_string(), Value::Bool(true));
+    tls.insert(
+        "insecure".to_string(),
+        // insecure => ($server['insecure'] ?? $tlsSettings['allow_insecure'] ?? 0) == 1
+        Value::Bool(
+            extra_i64(server, "insecure")
+                .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+                .unwrap_or_default()
+                == 1,
+        ),
     );
+    tls.insert("alpn".to_string(), json!(["h3"]));
+    tls.insert(
+        "disable_sni".to_string(),
+        Value::Bool(extra_i64(server, "disable_sni").unwrap_or_default() == 1),
+    );
+    tls.insert(
+        "server_name".to_string(),
+        // server_name => $server['server_name'] ?? $tlsSettings['server_name'] ?? ''
+        Value::String(
+            extra_string(server, "server_name")
+                .or_else(|| json_path_string(&tls_settings, &["server_name"]))
+                .unwrap_or_default(),
+        ),
+    );
+    object.insert("tls".to_string(), Value::Object(tls));
     Some(Value::Object(object))
 }
 
@@ -1170,23 +1311,58 @@ fn build_singbox_anytls(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
 ) -> Option<Value> {
+    // Singbox.php:359-418. anytls is modern-only (SingboxOld has no builder), so
+    // it always emits `domain_resolver`. TLS: alpn ['h2','http/1.1'], optional
+    // reality (tls==2) + utls when tls_settings present, never ECH.
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls_settings = extra_json(server, "tls_settings");
+    let tls_mode = extra_i64(server, "tls").unwrap_or(1);
     let mut object = singbox_base(server, "anytls");
     object.insert("password".to_string(), Value::String(uuid.to_string()));
     object.insert(
         "domain_resolver".to_string(),
         Value::String("local".to_string()),
     );
-    object.insert(
-        "tls".to_string(),
-        singbox_tls(
-            server,
-            &tls_settings,
-            extra_i64(server, "tls").unwrap_or(1),
-            true,
+    let mut tls = Map::new();
+    tls.insert("enabled".to_string(), Value::Bool(true));
+    tls.insert(
+        "insecure".to_string(),
+        Value::Bool(
+            extra_i64(server, "insecure")
+                .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+                .unwrap_or_default()
+                == 1,
         ),
     );
+    tls.insert("alpn".to_string(), json!(["h2", "http/1.1"]));
+    tls.insert(
+        "server_name".to_string(),
+        Value::String(
+            extra_string(server, "server_name")
+                .or_else(|| json_path_string(&tls_settings, &["server_name"]))
+                .unwrap_or_default(),
+        ),
+    );
+    if value_is_non_empty(&tls_settings) {
+        if tls_mode == 2 {
+            tls.insert(
+                "reality".to_string(),
+                json!({
+                    "enabled": true,
+                    "public_key": json_path_string(&tls_settings, &["public_key"]).unwrap_or_default(),
+                    "short_id": json_path_string(&tls_settings, &["short_id"]).unwrap_or_default()
+                }),
+            );
+        }
+        tls.insert(
+            "utls".to_string(),
+            json!({
+                "enabled": true,
+                "fingerprint": json_path_string(&tls_settings, &["fingerprint"]).unwrap_or_else(|| "chrome".to_string())
+            }),
+        );
+    }
+    object.insert("tls".to_string(), Value::Object(tls));
     add_singbox_transport(
         &mut object,
         &network,
@@ -1198,24 +1374,14 @@ fn build_singbox_anytls(
 fn build_singbox_hysteria(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
+    modern: bool,
 ) -> Option<Value> {
-    if extra_i64(server, "version") == Some(2) {
-        return build_singbox_hysteria2(uuid, server);
-    }
+    // Singbox.php:420-478 (modern) / SingboxOld.php:306-351 (legacy). A single
+    // builder covers hysteria v1 AND v2. Modern additionally emits
+    // `domain_resolver` and multi-port `server_ports`; legacy keeps the single
+    // first `server_port` from `singbox_base`.
     let mut object = singbox_base(server, "hysteria");
-    object.insert("auth_str".to_string(), Value::String(uuid.to_string()));
-    object.insert(
-        "domain_resolver".to_string(),
-        Value::String("local".to_string()),
-    );
-    object.insert(
-        "up_mbps".to_string(),
-        Value::from(extra_i64(server, "down_mbps").unwrap_or_default()),
-    );
-    object.insert(
-        "down_mbps".to_string(),
-        Value::from(extra_i64(server, "up_mbps").unwrap_or_default()),
-    );
+    insert_singbox_domain_resolver(&mut object, modern);
     object.insert(
         "tls".to_string(),
         json!({
@@ -1224,27 +1390,67 @@ fn build_singbox_hysteria(
             "server_name": extra_string(server, "server_name").unwrap_or_default()
         }),
     );
-    if let Some(obfs_password) = extra_string(server, "obfs_password") {
-        object.insert("obfs".to_string(), Value::String(obfs_password));
+    if modern {
+        set_singbox_hysteria_ports(&mut object, server);
     }
-    add_singbox_multi_port_fields(&mut object, server);
+    let version = extra_i64(server, "version");
+    if version.is_none() || version == Some(1) {
+        object.insert("auth_str".to_string(), Value::String(uuid.to_string()));
+        object.insert("type".to_string(), Value::String("hysteria".to_string()));
+        // NOTE: the up/down swap is intentional (matches the oracle). The
+        // `min($mbps, $user->speed_limit)` clamp cannot be reproduced — the Rust
+        // access row carries no per-user speed_limit — so raw column values are
+        // emitted unclamped. Reported as a data gap.
+        object.insert(
+            "up_mbps".to_string(),
+            Value::from(extra_i64(server, "down_mbps").unwrap_or_default()),
+        );
+        object.insert(
+            "down_mbps".to_string(),
+            Value::from(extra_i64(server, "up_mbps").unwrap_or_default()),
+        );
+        // obfs = obfs_password, gated on BOTH columns being set (isset && isset).
+        if extra_string(server, "obfs").is_some()
+            && let Some(obfs_password) = extra_string(server, "obfs_password")
+        {
+            object.insert("obfs".to_string(), Value::String(obfs_password));
+        }
+        object.insert("disable_mtu_discovery".to_string(), Value::Bool(true));
+    } else if version == Some(2) {
+        object.insert("password".to_string(), Value::String(uuid.to_string()));
+        object.insert("type".to_string(), Value::String("hysteria2".to_string()));
+        if let Some(obfs) = extra_string(server, "obfs") {
+            object.insert(
+                "obfs".to_string(),
+                json!({
+                    "type": obfs,
+                    "password": extra_string(server, "obfs_password").unwrap_or_default()
+                }),
+            );
+        }
+    }
     Some(Value::Object(object))
 }
 
 fn build_singbox_hysteria2(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
+    modern: bool,
 ) -> Option<Value> {
+    // Singbox.php:480-509 (modern) / SingboxOld.php:353-381 (legacy). Always a
+    // single first `server_port` (from `singbox_base`), never `server_ports`.
+    // Modern adds `domain_resolver`. TLS reads tls_settings and never emits ECH.
     let tls_settings = extra_json(server, "tls_settings");
     let mut object = singbox_base(server, "hysteria2");
     object.insert("password".to_string(), Value::String(uuid.to_string()));
-    object.insert(
-        "domain_resolver".to_string(),
-        Value::String("local".to_string()),
-    );
+    insert_singbox_domain_resolver(&mut object, modern);
     object.insert(
         "tls".to_string(),
-        singbox_tls(server, &tls_settings, 1, false),
+        json!({
+            "enabled": true,
+            "insecure": json_path_i64(&tls_settings, &["allow_insecure"]).unwrap_or_default() == 1,
+            "server_name": json_path_string(&tls_settings, &["server_name"]).unwrap_or_default()
+        }),
     );
     if let Some(obfs) = extra_string(server, "obfs") {
         object.insert(
@@ -1255,7 +1461,6 @@ fn build_singbox_hysteria2(
             }),
         );
     }
-    add_singbox_multi_port_fields(&mut object, server);
     Some(Value::Object(object))
 }
 
@@ -1418,93 +1623,313 @@ fn build_surfboard_proxy(
 }
 
 fn build_loon_proxy(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<String> {
+    // Loon.php:27-44 dispatch. vless requires tcp/ws, trojan excludes grpc,
+    // hysteria only matches the raw `hysteria` type at version 2 (there is no
+    // `hysteria2` case), and anytls/vmess/shadowsocks are unconditional.
     match server_protocol(server).as_str() {
-        "shadowsocks" => Some(format!(
-            "{}=Shadowsocks,{},{},{},{},fast-open=false,udp=true\r\n",
-            server.name,
-            server.host,
-            first_port(server),
-            extra_string(server, "cipher")?,
-            shadowsocks_password(uuid, server)?
-        )),
-        "vmess" => {
-            let mut parts = vec![
-                format!("{}=vmess", server.name),
-                server.host.clone(),
-                first_port(server),
-                "auto".to_string(),
-                uuid.to_string(),
-                "fast-open=false".to_string(),
-                "udp=true".to_string(),
-                "alterId=0".to_string(),
-            ];
-            append_loon_transport_and_tls(server, &mut parts);
-            Some(format!("{}\r\n", parts.join(",")))
+        "shadowsocks" => build_loon_shadowsocks(uuid, server),
+        "vmess" => build_loon_vmess(uuid, server),
+        "vless"
+            if matches!(
+                extra_string(server, "network").as_deref(),
+                Some("tcp") | Some("ws")
+            ) =>
+        {
+            build_loon_vless(uuid, server)
         }
-        "vless" => {
-            let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
-            if !matches!(network.as_str(), "tcp" | "ws") {
-                return None;
-            }
-            let mut parts = vec![
-                format!("{}=vless", server.name),
-                server.host.clone(),
-                first_port(server),
-                uuid.to_string(),
-                "fast-open=false".to_string(),
-                "udp=true".to_string(),
-                "alterId=0".to_string(),
-            ];
-            insert_opt_part(&mut parts, "flow", extra_string(server, "flow"));
-            append_loon_transport_and_tls(server, &mut parts);
-            Some(format!("{}\r\n", parts.join(",")))
+        "trojan" if extra_string(server, "network").as_deref() != Some("grpc") => {
+            build_loon_trojan(uuid, server)
         }
-        "trojan" => {
-            if extra_string(server, "network").as_deref() == Some("grpc") {
-                return None;
-            }
-            let mut parts = vec![
-                format!("{}=trojan", server.name),
-                server.host.clone(),
-                first_port(server),
-                uuid.to_string(),
-                "fast-open=false".to_string(),
-                "udp=true".to_string(),
-            ];
-            append_sni_and_insecure(server, &mut parts, "tls-name");
-            Some(format!("{}\r\n", parts.join(",")))
-        }
-        "hysteria" | "hysteria2" if extra_i64(server, "version") == Some(2) => {
-            let mut parts = vec![
-                format!("{}=hysteria2", server.name),
-                server.host.clone(),
-                first_port(server),
-                format!("password={uuid}"),
-                format!(
-                    "download-bandwidth={}",
-                    extra_i64(server, "up_mbps").unwrap_or_default()
-                ),
-                "udp=true".to_string(),
-            ];
-            append_sni_and_insecure(server, &mut parts, "sni");
-            if let Some(obfs_password) = extra_string(server, "obfs_password") {
-                parts.push(format!("salamander-password={obfs_password}"));
-            }
-            Some(format!("{}\r\n", parts.join(",")))
-        }
-        "anytls" => {
-            let mut parts = vec![
-                format!("{}=anytls", server.name),
-                server.host.clone(),
-                first_port(server),
-                uuid.to_string(),
-                "udp=true".to_string(),
-            ];
-            append_sni_and_insecure(server, &mut parts, "sni");
-            Some(format!("{}\r\n", parts.join(",")))
-        }
+        "hysteria" if extra_i64(server, "version") == Some(2) => build_loon_hysteria(uuid, server),
+        "anytls" => build_loon_anytls(uuid, server),
         _ => None,
     }
+}
+
+// Loon.php:49-83. All shadowsocks are eligible (no cipher filter). The http-obfs
+// block mirrors ServerService::getAvailableShadowsocks flattening obfs_settings
+// into obfs-host/obfs-path (ServerService.php:161-164).
+fn build_loon_shadowsocks(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    let cipher = extra_string(server, "cipher")?;
+    let mut config = vec![
+        format!("{}=Shadowsocks", server.name),
+        server.host.clone(),
+        first_port(server),
+        cipher,
+        shadowsocks_password(uuid, server)?,
+    ];
+    if extra_string(server, "obfs").as_deref() == Some("http") {
+        config.push("obfs-name=http".to_string());
+        let obfs_settings = extra_json(server, "obfs_settings");
+        insert_opt_part(
+            &mut config,
+            "obfs-host",
+            json_path_string(&obfs_settings, &["host"]),
+        );
+        // obfs-uri is `isset()`-gated only (no !empty), so an explicit empty path
+        // still emits `obfs-uri=`.
+        if let Some(path) = json_path_string(&obfs_settings, &["path"]) {
+            config.push(format!("obfs-uri={path}"));
+        }
+    }
+    config.push("fast-open=false".to_string());
+    config.push("udp=true".to_string());
+    Some(format!("{}\r\n", config.join(",")))
+}
+
+// Loon.php:85-135. vmess reads the legacy camelCase tlsSettings inner keys
+// (allowInsecure/serverName) and the networkSettings `security`; block order is
+// base, TCP transport, TLS, WS transport.
+fn build_loon_vmess(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<String> {
+    let network = extra_string(server, "network").unwrap_or_default();
+    let network_settings = extra_json(server, "network_settings");
+    let tls_settings = extra_json(server, "tls_settings");
+    let security =
+        json_path_string(&network_settings, &["security"]).unwrap_or_else(|| "auto".to_string());
+    let mut config = vec![
+        format!("{}=vmess", server.name),
+        server.host.clone(),
+        first_port(server),
+        security,
+        uuid.to_string(),
+        "fast-open=false".to_string(),
+        "udp=true".to_string(),
+        "alterId=0".to_string(),
+    ];
+    if network == "tcp" {
+        // header.type == 'http' rewrites transport=tcp to transport=http.
+        let transport = json_path_string(&network_settings, &["header", "type"])
+            .filter(|value| value == "http")
+            .unwrap_or_else(|| "tcp".to_string());
+        config.push(format!("transport={transport}"));
+        insert_opt_part(
+            &mut config,
+            "path",
+            json_path_first_string(&network_settings, &["header", "request", "path"]),
+        );
+        insert_opt_part(
+            &mut config,
+            "host",
+            json_path_first_string(&network_settings, &["header", "request", "headers", "Host"]),
+        );
+    }
+    if extra_i64(server, "tls").unwrap_or_default() != 0 {
+        config.push("over-tls=true".to_string());
+        // The !empty() guard means the emitted value is always true.
+        if json_path_i64(&tls_settings, &["allowInsecure"]).unwrap_or_default() != 0 {
+            config.push("skip-cert-verify=true".to_string());
+        }
+        insert_opt_part(
+            &mut config,
+            "tls-name",
+            json_path_string(&tls_settings, &["serverName"]),
+        );
+    }
+    if network == "ws" {
+        config.push("transport=ws".to_string());
+        insert_opt_part(
+            &mut config,
+            "path",
+            json_path_string(&network_settings, &["path"]),
+        );
+        insert_opt_part(
+            &mut config,
+            "host",
+            json_path_string(&network_settings, &["headers", "Host"]),
+        );
+    }
+    Some(format!("{}\r\n", config.join(",")))
+}
+
+// Loon.php:137-199. vless uses snake_case tls_settings and strict tls === 1/2;
+// `flow` is emitted (raw, even empty) inside each TLS branch.
+fn build_loon_vless(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<String> {
+    let network = extra_string(server, "network").unwrap_or_default();
+    let network_settings = extra_json(server, "network_settings");
+    let tls_settings = extra_json(server, "tls_settings");
+    let tls = extra_i64(server, "tls").unwrap_or_default();
+    let mut config = vec![
+        format!("{}=vless", server.name),
+        server.host.clone(),
+        first_port(server),
+        uuid.to_string(),
+        "fast-open=false".to_string(),
+        "udp=true".to_string(),
+        "alterId=0".to_string(),
+    ];
+    if network == "tcp" {
+        let transport = json_path_string(&network_settings, &["header", "type"])
+            .filter(|value| value == "http")
+            .unwrap_or_else(|| "tcp".to_string());
+        config.push(format!("transport={transport}"));
+        insert_opt_part(
+            &mut config,
+            "path",
+            json_path_first_string(&network_settings, &["header", "request", "path"]),
+        );
+        insert_opt_part(
+            &mut config,
+            "host",
+            json_path_first_string(&network_settings, &["header", "request", "headers", "Host"]),
+        );
+    }
+    if tls == 1 {
+        config.push("over-tls=true".to_string());
+        config.push(format!(
+            "flow={}",
+            extra_string(server, "flow").unwrap_or_default()
+        ));
+        if json_path_i64(&tls_settings, &["allow_insecure"]).unwrap_or_default() != 0 {
+            config.push("skip-cert-verify=true".to_string());
+        }
+        insert_opt_part(
+            &mut config,
+            "tls-name",
+            json_path_string(&tls_settings, &["server_name"]),
+        );
+    } else if tls == 2 {
+        config.push(format!(
+            "flow={}",
+            extra_string(server, "flow").unwrap_or_default()
+        ));
+        insert_opt_part(
+            &mut config,
+            "public-key",
+            json_path_string(&tls_settings, &["public_key"]),
+        );
+        insert_opt_part(
+            &mut config,
+            "short-id",
+            json_path_string(&tls_settings, &["short_id"]),
+        );
+        insert_opt_part(
+            &mut config,
+            "sni",
+            json_path_string(&tls_settings, &["server_name"]),
+        );
+        if json_path_i64(&tls_settings, &["allow_insecure"]).unwrap_or_default() != 0 {
+            config.push("skip-cert-verify=true".to_string());
+        }
+    }
+    if network == "ws" {
+        config.push("transport=ws".to_string());
+        insert_opt_part(
+            &mut config,
+            "path",
+            json_path_string(&network_settings, &["path"]),
+        );
+        insert_opt_part(
+            &mut config,
+            "host",
+            json_path_string(&network_settings, &["headers", "Host"]),
+        );
+    }
+    Some(format!("{}\r\n", config.join(",")))
+}
+
+// Loon.php:201-229. tls-name is positional (before fast-open) and array_filter
+// drops it when server_name is empty; adds the ws block after skip-cert-verify.
+fn build_loon_trojan(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    let mut config = vec![
+        format!("{}=trojan", server.name),
+        server.host.clone(),
+        first_port(server),
+        uuid.to_string(),
+    ];
+    if let Some(server_name) = extra_string(server, "server_name").filter(|value| !value.is_empty())
+    {
+        config.push(format!("tls-name={server_name}"));
+    }
+    config.push("fast-open=false".to_string());
+    config.push("udp=true".to_string());
+    if matches!(extra_i64(server, "allow_insecure"), Some(value) if value != 0) {
+        config.push("skip-cert-verify=true".to_string());
+    }
+    if extra_string(server, "network").as_deref() == Some("ws") {
+        config.push("ws=true".to_string());
+        let network_settings = extra_json(server, "network_settings");
+        insert_opt_part(
+            &mut config,
+            "ws-path",
+            json_path_string(&network_settings, &["path"]),
+        );
+        if let Some(host) =
+            json_path_string(&network_settings, &["headers", "Host"]).filter(|v| !v.is_empty())
+        {
+            config.push(format!("ws-headers=Host:{host}"));
+        }
+    }
+    Some(format!("{}\r\n", config.join(",")))
+}
+
+// Loon.php:231-262. hysteria2 only (dispatched on raw type `hysteria` v2). sni is
+// positional (before udp); salamander-password is gated on isset(obfs).
+fn build_loon_hysteria(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    let mut config = vec![
+        format!("{}=hysteria2", server.name),
+        server.host.clone(),
+        first_port(server),
+        format!("password={uuid}"),
+        format!(
+            "download-bandwidth={}",
+            extra_i64(server, "up_mbps").unwrap_or_default()
+        ),
+    ];
+    if let Some(server_name) = extra_string(server, "server_name").filter(|value| !value.is_empty())
+    {
+        config.push(format!("sni={server_name}"));
+    }
+    config.push("udp=true".to_string());
+    if matches!(extra_i64(server, "insecure"), Some(value) if value != 0) {
+        config.push("skip-cert-verify=true".to_string());
+    }
+    if extra_string(server, "obfs").is_some() {
+        config.push(format!(
+            "salamander-password={}",
+            extra_string(server, "obfs_password").unwrap_or_default()
+        ));
+    }
+    Some(format!("{}\r\n", config.join(",")))
+}
+
+// Loon.php:264-284. skip-cert-verify is always emitted (true/false); sni follows
+// udp and coalesces server_name then tls_settings.server_name.
+fn build_loon_anytls(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut config = vec![
+        format!("{}=anytls", server.name),
+        server.host.clone(),
+        first_port(server),
+        uuid.to_string(),
+        "udp=true".to_string(),
+    ];
+    if let Some(sni) = extra_string(server, "server_name")
+        .or_else(|| json_path_string(&tls_settings, &["server_name"]))
+        .filter(|value| !value.is_empty())
+    {
+        config.push(format!("sni={sni}"));
+    }
+    let insecure = extra_i64(server, "insecure")
+        .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+        .unwrap_or_default()
+        != 0;
+    config.push(format!(
+        "skip-cert-verify={}",
+        if insecure { "true" } else { "false" }
+    ));
+    Some(format!("{}\r\n", config.join(",")))
 }
 
 fn build_shadowrocket_vmess_uri(
@@ -1594,6 +2019,8 @@ fn build_quantumultx_proxy(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
 ) -> Option<String> {
+    // QuantumultX.php only handles ss/vmess/vless/trojan — there is no anytls
+    // (nor hysteria) case, so those protocols emit nothing.
     match server_protocol(server).as_str() {
         "shadowsocks" => Some(format!(
             "shadowsocks={}:{},method={},password={},fast-open=false,udp-relay=true,tag={}\r\n",
@@ -1603,66 +2030,203 @@ fn build_quantumultx_proxy(
             shadowsocks_password(uuid, server)?,
             server.name
         )),
-        "vmess" => Some(format!(
-            "vmess={}:{},method=chacha20-poly1305,password={},fast-open=true,udp-relay=true,tag={}\r\n",
-            server.host,
-            first_port(server),
-            uuid,
-            server.name
-        )),
-        "vless" => {
-            if !extra_string(server, "encryption")
-                .unwrap_or_default()
-                .is_empty()
-            {
-                return None;
-            }
-            Some(format!(
-                "vless={}:{},method=none,password={},udp-relay=true,fast-open=true,tag={}\r\n",
-                server.host,
-                first_port(server),
-                uuid,
-                server.name
-            ))
-        }
-        "trojan" => Some(format!(
-            "trojan={}:{},password={},fast-open=true,udp-relay=true,tag={}\r\n",
-            server.host,
-            first_port(server),
-            uuid,
-            server.name
-        )),
-        "anytls" => Some(build_quantumultx_anytls(uuid, server)),
+        "vmess" => Some(build_quantumultx_vmess(uuid, server)),
+        "vless" => build_quantumultx_vless(uuid, server),
+        "trojan" => Some(build_quantumultx_trojan(uuid, server)),
         _ => None,
     }
 }
 
-fn build_quantumultx_anytls(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> String {
+// QuantumultX.php:119-219
+fn build_quantumultx_vmess(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> String {
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let tls_settings = extra_json(server, "tls_settings");
+    let net_settings = extra_json(server, "network_settings");
+    let is_tls = extra_i64(server, "tls").unwrap_or_default() != 0;
     let mut config = vec![
-        format!("anytls={}:{}", server.host, first_port(server)),
+        format!("vmess={}:{}", server.host, first_port(server)),
+        "method=chacha20-poly1305".to_string(),
+        format!("password={uuid}"),
+        "fast-open=true".to_string(),
+        "udp-relay=true".to_string(),
+        format!("tag={}", server.name),
+    ];
+    // WS with an explicit non-auto security overrides the method (QX has no auto).
+    if network == "ws"
+        && let Some(security) =
+            json_path_string(&net_settings, &["security"]).filter(|value| value != "auto")
+        && let Some(slot) = config.iter_mut().find(|value| value.starts_with("method="))
+    {
+        *slot = format!("method={security}");
+    }
+    let allow_insecure = json_path_i64(&tls_settings, &["allow_insecure"])
+        .or_else(|| json_path_i64(&tls_settings, &["allowInsecure"]))
+        .unwrap_or_default()
+        != 0;
+    if is_tls {
+        config.push("tls13=true".to_string());
+        if allow_insecure {
+            config.push("tls-verification=false".to_string());
+        }
+    }
+    push_quantumultx_transport(&mut config, &network, &net_settings, is_tls);
+    let sni = json_path_string(&tls_settings, &["server_name"])
+        .or_else(|| json_path_string(&tls_settings, &["serverName"]));
+    push_quantumultx_host_path(&mut config, &network, &net_settings, is_tls, sni);
+    format!("{}\r\n", config.join(","))
+}
+
+// QuantumultX.php:221-311
+fn build_quantumultx_vless(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let tls = extra_i64(server, "tls").unwrap_or_default();
+    let is_tls = tls != 0;
+    let tls_settings = extra_json(server, "tls_settings");
+    let net_settings = extra_json(server, "network_settings");
+    let mut config = vec![
+        format!("vless={}:{}", server.host, first_port(server)),
+        "method=none".to_string(),
         format!("password={uuid}"),
         "udp-relay=true".to_string(),
         format!("tag={}", server.name),
     ];
+    // REALITY disables fast-open; everything else enables it.
+    config.push(
+        if tls == 2 {
+            "fast-open=false"
+        } else {
+            "fast-open=true"
+        }
+        .to_string(),
+    );
+    // QX cannot express VLESS encryption: skip the node entirely when both the
+    // encryption and its settings are present (:235-238).
+    let encryption = extra_string(server, "encryption").unwrap_or_default();
+    if !encryption.is_empty() && value_is_non_empty(&extra_json(server, "encryption_settings")) {
+        return None;
+    }
+    if is_tls {
+        config.push("tls13=true".to_string());
+        if json_path_i64(&tls_settings, &["allow_insecure"]).unwrap_or_default() != 0 {
+            config.push("tls-verification=false".to_string());
+        }
+        if let Some(flow) = extra_string(server, "flow").filter(|value| !value.is_empty()) {
+            config.push(format!("vless-flow={flow}"));
+        }
+        if tls == 2 {
+            if let Some(public_key) = json_path_string(&tls_settings, &["public_key"]) {
+                config.push(format!("reality-base64-pubkey={public_key}"));
+            }
+            if let Some(short_id) = json_path_string(&tls_settings, &["short_id"]) {
+                config.push(format!("reality-hex-shortid={short_id}"));
+            }
+        }
+    }
+    push_quantumultx_transport(&mut config, &network, &net_settings, is_tls);
+    let sni = json_path_string(&tls_settings, &["server_name"]);
+    push_quantumultx_host_path(&mut config, &network, &net_settings, is_tls, sni);
+    Some(format!("{}\r\n", config.join(",")))
+}
+
+// QuantumultX.php:313-378
+fn build_quantumultx_trojan(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> String {
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let tls_settings = extra_json(server, "tls_settings");
+    let net_settings = extra_json(server, "network_settings");
+    let sni = extra_string(server, "server_name")
+        .or_else(|| json_path_string(&tls_settings, &["server_name"]));
+    let allow_insecure = extra_i64(server, "allow_insecure")
+        .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+        .unwrap_or_default()
+        != 0;
+    let mut config = vec![
+        format!("trojan={}:{}", server.host, first_port(server)),
+        format!("password={uuid}"),
+        "fast-open=true".to_string(),
+        "udp-relay=true".to_string(),
+        format!("tag={}", server.name),
+    ];
     if network == "tcp" {
         config.push("over-tls=true".to_string());
-        let tls_settings = extra_json(server, "tls_settings");
-        if let Some(sni) = json_path_string(&tls_settings, &["server_name"])
-            .or_else(|| extra_string(server, "server_name"))
-        {
+        if let Some(sni) = sni.as_deref().filter(|value| !value.is_empty()) {
             config.push(format!("tls-host={sni}"));
         }
-        let allow_insecure = json_path_i64(&tls_settings, &["allow_insecure"])
-            .or_else(|| extra_i64(server, "allow_insecure"))
-            .unwrap_or_default()
-            != 0;
         config.push(format!(
             "tls-verification={}",
             if allow_insecure { "false" } else { "true" }
         ));
     }
+    if network == "ws" {
+        config.push("obfs=wss".to_string());
+        let mut host = json_path_string(&net_settings, &["headers", "Host"]);
+        let path = json_path_string(&net_settings, &["path"]);
+        if host.as_deref().map(str::is_empty).unwrap_or(true) {
+            host = sni.filter(|value| !value.is_empty());
+        }
+        if let Some(host) = host.filter(|value| !value.is_empty()) {
+            config.push(format!("obfs-host={host}"));
+        }
+        if let Some(path) = path.filter(|value| !value.is_empty()) {
+            config.push(format!("obfs-uri={path}"));
+        }
+        if allow_insecure {
+            config.push("tls-verification=false".to_string());
+        }
+    }
     format!("{}\r\n", config.join(","))
+}
+
+// Shared vmess/vless `obfs=` transport tag selection (QuantumultX.php).
+fn push_quantumultx_transport(
+    config: &mut Vec<String>,
+    network: &str,
+    net_settings: &Value,
+    is_tls: bool,
+) {
+    if network == "ws" {
+        config.push(if is_tls { "obfs=wss" } else { "obfs=ws" }.to_string());
+    } else if network == "tcp" {
+        if is_tls {
+            config.push("obfs=over-tls".to_string());
+        } else if json_path_string(net_settings, &["header", "type"]).as_deref() == Some("http") {
+            config.push("obfs=http".to_string());
+        }
+    }
+}
+
+// Shared vmess/vless obfs-host / obfs-uri emission, falling back to the SNI host.
+fn push_quantumultx_host_path(
+    config: &mut Vec<String>,
+    network: &str,
+    net_settings: &Value,
+    _is_tls: bool,
+    sni: Option<String>,
+) {
+    let (mut host, path) = match network {
+        "tcp" if json_path_string(net_settings, &["header", "type"]).as_deref() == Some("http") => {
+            (
+                json_path_first_string(net_settings, &["header", "request", "headers", "Host"]),
+                json_path_first_string(net_settings, &["header", "request", "path"]),
+            )
+        }
+        "ws" => (
+            json_path_string(net_settings, &["headers", "Host"]),
+            json_path_string(net_settings, &["path"]),
+        ),
+        _ => (None, None),
+    };
+    if host.as_deref().map(str::is_empty).unwrap_or(true) {
+        host = sni.filter(|value| !value.is_empty());
+    }
+    if let Some(host) = host.filter(|value| !value.is_empty()) {
+        config.push(format!("obfs-host={host}"));
+    }
+    if let Some(path) = path.filter(|value| !value.is_empty()) {
+        config.push(format!("obfs-uri={path}"));
+    }
 }
 
 fn supports_surge(server: &v2board_db::server::AvailableServerRow) -> bool {
@@ -1738,72 +2302,6 @@ fn append_sni_and_insecure(
         .unwrap_or_default()
         == 1
     {
-        parts.push("skip-cert-verify=true".to_string());
-    }
-}
-
-fn append_loon_transport_and_tls(
-    server: &v2board_db::server::AvailableServerRow,
-    parts: &mut Vec<String>,
-) {
-    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
-    let settings = extra_json(server, "network_settings");
-    match network.as_str() {
-        "tcp" => {
-            let transport = json_path_string(&settings, &["header", "type"])
-                .filter(|value| value == "http")
-                .unwrap_or_else(|| "tcp".to_string());
-            parts.push(format!("transport={transport}"));
-            insert_opt_part(
-                parts,
-                "path",
-                json_path_string(&settings, &["header", "request", "path"]),
-            );
-            insert_opt_part(
-                parts,
-                "host",
-                json_path_string(&settings, &["header", "request", "headers", "Host"]),
-            );
-        }
-        "ws" => {
-            parts.push("transport=ws".to_string());
-            insert_opt_part(parts, "path", json_path_string(&settings, &["path"]));
-            insert_opt_part(
-                parts,
-                "host",
-                json_path_string(&settings, &["headers", "Host"]),
-            );
-        }
-        _ => {}
-    }
-    let tls = extra_i64(server, "tls").unwrap_or_default();
-    let tls_settings = extra_json(server, "tls_settings");
-    if tls == 1 {
-        parts.push("over-tls=true".to_string());
-        insert_opt_part(
-            parts,
-            "tls-name",
-            json_path_string(&tls_settings, &["server_name"])
-                .or_else(|| json_path_string(&tls_settings, &["serverName"])),
-        );
-    } else if tls == 2 {
-        insert_opt_part(
-            parts,
-            "public-key",
-            json_path_string(&tls_settings, &["public_key"]),
-        );
-        insert_opt_part(
-            parts,
-            "short-id",
-            json_path_string(&tls_settings, &["short_id"]),
-        );
-        insert_opt_part(
-            parts,
-            "sni",
-            json_path_string(&tls_settings, &["server_name"]),
-        );
-    }
-    if json_path_i64(&tls_settings, &["allow_insecure"]).unwrap_or_default() == 1 {
         parts.push("skip-cert-verify=true".to_string());
     }
 }
@@ -1957,33 +2455,46 @@ fn add_singbox_transport(object: &mut Map<String, Value>, network: &str, setting
     }
 }
 
+// insecure/server_name resolution shared by every sing-box TLS block, checking
+// both v2node (`allow_insecure`/`server_name`) and legacy (`allowInsecure`/
+// `serverName`) key spellings plus the outer server columns.
+fn singbox_insecure(server: &v2board_db::server::AvailableServerRow, tls_settings: &Value) -> bool {
+    extra_i64(server, "insecure")
+        .or_else(|| extra_i64(server, "allow_insecure"))
+        .or_else(|| json_path_i64(tls_settings, &["allow_insecure"]))
+        .or_else(|| json_path_i64(tls_settings, &["allowInsecure"]))
+        .unwrap_or_default()
+        == 1
+}
+
+fn singbox_server_name(
+    server: &v2board_db::server::AvailableServerRow,
+    tls_settings: &Value,
+) -> String {
+    extra_string(server, "server_name")
+        .or_else(|| json_path_string(tls_settings, &["server_name"]))
+        .or_else(|| json_path_string(tls_settings, &["serverName"]))
+        .unwrap_or_default()
+}
+
 fn singbox_tls(
     server: &v2board_db::server::AvailableServerRow,
     tls_settings: &Value,
     tls_mode: i64,
     utls: bool,
+    // Only vmess/vless/trojan on modern sing-box emit ECH; legacy sing-box and
+    // tuic/anytls/hysteria2 never do.
+    include_ech: bool,
 ) -> Value {
     let mut tls = Map::new();
     tls.insert("enabled".to_string(), Value::Bool(true));
     tls.insert(
         "insecure".to_string(),
-        Value::Bool(
-            extra_i64(server, "insecure")
-                .or_else(|| extra_i64(server, "allow_insecure"))
-                .or_else(|| json_path_i64(tls_settings, &["allow_insecure"]))
-                .or_else(|| json_path_i64(tls_settings, &["allowInsecure"]))
-                .unwrap_or_default()
-                == 1,
-        ),
+        Value::Bool(singbox_insecure(server, tls_settings)),
     );
     tls.insert(
         "server_name".to_string(),
-        Value::String(
-            extra_string(server, "server_name")
-                .or_else(|| json_path_string(tls_settings, &["server_name"]))
-                .or_else(|| json_path_string(tls_settings, &["serverName"]))
-                .unwrap_or_default(),
-        ),
+        Value::String(singbox_server_name(server, tls_settings)),
     );
     if tls_mode == 2 {
         tls.insert(
@@ -2004,7 +2515,9 @@ fn singbox_tls(
             }),
         );
     }
-    add_singbox_ech(&mut tls, tls_settings);
+    if include_ech {
+        add_singbox_ech(&mut tls, tls_settings);
+    }
     Value::Object(tls)
 }
 
@@ -2058,22 +2571,28 @@ fn add_multi_port_fields(
     }
 }
 
-fn add_singbox_multi_port_fields(
+// Modern sing-box hysteria port logic (Singbox.php:422-453): a lone single port
+// stays `server_port`; anything else becomes `server_ports` with the range
+// entries only (bare single ports inside a comma list are discarded).
+fn set_singbox_hysteria_ports(
     object: &mut Map<String, Value>,
     server: &v2board_db::server::AvailableServerRow,
 ) {
     let raw = port_text(server);
-    if raw.contains('-') || raw.contains(',') {
-        let ranges = raw
-            .split(',')
-            .map(str::trim)
+    let parts = raw.split(',').map(str::trim).collect::<Vec<_>>();
+    if parts.len() == 1 && !parts[0].contains('-') {
+        object.insert(
+            "server_port".to_string(),
+            Value::from(parts[0].parse::<i64>().unwrap_or_default()),
+        );
+    } else {
+        object.remove("server_port");
+        let ranges = parts
+            .iter()
             .filter(|part| part.contains('-'))
             .map(|part| part.replace('-', ":"))
             .collect::<Vec<_>>();
-        if !ranges.is_empty() {
-            object.remove("server_port");
-            object.insert("server_ports".to_string(), json!(ranges));
-        }
+        object.insert("server_ports".to_string(), json!(ranges));
     }
 }
 
@@ -2136,8 +2655,38 @@ fn split_jsonish_list(value: &str) -> Value {
     }
 }
 
-fn bytes_to_gib(value: i64) -> f64 {
-    value as f64 / 1_073_741_824_f64
+const KIB: f64 = 1024.0;
+const MIB: f64 = 1_048_576.0;
+const GIB: f64 = 1_073_741_824.0;
+
+// Round half-away-from-zero to 2 decimals (PHP `round($x, 2)` default mode).
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
+}
+
+// Format a rounded value the way PHP prints a float: trailing zeros and a bare
+// decimal point are dropped (e.g. 1.0 -> "1", 1.50 -> "1.5", 1.05 -> "1.05").
+fn php_round2(value: f64) -> String {
+    let cents = (value * 100.0).round() as i64;
+    let sign = if cents < 0 { "-" } else { "" };
+    let cents = cents.abs();
+    let whole = cents / 100;
+    let frac = cents % 100;
+    if frac == 0 {
+        format!("{sign}{whole}")
+    } else if frac % 10 == 0 {
+        format!("{sign}{whole}.{}", frac / 10)
+    } else {
+        format!("{sign}{whole}.{frac:02}")
+    }
+}
+
+fn format_datetime_timestamp(timestamp: i64) -> String {
+    Local
+        .timestamp_opt(timestamp, 0)
+        .single()
+        .map(|value| value.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| timestamp.to_string())
 }
 
 fn render_yaml(value: &Value) -> String {
@@ -2265,7 +2814,10 @@ fn build_vmess_uri(uuid: &str, server: &v2board_db::server::AvailableServerRow) 
     let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
     let tls = extra_i64(server, "tls").unwrap_or_default();
     let tls_settings = extra_json(server, "tls_settings");
-    let mut config = serde_json::Map::new();
+    // PHP json_encode preserves INSERTION order (v,ps,add,port,id,...) and escapes
+    // `/` and non-ASCII; serde's BTreeMap would sort keys and skip those escapes.
+    // Build an ordered list and serialise it PHP-compatibly (Helper.php:223-289).
+    let mut config: Vec<(String, Value)> = Vec::new();
     json_insert_str(&mut config, "v", "2");
     json_insert_str(&mut config, "ps", &server.name);
     json_insert_str(&mut config, "add", &format_host(&server.host));
@@ -2300,7 +2852,7 @@ fn build_vmess_uri(uuid: &str, server: &v2board_db::server::AvailableServerRow) 
         &extra_json(server, "network_settings"),
         &mut config,
     );
-    let payload = serde_json::to_string(&serde_json::Value::Object(config)).ok()?;
+    let payload = php_json_encode_object(&config);
     Some(format!(
         "vmess://{}\r\n",
         standard_base64_encode(payload.as_bytes())
@@ -2613,7 +3165,7 @@ fn server_protocol(server: &v2board_db::server::AvailableServerRow) -> String {
 fn configure_vmess_network(
     network: &str,
     settings: &serde_json::Value,
-    config: &mut serde_json::Map<String, serde_json::Value>,
+    config: &mut Vec<(String, serde_json::Value)>,
 ) {
     match network {
         "tcp" => {
@@ -2865,19 +3417,76 @@ fn set_param(params: &mut Vec<(String, String)>, key: &str, value: impl Into<Str
     }
 }
 
-fn json_insert_str(
-    config: &mut serde_json::Map<String, serde_json::Value>,
-    key: &str,
-    value: &str,
-) {
-    config.insert(
-        key.to_string(),
-        serde_json::Value::String(value.to_string()),
-    );
+// Ordered-map upsert: replace an existing key in place (PHP array assignment
+// keeps insertion position) or append a new one.
+fn vmess_set(config: &mut Vec<(String, serde_json::Value)>, key: &str, value: serde_json::Value) {
+    if let Some(entry) = config.iter_mut().find(|(existing, _)| existing == key) {
+        entry.1 = value;
+    } else {
+        config.push((key.to_string(), value));
+    }
 }
 
-fn json_insert_i64(config: &mut serde_json::Map<String, serde_json::Value>, key: &str, value: i64) {
-    config.insert(key.to_string(), serde_json::Value::from(value));
+fn json_insert_str(config: &mut Vec<(String, serde_json::Value)>, key: &str, value: &str) {
+    vmess_set(config, key, serde_json::Value::String(value.to_string()));
+}
+
+fn json_insert_i64(config: &mut Vec<(String, serde_json::Value)>, key: &str, value: i64) {
+    vmess_set(config, key, serde_json::Value::from(value));
+}
+
+// PHP-compatible json_encode for the vmess payload: ordered keys, `/` escaped as
+// `\/`, and non-ASCII emitted as lowercase `\uXXXX` (UTF-16, surrogate pairs for
+// astral code points) — matching PHP's default flags (Helper.php:289).
+fn php_json_encode_object(entries: &[(String, serde_json::Value)]) -> String {
+    let mut out = String::from("{");
+    for (index, (key, value)) in entries.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        php_json_encode_string(&mut out, key);
+        out.push(':');
+        php_json_encode_value(&mut out, value);
+    }
+    out.push('}');
+    out
+}
+
+fn php_json_encode_value(out: &mut String, value: &serde_json::Value) {
+    match value {
+        serde_json::Value::String(text) => php_json_encode_string(out, text),
+        serde_json::Value::Null => out.push_str("null"),
+        serde_json::Value::Bool(flag) => out.push_str(if *flag { "true" } else { "false" }),
+        serde_json::Value::Number(number) => out.push_str(&number.to_string()),
+        other => out.push_str(&serde_json::to_string(other).unwrap_or_default()),
+    }
+}
+
+fn php_json_encode_string(out: &mut String, text: &str) {
+    out.push('"');
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '/' => out.push_str("\\/"),
+            '\u{08}' => out.push_str("\\b"),
+            '\u{0C}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            control if (control as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", control as u32));
+            }
+            ascii if (ascii as u32) < 0x80 => out.push(ascii),
+            other => {
+                let mut units = [0u16; 2];
+                for unit in other.encode_utf16(&mut units) {
+                    out.push_str(&format!("\\u{unit:04x}"));
+                }
+            }
+        }
+    }
+    out.push('"');
 }
 
 fn extra_json(server: &v2board_db::server::AvailableServerRow, key: &str) -> serde_json::Value {
@@ -2915,6 +3524,29 @@ fn json_path_string(value: &serde_json::Value, path: &[&str]) -> Option<String> 
 
 fn json_path_i64(value: &serde_json::Value, path: &[&str]) -> Option<i64> {
     json_path_value(value, path).and_then(value_to_i64)
+}
+
+// Legacy v2 transport settings store Host/path as arrays; read the first element
+// if the target is an array, otherwise stringify the scalar (QuantumultX.php uses
+// `$header['request']['path'][0]` etc.).
+fn json_path_first_string(value: &serde_json::Value, path: &[&str]) -> Option<String> {
+    match json_path_value(value, path) {
+        Some(serde_json::Value::Array(items)) => items.first().and_then(value_to_string),
+        other => other.and_then(value_to_string),
+    }
+}
+
+// PHP `!empty()` for a JSON value: null / empty string / empty array / empty
+// object / 0 count as empty.
+fn value_is_non_empty(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(flag) => *flag,
+        serde_json::Value::String(text) => !text.is_empty() && text != "0",
+        serde_json::Value::Number(number) => number.as_f64().map(|n| n != 0.0).unwrap_or(true),
+        serde_json::Value::Array(items) => !items.is_empty(),
+        serde_json::Value::Object(map) => !map.is_empty(),
+    }
 }
 
 fn first_port(server: &v2board_db::server::AvailableServerRow) -> String {
@@ -2973,7 +3605,9 @@ mod tests {
     }
 
     #[test]
-    fn quantumultx_anytls_matches_legacy_reference_shape() {
+    fn quantumultx_skips_anytls() {
+        // QuantumultX.php has no anytls case (it only handles ss/vmess/vless/
+        // trojan), so anytls servers must emit nothing.
         let server = v2board_db::server::AvailableServerRow {
             id: 1,
             parent_id: None,
@@ -2998,14 +3632,247 @@ mod tests {
             }),
         };
 
-        let line = build_quantumultx_proxy("pwd", &server).expect("anytls output");
-        assert!(line.contains("anytls=example.com:443"));
-        assert!(line.contains("password=pwd"));
-        assert!(line.contains("udp-relay=true"));
-        assert!(line.contains("tag=anytls-reality-tls-01"));
-        assert!(line.contains("over-tls=true"));
-        assert!(line.contains("tls-host=apple.com"));
-        assert!(line.contains("tls-verification=true"));
-        assert!(line.ends_with("\r\n"));
+        assert!(build_quantumultx_proxy("pwd", &server).is_none());
+    }
+
+    fn server_row(
+        kind: &str,
+        port: serde_json::Value,
+        extra: serde_json::Value,
+    ) -> v2board_db::server::AvailableServerRow {
+        v2board_db::server::AvailableServerRow {
+            id: 1,
+            parent_id: None,
+            group_id: vec![1],
+            route_id: None,
+            name: "node".to_string(),
+            rate: "1".to_string(),
+            r#type: kind.to_string(),
+            host: "example.com".to_string(),
+            port,
+            cache_key: "k".to_string(),
+            last_check_at: None,
+            is_online: 0,
+            tags: None,
+            sort: None,
+            extra,
+        }
+    }
+
+    #[test]
+    fn singbox_tuic_modern_adds_domain_resolver_and_alpn() {
+        let server = server_row(
+            "tuic",
+            json!(443),
+            json!({ "server_name": "sni.example", "insecure": 1, "disable_sni": 1 }),
+        );
+        let modern = build_singbox_proxy("uuid", &server, true).unwrap();
+        assert_eq!(modern["domain_resolver"], json!("local"));
+        assert_eq!(modern["tls"]["alpn"], json!(["h3"]));
+        assert_eq!(modern["tls"]["disable_sni"], json!(true));
+        assert_eq!(modern["tls"]["insecure"], json!(true));
+        assert!(modern["tls"].get("ech").is_none());
+
+        let legacy = build_singbox_proxy("uuid", &server, false).unwrap();
+        assert!(legacy.get("domain_resolver").is_none());
+        assert_eq!(legacy["tls"]["alpn"], json!(["h3"]));
+    }
+
+    #[test]
+    fn singbox_anytls_is_modern_only_with_h2_alpn() {
+        let server = server_row(
+            "anytls",
+            json!(443),
+            json!({
+                "network": "tcp",
+                "tls": 1,
+                "tls_settings": { "server_name": "sni.example", "allow_insecure": 1 }
+            }),
+        );
+        let modern = build_singbox_proxy("uuid", &server, true).unwrap();
+        assert_eq!(modern["type"], json!("anytls"));
+        assert_eq!(modern["tls"]["alpn"], json!(["h2", "http/1.1"]));
+        assert_eq!(modern["domain_resolver"], json!("local"));
+        assert!(modern["tls"].get("ech").is_none());
+        assert!(modern["tls"].get("utls").is_some());
+        // Legacy sing-box has no anytls builder.
+        assert!(build_singbox_proxy("uuid", &server, false).is_none());
+    }
+
+    #[test]
+    fn singbox_hysteria_v1_swaps_mbps_and_gates_ports() {
+        let server = server_row(
+            "hysteria",
+            json!("20000-50000"),
+            json!({
+                "version": 1, "up_mbps": 100, "down_mbps": 200,
+                "server_name": "sni", "insecure": 1,
+                "obfs": "salamander", "obfs_password": "pw"
+            }),
+        );
+        let modern = build_singbox_proxy("uuid", &server, true).unwrap();
+        assert_eq!(modern["type"], json!("hysteria"));
+        assert_eq!(modern["disable_mtu_discovery"], json!(true));
+        assert_eq!(modern["up_mbps"], json!(200));
+        assert_eq!(modern["down_mbps"], json!(100));
+        assert_eq!(modern["obfs"], json!("pw"));
+        assert_eq!(modern["server_ports"], json!(["20000:50000"]));
+        assert!(modern.get("server_port").is_none());
+        assert_eq!(modern["domain_resolver"], json!("local"));
+
+        let legacy = build_singbox_proxy("uuid", &server, false).unwrap();
+        assert!(legacy.get("domain_resolver").is_none());
+        assert!(legacy.get("server_ports").is_none());
+        assert_eq!(legacy["server_port"], json!(20000));
+        assert_eq!(legacy["disable_mtu_discovery"], json!(true));
+    }
+
+    #[test]
+    fn singbox_hysteria2_uses_single_first_port_without_ech() {
+        let server = server_row(
+            "hysteria2",
+            json!("443-500"),
+            json!({
+                "tls_settings": { "server_name": "sni", "allow_insecure": 1 },
+                "obfs": "salamander", "obfs_password": "pw"
+            }),
+        );
+        let out = build_singbox_proxy("uuid", &server, true).unwrap();
+        assert_eq!(out["type"], json!("hysteria2"));
+        assert_eq!(out["server_port"], json!(443));
+        assert!(out.get("server_ports").is_none());
+        assert_eq!(out["obfs"]["type"], json!("salamander"));
+        assert!(out["tls"].get("ech").is_none());
+    }
+
+    #[test]
+    fn singbox_vmess_ech_only_on_modern() {
+        let server = server_row(
+            "vmess",
+            json!(443),
+            json!({
+                "network": "tcp", "tls": 1,
+                "tls_settings": { "server_name": "sni", "allow_insecure": 1, "ech": "cloudflare" }
+            }),
+        );
+        let modern = build_singbox_proxy("uuid", &server, true).unwrap();
+        assert!(modern["tls"].get("ech").is_some());
+        assert_eq!(modern["domain_resolver"], json!("local"));
+
+        let legacy = build_singbox_proxy("uuid", &server, false).unwrap();
+        assert!(legacy["tls"].get("ech").is_none());
+        assert!(legacy.get("domain_resolver").is_none());
+    }
+
+    #[test]
+    fn loon_vmess_uses_network_security_and_tls_before_ws() {
+        let server = server_row(
+            "vmess",
+            json!(443),
+            json!({
+                "network": "ws", "tls": 1,
+                "network_settings": {
+                    "security": "chacha20", "path": "/ws", "headers": { "Host": "h.example" }
+                },
+                "tls_settings": { "allowInsecure": 1, "serverName": "sni.example" }
+            }),
+        );
+        let line = build_loon_proxy("uuid", &server).unwrap();
+        assert!(line.contains("=vmess,example.com,443,chacha20,uuid,"));
+        let tls_pos = line.find("over-tls=true").unwrap();
+        let ws_pos = line.find("transport=ws").unwrap();
+        assert!(tls_pos < ws_pos);
+        assert!(line.contains("skip-cert-verify=true"));
+        assert!(line.contains("tls-name=sni.example"));
+        assert!(line.contains("path=/ws"));
+        assert!(line.contains("host=h.example"));
+    }
+
+    #[test]
+    fn loon_vless_emits_flow_inside_reality_branch() {
+        let server = server_row(
+            "vless",
+            json!(443),
+            json!({
+                "network": "tcp", "tls": 2, "flow": "xtls-rprx-vision",
+                "tls_settings": {
+                    "public_key": "PK", "short_id": "SID",
+                    "server_name": "sni", "allow_insecure": 1
+                }
+            }),
+        );
+        let line = build_loon_proxy("uuid", &server).unwrap();
+        assert!(line.contains("flow=xtls-rprx-vision"));
+        assert!(line.contains("public-key=PK"));
+        assert!(line.contains("short-id=SID"));
+        assert!(line.contains("sni=sni"));
+        assert!(line.contains("skip-cert-verify=true"));
+        assert!(!line.contains("over-tls=true"));
+    }
+
+    #[test]
+    fn loon_trojan_tls_name_positional_with_ws_block() {
+        let server = server_row(
+            "trojan",
+            json!(443),
+            json!({
+                "server_name": "sni.example", "allow_insecure": 1, "network": "ws",
+                "network_settings": { "path": "/p", "headers": { "Host": "h" } }
+            }),
+        );
+        let line = build_loon_proxy("uuid", &server).unwrap();
+        let name_pos = line.find("tls-name=sni.example").unwrap();
+        let fo_pos = line.find("fast-open=false").unwrap();
+        assert!(name_pos < fo_pos);
+        assert!(line.contains("skip-cert-verify=true"));
+        assert!(line.contains("ws=true"));
+        assert!(line.contains("ws-path=/p"));
+        assert!(line.contains("ws-headers=Host:h"));
+    }
+
+    #[test]
+    fn loon_hysteria_sni_precedes_udp() {
+        let server = server_row(
+            "hysteria",
+            json!("20000-50000"),
+            json!({
+                "version": 2, "up_mbps": 100, "server_name": "sni.example",
+                "insecure": 1, "obfs": "salamander", "obfs_password": "pw"
+            }),
+        );
+        let line = build_loon_proxy("uuid", &server).unwrap();
+        assert!(
+            line.contains("=hysteria2,example.com,20000,password=uuid,download-bandwidth=100,")
+        );
+        let sni_pos = line.find("sni=sni.example").unwrap();
+        let udp_pos = line.find("udp=true").unwrap();
+        assert!(sni_pos < udp_pos);
+        assert!(line.contains("skip-cert-verify=true"));
+        assert!(line.contains("salamander-password=pw"));
+    }
+
+    #[test]
+    fn loon_anytls_always_emits_skip_cert_verify() {
+        let server = server_row(
+            "anytls",
+            json!(443),
+            json!({
+                "server_name": "sni.example", "insecure": 0,
+                "tls_settings": { "server_name": "ts.sni", "allow_insecure": 0 }
+            }),
+        );
+        let line = build_loon_proxy("uuid", &server).unwrap();
+        assert!(line.contains("sni=sni.example"));
+        assert!(line.contains("skip-cert-verify=false"));
+    }
+
+    #[test]
+    fn loon_skips_raw_hysteria2_type() {
+        let server = server_row(
+            "hysteria2",
+            json!(443),
+            json!({ "version": 2, "up_mbps": 100 }),
+        );
+        assert!(build_loon_proxy("uuid", &server).is_none());
     }
 }

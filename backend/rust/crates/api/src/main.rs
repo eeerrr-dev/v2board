@@ -321,11 +321,25 @@ async fn client_subscribe_response(
         .await?
         .ok_or_else(|| forbidden("token is error"))?;
 
-    let servers = if user_is_available(&user) {
+    let mut servers = if user_is_available(&user) {
         v2board_db::server::fetch_available_servers(&state.db, user.group_id).await?
     } else {
         Vec::new()
     };
+    // Prepend the show_info_to_server_enable pseudo-nodes (remaining traffic /
+    // next reset / expiry). build_info_servers self-checks the config flag and
+    // an empty server list, so calling it unconditionally is safe.
+    let plan = match user.plan_id {
+        Some(plan_id) => v2board_db::plan::find_plan(&state.db, plan_id).await?,
+        None => None,
+    };
+    let reset = reset_day(user.expired_at, plan.as_ref(), &config).filter(|day| *day != 0);
+    let info = subscription::build_info_servers(&user, &servers, reset, &config);
+    if !info.is_empty() {
+        let mut merged = info;
+        merged.extend(servers);
+        servers = merged;
+    }
     let flag = query
         .flag
         .or_else(|| {
@@ -337,7 +351,15 @@ async fn client_subscribe_response(
         .unwrap_or_default()
         .to_lowercase();
 
-    let subscription = subscription::build_subscription_document(&config, &user, &servers, &flag)?;
+    // Request Host header for Surge/Surfboard `$subs_domain` and Stash's
+    // forced-DIRECT rule (Laravel `$_SERVER['HTTP_HOST']`).
+    let host = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_owned();
+    let subscription =
+        subscription::build_subscription_document(&config, &user, &servers, &flag, &host)?;
     let mut response = subscription.body.into_response();
     let headers = response.headers_mut();
     headers.insert(
@@ -346,11 +368,8 @@ async fn client_subscribe_response(
     );
     headers.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&format!(
-            "attachment; filename*=UTF-8''{}",
-            percent_encode(&config.app_name)
-        ))
-        .map_err(|_| ApiError::internal("invalid subscription filename"))?,
+        HeaderValue::from_str(&subscription.content_disposition)
+            .map_err(|_| ApiError::internal("invalid subscription filename"))?,
     );
     if let Some(app_url) = config.app_url.as_deref() {
         headers.insert(
@@ -1366,6 +1385,7 @@ async fn passport_quick_login_url(
 
 async fn send_email_verify(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Form(payload): Form<EmailVerifyInput>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
     let auth = AuthService::new(
@@ -1373,7 +1393,10 @@ async fn send_email_verify(
         state.redis.clone(),
         state.config_snapshot(),
     );
-    Ok(legacy_data(auth.send_email_verify(payload).await?))
+    Ok(legacy_data(
+        auth.send_email_verify(payload, Some(addr.ip().to_string()))
+            .await?,
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1659,7 +1682,7 @@ async fn user_subscribe(
     let alive_ip = alive_ip(&state.redis, user.id).await?;
     let config = state.config_snapshot();
     let reset_day = reset_day(subscribe.expired_at, plan.as_ref(), &config);
-    let subscribe_url = config.subscribe_url_for_token(&subscribe.token);
+    let subscribe_url = subscribe_url_for_user(&state, user.id, &subscribe.token).await?;
 
     Ok(legacy_data(SubscribeInfo {
         plan_id: subscribe.plan_id,
@@ -2102,16 +2125,25 @@ async fn order_detail(
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<v2board_db::order::OrderRow>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    let order = v2board_db::order::find_user_order(
+    let config = state.config_snapshot();
+    let mut order = v2board_db::order::find_user_order(
         &state.db,
         user.id,
         &query.trade_no,
-        state.config_snapshot().try_out_plan_id,
+        config.try_out_plan_id,
     )
     .await?
     .ok_or_else(|| ApiError::legacy("Order does not exist or has been paid"))?;
     if order.plan_id != 0 && order.plan.is_none() {
         return Err(ApiError::legacy("Subscription plan does not exist"));
+    }
+    // Deposit orders (plan_id == 0) advertise the reward tier: `bounus` and
+    // `get_amount = total_amount + bounus` (OrderController::detail). The db layer is config-free,
+    // so the real tier lookup happens here.
+    if order.plan_id == 0 {
+        let bonus = config.deposit_bonus(order.total_amount);
+        order.bounus = Some(bonus);
+        order.get_amount = Some(order.total_amount + bonus);
     }
     Ok(legacy_data(order))
 }
@@ -2447,7 +2479,9 @@ async fn server_fetch(
     if !user_is_available(&access) {
         return Ok(legacy_data(Vec::new()));
     }
-    let servers = v2board_db::server::fetch_available_servers(&state.db, access.group_id).await?;
+    let mut servers =
+        v2board_db::server::fetch_available_servers(&state.db, access.group_id).await?;
+    crate::server_api::hydrate_online_status(&state.redis, &mut servers).await?;
     Ok(legacy_data(servers))
 }
 
@@ -2476,7 +2510,7 @@ async fn knowledge_fetch(
             knowledge.body = format_access_blocks(&knowledge.body);
         }
         let config = state.config_snapshot();
-        let subscribe_url = config.subscribe_url_for_token(&access.token);
+        let subscribe_url = subscribe_url_for_user(&state, user.id, &access.token).await?;
         knowledge.body =
             render_knowledge_body(&knowledge.body, &config, &subscribe_url, &access.token);
         return Ok(legacy_data(knowledge).into_response());
@@ -2677,6 +2711,69 @@ async fn resolve_totp_subscribe_token(state: &AppState, token: &str) -> Result<S
 
     let _: () = conn.set_ex(cache_key, &user.token, timestep).await?;
     Ok(user.token)
+}
+
+/// Mirror `Helper::getSubscribeUrl`: derive the method-specific token so the generated URL
+/// resolves back through [`resolve_subscribe_token`]. Method 0 keeps the raw token; method 1
+/// mints/reuses a one-time token; method 2 derives the time-stepped `{id}:{hmac}` token.
+async fn subscribe_url_for_user(
+    state: &AppState,
+    user_id: i64,
+    token: &str,
+) -> Result<String, ApiError> {
+    let config = state.config_snapshot();
+    let method_token = match config.show_subscribe_method {
+        1 => one_time_subscribe_token(state, token).await?,
+        2 => totp_subscribe_token(&config, user_id, token)?,
+        _ => token.to_string(),
+    };
+    Ok(config.subscribe_url_for_token(&method_token))
+}
+
+/// Method 1 token: `Cache::add("otp_{token}")` mints a fresh 24-byte url-safe token and stores
+/// the reverse `otpn_{newtoken}` mapping the subscribe middleware pulls. The SET NX mirrors
+/// `Cache::add`, so a concurrent generator that loses the race reuses the winner's token.
+async fn one_time_subscribe_token(state: &AppState, token: &str) -> Result<String, ApiError> {
+    let mut conn = state.redis.get_multiplexed_async_connection().await?;
+    if let Some(existing) = conn
+        .get::<_, Option<String>>(format!("otp_{token}"))
+        .await?
+        .filter(|value| !value.is_empty())
+    {
+        return Ok(existing);
+    }
+    let mut raw = [0_u8; 24];
+    raw[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+    raw[16..].copy_from_slice(&Uuid::new_v4().as_bytes()[..8]);
+    let new_token = safe_base64_encode(&raw);
+    let added: Option<String> = redis::cmd("SET")
+        .arg(format!("otp_{token}"))
+        .arg(&new_token)
+        .arg("NX")
+        .arg("EX")
+        .arg(86400)
+        .query_async(&mut conn)
+        .await?;
+    if added.is_some() {
+        let _: () = conn
+            .set_ex(format!("otpn_{new_token}"), token, 86400)
+            .await?;
+        return Ok(new_token);
+    }
+    conn.get::<_, Option<String>>(format!("otp_{token}"))
+        .await?
+        .ok_or_else(|| ApiError::internal("subscribe token race lost"))
+}
+
+/// Method 2 token: `base64url("{user_id}:{hmac_sha1(counterBytes, token)}")`, derived purely so
+/// it stays in lock-step with [`resolve_totp_subscribe_token`] for the same time window.
+fn totp_subscribe_token(config: &AppConfig, user_id: i64, token: &str) -> Result<String, ApiError> {
+    let timestep = (config.show_subscribe_expire.max(1) * 60) as u64;
+    let counter = Utc::now().timestamp().max(0) as u64 / timestep;
+    let mut counter_bytes = [0_u8; 8];
+    counter_bytes[4..].copy_from_slice(&(counter as u32).to_be_bytes());
+    let hash = hmac_sha1_hex(token.as_bytes(), &counter_bytes)?;
+    Ok(safe_base64_encode(format!("{user_id}:{hash}").as_bytes()))
 }
 
 async fn payment_request_input(

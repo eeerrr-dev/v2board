@@ -61,15 +61,6 @@ impl From<NoticeRaw> for NoticeDto {
     }
 }
 
-#[derive(Debug, FromRow)]
-pub(super) struct UserCsvRow {
-    pub(super) id: i64,
-    pub(super) email: String,
-    pub(super) token: String,
-    pub(super) uuid: String,
-    pub(super) created_at: i64,
-}
-
 pub(super) struct MailSettings {
     pub(super) host: String,
     pub(super) port: Option<u16>,
@@ -558,6 +549,81 @@ pub(super) fn push_common_server_values(
 
 pub(super) fn text_value(value: String) -> AdminSqlValue {
     AdminSqlValue::Text(value)
+}
+
+/// Validated coupon columns (excluding `code`) present in a generate request.
+/// Mirrors CouponGenerate rules; used for both single create/update and the
+/// per-row inserts of multiGenerate.
+pub(super) fn coupon_field_values(
+    params: &HashMap<String, String>,
+) -> Vec<(&'static str, AdminSqlValue)> {
+    let mut values = Vec::new();
+    if params.contains_key("name") {
+        values.push(("name", optional_text_value(params, "name")));
+    }
+    for key in [
+        "type",
+        "value",
+        "started_at",
+        "ended_at",
+        "limit_use",
+        "limit_use_with_user",
+    ] {
+        if params.contains_key(key) {
+            values.push((key, optional_int_or_null_value(params, key)));
+        }
+    }
+    for key in ["limit_plan_ids", "limit_period"] {
+        if params
+            .keys()
+            .any(|param| param == key || param.starts_with(&format!("{key}[")))
+        {
+            values.push((key, optional_json_array_text_value(params, key)));
+        }
+    }
+    values
+}
+
+/// Validated giftcard columns (excluding `code`) present in a generate request.
+pub(super) fn giftcard_field_values(
+    params: &HashMap<String, String>,
+) -> Vec<(&'static str, AdminSqlValue)> {
+    let mut values = Vec::new();
+    if params.contains_key("name") {
+        values.push(("name", optional_text_value(params, "name")));
+    }
+    for key in [
+        "type",
+        "value",
+        "plan_id",
+        "started_at",
+        "ended_at",
+        "limit_use",
+    ] {
+        if params.contains_key(key) {
+            values.push((key, optional_int_or_null_value(params, key)));
+        }
+    }
+    values
+}
+
+/// Joins a reconstructed array param with `/` for CSV display, or returns the
+/// localized "unlimited" placeholder when the param was not supplied.
+pub(super) fn joined_array_display(params: &HashMap<String, String>, key: &str) -> String {
+    let present = params
+        .keys()
+        .any(|param| param == key || param.starts_with(&format!("{key}[")));
+    if !present {
+        return "不限制".to_string();
+    }
+    json_array_param(params, key)
+        .iter()
+        .map(|value| match value {
+            Value::String(value) => value.clone(),
+            other => other.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 pub(super) fn optional_text(value: Option<String>) -> AdminSqlValue {
@@ -1393,24 +1459,121 @@ pub(super) fn parse_php_array_lines(
     (items, index)
 }
 
+/// Whitelist of persistable config keys, ported verbatim from ConfigSave::RULES
+/// (laravel .../Admin/ConfigSave.php:9-107). ConfigController::save only writes
+/// keys present in this list, so `_admin_email`, `auth_data`, and any stray
+/// field never reach the config file.
+pub(super) fn config_save_whitelisted(base: &str) -> bool {
+    const KEYS: &[&str] = &[
+        "deposit_bounus",
+        "ticket_status",
+        "invite_force",
+        "invite_commission",
+        "invite_gen_limit",
+        "invite_never_expire",
+        "commission_first_time_enable",
+        "commission_auto_check_enable",
+        "commission_withdraw_limit",
+        "commission_withdraw_method",
+        "withdraw_close_enable",
+        "commission_distribution_enable",
+        "commission_distribution_l1",
+        "commission_distribution_l2",
+        "commission_distribution_l3",
+        "logo",
+        "force_https",
+        "stop_register",
+        "app_name",
+        "app_description",
+        "app_url",
+        "subscribe_url",
+        "subscribe_path",
+        "try_out_enable",
+        "try_out_plan_id",
+        "try_out_hour",
+        "tos_url",
+        "currency",
+        "currency_symbol",
+        "plan_change_enable",
+        "reset_traffic_method",
+        "surplus_enable",
+        "allow_new_period",
+        "new_order_event_id",
+        "renew_order_event_id",
+        "change_order_event_id",
+        "show_info_to_server_enable",
+        "show_subscribe_method",
+        "show_subscribe_expire",
+        "server_api_url",
+        "server_token",
+        "server_pull_interval",
+        "server_push_interval",
+        "device_limit_mode",
+        "server_node_report_min_traffic",
+        "server_device_online_min_traffic",
+        "frontend_theme",
+        "frontend_theme_sidebar",
+        "frontend_theme_header",
+        "frontend_theme_color",
+        "frontend_background_url",
+        "email_template",
+        "email_host",
+        "email_port",
+        "email_username",
+        "email_password",
+        "email_encryption",
+        "email_from_address",
+        "telegram_bot_enable",
+        "telegram_bot_token",
+        "telegram_discuss_id",
+        "telegram_channel_id",
+        "telegram_discuss_link",
+        "windows_version",
+        "windows_download_url",
+        "macos_version",
+        "macos_download_url",
+        "android_version",
+        "android_download_url",
+        "email_whitelist_enable",
+        "email_whitelist_suffix",
+        "email_gmail_limit_enable",
+        "recaptcha_enable",
+        "recaptcha_key",
+        "recaptcha_site_key",
+        "email_verify",
+        "safe_mode_enable",
+        "register_limit_by_ip_enable",
+        "register_limit_count",
+        "register_limit_expire",
+        "secure_path",
+        "password_limit_enable",
+        "password_limit_count",
+        "password_limit_expire",
+    ];
+    KEYS.contains(&base)
+}
+
 pub(super) fn merge_config_params(
     config: &mut Map<String, Value>,
     params: &HashMap<String, String>,
 ) {
     let mut arrays = BTreeMap::<String, BTreeMap<usize, Value>>::new();
     for (key, value) in params {
-        if key == "auth_data" {
-            continue;
-        }
         if let Some((base, index)) = key
             .split_once('[')
             .and_then(|(base, rest)| rest.strip_suffix(']').map(|rest| (base, rest)))
             .and_then(|(base, index)| index.parse::<usize>().ok().map(|index| (base, index)))
         {
+            if !config_save_whitelisted(base) {
+                continue;
+            }
             arrays
                 .entry(base.to_string())
                 .or_default()
                 .insert(index, json_scalar(value));
+            continue;
+        }
+        if !config_save_whitelisted(key) {
             continue;
         }
         config.insert(key.clone(), json_scalar(value));
@@ -1589,6 +1752,268 @@ pub(super) fn ensure_toggle_column(column: &str) -> Result<(), ApiError> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Admin user filtering / sorting.
+// Ports UserController::filter (laravel .../Admin/UserController.php:36-62) and
+// the sort/sort_type parsing in fetch (:66-69). All dynamic SQL is guarded by
+// column and operator whitelists to stay injection-safe.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug)]
+pub(super) enum UserFilterClause {
+    Compare {
+        column: &'static str,
+        op: &'static str,
+        value: FilterBind,
+    },
+    IsNull {
+        column: &'static str,
+    },
+}
+
+#[derive(Debug)]
+pub(super) enum FilterBind {
+    Int(i64),
+    Text(String),
+}
+
+/// Whitelisted v2_user columns usable in a filter[] key or a sort. Guards the
+/// dynamically-built WHERE/ORDER BY clauses against SQL injection.
+pub(super) fn user_column(key: &str) -> Option<&'static str> {
+    const COLUMNS: &[&str] = &[
+        "id",
+        "email",
+        "telegram_id",
+        "balance",
+        "discount",
+        "commission_type",
+        "commission_rate",
+        "commission_balance",
+        "t",
+        "u",
+        "d",
+        "transfer_enable",
+        "device_limit",
+        "banned",
+        "is_admin",
+        "is_staff",
+        "last_login_at",
+        "uuid",
+        "group_id",
+        "plan_id",
+        "speed_limit",
+        "token",
+        "expired_at",
+        "remarks",
+        "invite_user_id",
+        "created_at",
+        "updated_at",
+    ];
+    COLUMNS.iter().copied().find(|column| *column == key)
+}
+
+pub(super) fn user_filter_operator(condition: &str) -> Option<&'static str> {
+    match condition {
+        "=" => Some("="),
+        ">" => Some(">"),
+        "<" => Some("<"),
+        ">=" => Some(">="),
+        "<=" => Some("<="),
+        "<>" | "!=" => Some("<>"),
+        "like" | "LIKE" => Some("like"),
+        _ => None,
+    }
+}
+
+/// Returns the validated `(ORDER BY expression, direction)`. Mirrors fetch():
+/// sort defaults to created_at, sort_type is DESC unless exactly "ASC".
+pub(super) fn user_sort(params: &HashMap<String, String>) -> (String, &'static str) {
+    let direction = match params.get("sort_type").map(String::as_str) {
+        Some("ASC") => "ASC",
+        _ => "DESC",
+    };
+    let sort_expr = match params
+        .get("sort")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        Some("total_used") => "(u.u + u.d)".to_string(),
+        Some(sort) => match user_column(sort) {
+            Some(column) => format!("u.{column}"),
+            None => "u.created_at".to_string(),
+        },
+        None => "u.created_at".to_string(),
+    };
+    (sort_expr, direction)
+}
+
+pub(super) fn push_user_where(builder: &mut QueryBuilder<MySql>, clauses: &[UserFilterClause]) {
+    for clause in clauses {
+        builder.push(" AND ");
+        match clause {
+            UserFilterClause::Compare { column, op, value } => {
+                builder.push(format!("u.{column} {op} "));
+                match value {
+                    FilterBind::Int(value) => {
+                        builder.push_bind(*value);
+                    }
+                    FilterBind::Text(value) => {
+                        builder.push_bind(value.clone());
+                    }
+                }
+            }
+            UserFilterClause::IsNull { column } => {
+                builder.push(format!("u.{column} IS NULL"));
+            }
+        }
+    }
+}
+
+/// Reconstructs `filter[<i>][<field>]` request keys into per-index maps of raw
+/// string values, ordered by index. Kept as raw strings (not `json_scalar`d) so
+/// the literal `plan_id == 'null'` sentinel survives.
+pub(super) fn collect_filter_entries(
+    params: &HashMap<String, String>,
+) -> Vec<BTreeMap<String, String>> {
+    let mut entries: BTreeMap<usize, BTreeMap<String, String>> = BTreeMap::new();
+    for (key, value) in params {
+        let Some(rest) = key.strip_prefix("filter[") else {
+            continue;
+        };
+        let Some((index, rest)) = rest.split_once(']') else {
+            continue;
+        };
+        let Ok(index) = index.parse::<usize>() else {
+            continue;
+        };
+        let Some(field) = rest
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_suffix(']'))
+        else {
+            continue;
+        };
+        entries
+            .entry(index)
+            .or_default()
+            .insert(field.to_string(), value.clone());
+    }
+    entries.into_values().collect()
+}
+
+#[derive(Debug, FromRow)]
+pub(super) struct UserDumpRow {
+    pub(super) email: String,
+    pub(super) balance: i64,
+    pub(super) commission_balance: i64,
+    pub(super) transfer_enable: i64,
+    pub(super) u: i64,
+    pub(super) d: i64,
+    pub(super) device_limit: Option<i64>,
+    pub(super) expired_at: Option<i64>,
+    pub(super) plan_name: Option<String>,
+    pub(super) token: String,
+}
+
+/// Parses an `ALIVE_IP_USER_<id>` cache payload into `(alive_ip, ips)`.
+/// Mirrors UserController::fetch :89-102.
+pub(super) fn parse_alive_ip(raw: &str) -> (i64, String) {
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return (0, String::new());
+    };
+    let Some(object) = value.as_object() else {
+        return (0, String::new());
+    };
+    let alive_ip = object
+        .get("alive_ip")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let mut ips = Vec::new();
+    for (node_type_id, data) in object {
+        if node_type_id == "alive_ip" {
+            continue;
+        }
+        let Some(alive_ips) = data.get("aliveips").and_then(Value::as_array) else {
+            continue;
+        };
+        for entry in alive_ips {
+            let Some(entry) = entry.as_str() else {
+                continue;
+            };
+            let ip = entry.split('_').next().unwrap_or_default();
+            ips.push(format!("{ip}_{node_type_id}"));
+        }
+    }
+    (alive_ip, ips.join(", "))
+}
+
+/// Random `[a-zA-Z0-9]` string of `len` chars. Ports Helper::randomChar.
+pub(super) fn random_char(len: usize) -> String {
+    const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let mut bytes = Vec::with_capacity(len);
+    while bytes.len() < len {
+        bytes.extend_from_slice(Uuid::new_v4().as_bytes());
+    }
+    (0..len)
+        .map(|index| CHARS[(bytes[index] as usize) % CHARS.len()] as char)
+        .collect()
+}
+
+/// PHP `date('Y-m-d H:i:s', ts)` in the server's local timezone.
+pub(super) fn local_datetime(ts: i64) -> String {
+    Local
+        .timestamp_opt(ts, 0)
+        .single()
+        .map(|value| value.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_default()
+}
+
+/// PHP `date('m-d', ts)` in the server's local timezone.
+pub(super) fn local_month_day(ts: i64) -> String {
+    Local
+        .timestamp_opt(ts, 0)
+        .single()
+        .map(|value| value.format("%m-%d").to_string())
+        .unwrap_or_default()
+}
+
+/// Node availability status, ported from ServerService::mergeData :414-420.
+pub(super) fn node_available_status(
+    now: i64,
+    last_check_at: Option<i64>,
+    last_push_at: Option<i64>,
+) -> i64 {
+    if now - 300 >= last_check_at.unwrap_or_default() {
+        0
+    } else if now - 300 >= last_push_at.unwrap_or_default() {
+        1
+    } else {
+        2
+    }
+}
+
+/// Maps a `v2_stat_server.server_type` onto the canonical node-table key used
+/// for name resolution. Legacy stats recorded vmess nodes as `v2ray`.
+pub(super) fn normalize_stat_server_type(server_type: &str) -> String {
+    match server_type {
+        "v2ray" => "vmess".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// True when a server's `group_id` JSON array contains `target` (loose match,
+/// mirroring PHP `in_array` against string/int group ids).
+pub(super) fn group_id_contains(group_id_json: &str, target: i64) -> bool {
+    let Ok(Value::Array(items)) = serde_json::from_str::<Value>(group_id_json) else {
+        return false;
+    };
+    let target_string = target.to_string();
+    items.iter().any(|item| match item {
+        Value::Number(number) => number.as_i64() == Some(target),
+        Value::String(value) => value == &target_string,
+        _ => false,
+    })
+}
+
 pub(super) fn first_day_of_month() -> i64 {
     let now = Local::now();
     Local
@@ -1623,4 +2048,111 @@ pub(super) fn start_of_today() -> i64 {
 
 pub(super) fn start_of_yesterday() -> i64 {
     start_of_today() - 86_400
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn random_char_has_requested_length_and_charset() {
+        let value = random_char(16);
+        assert_eq!(value.chars().count(), 16);
+        assert!(value.chars().all(|c| c.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn group_id_contains_matches_numeric_and_string_members() {
+        assert!(group_id_contains("[1, 2, 3]", 2));
+        assert!(group_id_contains("[\"1\", \"2\"]", 1));
+        assert!(!group_id_contains("[1, 2]", 3));
+        assert!(!group_id_contains("not json", 1));
+        assert!(!group_id_contains("{}", 1));
+    }
+
+    #[test]
+    fn node_available_status_reports_three_states() {
+        let now = 10_000;
+        // last_check older than 5 min -> offline (0)
+        assert_eq!(node_available_status(now, Some(now - 400), Some(now)), 0);
+        // check fresh, push stale -> degraded (1)
+        assert_eq!(node_available_status(now, Some(now), Some(now - 400)), 1);
+        // both fresh -> online (2)
+        assert_eq!(node_available_status(now, Some(now), Some(now)), 2);
+        // missing cache values default to 0 -> offline
+        assert_eq!(node_available_status(now, None, None), 0);
+    }
+
+    #[test]
+    fn normalize_stat_server_type_maps_legacy_v2ray() {
+        assert_eq!(normalize_stat_server_type("v2ray"), "vmess");
+        assert_eq!(normalize_stat_server_type("shadowsocks"), "shadowsocks");
+    }
+
+    #[test]
+    fn user_column_and_operator_reject_unknown_input() {
+        assert_eq!(user_column("email"), Some("email"));
+        assert_eq!(user_column("id"), Some("id"));
+        assert_eq!(user_column("password"), None);
+        assert_eq!(user_column("email); DROP TABLE"), None);
+        assert_eq!(user_filter_operator("="), Some("="));
+        assert_eq!(user_filter_operator("like"), Some("like"));
+        assert_eq!(user_filter_operator("!="), Some("<>"));
+        // 模糊 is rewritten to `like` before reaching the operator whitelist.
+        assert_eq!(user_filter_operator("模糊"), None);
+        assert_eq!(user_filter_operator("; DELETE"), None);
+    }
+
+    #[test]
+    fn user_sort_whitelists_expression_and_direction() {
+        let mut params = HashMap::new();
+        assert_eq!(user_sort(&params), ("u.created_at".to_string(), "DESC"));
+
+        params.insert("sort".to_string(), "total_used".to_string());
+        params.insert("sort_type".to_string(), "ASC".to_string());
+        assert_eq!(user_sort(&params), ("(u.u + u.d)".to_string(), "ASC"));
+
+        params.insert("sort".to_string(), "email".to_string());
+        assert_eq!(user_sort(&params), ("u.email".to_string(), "ASC"));
+
+        params.insert("sort".to_string(), "bogus".to_string());
+        params.insert("sort_type".to_string(), "sideways".to_string());
+        assert_eq!(user_sort(&params), ("u.created_at".to_string(), "DESC"));
+    }
+
+    #[test]
+    fn collect_filter_entries_groups_by_index_and_keeps_raw_null() {
+        let mut params = HashMap::new();
+        params.insert("filter[0][key]".to_string(), "plan_id".to_string());
+        params.insert("filter[0][condition]".to_string(), "=".to_string());
+        params.insert("filter[0][value]".to_string(), "null".to_string());
+        params.insert("filter[1][key]".to_string(), "email".to_string());
+        let entries = collect_filter_entries(&params);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].get("key").map(String::as_str), Some("plan_id"));
+        // Raw "null" must survive so plan_id == 'null' -> IS NULL still fires.
+        assert_eq!(entries[0].get("value").map(String::as_str), Some("null"));
+        assert_eq!(entries[1].get("key").map(String::as_str), Some("email"));
+    }
+
+    #[test]
+    fn joined_array_display_joins_or_defaults() {
+        let mut params = HashMap::new();
+        assert_eq!(joined_array_display(&params, "limit_plan_ids"), "不限制");
+        params.insert("limit_plan_ids[0]".to_string(), "1".to_string());
+        params.insert("limit_plan_ids[1]".to_string(), "3".to_string());
+        assert_eq!(joined_array_display(&params, "limit_plan_ids"), "1/3");
+    }
+
+    #[test]
+    fn parse_alive_ip_extracts_count_and_ip_labels() {
+        let raw = json!({
+            "alive_ip": 2,
+            "7": { "aliveips": ["1.2.3.4_ded", "5.6.7.8_abc"] }
+        })
+        .to_string();
+        let (alive_ip, ips) = parse_alive_ip(&raw);
+        assert_eq!(alive_ip, 2);
+        assert_eq!(ips, "1.2.3.4_7, 5.6.7.8_7");
+    }
 }
