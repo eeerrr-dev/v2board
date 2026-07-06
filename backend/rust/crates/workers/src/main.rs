@@ -9,6 +9,7 @@ use lettre::{
     transport::smtp::authentication::Credentials,
 };
 use redis::AsyncCommands;
+use reqwest::header;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{FromRow, MySql, MySqlPool, QueryBuilder};
@@ -48,6 +49,10 @@ enum QueueJob {
         subject: String,
         template_name: Option<String>,
         template_value: Option<Value>,
+    },
+    SendTelegram {
+        telegram_id: i64,
+        text: String,
     },
 }
 
@@ -409,6 +414,7 @@ fn queue_job_name(job: &QueueJob) -> &'static str {
         QueueJob::SendRemindMail => "send_remind_mail",
         QueueJob::Statistics => "statistics",
         QueueJob::SendEmail { .. } => "send_email",
+        QueueJob::SendTelegram { .. } => "send_telegram",
     }
 }
 
@@ -440,6 +446,9 @@ async fn run_queue_job(job: QueueJob, state: &WorkerState) -> anyhow::Result<()>
                 &mail_body(&state.config, &subject, template_value.as_ref()),
             )
             .await
+        }
+        QueueJob::SendTelegram { telegram_id, text } => {
+            send_telegram(state, telegram_id, &text).await
         }
     }
 }
@@ -1083,6 +1092,34 @@ async fn send_email(
     Ok(())
 }
 
+async fn send_telegram(state: &WorkerState, telegram_id: i64, text: &str) -> anyhow::Result<()> {
+    let token = state
+        .config
+        .telegram_bot_token
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Telegram bot token is not configured"))?;
+    let body = serde_urlencoded::to_string([
+        ("chat_id", telegram_id.to_string()),
+        ("text", escape_telegram_markdown(text)),
+        ("parse_mode", "markdown".to_string()),
+    ])?;
+    let response = reqwest::Client::new()
+        .post(format!("https://api.telegram.org/bot{token}/sendMessage"))
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(body)
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        anyhow::bail!("Telegram request failed");
+    }
+    Ok(())
+}
+
+fn escape_telegram_markdown(text: &str) -> String {
+    text.replace('_', "\\_")
+}
+
 async fn send_email_inner(
     config: &AppConfig,
     email: &str,
@@ -1348,6 +1385,10 @@ mod tests {
                 template_name: None,
                 template_value: None,
             },
+            QueueJob::SendTelegram {
+                telegram_id: 1,
+                text: "message".to_string(),
+            },
         ];
         let names = jobs.iter().map(queue_job_name).collect::<Vec<_>>();
         assert_eq!(
@@ -1364,6 +1405,7 @@ mod tests {
                 "send_remind_mail",
                 "statistics",
                 "send_email",
+                "send_telegram",
             ]
         );
     }
