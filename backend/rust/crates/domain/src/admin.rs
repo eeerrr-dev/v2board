@@ -6,6 +6,7 @@ use lettre::{
     transport::smtp::authentication::Credentials,
 };
 use openssl::pkey::PKey;
+use redis::AsyncCommands;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use sqlx::{AssertSqlSafe, FromRow, MySql, MySqlPool, QueryBuilder, types::Json};
@@ -20,6 +21,7 @@ const GIB: i64 = 1_073_741_824;
 #[derive(Clone)]
 pub struct AdminService {
     db: MySqlPool,
+    redis: redis::Client,
     config: AppConfig,
 }
 
@@ -30,9 +32,63 @@ pub enum AdminOutput {
     Csv { filename: String, body: String },
 }
 
+#[derive(Debug, Default)]
+struct WorkerSnapshot {
+    schedule_last_seen_at: Option<i64>,
+    totals: BTreeMap<String, i64>,
+    failed: BTreeMap<String, i64>,
+    last_run_at: BTreeMap<String, i64>,
+    last_success_at: BTreeMap<String, i64>,
+    last_failure_at: BTreeMap<String, i64>,
+}
+
+impl WorkerSnapshot {
+    fn total_jobs(&self) -> i64 {
+        self.totals.values().sum()
+    }
+
+    fn failed_jobs(&self) -> i64 {
+        self.failed.values().sum()
+    }
+
+    fn last_seen_at(&self) -> Option<i64> {
+        self.schedule_last_seen_at
+            .into_iter()
+            .chain(self.last_run_at.values().copied())
+            .max()
+    }
+
+    fn worker_running(&self, now: i64, seconds: i64) -> bool {
+        self.last_seen_at()
+            .map(|last_seen| now - last_seen <= seconds)
+            .unwrap_or(false)
+    }
+
+    fn max_counter_key(&self) -> Option<String> {
+        self.totals
+            .iter()
+            .max_by_key(|(_, value)| *value)
+            .map(|(key, _)| key.clone())
+    }
+
+    fn job_names(&self) -> Vec<String> {
+        let mut names = self
+            .totals
+            .keys()
+            .chain(self.failed.keys())
+            .chain(self.last_run_at.keys())
+            .cloned()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    }
+}
+
 impl AdminService {
-    pub fn new(db: MySqlPool, config: AppConfig) -> Self {
-        Self { db, config }
+    pub fn new(db: MySqlPool, redis: redis::Client, config: AppConfig) -> Self {
+        Self { db, redis, config }
     }
 
     pub async fn get(
@@ -73,41 +129,10 @@ impl AdminService {
             "stat/getStatUser" => self.stat_user(&params).await,
             "stat/getRanking" => self.stat_summary().await,
             "stat/getStatRecord" => self.stat_record(&params).await,
-            "system/getSystemStatus" => Ok(AdminOutput::Data(json!({
-                "schedule": true,
-                "horizon": false,
-                "logChannel": "rust",
-                "logLevel": std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
-                "cacheDriver": "redis",
-                "backendVersion": env!("CARGO_PKG_VERSION"),
-                "frontendVersion": env!("CARGO_PKG_VERSION"),
-            }))),
-            "system/getQueueStats" => Ok(AdminOutput::Data(json!({
-                "failedJobs": 0,
-                "jobsPerMinute": 0,
-                "pausedMasters": 0,
-                "periods": { "failedJobs": 0, "recentJobs": 0 },
-                "processes": 0,
-                "queueWithMaxRuntime": null,
-                "queueWithMaxThroughput": null,
-                "recentJobs": 0,
-                "status": "running",
-                "wait": {},
-            }))),
-            "system/getQueueWorkload" => Ok(AdminOutput::Data(json!([{
-                "name": "rust-worker",
-                "length": 0,
-                "wait": 0,
-                "processes": 1,
-                "recent_jobs": 0,
-                "failed_jobs": 0,
-            }]))),
-            "system/getQueueMasters" => Ok(AdminOutput::Data(json!([{
-                "name": "rust-worker",
-                "status": "running",
-                "pid": std::process::id(),
-                "supervisors": [],
-            }]))),
+            "system/getSystemStatus" => self.system_status().await,
+            "system/getQueueStats" => self.queue_stats().await,
+            "system/getQueueWorkload" => self.queue_workload().await,
+            "system/getQueueMasters" => self.queue_masters().await,
             "system/getSystemLog" => self.system_log(&params).await,
             "theme/getThemes" => self.themes().await,
             _ => Err(ApiError::not_found("Admin endpoint does not exist")),
@@ -2163,6 +2188,135 @@ impl AdminService {
             .unwrap_or_default()
         };
         Ok(AdminOutput::Page { data, total })
+    }
+
+    async fn system_status(&self) -> Result<AdminOutput, ApiError> {
+        let snapshot = self.worker_snapshot().await?;
+        let now = Utc::now().timestamp();
+        let schedule_recent = snapshot
+            .schedule_last_seen_at
+            .map(|last_seen| now - last_seen <= 180)
+            .unwrap_or(false);
+        let worker_running = snapshot.worker_running(now, 180);
+        Ok(AdminOutput::Data(json!({
+            "schedule": schedule_recent,
+            "horizon": worker_running,
+            "schedule_last_runtime": snapshot.schedule_last_seen_at.unwrap_or_default(),
+            "logChannel": "rust",
+            "logLevel": std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+            "cacheDriver": "redis",
+            "backendVersion": env!("CARGO_PKG_VERSION"),
+            "frontendVersion": env!("CARGO_PKG_VERSION"),
+        })))
+    }
+
+    async fn queue_stats(&self) -> Result<AdminOutput, ApiError> {
+        let snapshot = self.worker_snapshot().await?;
+        let now = Utc::now().timestamp();
+        let worker_running = snapshot.worker_running(now, 180);
+        let jobs_per_minute = snapshot
+            .last_run_at
+            .values()
+            .filter(|last_run| now - **last_run <= 60)
+            .count();
+        Ok(AdminOutput::Data(json!({
+            "failedJobs": snapshot.failed_jobs(),
+            "jobsPerMinute": jobs_per_minute,
+            "pausedMasters": 0,
+            "periods": {
+                "failedJobs": snapshot.failed_jobs(),
+                "recentJobs": snapshot.total_jobs(),
+            },
+            "processes": if worker_running { 1 } else { 0 },
+            "queueWithMaxRuntime": null,
+            "queueWithMaxThroughput": snapshot.max_counter_key(),
+            "recentJobs": snapshot.total_jobs(),
+            "status": worker_running,
+            "wait": {},
+            "lastRunAt": snapshot.last_run_at,
+            "lastSuccessAt": snapshot.last_success_at,
+            "lastFailureAt": snapshot.last_failure_at,
+        })))
+    }
+
+    async fn queue_workload(&self) -> Result<AdminOutput, ApiError> {
+        let snapshot = self.worker_snapshot().await?;
+        let now = Utc::now().timestamp();
+        let rows = snapshot
+            .job_names()
+            .into_iter()
+            .map(|name| {
+                let total = snapshot.totals.get(&name).copied().unwrap_or_default();
+                let failed = snapshot.failed.get(&name).copied().unwrap_or_default();
+                let last_run_at = snapshot.last_run_at.get(&name).copied();
+                json!({
+                    "name": name,
+                    "length": 0,
+                    "wait": 0,
+                    "processes": if last_run_at.map(|seen| now - seen <= 180).unwrap_or(false) { 1 } else { 0 },
+                    "recent_jobs": total,
+                    "failed_jobs": failed,
+                    "last_run_at": last_run_at,
+                    "last_success_at": snapshot.last_success_at.get(&name).copied(),
+                    "last_failure_at": snapshot.last_failure_at.get(&name).copied(),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(AdminOutput::Data(json!(rows)))
+    }
+
+    async fn queue_masters(&self) -> Result<AdminOutput, ApiError> {
+        let snapshot = self.worker_snapshot().await?;
+        let now = Utc::now().timestamp();
+        let worker_running = snapshot.worker_running(now, 180);
+        Ok(AdminOutput::Data(json!([{
+            "name": "rust-worker",
+            "status": if worker_running { "running" } else { "stale" },
+            "pid": null,
+            "supervisors": snapshot.job_names(),
+            "last_seen_at": snapshot.last_seen_at(),
+            "schedule_last_seen_at": snapshot.schedule_last_seen_at,
+        }])))
+    }
+
+    async fn worker_snapshot(&self) -> Result<WorkerSnapshot, ApiError> {
+        let mut conn = self
+            .redis
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|_| ApiError::internal("failed to connect redis for worker metrics"))?;
+        let schedule_last_seen_at = conn
+            .get::<_, Option<i64>>("SCHEDULE_LAST_CHECK_AT_")
+            .await
+            .map_err(|_| ApiError::internal("failed to read scheduler heartbeat"))?;
+        let totals = conn
+            .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_JOBS_TOTAL")
+            .await
+            .map_err(|_| ApiError::internal("failed to read worker totals"))?;
+        let failed = conn
+            .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_JOBS_FAILED")
+            .await
+            .map_err(|_| ApiError::internal("failed to read worker failures"))?;
+        let last_run_at = conn
+            .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_LAST_RUN_AT")
+            .await
+            .map_err(|_| ApiError::internal("failed to read worker last run"))?;
+        let last_success_at = conn
+            .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_LAST_SUCCESS_AT")
+            .await
+            .map_err(|_| ApiError::internal("failed to read worker last success"))?;
+        let last_failure_at = conn
+            .hgetall::<_, BTreeMap<String, i64>>("RUST_WORKER_LAST_FAILURE_AT")
+            .await
+            .map_err(|_| ApiError::internal("failed to read worker last failure"))?;
+        Ok(WorkerSnapshot {
+            schedule_last_seen_at,
+            totals,
+            failed,
+            last_run_at,
+            last_success_at,
+            last_failure_at,
+        })
     }
 
     async fn system_log(&self, params: &HashMap<String, String>) -> Result<AdminOutput, ApiError> {

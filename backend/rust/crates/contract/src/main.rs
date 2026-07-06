@@ -415,7 +415,15 @@ fn scenarios() -> Vec<Scenario> {
             "/api/v1/client/subscribe?flag=sing-box",
             Mode::RustBodyContains {
                 content_type_hint: "json",
-                needles: vec!["\"outbounds\"", "节点选择"],
+                needles: vec!["\"outbounds\"", "节点选择", "domain_strategy"],
+            },
+        ),
+        client_get(
+            "client.subscribe.singbox.modern",
+            "/api/v1/client/subscribe?flag=sing-box%201.12.0",
+            Mode::RustBodyContains {
+                content_type_hint: "json",
+                needles: vec!["\"outbounds\"", "节点选择", "route_exclude_address_set"],
             },
         ),
         client_get(

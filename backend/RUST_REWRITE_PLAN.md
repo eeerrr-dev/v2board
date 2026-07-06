@@ -262,10 +262,12 @@ Completed in the Rust tree:
   StripeCheckout, and StripeALL.
 - Subscription and client endpoints: `/api/v1/client/subscribe`,
   `/api/v1/client/app/getConfig`, and `/api/v1/client/app/getVersion`.
-  Rust subscription rendering now routes the legacy client flags for General,
-  Clash, Meta/Mihomo/Stash/Clash Verge/Nyanpasu, Sing-box, Surge, Surfboard,
-  Loon, Shadowrocket, SIP008 Shadowsocks, Quantumult X, SagerNet, V2rayN,
-  V2rayNG, v2RayTun, Passwall, and SSRPlus.
+  Rust also registers the configured custom `subscribe_path` when it differs
+  from the default API path. Rust subscription rendering now routes the legacy
+  client flags for General, Clash, Meta/Mihomo/Stash/Clash Verge/Nyanpasu,
+  Sing-box legacy and Sing-box 1.12+ templates, Surge, Surfboard, Loon,
+  Shadowrocket, SIP008 Shadowsocks, Quantumult X, SagerNet, V2rayN, V2rayNG,
+  v2RayTun, Passwall, and SSRPlus.
 - Node/server APIs: `/api/v1/server/{class}/{action}` and
   `/api/v2/server/config`, including token validation, config fetch, user fetch,
   traffic push, alive push/list, ETag, and msgpack for UniProxy users.
@@ -311,11 +313,16 @@ Verified in Docker on 2026-07-06:
 - Admin system smoke passed against the Rust API: `system/getSystemStatus`
   reported `schedule=true`, `system/getQueueStats` reported a running worker
   with recent jobs, and `system/getQueueWorkload` included executed Rust jobs.
-- `make rust-contract` passes 59 Laravel-vs-Rust black-box contract scenarios
+- Admin queue/status endpoints read Rust worker Redis metrics
+  (`SCHEDULE_LAST_CHECK_AT_`, `RUST_WORKER_JOBS_TOTAL`,
+  `RUST_WORKER_JOBS_FAILED`, and `RUST_WORKER_LAST_*`) instead of returning
+  static Horizon placeholders.
+- `make rust-contract` passes 60 Laravel-vs-Rust black-box contract scenarios
   across auth, guest config, client app endpoints, user profile/order/invite/
   ticket/server/knowledge/notice/traffic surfaces, admin config/users/orders/
   plans/servers/payments/knowledge/system queues, legacy-compatible status
-  behavior, staff routing boundaries, and Rust subscription renderer flags.
+  behavior, staff routing boundaries, and Rust subscription renderer flags,
+  including legacy Sing-box and Sing-box 1.12+ user agents.
 - `make rust-worker-reconcile` passes all strict worker reconciliation checks:
   scheduler heartbeat, recent worker metrics, released scheduler locks, drained
   traffic Redis buffers, absent reset lock, opened paid orders, cancelled

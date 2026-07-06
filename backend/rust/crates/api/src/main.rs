@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, fs, net::SocketAddr};
 
 use axum::{
     Json, Router,
@@ -43,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
         redis,
     };
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/healthz", get(healthz))
         .route("/api/v1/guest/comm/config", get(guest_config))
         .route(
@@ -133,9 +133,14 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v2/server/config",
             get(server_v2_config).post(server_v2_config),
-        )
-        .with_state(state)
-        .layer(TraceLayer::new_for_http());
+        );
+
+    if let Some(path) = custom_subscribe_route_path(&config) {
+        tracing::info!(path = %path, "registering custom subscribe route");
+        app = app.route(&path, get(client_subscribe));
+    }
+
+    let app = app.with_state(state).layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(&config.bind_addr).await?;
     tracing::info!(bind_addr = %config.bind_addr, "v2board rust api listening");
@@ -155,6 +160,37 @@ fn init_tracing() {
         .with(env_filter)
         .with(tracing_subscriber::fmt::layer())
         .init();
+}
+
+fn custom_subscribe_route_path(config: &AppConfig) -> Option<String> {
+    custom_subscribe_route_path_from_str(&config.subscribe_path)
+}
+
+fn custom_subscribe_route_path_from_str(path: &str) -> Option<String> {
+    let raw_path = path.trim();
+    if raw_path.is_empty() {
+        return None;
+    }
+    let path = raw_path
+        .split('?')
+        .next()
+        .unwrap_or(raw_path)
+        .trim_end_matches('/');
+    if path == "/api/v1/client/subscribe" {
+        return None;
+    }
+    if !path.starts_with('/') {
+        tracing::warn!(
+            path,
+            "custom subscribe_path must start with /; route skipped"
+        );
+        return None;
+    }
+    Some(if path.is_empty() {
+        "/".to_string()
+    } else {
+        path.to_string()
+    })
 }
 
 async fn healthz() -> Json<serde_json::Value> {
@@ -389,10 +425,7 @@ async fn admin_get(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let _admin = require_admin(&state, &headers, params.get("auth_data").cloned()).await?;
-    if let Some(response) = admin_system_response(&state, &admin_path).await? {
-        return Ok(response);
-    }
-    let service = v2board_domain::admin::AdminService::new(state.db, state.config);
+    let service = v2board_domain::admin::AdminService::new(state.db, state.redis, state.config);
     admin_response(service.get(&admin_path, params).await?)
 }
 
@@ -405,7 +438,7 @@ async fn admin_post(
     let mut params = admin_request_params(request).await?;
     let admin = require_admin(&state, &headers, params.get("auth_data").cloned()).await?;
     params.insert("_admin_email".to_string(), admin.email);
-    let service = v2board_domain::admin::AdminService::new(state.db, state.config);
+    let service = v2board_domain::admin::AdminService::new(state.db, state.redis, state.config);
     admin_response(service.post(&admin_path, params).await?)
 }
 
@@ -419,7 +452,7 @@ async fn staff_get(
         return Err(ApiError::not_found("Staff endpoint does not exist"));
     }
     let _staff = require_staff(&state, &headers, params.get("auth_data").cloned()).await?;
-    let service = v2board_domain::admin::AdminService::new(state.db, state.config);
+    let service = v2board_domain::admin::AdminService::new(state.db, state.redis, state.config);
     admin_response(service.staff_get(&staff_path, params).await?)
 }
 
@@ -435,7 +468,7 @@ async fn staff_post(
     let mut params = admin_request_params(request).await?;
     let staff = require_staff(&state, &headers, params.get("auth_data").cloned()).await?;
     params.insert("_admin_email".to_string(), staff.email);
-    let service = v2board_domain::admin::AdminService::new(state.db, state.config);
+    let service = v2board_domain::admin::AdminService::new(state.db, state.redis, state.config);
     admin_response(service.staff_post(&staff_path, params).await?)
 }
 
@@ -1097,129 +1130,6 @@ fn admin_response(output: v2board_domain::admin::AdminOutput) -> Result<Response
             Ok(response)
         }
     }
-}
-
-async fn admin_system_response(state: &AppState, path: &str) -> Result<Option<Response>, ApiError> {
-    match path {
-        "system/getSystemStatus" => {
-            let mut conn = state.redis.get_multiplexed_async_connection().await?;
-            let schedule_last_runtime = conn
-                .get::<_, Option<i64>>("SCHEDULE_LAST_CHECK_AT_")
-                .await?
-                .unwrap_or_default();
-            let last_runs = conn
-                .hgetall::<_, HashMap<String, i64>>("RUST_WORKER_LAST_RUN_AT")
-                .await
-                .unwrap_or_default();
-            let worker_running = worker_recent(&last_runs, 120);
-            Ok(Some(
-                legacy_data(json!({
-                    "schedule": Utc::now().timestamp() - 120 < schedule_last_runtime,
-                    "horizon": worker_running,
-                    "schedule_last_runtime": schedule_last_runtime,
-                    "logChannel": "rust",
-                    "logLevel": std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
-                    "cacheDriver": "redis",
-                    "backendVersion": env!("CARGO_PKG_VERSION"),
-                    "frontendVersion": env!("CARGO_PKG_VERSION"),
-                }))
-                .into_response(),
-            ))
-        }
-        "system/getQueueStats" => {
-            let mut conn = state.redis.get_multiplexed_async_connection().await?;
-            let totals = conn
-                .hgetall::<_, HashMap<String, i64>>("RUST_WORKER_JOBS_TOTAL")
-                .await
-                .unwrap_or_default();
-            let failed = conn
-                .hgetall::<_, HashMap<String, i64>>("RUST_WORKER_JOBS_FAILED")
-                .await
-                .unwrap_or_default();
-            let last_runs = conn
-                .hgetall::<_, HashMap<String, i64>>("RUST_WORKER_LAST_RUN_AT")
-                .await
-                .unwrap_or_default();
-            let worker_running = worker_recent(&last_runs, 120);
-            let recent_jobs = totals.values().sum::<i64>();
-            let failed_jobs = failed.values().sum::<i64>();
-            let jobs_per_minute = last_runs
-                .values()
-                .filter(|last_run| Utc::now().timestamp() - **last_run <= 60)
-                .count();
-            Ok(Some(
-                legacy_data(json!({
-                    "failedJobs": failed_jobs,
-                    "jobsPerMinute": jobs_per_minute,
-                    "pausedMasters": 0,
-                    "periods": { "failedJobs": 0, "recentJobs": 0 },
-                    "processes": if worker_running { 1 } else { 0 },
-                    "queueWithMaxRuntime": null,
-                    "queueWithMaxThroughput": max_counter_key(&totals),
-                    "recentJobs": recent_jobs,
-                    "status": worker_running,
-                    "wait": {},
-                }))
-                .into_response(),
-            ))
-        }
-        "system/getQueueWorkload" => {
-            let mut conn = state.redis.get_multiplexed_async_connection().await?;
-            let totals = conn
-                .hgetall::<_, HashMap<String, i64>>("RUST_WORKER_JOBS_TOTAL")
-                .await
-                .unwrap_or_default();
-            let failed = conn
-                .hgetall::<_, HashMap<String, i64>>("RUST_WORKER_JOBS_FAILED")
-                .await
-                .unwrap_or_default();
-            let workload = totals
-                .iter()
-                .map(|(name, total)| {
-                    json!({
-                        "name": name,
-                        "length": 0,
-                        "wait": 0,
-                        "processes": 1,
-                        "recent_jobs": total,
-                        "failed_jobs": failed.get(name).copied().unwrap_or_default(),
-                    })
-                })
-                .collect::<Vec<_>>();
-            Ok(Some(legacy_data(workload).into_response()))
-        }
-        "system/getQueueMasters" => {
-            let mut conn = state.redis.get_multiplexed_async_connection().await?;
-            let last_runs = conn
-                .hgetall::<_, HashMap<String, i64>>("RUST_WORKER_LAST_RUN_AT")
-                .await
-                .unwrap_or_default();
-            let worker_running = worker_recent(&last_runs, 120);
-            Ok(Some(
-                legacy_data(json!([{
-                    "name": "rust-worker",
-                    "status": if worker_running { "running" } else { "stale" },
-                    "pid": null,
-                    "supervisors": last_runs.keys().cloned().collect::<Vec<_>>(),
-                }]))
-                .into_response(),
-            ))
-        }
-        _ => Ok(None),
-    }
-}
-
-fn worker_recent(last_runs: &HashMap<String, i64>, seconds: i64) -> bool {
-    last_runs
-        .values()
-        .any(|last_run| Utc::now().timestamp() - *last_run <= seconds)
-}
-
-fn max_counter_key(counters: &HashMap<String, i64>) -> Option<String> {
-    counters
-        .iter()
-        .max_by_key(|(_, value)| *value)
-        .map(|(key, _)| key.clone())
 }
 
 fn response_wants_msgpack(headers: &HeaderMap) -> bool {
@@ -3793,6 +3703,7 @@ enum SubscriptionFormat {
     Clash,
     ClashMeta,
     SingBox,
+    SingBoxLegacy,
     Surge,
     Surfboard,
     Loon,
@@ -3809,7 +3720,11 @@ impl SubscriptionFormat {
             .replace(['_', '-', '/'], " ")
             .to_lowercase();
         if normalized.contains("sing") {
-            Self::SingBox
+            if singbox_modern_flag(&normalized) {
+                Self::SingBox
+            } else {
+                Self::SingBoxLegacy
+            }
         } else if normalized.contains("surfboard") {
             Self::Surfboard
         } else if normalized.contains("surge") {
@@ -3846,6 +3761,48 @@ impl SubscriptionFormat {
     }
 }
 
+fn singbox_modern_flag(normalized_flag: &str) -> bool {
+    let marker = ["sing-box", "sing box", "singbox", "sing"]
+        .into_iter()
+        .find_map(|marker| {
+            normalized_flag
+                .find(marker)
+                .map(|start| (start, marker.len()))
+        });
+    let Some((start, marker_len)) = marker else {
+        return false;
+    };
+    let version_start = normalized_flag[start + marker_len..]
+        .char_indices()
+        .find_map(|(index, ch)| ch.is_ascii_digit().then_some(index));
+    let Some(version_start) = version_start else {
+        return false;
+    };
+    let rest = &normalized_flag[start + marker_len + version_start..];
+    let version = rest
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit() || *ch == '.')
+        .collect::<String>();
+    version_at_least(&version, &[1, 12, 0])
+}
+
+fn version_at_least(version: &str, minimum: &[u64]) -> bool {
+    let parts = version
+        .split('.')
+        .map(|part| part.parse::<u64>().unwrap_or_default())
+        .collect::<Vec<_>>();
+    for (index, min) in minimum.iter().enumerate() {
+        let value = parts.get(index).copied().unwrap_or_default();
+        if value > *min {
+            return true;
+        }
+        if value < *min {
+            return false;
+        }
+    }
+    true
+}
+
 fn build_subscription_document(
     config: &AppConfig,
     user: &v2board_db::user::UserAccessRow,
@@ -3860,7 +3817,12 @@ fn build_subscription_document(
         SubscriptionFormat::ClashMeta => {
             build_clash_subscription(config, &user.uuid, servers, true)
         }
-        SubscriptionFormat::SingBox => build_singbox_subscription(config, &user.uuid, servers)?,
+        SubscriptionFormat::SingBox => {
+            build_singbox_subscription(config, &user.uuid, servers, true)?
+        }
+        SubscriptionFormat::SingBoxLegacy => {
+            build_singbox_subscription(config, &user.uuid, servers, false)?
+        }
         SubscriptionFormat::Surge => build_surge_subscription(config, user, servers),
         SubscriptionFormat::Surfboard => build_surfboard_subscription(config, user, servers),
         SubscriptionFormat::Loon => build_loon_subscription(&user.uuid, servers),
@@ -3873,9 +3835,9 @@ fn build_subscription_document(
         SubscriptionFormat::Clash | SubscriptionFormat::ClashMeta => {
             "application/yaml; charset=utf-8"
         }
-        SubscriptionFormat::SingBox | SubscriptionFormat::Shadowsocks => {
-            "application/json; charset=utf-8"
-        }
+        SubscriptionFormat::SingBox
+        | SubscriptionFormat::SingBoxLegacy
+        | SubscriptionFormat::Shadowsocks => "application/json; charset=utf-8",
         _ => "text/plain; charset=utf-8",
     };
     Ok(SubscriptionDocument { body, content_type })
@@ -3966,9 +3928,11 @@ fn build_singbox_subscription(
     _config: &AppConfig,
     uuid: &str,
     servers: &[v2board_db::server::AvailableServerRow],
+    modern: bool,
 ) -> Result<String, ApiError> {
     let proxies = servers
         .iter()
+        .filter(|server| modern || server_protocol(server) != "anytls")
         .filter_map(|server| build_singbox_proxy(uuid, server))
         .collect::<Vec<_>>();
     let proxy_tags = proxies
@@ -3980,87 +3944,187 @@ fn build_singbox_subscription(
                 .map(ToOwned::to_owned)
         })
         .collect::<Vec<_>>();
-    let mut selector_outbounds = vec!["自动选择".to_string()];
-    selector_outbounds.extend(proxy_tags.clone());
-    let mut outbounds = vec![
-        json!({
-            "tag": "DIRECT",
-            "type": "direct",
-            "domain_resolver": { "server": "local" }
-        }),
-        json!({
-            "tag": "节点选择",
-            "type": "selector",
-            "interrupt_exist_connections": true,
-            "outbounds": selector_outbounds
-        }),
-        json!({
-            "tag": "自动选择",
-            "type": "urltest",
-            "url": "https://www.gstatic.com/generate_204",
-            "interval": "10m",
-            "tolerance": 50,
-            "idle_timeout": "30m",
-            "interrupt_exist_connections": false,
-            "outbounds": proxy_tags
-        }),
-    ];
-    outbounds.extend(proxies);
-    serde_json::to_string(&json!({
-        "dns": {
-            "servers": [
-                { "type": "local", "tag": "local" },
-                { "type": "udp", "tag": "remote", "server": "1.1.1.1" },
-                { "type": "udp", "tag": "cn", "server": "223.5.5.5" }
-            ],
-            "final": "remote"
-        },
-        "inbounds": [
-            {
-                "tag": "mixed-in",
-                "type": "mixed",
-                "listen": "127.0.0.1",
-                "listen_port": 2334,
-                "users": []
-            }
-        ],
-        "outbounds": outbounds,
-        "route": {
-            "rules": [
-                { "protocol": "dns", "action": "hijack-dns" },
-                { "ip_is_private": true, "action": "route", "outbound": "DIRECT" },
-                { "rule_set": ["geosite-cn", "geoip-cn"], "action": "route", "outbound": "DIRECT" }
-            ],
-            "auto_detect_interface": true,
-            "final": "节点选择",
-            "default_domain_resolver": { "server": "remote" },
-            "rule_set": [
-                {
-                    "tag": "geoip-cn",
-                    "type": "remote",
-                    "format": "binary",
-                    "url": "https://raw.githubusercontent.com/Loyalsoldier/geoip/release/srs/cn.srs",
-                    "download_detour": "节点选择"
-                },
-                {
-                    "tag": "geosite-cn",
-                    "type": "remote",
-                    "format": "binary",
-                    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs",
-                    "download_detour": "节点选择"
+    let mut config = load_singbox_template(modern);
+    inject_singbox_proxies(&mut config, &proxy_tags, proxies);
+    serde_json::to_string(&config)
+        .map_err(|_| ApiError::internal("failed to render sing-box subscription"))
+}
+
+fn load_singbox_template(modern: bool) -> Value {
+    let candidates = if modern {
+        ["custom.sing-box.json", "default.sing-box.json"]
+    } else {
+        ["custom.sing-box.old.json", "default.sing-box.old.json"]
+    };
+    for filename in candidates {
+        let path = format!("/laravel/resources/rules/{filename}");
+        if let Ok(body) = fs::read_to_string(path)
+            && let Ok(value) = serde_json::from_str::<Value>(&body)
+        {
+            return value;
+        }
+    }
+    fallback_singbox_template(modern)
+}
+
+fn inject_singbox_proxies(config: &mut Value, proxy_tags: &[String], proxies: Vec<Value>) {
+    if !config.get("outbounds").is_some_and(Value::is_array) {
+        config["outbounds"] = json!([]);
+    }
+    let Some(outbounds) = config.get_mut("outbounds").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for outbound in outbounds.iter_mut() {
+        let outbound_type = outbound.get("type").and_then(Value::as_str);
+        let tag = outbound
+            .get("tag")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let should_attach = (outbound_type == Some("selector") && tag == "节点选择")
+            || (outbound_type == Some("urltest") && tag == "自动选择")
+            || (outbound_type == Some("selector") && tag.starts_with('#'));
+        if !should_attach {
+            continue;
+        }
+        if !outbound.get("outbounds").is_some_and(Value::is_array) {
+            outbound["outbounds"] = json!([]);
+        }
+        if let Some(items) = outbound.get_mut("outbounds").and_then(Value::as_array_mut) {
+            for tag in proxy_tags {
+                if !items.iter().any(|item| item.as_str() == Some(tag.as_str())) {
+                    items.push(json!(tag));
                 }
-            ]
-        },
-        "experimental": {
-            "cache_file": { "enabled": true },
-            "clash_api": {
-                "default_mode": "海外代理",
-                "external_controller": "127.0.0.1:9090",
-                "secret": ""
             }
         }
-    }))
-    .map_err(|_| ApiError::internal("failed to render sing-box subscription"))
+    }
+    outbounds.extend(proxies);
+}
+
+fn fallback_singbox_template(modern: bool) -> Value {
+    if modern {
+        json!({
+            "dns": {
+                "servers": [
+                    { "type": "local", "tag": "local" },
+                    { "type": "udp", "tag": "remote", "server": "1.1.1.1" },
+                    { "type": "udp", "tag": "cn", "server": "223.5.5.5" }
+                ],
+                "final": "remote"
+            },
+            "inbounds": [
+                {
+                    "tag": "tun-in",
+                    "type": "tun",
+                    "address": ["172.19.0.1/30", "2001:0470:f9da:fdfa::1/64"],
+                    "auto_route": true,
+                    "mtu": 9000,
+                    "stack": "system",
+                    "strict_route": true,
+                    "route_exclude_address_set": ["geoip-cn"]
+                },
+                {
+                    "tag": "mixed-in",
+                    "type": "mixed",
+                    "listen": "127.0.0.1",
+                    "listen_port": 2334,
+                    "users": []
+                }
+            ],
+            "outbounds": [
+                { "tag": "DIRECT", "type": "direct", "domain_resolver": { "server": "local" } },
+                { "tag": "节点选择", "type": "selector", "interrupt_exist_connections": true, "outbounds": ["自动选择"] },
+                { "tag": "自动选择", "type": "urltest", "url": "https://www.gstatic.com/generate_204", "interval": "10m", "tolerance": 50, "idle_timeout": "30m", "interrupt_exist_connections": false, "outbounds": [] }
+            ],
+            "route": {
+                "rules": [
+                    { "action": "sniff" },
+                    { "protocol": "dns", "action": "hijack-dns" },
+                    { "ip_is_private": true, "action": "route", "outbound": "DIRECT" },
+                    { "rule_set": ["geosite-cn", "geoip-cn"], "action": "route", "outbound": "DIRECT" }
+                ],
+                "auto_detect_interface": true,
+                "final": "节点选择",
+                "default_domain_resolver": { "server": "remote" },
+                "rule_set": [
+                    { "tag": "geoip-cn", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/Loyalsoldier/geoip/release/srs/cn.srs", "download_detour": "节点选择" },
+                    { "tag": "geosite-cn", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs", "download_detour": "节点选择" }
+                ]
+            },
+            "experimental": {
+                "cache_file": { "enabled": true },
+                "clash_api": { "default_mode": "海外代理", "external_controller": "127.0.0.1:9090", "secret": "" }
+            }
+        })
+    } else {
+        json!({
+            "dns": {
+                "rules": [
+                    { "outbound": ["any"], "server": "local" },
+                    { "clash_mode": "全局代理", "server": "remote" },
+                    { "clash_mode": "关闭代理", "server": "local" },
+                    { "rule_set": ["geosite-cn"], "server": "local" },
+                    { "rule_set": ["category-ads-all"], "server": "block" }
+                ],
+                "servers": [
+                    { "address": "1.1.1.1", "detour": "节点选择", "tag": "remote" },
+                    { "address": "https://223.5.5.5/dns-query", "detour": "direct", "tag": "local" },
+                    { "address": "rcode://refused", "tag": "block" }
+                ],
+                "final": "remote",
+                "strategy": "ipv4_only",
+                "disable_cache": false
+            },
+            "experimental": {
+                "cache_file": { "enabled": true },
+                "clash_api": { "default_mode": "海外代理", "external_controller": "127.0.0.1:9090", "secret": "" }
+            },
+            "inbounds": [
+                {
+                    "auto_route": true,
+                    "domain_strategy": "prefer_ipv4",
+                    "endpoint_independent_nat": true,
+                    "address": ["172.19.0.1/30", "2001:0470:f9da:fdfa::1/64"],
+                    "mtu": 9000,
+                    "sniff_override_destination": true,
+                    "stack": "system",
+                    "strict_route": true,
+                    "type": "tun"
+                },
+                {
+                    "domain_strategy": "prefer_ipv4",
+                    "listen": "127.0.0.1",
+                    "listen_port": 2334,
+                    "sniff": true,
+                    "sniff_override_destination": true,
+                    "tag": "mixed-in",
+                    "type": "mixed",
+                    "users": []
+                }
+            ],
+            "outbounds": [
+                { "type": "selector", "tag": "节点选择", "outbounds": ["自动选择"] },
+                { "type": "urltest", "tag": "自动选择", "outbounds": [] },
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": {
+                "auto_detect_interface": true,
+                "rules": [
+                    { "action": "sniff" },
+                    { "protocol": "dns", "action": "hijack-dns" },
+                    { "clash_mode": "关闭代理", "outbound": "direct" },
+                    { "clash_mode": "全局代理", "outbound": "节点选择" },
+                    { "rule_set": ["geosite-cn", "geoip-cn"], "outbound": "direct" },
+                    { "ip_is_private": true, "outbound": "direct" },
+                    { "rule_set": ["category-ads-all"], "action": "reject" }
+                ],
+                "rule_set": [
+                    { "tag": "geosite-cn", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs", "download_detour": "节点选择" },
+                    { "tag": "category-ads-all", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs", "download_detour": "节点选择" },
+                    { "tag": "geoip-cn", "type": "remote", "format": "binary", "url": "https://raw.githubusercontent.com/Loyalsoldier/geoip/release/srs/cn.srs", "download_detour": "节点选择" }
+                ]
+            }
+        })
+    }
 }
 
 fn build_surge_subscription(
@@ -6748,5 +6812,43 @@ fn validate_binary(field: &str, value: Option<i8>) -> Result<(), ApiError> {
     match value {
         Some(0 | 1) | None => Ok(()),
         Some(_) => Err(ApiError::bad_request(format!("{field} must be 0 or 1"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn singbox_flag_uses_legacy_without_modern_version() {
+        assert!(!singbox_modern_flag("sing-box"));
+        assert!(!singbox_modern_flag("sing-box 1.11.9"));
+    }
+
+    #[test]
+    fn singbox_flag_uses_modern_for_1_12_and_newer() {
+        assert!(singbox_modern_flag("sing-box 1.12.0"));
+        assert!(singbox_modern_flag("sing box 1.12.0"));
+        assert!(singbox_modern_flag("sing-box/1.13.2"));
+    }
+
+    #[test]
+    fn custom_subscribe_route_skips_default_and_registers_custom_path() {
+        assert_eq!(
+            custom_subscribe_route_path_from_str("/api/v1/client/subscribe"),
+            None
+        );
+        assert_eq!(
+            custom_subscribe_route_path_from_str("/api/v1/client/subscribe/"),
+            None
+        );
+        assert_eq!(
+            custom_subscribe_route_path_from_str("/custom/subscribe"),
+            Some("/custom/subscribe".to_string())
+        );
+        assert_eq!(
+            custom_subscribe_route_path_from_str("/custom/subscribe/"),
+            Some("/custom/subscribe".to_string())
+        );
     }
 }
