@@ -1072,10 +1072,13 @@ impl OrderService {
             mark_surplus_orders(tx, ids).await?;
         }
 
+        // Read the wall clock once so every expiry/reset decision in this open
+        // uses a single consistent `now` (Laravel evaluates one Carbon::now()).
+        let now = Utc::now().timestamp();
         match order.period.as_str() {
             "onetime_price" => buy_by_one_time(&mut user, &order, &plan, surplus_ids.is_some()),
             "reset_price" => reset_traffic(&mut user),
-            period => buy_by_period(&mut user, &order, &plan, period),
+            period => buy_by_period(&mut user, &order, &plan, period, now),
         }
         match order.r#type {
             1 if self.config.new_order_event_id == 1 => reset_traffic(&mut user),
@@ -3096,8 +3099,13 @@ fn calculate_handling_amount(
     Some(((order.total_amount as f64 * (percent / 100.0)) + fixed as f64).round() as i32)
 }
 
-fn buy_by_period(user: &mut UserForOrder, order: &OrderForCheckout, plan: &PlanRow, period: &str) {
-    let now = Utc::now().timestamp();
+fn buy_by_period(
+    user: &mut UserForOrder,
+    order: &OrderForCheckout,
+    plan: &PlanRow,
+    period: &str,
+    now: i64,
+) {
     if order.r#type == 3 {
         user.expired_at = Some(now);
     }
@@ -3114,7 +3122,7 @@ fn buy_by_period(user: &mut UserForOrder, order: &OrderForCheckout, plan: &PlanR
     }
     user.plan_id = Some(plan.id);
     user.group_id = Some(plan.group_id);
-    user.expired_at = Some(add_period_time(period, user.expired_at.unwrap_or(now)));
+    user.expired_at = Some(add_period_time(period, user.expired_at.unwrap_or(now), now));
 }
 
 fn buy_by_one_time(
@@ -3206,8 +3214,8 @@ fn period_months(period: &str) -> Option<u32> {
     }
 }
 
-fn add_period_time(period: &str, timestamp: i64) -> i64 {
-    let base = timestamp.max(Utc::now().timestamp());
+fn add_period_time(period: &str, timestamp: i64, now: i64) -> i64 {
+    let base = timestamp.max(now);
     period_months(period)
         .map(|months| add_months(base, months))
         .unwrap_or(base)
@@ -4027,5 +4035,215 @@ mod tests {
         };
 
         assert!(btcpay_notify(&payment, &input).await.is_err());
+    }
+
+    // --- Order-open grant math (the paid -> plan/traffic/expiry side effect).
+    //     These pure functions decide expiry extension and reset-on-renew, which
+    //     Laravel's OrderService::buyByPeriod/buyByOneTime own; a regression here
+    //     would silently mis-grant subscriptions on every paid order. `now` is
+    //     injected so the assertions are deterministic and timezone-robust. ---
+
+    const GRANT_NOW: i64 = 1_700_000_000;
+
+    fn plan_grant_fixture() -> PlanRow {
+        PlanRow {
+            id: 7,
+            group_id: 3,
+            transfer_enable: 100, // GiB, multiplied by GIB inside the grant fns
+            device_limit: Some(3),
+            name: "Pro".to_string(),
+            speed_limit: Some(1000),
+            show: 1,
+            sort: Some(1),
+            renew: 1,
+            content: None,
+            month_price: Some(1000),
+            quarter_price: Some(2700),
+            half_year_price: None,
+            year_price: Some(10000),
+            two_year_price: None,
+            three_year_price: None,
+            onetime_price: Some(5000),
+            reset_price: Some(500),
+            reset_traffic_method: None,
+            capacity_limit: None,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    fn order_grant_fixture(order_type: i32, period: &str) -> OrderForCheckout {
+        OrderForCheckout {
+            id: 100,
+            user_id: 1,
+            plan_id: 7,
+            r#type: order_type,
+            period: period.to_string(),
+            trade_no: "T-GRANT".to_string(),
+            total_amount: 1000,
+            refund_amount: None,
+            surplus_order_ids: None,
+        }
+    }
+
+    fn user_grant_fixture() -> UserForOrder {
+        UserForOrder {
+            id: 1,
+            invite_user_id: None,
+            balance: 0,
+            discount: None,
+            commission_type: 0,
+            commission_rate: None,
+            u: 9 * GIB,
+            d: GIB,
+            transfer_enable: 50 * GIB,
+            device_limit: Some(1),
+            banned: 0,
+            group_id: Some(1),
+            plan_id: Some(1),
+            speed_limit: Some(100),
+            expired_at: None,
+        }
+    }
+
+    #[test]
+    fn new_order_forces_reset_and_grants_full_plan() {
+        // type 1 (new) always resets traffic even if the user still had time left,
+        // and grants the plan's transfer/device/group.
+        let mut user = user_grant_fixture();
+        user.expired_at = Some(GRANT_NOW + 86_400 * 40);
+        let plan = plan_grant_fixture();
+        buy_by_period(
+            &mut user,
+            &order_grant_fixture(1, "month_price"),
+            &plan,
+            "month_price",
+            GRANT_NOW,
+        );
+        assert_eq!(user.u, 0);
+        assert_eq!(user.d, 0);
+        assert_eq!(user.transfer_enable, 100 * GIB);
+        assert_eq!(user.device_limit, Some(3));
+        assert_eq!(user.plan_id, Some(7));
+        assert_eq!(user.group_id, Some(3));
+        // Extended one month from the still-future expiry, not from now.
+        assert_eq!(
+            user.expired_at,
+            Some(add_months(GRANT_NOW + 86_400 * 40, 1))
+        );
+    }
+
+    #[test]
+    fn renew_preserves_traffic_when_not_same_month_day() {
+        // type 2 (renew) with an expiry ~40 days out keeps used traffic and just
+        // extends the period.
+        let mut user = user_grant_fixture();
+        user.expired_at = Some(GRANT_NOW + 86_400 * 40);
+        buy_by_period(
+            &mut user,
+            &order_grant_fixture(2, "month_price"),
+            &plan_grant_fixture(),
+            "month_price",
+            GRANT_NOW,
+        );
+        assert_eq!(user.u, 9 * GIB);
+        assert_eq!(user.d, GIB);
+        assert_eq!(user.transfer_enable, 100 * GIB);
+        assert_eq!(
+            user.expired_at,
+            Some(add_months(GRANT_NOW + 86_400 * 40, 1))
+        );
+    }
+
+    #[test]
+    fn renew_resets_traffic_on_same_month_day() {
+        // Renewing on the exact expiry day (same month/day) resets traffic, per
+        // OrderService::buyByPeriod's Carbon isSameDay branch.
+        let mut user = user_grant_fixture();
+        user.expired_at = Some(GRANT_NOW);
+        buy_by_period(
+            &mut user,
+            &order_grant_fixture(2, "month_price"),
+            &plan_grant_fixture(),
+            "month_price",
+            GRANT_NOW,
+        );
+        assert_eq!(user.u, 0);
+        assert_eq!(user.d, 0);
+        assert_eq!(user.expired_at, Some(add_months(GRANT_NOW, 1)));
+    }
+
+    #[test]
+    fn change_order_restarts_period_from_now_and_keeps_traffic() {
+        // type 3 (change plan) drops the old expiry to now, then extends from now;
+        // traffic is not reset by buy_by_period itself.
+        let mut user = user_grant_fixture();
+        user.expired_at = Some(GRANT_NOW + 86_400 * 100);
+        buy_by_period(
+            &mut user,
+            &order_grant_fixture(3, "month_price"),
+            &plan_grant_fixture(),
+            "month_price",
+            GRANT_NOW,
+        );
+        assert_eq!(user.u, 9 * GIB);
+        assert_eq!(user.d, GIB);
+        assert_eq!(user.expired_at, Some(add_months(GRANT_NOW, 1)));
+    }
+
+    #[test]
+    fn one_time_absorbs_leftover_traffic_when_no_expiry() {
+        // buyByOneTime folds the user's unused traffic into the new allowance when
+        // they have no active expiry and no surplus orders were consumed.
+        let mut user = user_grant_fixture();
+        user.expired_at = None;
+        user.transfer_enable = 50 * GIB;
+        user.u = 5 * GIB;
+        user.d = 3 * GIB; // 42 GiB unused
+        buy_by_one_time(
+            &mut user,
+            &order_grant_fixture(1, "onetime_price"),
+            &plan_grant_fixture(),
+            false,
+        );
+        assert_eq!(user.transfer_enable, 100 * GIB + 42 * GIB);
+        assert_eq!(user.u, 0);
+        assert_eq!(user.d, 0);
+        assert_eq!(user.expired_at, None);
+        assert_eq!(user.plan_id, Some(7));
+    }
+
+    #[test]
+    fn one_time_ignores_leftover_when_surplus_orders_consumed() {
+        let mut user = user_grant_fixture();
+        user.expired_at = None;
+        user.transfer_enable = 50 * GIB;
+        user.u = 5 * GIB;
+        user.d = 3 * GIB;
+        buy_by_one_time(
+            &mut user,
+            &order_grant_fixture(1, "onetime_price"),
+            &plan_grant_fixture(),
+            true,
+        );
+        assert_eq!(user.transfer_enable, 100 * GIB);
+    }
+
+    #[test]
+    fn add_period_time_floors_past_base_to_now_and_passes_through_unknown_period() {
+        // A base in the past is clamped to now before adding the period.
+        assert_eq!(
+            add_period_time("month_price", GRANT_NOW - 999_999, GRANT_NOW),
+            add_months(GRANT_NOW, 1)
+        );
+        // Non-calendar periods (e.g. deposit) return the clamped base unchanged.
+        assert_eq!(
+            add_period_time("deposit", GRANT_NOW - 5, GRANT_NOW),
+            GRANT_NOW
+        );
+        assert_eq!(
+            add_period_time("deposit", GRANT_NOW + 100, GRANT_NOW),
+            GRANT_NOW + 100
+        );
     }
 }
