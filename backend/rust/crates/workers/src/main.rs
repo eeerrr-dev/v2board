@@ -861,17 +861,21 @@ async fn renew_user(state: &WorkerState, user: RenewalUserRow) -> anyhow::Result
     Ok(())
 }
 
+/// The plan's price (in cents) for a recurring renewal period. Returns `Some(0)`
+/// when the column is NULL or zero — Laravel's CheckRenewal compares
+/// `balance < $plan[$period]` where a NULL price coerces to 0, so a free/unpriced
+/// period auto-renews at no cost rather than disabling auto-renewal. Only a period
+/// that is not a recognized recurring key yields `None` (cannot be renewed).
 fn renewal_price(plan: &RenewalPlanRow, period: &str) -> Option<i32> {
     match period {
-        "month_price" => plan.month_price,
-        "quarter_price" => plan.quarter_price,
-        "half_year_price" => plan.half_year_price,
-        "year_price" => plan.year_price,
-        "two_year_price" => plan.two_year_price,
-        "three_year_price" => plan.three_year_price,
+        "month_price" => Some(plan.month_price.unwrap_or(0)),
+        "quarter_price" => Some(plan.quarter_price.unwrap_or(0)),
+        "half_year_price" => Some(plan.half_year_price.unwrap_or(0)),
+        "year_price" => Some(plan.year_price.unwrap_or(0)),
+        "two_year_price" => Some(plan.two_year_price.unwrap_or(0)),
+        "three_year_price" => Some(plan.three_year_price.unwrap_or(0)),
         _ => None,
     }
-    .filter(|price| *price > 0)
 }
 
 async fn disable_auto_renewal(db: &MySqlPool, user_id: i64) -> anyhow::Result<()> {
@@ -1302,6 +1306,27 @@ fn generate_trade_no() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renewal_price_treats_null_or_zero_as_free_not_disable() {
+        let plan = RenewalPlanRow {
+            id: 1,
+            renew: 1,
+            month_price: None,      // unpriced period
+            quarter_price: Some(0), // explicitly free
+            half_year_price: Some(1000),
+            year_price: None,
+            two_year_price: None,
+            three_year_price: None,
+        };
+        // Laravel free-renews (balance < NULL/0 is false) instead of disabling.
+        assert_eq!(renewal_price(&plan, "month_price"), Some(0));
+        assert_eq!(renewal_price(&plan, "quarter_price"), Some(0));
+        assert_eq!(renewal_price(&plan, "half_year_price"), Some(1000));
+        // A non-recurring period cannot be auto-renewed.
+        assert_eq!(renewal_price(&plan, "reset_price"), None);
+        assert_eq!(renewal_price(&plan, "onetime_price"), None);
+    }
 
     #[test]
     fn scheduled_task_matrix_matches_laravel_scheduler_jobs() {
