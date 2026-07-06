@@ -828,6 +828,11 @@ fn scenarios(config: &ContractConfig) -> Vec<Scenario> {
             "/api/v1/client/subscribe?flag=sagernet",
             Mode::RustContentType("text/plain"),
         ),
+        client_get(
+            "client.subscribe.quantumultx",
+            "/api/v1/client/subscribe?flag=quantumultx",
+            Mode::RustContentType("text/plain"),
+        ),
         get(
             "user.info",
             "/api/v1/user/info",

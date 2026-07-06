@@ -1632,8 +1632,37 @@ fn build_quantumultx_proxy(
             uuid,
             server.name
         )),
+        "anytls" => Some(build_quantumultx_anytls(uuid, server)),
         _ => None,
     }
+}
+
+fn build_quantumultx_anytls(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> String {
+    let mut config = vec![
+        format!("anytls={}:{}", server.host, first_port(server)),
+        format!("password={uuid}"),
+        "udp-relay=true".to_string(),
+        format!("tag={}", server.name),
+    ];
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    if network == "tcp" {
+        config.push("over-tls=true".to_string());
+        let tls_settings = extra_json(server, "tls_settings");
+        if let Some(sni) = json_path_string(&tls_settings, &["server_name"])
+            .or_else(|| extra_string(server, "server_name"))
+        {
+            config.push(format!("tls-host={sni}"));
+        }
+        let allow_insecure = json_path_i64(&tls_settings, &["allow_insecure"])
+            .or_else(|| extra_i64(server, "allow_insecure"))
+            .unwrap_or_default()
+            != 0;
+        config.push(format!(
+            "tls-verification={}",
+            if allow_insecure { "false" } else { "true" }
+        ));
+    }
+    format!("{}\r\n", config.join(","))
 }
 
 fn supports_surge(server: &v2board_db::server::AvailableServerRow) -> bool {
@@ -2941,5 +2970,42 @@ mod tests {
         assert!(singbox_modern_flag("sing-box 1.12.0"));
         assert!(singbox_modern_flag("sing box 1.12.0"));
         assert!(singbox_modern_flag("sing-box/1.13.2"));
+    }
+
+    #[test]
+    fn quantumultx_anytls_matches_legacy_reference_shape() {
+        let server = v2board_db::server::AvailableServerRow {
+            id: 1,
+            parent_id: None,
+            group_id: vec![1],
+            route_id: None,
+            name: "anytls-reality-tls-01".to_string(),
+            rate: "1".to_string(),
+            r#type: "anytls".to_string(),
+            host: "example.com".to_string(),
+            port: serde_json::json!(443),
+            cache_key: "anytls-1".to_string(),
+            last_check_at: None,
+            is_online: 0,
+            tags: None,
+            sort: None,
+            extra: serde_json::json!({
+                "network": "tcp",
+                "tls_settings": {
+                    "server_name": "apple.com",
+                    "allow_insecure": false
+                }
+            }),
+        };
+
+        let line = build_quantumultx_proxy("pwd", &server).expect("anytls output");
+        assert!(line.contains("anytls=example.com:443"));
+        assert!(line.contains("password=pwd"));
+        assert!(line.contains("udp-relay=true"));
+        assert!(line.contains("tag=anytls-reality-tls-01"));
+        assert!(line.contains("over-tls=true"));
+        assert!(line.contains("tls-host=apple.com"));
+        assert!(line.contains("tls-verification=true"));
+        assert!(line.ends_with("\r\n"));
     }
 }

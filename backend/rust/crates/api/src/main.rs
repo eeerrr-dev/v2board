@@ -1,10 +1,16 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{Arc, RwLock},
+};
 
 use axum::{
     Json, Router,
-    body::to_bytes,
-    extract::{ConnectInfo, Form, Path, Query, Request, State},
+    body::{Body, to_bytes},
+    extract::{ConnectInfo, Form, OriginalUri, Path, Query, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
+    middleware,
+    middleware::Next,
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
 };
@@ -31,9 +37,32 @@ use codec::{base64_decode_url_safe, percent_encode, safe_base64_encode, standard
 
 #[derive(Clone)]
 struct AppState {
-    config: AppConfig,
+    config: Arc<RwLock<AppConfig>>,
     db: DbPool,
     redis: redis::Client,
+}
+
+impl AppState {
+    fn new(config: AppConfig, db: DbPool, redis: redis::Client) -> Self {
+        Self {
+            config: Arc::new(RwLock::new(config)),
+            db,
+            redis,
+        }
+    }
+
+    fn config_snapshot(&self) -> AppConfig {
+        self.config
+            .read()
+            .expect("app config lock poisoned")
+            .clone()
+    }
+
+    fn reload_config(&self) -> AppConfig {
+        let config = AppConfig::from_env();
+        *self.config.write().expect("app config lock poisoned") = config.clone();
+        config
+    }
 }
 
 #[tokio::main]
@@ -43,11 +72,7 @@ async fn main() -> anyhow::Result<()> {
     let config = AppConfig::from_env();
     let db = connect_mysql(&config.database_url).await?;
     let redis = redis::Client::open(config.redis_url.clone())?;
-    let state = AppState {
-        config: config.clone(),
-        db,
-        redis,
-    };
+    let state = AppState::new(config.clone(), db, redis);
     let admin_api_route = config.admin_api_route();
 
     let mut app = Router::new()
@@ -137,14 +162,18 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v2/server/config",
             get(server_api::server_v2_config).post(server_api::server_v2_config),
-        );
+        )
+        .fallback(dynamic_fallback);
 
     if let Some(path) = custom_subscribe_route_path(&config) {
         tracing::info!(path = %path, "registering custom subscribe route");
         app = app.route(&path, get(client_subscribe));
     }
 
-    let app = app.with_state(state).layer(TraceLayer::new_for_http());
+    let app = app
+        .with_state(state)
+        .layer(middleware::from_fn(language_middleware))
+        .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(&config.bind_addr).await?;
     tracing::info!(bind_addr = %config.bind_addr, "v2board rust api listening");
@@ -201,6 +230,165 @@ async fn healthz() -> Json<serde_json::Value> {
     Json(json!({ "ok": true }))
 }
 
+async fn dynamic_fallback(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    request: Request,
+) -> Result<Response, ApiError> {
+    let method = request.method().clone();
+    let path = normalize_request_path(request.uri().path());
+    let config = state.config_snapshot();
+
+    if method == Method::GET
+        && custom_subscribe_route_path_from_str(&config.subscribe_path)
+            .as_deref()
+            .is_some_and(|subscribe_path| normalize_request_path(subscribe_path) == path)
+    {
+        let query = serde_urlencoded::from_str::<ClientSubscribeQuery>(
+            request.uri().query().unwrap_or_default(),
+        )
+        .map_err(|_| ApiError::bad_request("Invalid subscribe query"))?;
+        return client_subscribe_response(&state, query, headers).await;
+    }
+
+    let admin_prefix = format!("/api/v1/{}/", config.admin_path());
+    if let Some(admin_path) = path.strip_prefix(&admin_prefix) {
+        let admin_path = admin_path.to_string();
+        match method {
+            Method::GET => {
+                let params = request
+                    .uri()
+                    .query()
+                    .map(parse_urlencoded_params)
+                    .transpose()?
+                    .unwrap_or_default();
+                let _admin =
+                    require_admin(&state, &headers, params.get("auth_data").cloned()).await?;
+                let service = v2board_domain::admin::AdminService::new(
+                    state.db.clone(),
+                    state.redis.clone(),
+                    config.clone(),
+                );
+                return admin_response(service.get(&admin_path, params).await?);
+            }
+            Method::POST => {
+                let mut params = admin_request_params(request).await?;
+                let admin =
+                    require_admin(&state, &headers, params.get("auth_data").cloned()).await?;
+                params.insert("_admin_email".to_string(), admin.email);
+                let service = v2board_domain::admin::AdminService::new(
+                    state.db.clone(),
+                    state.redis.clone(),
+                    config.clone(),
+                );
+                let output = service.post(&admin_path, params).await?;
+                if admin_path.trim_matches('/') == "config/save" {
+                    state.reload_config();
+                }
+                return admin_response(output);
+            }
+            _ => {}
+        }
+    }
+
+    Err(ApiError::not_found("Not Found"))
+}
+
+fn normalize_request_path(path: &str) -> String {
+    let path = path.split('?').next().unwrap_or(path).trim_end_matches('/');
+    if path.is_empty() {
+        "/".to_string()
+    } else {
+        path.to_string()
+    }
+}
+
+fn path_matches_current_admin_route(config: &AppConfig, request_path: &str) -> bool {
+    let path = normalize_request_path(request_path);
+    let admin_prefix = format!("/api/v1/{}/", config.admin_path());
+    path.starts_with(&admin_prefix)
+}
+
+async fn language_middleware(request: Request, next: Next) -> Response {
+    let locale = request
+        .headers()
+        .get("content-language")
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned);
+    let response = next.run(request).await;
+    let Some(locale) = locale else {
+        return response;
+    };
+    if !response.status().is_client_error() && !response.status().is_server_error() {
+        return response;
+    }
+
+    let (mut parts, body) = response.into_parts();
+    let Ok(bytes) = to_bytes(body, 64 * 1024).await else {
+        parts.headers.remove(header::CONTENT_LENGTH);
+        return Response::from_parts(parts, Body::empty());
+    };
+    let Ok(mut json) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return Response::from_parts(parts, Body::from(bytes));
+    };
+    let Some(message) = json.get("message").and_then(serde_json::Value::as_str) else {
+        return Response::from_parts(parts, Body::from(bytes));
+    };
+    let localized = localize_legacy_message(message, &locale);
+    if localized == message {
+        return Response::from_parts(parts, Body::from(bytes));
+    }
+    json["message"] = json!(localized);
+    match serde_json::to_vec(&json) {
+        Ok(body) => {
+            parts.headers.remove(header::CONTENT_LENGTH);
+            Response::from_parts(parts, Body::from(body))
+        }
+        Err(_) => Response::from_parts(parts, Body::from(bytes)),
+    }
+}
+
+fn localize_legacy_message(message: &str, locale: &str) -> String {
+    let locale = locale.to_ascii_lowercase();
+    if locale.starts_with("zh") {
+        return localize_zh_cn_message(message).unwrap_or_else(|| message.to_string());
+    }
+    if locale.starts_with("en") && message == "未登录或登陆已过期" {
+        return "You are not logged in or login has expired".to_string();
+    }
+    message.to_string()
+}
+
+fn localize_zh_cn_message(message: &str) -> Option<String> {
+    if let Some(minute) = password_limit_minutes(message) {
+        return Some(format!("密码错误次数过多，请 {minute} 分钟后再试"));
+    }
+    let translated = match message {
+        "Incorrect email or password" => "邮箱或密码错误",
+        "Incorrect email verification code" => "邮箱验证码有误",
+        "Invalid invitation code" => "邀请码无效",
+        "Registration has closed" => "本站已关闭注册",
+        "Your account has been suspended" => "该账户已被停止使用",
+        "Email suffix is not in the Whitelist" => "邮箱后缀不在白名单中",
+        "Gmail alias is not supported" => "Gmail 别名不受支持",
+        "Invalid code is incorrect" => "验证码有误",
+        "You must use the invitation code to register" => "您必须使用邀请码注册",
+        "Email already exists" => "邮箱已存在",
+        "Token error" => "令牌错误",
+        "未登录或登陆已过期" => "未登录或登陆已过期",
+        _ => return None,
+    };
+    Some(translated.to_string())
+}
+
+fn password_limit_minutes(message: &str) -> Option<&str> {
+    let prefix = "There are too many password errors, please try again after ";
+    let suffix = " minutes.";
+    message
+        .strip_prefix(prefix)
+        .and_then(|message| message.strip_suffix(suffix))
+}
+
 #[derive(Debug, Serialize)]
 struct GuestConfig {
     tos_url: Option<String>,
@@ -215,22 +403,23 @@ struct GuestConfig {
 }
 
 async fn guest_config(State(state): State<AppState>) -> Json<LegacyEnvelope<GuestConfig>> {
-    let email_whitelist_suffix = if state.config.email_whitelist_enable {
-        json!(state.config.email_whitelist_suffix)
+    let config = state.config_snapshot();
+    let email_whitelist_suffix = if config.email_whitelist_enable {
+        json!(config.email_whitelist_suffix)
     } else {
         json!(0)
     };
 
     legacy_data(GuestConfig {
-        tos_url: state.config.tos_url,
-        is_email_verify: state.config.email_verify as i32,
-        is_invite_force: state.config.invite_force as i32,
+        tos_url: config.tos_url,
+        is_email_verify: config.email_verify as i32,
+        is_invite_force: config.invite_force as i32,
         email_whitelist_suffix,
-        is_recaptcha: state.config.recaptcha_enable as i32,
-        recaptcha_site_key: state.config.recaptcha_site_key,
-        app_description: state.config.app_description,
-        app_url: state.config.app_url,
-        logo: state.config.logo,
+        is_recaptcha: config.recaptcha_enable as i32,
+        recaptcha_site_key: config.recaptcha_site_key,
+        app_description: config.app_description,
+        app_url: config.app_url,
+        logo: config.logo,
     })
 }
 
@@ -245,13 +434,22 @@ async fn client_subscribe(
     Query(query): Query<ClientSubscribeQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
+    client_subscribe_response(&state, query, headers).await
+}
+
+async fn client_subscribe_response(
+    state: &AppState,
+    query: ClientSubscribeQuery,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let config = state.config_snapshot();
     let token = query
         .token
         .as_deref()
         .map(str::trim)
         .filter(|token| !token.is_empty())
         .ok_or_else(|| forbidden("token is null"))?;
-    let token = resolve_subscribe_token(&state, token).await?;
+    let token = resolve_subscribe_token(state, token).await?;
     let user = v2board_db::user::find_user_access_by_token(&state.db, &token)
         .await?
         .ok_or_else(|| forbidden("token is error"))?;
@@ -272,8 +470,7 @@ async fn client_subscribe(
         .unwrap_or_default()
         .to_lowercase();
 
-    let subscription =
-        subscription::build_subscription_document(&state.config, &user, &servers, &flag)?;
+    let subscription = subscription::build_subscription_document(&config, &user, &servers, &flag)?;
     let mut response = subscription.body.into_response();
     let headers = response.headers_mut();
     headers.insert(
@@ -284,11 +481,11 @@ async fn client_subscribe(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_str(&format!(
             "attachment; filename*=UTF-8''{}",
-            percent_encode(&state.config.app_name)
+            percent_encode(&config.app_name)
         ))
         .map_err(|_| ApiError::internal("invalid subscription filename"))?,
     );
-    if let Some(app_url) = state.config.app_url.as_deref() {
+    if let Some(app_url) = config.app_url.as_deref() {
         headers.insert(
             header::HeaderName::from_static("profile-web-page-url"),
             HeaderValue::from_str(app_url)
@@ -299,7 +496,7 @@ async fn client_subscribe(
         header::HeaderName::from_static("profile-title"),
         HeaderValue::from_str(&format!(
             "base64:{}",
-            standard_base64_encode(state.config.app_name.as_bytes())
+            standard_base64_encode(config.app_name.as_bytes())
         ))
         .map_err(|_| ApiError::internal("invalid profile title"))?,
     );
@@ -386,6 +583,7 @@ async fn client_app_version(
     let _user = v2board_db::user::find_user_access_by_token(&state.db, &token)
         .await?
         .ok_or_else(|| forbidden("token is error"))?;
+    let config = state.config_snapshot();
     let ua = headers
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
@@ -393,22 +591,22 @@ async fn client_app_version(
     if ua.contains("tidalab/4.0.0") || ua.contains("tunnelab/4.0.0") {
         if ua.contains("Win64") {
             return Ok(legacy_data(json!({
-                "version": state.config.windows_version,
-                "download_url": state.config.windows_download_url,
+                "version": config.windows_version,
+                "download_url": config.windows_download_url,
             })));
         }
         return Ok(legacy_data(json!({
-            "version": state.config.macos_version,
-            "download_url": state.config.macos_download_url,
+            "version": config.macos_version,
+            "download_url": config.macos_download_url,
         })));
     }
     Ok(legacy_data(json!({
-        "windows_version": state.config.windows_version,
-        "windows_download_url": state.config.windows_download_url,
-        "macos_version": state.config.macos_version,
-        "macos_download_url": state.config.macos_download_url,
-        "android_version": state.config.android_version,
-        "android_download_url": state.config.android_download_url,
+        "windows_version": config.windows_version,
+        "windows_download_url": config.windows_download_url,
+        "macos_version": config.macos_version,
+        "macos_download_url": config.macos_download_url,
+        "android_version": config.android_version,
+        "android_download_url": config.android_download_url,
     })))
 }
 
@@ -418,33 +616,50 @@ async fn payment_notify(
     request: Request,
 ) -> Result<Response, ApiError> {
     let input = payment_request_input(request).await?;
-    let service = v2board_domain::order::OrderService::new(state.db, state.config);
+    let service =
+        v2board_domain::order::OrderService::new(state.db.clone(), state.config_snapshot());
     let result = service.handle_payment_notify(&method, &uuid, input).await?;
     Ok(result.body.into_response())
 }
 
 async fn admin_get(
     State(state): State<AppState>,
+    OriginalUri(original_uri): OriginalUri,
     Path(admin_path): Path<String>,
     Query(params): Query<HashMap<String, String>>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
+    let config = state.config_snapshot();
+    if !path_matches_current_admin_route(&config, original_uri.path()) {
+        return Err(ApiError::not_found("Not Found"));
+    }
     let _admin = require_admin(&state, &headers, params.get("auth_data").cloned()).await?;
-    let service = v2board_domain::admin::AdminService::new(state.db, state.redis, state.config);
+    let service =
+        v2board_domain::admin::AdminService::new(state.db.clone(), state.redis.clone(), config);
     admin_response(service.get(&admin_path, params).await?)
 }
 
 async fn admin_post(
     State(state): State<AppState>,
+    OriginalUri(original_uri): OriginalUri,
     Path(admin_path): Path<String>,
     request: Request,
 ) -> Result<Response, ApiError> {
+    let config = state.config_snapshot();
+    if !path_matches_current_admin_route(&config, original_uri.path()) {
+        return Err(ApiError::not_found("Not Found"));
+    }
     let headers = request.headers().clone();
     let mut params = admin_request_params(request).await?;
     let admin = require_admin(&state, &headers, params.get("auth_data").cloned()).await?;
     params.insert("_admin_email".to_string(), admin.email);
-    let service = v2board_domain::admin::AdminService::new(state.db, state.redis, state.config);
-    admin_response(service.post(&admin_path, params).await?)
+    let service =
+        v2board_domain::admin::AdminService::new(state.db.clone(), state.redis.clone(), config);
+    let output = service.post(&admin_path, params).await?;
+    if admin_path.trim_matches('/') == "config/save" {
+        state.reload_config();
+    }
+    admin_response(output)
 }
 
 async fn staff_get(
@@ -457,7 +672,11 @@ async fn staff_get(
         return Err(ApiError::not_found("Staff endpoint does not exist"));
     }
     let _staff = require_staff(&state, &headers, params.get("auth_data").cloned()).await?;
-    let service = v2board_domain::admin::AdminService::new(state.db, state.redis, state.config);
+    let service = v2board_domain::admin::AdminService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     admin_response(service.staff_get(&staff_path, params).await?)
 }
 
@@ -473,7 +692,11 @@ async fn staff_post(
     let mut params = admin_request_params(request).await?;
     let staff = require_staff(&state, &headers, params.get("auth_data").cloned()).await?;
     params.insert("_admin_email".to_string(), staff.email);
-    let service = v2board_domain::admin::AdminService::new(state.db, state.redis, state.config);
+    let service = v2board_domain::admin::AdminService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     admin_response(service.staff_post(&staff_path, params).await?)
 }
 
@@ -504,8 +727,8 @@ async fn telegram_webhook(
     Query(query): Query<HashMap<String, String>>,
     request: Request,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let token = state
-        .config
+    let config = state.config_snapshot();
+    let token = config
         .telegram_bot_token
         .as_deref()
         .filter(|value| !value.is_empty())
@@ -802,10 +1025,11 @@ async fn telegram_latest_url(
     bot_token: &str,
     message: &TelegramMessage,
 ) -> Result<(), TelegramCommandError> {
+    let config = state.config_snapshot();
     let text = format!(
         "{}的最新网址是：{}",
-        state.config.app_name,
-        state.config.app_url.as_deref().unwrap_or_default()
+        config.app_name,
+        config.app_url.as_deref().unwrap_or_default()
     );
     telegram_send_message(bot_token, message.chat.id, &text, Some("markdown")).await?;
     Ok(())
@@ -909,7 +1133,7 @@ async fn send_telegram_message_with_admin(
     message: &str,
     include_staff: bool,
 ) -> Result<(), TelegramCommandError> {
-    if !state.config.telegram_bot_enable {
+    if !state.config_snapshot().telegram_bot_enable {
         return Ok(());
     }
     let users = sqlx::query_as::<_, TelegramAdminRecipient>(
@@ -992,7 +1216,7 @@ async fn resolve_subscribe_token_for_telegram_bind(
     state: &AppState,
     token: &str,
 ) -> Result<String, ApiError> {
-    match state.config.show_subscribe_method {
+    match state.config_snapshot().show_subscribe_method {
         0 => Ok(token.to_string()),
         1 => {
             let mut conn = state.redis.get_multiplexed_async_connection().await?;
@@ -1166,7 +1390,11 @@ async fn login(
     headers: HeaderMap,
     Form(payload): Form<LoginRequest>,
 ) -> Result<Json<LegacyEnvelope<v2board_domain::auth::AuthData>>, ApiError> {
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     let user_agent = headers
         .get(axum::http::header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
@@ -1184,7 +1412,11 @@ async fn register(
     headers: HeaderMap,
     Form(payload): Form<RegisterInput>,
 ) -> Result<Json<LegacyEnvelope<v2board_domain::auth::AuthData>>, ApiError> {
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     let user_agent = headers
         .get(axum::http::header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
@@ -1208,7 +1440,11 @@ async fn token2_login(
     headers: HeaderMap,
     Query(query): Query<Token2LoginQuery>,
 ) -> Result<Response, ApiError> {
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     if let Some(token) = query.token.as_deref().filter(|value| !value.is_empty()) {
         let url = auth.login_redirect_url(token, query.redirect.as_deref());
         return Ok(Redirect::temporary(&url).into_response());
@@ -1230,7 +1466,11 @@ async fn forget_password(
     State(state): State<AppState>,
     Form(payload): Form<ForgetInput>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     Ok(legacy_data(auth.forget(payload).await?))
 }
 
@@ -1246,7 +1486,11 @@ async fn passport_quick_login_url(
     Form(payload): Form<QuickLoginRequest>,
 ) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
     let user = require_user(&state, &headers, payload.auth_data).await?;
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     let url = auth
         .quick_login_url(user.id, payload.redirect.as_deref())
         .await?;
@@ -1257,7 +1501,11 @@ async fn send_email_verify(
     State(state): State<AppState>,
     Form(payload): Form<EmailVerifyInput>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     Ok(legacy_data(auth.send_email_verify(payload).await?))
 }
 
@@ -1270,7 +1518,11 @@ async fn passport_pv(
     State(state): State<AppState>,
     Form(payload): Form<PassportPvRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     Ok(legacy_data(
         auth.passport_pv(payload.invite_code.as_deref()).await?,
     ))
@@ -1371,7 +1623,11 @@ async fn change_password(
     Form(payload): Form<ChangePasswordRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     auth.change_password(user.id, &payload.old_password, &payload.new_password)
         .await?;
     Ok(legacy_data(true))
@@ -1383,7 +1639,11 @@ async fn reset_security(
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     let subscribe_url = auth.reset_security(user.id).await?;
     Ok(legacy_data(subscribe_url))
 }
@@ -1408,7 +1668,11 @@ async fn active_sessions(
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<serde_json::Map<String, serde_json::Value>>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     let sessions = auth.sessions(user.id).await?;
     Ok(legacy_data(sessions))
 }
@@ -1425,7 +1689,11 @@ async fn remove_active_session(
     Form(payload): Form<RemoveActiveSessionRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     let removed = auth.remove_session(user.id, &payload.session_id).await?;
     Ok(legacy_data(removed))
 }
@@ -1451,18 +1719,19 @@ async fn user_comm_config(
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<UserCommConfig>>, ApiError> {
     let _user = require_user(&state, &headers, query.auth_data).await?;
+    let config = state.config_snapshot();
     Ok(legacy_data(UserCommConfig {
-        is_telegram: state.config.telegram_bot_enable as i32,
-        telegram_discuss_link: state.config.telegram_discuss_link,
-        stripe_pk: state.config.stripe_pk_live,
-        withdraw_methods: state.config.commission_withdraw_method,
-        withdraw_close: state.config.withdraw_close_enable as i32,
-        currency: state.config.currency,
-        currency_symbol: state.config.currency_symbol,
-        commission_distribution_enable: state.config.commission_distribution_enable as i32,
-        commission_distribution_l1: state.config.commission_distribution_l1,
-        commission_distribution_l2: state.config.commission_distribution_l2,
-        commission_distribution_l3: state.config.commission_distribution_l3,
+        is_telegram: config.telegram_bot_enable as i32,
+        telegram_discuss_link: config.telegram_discuss_link,
+        stripe_pk: config.stripe_pk_live,
+        withdraw_methods: config.commission_withdraw_method,
+        withdraw_close: config.withdraw_close_enable as i32,
+        currency: config.currency,
+        currency_symbol: config.currency_symbol,
+        commission_distribution_enable: config.commission_distribution_enable as i32,
+        commission_distribution_l1: config.commission_distribution_l1,
+        commission_distribution_l2: config.commission_distribution_l2,
+        commission_distribution_l3: config.commission_distribution_l3,
     }))
 }
 
@@ -1521,8 +1790,9 @@ async fn user_subscribe(
         None => None,
     };
     let alive_ip = alive_ip(&state.redis, user.id).await?;
-    let reset_day = reset_day(subscribe.expired_at, plan.as_ref(), &state.config);
-    let subscribe_url = state.config.subscribe_url_for_token(&subscribe.token);
+    let config = state.config_snapshot();
+    let reset_day = reset_day(subscribe.expired_at, plan.as_ref(), &config);
+    let subscribe_url = config.subscribe_url_for_token(&subscribe.token);
 
     Ok(legacy_data(SubscribeInfo {
         plan_id: subscribe.plan_id,
@@ -1538,7 +1808,7 @@ async fn user_subscribe(
         alive_ip,
         subscribe_url,
         reset_day,
-        allow_new_period: state.config.allow_new_period,
+        allow_new_period: config.allow_new_period,
     }))
 }
 
@@ -1557,7 +1827,8 @@ async fn user_new_period(
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    if state.config.allow_new_period == 0 {
+    let config = state.config_snapshot();
+    if config.allow_new_period == 0 {
         return Err(ApiError::legacy("Renewal is not allowed"));
     }
     let row = sqlx::query_as::<_, UserPeriodRow>(
@@ -1582,9 +1853,9 @@ async fn user_new_period(
         .expired_at
         .filter(|expired_at| *expired_at > Utc::now().timestamp())
         .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
-    let mut reset_day = reset_day_by_method(expired_at, row.reset_traffic_method, &state.config)
+    let mut reset_day = reset_day_by_method(expired_at, row.reset_traffic_method, &config)
         .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
-    let mut period = reset_period_by_method(row.reset_traffic_method, &state.config)
+    let mut period = reset_period_by_method(row.reset_traffic_method, &config)
         .ok_or_else(|| ApiError::legacy("You do not allow to renew the subscription"))?;
     match period {
         1 => {
@@ -1850,7 +2121,11 @@ async fn user_quick_login_url(
     Form(payload): Form<UserQuickLoginRequest>,
 ) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    let auth = AuthService::new(state.db, state.redis, state.config);
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     Ok(legacy_data(
         auth.quick_login_url(user.id, payload.redirect.as_deref())
             .await?,
@@ -1920,7 +2195,8 @@ async fn order_save(
     Form(payload): Form<v2board_domain::order::SaveOrderInput>,
 ) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    let service = v2board_domain::order::OrderService::new(state.db, state.config);
+    let service =
+        v2board_domain::order::OrderService::new(state.db.clone(), state.config_snapshot());
     let trade_no = service.save(user.id, payload).await?;
     Ok(legacy_data(trade_no))
 }
@@ -1938,7 +2214,8 @@ async fn order_checkout(
     Form(payload): Form<v2board_domain::order::CheckoutOrderInput>,
 ) -> Result<Json<CheckoutEnvelope>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    let service = v2board_domain::order::OrderService::new(state.db, state.config);
+    let service =
+        v2board_domain::order::OrderService::new(state.db.clone(), state.config_snapshot());
     let result = service.checkout(user.id, payload).await?;
     Ok(Json(CheckoutEnvelope {
         r#type: result.r#type,
@@ -1962,7 +2239,7 @@ async fn order_detail(
         &state.db,
         user.id,
         &query.trade_no,
-        state.config.try_out_plan_id,
+        state.config_snapshot().try_out_plan_id,
     )
     .await?
     .ok_or_else(|| ApiError::legacy("Order does not exist or has been paid"))?;
@@ -2061,7 +2338,7 @@ async fn invite_save(
     let created = v2board_db::invite::create_invite_code(
         &state.db,
         user.id,
-        state.config.invite_gen_limit,
+        state.config_snapshot().invite_gen_limit,
         Utc::now().timestamp(),
     )
     .await?;
@@ -2155,7 +2432,7 @@ async fn ticket_save(
     if v2board_db::ticket::count_open_tickets(&state.db, user.id).await? > 0 {
         return Err(ApiError::legacy("There are other unresolved tickets"));
     }
-    match state.config.ticket_status {
+    match state.config_snapshot().ticket_status {
         0 => {}
         1 => {
             if v2board_db::ticket::count_paid_orders(&state.db, user.id).await? == 0 {
@@ -2250,7 +2527,8 @@ async fn ticket_withdraw(
     Form(payload): Form<TicketWithdrawRequest>,
 ) -> Result<Json<LegacyEnvelope<bool>>, ApiError> {
     let user = require_user(&state, &headers, query.auth_data).await?;
-    if state.config.withdraw_close_enable {
+    let config = state.config_snapshot();
+    if config.withdraw_close_enable {
         return Err(ApiError::legacy(
             "user.ticket.withdraw.not_support_withdraw",
         ));
@@ -2263,8 +2541,7 @@ async fn ticket_withdraw(
         payload.withdraw_account.as_deref(),
         "The withdrawal account cannot be empty",
     )?;
-    if !state
-        .config
+    if !config
         .commission_withdraw_method
         .iter()
         .any(|allowed| allowed == method)
@@ -2274,10 +2551,10 @@ async fn ticket_withdraw(
     let access = v2board_db::user::find_user_access(&state.db, user.id)
         .await?
         .ok_or_else(|| ApiError::legacy("The user does not exist"))?;
-    if state.config.commission_withdraw_limit > access.commission_balance / 100 {
+    if config.commission_withdraw_limit > access.commission_balance / 100 {
         return Err(ApiError::legacy(format!(
             "The current required minimum withdrawal commission is {}",
-            state.config.commission_withdraw_limit
+            config.commission_withdraw_limit
         )));
     }
     v2board_db::ticket::create_withdraw_ticket(
@@ -2331,13 +2608,10 @@ async fn knowledge_fetch(
         if !user_is_available(&access) {
             knowledge.body = format_access_blocks(&knowledge.body);
         }
-        let subscribe_url = state.config.subscribe_url_for_token(&access.token);
-        knowledge.body = render_knowledge_body(
-            &knowledge.body,
-            &state.config,
-            &subscribe_url,
-            &access.token,
-        );
+        let config = state.config_snapshot();
+        let subscribe_url = config.subscribe_url_for_token(&access.token);
+        knowledge.body =
+            render_knowledge_body(&knowledge.body, &config, &subscribe_url, &access.token);
         return Ok(legacy_data(knowledge).into_response());
     }
     let language = query.language.as_deref().unwrap_or("zh-CN");
@@ -2372,8 +2646,8 @@ async fn telegram_bot_info(
     headers: HeaderMap,
 ) -> Result<Json<LegacyEnvelope<serde_json::Value>>, ApiError> {
     let _user = require_user(&state, &headers, query.auth_data).await?;
-    let token = state
-        .config
+    let config = state.config_snapshot();
+    let token = config
         .telegram_bot_token
         .as_deref()
         .filter(|value| !value.is_empty())
@@ -2448,7 +2722,11 @@ async fn require_user(
                 .map(ToOwned::to_owned)
         })
         .ok_or_else(ApiError::unauthorized)?;
-    let auth = AuthService::new(state.db.clone(), state.redis.clone(), state.config.clone());
+    let auth = AuthService::new(
+        state.db.clone(),
+        state.redis.clone(),
+        state.config_snapshot(),
+    );
     auth.user_from_auth_data(&auth_data).await
 }
 
@@ -2477,7 +2755,7 @@ async fn require_staff(
 }
 
 async fn resolve_subscribe_token(state: &AppState, token: &str) -> Result<String, ApiError> {
-    match state.config.show_subscribe_method {
+    match state.config_snapshot().show_subscribe_method {
         0 => Ok(token.to_string()),
         1 => resolve_one_time_subscribe_token(state, token).await,
         2 => resolve_totp_subscribe_token(state, token).await,
@@ -2521,7 +2799,7 @@ async fn resolve_totp_subscribe_token(state: &AppState, token: &str) -> Result<S
         .await?
         .ok_or_else(|| forbidden("token is error"))?;
 
-    let timestep = (state.config.show_subscribe_expire.max(1) * 60) as u64;
+    let timestep = (state.config_snapshot().show_subscribe_expire.max(1) * 60) as u64;
     let counter = Utc::now().timestamp().max(0) as u64 / timestep;
     let mut counter_bytes = [0_u8; 8];
     counter_bytes[4..].copy_from_slice(&(counter as u32).to_be_bytes());
@@ -3009,6 +3287,33 @@ mod tests {
         assert_eq!(
             custom_subscribe_route_path_from_str("/custom/subscribe/"),
             Some("/custom/subscribe".to_string())
+        );
+    }
+
+    #[test]
+    fn current_admin_route_match_uses_latest_config_path() {
+        let mut config = AppConfig::from_env();
+        config.secure_path = Some("new-admin".to_string());
+        config.frontend_admin_path = None;
+
+        assert!(path_matches_current_admin_route(
+            &config,
+            "/api/v1/new-admin/config/fetch"
+        ));
+        assert!(!path_matches_current_admin_route(
+            &config,
+            "/api/v1/admin/config/fetch"
+        ));
+    }
+
+    #[test]
+    fn legacy_error_localization_covers_password_limit_message() {
+        assert_eq!(
+            localize_legacy_message(
+                "There are too many password errors, please try again after 15 minutes.",
+                "zh-CN"
+            ),
+            "密码错误次数过多，请 15 分钟后再试"
         );
     }
 

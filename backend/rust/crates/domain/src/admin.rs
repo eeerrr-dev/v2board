@@ -14,7 +14,10 @@ use uuid::Uuid;
 use v2board_compat::ApiError;
 use v2board_config::AppConfig;
 
-use crate::order::{OrderService, SUPPORTED_PAYMENT_GATEWAYS};
+use crate::order::OrderService;
+use crate::payment_provider::{
+    payment_provider_codes, payment_provider_form, payment_provider_manifest,
+};
 
 mod support;
 
@@ -111,7 +114,7 @@ impl AdminService {
             )))),
             "plan/fetch" => self.plan_fetch().await,
             "payment/fetch" => self.payment_fetch().await,
-            "payment/getPaymentMethods" => Ok(AdminOutput::Data(json!(payment_methods()))),
+            "payment/getPaymentMethods" => Ok(AdminOutput::Data(json!(payment_provider_codes()))),
             "user/fetch" => self.user_fetch(&params).await,
             "user/getUserInfoById" => self.user_detail(required_i64(&params, "id")?).await,
             "order/fetch" => self.order_fetch(&params).await,
@@ -746,7 +749,22 @@ impl AdminService {
             .get("payment")
             .map(String::as_str)
             .unwrap_or_default();
-        Ok(AdminOutput::Data(payment_form(payment)))
+        let config = if let Some(id) = optional_i64(params, "id") {
+            let raw_config = sqlx::query_scalar::<_, String>(
+                "SELECT CAST(config AS CHAR) FROM v2_payment WHERE id = ? LIMIT 1",
+            )
+            .bind(id)
+            .fetch_optional(&self.db)
+            .await?
+            .ok_or_else(|| ApiError::legacy("支付方式不存在"))?;
+            Some(serde_json::from_str::<Value>(&raw_config).unwrap_or_else(|_| json!({})))
+        } else {
+            None
+        };
+        Ok(AdminOutput::Data(payment_provider_form(
+            payment,
+            config.as_ref(),
+        )))
     }
 
     async fn payment_save(
@@ -761,6 +779,10 @@ impl AdminService {
             .is_empty()
         {
             return Err(ApiError::legacy("请在站点配置中配置站点地址"));
+        }
+        let payment = required_string(params, "payment")?;
+        if payment_provider_manifest(&payment).is_none() {
+            return Err(ApiError::legacy("gate is not found"));
         }
         let config = nested_json(params, "config");
         let config = serde_json::to_string(&config)
@@ -777,7 +799,7 @@ impl AdminService {
             )
             .bind(required_string(params, "name")?)
             .bind(params.get("icon"))
-            .bind(required_string(params, "payment")?)
+            .bind(&payment)
             .bind(config)
             .bind(params.get("notify_domain"))
             .bind(optional_i64(params, "handling_fee_fixed"))
@@ -798,7 +820,7 @@ impl AdminService {
             )
             .bind(required_string(params, "name")?)
             .bind(params.get("icon"))
-            .bind(required_string(params, "payment")?)
+            .bind(&payment)
             .bind(random_short())
             .bind(config)
             .bind(params.get("notify_domain"))

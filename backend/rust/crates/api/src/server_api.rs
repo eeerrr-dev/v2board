@@ -28,7 +28,8 @@ pub(super) async fn server_v1(
     request: Request,
 ) -> Result<Response, ApiError> {
     let input = server_request_input(request).await?;
-    validate_server_token(&state.config, &input.params)?;
+    let config = state.config_snapshot();
+    validate_server_token(&config, &input.params)?;
     let class = class.to_ascii_lowercase();
     let action = action.to_ascii_lowercase();
 
@@ -91,7 +92,8 @@ pub(super) async fn server_v2_config(
     request: Request,
 ) -> Result<Response, ApiError> {
     let input = server_request_input(request).await?;
-    if let Err(error) = validate_server_token(&state.config, &input.params) {
+    let config = state.config_snapshot();
+    if let Err(error) = validate_server_token(&config, &input.params) {
         return Ok(server_fail_response(error.to_string()));
     }
     let node_id = match required_i32_param(&input.params, "node_id") {
@@ -1035,6 +1037,7 @@ async fn server_v1_config_value(
     node_type: &str,
     node: &ServerNodeRow,
 ) -> Result<serde_json::Value, ApiError> {
+    let config = state.config_snapshot();
     let mut response = serde_json::Map::new();
     match node_type {
         "shadowsocks" => {
@@ -1146,8 +1149,8 @@ async fn server_v1_config_value(
     response.insert(
         "base_config".to_string(),
         json!({
-            "push_interval": state.config.server_push_interval,
-            "pull_interval": state.config.server_pull_interval,
+            "push_interval": config.server_push_interval,
+            "pull_interval": config.server_pull_interval,
         }),
     );
     let routes = server_routes(&state.db, parse_i32_json_list(node.route_id.as_ref())).await?;
@@ -1161,6 +1164,7 @@ async fn server_v2_config_value(
     state: &AppState,
     node: &ServerNodeRow,
 ) -> Result<serde_json::Value, ApiError> {
+    let config = state.config_snapshot();
     let mut response = serde_json::Map::new();
     response.insert("listen_ip".to_string(), json!(node.listen_ip));
     response.insert("server_port".to_string(), json!(node.server_port));
@@ -1224,10 +1228,10 @@ async fn server_v2_config_value(
     response.insert(
         "base_config".to_string(),
         json!({
-            "push_interval": state.config.server_push_interval,
-            "pull_interval": state.config.server_pull_interval,
-            "node_report_min_traffic": state.config.server_node_report_min_traffic,
-            "device_online_min_traffic": state.config.server_device_online_min_traffic,
+            "push_interval": config.server_push_interval,
+            "pull_interval": config.server_pull_interval,
+            "node_report_min_traffic": config.server_node_report_min_traffic,
+            "device_online_min_traffic": config.server_device_online_min_traffic,
         }),
     );
     let routes = server_routes(&state.db, parse_i32_json_list(node.route_id.as_ref())).await?;

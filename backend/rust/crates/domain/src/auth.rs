@@ -77,6 +77,21 @@ impl AuthService {
         ip: Option<String>,
         user_agent: Option<String>,
     ) -> Result<AuthData, ApiError> {
+        let password_error_limit = if self.config.password_limit_enable {
+            let key = cache_key("PASSWORD_ERROR_LIMIT", email);
+            let mut conn = self.redis.get_multiplexed_async_connection().await?;
+            let count = conn.get::<_, Option<i64>>(&key).await?.unwrap_or(0);
+            if count >= self.config.password_limit_count {
+                return Err(ApiError::legacy(format!(
+                    "There are too many password errors, please try again after {} minutes.",
+                    self.config.password_limit_expire
+                )));
+            }
+            Some((key, count))
+        } else {
+            None
+        };
+
         let user = db::user::find_user_for_auth(&self.db, email)
             .await?
             .ok_or_else(|| ApiError::legacy("Incorrect email or password"))?;
@@ -87,6 +102,15 @@ impl AuthService {
             password,
             &user.password,
         ) {
+            if let Some((key, count)) = password_error_limit {
+                let mut conn = self.redis.get_multiplexed_async_connection().await?;
+                conn.set_ex::<_, _, ()>(
+                    key,
+                    count + 1,
+                    (self.config.password_limit_expire.max(1) * 60) as u64,
+                )
+                .await?;
+            }
             return Err(ApiError::legacy("Incorrect email or password"));
         }
 
