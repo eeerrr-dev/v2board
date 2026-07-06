@@ -63,6 +63,19 @@ enum ScheduledTask {
     SendRemindMail,
 }
 
+#[cfg(test)]
+const SCHEDULED_TASK_NAMES: &[&str] = &[
+    "traffic_update",
+    "statistics",
+    "check_order",
+    "check_commission",
+    "check_ticket",
+    "check_renewal",
+    "reset_traffic",
+    "reset_log",
+    "send_remind_mail",
+];
+
 #[derive(Debug, Clone)]
 struct ScheduledJob {
     name: &'static str,
@@ -1230,4 +1243,68 @@ fn generate_trade_no() -> String {
         Utc::now().format("%Y%m%d%H%M%S"),
         Uuid::new_v4().simple()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scheduled_task_matrix_matches_laravel_scheduler_jobs() {
+        assert_eq!(
+            SCHEDULED_TASK_NAMES,
+            &[
+                "traffic_update",
+                "statistics",
+                "check_order",
+                "check_commission",
+                "check_ticket",
+                "check_renewal",
+                "reset_traffic",
+                "reset_log",
+                "send_remind_mail",
+            ]
+        );
+    }
+
+    #[test]
+    fn queue_job_names_cover_all_worker_jobs() {
+        let jobs = [
+            QueueJob::TrafficUpdate { user_id: None },
+            QueueJob::CheckOrder { trade_no: None },
+            QueueJob::OrderHandle {
+                trade_no: "T".to_string(),
+            },
+            QueueJob::CheckCommission,
+            QueueJob::CheckTicket,
+            QueueJob::CheckRenewal,
+            QueueJob::ResetTraffic,
+            QueueJob::ResetLog,
+            QueueJob::SendRemindMail,
+            QueueJob::Statistics,
+            QueueJob::SendEmail {
+                email: "user@example.test".to_string(),
+                subject: "subject".to_string(),
+                template_name: None,
+                template_value: None,
+            },
+        ];
+        let names = jobs.iter().map(queue_job_name).collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            vec![
+                "traffic_update",
+                "check_order",
+                "order_handle",
+                "check_commission",
+                "check_ticket",
+                "check_renewal",
+                "reset_traffic",
+                "reset_log",
+                "send_remind_mail",
+                "statistics",
+                "send_email",
+            ]
+        );
+    }
 }

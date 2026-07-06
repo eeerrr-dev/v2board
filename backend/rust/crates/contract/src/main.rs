@@ -374,6 +374,12 @@ enum Mode {
     Selected(Vec<&'static str>),
     Shape(Vec<&'static str>),
     BodyNonEmpty(&'static str),
+    RustBodyContains {
+        content_type_hint: &'static str,
+        needles: Vec<&'static str>,
+    },
+    RustContentType(&'static str),
+    RustShape(Vec<&'static str>),
     StatusOnly,
     RustMayImproveLegacy5xx,
 }
@@ -395,6 +401,89 @@ fn scenarios() -> Vec<Scenario> {
             "client.app.version",
             "/api/v1/client/app/getVersion",
             Mode::Exact,
+        ),
+        client_get(
+            "client.subscribe.clash",
+            "/api/v1/client/subscribe?flag=clash",
+            Mode::RustBodyContains {
+                content_type_hint: "yaml",
+                needles: vec!["proxies:", "proxy-groups:"],
+            },
+        ),
+        client_get(
+            "client.subscribe.singbox",
+            "/api/v1/client/subscribe?flag=sing-box",
+            Mode::RustBodyContains {
+                content_type_hint: "json",
+                needles: vec!["\"outbounds\"", "节点选择"],
+            },
+        ),
+        client_get(
+            "client.subscribe.surge",
+            "/api/v1/client/subscribe?flag=surge",
+            Mode::RustBodyContains {
+                content_type_hint: "text/plain",
+                needles: vec!["[Proxy]", "[Proxy Group]"],
+            },
+        ),
+        client_get(
+            "client.subscribe.surfboard",
+            "/api/v1/client/subscribe?flag=surfboard",
+            Mode::RustBodyContains {
+                content_type_hint: "text/plain",
+                needles: vec!["[Proxy]", "[Proxy Group]"],
+            },
+        ),
+        client_get(
+            "client.subscribe.loon",
+            "/api/v1/client/subscribe?flag=loon",
+            Mode::RustContentType("text/plain"),
+        ),
+        client_get(
+            "client.subscribe.shadowrocket",
+            "/api/v1/client/subscribe?flag=shadowrocket",
+            Mode::RustBodyContains {
+                content_type_hint: "text/plain",
+                needles: vec![],
+            },
+        ),
+        client_get(
+            "client.subscribe.shadowsocks",
+            "/api/v1/client/subscribe?flag=shadowsocks",
+            Mode::RustBodyContains {
+                content_type_hint: "json",
+                needles: vec!["\"version\"", "\"servers\""],
+            },
+        ),
+        client_get(
+            "client.subscribe.v2rayn",
+            "/api/v1/client/subscribe?flag=v2rayn",
+            Mode::RustContentType("text/plain"),
+        ),
+        client_get(
+            "client.subscribe.v2rayng",
+            "/api/v1/client/subscribe?flag=v2rayng",
+            Mode::RustContentType("text/plain"),
+        ),
+        client_get(
+            "client.subscribe.v2raytun",
+            "/api/v1/client/subscribe?flag=v2raytun",
+            Mode::RustContentType("text/plain"),
+        ),
+        client_get(
+            "client.subscribe.passwall",
+            "/api/v1/client/subscribe?flag=passwall",
+            Mode::RustContentType("text/plain"),
+        ),
+        client_get(
+            "client.subscribe.ssrplus",
+            "/api/v1/client/subscribe?flag=ssrplus",
+            Mode::RustContentType("text/plain"),
+        ),
+        client_get(
+            "client.subscribe.sagernet",
+            "/api/v1/client/subscribe?flag=sagernet",
+            Mode::RustContentType("text/plain"),
         ),
         get(
             "user.info",
@@ -600,6 +689,12 @@ fn scenarios() -> Vec<Scenario> {
             Mode::RustMayImproveLegacy5xx,
         ),
         get(
+            "admin.stat.records",
+            "/api/v1/admin/stat/getStatRecord",
+            true,
+            Mode::RustShape(vec!["data", "total"]),
+        ),
+        get(
             "admin.system.status",
             "/api/v1/admin/system/getSystemStatus",
             true,
@@ -616,6 +711,36 @@ fn scenarios() -> Vec<Scenario> {
             "/api/v1/admin/system/getQueueWorkload",
             true,
             Mode::Shape(vec!["data"]),
+        ),
+        get(
+            "admin.queue.masters",
+            "/api/v1/admin/system/getQueueMasters",
+            true,
+            Mode::RustShape(vec!["data"]),
+        ),
+        get(
+            "admin.system.logs",
+            "/api/v1/admin/system/getSystemLog",
+            true,
+            Mode::Shape(vec!["data", "total"]),
+        ),
+        get(
+            "staff.plan.fetch",
+            "/api/v1/staff/plan/fetch",
+            true,
+            Mode::StatusOnly,
+        ),
+        get(
+            "staff.notice.fetch",
+            "/api/v1/staff/notice/fetch",
+            true,
+            Mode::StatusOnly,
+        ),
+        get(
+            "staff.admin_endpoint_blocked",
+            "/api/v1/staff/config/fetch",
+            true,
+            Mode::StatusOnly,
         ),
     ]
 }
@@ -683,6 +808,19 @@ struct ContractResult {
 }
 
 fn compare_pair(name: &str, laravel: &Snapshot, rust: &Snapshot, mode: &Mode) -> ContractResult {
+    if let Mode::RustBodyContains {
+        content_type_hint,
+        needles,
+    } = mode
+    {
+        return compare_rust_body_contains(name, rust, content_type_hint, needles);
+    }
+    if let Mode::RustShape(paths) = mode {
+        return compare_rust_shape(name, rust, paths);
+    }
+    if let Mode::RustContentType(content_type_hint) = mode {
+        return compare_rust_content_type(name, rust, content_type_hint);
+    }
     if matches!(mode, Mode::RustMayImproveLegacy5xx) {
         return compare_rust_may_improve_legacy_5xx(name, laravel, rust);
     }
@@ -720,9 +858,91 @@ fn compare_pair(name: &str, laravel: &Snapshot, rust: &Snapshot, mode: &Mode) ->
         Mode::BodyNonEmpty(content_type_hint) => {
             compare_body_non_empty(name, laravel, rust, content_type_hint)
         }
+        Mode::RustBodyContains { .. } => unreachable!("handled before status comparison"),
+        Mode::RustContentType(_) => unreachable!("handled before status comparison"),
+        Mode::RustShape(_) => unreachable!("handled before status comparison"),
         Mode::StatusOnly => pass(name),
         Mode::RustMayImproveLegacy5xx => unreachable!("handled before status comparison"),
     }
+}
+
+fn compare_rust_shape(name: &str, rust: &Snapshot, paths: &[&'static str]) -> ContractResult {
+    if rust.status != StatusCode::OK.as_u16() {
+        return fail(name, format!("rust status is {}", rust.status));
+    }
+    let Some(rust_json) = rust.json.as_ref() else {
+        return fail(name, "rust response is not JSON");
+    };
+    for path in paths {
+        if json_at(rust_json, path).is_none() {
+            return fail(name, format!("required rust path `{path}` missing"));
+        }
+    }
+    pass(name)
+}
+
+fn compare_rust_content_type(
+    name: &str,
+    rust: &Snapshot,
+    content_type_hint: &str,
+) -> ContractResult {
+    if rust.status != StatusCode::OK.as_u16() {
+        return fail(name, format!("rust status is {}", rust.status));
+    }
+    if !rust
+        .content_type
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .contains(content_type_hint)
+    {
+        return fail(
+            name,
+            format!(
+                "rust content-type `{}` does not contain `{content_type_hint}`",
+                rust.content_type.as_deref().unwrap_or("<missing>")
+            ),
+        );
+    }
+    pass(name)
+}
+
+fn compare_rust_body_contains(
+    name: &str,
+    rust: &Snapshot,
+    content_type_hint: &str,
+    needles: &[&'static str],
+) -> ContractResult {
+    if rust.status != StatusCode::OK.as_u16() {
+        return fail(name, format!("rust status is {}", rust.status));
+    }
+    if !rust
+        .content_type
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .contains(content_type_hint)
+    {
+        return fail(
+            name,
+            format!(
+                "rust content-type `{}` does not contain `{content_type_hint}`",
+                rust.content_type.as_deref().unwrap_or("<missing>")
+            ),
+        );
+    }
+    if rust.body.trim().is_empty() {
+        return fail(name, "rust response body is empty");
+    }
+    for needle in needles {
+        if !rust.body.contains(needle) {
+            return fail(
+                name,
+                format!("rust response body does not contain `{needle}`"),
+            );
+        }
+    }
+    pass(name)
 }
 
 fn compare_rust_may_improve_legacy_5xx(

@@ -262,6 +262,10 @@ Completed in the Rust tree:
   StripeCheckout, and StripeALL.
 - Subscription and client endpoints: `/api/v1/client/subscribe`,
   `/api/v1/client/app/getConfig`, and `/api/v1/client/app/getVersion`.
+  Rust subscription rendering now routes the legacy client flags for General,
+  Clash, Meta/Mihomo/Stash/Clash Verge/Nyanpasu, Sing-box, Surge, Surfboard,
+  Loon, Shadowrocket, SIP008 Shadowsocks, Quantumult X, SagerNet, V2rayN,
+  V2rayNG, v2RayTun, Passwall, and SSRPlus.
 - Node/server APIs: `/api/v1/server/{class}/{action}` and
   `/api/v2/server/config`, including token validation, config fetch, user fetch,
   traffic push, alive push/list, ETag, and msgpack for UniProxy users.
@@ -279,15 +283,20 @@ Completed in the Rust tree:
   stale-ticket closure, auto-renewal, traffic reset, log cleanup, reminder
   mail dispatch/logging, daily statistics, Redis heartbeat, queue counters,
   and Redis distributed scheduler locks.
-- Admin system status, queue stats, and queue workload endpoints now read Rust
-  worker Redis metrics instead of static placeholders.
+- Admin system status, queue stats, queue workload, queue masters, system log,
+  and statistics record endpoints now return Rust worker/database-backed data
+  instead of static placeholders.
 - Contract/parity runner in `crates/contract`, with Docker Make targets for
   Laravel-vs-Rust HTTP contract checks and worker DB/Redis reconciliation.
+- Payment gateway registration is centralized in Rust and guarded by tests so
+  admin payment methods, checkout, and notify support cannot drift silently.
 
-Verified in Docker on 2026-07-05:
+Verified in Docker on 2026-07-06:
 
 - `make rust-check` passes: `cargo fmt --all --check` and
   `cargo clippy --workspace --all-targets --locked -- -D warnings`.
+- `cargo test --workspace --locked` passes, including the Rust payment gateway
+  matrix tests and worker scheduler/queue matrix tests.
 - API smoke passed inside the Rust container for health, guest config, login,
   user info/stat, knowledge categories, client app version, staff plan fetch,
   admin plan fetch, and quick-login URL generation.
@@ -302,11 +311,11 @@ Verified in Docker on 2026-07-05:
 - Admin system smoke passed against the Rust API: `system/getSystemStatus`
   reported `schedule=true`, `system/getQueueStats` reported a running worker
   with recent jobs, and `system/getQueueWorkload` included executed Rust jobs.
-- `make rust-contract` passes 40 Laravel-vs-Rust black-box contract scenarios
+- `make rust-contract` passes 59 Laravel-vs-Rust black-box contract scenarios
   across auth, guest config, client app endpoints, user profile/order/invite/
   ticket/server/knowledge/notice/traffic surfaces, admin config/users/orders/
-  plans/servers/payments/knowledge/system queues, and legacy-compatible status
-  behavior.
+  plans/servers/payments/knowledge/system queues, legacy-compatible status
+  behavior, staff routing boundaries, and Rust subscription renderer flags.
 - `make rust-worker-reconcile` passes all strict worker reconciliation checks:
   scheduler heartbeat, recent worker metrics, released scheduler locks, drained
   traffic Redis buffers, absent reset lock, opened paid orders, cancelled
@@ -314,6 +323,11 @@ Verified in Docker on 2026-07-05:
   queue. The local seed run warns when yesterday's daily statistics row is
   absent, because the daily statistics cron may not have elapsed in the local
   fixture.
+- `make rust-target-gate` passes for the configured Docker target data:
+  Laravel-vs-Rust contract parity plus Rust worker reconciliation.
+- `make rust-interaction-parity` passes with the frontend rebuilt against
+  `VITE_API_BASE=http://rust-api:8080`, covering the configured focused user
+  and admin desktop interaction shards.
 - `docker compose -p v2board -f docker-compose.local.yml config` passes after
   separating API and worker workspaces.
 - `git diff --check` passes.
@@ -328,9 +342,11 @@ Implementation scope that remains explicitly outside the built-in rewrite:
 
 Release gates still required before production cutover:
 
-- The contract and reconciliation gates must be run end to end against the
-  target deployment data/config, not only the local seed fixture.
-- Focused frontend behavior/interaction parity must be green against Rust.
+- If the production cutover uses data/config different from the configured
+  Docker target, rerun `make rust-target-gate` or the equivalent contract and
+  reconciliation gates against that copied target data before switching traffic.
+- Built-in payment gateways must be exercised against the operator's sandbox or
+  production-equivalent callback credentials before accepting real money.
 - Production-like worker reconciliation must review traffic totals, order
   states, commission balances, subscription expiration, reminder mail logs, and
   statistics after the Rust worker has run on copied production-like data.

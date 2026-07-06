@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
     body::to_bytes,
     extract::{ConnectInfo, Form, Path, Query, Request, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
 };
@@ -12,7 +12,7 @@ use chrono::{Datelike, Duration, Local, TimeZone, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Map, Value, json};
 use sha1::{Digest, Sha1};
 use sqlx::{AssertSqlSafe, FromRow, MySql, QueryBuilder};
 use tower_http::trace::TraceLayer;
@@ -221,7 +221,7 @@ async fn client_subscribe(
     } else {
         Vec::new()
     };
-    let _flag = query
+    let flag = query
         .flag
         .or_else(|| {
             headers
@@ -232,12 +232,35 @@ async fn client_subscribe(
         .unwrap_or_default()
         .to_lowercase();
 
-    let body = build_general_subscription(&user.uuid, &servers);
-    let mut response = body.into_response();
+    let subscription = build_subscription_document(&state.config, &user, &servers, &flag)?;
+    let mut response = subscription.body.into_response();
     let headers = response.headers_mut();
     headers.insert(
         header::CONTENT_TYPE,
-        HeaderValue::from_static("text/plain; charset=utf-8"),
+        HeaderValue::from_static(subscription.content_type),
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&format!(
+            "attachment; filename*=UTF-8''{}",
+            percent_encode(&state.config.app_name)
+        ))
+        .map_err(|_| ApiError::internal("invalid subscription filename"))?,
+    );
+    if let Some(app_url) = state.config.app_url.as_deref() {
+        headers.insert(
+            header::HeaderName::from_static("profile-web-page-url"),
+            HeaderValue::from_str(app_url)
+                .map_err(|_| ApiError::internal("invalid profile web page url"))?,
+        );
+    }
+    headers.insert(
+        header::HeaderName::from_static("profile-title"),
+        HeaderValue::from_str(&format!(
+            "base64:{}",
+            standard_base64_encode(state.config.app_name.as_bytes())
+        ))
+        .map_err(|_| ApiError::internal("invalid profile title"))?,
     );
     headers.insert(
         header::HeaderName::from_static("subscription-userinfo"),
@@ -392,9 +415,12 @@ async fn staff_get(
     Query(params): Query<HashMap<String, String>>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
+    if !staff_path_allowed(&staff_path, Method::GET) {
+        return Err(ApiError::not_found("Staff endpoint does not exist"));
+    }
     let _staff = require_staff(&state, &headers, params.get("auth_data").cloned()).await?;
     let service = v2board_domain::admin::AdminService::new(state.db, state.config);
-    admin_response(service.get(&staff_path, params).await?)
+    admin_response(service.staff_get(&staff_path, params).await?)
 }
 
 async fn staff_post(
@@ -402,12 +428,37 @@ async fn staff_post(
     Path(staff_path): Path<String>,
     request: Request,
 ) -> Result<Response, ApiError> {
+    if !staff_path_allowed(&staff_path, Method::POST) {
+        return Err(ApiError::not_found("Staff endpoint does not exist"));
+    }
     let headers = request.headers().clone();
     let mut params = admin_request_params(request).await?;
     let staff = require_staff(&state, &headers, params.get("auth_data").cloned()).await?;
     params.insert("_admin_email".to_string(), staff.email);
     let service = v2board_domain::admin::AdminService::new(state.db, state.config);
-    admin_response(service.post(&staff_path, params).await?)
+    admin_response(service.staff_post(&staff_path, params).await?)
+}
+
+fn staff_path_allowed(path: &str, method: Method) -> bool {
+    let path = path.trim_matches('/');
+    match method {
+        Method::GET => matches!(
+            path,
+            "ticket/fetch" | "user/getUserInfoById" | "plan/fetch" | "notice/fetch"
+        ),
+        Method::POST => matches!(
+            path,
+            "ticket/reply"
+                | "ticket/close"
+                | "user/update"
+                | "user/sendMail"
+                | "user/ban"
+                | "notice/save"
+                | "notice/update"
+                | "notice/drop"
+        ),
+        _ => false,
+    }
 }
 
 async fn telegram_webhook(
@@ -1136,6 +1187,23 @@ async fn admin_system_response(state: &AppState, path: &str) -> Result<Option<Re
                 })
                 .collect::<Vec<_>>();
             Ok(Some(legacy_data(workload).into_response()))
+        }
+        "system/getQueueMasters" => {
+            let mut conn = state.redis.get_multiplexed_async_connection().await?;
+            let last_runs = conn
+                .hgetall::<_, HashMap<String, i64>>("RUST_WORKER_LAST_RUN_AT")
+                .await
+                .unwrap_or_default();
+            let worker_running = worker_recent(&last_runs, 120);
+            Ok(Some(
+                legacy_data(json!([{
+                    "name": "rust-worker",
+                    "status": if worker_running { "running" } else { "stale" },
+                    "pid": null,
+                    "supervisors": last_runs.keys().cloned().collect::<Vec<_>>(),
+                }]))
+                .into_response(),
+            ))
         }
         _ => Ok(None),
     }
@@ -3246,7 +3314,7 @@ async fn require_staff(
     auth_data: Option<String>,
 ) -> Result<AuthUser, ApiError> {
     let user = require_user(state, headers, auth_data).await?;
-    if user.is_admin == 0 && user.is_staff == 0 {
+    if user.is_staff == 0 {
         return Err(forbidden("Permission denied"));
     }
     Ok(user)
@@ -3713,6 +3781,507 @@ fn user_is_available(user: &v2board_db::user::UserAccessRow) -> bool {
     user.banned == 0 && user.transfer_enable > 0 && unexpired
 }
 
+struct SubscriptionDocument {
+    body: String,
+    content_type: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SubscriptionFormat {
+    General,
+    Base64Uri,
+    Clash,
+    ClashMeta,
+    SingBox,
+    Surge,
+    Surfboard,
+    Loon,
+    Shadowsocks,
+    Shadowrocket,
+    SagerNet,
+    QuantumultX,
+}
+
+impl SubscriptionFormat {
+    fn detect(flag: &str) -> Self {
+        let normalized = flag
+            .replace("%20", " ")
+            .replace(['_', '-', '/'], " ")
+            .to_lowercase();
+        if normalized.contains("sing") {
+            Self::SingBox
+        } else if normalized.contains("surfboard") {
+            Self::Surfboard
+        } else if normalized.contains("surge") {
+            Self::Surge
+        } else if normalized.contains("loon") {
+            Self::Loon
+        } else if normalized.contains("shadowrocket") {
+            Self::Shadowrocket
+        } else if normalized.contains("shadowsocks") {
+            Self::Shadowsocks
+        } else if normalized.contains("sagernet") {
+            Self::SagerNet
+        } else if normalized.contains("quantumult") {
+            Self::QuantumultX
+        } else if normalized.contains("v2rayn")
+            || normalized.contains("v2rayng")
+            || normalized.contains("v2raytun")
+            || normalized.contains("passwall")
+            || normalized.contains("ssrplus")
+        {
+            Self::Base64Uri
+        } else if normalized.contains("meta")
+            || normalized.contains("mihomo")
+            || normalized.contains("stash")
+            || normalized.contains("nyanpasu")
+            || normalized.contains("verge")
+        {
+            Self::ClashMeta
+        } else if normalized.contains("clash") {
+            Self::Clash
+        } else {
+            Self::General
+        }
+    }
+}
+
+fn build_subscription_document(
+    config: &AppConfig,
+    user: &v2board_db::user::UserAccessRow,
+    servers: &[v2board_db::server::AvailableServerRow],
+    flag: &str,
+) -> Result<SubscriptionDocument, ApiError> {
+    let format = SubscriptionFormat::detect(flag);
+    let body = match format {
+        SubscriptionFormat::General => build_general_subscription(&user.uuid, servers),
+        SubscriptionFormat::Base64Uri => build_base64_uri_subscription(&user.uuid, servers),
+        SubscriptionFormat::Clash => build_clash_subscription(config, &user.uuid, servers, false),
+        SubscriptionFormat::ClashMeta => {
+            build_clash_subscription(config, &user.uuid, servers, true)
+        }
+        SubscriptionFormat::SingBox => build_singbox_subscription(config, &user.uuid, servers)?,
+        SubscriptionFormat::Surge => build_surge_subscription(config, user, servers),
+        SubscriptionFormat::Surfboard => build_surfboard_subscription(config, user, servers),
+        SubscriptionFormat::Loon => build_loon_subscription(&user.uuid, servers),
+        SubscriptionFormat::Shadowsocks => build_shadowsocks_sip008_subscription(user, servers)?,
+        SubscriptionFormat::Shadowrocket => build_shadowrocket_subscription(user, servers),
+        SubscriptionFormat::SagerNet => build_sagernet_subscription(&user.uuid, servers),
+        SubscriptionFormat::QuantumultX => build_quantumultx_subscription(&user.uuid, servers),
+    };
+    let content_type = match format {
+        SubscriptionFormat::Clash | SubscriptionFormat::ClashMeta => {
+            "application/yaml; charset=utf-8"
+        }
+        SubscriptionFormat::SingBox | SubscriptionFormat::Shadowsocks => {
+            "application/json; charset=utf-8"
+        }
+        _ => "text/plain; charset=utf-8",
+    };
+    Ok(SubscriptionDocument { body, content_type })
+}
+
+fn build_clash_subscription(
+    config: &AppConfig,
+    uuid: &str,
+    servers: &[v2board_db::server::AvailableServerRow],
+    meta: bool,
+) -> String {
+    let proxies = servers
+        .iter()
+        .filter_map(|server| build_clash_proxy(uuid, server, meta))
+        .collect::<Vec<_>>();
+    let proxy_names = proxies
+        .iter()
+        .filter_map(|proxy| {
+            proxy
+                .get("name")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .collect::<Vec<_>>();
+    let selector_name = config.app_name.clone();
+    let mut config = json!({
+        "mixed-port": 7890,
+        "allow-lan": true,
+        "bind-address": "*",
+        "mode": "rule",
+        "log-level": "info",
+        "external-controller": "127.0.0.1:9090",
+        "dns": {
+            "enable": true,
+            "ipv6": false,
+            "enhanced-mode": "fake-ip",
+            "fake-ip-range": "198.18.0.1/16",
+            "default-nameserver": ["223.5.5.5", "119.29.29.29", "114.114.114.114"],
+            "nameserver": ["223.5.5.5", "119.29.29.29", "114.114.114.114"],
+            "fallback": ["1.1.1.1", "8.8.8.8"]
+        },
+        "proxies": proxies,
+        "proxy-groups": [
+            {
+                "name": selector_name,
+                "type": "select",
+                "proxies": ["自动选择", "故障转移"]
+            },
+            {
+                "name": "自动选择",
+                "type": "url-test",
+                "proxies": [],
+                "url": "http://www.gstatic.com/generate_204",
+                "interval": 86400
+            },
+            {
+                "name": "故障转移",
+                "type": "fallback",
+                "proxies": [],
+                "url": "http://www.gstatic.com/generate_204",
+                "interval": 7200
+            }
+        ],
+        "rules": [
+            format!("MATCH,{}", config.app_name)
+        ]
+    });
+
+    if let Some(groups) = config.get_mut("proxy-groups").and_then(Value::as_array_mut) {
+        for group in groups.iter_mut() {
+            if let Some(values) = group.get_mut("proxies").and_then(Value::as_array_mut) {
+                values.extend(proxy_names.iter().cloned().map(Value::String));
+            }
+        }
+        groups.retain(|group| {
+            group
+                .get("proxies")
+                .and_then(Value::as_array)
+                .map(|proxies| !proxies.is_empty())
+                .unwrap_or(false)
+        });
+    }
+
+    render_yaml(&config)
+}
+
+fn build_singbox_subscription(
+    _config: &AppConfig,
+    uuid: &str,
+    servers: &[v2board_db::server::AvailableServerRow],
+) -> Result<String, ApiError> {
+    let proxies = servers
+        .iter()
+        .filter_map(|server| build_singbox_proxy(uuid, server))
+        .collect::<Vec<_>>();
+    let proxy_tags = proxies
+        .iter()
+        .filter_map(|proxy| {
+            proxy
+                .get("tag")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .collect::<Vec<_>>();
+    let mut selector_outbounds = vec!["自动选择".to_string()];
+    selector_outbounds.extend(proxy_tags.clone());
+    let mut outbounds = vec![
+        json!({
+            "tag": "DIRECT",
+            "type": "direct",
+            "domain_resolver": { "server": "local" }
+        }),
+        json!({
+            "tag": "节点选择",
+            "type": "selector",
+            "interrupt_exist_connections": true,
+            "outbounds": selector_outbounds
+        }),
+        json!({
+            "tag": "自动选择",
+            "type": "urltest",
+            "url": "https://www.gstatic.com/generate_204",
+            "interval": "10m",
+            "tolerance": 50,
+            "idle_timeout": "30m",
+            "interrupt_exist_connections": false,
+            "outbounds": proxy_tags
+        }),
+    ];
+    outbounds.extend(proxies);
+    serde_json::to_string(&json!({
+        "dns": {
+            "servers": [
+                { "type": "local", "tag": "local" },
+                { "type": "udp", "tag": "remote", "server": "1.1.1.1" },
+                { "type": "udp", "tag": "cn", "server": "223.5.5.5" }
+            ],
+            "final": "remote"
+        },
+        "inbounds": [
+            {
+                "tag": "mixed-in",
+                "type": "mixed",
+                "listen": "127.0.0.1",
+                "listen_port": 2334,
+                "users": []
+            }
+        ],
+        "outbounds": outbounds,
+        "route": {
+            "rules": [
+                { "protocol": "dns", "action": "hijack-dns" },
+                { "ip_is_private": true, "action": "route", "outbound": "DIRECT" },
+                { "rule_set": ["geosite-cn", "geoip-cn"], "action": "route", "outbound": "DIRECT" }
+            ],
+            "auto_detect_interface": true,
+            "final": "节点选择",
+            "default_domain_resolver": { "server": "remote" },
+            "rule_set": [
+                {
+                    "tag": "geoip-cn",
+                    "type": "remote",
+                    "format": "binary",
+                    "url": "https://raw.githubusercontent.com/Loyalsoldier/geoip/release/srs/cn.srs",
+                    "download_detour": "节点选择"
+                },
+                {
+                    "tag": "geosite-cn",
+                    "type": "remote",
+                    "format": "binary",
+                    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs",
+                    "download_detour": "节点选择"
+                }
+            ]
+        },
+        "experimental": {
+            "cache_file": { "enabled": true },
+            "clash_api": {
+                "default_mode": "海外代理",
+                "external_controller": "127.0.0.1:9090",
+                "secret": ""
+            }
+        }
+    }))
+    .map_err(|_| ApiError::internal("failed to render sing-box subscription"))
+}
+
+fn build_surge_subscription(
+    config: &AppConfig,
+    user: &v2board_db::user::UserAccessRow,
+    servers: &[v2board_db::server::AvailableServerRow],
+) -> String {
+    let proxies = servers
+        .iter()
+        .filter_map(|server| build_surge_proxy(&user.uuid, server))
+        .collect::<Vec<_>>();
+    let proxy_names = servers
+        .iter()
+        .filter(|server| supports_surge(server))
+        .map(|server| server.name.clone())
+        .collect::<Vec<_>>();
+    let proxy_group = proxy_names.join(", ");
+    let upload = bytes_to_gib(user.u);
+    let download = bytes_to_gib(user.d);
+    let total = bytes_to_gib(user.transfer_enable);
+    let expire = user
+        .expired_at
+        .map(|expired_at| expired_at.to_string())
+        .unwrap_or_else(|| "长期有效".to_string());
+    format!(
+        r#"#!MANAGED-CONFIG {subscribe_url} interval=43200 strict=true
+[General]
+loglevel = notify
+dns-server = 223.5.5.5, 114.114.114.114
+allow-wifi-access = true
+http-listen = 0.0.0.0:6152
+socks5-listen = 0.0.0.0:6153
+proxy-test-url = http://www.gstatic.com/generate_204
+
+[Panel]
+SubscribeInfo = title={app_name}订阅信息, content=上传流量：{upload:.2}GB\n下载流量：{download:.2}GB\n套餐流量：{total:.2}GB\n到期时间：{expire}, style=info
+
+[Proxy]
+{proxies}
+
+[Proxy Group]
+Proxy = select, auto, fallback, {proxy_group}
+auto = url-test, {proxy_group}, url=http://www.gstatic.com/generate_204, interval=43200
+fallback = fallback, {proxy_group}, url=http://www.gstatic.com/generate_204, interval=43200
+
+[Rule]
+FINAL,Proxy
+"#,
+        subscribe_url = config.subscribe_url_for_token(&user.token),
+        app_name = config.app_name,
+        upload = upload,
+        download = download,
+        total = total,
+        expire = expire,
+        proxies = proxies.join(""),
+        proxy_group = proxy_group
+    )
+}
+
+fn build_quantumultx_subscription(
+    uuid: &str,
+    servers: &[v2board_db::server::AvailableServerRow],
+) -> String {
+    let lines = servers
+        .iter()
+        .filter(|server| {
+            !matches!(
+                extra_string(server, "network").as_deref(),
+                Some("grpc" | "httpupgrade" | "xhttp")
+            )
+        })
+        .filter_map(|server| build_quantumultx_proxy(uuid, server))
+        .collect::<String>();
+    standard_base64_encode(lines.as_bytes())
+}
+
+fn build_surfboard_subscription(
+    config: &AppConfig,
+    user: &v2board_db::user::UserAccessRow,
+    servers: &[v2board_db::server::AvailableServerRow],
+) -> String {
+    let proxies = servers
+        .iter()
+        .filter_map(|server| build_surfboard_proxy(&user.uuid, server))
+        .collect::<Vec<_>>();
+    let proxy_names = servers
+        .iter()
+        .filter(|server| supports_surfboard(server))
+        .map(|server| server.name.clone())
+        .collect::<Vec<_>>();
+    let proxy_group = proxy_names.join(", ");
+    let upload = bytes_to_gib(user.u);
+    let download = bytes_to_gib(user.d);
+    let total = bytes_to_gib(user.transfer_enable);
+    let expire = user
+        .expired_at
+        .map(|expired_at| expired_at.to_string())
+        .unwrap_or_else(|| "长期有效".to_string());
+    format!(
+        r#"#!MANAGED-CONFIG {subscribe_url} interval=43200 strict=true
+[General]
+loglevel = notify
+dns-server = 223.5.5.5, 114.114.114.114
+proxy-test-url = http://www.gstatic.com/generate_204
+
+[Panel]
+SubscribeInfo = title={app_name}订阅信息, content=上传流量：{upload:.2}GB\n下载流量：{download:.2}GB\n套餐流量：{total:.2}GB\n到期时间：{expire}, style=info
+
+[Proxy]
+{proxies}
+
+[Proxy Group]
+Proxy = select, auto, fallback, {proxy_group}
+auto = url-test, {proxy_group}, url=http://www.gstatic.com/generate_204, interval=43200
+fallback = fallback, {proxy_group}, url=http://www.gstatic.com/generate_204, interval=43200
+
+[Rule]
+FINAL,Proxy
+"#,
+        subscribe_url = config.subscribe_url_for_token(&user.token),
+        app_name = config.app_name,
+        upload = upload,
+        download = download,
+        total = total,
+        expire = expire,
+        proxies = proxies.join(""),
+        proxy_group = proxy_group
+    )
+}
+
+fn build_loon_subscription(
+    uuid: &str,
+    servers: &[v2board_db::server::AvailableServerRow],
+) -> String {
+    servers
+        .iter()
+        .filter_map(|server| build_loon_proxy(uuid, server))
+        .collect::<String>()
+}
+
+fn build_shadowsocks_sip008_subscription(
+    user: &v2board_db::user::UserAccessRow,
+    servers: &[v2board_db::server::AvailableServerRow],
+) -> Result<String, ApiError> {
+    let configs = servers
+        .iter()
+        .filter(|server| server_protocol(server) == "shadowsocks")
+        .filter(|server| {
+            extra_string(server, "cipher")
+                .as_deref()
+                .map(is_basic_shadowsocks_cipher)
+                .unwrap_or(false)
+        })
+        .filter_map(|server| {
+            Some(json!({
+                "id": server.id,
+                "remarks": server.name,
+                "server": server.host,
+                "server_port": port_value(server),
+                "password": shadowsocks_password(&user.uuid, server)?,
+                "method": extra_string(server, "cipher")?,
+            }))
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_string_pretty(&json!({
+        "version": 1,
+        "bytes_used": user.u + user.d,
+        "bytes_remaining": user.transfer_enable - user.u - user.d,
+        "servers": configs,
+    }))
+    .map_err(|_| ApiError::internal("failed to render shadowsocks subscription"))
+}
+
+fn build_shadowrocket_subscription(
+    user: &v2board_db::user::UserAccessRow,
+    servers: &[v2board_db::server::AvailableServerRow],
+) -> String {
+    let upload = bytes_to_gib(user.u);
+    let download = bytes_to_gib(user.d);
+    let total = bytes_to_gib(user.transfer_enable);
+    let expire = user
+        .expired_at
+        .map(format_date_timestamp)
+        .unwrap_or_else(|| "长期有效".to_string());
+    let mut lines =
+        format!("STATUS=↑:{upload:.2}GB,↓:{download:.2}GB,TOT:{total:.2}GB Expires:{expire}\r\n");
+    for server in servers {
+        if server_protocol(server) == "vmess" {
+            if let Some(uri) = build_shadowrocket_vmess_uri(&user.uuid, server) {
+                lines.push_str(&uri);
+            }
+        } else if let Some(uri) = build_server_uri(&user.uuid, server) {
+            lines.push_str(&uri);
+        }
+    }
+    standard_base64_encode(lines.as_bytes())
+}
+
+fn build_sagernet_subscription(
+    uuid: &str,
+    servers: &[v2board_db::server::AvailableServerRow],
+) -> String {
+    let mut uris = String::new();
+    for server in servers {
+        if server_protocol(server) == "hysteria" {
+            continue;
+        }
+        if let Some(uri) = build_server_uri(uuid, server) {
+            uris.push_str(&uri);
+        }
+    }
+    standard_base64_encode(uris.as_bytes())
+}
+
+fn build_base64_uri_subscription(
+    uuid: &str,
+    servers: &[v2board_db::server::AvailableServerRow],
+) -> String {
+    build_general_subscription(uuid, servers)
+}
+
 fn build_general_subscription(
     uuid: &str,
     servers: &[v2board_db::server::AvailableServerRow],
@@ -3740,12 +4309,1389 @@ fn build_server_uri(uuid: &str, server: &v2board_db::server::AvailableServerRow)
     }
 }
 
-fn build_shadowsocks_uri(
+fn build_clash_proxy(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+    meta: bool,
+) -> Option<Value> {
+    match server_protocol(server).as_str() {
+        "shadowsocks" => build_clash_shadowsocks(uuid, server),
+        "vmess" => build_clash_vmess(uuid, server),
+        "vless" if meta => build_clash_vless(uuid, server),
+        "trojan" => build_clash_trojan(uuid, server),
+        "tuic" if meta => build_clash_tuic(uuid, server),
+        "anytls" if meta => build_clash_anytls(uuid, server),
+        "hysteria" if meta => build_clash_hysteria(uuid, server),
+        "hysteria2" if meta => build_clash_hysteria2(uuid, server),
+        _ => None,
+    }
+}
+
+fn build_clash_shadowsocks(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let cipher = extra_string(server, "cipher")?;
+    let mut object = proxy_base(server, "ss");
+    object.insert("cipher".to_string(), Value::String(cipher));
+    object.insert(
+        "password".to_string(),
+        Value::String(shadowsocks_password(uuid, server)?),
+    );
+    object.insert("udp".to_string(), Value::Bool(true));
+    if extra_string(server, "obfs").as_deref() == Some("http") {
+        object.insert("plugin".to_string(), Value::String("obfs".to_string()));
+        let settings = extra_json(server, "obfs_settings");
+        let mut opts = Map::new();
+        opts.insert("mode".to_string(), Value::String("http".to_string()));
+        insert_opt_string(&mut opts, "host", json_path_string(&settings, &["host"]));
+        insert_opt_string(&mut opts, "path", json_path_string(&settings, &["path"]));
+        object.insert("plugin-opts".to_string(), Value::Object(opts));
+    } else if extra_string(server, "network").as_deref() == Some("http") {
+        let settings = extra_json(server, "network_settings");
+        let mut opts = Map::new();
+        opts.insert("mode".to_string(), Value::String("http".to_string()));
+        insert_opt_string(
+            &mut opts,
+            "host",
+            json_path_string(&settings, &["Host"])
+                .or_else(|| json_path_string(&settings, &["headers", "Host"])),
+        );
+        insert_opt_string(&mut opts, "path", json_path_string(&settings, &["path"]));
+        object.insert("plugin".to_string(), Value::String("obfs".to_string()));
+        object.insert("plugin-opts".to_string(), Value::Object(opts));
+    }
+    Some(Value::Object(object))
+}
+
+fn build_clash_vmess(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<Value> {
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let tls = extra_i64(server, "tls").unwrap_or_default();
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = proxy_base(server, "vmess");
+    object.insert("uuid".to_string(), Value::String(uuid.to_string()));
+    object.insert("alterId".to_string(), Value::from(0));
+    object.insert("cipher".to_string(), Value::String("auto".to_string()));
+    object.insert("udp".to_string(), Value::Bool(true));
+    if tls != 0 {
+        object.insert("tls".to_string(), Value::Bool(true));
+        object.insert(
+            "skip-cert-verify".to_string(),
+            Value::Bool(
+                json_path_i64(&tls_settings, &["allow_insecure"])
+                    .or_else(|| json_path_i64(&tls_settings, &["allowInsecure"]))
+                    .unwrap_or_default()
+                    == 1,
+            ),
+        );
+        insert_opt_string(
+            &mut object,
+            "servername",
+            json_path_string(&tls_settings, &["server_name"])
+                .or_else(|| json_path_string(&tls_settings, &["serverName"])),
+        );
+    }
+    add_clash_transport(
+        &mut object,
+        &network,
+        &extra_json(server, "network_settings"),
+    );
+    add_clash_ech(&mut object, &tls_settings);
+    Some(Value::Object(object))
+}
+
+fn build_clash_vless(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<Value> {
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let tls = extra_i64(server, "tls").unwrap_or_default();
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = proxy_base(server, "vless");
+    object.insert("uuid".to_string(), Value::String(uuid.to_string()));
+    object.insert("udp".to_string(), Value::Bool(true));
+    insert_opt_string(&mut object, "flow", extra_string(server, "flow"));
+    if tls != 0 {
+        object.insert("tls".to_string(), Value::Bool(true));
+        object.insert(
+            "skip-cert-verify".to_string(),
+            Value::Bool(json_path_i64(&tls_settings, &["allow_insecure"]).unwrap_or_default() == 1),
+        );
+        object.insert(
+            "client-fingerprint".to_string(),
+            Value::String(
+                json_path_string(&tls_settings, &["fingerprint"])
+                    .unwrap_or_else(|| "chrome".to_string()),
+            ),
+        );
+        insert_opt_string(
+            &mut object,
+            "servername",
+            json_path_string(&tls_settings, &["server_name"]),
+        );
+        if tls == 2 {
+            object.insert(
+                "reality-opts".to_string(),
+                json!({
+                    "public-key": json_path_string(&tls_settings, &["public_key"]).unwrap_or_default(),
+                    "short-id": json_path_string(&tls_settings, &["short_id"]).unwrap_or_default(),
+                }),
+            );
+        }
+    }
+    add_clash_transport(
+        &mut object,
+        &network,
+        &extra_json(server, "network_settings"),
+    );
+    add_clash_ech(&mut object, &tls_settings);
+    Some(Value::Object(object))
+}
+
+fn build_clash_trojan(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = proxy_base(server, "trojan");
+    object.insert("password".to_string(), Value::String(uuid.to_string()));
+    object.insert("udp".to_string(), Value::Bool(true));
+    object.insert(
+        "skip-cert-verify".to_string(),
+        Value::Bool(
+            extra_i64(server, "allow_insecure")
+                .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+                .unwrap_or_default()
+                == 1,
+        ),
+    );
+    insert_opt_string(
+        &mut object,
+        "sni",
+        extra_string(server, "server_name")
+            .or_else(|| json_path_string(&tls_settings, &["server_name"])),
+    );
+    add_clash_transport(
+        &mut object,
+        &network,
+        &extra_json(server, "network_settings"),
+    );
+    add_clash_ech(&mut object, &tls_settings);
+    Some(Value::Object(object))
+}
+
+fn build_clash_tuic(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<Value> {
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = proxy_base(server, "tuic");
+    object.insert("uuid".to_string(), Value::String(uuid.to_string()));
+    object.insert("password".to_string(), Value::String(uuid.to_string()));
+    object.insert("alpn".to_string(), json!(["h3"]));
+    object.insert(
+        "disable-sni".to_string(),
+        Value::Bool(extra_i64(server, "disable_sni").unwrap_or_default() == 1),
+    );
+    object.insert(
+        "reduce-rtt".to_string(),
+        Value::Bool(extra_i64(server, "zero_rtt_handshake").unwrap_or_default() == 1),
+    );
+    insert_opt_string(
+        &mut object,
+        "udp-relay-mode",
+        extra_string(server, "udp_relay_mode"),
+    );
+    insert_opt_string(
+        &mut object,
+        "congestion-controller",
+        extra_string(server, "congestion_control"),
+    );
+    object.insert(
+        "skip-cert-verify".to_string(),
+        Value::Bool(
+            extra_i64(server, "insecure")
+                .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+                .unwrap_or_default()
+                == 1,
+        ),
+    );
+    insert_opt_string(
+        &mut object,
+        "sni",
+        extra_string(server, "server_name")
+            .or_else(|| json_path_string(&tls_settings, &["server_name"])),
+    );
+    Some(Value::Object(object))
+}
+
+fn build_clash_anytls(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = proxy_base(server, "anytls");
+    object.insert("password".to_string(), Value::String(uuid.to_string()));
+    object.insert(
+        "client-fingerprint".to_string(),
+        Value::String("chrome".to_string()),
+    );
+    object.insert("udp".to_string(), Value::Bool(true));
+    object.insert("alpn".to_string(), json!(["h2", "http/1.1"]));
+    object.insert(
+        "skip-cert-verify".to_string(),
+        Value::Bool(
+            extra_i64(server, "insecure")
+                .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+                .unwrap_or_default()
+                == 1,
+        ),
+    );
+    insert_opt_string(
+        &mut object,
+        "sni",
+        extra_string(server, "server_name")
+            .or_else(|| json_path_string(&tls_settings, &["server_name"])),
+    );
+    Some(Value::Object(object))
+}
+
+fn build_clash_hysteria(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    if extra_i64(server, "version") == Some(2) {
+        return build_clash_hysteria2(uuid, server);
+    }
+    let mut object = proxy_base(server, "hysteria");
+    object.insert("auth_str".to_string(), Value::String(uuid.to_string()));
+    object.insert("udp".to_string(), Value::Bool(true));
+    object.insert("protocol".to_string(), Value::String("udp".to_string()));
+    object.insert(
+        "skip-cert-verify".to_string(),
+        Value::Bool(extra_i64(server, "insecure").unwrap_or_default() == 1),
+    );
+    insert_opt_string(&mut object, "sni", extra_string(server, "server_name"));
+    object.insert(
+        "up".to_string(),
+        Value::from(extra_i64(server, "down_mbps").unwrap_or_default()),
+    );
+    object.insert(
+        "down".to_string(),
+        Value::from(extra_i64(server, "up_mbps").unwrap_or_default()),
+    );
+    if let Some(obfs_password) = extra_string(server, "obfs_password") {
+        object.insert("obfs".to_string(), Value::String(obfs_password));
+    }
+    add_multi_port_fields(&mut object, server);
+    Some(Value::Object(object))
+}
+
+fn build_clash_hysteria2(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = proxy_base(server, "hysteria2");
+    object.insert("password".to_string(), Value::String(uuid.to_string()));
+    object.insert("udp".to_string(), Value::Bool(true));
+    object.insert(
+        "skip-cert-verify".to_string(),
+        Value::Bool(
+            extra_i64(server, "insecure")
+                .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+                .unwrap_or_default()
+                == 1,
+        ),
+    );
+    insert_opt_string(
+        &mut object,
+        "sni",
+        extra_string(server, "server_name")
+            .or_else(|| json_path_string(&tls_settings, &["server_name"])),
+    );
+    if let Some(obfs) = extra_string(server, "obfs") {
+        object.insert("obfs".to_string(), Value::String(obfs));
+        insert_opt_string(
+            &mut object,
+            "obfs-password",
+            extra_string(server, "obfs_password"),
+        );
+    }
+    add_multi_port_fields(&mut object, server);
+    Some(Value::Object(object))
+}
+
+fn build_singbox_proxy(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    match server_protocol(server).as_str() {
+        "shadowsocks" => build_singbox_shadowsocks(uuid, server),
+        "vmess" => build_singbox_vmess(uuid, server),
+        "vless" => build_singbox_vless(uuid, server),
+        "trojan" => build_singbox_trojan(uuid, server),
+        "tuic" => build_singbox_tuic(uuid, server),
+        "anytls" => build_singbox_anytls(uuid, server),
+        "hysteria" => build_singbox_hysteria(uuid, server),
+        "hysteria2" => build_singbox_hysteria2(uuid, server),
+        _ => None,
+    }
+}
+
+fn build_singbox_shadowsocks(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let cipher = extra_string(server, "cipher")?;
+    let mut object = singbox_base(server, "shadowsocks");
+    object.insert("method".to_string(), Value::String(cipher));
+    object.insert(
+        "password".to_string(),
+        Value::String(shadowsocks_password(uuid, server)?),
+    );
+    object.insert(
+        "domain_resolver".to_string(),
+        Value::String("local".to_string()),
+    );
+    if extra_string(server, "obfs").as_deref() == Some("http") {
+        let settings = extra_json(server, "obfs_settings");
+        object.insert(
+            "plugin".to_string(),
+            Value::String("obfs-local".to_string()),
+        );
+        object.insert(
+            "plugin_opts".to_string(),
+            Value::String(obfs_plugin_opts(
+                "http",
+                json_path_string(&settings, &["host"]),
+                json_path_string(&settings, &["path"]),
+            )),
+        );
+    }
+    Some(Value::Object(object))
+}
+
+fn build_singbox_vmess(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let tls = extra_i64(server, "tls").unwrap_or_default();
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = singbox_base(server, "vmess");
+    object.insert("uuid".to_string(), Value::String(uuid.to_string()));
+    object.insert("security".to_string(), Value::String("auto".to_string()));
+    object.insert("alter_id".to_string(), Value::from(0));
+    object.insert(
+        "domain_resolver".to_string(),
+        Value::String("local".to_string()),
+    );
+    if tls != 0 {
+        object.insert(
+            "tls".to_string(),
+            singbox_tls(server, &tls_settings, tls, false),
+        );
+    }
+    add_singbox_transport(
+        &mut object,
+        &network,
+        &extra_json(server, "network_settings"),
+    );
+    Some(Value::Object(object))
+}
+
+fn build_singbox_vless(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let tls = extra_i64(server, "tls").unwrap_or_default();
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = singbox_base(server, "vless");
+    object.insert("uuid".to_string(), Value::String(uuid.to_string()));
+    object.insert(
+        "domain_resolver".to_string(),
+        Value::String("local".to_string()),
+    );
+    object.insert(
+        "packet_encoding".to_string(),
+        Value::String("xudp".to_string()),
+    );
+    insert_opt_string(&mut object, "flow", extra_string(server, "flow"));
+    if tls != 0 {
+        object.insert(
+            "tls".to_string(),
+            singbox_tls(server, &tls_settings, tls, true),
+        );
+    }
+    add_singbox_transport(
+        &mut object,
+        &network,
+        &extra_json(server, "network_settings"),
+    );
+    Some(Value::Object(object))
+}
+
+fn build_singbox_trojan(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = singbox_base(server, "trojan");
+    object.insert("password".to_string(), Value::String(uuid.to_string()));
+    object.insert(
+        "domain_resolver".to_string(),
+        Value::String("local".to_string()),
+    );
+    object.insert(
+        "tls".to_string(),
+        singbox_tls(server, &tls_settings, 1, false),
+    );
+    add_singbox_transport(
+        &mut object,
+        &network,
+        &extra_json(server, "network_settings"),
+    );
+    Some(Value::Object(object))
+}
+
+fn build_singbox_tuic(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = singbox_base(server, "tuic");
+    object.insert("uuid".to_string(), Value::String(uuid.to_string()));
+    object.insert("password".to_string(), Value::String(uuid.to_string()));
+    object.insert(
+        "domain_resolver".to_string(),
+        Value::String("local".to_string()),
+    );
+    insert_opt_string(
+        &mut object,
+        "congestion_control",
+        extra_string(server, "congestion_control").or_else(|| Some("cubic".to_string())),
+    );
+    insert_opt_string(
+        &mut object,
+        "udp_relay_mode",
+        extra_string(server, "udp_relay_mode").or_else(|| Some("native".to_string())),
+    );
+    object.insert(
+        "zero_rtt_handshake".to_string(),
+        Value::Bool(extra_i64(server, "zero_rtt_handshake").unwrap_or_default() == 1),
+    );
+    object.insert(
+        "tls".to_string(),
+        singbox_tls(server, &tls_settings, 1, false),
+    );
+    Some(Value::Object(object))
+}
+
+fn build_singbox_anytls(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = singbox_base(server, "anytls");
+    object.insert("password".to_string(), Value::String(uuid.to_string()));
+    object.insert(
+        "domain_resolver".to_string(),
+        Value::String("local".to_string()),
+    );
+    object.insert(
+        "tls".to_string(),
+        singbox_tls(
+            server,
+            &tls_settings,
+            extra_i64(server, "tls").unwrap_or(1),
+            true,
+        ),
+    );
+    add_singbox_transport(
+        &mut object,
+        &network,
+        &extra_json(server, "network_settings"),
+    );
+    Some(Value::Object(object))
+}
+
+fn build_singbox_hysteria(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    if extra_i64(server, "version") == Some(2) {
+        return build_singbox_hysteria2(uuid, server);
+    }
+    let mut object = singbox_base(server, "hysteria");
+    object.insert("auth_str".to_string(), Value::String(uuid.to_string()));
+    object.insert(
+        "domain_resolver".to_string(),
+        Value::String("local".to_string()),
+    );
+    object.insert(
+        "up_mbps".to_string(),
+        Value::from(extra_i64(server, "down_mbps").unwrap_or_default()),
+    );
+    object.insert(
+        "down_mbps".to_string(),
+        Value::from(extra_i64(server, "up_mbps").unwrap_or_default()),
+    );
+    object.insert(
+        "tls".to_string(),
+        json!({
+            "enabled": true,
+            "insecure": extra_i64(server, "insecure").unwrap_or_default() == 1,
+            "server_name": extra_string(server, "server_name").unwrap_or_default()
+        }),
+    );
+    if let Some(obfs_password) = extra_string(server, "obfs_password") {
+        object.insert("obfs".to_string(), Value::String(obfs_password));
+    }
+    add_singbox_multi_port_fields(&mut object, server);
+    Some(Value::Object(object))
+}
+
+fn build_singbox_hysteria2(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<Value> {
+    let tls_settings = extra_json(server, "tls_settings");
+    let mut object = singbox_base(server, "hysteria2");
+    object.insert("password".to_string(), Value::String(uuid.to_string()));
+    object.insert(
+        "domain_resolver".to_string(),
+        Value::String("local".to_string()),
+    );
+    object.insert(
+        "tls".to_string(),
+        singbox_tls(server, &tls_settings, 1, false),
+    );
+    if let Some(obfs) = extra_string(server, "obfs") {
+        object.insert(
+            "obfs".to_string(),
+            json!({
+                "type": obfs,
+                "password": extra_string(server, "obfs_password").unwrap_or_default()
+            }),
+        );
+    }
+    add_singbox_multi_port_fields(&mut object, server);
+    Some(Value::Object(object))
+}
+
+fn build_surge_proxy(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    match server_protocol(server).as_str() {
+        "shadowsocks" => Some(format!(
+            "{}=ss,{},{},encrypt-method={},password={},fast-open=false,udp=true\r\n",
+            server.name,
+            server.host,
+            first_port(server),
+            extra_string(server, "cipher")?,
+            shadowsocks_password(uuid, server)?
+        )),
+        "vmess" => {
+            let mut parts = vec![
+                format!("{}=vmess", server.name),
+                server.host.clone(),
+                first_port(server),
+                format!("username={uuid}"),
+                "vmess-aead=true".to_string(),
+                "tfo=true".to_string(),
+                "udp-relay=true".to_string(),
+            ];
+            if extra_i64(server, "tls").unwrap_or_default() != 0 {
+                parts.push("tls=true".to_string());
+                let tls_settings = extra_json(server, "tls_settings");
+                if json_path_i64(&tls_settings, &["allow_insecure"])
+                    .or_else(|| json_path_i64(&tls_settings, &["allowInsecure"]))
+                    .unwrap_or_default()
+                    == 1
+                {
+                    parts.push("skip-cert-verify=true".to_string());
+                }
+                if let Some(sni) = json_path_string(&tls_settings, &["server_name"])
+                    .or_else(|| json_path_string(&tls_settings, &["serverName"]))
+                {
+                    parts.push(format!("sni={sni}"));
+                }
+            }
+            Some(format!("{}\r\n", parts.join(",")))
+        }
+        "trojan" => {
+            let tls_settings = extra_json(server, "tls_settings");
+            let mut parts = vec![
+                format!("{}=trojan", server.name),
+                server.host.clone(),
+                first_port(server),
+                format!("password={uuid}"),
+                "tfo=true".to_string(),
+                "udp-relay=true".to_string(),
+            ];
+            if let Some(sni) = extra_string(server, "server_name")
+                .or_else(|| json_path_string(&tls_settings, &["server_name"]))
+            {
+                parts.push(format!("sni={sni}"));
+            }
+            if extra_i64(server, "allow_insecure")
+                .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+                .unwrap_or_default()
+                == 1
+            {
+                parts.push("skip-cert-verify=true".to_string());
+            }
+            Some(format!("{}\r\n", parts.join(",")))
+        }
+        "hysteria" | "hysteria2" if extra_i64(server, "version") == Some(2) => {
+            let mut parts = vec![
+                format!("{}=hysteria2", server.name),
+                server.host.clone(),
+                first_port(server),
+                format!("password={uuid}"),
+                format!(
+                    "download-bandwidth={}",
+                    extra_i64(server, "up_mbps").unwrap_or_default()
+                ),
+                "udp-relay=true".to_string(),
+            ];
+            if let Some(sni) = extra_string(server, "server_name") {
+                parts.push(format!("sni={sni}"));
+            }
+            Some(format!("{}\r\n", parts.join(",")))
+        }
+        "anytls" => Some(format!(
+            "{}=anytls,{},{},password={},udp-relay=true\r\n",
+            server.name,
+            server.host,
+            first_port(server),
+            uuid
+        )),
+        _ => None,
+    }
+}
+
+fn build_surfboard_proxy(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    match server_protocol(server).as_str() {
+        "shadowsocks" => Some(format!(
+            "{}=ss,{},{},encrypt-method={},password={},tfo=true,udp-relay=true\r\n",
+            server.name,
+            server.host,
+            first_port(server),
+            extra_string(server, "cipher")?,
+            shadowsocks_password(uuid, server)?
+        )),
+        "vmess" => {
+            let mut parts = vec![
+                format!("{}=vmess", server.name),
+                server.host.clone(),
+                first_port(server),
+                format!("username={uuid}"),
+                "vmess-aead=true".to_string(),
+                "tfo=true".to_string(),
+                "udp-relay=true".to_string(),
+            ];
+            append_surge_like_tls(server, &mut parts);
+            append_surge_like_ws(server, &mut parts);
+            Some(format!("{}\r\n", parts.join(",")))
+        }
+        "trojan" => {
+            let mut parts = vec![
+                format!("{}=trojan", server.name),
+                server.host.clone(),
+                first_port(server),
+                format!("password={uuid}"),
+                "tfo=true".to_string(),
+                "udp-relay=true".to_string(),
+            ];
+            append_sni_and_insecure(server, &mut parts, "sni");
+            append_surge_like_ws(server, &mut parts);
+            Some(format!("{}\r\n", parts.join(",")))
+        }
+        "anytls" => {
+            let tls_settings = extra_json(server, "tls_settings");
+            let insecure = extra_i64(server, "insecure")
+                .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+                .unwrap_or_default()
+                == 1;
+            let mut parts = vec![
+                format!("{}=anytls", server.name),
+                server.host.clone(),
+                first_port(server),
+                format!("password={uuid}"),
+                format!("skip-cert-verify={insecure}"),
+                "reuse=false".to_string(),
+            ];
+            if let Some(sni) = extra_string(server, "server_name")
+                .or_else(|| json_path_string(&tls_settings, &["server_name"]))
+            {
+                parts.push(format!("sni={sni}"));
+            }
+            Some(format!("{}\r\n", parts.join(", ")))
+        }
+        _ => None,
+    }
+}
+
+fn build_loon_proxy(uuid: &str, server: &v2board_db::server::AvailableServerRow) -> Option<String> {
+    match server_protocol(server).as_str() {
+        "shadowsocks" => Some(format!(
+            "{}=Shadowsocks,{},{},{},{},fast-open=false,udp=true\r\n",
+            server.name,
+            server.host,
+            first_port(server),
+            extra_string(server, "cipher")?,
+            shadowsocks_password(uuid, server)?
+        )),
+        "vmess" => {
+            let mut parts = vec![
+                format!("{}=vmess", server.name),
+                server.host.clone(),
+                first_port(server),
+                "auto".to_string(),
+                uuid.to_string(),
+                "fast-open=false".to_string(),
+                "udp=true".to_string(),
+                "alterId=0".to_string(),
+            ];
+            append_loon_transport_and_tls(server, &mut parts);
+            Some(format!("{}\r\n", parts.join(",")))
+        }
+        "vless" => {
+            let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+            if !matches!(network.as_str(), "tcp" | "ws") {
+                return None;
+            }
+            let mut parts = vec![
+                format!("{}=vless", server.name),
+                server.host.clone(),
+                first_port(server),
+                uuid.to_string(),
+                "fast-open=false".to_string(),
+                "udp=true".to_string(),
+                "alterId=0".to_string(),
+            ];
+            insert_opt_part(&mut parts, "flow", extra_string(server, "flow"));
+            append_loon_transport_and_tls(server, &mut parts);
+            Some(format!("{}\r\n", parts.join(",")))
+        }
+        "trojan" => {
+            if extra_string(server, "network").as_deref() == Some("grpc") {
+                return None;
+            }
+            let mut parts = vec![
+                format!("{}=trojan", server.name),
+                server.host.clone(),
+                first_port(server),
+                uuid.to_string(),
+                "fast-open=false".to_string(),
+                "udp=true".to_string(),
+            ];
+            append_sni_and_insecure(server, &mut parts, "tls-name");
+            Some(format!("{}\r\n", parts.join(",")))
+        }
+        "hysteria" | "hysteria2" if extra_i64(server, "version") == Some(2) => {
+            let mut parts = vec![
+                format!("{}=hysteria2", server.name),
+                server.host.clone(),
+                first_port(server),
+                format!("password={uuid}"),
+                format!(
+                    "download-bandwidth={}",
+                    extra_i64(server, "up_mbps").unwrap_or_default()
+                ),
+                "udp=true".to_string(),
+            ];
+            append_sni_and_insecure(server, &mut parts, "sni");
+            if let Some(obfs_password) = extra_string(server, "obfs_password") {
+                parts.push(format!("salamander-password={obfs_password}"));
+            }
+            Some(format!("{}\r\n", parts.join(",")))
+        }
+        "anytls" => {
+            let mut parts = vec![
+                format!("{}=anytls", server.name),
+                server.host.clone(),
+                first_port(server),
+                uuid.to_string(),
+                "udp=true".to_string(),
+            ];
+            append_sni_and_insecure(server, &mut parts, "sni");
+            Some(format!("{}\r\n", parts.join(",")))
+        }
+        _ => None,
+    }
+}
+
+fn build_shadowrocket_vmess_uri(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    let userinfo = standard_base64_encode(
+        format!("auto:{uuid}@{}:{}", server.host, first_port(server)).as_bytes(),
+    );
+    let mut params = vec![
+        ("tfo".to_string(), "1".to_string()),
+        ("remark".to_string(), server.name.clone()),
+        ("alterId".to_string(), "0".to_string()),
+    ];
+    let tls = extra_i64(server, "tls").unwrap_or_default();
+    let tls_settings = extra_json(server, "tls_settings");
+    if tls != 0 {
+        params.push(("tls".to_string(), "1".to_string()));
+        params.push((
+            "allowInsecure".to_string(),
+            json_path_i64(&tls_settings, &["allow_insecure"])
+                .or_else(|| json_path_i64(&tls_settings, &["allowInsecure"]))
+                .unwrap_or_default()
+                .to_string(),
+        ));
+        insert_query_param(
+            &mut params,
+            "peer",
+            json_path_string(&tls_settings, &["server_name"])
+                .or_else(|| json_path_string(&tls_settings, &["serverName"])),
+        );
+    }
+    match extra_string(server, "network").as_deref() {
+        Some("tcp") => {
+            let settings = extra_json(server, "network_settings");
+            insert_query_param(
+                &mut params,
+                "obfs",
+                json_path_string(&settings, &["header", "type"]),
+            );
+            insert_query_param(
+                &mut params,
+                "path",
+                json_path_string(&settings, &["header", "request", "path"]),
+            );
+            insert_query_param(
+                &mut params,
+                "obfsParam",
+                json_path_string(&settings, &["header", "request", "headers", "Host"]),
+            );
+        }
+        Some("ws") => {
+            let settings = extra_json(server, "network_settings");
+            params.push(("obfs".to_string(), "websocket".to_string()));
+            insert_query_param(&mut params, "path", json_path_string(&settings, &["path"]));
+            insert_query_param(
+                &mut params,
+                "obfsParam",
+                json_path_string(&settings, &["headers", "Host"]),
+            );
+            insert_query_param(
+                &mut params,
+                "method",
+                json_path_string(&settings, &["security"]),
+            );
+        }
+        Some("grpc") => {
+            let settings = extra_json(server, "network_settings");
+            params.push(("obfs".to_string(), "grpc".to_string()));
+            insert_query_param(
+                &mut params,
+                "path",
+                json_path_string(&settings, &["serviceName"]),
+            );
+            params.push((
+                "host".to_string(),
+                json_path_string(&tls_settings, &["server_name"])
+                    .unwrap_or_else(|| server.host.clone()),
+            ));
+        }
+        _ => {}
+    }
+    Some(format!("vmess://{userinfo}?{}\r\n", query_string(&params)))
+}
+
+fn build_quantumultx_proxy(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    match server_protocol(server).as_str() {
+        "shadowsocks" => Some(format!(
+            "shadowsocks={}:{},method={},password={},fast-open=false,udp-relay=true,tag={}\r\n",
+            server.host,
+            first_port(server),
+            extra_string(server, "cipher")?,
+            shadowsocks_password(uuid, server)?,
+            server.name
+        )),
+        "vmess" => Some(format!(
+            "vmess={}:{},method=chacha20-poly1305,password={},fast-open=true,udp-relay=true,tag={}\r\n",
+            server.host,
+            first_port(server),
+            uuid,
+            server.name
+        )),
+        "vless" => {
+            if !extra_string(server, "encryption")
+                .unwrap_or_default()
+                .is_empty()
+            {
+                return None;
+            }
+            Some(format!(
+                "vless={}:{},method=none,password={},udp-relay=true,fast-open=true,tag={}\r\n",
+                server.host,
+                first_port(server),
+                uuid,
+                server.name
+            ))
+        }
+        "trojan" => Some(format!(
+            "trojan={}:{},password={},fast-open=true,udp-relay=true,tag={}\r\n",
+            server.host,
+            first_port(server),
+            uuid,
+            server.name
+        )),
+        _ => None,
+    }
+}
+
+fn supports_surge(server: &v2board_db::server::AvailableServerRow) -> bool {
+    matches!(
+        server_protocol(server).as_str(),
+        "shadowsocks" | "vmess" | "trojan" | "anytls"
+    ) || (matches!(server_protocol(server).as_str(), "hysteria" | "hysteria2")
+        && extra_i64(server, "version") == Some(2))
+}
+
+fn supports_surfboard(server: &v2board_db::server::AvailableServerRow) -> bool {
+    matches!(
+        server_protocol(server).as_str(),
+        "shadowsocks" | "vmess" | "trojan" | "anytls"
+    )
+}
+
+fn append_surge_like_tls(server: &v2board_db::server::AvailableServerRow, parts: &mut Vec<String>) {
+    if extra_i64(server, "tls").unwrap_or_default() == 0 {
+        return;
+    }
+    parts.push("tls=true".to_string());
+    let tls_settings = extra_json(server, "tls_settings");
+    if json_path_i64(&tls_settings, &["allow_insecure"])
+        .or_else(|| json_path_i64(&tls_settings, &["allowInsecure"]))
+        .unwrap_or_default()
+        == 1
+    {
+        parts.push("skip-cert-verify=true".to_string());
+    }
+    if let Some(sni) = json_path_string(&tls_settings, &["server_name"])
+        .or_else(|| json_path_string(&tls_settings, &["serverName"]))
+    {
+        parts.push(format!("sni={sni}"));
+    }
+}
+
+fn append_surge_like_ws(server: &v2board_db::server::AvailableServerRow, parts: &mut Vec<String>) {
+    if extra_string(server, "network").as_deref() != Some("ws") {
+        return;
+    }
+    let settings = extra_json(server, "network_settings");
+    parts.push("ws=true".to_string());
+    insert_opt_part(parts, "ws-path", json_path_string(&settings, &["path"]));
+    insert_opt_part(
+        parts,
+        "ws-headers",
+        json_path_string(&settings, &["headers", "Host"]).map(|host| format!("Host:{host}")),
+    );
+    insert_opt_part(
+        parts,
+        "encrypt-method",
+        json_path_string(&settings, &["security"]),
+    );
+}
+
+fn append_sni_and_insecure(
+    server: &v2board_db::server::AvailableServerRow,
+    parts: &mut Vec<String>,
+    sni_key: &str,
+) {
+    let tls_settings = extra_json(server, "tls_settings");
+    if let Some(sni) = extra_string(server, "server_name")
+        .or_else(|| json_path_string(&tls_settings, &["server_name"]))
+        .or_else(|| json_path_string(&tls_settings, &["serverName"]))
+    {
+        parts.push(format!("{sni_key}={sni}"));
+    }
+    if extra_i64(server, "allow_insecure")
+        .or_else(|| extra_i64(server, "insecure"))
+        .or_else(|| json_path_i64(&tls_settings, &["allow_insecure"]))
+        .or_else(|| json_path_i64(&tls_settings, &["allowInsecure"]))
+        .unwrap_or_default()
+        == 1
+    {
+        parts.push("skip-cert-verify=true".to_string());
+    }
+}
+
+fn append_loon_transport_and_tls(
+    server: &v2board_db::server::AvailableServerRow,
+    parts: &mut Vec<String>,
+) {
+    let network = extra_string(server, "network").unwrap_or_else(|| "tcp".to_string());
+    let settings = extra_json(server, "network_settings");
+    match network.as_str() {
+        "tcp" => {
+            let transport = json_path_string(&settings, &["header", "type"])
+                .filter(|value| value == "http")
+                .unwrap_or_else(|| "tcp".to_string());
+            parts.push(format!("transport={transport}"));
+            insert_opt_part(
+                parts,
+                "path",
+                json_path_string(&settings, &["header", "request", "path"]),
+            );
+            insert_opt_part(
+                parts,
+                "host",
+                json_path_string(&settings, &["header", "request", "headers", "Host"]),
+            );
+        }
+        "ws" => {
+            parts.push("transport=ws".to_string());
+            insert_opt_part(parts, "path", json_path_string(&settings, &["path"]));
+            insert_opt_part(
+                parts,
+                "host",
+                json_path_string(&settings, &["headers", "Host"]),
+            );
+        }
+        _ => {}
+    }
+    let tls = extra_i64(server, "tls").unwrap_or_default();
+    let tls_settings = extra_json(server, "tls_settings");
+    if tls == 1 {
+        parts.push("over-tls=true".to_string());
+        insert_opt_part(
+            parts,
+            "tls-name",
+            json_path_string(&tls_settings, &["server_name"])
+                .or_else(|| json_path_string(&tls_settings, &["serverName"])),
+        );
+    } else if tls == 2 {
+        insert_opt_part(
+            parts,
+            "public-key",
+            json_path_string(&tls_settings, &["public_key"]),
+        );
+        insert_opt_part(
+            parts,
+            "short-id",
+            json_path_string(&tls_settings, &["short_id"]),
+        );
+        insert_opt_part(
+            parts,
+            "sni",
+            json_path_string(&tls_settings, &["server_name"]),
+        );
+    }
+    if json_path_i64(&tls_settings, &["allow_insecure"]).unwrap_or_default() == 1 {
+        parts.push("skip-cert-verify=true".to_string());
+    }
+}
+
+fn insert_opt_part(parts: &mut Vec<String>, key: &str, value: Option<String>) {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        parts.push(format!("{key}={value}"));
+    }
+}
+
+fn insert_query_param(params: &mut Vec<(String, String)>, key: &str, value: Option<String>) {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        params.push((key.to_string(), value));
+    }
+}
+
+fn is_basic_shadowsocks_cipher(cipher: &str) -> bool {
+    matches!(
+        cipher,
+        "aes-128-gcm" | "aes-192-gcm" | "aes-256-gcm" | "chacha20-ietf-poly1305"
+    )
+}
+
+fn format_date_timestamp(timestamp: i64) -> String {
+    Local
+        .timestamp_opt(timestamp, 0)
+        .single()
+        .map(|value| value.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| timestamp.to_string())
+}
+
+fn proxy_base(
+    server: &v2board_db::server::AvailableServerRow,
+    proxy_type: &str,
+) -> Map<String, Value> {
+    let mut object = Map::new();
+    object.insert("name".to_string(), Value::String(server.name.clone()));
+    object.insert("type".to_string(), Value::String(proxy_type.to_string()));
+    object.insert("server".to_string(), Value::String(server.host.clone()));
+    object.insert("port".to_string(), port_value(server));
+    object
+}
+
+fn singbox_base(
+    server: &v2board_db::server::AvailableServerRow,
+    proxy_type: &str,
+) -> Map<String, Value> {
+    let mut object = Map::new();
+    object.insert("tag".to_string(), Value::String(server.name.clone()));
+    object.insert("type".to_string(), Value::String(proxy_type.to_string()));
+    object.insert("server".to_string(), Value::String(server.host.clone()));
+    object.insert("server_port".to_string(), port_value(server));
+    object
+}
+
+fn add_clash_transport(object: &mut Map<String, Value>, network: &str, settings: &Value) {
+    match network {
+        "tcp" => {
+            if json_path_string(settings, &["header", "type"]).as_deref() == Some("http") {
+                object.insert("network".to_string(), Value::String("http".to_string()));
+                let mut opts = Map::new();
+                if let Some(host) =
+                    json_path_string(settings, &["header", "request", "headers", "Host"])
+                {
+                    let hosts = split_jsonish_list(&host);
+                    opts.insert("headers".to_string(), json!({ "Host": hosts }));
+                }
+                insert_opt_value(
+                    &mut opts,
+                    "path",
+                    json_path_value(settings, &["header", "request", "path"]).cloned(),
+                );
+                object.insert("http-opts".to_string(), Value::Object(opts));
+            }
+        }
+        "ws" => {
+            object.insert("network".to_string(), Value::String("ws".to_string()));
+            let mut opts = Map::new();
+            insert_opt_string(&mut opts, "path", json_path_string(settings, &["path"]));
+            if let Some(host) = json_path_string(settings, &["headers", "Host"]) {
+                opts.insert("headers".to_string(), json!({ "Host": host }));
+            }
+            object.insert("ws-opts".to_string(), Value::Object(opts));
+        }
+        "grpc" => {
+            object.insert("network".to_string(), Value::String("grpc".to_string()));
+            object.insert(
+                "grpc-opts".to_string(),
+                json!({ "grpc-service-name": json_path_string(settings, &["serviceName"]).unwrap_or_default() }),
+            );
+        }
+        "xhttp" => {
+            object.insert("network".to_string(), Value::String("xhttp".to_string()));
+            let mut opts = Map::new();
+            insert_opt_string(&mut opts, "path", json_path_string(settings, &["path"]));
+            insert_opt_string(&mut opts, "host", json_path_string(settings, &["host"]));
+            insert_opt_string(&mut opts, "mode", json_path_string(settings, &["mode"]));
+            object.insert("xhttp-opts".to_string(), Value::Object(opts));
+        }
+        _ => {}
+    }
+}
+
+fn add_singbox_transport(object: &mut Map<String, Value>, network: &str, settings: &Value) {
+    let mut transport = Map::new();
+    match network {
+        "tcp" => {
+            if json_path_string(settings, &["header", "type"]).as_deref() == Some("http") {
+                transport.insert("type".to_string(), Value::String("http".to_string()));
+                insert_opt_string(
+                    &mut transport,
+                    "host",
+                    json_path_string(settings, &["header", "request", "headers", "Host"]),
+                );
+                insert_opt_string(
+                    &mut transport,
+                    "path",
+                    json_path_string(settings, &["header", "request", "path"]),
+                );
+            }
+        }
+        "ws" => {
+            transport.insert("type".to_string(), Value::String("ws".to_string()));
+            transport.insert(
+                "path".to_string(),
+                Value::String(
+                    json_path_string(settings, &["path"]).unwrap_or_else(|| "/".to_string()),
+                ),
+            );
+            if let Some(host) = json_path_string(settings, &["headers", "Host"]) {
+                transport.insert("headers".to_string(), json!({ "Host": [host] }));
+            }
+            transport.insert("max_early_data".to_string(), Value::from(2048));
+            transport.insert(
+                "early_data_header_name".to_string(),
+                Value::String("Sec-WebSocket-Protocol".to_string()),
+            );
+        }
+        "grpc" => {
+            transport.insert("type".to_string(), Value::String("grpc".to_string()));
+            insert_opt_string(
+                &mut transport,
+                "service_name",
+                json_path_string(settings, &["serviceName"]),
+            );
+        }
+        _ => {}
+    }
+    if !transport.is_empty() {
+        object.insert("transport".to_string(), Value::Object(transport));
+    }
+}
+
+fn singbox_tls(
+    server: &v2board_db::server::AvailableServerRow,
+    tls_settings: &Value,
+    tls_mode: i64,
+    utls: bool,
+) -> Value {
+    let mut tls = Map::new();
+    tls.insert("enabled".to_string(), Value::Bool(true));
+    tls.insert(
+        "insecure".to_string(),
+        Value::Bool(
+            extra_i64(server, "insecure")
+                .or_else(|| extra_i64(server, "allow_insecure"))
+                .or_else(|| json_path_i64(tls_settings, &["allow_insecure"]))
+                .or_else(|| json_path_i64(tls_settings, &["allowInsecure"]))
+                .unwrap_or_default()
+                == 1,
+        ),
+    );
+    tls.insert(
+        "server_name".to_string(),
+        Value::String(
+            extra_string(server, "server_name")
+                .or_else(|| json_path_string(tls_settings, &["server_name"]))
+                .or_else(|| json_path_string(tls_settings, &["serverName"]))
+                .unwrap_or_default(),
+        ),
+    );
+    if tls_mode == 2 {
+        tls.insert(
+            "reality".to_string(),
+            json!({
+                "enabled": true,
+                "public_key": json_path_string(tls_settings, &["public_key"]).unwrap_or_default(),
+                "short_id": json_path_string(tls_settings, &["short_id"]).unwrap_or_default()
+            }),
+        );
+    }
+    if utls {
+        tls.insert(
+            "utls".to_string(),
+            json!({
+                "enabled": true,
+                "fingerprint": json_path_string(tls_settings, &["fingerprint"]).unwrap_or_else(|| "chrome".to_string())
+            }),
+        );
+    }
+    add_singbox_ech(&mut tls, tls_settings);
+    Value::Object(tls)
+}
+
+fn add_clash_ech(object: &mut Map<String, Value>, tls_settings: &Value) {
+    match json_path_string(tls_settings, &["ech"]).as_deref() {
+        Some("cloudflare") => {
+            object.insert(
+                "ech-opts".to_string(),
+                json!({ "enable": true, "query-server-name": "cloudflare-ech.com" }),
+            );
+        }
+        Some("custom") => {
+            if let Some(config) = json_path_string(tls_settings, &["ech_config"]) {
+                object.insert(
+                    "ech-opts".to_string(),
+                    json!({ "enable": true, "config": [config] }),
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn add_singbox_ech(object: &mut Map<String, Value>, tls_settings: &Value) {
+    match json_path_string(tls_settings, &["ech"]).as_deref() {
+        Some("cloudflare") => {
+            object.insert(
+                "ech".to_string(),
+                json!({ "enabled": true, "query_server_name": "cloudflare-ech.com" }),
+            );
+        }
+        Some("custom") => {
+            if let Some(config) = json_path_string(tls_settings, &["ech_config"]) {
+                object.insert(
+                    "ech".to_string(),
+                    json!({ "enabled": true, "config": [config] }),
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn add_multi_port_fields(
+    object: &mut Map<String, Value>,
+    server: &v2board_db::server::AvailableServerRow,
+) {
+    if let Some(mport) = mport(server) {
+        object.insert("ports".to_string(), Value::String(mport.clone()));
+        object.insert("mport".to_string(), Value::String(mport));
+    }
+}
+
+fn add_singbox_multi_port_fields(
+    object: &mut Map<String, Value>,
+    server: &v2board_db::server::AvailableServerRow,
+) {
+    let raw = port_text(server);
+    if raw.contains('-') || raw.contains(',') {
+        let ranges = raw
+            .split(',')
+            .map(str::trim)
+            .filter(|part| part.contains('-'))
+            .map(|part| part.replace('-', ":"))
+            .collect::<Vec<_>>();
+        if !ranges.is_empty() {
+            object.remove("server_port");
+            object.insert("server_ports".to_string(), json!(ranges));
+        }
+    }
+}
+
+fn insert_opt_string(object: &mut Map<String, Value>, key: &str, value: Option<String>) {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        object.insert(key.to_string(), Value::String(value));
+    }
+}
+
+fn insert_opt_value(object: &mut Map<String, Value>, key: &str, value: Option<Value>) {
+    if let Some(value) = value.filter(|value| !value.is_null()) {
+        object.insert(key.to_string(), value);
+    }
+}
+
+fn port_value(server: &v2board_db::server::AvailableServerRow) -> Value {
+    first_port(server)
+        .parse::<i64>()
+        .map(Value::from)
+        .unwrap_or_else(|_| Value::String(first_port(server)))
+}
+
+fn shadowsocks_password(
     uuid: &str,
     server: &v2board_db::server::AvailableServerRow,
 ) -> Option<String> {
     let cipher = extra_string(server, "cipher")?;
-    let password = if cipher.contains("2022-blake3") {
+    if cipher.contains("2022-blake3") {
         let length = if cipher == "2022-blake3-aes-128-gcm" {
             16
         } else {
@@ -3755,10 +5701,127 @@ fn build_shadowsocks_uri(
         let server_key_seed = format!("{:x}", md5::compute(created_at.as_bytes()));
         let server_key = standard_base64_encode(prefix_bytes(&server_key_seed, length));
         let user_key = standard_base64_encode(prefix_bytes(uuid, length));
-        format!("{server_key}:{user_key}")
+        Some(format!("{server_key}:{user_key}"))
     } else {
-        uuid.to_string()
-    };
+        Some(uuid.to_string())
+    }
+}
+
+fn obfs_plugin_opts(mode: &str, host: Option<String>, path: Option<String>) -> String {
+    let mut parts = vec![format!("obfs={mode}")];
+    if let Some(host) = host.filter(|value| !value.is_empty()) {
+        parts.push(format!("obfs-host={host}"));
+    }
+    if let Some(path) = path.filter(|value| !value.is_empty()) {
+        parts.push(format!("path={path}"));
+    }
+    parts.join(";")
+}
+
+fn split_jsonish_list(value: &str) -> Value {
+    if let Ok(values) = serde_json::from_str::<Vec<String>>(value) {
+        json!(values)
+    } else {
+        Value::String(value.to_string())
+    }
+}
+
+fn bytes_to_gib(value: i64) -> f64 {
+    value as f64 / 1_073_741_824_f64
+}
+
+fn render_yaml(value: &Value) -> String {
+    let mut output = String::new();
+    write_yaml_value(&mut output, value, 0);
+    output
+}
+
+fn write_yaml_value(output: &mut String, value: &Value, indent: usize) {
+    match value {
+        Value::Object(map) => {
+            if map.is_empty() {
+                output.push_str("{}\n");
+                return;
+            }
+            for (key, value) in map {
+                output.push_str(&" ".repeat(indent));
+                output.push_str(&yaml_key(key));
+                output.push(':');
+                if yaml_scalar(value) {
+                    output.push(' ');
+                    output.push_str(&yaml_scalar_value(value));
+                    output.push('\n');
+                } else {
+                    output.push('\n');
+                    write_yaml_value(output, value, indent + 2);
+                }
+            }
+        }
+        Value::Array(values) => {
+            if values.is_empty() {
+                output.push_str(&" ".repeat(indent));
+                output.push_str("[]\n");
+                return;
+            }
+            for value in values {
+                output.push_str(&" ".repeat(indent));
+                output.push('-');
+                if yaml_scalar(value) {
+                    output.push(' ');
+                    output.push_str(&yaml_scalar_value(value));
+                    output.push('\n');
+                } else {
+                    output.push('\n');
+                    write_yaml_value(output, value, indent + 2);
+                }
+            }
+        }
+        _ => {
+            output.push_str(&" ".repeat(indent));
+            output.push_str(&yaml_scalar_value(value));
+            output.push('\n');
+        }
+    }
+}
+
+fn yaml_scalar(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
+    )
+}
+
+fn yaml_key(key: &str) -> String {
+    if key
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+    {
+        key.to_string()
+    } else {
+        yaml_quote(key)
+    }
+}
+
+fn yaml_scalar_value(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        Value::String(value) => yaml_quote(value),
+        Value::Array(_) | Value::Object(_) => unreachable!("nested value is not a YAML scalar"),
+    }
+}
+
+fn yaml_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn build_shadowsocks_uri(
+    uuid: &str,
+    server: &v2board_db::server::AvailableServerRow,
+) -> Option<String> {
+    let cipher = extra_string(server, "cipher")?;
+    let password = shadowsocks_password(uuid, server)?;
     let auth = safe_base64_encode(format!("{cipher}:{password}").as_bytes());
     let mut uri = format!(
         "ss://{auth}@{}:{}",

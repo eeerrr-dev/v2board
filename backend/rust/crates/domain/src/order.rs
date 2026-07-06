@@ -17,6 +17,21 @@ use v2board_config::AppConfig;
 use v2board_db::plan::PlanRow;
 
 const GIB: i64 = 1_073_741_824;
+pub const SUPPORTED_PAYMENT_GATEWAYS: &[&str] = &[
+    "AlipayF2F",
+    "BEasyPaymentUSDT",
+    "BTCPay",
+    "CoinPayments",
+    "Coinbase",
+    "EPay",
+    "MGate",
+    "StripeALL",
+    "StripeAlipay",
+    "StripeCheckout",
+    "StripeCredit",
+    "StripeWepay",
+    "WechatPayNative",
+];
 
 #[derive(Clone)]
 pub struct OrderService {
@@ -368,6 +383,12 @@ impl OrderService {
         payment: &PaymentForCheckout,
         order: &PaymentOrder,
     ) -> Result<CheckoutResult, ApiError> {
+        if !payment_pay_supported(&payment.payment) {
+            return Err(ApiError::legacy(format!(
+                "Payment gateway {} is not implemented in Rust yet",
+                payment.payment
+            )));
+        }
         match payment.payment.as_str() {
             "EPay" => epay_pay(payment, order),
             "MGate" => mgate_pay(payment, order).await,
@@ -382,9 +403,7 @@ impl OrderService {
             "StripeWepay" => stripe_source_pay(payment, order, "wechat").await,
             "StripeCheckout" => stripe_checkout_pay(payment, order).await,
             "StripeALL" => stripe_all_pay(self, payment, order).await,
-            method => Err(ApiError::legacy(format!(
-                "Payment gateway {method} is not implemented in Rust yet"
-            ))),
+            _ => unreachable!("payment_pay_supported and pay gateway match diverged"),
         }
     }
 
@@ -393,6 +412,12 @@ impl OrderService {
         payment: &PaymentForCheckout,
         input: &PaymentNotifyInput,
     ) -> Result<PaymentNotifyOutcome, ApiError> {
+        if !payment_notify_supported(&payment.payment) {
+            return Err(ApiError::legacy(format!(
+                "Payment gateway {} notify is not implemented in Rust yet",
+                payment.payment
+            )));
+        }
         match payment.payment.as_str() {
             "EPay" => epay_notify(payment, &input.params),
             "MGate" => mgate_notify(payment, &input.params),
@@ -407,9 +432,7 @@ impl OrderService {
             }
             "StripeCheckout" => stripe_checkout_notify(payment, input),
             "StripeALL" => stripe_all_notify(payment, input),
-            method => Err(ApiError::legacy(format!(
-                "Payment gateway {method} notify is not implemented in Rust yet"
-            ))),
+            _ => unreachable!("payment_notify_supported and notify gateway match diverged"),
         }
     }
 
@@ -1027,6 +1050,44 @@ impl OrderService {
             .await?;
         Ok(())
     }
+}
+
+fn payment_pay_supported(method: &str) -> bool {
+    matches!(
+        method,
+        "EPay"
+            | "MGate"
+            | "BEasyPaymentUSDT"
+            | "CoinPayments"
+            | "Coinbase"
+            | "BTCPay"
+            | "WechatPayNative"
+            | "AlipayF2F"
+            | "StripeCredit"
+            | "StripeAlipay"
+            | "StripeWepay"
+            | "StripeCheckout"
+            | "StripeALL"
+    )
+}
+
+fn payment_notify_supported(method: &str) -> bool {
+    matches!(
+        method,
+        "EPay"
+            | "MGate"
+            | "BEasyPaymentUSDT"
+            | "CoinPayments"
+            | "Coinbase"
+            | "BTCPay"
+            | "WechatPayNative"
+            | "AlipayF2F"
+            | "StripeCredit"
+            | "StripeAlipay"
+            | "StripeWepay"
+            | "StripeCheckout"
+            | "StripeALL"
+    )
 }
 
 async fn find_user_for_order(
@@ -3209,3 +3270,44 @@ WHERE id = ?
 LIMIT 1
 FOR UPDATE
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn built_in_payment_gateway_matrix_matches_laravel_plugins() {
+        assert_eq!(
+            SUPPORTED_PAYMENT_GATEWAYS,
+            &[
+                "AlipayF2F",
+                "BEasyPaymentUSDT",
+                "BTCPay",
+                "CoinPayments",
+                "Coinbase",
+                "EPay",
+                "MGate",
+                "StripeALL",
+                "StripeAlipay",
+                "StripeCheckout",
+                "StripeCredit",
+                "StripeWepay",
+                "WechatPayNative",
+            ]
+        );
+    }
+
+    #[test]
+    fn pay_and_notify_gateway_maps_cover_the_same_built_ins() {
+        for method in SUPPORTED_PAYMENT_GATEWAYS {
+            assert!(
+                payment_pay_supported(method),
+                "{method} is listed but checkout is not implemented"
+            );
+            assert!(
+                payment_notify_supported(method),
+                "{method} is listed but notify is not implemented"
+            );
+        }
+    }
+}

@@ -13,7 +13,7 @@ use uuid::Uuid;
 use v2board_compat::ApiError;
 use v2board_config::AppConfig;
 
-use crate::order::OrderService;
+use crate::order::{OrderService, SUPPORTED_PAYMENT_GATEWAYS};
 
 const GIB: i64 = 1_073_741_824;
 
@@ -72,7 +72,7 @@ impl AdminService {
             "stat/getOrder" => self.order_stat().await,
             "stat/getStatUser" => self.stat_user(&params).await,
             "stat/getRanking" => self.stat_summary().await,
-            "stat/getStatRecord" => Ok(AdminOutput::Data(json!([]))),
+            "stat/getStatRecord" => self.stat_record(&params).await,
             "system/getSystemStatus" => Ok(AdminOutput::Data(json!({
                 "schedule": true,
                 "horizon": false,
@@ -94,10 +94,21 @@ impl AdminService {
                 "status": "running",
                 "wait": {},
             }))),
-            "system/getQueueWorkload" | "system/getQueueMasters" => {
-                Ok(AdminOutput::Data(json!([])))
-            }
-            "system/getSystemLog" => Ok(AdminOutput::Data(json!(""))),
+            "system/getQueueWorkload" => Ok(AdminOutput::Data(json!([{
+                "name": "rust-worker",
+                "length": 0,
+                "wait": 0,
+                "processes": 1,
+                "recent_jobs": 0,
+                "failed_jobs": 0,
+            }]))),
+            "system/getQueueMasters" => Ok(AdminOutput::Data(json!([{
+                "name": "rust-worker",
+                "status": "running",
+                "pid": std::process::id(),
+                "supervisors": [],
+            }]))),
+            "system/getSystemLog" => self.system_log(&params).await,
             "theme/getThemes" => self.themes().await,
             _ => Err(ApiError::not_found("Admin endpoint does not exist")),
         }
@@ -221,6 +232,43 @@ impl AdminService {
             }
             _ if is_server_path(&path, "copy") => self.server_copy(&path, &params).await,
             _ => Err(ApiError::not_found("Admin endpoint does not exist")),
+        }
+    }
+
+    pub async fn staff_get(
+        &self,
+        path: &str,
+        params: HashMap<String, String>,
+    ) -> Result<AdminOutput, ApiError> {
+        let path = normalize_admin_path(path);
+        match path.as_str() {
+            "ticket/fetch" => self.ticket_fetch(&params).await,
+            "user/getUserInfoById" => self.staff_user_detail(required_i64(&params, "id")?).await,
+            "plan/fetch" => self.plan_fetch().await,
+            "notice/fetch" => self.notice_fetch().await,
+            _ => Err(ApiError::not_found("Staff endpoint does not exist")),
+        }
+    }
+
+    pub async fn staff_post(
+        &self,
+        path: &str,
+        params: HashMap<String, String>,
+    ) -> Result<AdminOutput, ApiError> {
+        let path = normalize_admin_path(path);
+        match path.as_str() {
+            "ticket/reply" => self.ticket_reply(&params).await,
+            "ticket/close" => self.ticket_close(required_i64(&params, "id")?).await,
+            "user/update" => self.staff_user_update(&params).await,
+            "user/sendMail" => self.staff_send_mail_to_users(&params).await,
+            "user/ban" => self.staff_user_bulk_ban(&params).await,
+            "notice/save" => self.notice_save(&params).await,
+            "notice/update" => self.notice_update(&params).await,
+            "notice/drop" => {
+                self.delete_by_id("v2_notice", required_i64(&params, "id")?)
+                    .await
+            }
+            _ => Err(ApiError::not_found("Staff endpoint does not exist")),
         }
     }
 
@@ -1223,6 +1271,34 @@ impl AdminService {
         Ok(AdminOutput::Data(value))
     }
 
+    async fn staff_user_detail(&self, id: i64) -> Result<AdminOutput, ApiError> {
+        let value = fetch_json_one(
+            &self.db,
+            r#"
+            SELECT JSON_OBJECT(
+                'id', u.id, 'email', u.email, 'password', '', 'balance', u.balance,
+                'commission_balance', u.commission_balance, 'transfer_enable', u.transfer_enable,
+                'device_limit', u.device_limit, 'u', u.u, 'd', u.d, 'total_used', u.u + u.d,
+                'alive_ip', 0, 'ips', '', 'plan_id', u.plan_id, 'plan_name', p.name,
+                'group_id', u.group_id, 'expired_at', u.expired_at, 'uuid', u.uuid,
+                'token', u.token, 'subscribe_url', '', 'banned', u.banned,
+                'is_admin', u.is_admin, 'is_staff', u.is_staff,
+                'invite_user_id', u.invite_user_id, 'discount', u.discount,
+                'commission_rate', u.commission_rate, 'telegram_id', u.telegram_id,
+                'last_login_at', u.last_login_at, 'created_at', u.created_at, 'updated_at', u.updated_at
+            )
+            FROM v2_user u
+            LEFT JOIN v2_plan p ON p.id = u.plan_id
+            WHERE u.id = ? AND u.is_admin = 0 AND u.is_staff = 0
+            LIMIT 1
+            "#,
+            id,
+        )
+        .await?
+        .ok_or_else(|| ApiError::legacy("用户不存在"))?;
+        Ok(AdminOutput::Data(value))
+    }
+
     async fn user_update(&self, params: &HashMap<String, String>) -> Result<AdminOutput, ApiError> {
         let id = required_i64(params, "id")?;
         let now = Utc::now().timestamp();
@@ -1268,6 +1344,110 @@ impl AdminService {
                 .execute(&self.db)
                 .await?;
         }
+        Ok(AdminOutput::Data(json!(true)))
+    }
+
+    async fn staff_user_update(
+        &self,
+        params: &HashMap<String, String>,
+    ) -> Result<AdminOutput, ApiError> {
+        let id = required_i64(params, "id")?;
+        let plan_id = optional_i64(params, "plan_id");
+        let group_id = if let Some(plan_id) = plan_id {
+            Some(
+                sqlx::query_scalar::<_, i64>("SELECT group_id FROM v2_plan WHERE id = ? LIMIT 1")
+                    .bind(plan_id)
+                    .fetch_optional(&self.db)
+                    .await?
+                    .ok_or_else(|| ApiError::legacy("订阅计划不存在"))?,
+            )
+        } else {
+            optional_i64(params, "group_id")
+        };
+        let now = Utc::now().timestamp();
+        let result = sqlx::query(
+            r#"
+            UPDATE v2_user
+            SET email = COALESCE(?, email),
+                plan_id = COALESCE(?, plan_id),
+                group_id = COALESCE(?, group_id),
+                expired_at = COALESCE(?, expired_at),
+                transfer_enable = COALESCE(?, transfer_enable),
+                device_limit = COALESCE(?, device_limit),
+                balance = COALESCE(?, balance),
+                commission_balance = COALESCE(?, commission_balance),
+                commission_rate = COALESCE(?, commission_rate),
+                discount = COALESCE(?, discount),
+                speed_limit = COALESCE(?, speed_limit),
+                banned = COALESCE(?, banned),
+                remind_expire = COALESCE(?, remind_expire),
+                remind_traffic = COALESCE(?, remind_traffic),
+                updated_at = ?
+            WHERE id = ? AND is_admin = 0 AND is_staff = 0
+            "#,
+        )
+        .bind(params.get("email"))
+        .bind(plan_id)
+        .bind(group_id)
+        .bind(optional_i64(params, "expired_at"))
+        .bind(optional_i64(params, "transfer_enable").map(|value| value * GIB))
+        .bind(optional_i64(params, "device_limit"))
+        .bind(optional_i64(params, "balance"))
+        .bind(optional_i64(params, "commission_balance"))
+        .bind(optional_i64(params, "commission_rate"))
+        .bind(optional_i64(params, "discount"))
+        .bind(optional_i64(params, "speed_limit"))
+        .bind(optional_i64(params, "banned"))
+        .bind(optional_i64(params, "remind_expire"))
+        .bind(optional_i64(params, "remind_traffic"))
+        .bind(now)
+        .bind(id)
+        .execute(&self.db)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(ApiError::legacy("用户不存在"));
+        }
+        if let Some(password) = params.get("password").filter(|value| !value.is_empty()) {
+            let hash = bcrypt::hash(password, bcrypt::DEFAULT_COST)
+                .map_err(|_| ApiError::internal("failed to hash password"))?;
+            sqlx::query(
+                "UPDATE v2_user SET password = ?, password_algo = 'bcrypt', password_salt = NULL WHERE id = ? AND is_admin = 0 AND is_staff = 0",
+            )
+            .bind(hash)
+            .bind(id)
+            .execute(&self.db)
+            .await?;
+        }
+        Ok(AdminOutput::Data(json!(true)))
+    }
+
+    async fn staff_send_mail_to_users(
+        &self,
+        params: &HashMap<String, String>,
+    ) -> Result<AdminOutput, ApiError> {
+        let subject = required_string(params, "subject")?;
+        let content = required_string(params, "content")?;
+        let emails = sqlx::query_scalar::<_, String>(
+            "SELECT email FROM v2_user WHERE banned = 0 AND is_admin = 0 AND is_staff = 0",
+        )
+        .fetch_all(&self.db)
+        .await?;
+        for email in emails {
+            self.send_mail(&email, &subject, &content).await?;
+        }
+        Ok(AdminOutput::Data(json!(true)))
+    }
+
+    async fn staff_user_bulk_ban(
+        &self,
+        _params: &HashMap<String, String>,
+    ) -> Result<AdminOutput, ApiError> {
+        sqlx::query(
+            "UPDATE v2_user SET banned = 1, updated_at = ? WHERE is_admin = 0 AND is_staff = 0",
+        )
+        .bind(Utc::now().timestamp())
+        .execute(&self.db)
+        .await?;
         Ok(AdminOutput::Data(json!(true)))
     }
 
@@ -1913,6 +2093,136 @@ impl AdminService {
         )
         .await
         .unwrap_or_default();
+        Ok(AdminOutput::Page { data, total })
+    }
+
+    async fn stat_record(&self, params: &HashMap<String, String>) -> Result<AdminOutput, ApiError> {
+        let (current, page_size) = page(params);
+        let record_type = params
+            .get("record_type")
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let total: i64 = if let Some(record_type) = record_type {
+            sqlx::query_scalar("SELECT COUNT(*) FROM v2_stat WHERE record_type = ?")
+                .bind(record_type)
+                .fetch_one(&self.db)
+                .await
+                .unwrap_or_default()
+        } else {
+            sqlx::query_scalar("SELECT COUNT(*) FROM v2_stat")
+                .fetch_one(&self.db)
+                .await
+                .unwrap_or_default()
+        };
+        let data = if let Some(record_type) = record_type {
+            fetch_json_list_page_bind_text(
+                &self.db,
+                r#"
+                SELECT JSON_OBJECT(
+                    'id', id, 'record_at', record_at, 'record_type', record_type,
+                    'order_count', order_count, 'order_total', order_total,
+                    'commission_count', commission_count, 'commission_total', commission_total,
+                    'paid_count', paid_count, 'paid_total', paid_total,
+                    'register_count', register_count, 'invite_count', invite_count,
+                    'transfer_used_total', transfer_used_total,
+                    'created_at', created_at, 'updated_at', updated_at
+                )
+                FROM v2_stat
+                WHERE record_type = ?
+                ORDER BY record_at DESC
+                LIMIT ? OFFSET ?
+                "#,
+                record_type,
+                page_size,
+                offset(current, page_size),
+            )
+            .await
+            .unwrap_or_default()
+        } else {
+            fetch_json_list_page(
+                &self.db,
+                r#"
+                SELECT JSON_OBJECT(
+                    'id', id, 'record_at', record_at, 'record_type', record_type,
+                    'order_count', order_count, 'order_total', order_total,
+                    'commission_count', commission_count, 'commission_total', commission_total,
+                    'paid_count', paid_count, 'paid_total', paid_total,
+                    'register_count', register_count, 'invite_count', invite_count,
+                    'transfer_used_total', transfer_used_total,
+                    'created_at', created_at, 'updated_at', updated_at
+                )
+                FROM v2_stat
+                ORDER BY record_at DESC
+                LIMIT ? OFFSET ?
+                "#,
+                page_size,
+                offset(current, page_size),
+            )
+            .await
+            .unwrap_or_default()
+        };
+        Ok(AdminOutput::Page { data, total })
+    }
+
+    async fn system_log(&self, params: &HashMap<String, String>) -> Result<AdminOutput, ApiError> {
+        let (current, page_size) = page(params);
+        let level = params
+            .get("level")
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let total: i64 = if let Some(level) = level {
+            sqlx::query_scalar("SELECT COUNT(*) FROM v2_log WHERE level = ?")
+                .bind(level)
+                .fetch_one(&self.db)
+                .await
+                .unwrap_or_default()
+        } else {
+            sqlx::query_scalar("SELECT COUNT(*) FROM v2_log")
+                .fetch_one(&self.db)
+                .await
+                .unwrap_or_default()
+        };
+        let data = if let Some(level) = level {
+            fetch_json_list_page_bind_text(
+                &self.db,
+                r#"
+                SELECT JSON_OBJECT(
+                    'id', id, 'title', title, 'level', level, 'host', host, 'uri', uri,
+                    'method', method, 'data', data, 'ip', ip, 'context', context,
+                    'created_at', created_at, 'updated_at', updated_at
+                )
+                FROM v2_log
+                WHERE level = ?
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+                "#,
+                level,
+                page_size,
+                offset(current, page_size),
+            )
+            .await
+            .unwrap_or_default()
+        } else {
+            fetch_json_list_page(
+                &self.db,
+                r#"
+                SELECT JSON_OBJECT(
+                    'id', id, 'title', title, 'level', level, 'host', host, 'uri', uri,
+                    'method', method, 'data', data, 'ip', ip, 'context', context,
+                    'created_at', created_at, 'updated_at', updated_at
+                )
+                FROM v2_log
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+                "#,
+                page_size,
+                offset(current, page_size),
+            )
+            .await
+            .unwrap_or_default()
+        };
         Ok(AdminOutput::Page { data, total })
     }
 
@@ -3009,21 +3319,7 @@ fn bool_i(value: bool) -> i32 {
 }
 
 fn payment_methods() -> Vec<&'static str> {
-    vec![
-        "AlipayF2F",
-        "BEasyPaymentUSDT",
-        "BTCPay",
-        "CoinPayments",
-        "Coinbase",
-        "EPay",
-        "MGate",
-        "StripeALL",
-        "StripeAlipay",
-        "StripeCheckout",
-        "StripeCredit",
-        "StripeWepay",
-        "WechatPayNative",
-    ]
+    SUPPORTED_PAYMENT_GATEWAYS.to_vec()
 }
 
 fn payment_form(payment: &str) -> Value {
@@ -3141,6 +3437,22 @@ async fn fetch_json_list_page_bind(
     db: &MySqlPool,
     sql: &str,
     bind: i64,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Value>, ApiError> {
+    let rows = sqlx::query_scalar::<_, Json<Value>>(AssertSqlSafe(sql))
+        .bind(bind)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(db)
+        .await?;
+    Ok(json_rows(rows))
+}
+
+async fn fetch_json_list_page_bind_text(
+    db: &MySqlPool,
+    sql: &str,
+    bind: &str,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Value>, ApiError> {
