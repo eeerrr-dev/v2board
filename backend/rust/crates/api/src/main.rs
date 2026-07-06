@@ -5,14 +5,12 @@ use std::{
 };
 
 use axum::{
-    Json, Router,
+    Json,
     body::{Body, to_bytes},
     extract::{ConnectInfo, Form, OriginalUri, Path, Query, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
-    middleware,
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
-    routing::{get, post},
 };
 use chrono::{Datelike, Duration, Local, TimeZone, Utc};
 use hmac::{Hmac, KeyInit, Mac};
@@ -20,7 +18,6 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha1::Sha1;
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 use v2board_compat::{ApiError, LegacyEnvelope, legacy_data, legacy_page};
@@ -30,6 +27,7 @@ use v2board_domain::auth::{AuthService, AuthUser, EmailVerifyInput, ForgetInput,
 
 mod codec;
 mod json_value;
+mod routes;
 mod server_api;
 mod subscription;
 
@@ -73,107 +71,7 @@ async fn main() -> anyhow::Result<()> {
     let db = connect_mysql(&config.database_url).await?;
     let redis = redis::Client::open(config.redis_url.clone())?;
     let state = AppState::new(config.clone(), db, redis);
-    let admin_api_route = config.admin_api_route();
-
-    let mut app = Router::new()
-        .route("/healthz", get(healthz))
-        .route("/api/v1/guest/comm/config", get(guest_config))
-        .route(
-            "/api/v1/guest/payment/notify/{method}/{uuid}",
-            get(payment_notify).post(payment_notify),
-        )
-        .route("/api/v1/guest/telegram/webhook", post(telegram_webhook))
-        .route("/api/v1/client/subscribe", get(client_subscribe))
-        .route("/api/v1/client/app/getConfig", get(client_app_config))
-        .route("/api/v1/client/app/getVersion", get(client_app_version))
-        .route("/api/v1/passport/auth/register", post(register))
-        .route("/api/v1/passport/auth/login", post(login))
-        .route("/api/v1/passport/auth/token2Login", get(token2_login))
-        .route("/api/v1/passport/auth/forget", post(forget_password))
-        .route(
-            "/api/v1/passport/auth/getQuickLoginUrl",
-            post(passport_quick_login_url),
-        )
-        .route(
-            "/api/v1/passport/comm/sendEmailVerify",
-            post(send_email_verify),
-        )
-        .route("/api/v1/passport/comm/pv", post(passport_pv))
-        .route("/api/v1/user/info", get(user_info))
-        .route("/api/v1/user/checkLogin", get(check_login))
-        .route("/api/v1/user/getStat", get(user_stat))
-        .route("/api/v1/user/getSubscribe", get(user_subscribe))
-        .route("/api/v1/user/newPeriod", post(user_new_period))
-        .route("/api/v1/user/redeemgiftcard", post(redeem_giftcard))
-        .route("/api/v1/user/update", post(user_update))
-        .route("/api/v1/user/changePassword", post(change_password))
-        .route("/api/v1/user/resetSecurity", get(reset_security))
-        .route("/api/v1/user/unbindTelegram", get(unbind_telegram))
-        .route("/api/v1/user/transfer", post(user_transfer))
-        .route("/api/v1/user/getQuickLoginUrl", post(user_quick_login_url))
-        .route("/api/v1/user/getActiveSession", get(active_sessions))
-        .route(
-            "/api/v1/user/removeActiveSession",
-            post(remove_active_session),
-        )
-        .route("/api/v1/user/plan/fetch", get(user_plan_fetch))
-        .route("/api/v1/user/order/save", post(order_save))
-        .route("/api/v1/user/order/checkout", post(order_checkout))
-        .route("/api/v1/user/order/fetch", get(order_fetch))
-        .route("/api/v1/user/order/detail", get(order_detail))
-        .route("/api/v1/user/order/check", get(order_check))
-        .route("/api/v1/user/order/cancel", post(order_cancel))
-        .route(
-            "/api/v1/user/order/getPaymentMethod",
-            get(order_payment_methods),
-        )
-        .route("/api/v1/user/invite/save", get(invite_save))
-        .route("/api/v1/user/invite/fetch", get(invite_fetch))
-        .route("/api/v1/user/invite/details", get(invite_details))
-        .route("/api/v1/user/ticket/fetch", get(ticket_fetch))
-        .route("/api/v1/user/ticket/save", post(ticket_save))
-        .route("/api/v1/user/ticket/reply", post(ticket_reply))
-        .route("/api/v1/user/ticket/close", post(ticket_close))
-        .route("/api/v1/user/ticket/withdraw", post(ticket_withdraw))
-        .route("/api/v1/user/server/fetch", get(server_fetch))
-        .route("/api/v1/user/coupon/check", post(coupon_check))
-        .route("/api/v1/user/knowledge/fetch", get(knowledge_fetch))
-        .route(
-            "/api/v1/user/knowledge/getCategory",
-            get(knowledge_categories),
-        )
-        .route("/api/v1/user/notice/fetch", get(user_notice_fetch))
-        .route("/api/v1/user/telegram/getBotInfo", get(telegram_bot_info))
-        .route("/api/v1/user/comm/config", get(user_comm_config))
-        .route(
-            "/api/v1/user/comm/getStripePublicKey",
-            post(stripe_public_key),
-        )
-        .route("/api/v1/user/stat/getTrafficLog", get(user_traffic_logs))
-        .route(&admin_api_route, get(admin_get).post(admin_post))
-        .route(
-            "/api/v1/staff/{*staff_path}",
-            get(staff_get).post(staff_post),
-        )
-        .route(
-            "/api/v1/server/{class}/{action}",
-            get(server_api::server_v1).post(server_api::server_v1),
-        )
-        .route(
-            "/api/v2/server/config",
-            get(server_api::server_v2_config).post(server_api::server_v2_config),
-        )
-        .fallback(dynamic_fallback);
-
-    if let Some(path) = custom_subscribe_route_path(&config) {
-        tracing::info!(path = %path, "registering custom subscribe route");
-        app = app.route(&path, get(client_subscribe));
-    }
-
-    let app = app
-        .with_state(state)
-        .layer(middleware::from_fn(language_middleware))
-        .layer(TraceLayer::new_for_http());
+    let app = routes::build_app(state, &config);
 
     let listener = tokio::net::TcpListener::bind(&config.bind_addr).await?;
     tracing::info!(bind_addr = %config.bind_addr, "v2board rust api listening");
@@ -195,37 +93,6 @@ fn init_tracing() {
         .init();
 }
 
-fn custom_subscribe_route_path(config: &AppConfig) -> Option<String> {
-    custom_subscribe_route_path_from_str(&config.subscribe_path)
-}
-
-fn custom_subscribe_route_path_from_str(path: &str) -> Option<String> {
-    let raw_path = path.trim();
-    if raw_path.is_empty() {
-        return None;
-    }
-    let path = raw_path
-        .split('?')
-        .next()
-        .unwrap_or(raw_path)
-        .trim_end_matches('/');
-    if path == "/api/v1/client/subscribe" {
-        return None;
-    }
-    if !path.starts_with('/') {
-        tracing::warn!(
-            path,
-            "custom subscribe_path must start with /; route skipped"
-        );
-        return None;
-    }
-    Some(if path.is_empty() {
-        "/".to_string()
-    } else {
-        path.to_string()
-    })
-}
-
 async fn healthz() -> Json<serde_json::Value> {
     Json(json!({ "ok": true }))
 }
@@ -240,7 +107,7 @@ async fn dynamic_fallback(
     let config = state.config_snapshot();
 
     if method == Method::GET
-        && custom_subscribe_route_path_from_str(&config.subscribe_path)
+        && routes::custom_subscribe_route_path_from_str(&config.subscribe_path)
             .as_deref()
             .is_some_and(|subscribe_path| normalize_request_path(subscribe_path) == path)
     {
@@ -3273,19 +3140,19 @@ mod tests {
     #[test]
     fn custom_subscribe_route_skips_default_and_registers_custom_path() {
         assert_eq!(
-            custom_subscribe_route_path_from_str("/api/v1/client/subscribe"),
+            routes::custom_subscribe_route_path_from_str("/api/v1/client/subscribe"),
             None
         );
         assert_eq!(
-            custom_subscribe_route_path_from_str("/api/v1/client/subscribe/"),
+            routes::custom_subscribe_route_path_from_str("/api/v1/client/subscribe/"),
             None
         );
         assert_eq!(
-            custom_subscribe_route_path_from_str("/custom/subscribe"),
+            routes::custom_subscribe_route_path_from_str("/custom/subscribe"),
             Some("/custom/subscribe".to_string())
         );
         assert_eq!(
-            custom_subscribe_route_path_from_str("/custom/subscribe/"),
+            routes::custom_subscribe_route_path_from_str("/custom/subscribe/"),
             Some("/custom/subscribe".to_string())
         );
     }

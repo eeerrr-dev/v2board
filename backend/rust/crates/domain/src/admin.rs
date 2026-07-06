@@ -107,10 +107,10 @@ impl AdminService {
         match path.as_str() {
             "config/fetch" => self.config_fetch(params.get("key").map(String::as_str)),
             "config/getEmailTemplate" => Ok(AdminOutput::Data(json!(list_names(
-                "/laravel/resources/views/mail"
+                &self.config.runtime_paths.mail_templates
             )))),
             "config/getThemeTemplate" => Ok(AdminOutput::Data(json!(list_names(
-                "/laravel/public/theme"
+                &self.config.runtime_paths.themes
             )))),
             "plan/fetch" => self.plan_fetch().await,
             "payment/fetch" => self.payment_fetch().await,
@@ -415,7 +415,7 @@ impl AdminService {
     }
 
     async fn config_save(&self, params: &HashMap<String, String>) -> Result<AdminOutput, ApiError> {
-        let path = "/laravel/config/v2board.php";
+        let path = &self.config.runtime_paths.v2board_config;
         let mut config = read_php_config(path);
         merge_config_params(&mut config, params);
         write_php_config(path, &Value::Object(config))?;
@@ -2408,7 +2408,7 @@ impl AdminService {
 
     async fn themes(&self) -> Result<AdminOutput, ApiError> {
         let mut themes = Map::new();
-        if let Ok(entries) = std::fs::read_dir("/laravel/public/theme") {
+        if let Ok(entries) = std::fs::read_dir(&self.config.runtime_paths.themes) {
             for entry in entries.flatten() {
                 let Ok(name) = entry.file_name().into_string() else {
                     continue;
@@ -2433,7 +2433,11 @@ impl AdminService {
 
     async fn theme_config(&self, name: String) -> Result<AdminOutput, ApiError> {
         ensure_theme_name(&name)?;
-        let path = format!("/laravel/config/theme/{name}.php");
+        let path = self
+            .config
+            .runtime_paths
+            .theme_configs
+            .join(format!("{name}.php"));
         Ok(AdminOutput::Data(Value::Object(read_php_config(&path))))
     }
 
@@ -2448,11 +2452,20 @@ impl AdminService {
         if !config.is_object() {
             return Err(ApiError::legacy("参数有误"));
         }
-        let theme_config_file = format!("/laravel/public/theme/{name}/config.json");
-        if !std::path::Path::new(&theme_config_file).exists() {
+        let theme_config_file = self
+            .config
+            .runtime_paths
+            .themes
+            .join(&name)
+            .join("config.json");
+        if !theme_config_file.exists() {
             return Err(ApiError::legacy("主题不存在"));
         }
-        let path = format!("/laravel/config/theme/{name}.php");
+        let path = self
+            .config
+            .runtime_paths
+            .theme_configs
+            .join(format!("{name}.php"));
         write_php_config(&path, &config)?;
         Ok(AdminOutput::Data(config))
     }

@@ -5,10 +5,20 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
+pub struct RuntimePaths {
+    pub v2board_config: PathBuf,
+    pub mail_templates: PathBuf,
+    pub themes: PathBuf,
+    pub theme_configs: PathBuf,
+    pub rules: PathBuf,
+}
+
+#[derive(Clone, Debug)]
 pub struct AppConfig {
     pub bind_addr: String,
     pub database_url: String,
     pub redis_url: String,
+    pub runtime_paths: RuntimePaths,
     pub app_key: String,
     pub app_name: String,
     pub app_url: Option<String>,
@@ -97,423 +107,387 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn from_env() -> Self {
-        if let Ok(path) = env::var("LARAVEL_ENV_PATH")
-            && Path::new(&path).exists()
+        if let Some(path) = env_path(&["V2BOARD_ENV_PATH", "RUST_ENV_PATH", "LARAVEL_ENV_PATH"])
+            && path.exists()
         {
             let _ = dotenvy::from_path(path);
         }
         let _ = dotenvy::dotenv();
-        let laravel_config = load_laravel_config();
+        let runtime_paths = RuntimePaths::from_env();
+        let file_config = load_php_config(&runtime_paths.v2board_config);
 
         Self {
             bind_addr: env_or("RUST_BIND_ADDR", "0.0.0.0:8080"),
             database_url: env_or("DATABASE_URL", "mysql://v2board:v2board@mysql:3306/v2board"),
             redis_url: env_or("REDIS_URL", "redis://redis:6379/1"),
+            runtime_paths,
             app_key: env_or("APP_KEY", "local-rust-dev-key"),
-            app_name: config_or_env(&laravel_config, "app_name", "V2BOARD_APP_NAME")
+            app_name: config_or_env(&file_config, "app_name", "V2BOARD_APP_NAME")
                 .unwrap_or_else(|| "V2Board".to_string()),
-            app_url: config_or_env(&laravel_config, "app_url", "APP_URL"),
+            app_url: config_or_env(&file_config, "app_url", "APP_URL"),
             app_description: config_or_env(
-                &laravel_config,
+                &file_config,
                 "app_description",
                 "V2BOARD_APP_DESCRIPTION",
             )
             .or_else(|| Some("V2Board is best".to_string())),
-            logo: config_or_env(&laravel_config, "logo", "V2BOARD_LOGO"),
-            tos_url: config_or_env(&laravel_config, "tos_url", "V2BOARD_TOS_URL"),
-            force_https: config_bool(&laravel_config, "force_https", "V2BOARD_FORCE_HTTPS", false),
-            email_verify: config_bool(
-                &laravel_config,
-                "email_verify",
-                "V2BOARD_EMAIL_VERIFY",
-                false,
-            ),
-            email_template: config_or_env(
-                &laravel_config,
-                "email_template",
-                "V2BOARD_EMAIL_TEMPLATE",
-            ),
-            email_host: config_or_env(&laravel_config, "email_host", "V2BOARD_EMAIL_HOST"),
-            email_port: config_or_env(&laravel_config, "email_port", "V2BOARD_EMAIL_PORT")
+            logo: config_or_env(&file_config, "logo", "V2BOARD_LOGO"),
+            tos_url: config_or_env(&file_config, "tos_url", "V2BOARD_TOS_URL"),
+            force_https: config_bool(&file_config, "force_https", "V2BOARD_FORCE_HTTPS", false),
+            email_verify: config_bool(&file_config, "email_verify", "V2BOARD_EMAIL_VERIFY", false),
+            email_template: config_or_env(&file_config, "email_template", "V2BOARD_EMAIL_TEMPLATE"),
+            email_host: config_or_env(&file_config, "email_host", "V2BOARD_EMAIL_HOST"),
+            email_port: config_or_env(&file_config, "email_port", "V2BOARD_EMAIL_PORT")
                 .and_then(|value| value.parse::<i32>().ok()),
-            email_username: config_or_env(
-                &laravel_config,
-                "email_username",
-                "V2BOARD_EMAIL_USERNAME",
-            ),
-            email_password: config_or_env(
-                &laravel_config,
-                "email_password",
-                "V2BOARD_EMAIL_PASSWORD",
-            ),
+            email_username: config_or_env(&file_config, "email_username", "V2BOARD_EMAIL_USERNAME"),
+            email_password: config_or_env(&file_config, "email_password", "V2BOARD_EMAIL_PASSWORD"),
             email_encryption: config_or_env(
-                &laravel_config,
+                &file_config,
                 "email_encryption",
                 "V2BOARD_EMAIL_ENCRYPTION",
             ),
             email_from_address: config_or_env(
-                &laravel_config,
+                &file_config,
                 "email_from_address",
                 "V2BOARD_EMAIL_FROM_ADDRESS",
             ),
             stop_register: config_bool(
-                &laravel_config,
+                &file_config,
                 "stop_register",
                 "V2BOARD_STOP_REGISTER",
                 false,
             ),
-            invite_force: config_bool(
-                &laravel_config,
-                "invite_force",
-                "V2BOARD_INVITE_FORCE",
-                false,
-            ),
+            invite_force: config_bool(&file_config, "invite_force", "V2BOARD_INVITE_FORCE", false),
             invite_never_expire: config_bool(
-                &laravel_config,
+                &file_config,
                 "invite_never_expire",
                 "V2BOARD_INVITE_NEVER_EXPIRE",
                 false,
             ),
             email_whitelist_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "email_whitelist_enable",
                 "V2BOARD_EMAIL_WHITELIST_ENABLE",
                 false,
             ),
             email_whitelist_suffix: config_list(
-                &laravel_config,
+                &file_config,
                 "email_whitelist_suffix",
                 "V2BOARD_EMAIL_WHITELIST_SUFFIX",
                 &["gmail.com"],
             ),
             email_gmail_limit_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "email_gmail_limit_enable",
                 "V2BOARD_EMAIL_GMAIL_LIMIT_ENABLE",
                 false,
             ),
             recaptcha_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "recaptcha_enable",
                 "V2BOARD_RECAPTCHA_ENABLE",
                 false,
             ),
             recaptcha_site_key: config_or_env(
-                &laravel_config,
+                &file_config,
                 "recaptcha_site_key",
                 "V2BOARD_RECAPTCHA_SITE_KEY",
             ),
-            recaptcha_key: config_or_env(&laravel_config, "recaptcha_key", "V2BOARD_RECAPTCHA_KEY"),
+            recaptcha_key: config_or_env(&file_config, "recaptcha_key", "V2BOARD_RECAPTCHA_KEY"),
             register_limit_by_ip_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "register_limit_by_ip_enable",
                 "V2BOARD_REGISTER_LIMIT_BY_IP_ENABLE",
                 false,
             ),
             register_limit_count: config_i64(
-                &laravel_config,
+                &file_config,
                 "register_limit_count",
                 "V2BOARD_REGISTER_LIMIT_COUNT",
                 3,
             ),
             register_limit_expire: config_i64(
-                &laravel_config,
+                &file_config,
                 "register_limit_expire",
                 "V2BOARD_REGISTER_LIMIT_EXPIRE",
                 60,
             ),
             telegram_bot_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "telegram_bot_enable",
                 "V2BOARD_TELEGRAM_BOT_ENABLE",
                 false,
             ),
             telegram_bot_token: config_or_env(
-                &laravel_config,
+                &file_config,
                 "telegram_bot_token",
                 "V2BOARD_TELEGRAM_BOT_TOKEN",
             ),
             telegram_discuss_link: config_or_env(
-                &laravel_config,
+                &file_config,
                 "telegram_discuss_link",
                 "V2BOARD_TELEGRAM_DISCUSS_LINK",
             ),
-            stripe_pk_live: config_or_env(
-                &laravel_config,
-                "stripe_pk_live",
-                "V2BOARD_STRIPE_PK_LIVE",
-            ),
+            stripe_pk_live: config_or_env(&file_config, "stripe_pk_live", "V2BOARD_STRIPE_PK_LIVE"),
             commission_withdraw_method: config_list(
-                &laravel_config,
+                &file_config,
                 "commission_withdraw_method",
                 "V2BOARD_COMMISSION_WITHDRAW_METHOD",
                 &["支付宝", "USDT", "Paypal"],
             ),
             withdraw_close_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "withdraw_close_enable",
                 "V2BOARD_WITHDRAW_CLOSE_ENABLE",
                 false,
             ),
-            currency: config_or_env(&laravel_config, "currency", "V2BOARD_CURRENCY")
+            currency: config_or_env(&file_config, "currency", "V2BOARD_CURRENCY")
                 .unwrap_or_else(|| "CNY".to_string()),
             currency_symbol: config_or_env(
-                &laravel_config,
+                &file_config,
                 "currency_symbol",
                 "V2BOARD_CURRENCY_SYMBOL",
             )
             .unwrap_or_else(|| "\u{00a5}".to_string()),
             commission_distribution_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "commission_distribution_enable",
                 "V2BOARD_COMMISSION_DISTRIBUTION_ENABLE",
                 false,
             ),
             commission_auto_check_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "commission_auto_check_enable",
                 "V2BOARD_COMMISSION_AUTO_CHECK_ENABLE",
                 true,
             ),
             commission_distribution_l1: config_or_env(
-                &laravel_config,
+                &file_config,
                 "commission_distribution_l1",
                 "V2BOARD_COMMISSION_DISTRIBUTION_L1",
             ),
             commission_distribution_l2: config_or_env(
-                &laravel_config,
+                &file_config,
                 "commission_distribution_l2",
                 "V2BOARD_COMMISSION_DISTRIBUTION_L2",
             ),
             commission_distribution_l3: config_or_env(
-                &laravel_config,
+                &file_config,
                 "commission_distribution_l3",
                 "V2BOARD_COMMISSION_DISTRIBUTION_L3",
             ),
-            subscribe_url: config_or_env(&laravel_config, "subscribe_url", "V2BOARD_SUBSCRIBE_URL"),
-            subscribe_path: config_or_env(
-                &laravel_config,
-                "subscribe_path",
-                "V2BOARD_SUBSCRIBE_PATH",
-            )
-            .filter(|path| !path.is_empty())
-            .unwrap_or_else(|| "/api/v1/client/subscribe".to_string()),
+            subscribe_url: config_or_env(&file_config, "subscribe_url", "V2BOARD_SUBSCRIBE_URL"),
+            subscribe_path: config_or_env(&file_config, "subscribe_path", "V2BOARD_SUBSCRIBE_PATH")
+                .filter(|path| !path.is_empty())
+                .unwrap_or_else(|| "/api/v1/client/subscribe".to_string()),
             show_subscribe_method: config_i32(
-                &laravel_config,
+                &file_config,
                 "show_subscribe_method",
                 "V2BOARD_SHOW_SUBSCRIBE_METHOD",
                 0,
             ),
             show_subscribe_expire: config_i64(
-                &laravel_config,
+                &file_config,
                 "show_subscribe_expire",
                 "V2BOARD_SHOW_SUBSCRIBE_EXPIRE",
                 5,
             ),
             show_info_to_server_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "show_info_to_server_enable",
                 "V2BOARD_SHOW_INFO_TO_SERVER_ENABLE",
                 false,
             ),
             allow_new_period: config_i32(
-                &laravel_config,
+                &file_config,
                 "allow_new_period",
                 "V2BOARD_ALLOW_NEW_PERIOD",
                 0,
             ),
             reset_traffic_method: config_i32(
-                &laravel_config,
+                &file_config,
                 "reset_traffic_method",
                 "V2BOARD_RESET_TRAFFIC_METHOD",
                 0,
             ),
             try_out_plan_id: config_i32(
-                &laravel_config,
+                &file_config,
                 "try_out_plan_id",
                 "V2BOARD_TRY_OUT_PLAN_ID",
                 0,
             ),
-            try_out_hour: config_i64(&laravel_config, "try_out_hour", "V2BOARD_TRY_OUT_HOUR", 1),
+            try_out_hour: config_i64(&file_config, "try_out_hour", "V2BOARD_TRY_OUT_HOUR", 1),
             plan_change_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "plan_change_enable",
                 "V2BOARD_PLAN_CHANGE_ENABLE",
                 true,
             ),
             surplus_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "surplus_enable",
                 "V2BOARD_SURPLUS_ENABLE",
                 true,
             ),
             invite_commission: config_i32(
-                &laravel_config,
+                &file_config,
                 "invite_commission",
                 "V2BOARD_INVITE_COMMISSION",
                 10,
             ),
             commission_first_time_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "commission_first_time_enable",
                 "V2BOARD_COMMISSION_FIRST_TIME_ENABLE",
                 true,
             ),
             new_order_event_id: config_i32(
-                &laravel_config,
+                &file_config,
                 "new_order_event_id",
                 "V2BOARD_NEW_ORDER_EVENT_ID",
                 0,
             ),
             renew_order_event_id: config_i32(
-                &laravel_config,
+                &file_config,
                 "renew_order_event_id",
                 "V2BOARD_RENEW_ORDER_EVENT_ID",
                 0,
             ),
             change_order_event_id: config_i32(
-                &laravel_config,
+                &file_config,
                 "change_order_event_id",
                 "V2BOARD_CHANGE_ORDER_EVENT_ID",
                 0,
             ),
             deposit_bounus: config_list(
-                &laravel_config,
+                &file_config,
                 "deposit_bounus",
                 "V2BOARD_DEPOSIT_BOUNUS",
                 &[],
             ),
             invite_gen_limit: config_i64(
-                &laravel_config,
+                &file_config,
                 "invite_gen_limit",
                 "V2BOARD_INVITE_GEN_LIMIT",
                 5,
             ),
-            ticket_status: config_i32(&laravel_config, "ticket_status", "V2BOARD_TICKET_STATUS", 0),
+            ticket_status: config_i32(&file_config, "ticket_status", "V2BOARD_TICKET_STATUS", 0),
             commission_withdraw_limit: config_i32(
-                &laravel_config,
+                &file_config,
                 "commission_withdraw_limit",
                 "V2BOARD_COMMISSION_WITHDRAW_LIMIT",
                 100,
             ),
-            server_token: config_or_env(&laravel_config, "server_token", "V2BOARD_SERVER_TOKEN"),
-            server_api_url: config_or_env(
-                &laravel_config,
-                "server_api_url",
-                "V2BOARD_SERVER_API_URL",
-            ),
+            server_token: config_or_env(&file_config, "server_token", "V2BOARD_SERVER_TOKEN"),
+            server_api_url: config_or_env(&file_config, "server_api_url", "V2BOARD_SERVER_API_URL"),
             server_push_interval: config_i32(
-                &laravel_config,
+                &file_config,
                 "server_push_interval",
                 "V2BOARD_SERVER_PUSH_INTERVAL",
                 60,
             ),
             server_pull_interval: config_i32(
-                &laravel_config,
+                &file_config,
                 "server_pull_interval",
                 "V2BOARD_SERVER_PULL_INTERVAL",
                 60,
             ),
             server_node_report_min_traffic: config_i32(
-                &laravel_config,
+                &file_config,
                 "server_node_report_min_traffic",
                 "V2BOARD_SERVER_NODE_REPORT_MIN_TRAFFIC",
                 0,
             ),
             server_device_online_min_traffic: config_i32(
-                &laravel_config,
+                &file_config,
                 "server_device_online_min_traffic",
                 "V2BOARD_SERVER_DEVICE_ONLINE_MIN_TRAFFIC",
                 0,
             ),
             device_limit_mode: config_i32(
-                &laravel_config,
+                &file_config,
                 "device_limit_mode",
                 "V2BOARD_DEVICE_LIMIT_MODE",
                 0,
             ),
-            frontend_theme: config_or_env(
-                &laravel_config,
-                "frontend_theme",
-                "V2BOARD_FRONTEND_THEME",
-            )
-            .unwrap_or_else(|| "v2board".to_string()),
+            frontend_theme: config_or_env(&file_config, "frontend_theme", "V2BOARD_FRONTEND_THEME")
+                .unwrap_or_else(|| "v2board".to_string()),
             frontend_theme_sidebar: config_or_env(
-                &laravel_config,
+                &file_config,
                 "frontend_theme_sidebar",
                 "V2BOARD_FRONTEND_THEME_SIDEBAR",
             )
             .or_else(|| Some("light".to_string())),
             frontend_theme_header: config_or_env(
-                &laravel_config,
+                &file_config,
                 "frontend_theme_header",
                 "V2BOARD_FRONTEND_THEME_HEADER",
             )
             .or_else(|| Some("dark".to_string())),
             frontend_theme_color: config_or_env(
-                &laravel_config,
+                &file_config,
                 "frontend_theme_color",
                 "V2BOARD_FRONTEND_THEME_COLOR",
             )
             .or_else(|| Some("default".to_string())),
             frontend_background_url: config_or_env(
-                &laravel_config,
+                &file_config,
                 "frontend_background_url",
                 "V2BOARD_FRONTEND_BACKGROUND_URL",
             ),
             frontend_admin_path: config_or_env(
-                &laravel_config,
+                &file_config,
                 "frontend_admin_path",
                 "V2BOARD_FRONTEND_ADMIN_PATH",
             ),
-            secure_path: config_or_env(&laravel_config, "secure_path", "V2BOARD_SECURE_PATH"),
+            secure_path: config_or_env(&file_config, "secure_path", "V2BOARD_SECURE_PATH"),
             safe_mode_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "safe_mode_enable",
                 "V2BOARD_SAFE_MODE_ENABLE",
                 false,
             ),
             password_limit_enable: config_bool(
-                &laravel_config,
+                &file_config,
                 "password_limit_enable",
                 "V2BOARD_PASSWORD_LIMIT_ENABLE",
                 true,
             ),
             password_limit_count: config_i64(
-                &laravel_config,
+                &file_config,
                 "password_limit_count",
                 "V2BOARD_PASSWORD_LIMIT_COUNT",
                 5,
             ),
             password_limit_expire: config_i64(
-                &laravel_config,
+                &file_config,
                 "password_limit_expire",
                 "V2BOARD_PASSWORD_LIMIT_EXPIRE",
                 60,
             ),
             windows_version: config_or_env(
-                &laravel_config,
+                &file_config,
                 "windows_version",
                 "V2BOARD_WINDOWS_VERSION",
             ),
             windows_download_url: config_or_env(
-                &laravel_config,
+                &file_config,
                 "windows_download_url",
                 "V2BOARD_WINDOWS_DOWNLOAD_URL",
             ),
-            macos_version: config_or_env(&laravel_config, "macos_version", "V2BOARD_MACOS_VERSION"),
+            macos_version: config_or_env(&file_config, "macos_version", "V2BOARD_MACOS_VERSION"),
             macos_download_url: config_or_env(
-                &laravel_config,
+                &file_config,
                 "macos_download_url",
                 "V2BOARD_MACOS_DOWNLOAD_URL",
             ),
             android_version: config_or_env(
-                &laravel_config,
+                &file_config,
                 "android_version",
                 "V2BOARD_ANDROID_VERSION",
             ),
             android_download_url: config_or_env(
-                &laravel_config,
+                &file_config,
                 "android_download_url",
                 "V2BOARD_ANDROID_DOWNLOAD_URL",
             ),
@@ -562,6 +536,42 @@ impl AppConfig {
     }
 }
 
+impl RuntimePaths {
+    fn from_env() -> Self {
+        let root = env_path(&["V2BOARD_RUNTIME_ROOT", "RUST_RUNTIME_ROOT"]);
+        let legacy_root = env_path(&["LARAVEL_ROOT"]).unwrap_or_else(|| PathBuf::from("/laravel"));
+        let env_file = env_path(&["V2BOARD_ENV_PATH", "RUST_ENV_PATH", "LARAVEL_ENV_PATH"]);
+
+        Self {
+            v2board_config: env_path(&[
+                "V2BOARD_CONFIG_PATH",
+                "RUST_CONFIG_PATH",
+                "LARAVEL_CONFIG_PATH",
+            ])
+            .or_else(|| {
+                env_file
+                    .as_deref()
+                    .and_then(Path::parent)
+                    .map(|parent| parent.join("config/v2board.php"))
+            })
+            .or_else(|| root.as_ref().map(|root| root.join("config/v2board.php")))
+            .unwrap_or_else(|| legacy_root.join("config/v2board.php")),
+            mail_templates: env_path(&["V2BOARD_MAIL_TEMPLATE_DIR", "RUST_MAIL_TEMPLATE_DIR"])
+                .or_else(|| root.as_ref().map(|root| root.join("resources/views/mail")))
+                .unwrap_or_else(|| legacy_root.join("resources/views/mail")),
+            themes: env_path(&["V2BOARD_THEME_DIR", "RUST_THEME_DIR"])
+                .or_else(|| root.as_ref().map(|root| root.join("public/theme")))
+                .unwrap_or_else(|| legacy_root.join("public/theme")),
+            theme_configs: env_path(&["V2BOARD_THEME_CONFIG_DIR", "RUST_THEME_CONFIG_DIR"])
+                .or_else(|| root.as_ref().map(|root| root.join("config/theme")))
+                .unwrap_or_else(|| legacy_root.join("config/theme")),
+            rules: env_path(&["V2BOARD_RULE_DIR", "RUST_RULE_DIR"])
+                .or_else(|| root.as_ref().map(|root| root.join("resources/rules")))
+                .unwrap_or_else(|| legacy_root.join("resources/rules")),
+        }
+    }
+}
+
 fn env_or(key: &str, default: &str) -> String {
     env::var(key)
         .ok()
@@ -576,10 +586,11 @@ fn env_opt(key: &str) -> Option<String> {
         .filter(|value| !value.is_empty() && value != "null")
 }
 
-fn load_laravel_config() -> HashMap<String, String> {
-    let Some(path) = laravel_config_path() else {
-        return HashMap::new();
-    };
+fn env_path(keys: &[&str]) -> Option<PathBuf> {
+    keys.iter().find_map(|key| env_opt(key).map(PathBuf::from))
+}
+
+fn load_php_config(path: &Path) -> HashMap<String, String> {
     let Ok(content) = fs::read_to_string(path) else {
         return HashMap::new();
     };
@@ -670,31 +681,6 @@ fn crc32b_hex(bytes: &[u8]) -> String {
         }
     }
     format!("{:08x}", !crc)
-}
-
-fn laravel_config_path() -> Option<PathBuf> {
-    if let Ok(path) = env::var("LARAVEL_CONFIG_PATH") {
-        let path = PathBuf::from(path);
-        if path.exists() {
-            return Some(path);
-        }
-    }
-
-    if let Ok(path) = env::var("LARAVEL_ENV_PATH") {
-        let path = Path::new(&path)
-            .parent()
-            .map(|parent| parent.join("config/v2board.php"));
-        if let Some(path) = path.filter(|path| path.exists()) {
-            return Some(path);
-        }
-    }
-
-    let docker_path = PathBuf::from("/laravel/config/v2board.php");
-    if docker_path.exists() {
-        return Some(docker_path);
-    }
-
-    None
 }
 
 fn parse_php_scalar(value: &str) -> Option<String> {

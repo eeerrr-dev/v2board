@@ -347,8 +347,9 @@ fn parse_laravel_route_file(
 
 fn collect_rust_routes(root: &Path, admin_path: &str) -> Result<BTreeSet<RouteKey>> {
     let api_main = fs::read_to_string(root.join("crates/api/src/main.rs"))?;
+    let api_routes = fs::read_to_string(root.join("crates/api/src/routes.rs"))?;
     let admin = fs::read_to_string(root.join("crates/domain/src/admin.rs"))?;
-    let mut routes = collect_rust_axum_routes(&api_main);
+    let mut routes = collect_rust_axum_routes(&format!("{api_main}\n{api_routes}"));
     routes.retain(|route| {
         !route.path.contains("{*admin_path}") && !route.path.contains("{*staff_path}")
     });

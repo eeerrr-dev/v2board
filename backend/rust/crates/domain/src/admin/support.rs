@@ -80,8 +80,8 @@ pub(super) struct MailSettings {
 }
 
 impl MailSettings {
-    pub(super) fn load(_config: &AppConfig) -> Result<Self, ApiError> {
-        let values = read_php_config("/laravel/config/v2board.php");
+    pub(super) fn load(config: &AppConfig) -> Result<Self, ApiError> {
+        let values = read_php_config(&config.runtime_paths.v2board_config);
         let host = config_string(&values, "email_host")
             .ok_or_else(|| ApiError::legacy("Email host is not configured"))?;
         Ok(Self {
@@ -1276,7 +1276,7 @@ pub(super) fn random_token() -> String {
     Uuid::new_v4().simple().to_string()
 }
 
-pub(super) fn list_names(path: &str) -> Vec<String> {
+pub(super) fn list_names(path: impl AsRef<std::path::Path>) -> Vec<String> {
     std::fs::read_dir(path)
         .ok()
         .into_iter()
@@ -1286,7 +1286,7 @@ pub(super) fn list_names(path: &str) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn read_php_config(path: &str) -> Map<String, Value> {
+pub(super) fn read_php_config(path: impl AsRef<std::path::Path>) -> Map<String, Value> {
     let Ok(content) = std::fs::read_to_string(path) else {
         return Map::new();
     };
@@ -1420,8 +1420,11 @@ pub(super) fn merge_config_params(
     }
 }
 
-pub(super) fn write_php_config(path: &str, value: &Value) -> Result<(), ApiError> {
-    let path = std::path::Path::new(path);
+pub(super) fn write_php_config(
+    path: impl AsRef<std::path::Path>,
+    value: &Value,
+) -> Result<(), ApiError> {
+    let path = path.as_ref();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|_| ApiError::legacy("配置目录不可写"))?;
     }

@@ -174,7 +174,12 @@ services:
       RUST_BIND_ADDR: 0.0.0.0:8080
       DATABASE_URL: mysql://v2board:v2board@mysql:3306/v2board
       REDIS_URL: redis://redis:6379/1
-      LARAVEL_ENV_PATH: /laravel/.env
+      V2BOARD_ENV_PATH: /laravel/.env
+      V2BOARD_CONFIG_PATH: /laravel/config/v2board.php
+      V2BOARD_MAIL_TEMPLATE_DIR: /laravel/resources/views/mail
+      V2BOARD_RULE_DIR: /laravel/resources/rules
+      V2BOARD_THEME_DIR: /laravel/public/theme
+      V2BOARD_THEME_CONFIG_DIR: /laravel/config/theme
     depends_on:
       mysql:
         condition: service_healthy
@@ -214,7 +219,12 @@ services:
       RUST_LOG: v2board_workers=info
       DATABASE_URL: mysql://v2board:v2board@mysql:3306/v2board
       REDIS_URL: redis://redis:6379/1
-      LARAVEL_ENV_PATH: /laravel/.env
+      V2BOARD_ENV_PATH: /laravel/.env
+      V2BOARD_CONFIG_PATH: /laravel/config/v2board.php
+      V2BOARD_MAIL_TEMPLATE_DIR: /laravel/resources/views/mail
+      V2BOARD_RULE_DIR: /laravel/resources/rules
+      V2BOARD_THEME_DIR: /laravel/public/theme
+      V2BOARD_THEME_CONFIG_DIR: /laravel/config/theme
     depends_on:
       mysql:
         condition: service_healthy

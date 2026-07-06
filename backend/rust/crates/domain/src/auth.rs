@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
@@ -690,7 +692,7 @@ impl AuthService {
     }
 
     async fn send_mail(&self, to: &str, subject: &str, body: &str) -> Result<(), ApiError> {
-        let settings = MailSettings::load()?;
+        let settings = MailSettings::load(&self.config)?;
         let from = settings
             .from_address
             .clone()
@@ -775,8 +777,8 @@ struct MailSettings {
 }
 
 impl MailSettings {
-    fn load() -> Result<Self, ApiError> {
-        let values = read_php_config("/laravel/config/v2board.php");
+    fn load(config: &AppConfig) -> Result<Self, ApiError> {
+        let values = read_php_config(&config.runtime_paths.v2board_config);
         let host = config_string(&values, "email_host")
             .ok_or_else(|| ApiError::legacy("Email host is not configured"))?;
         Ok(Self {
@@ -867,7 +869,7 @@ fn six_digit_code() -> String {
     number.to_string()
 }
 
-fn read_php_config(path: &str) -> std::collections::HashMap<String, String> {
+fn read_php_config(path: impl AsRef<Path>) -> std::collections::HashMap<String, String> {
     let Ok(content) = std::fs::read_to_string(path) else {
         return std::collections::HashMap::new();
     };

@@ -242,7 +242,7 @@ fn build_clash_subscription(
 }
 
 fn build_singbox_subscription(
-    _config: &AppConfig,
+    config: &AppConfig,
     uuid: &str,
     servers: &[v2board_db::server::AvailableServerRow],
     modern: bool,
@@ -261,20 +261,20 @@ fn build_singbox_subscription(
                 .map(ToOwned::to_owned)
         })
         .collect::<Vec<_>>();
-    let mut config = load_singbox_template(modern);
-    inject_singbox_proxies(&mut config, &proxy_tags, proxies);
-    serde_json::to_string(&config)
+    let mut template = load_singbox_template(config, modern);
+    inject_singbox_proxies(&mut template, &proxy_tags, proxies);
+    serde_json::to_string(&template)
         .map_err(|_| ApiError::internal("failed to render sing-box subscription"))
 }
 
-fn load_singbox_template(modern: bool) -> Value {
+fn load_singbox_template(config: &AppConfig, modern: bool) -> Value {
     let candidates = if modern {
         ["custom.sing-box.json", "default.sing-box.json"]
     } else {
         ["custom.sing-box.old.json", "default.sing-box.old.json"]
     };
     for filename in candidates {
-        let path = format!("/laravel/resources/rules/{filename}");
+        let path = config.runtime_paths.rules.join(filename);
         if let Ok(body) = fs::read_to_string(path)
             && let Ok(value) = serde_json::from_str::<Value>(&body)
         {
