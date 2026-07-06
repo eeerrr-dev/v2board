@@ -316,7 +316,7 @@ fn parse_laravel_route_file(
         fs::read_to_string(path).with_context(|| format!("read Laravel route file {path:?}"))?;
     let mut routes = BTreeSet::new();
     let mut prefixes = vec![normalize_route_path(root_prefix)];
-    for line in content.lines() {
+    for (line_index, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.starts_with("});") && prefixes.len() > 1 {
             prefixes.pop();
@@ -330,6 +330,19 @@ fn parse_laravel_route_file(
             continue;
         }
         let Some((methods, route_path)) = extract_laravel_route(trimmed) else {
+            // A line that registers a routing verb but yields no literal path
+            // (multi-line, variable/const path, or an unmapped verb) would be
+            // silently dropped from the required set, letting a genuinely-missing
+            // Rust route pass the audit. Fail loudly instead. `->group(` lines are
+            // handled above and never reach here as verbs.
+            if let Some(verb) = laravel_route_verb(trimmed) {
+                bail!(
+                    "route audit: unparseable {verb} route in {path:?} line {}: `{trimmed}` \
+                     — could not extract a literal path; this route would be silently \
+                     dropped from the audit",
+                    line_index + 1
+                );
+            }
             continue;
         };
         let full_path = join_route_parts(
@@ -487,6 +500,19 @@ fn extract_laravel_group_prefix(line: &str) -> Option<String> {
         return None;
     }
     quoted_strings(right).into_iter().next()
+}
+
+/// Returns the routing verb of a `$router->verb(` registration line, if it is one
+/// of the HTTP verbs (not `group`/`resource`/other builder calls). Used to decide
+/// whether a line that failed path extraction is a genuinely-dropped route.
+fn laravel_route_verb(line: &str) -> Option<String> {
+    let rest = line.split_once("$router->")?.1;
+    let verb = rest.split_once('(')?.0.trim().to_ascii_lowercase();
+    matches!(
+        verb.as_str(),
+        "get" | "post" | "any" | "match" | "put" | "patch" | "delete"
+    )
+    .then_some(verb)
 }
 
 fn extract_laravel_route(line: &str) -> Option<(Vec<&'static str>, String)> {
@@ -1381,6 +1407,29 @@ fn compare_rust_may_improve_legacy_5xx(
         return pass(name);
     }
     if laravel.status >= 500 && rust.status == StatusCode::OK.as_u16() {
+        // Laravel 5xx'd in the seeded harness environment while Rust returned 200.
+        // Don't rubber-stamp any 200 as an "improvement": require a well-formed
+        // Laravel-style success envelope (JSON with a top-level `data`) so an empty
+        // or garbage 200 can't silently pass as a fixed endpoint.
+        let Some(rust_json) = rust.json.as_ref() else {
+            return fail(
+                name,
+                format!(
+                    "rust improved on laravel {} but body is not JSON: {}",
+                    laravel.status,
+                    rust.body.trim()
+                ),
+            );
+        };
+        if json_at(rust_json, "data").is_none() {
+            return fail(
+                name,
+                format!(
+                    "rust improved on laravel {} but the success envelope has no `data` key",
+                    laravel.status
+                ),
+            );
+        }
         return pass(name);
     }
     fail(
@@ -1696,4 +1745,143 @@ fn env_bool(key: &str, default: bool) -> bool {
         .ok()
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn snapshot(status: u16, body_json: Option<Value>) -> Snapshot {
+        Snapshot {
+            status,
+            content_type: Some("application/json".to_string()),
+            body: body_json
+                .as_ref()
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            json: body_json,
+        }
+    }
+
+    #[test]
+    fn laravel_route_verb_recognizes_http_verbs_not_group() {
+        assert_eq!(
+            laravel_route_verb("$router->post('/a', 'C@m');").as_deref(),
+            Some("post")
+        );
+        assert_eq!(
+            laravel_route_verb("$router->match(['get','post'], '/a', 'C@m');").as_deref(),
+            Some("match")
+        );
+        // Capitalized verb (a real occurrence in the oracle) normalizes.
+        assert_eq!(
+            laravel_route_verb("$router->Post('/a', 'C@m');").as_deref(),
+            Some("post")
+        );
+        // group / non-route builder calls are not routing verbs.
+        assert_eq!(
+            laravel_route_verb("$router->group(['prefix' => 'x'],"),
+            None
+        );
+        assert_eq!(laravel_route_verb("something else"), None);
+    }
+
+    #[test]
+    fn extract_laravel_route_handles_match_array_and_backslash_controller() {
+        // The `match` form lists methods first; the path is the first quoted
+        // string that is neither a verb nor a backslashed controller reference.
+        let (methods, path) = extract_laravel_route(
+            "$router->match(['get', 'post'], '/payment/notify/{method}/{uuid}', 'V1\\Guest\\PaymentController@notify');",
+        )
+        .expect("match route parses");
+        assert_eq!(methods, vec!["GET", "POST"]);
+        assert_eq!(path, "/payment/notify/{method}/{uuid}");
+    }
+
+    #[test]
+    fn parse_laravel_route_file_collects_literal_routes() {
+        let path =
+            std::env::temp_dir().join(format!("v2board_route_audit_ok_{}.php", std::process::id()));
+        std::fs::write(
+            &path,
+            "<?php\n$router->post('/order/save', 'V1\\\\User\\\\OrderController@save');\n\
+             $router->match(['get', 'post'], '/payment/notify/{method}/{uuid}', 'V1\\\\Guest\\\\PaymentController@notify');\n",
+        )
+        .unwrap();
+
+        let routes = parse_laravel_route_file(&path, "/api/v1/user", "user").unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert!(routes.contains(&route_key("POST", "/api/v1/user/order/save")));
+        assert!(routes.contains(&route_key(
+            "GET",
+            "/api/v1/user/payment/notify/{method}/{uuid}"
+        )));
+        assert!(routes.contains(&route_key(
+            "POST",
+            "/api/v1/user/payment/notify/{method}/{uuid}"
+        )));
+    }
+
+    #[test]
+    fn parse_laravel_route_file_hard_fails_on_unparseable_route() {
+        // A verb registration whose path is a PHP variable (not a literal) used to
+        // be silently dropped, hiding a genuinely-missing Rust route.
+        let path = std::env::temp_dir().join(format!(
+            "v2board_route_audit_bad_{}.php",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            "<?php\n$router->post($dynamicPath, 'V1\\\\User\\\\OrderController@save');\n",
+        )
+        .unwrap();
+
+        let result = parse_laravel_route_file(&path, "/api/v1/user", "user");
+        let _ = std::fs::remove_file(&path);
+
+        let error = result.expect_err("unparseable route must fail the audit");
+        assert!(error.to_string().contains("unparseable"));
+    }
+
+    #[test]
+    fn rust_improved_5xx_branch_requires_success_envelope() {
+        let laravel_5xx = snapshot(500, None);
+
+        // A well-formed success envelope with `data` is accepted as an improvement.
+        assert!(
+            compare_rust_may_improve_legacy_5xx(
+                "x",
+                &laravel_5xx,
+                &snapshot(200, Some(json!({ "data": [] })))
+            )
+            .ok
+        );
+        // A 200 with no JSON body is no longer rubber-stamped.
+        assert!(
+            !compare_rust_may_improve_legacy_5xx(
+                "x",
+                &laravel_5xx,
+                &Snapshot {
+                    status: 200,
+                    content_type: None,
+                    body: String::new(),
+                    json: None,
+                }
+            )
+            .ok
+        );
+        // A 200 whose envelope lacks `data` is rejected.
+        assert!(
+            !compare_rust_may_improve_legacy_5xx(
+                "x",
+                &laravel_5xx,
+                &snapshot(200, Some(json!({ "message": "ok" })))
+            )
+            .ok
+        );
+        // Equal statuses still pass through the first branch.
+        assert!(compare_rust_may_improve_legacy_5xx("x", &laravel_5xx, &snapshot(500, None)).ok);
+    }
 }
