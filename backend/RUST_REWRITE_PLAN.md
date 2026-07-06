@@ -27,6 +27,27 @@ Do not combine the first Rust rewrite with a full API redesign, frontend API
 rewrite, and database redesign. That should be a later v3 cleanup after the
 Rust backend is stable.
 
+## User-Confirmed Cutover Scope
+
+The first Rust backend release is evaluated for a cold cutover only:
+
+- Stop the Laravel app, Horizon, and scheduler before routing traffic to Rust.
+- Do not require hot, rolling, or route-by-route migration between Laravel and
+  Rust.
+- Do not require active Laravel Redis cache/session/temp-token values to remain
+  readable by Rust after the switch. Existing users may need to reauthenticate,
+  and ephemeral verification/login state may be regenerated after cutover.
+- Do not require Rust to load operator-added custom payment plugins written in
+  PHP, JavaScript, shell, or any non-Rust runtime.
+- Only the built-in payment gateways compiled into the Rust workspace are in
+  scope for the first release.
+
+Under this scope, "rewrite complete" means the Rust API, built-in payment
+gateways, subscription/node APIs, admin/staff APIs, and worker/scheduler runtime
+replace the Laravel runtime for the tracked v2 contracts on the cutover target
+data. It does not mean a hot-migration-compatible runtime or a plugin-runtime
+replacement for arbitrary non-Rust extensions.
+
 ## Stack
 
 - Rust toolchain: stable `1.96.1`
