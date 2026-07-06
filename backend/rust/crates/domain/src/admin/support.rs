@@ -426,7 +426,7 @@ pub(super) fn server_save_values(
                     params,
                     encryption.as_deref(),
                     false,
-                )),
+                )?),
             ));
         }
         "anytls" => {
@@ -481,7 +481,7 @@ pub(super) fn server_save_values(
                     params,
                     encryption.as_deref(),
                     true,
-                )),
+                )?),
             ));
             values.push(("disable_sni", optional_int_value(params, "disable_sni", 0)));
             values.push((
@@ -810,9 +810,11 @@ pub(super) fn ensure_reality_keys(settings: &mut Value) -> Result<(), ApiError> 
         .is_none()
         && let Some(private_key) = object.get("private_key").and_then(Value::as_str)
     {
+        // Laravel: substr(sha1($private_key), 0, 8) (VlessController.php:46) — SHA1 of the
+        // base64url private_key string, first 8 lowercase-hex chars, NOT MD5.
         object.insert(
             "short_id".to_string(),
-            json!(format!("{:x}", md5::compute(private_key))[..8].to_string()),
+            json!(hex::encode(openssl::sha::sha1(private_key.as_bytes()))[..8].to_string()),
         );
     }
     object
@@ -865,14 +867,14 @@ pub(super) fn prepare_encryption_settings(
     params: &HashMap<String, String>,
     encryption: Option<&str>,
     v2node: bool,
-) -> Value {
+) -> Result<Value, ApiError> {
     let mut settings =
         optional_json_value(params, "encryption_settings").unwrap_or_else(|| json!({}));
     if encryption != Some("mlkem768x25519plus") {
-        return settings;
+        return Ok(settings);
     }
     let Some(object) = settings.as_object_mut() else {
-        return json!({});
+        return Ok(json!({}));
     };
     if v2node {
         object.entry("mode".to_string()).or_insert(json!("native"));
@@ -899,16 +901,20 @@ pub(super) fn prepare_encryption_settings(
             .filter(|value| !value.is_empty())
             .is_none()
     {
-        let private_key = random_urlsafe_key(32);
-        let password = random_urlsafe_key(32);
+        // Laravel generates ONE crypto_box (X25519) keypair and stores
+        // private_key = base64url(secretkey), password = base64url(publickey)
+        // (VlessController.php:87-99 / V2nodeController.php). The password IS the public
+        // key that corresponds to private_key; two independent randoms would leave clients
+        // unable to derive the shared secret.
+        let (public_key, private_key) = x25519_key_pair_urlsafe()?;
         object
             .entry("private_key".to_string())
             .or_insert(json!(private_key));
         object
             .entry("password".to_string())
-            .or_insert(json!(password));
+            .or_insert(json!(public_key));
     }
-    settings
+    Ok(settings)
 }
 
 pub(super) fn coerce_object_bool(object: &mut Map<String, Value>, key: &str) {
@@ -1021,15 +1027,6 @@ pub(super) fn generate_ech_key_pair(outer_sni: &str) -> Result<(String, String),
         standard_base64_encode(&ech_keys),
         standard_base64_encode(&ech_config),
     ))
-}
-
-pub(super) fn random_urlsafe_key(length: usize) -> String {
-    let mut bytes = Vec::with_capacity(length);
-    while bytes.len() < length {
-        bytes.extend_from_slice(Uuid::new_v4().as_bytes());
-    }
-    bytes.truncate(length);
-    base64_url_no_pad(&bytes)
 }
 
 pub(super) fn base64_url_no_pad(bytes: &[u8]) -> String {

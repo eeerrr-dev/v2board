@@ -532,43 +532,46 @@ impl OrderService {
     }
 
     async fn paid_by_trade_no(&self, trade_no: &str, callback_no: &str) -> Result<(), ApiError> {
-        let mut tx = self.db.begin().await?;
-        let Some(order) = sqlx::query_as::<_, OrderForCheckout>(
-            r#"
-            SELECT
-                id,
-                user_id,
-                plan_id,
-                `type`,
-                period,
-                trade_no,
-                total_amount,
-                refund_amount,
-                surplus_order_ids
-            FROM v2_order
-            WHERE trade_no = ?
-            LIMIT 1
-            FOR UPDATE
-            "#,
-        )
-        .bind(trade_no)
-        .fetch_optional(&mut *tx)
-        .await?
-        else {
-            return Err(ApiError::legacy("Order does not exist"));
-        };
-        let status: i8 = sqlx::query_scalar("SELECT status FROM v2_order WHERE id = ?")
-            .bind(order.id)
-            .fetch_one(&mut *tx)
-            .await?;
-        if status != 0 {
+        // Commit the paid mark in its OWN transaction first, mirroring Laravel's
+        // OrderService::paid() which save()s status=1 before dispatching OrderHandleJob.
+        // A gateway-confirmed payment must be durable even if opening the order later
+        // fails; folding the open into the same transaction (as before) meant a transient
+        // error while granting the plan would roll back real, already-received money.
+        {
+            let mut tx = self.db.begin().await?;
+            let Some(order_id) = sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM v2_order WHERE trade_no = ? LIMIT 1 FOR UPDATE",
+            )
+            .bind(trade_no)
+            .fetch_optional(&mut *tx)
+            .await?
+            else {
+                return Err(ApiError::legacy("Order does not exist"));
+            };
+            let status: i8 = sqlx::query_scalar("SELECT status FROM v2_order WHERE id = ?")
+                .bind(order_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            if status != 0 {
+                // Already paid/opened/cancelled: idempotent no-op, safe on gateway replay.
+                tx.commit().await?;
+                return Ok(());
+            }
+            mark_order_paid(&mut tx, order_id, callback_no, Utc::now().timestamp()).await?;
             tx.commit().await?;
-            return Ok(());
         }
 
-        mark_order_paid(&mut tx, order.id, callback_no, Utc::now().timestamp()).await?;
-        self.open_order_in_tx(&mut tx, order).await?;
-        tx.commit().await?;
+        // Best-effort immediate open for responsiveness. On failure the order stays
+        // durably paid (status=1) and check:order (handle_pending_order) re-opens it every
+        // minute; do NOT surface the error to the gateway, which would re-deliver and then
+        // short-circuit on the status!=0 guard above without ever retrying the open.
+        if let Err(error) = self.handle_pending_order(trade_no).await {
+            tracing::error!(
+                trade_no,
+                ?error,
+                "order marked paid but opening failed; check_order will retry"
+            );
+        }
         Ok(())
     }
 
