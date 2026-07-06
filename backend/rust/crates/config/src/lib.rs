@@ -4,6 +4,22 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use chrono::{DateTime, FixedOffset, Utc};
+
+/// Laravel pins `config/app.php` `timezone` to `Asia/Shanghai` (UTC+8, no DST). The
+/// scheduler and every calendar-boundary computation (traffic reset day, statistics
+/// day, renewal expiry day) are evaluated in that zone, independent of the host/system
+/// timezone. Pin the same fixed offset here so Rust behavior does not depend on the
+/// container `TZ`.
+pub fn app_timezone() -> FixedOffset {
+    FixedOffset::east_opt(8 * 3600).expect("Asia/Shanghai is a valid fixed offset")
+}
+
+/// Current time in the pinned application timezone (`Asia/Shanghai`).
+pub fn app_now() -> DateTime<FixedOffset> {
+    Utc::now().with_timezone(&app_timezone())
+}
+
 #[derive(Clone, Debug)]
 pub struct RuntimePaths {
     pub v2board_config: PathBuf,

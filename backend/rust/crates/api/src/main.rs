@@ -26,6 +26,7 @@ use v2board_db::{DbPool, connect_mysql};
 use v2board_domain::auth::{AuthService, AuthUser, EmailVerifyInput, ForgetInput, RegisterInput};
 
 mod codec;
+mod i18n;
 mod json_value;
 mod routes;
 mod server_api;
@@ -183,9 +184,9 @@ async fn language_middleware(request: Request, next: Next) -> Response {
         .and_then(|value| value.to_str().ok())
         .map(ToOwned::to_owned);
     let response = next.run(request).await;
-    let Some(locale) = locale else {
-        return response;
-    };
+    // Laravel pins the default AND fallback locale to zh-CN (config/app.php), so a request
+    // with no Content-Language header still gets Chinese messages. Mirror that default.
+    let locale = locale.unwrap_or_else(|| i18n::DEFAULT_LOCALE.to_string());
     if !response.status().is_client_error() && !response.status().is_server_error() {
         return response;
     }
@@ -227,25 +228,12 @@ fn localize_legacy_message(message: &str, locale: &str) -> String {
 }
 
 fn localize_zh_cn_message(message: &str) -> Option<String> {
+    // Dynamically-composed rate-limit string (Laravel interpolates `:minute`); the
+    // remaining ~98 static strings resolve through the embedded Laravel catalog below.
     if let Some(minute) = password_limit_minutes(message) {
         return Some(format!("密码错误次数过多，请 {minute} 分钟后再试"));
     }
-    let translated = match message {
-        "Incorrect email or password" => "邮箱或密码错误",
-        "Incorrect email verification code" => "邮箱验证码有误",
-        "Invalid invitation code" => "邀请码无效",
-        "Registration has closed" => "本站已关闭注册",
-        "Your account has been suspended" => "该账户已被停止使用",
-        "Email suffix is not in the Whitelist" => "邮箱后缀不在白名单中",
-        "Gmail alias is not supported" => "Gmail 别名不受支持",
-        "Invalid code is incorrect" => "验证码有误",
-        "You must use the invitation code to register" => "您必须使用邀请码注册",
-        "Email already exists" => "邮箱已存在",
-        "Token error" => "令牌错误",
-        "未登录或登陆已过期" => "未登录或登陆已过期",
-        _ => return None,
-    };
-    Some(translated.to_string())
+    i18n::translate_zh_cn(message)
 }
 
 fn password_limit_minutes(message: &str) -> Option<&str> {

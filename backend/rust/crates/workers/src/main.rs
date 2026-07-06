@@ -13,7 +13,7 @@ use std::{collections::HashMap, env, str::FromStr, time::Duration};
 
 use apalis::prelude::*;
 use apalis_cron::{CronStream, Tick};
-use chrono::{DateTime, Datelike, Local, Months, TimeZone, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, Months, TimeZone, Utc};
 use cron::Schedule;
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::header::ContentType,
@@ -23,7 +23,7 @@ use redis::AsyncCommands;
 use sqlx::{FromRow, MySql, MySqlPool, QueryBuilder};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
-use v2board_config::AppConfig;
+use v2board_config::{AppConfig, app_now, app_timezone};
 use v2board_domain::order::OrderService;
 
 #[derive(Clone)]
@@ -235,7 +235,10 @@ async fn run_worker_runtime(state: WorkerState) -> anyhow::Result<()> {
         let state = state.clone();
         monitor = monitor.register(move |_| {
             WorkerBuilder::new(worker_name)
-                .backend(CronStream::new(schedule.clone()))
+                .backend(CronStream::new_with_timezone(
+                    schedule.clone(),
+                    app_timezone(),
+                ))
                 .data(job.clone())
                 .data(state.clone())
                 .build(handle_cron_tick)
@@ -300,7 +303,7 @@ fn scheduled_task_by_name(name: &str) -> Option<ScheduledTask> {
 }
 
 async fn handle_cron_tick(
-    tick: Tick,
+    tick: Tick<FixedOffset>,
     job: Data<ScheduledJob>,
     state: Data<WorkerState>,
 ) -> Result<(), BoxDynError> {
@@ -646,7 +649,7 @@ struct CommissionPayout {
 
 /// Pure port of `CheckCommission::payHandle` (CheckCommission.php:95-123): walk the
 /// invite chain and, for each configured share level, pay the CURRENT inviter. A zero
-/// share (or a computed amount of zero) `continue`s WITHOUT advancing the chain pointer
+/// share (or a zero commission product) `continue`s WITHOUT advancing the chain pointer
 /// (CheckCommission.php:98-100), so the SAME inviter is re-evaluated at the next level;
 /// the pointer only advances after a real payout (CheckCommission.php:120).
 fn plan_commission_payouts<F>(
@@ -673,10 +676,17 @@ where
         if share <= 0 {
             continue;
         }
-        let amount = commission_balance * share / 100;
-        if amount <= 0 {
+        // Laravel computes `commission_balance * (share / 100)` as a float and stores it
+        // into an INT column, so MySQL rounds (half away from zero). It skips a level only
+        // when that product is exactly zero (`if (!$commissionBalance) continue;`,
+        // CheckCommission.php:100) — NOT when the rounded amount is zero — and still
+        // advances the pointer for a sub-cent payout. Mirror both: round the payout and
+        // gate on the raw product rather than the truncated amount.
+        let raw = f64::from(commission_balance) * f64::from(share) / 100.0;
+        if raw == 0.0 {
             continue;
         }
+        let amount = raw.round() as i32;
         payouts.push(CommissionPayout {
             inviter_id: inviter.id,
             amount,
@@ -912,8 +922,8 @@ async fn reset_traffic(state: &WorkerState) -> anyhow::Result<()> {
 }
 
 fn should_reset_user(user: &ResetUserRow, default_method: i32) -> bool {
-    let now = Local::now();
-    let Some(expired) = Local.timestamp_opt(user.expired_at, 0).single() else {
+    let now = app_now();
+    let Some(expired) = app_timezone().timestamp_opt(user.expired_at, 0).single() else {
         return false;
     };
     match user.reset_traffic_method {
@@ -933,8 +943,8 @@ fn should_reset_user(user: &ResetUserRow, default_method: i32) -> bool {
 
 fn reset_matches(
     method: i32,
-    now: &DateTime<Local>,
-    expired: &DateTime<Local>,
+    now: &DateTime<FixedOffset>,
+    expired: &DateTime<FixedOffset>,
     expired_at: i64,
 ) -> bool {
     match method {
@@ -1248,7 +1258,7 @@ fn add_period(timestamp: i64, period: &str) -> Option<i64> {
     } else {
         timestamp
     };
-    Local
+    app_timezone()
         .timestamp_opt(base, 0)
         .single()?
         .checked_add_months(Months::new(months))
@@ -1256,14 +1266,14 @@ fn add_period(timestamp: i64, period: &str) -> Option<i64> {
 }
 
 fn month_delta_timestamp(months: u32) -> Option<i64> {
-    Local::now()
+    app_now()
         .checked_sub_months(Months::new(months))
         .map(|date| date.timestamp())
 }
 
 fn today_start_timestamp() -> i64 {
-    let now = Local::now();
-    Local
+    let now = app_now();
+    app_timezone()
         .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
         .single()
         .map(|date| date.timestamp())
@@ -1271,7 +1281,7 @@ fn today_start_timestamp() -> i64 {
 }
 
 fn last_day_of_current_month() -> u32 {
-    let today = Local::now().date_naive();
+    let today = app_now().date_naive();
     let (year, month) = if today.month() == 12 {
         (today.year() + 1, 1)
     } else {
@@ -1406,7 +1416,7 @@ mod tests {
     #[test]
     fn null_reset_method_default_three_falls_through_to_expire_year() {
         // A plan with reset_traffic_method = NULL whose expiry anniversary (m-d) is today.
-        let now_ts = Local::now().timestamp();
+        let now_ts = app_now().timestamp();
         let user = ResetUserRow {
             id: 1,
             expired_at: now_ts,
@@ -1423,7 +1433,7 @@ mod tests {
 
     #[test]
     fn explicit_reset_method_ignores_config_default_fall_through() {
-        let now_ts = Local::now().timestamp();
+        let now_ts = app_now().timestamp();
         // Explicit method 2 ("no action") must never reset, regardless of config default.
         let user = ResetUserRow {
             id: 1,

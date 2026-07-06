@@ -1,11 +1,34 @@
+use std::time::Duration;
+
 use axum::{
-    Router, middleware,
+    Router,
+    http::{HeaderName, Method, header},
+    middleware,
     routing::{get, post},
 };
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use v2board_config::AppConfig;
 
 use super::{AppState, language_middleware};
+
+/// Reproduce Laravel's global CORS middleware (`app/Http/Middleware/CORS.php`): reflect
+/// the request `Origin`, allow credentials, and advertise the same methods, headers, and
+/// max-age. Without this the browser blocks the SPA's cross-origin API calls.
+fn cors_layer() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::mirror_request())
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS, Method::HEAD])
+        .allow_headers([
+            header::ORIGIN,
+            header::CONTENT_TYPE,
+            header::ACCEPT,
+            header::AUTHORIZATION,
+            HeaderName::from_static("x-request-with"),
+        ])
+        .allow_credentials(true)
+        .max_age(Duration::from_secs(10080))
+}
 
 pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
     let admin_api_route = config.admin_api_route();
@@ -132,6 +155,7 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
     app.with_state(state)
         .layer(middleware::from_fn(language_middleware))
         .layer(TraceLayer::new_for_http())
+        .layer(cors_layer())
 }
 
 pub(super) fn custom_subscribe_route_path(config: &AppConfig) -> Option<String> {
