@@ -2153,7 +2153,7 @@ async fn user_transfer(
     let user = require_user(&state, &headers, query.auth_data).await?;
     // UserTransfer FormRequest: transfer_amount required|integer|min:1.
     if payload.transfer_amount <= 0 {
-        return Err(field_validation(
+        return Err(ApiError::validation_field(
             "transfer_amount",
             "The transfer amount parameter is wrong",
         ));
@@ -2567,9 +2567,12 @@ async fn ticket_save(
     )?;
     let level = payload
         .level
-        .ok_or_else(|| field_validation("level", "Ticket level cannot be empty"))?;
+        .ok_or_else(|| ApiError::validation_field("level", "Ticket level cannot be empty"))?;
     if !matches!(level, 0..=2) {
-        return Err(field_validation("level", "Incorrect ticket level format"));
+        return Err(ApiError::validation_field(
+            "level",
+            "Incorrect ticket level format",
+        ));
     }
     let message = required_field(
         payload.message.as_deref(),
@@ -3416,15 +3419,6 @@ fn required_trimmed<'a>(value: Option<&'a str>, message: &str) -> Result<&'a str
         .ok_or_else(|| ApiError::legacy(message))
 }
 
-/// Laravel FormRequest 422 body: `{message, errors:{field:[message]}}`. The top-level
-/// `message` mirrors Laravel's first failing-rule message.
-fn field_validation(field: &str, message: &str) -> ApiError {
-    ApiError::validation(
-        message,
-        HashMap::from([(field.to_string(), vec![message.to_string()])]),
-    )
-}
-
 /// Laravel `required` rule (a string is empty when it trims to ""); on failure returns a
 /// 422 keyed on `field` instead of a 500.
 fn required_field<'a>(
@@ -3435,7 +3429,7 @@ fn required_field<'a>(
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| field_validation(field, message))
+        .ok_or_else(|| ApiError::validation_field(field, message))
 }
 
 fn forbidden(message: impl Into<String>) -> ApiError {

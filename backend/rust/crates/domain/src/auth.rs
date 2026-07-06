@@ -473,12 +473,7 @@ impl AuthService {
         old_password: &str,
         new_password: &str,
     ) -> Result<(), ApiError> {
-        if old_password.is_empty() {
-            return Err(ApiError::legacy("Old password cannot be empty"));
-        }
-        if new_password.len() < 8 {
-            return Err(ApiError::legacy("Password must be greater than 8 digits"));
-        }
+        validate_change_password(old_password, new_password)?;
 
         let user = db::user::find_user_for_auth_by_id(&self.db, user_id)
             .await?
@@ -891,10 +886,16 @@ fn hash_password(password: &str) -> Result<String, ApiError> {
 fn validate_email(email: &str) -> Result<(), ApiError> {
     let email = email.trim();
     if email.is_empty() {
-        return Err(field_validation("email", "Email can not be empty"));
+        return Err(ApiError::validation_field(
+            "email",
+            "Email can not be empty",
+        ));
     }
     if !is_valid_email(email) {
-        return Err(field_validation("email", "Email format is incorrect"));
+        return Err(ApiError::validation_field(
+            "email",
+            "Email format is incorrect",
+        ));
     }
     Ok(())
 }
@@ -902,10 +903,13 @@ fn validate_email(email: &str) -> Result<(), ApiError> {
 /// Laravel `AuthRegister` validates `password => required|min:8` (character count, not bytes).
 fn validate_password(password: &str) -> Result<(), ApiError> {
     if password.is_empty() {
-        return Err(field_validation("password", "Password can not be empty"));
+        return Err(ApiError::validation_field(
+            "password",
+            "Password can not be empty",
+        ));
     }
     if password.chars().count() < 8 {
-        return Err(field_validation(
+        return Err(ApiError::validation_field(
             "password",
             "Password must be greater than 8 digits",
         ));
@@ -920,25 +924,53 @@ fn validate_password(password: &str) -> Result<(), ApiError> {
 fn validate_forget(email: &str, password: &str, email_code: &str) -> Result<(), ApiError> {
     validate_email(email)?;
     if email.trim().chars().count() > 64 {
-        return Err(field_validation("email", "Email format is incorrect"));
+        return Err(ApiError::validation_field(
+            "email",
+            "Email format is incorrect",
+        ));
     }
     validate_password(password)?;
     if password.chars().count() > 64 {
-        return Err(field_validation(
+        return Err(ApiError::validation_field(
             "password",
             "Password must be greater than 8 digits",
         ));
     }
     if email_code.trim().is_empty() {
-        return Err(field_validation(
+        return Err(ApiError::validation_field(
             "email_code",
             "Email verification code cannot be empty",
         ));
     }
     if email_code.chars().count() != 6 || !email_code.chars().all(|ch| ch.is_ascii_digit()) {
-        return Err(field_validation(
+        return Err(ApiError::validation_field(
             "email_code",
             "Incorrect email verification code",
+        ));
+    }
+    Ok(())
+}
+
+/// Laravel `UserChangePassword` validates old_password (`required`) and new_password
+/// (`required|min:8`, character count not bytes). The FormRequest fires before the
+/// controller body, returning HTTP 422 with the field message.
+fn validate_change_password(old_password: &str, new_password: &str) -> Result<(), ApiError> {
+    if old_password.is_empty() {
+        return Err(ApiError::validation_field(
+            "old_password",
+            "Old password cannot be empty",
+        ));
+    }
+    if new_password.is_empty() {
+        return Err(ApiError::validation_field(
+            "new_password",
+            "New password cannot be empty",
+        ));
+    }
+    if new_password.chars().count() < 8 {
+        return Err(ApiError::validation_field(
+            "new_password",
+            "Password must be greater than 8 digits",
         ));
     }
     Ok(())
@@ -954,13 +986,6 @@ fn is_valid_email(email: &str) -> bool {
         Some((local, host)) => !local.is_empty() && !host.is_empty() && !host.contains('@'),
         None => false,
     }
-}
-
-fn field_validation(field: &str, message: &str) -> ApiError {
-    ApiError::validation(
-        message,
-        std::collections::HashMap::from([(field.to_string(), vec![message.to_string()])]),
-    )
 }
 
 fn legacy_guid(format: bool) -> String {
@@ -1148,6 +1173,32 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "Incorrect email verification code"
+        );
+    }
+
+    #[test]
+    fn validate_change_password_mirrors_userchangepassword_rules() {
+        assert!(validate_change_password("old-secret", "new-secret").is_ok());
+
+        // old_password required takes precedence over new_password rules.
+        let empty_old = validate_change_password("", "short").unwrap_err();
+        assert_eq!(empty_old.to_string(), "Old password cannot be empty");
+        assert!(matches!(empty_old, ApiError::Validation { .. }));
+
+        // new_password required reports its own message, not the min message.
+        assert_eq!(
+            validate_change_password("old-secret", "")
+                .unwrap_err()
+                .to_string(),
+            "New password cannot be empty"
+        );
+
+        // min:8 counts characters (mb_strlen), so a 6-glyph multibyte password fails.
+        assert_eq!(
+            validate_change_password("old-secret", "七个中文密码")
+                .unwrap_err()
+                .to_string(),
+            "Password must be greater than 8 digits"
         );
     }
 }

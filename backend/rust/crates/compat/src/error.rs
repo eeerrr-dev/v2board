@@ -88,6 +88,17 @@ impl ApiError {
         }
     }
 
+    /// Single-field Laravel 422: `{message, errors:{field:[message]}}`. Mirrors a
+    /// FormRequest that stops at the first failing rule (the common case): the same
+    /// text is the top-level `message` and the field's sole error, matching Laravel's
+    /// MessageBag when one rule fails.
+    pub fn validation_field(field: &str, message: &str) -> Self {
+        Self::Validation {
+            message: message.to_string(),
+            errors: HashMap::from([(field.to_string(), vec![message.to_string()])]),
+        }
+    }
+
     fn status(&self) -> StatusCode {
         match self {
             Self::Http { status, .. } => *status,

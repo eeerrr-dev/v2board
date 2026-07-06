@@ -197,14 +197,14 @@ impl OrderService {
         // used to return.
         let plan_id = input
             .plan_id
-            .ok_or_else(|| order_validation("plan_id", "Plan ID cannot be empty"))?;
+            .ok_or_else(|| ApiError::validation_field("plan_id", "Plan ID cannot be empty"))?;
         let period = input
             .period
             .as_deref()
             .filter(|period| !period.trim().is_empty())
-            .ok_or_else(|| order_validation("period", "Plan period cannot be empty"))?;
+            .ok_or_else(|| ApiError::validation_field("period", "Plan period cannot be empty"))?;
         if !is_valid_period(period) {
-            return Err(order_validation("period", "Wrong plan period"));
+            return Err(ApiError::validation_field("period", "Wrong plan period"));
         }
 
         let mut tx = self.db.begin().await?;
@@ -3176,15 +3176,6 @@ fn plan_period_price(plan: &PlanRow, period: &str) -> Option<i32> {
         "reset_price" => plan.reset_price,
         _ => None,
     }
-}
-
-/// Laravel FormRequest validation failure: HTTP 422 `{message, errors:{field:[msg]}}`.
-/// The top-level message mirrors Laravel's first validation error message.
-fn order_validation(field: &str, message: &str) -> ApiError {
-    ApiError::validation(
-        message,
-        HashMap::from([(field.to_string(), vec![message.to_string()])]),
-    )
 }
 
 fn is_valid_period(period: &str) -> bool {

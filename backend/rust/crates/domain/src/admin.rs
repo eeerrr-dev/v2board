@@ -23,6 +23,44 @@ use support::*;
 
 const GIB: i64 = 1_073_741_824;
 
+/// Allowed `action` values for RouteController::save (`in:...` rule).
+const ROUTE_ACTIONS: [&str; 8] = [
+    "block",
+    "block_ip",
+    "block_port",
+    "protocol",
+    "dns",
+    "route",
+    "route_ip",
+    "default_out",
+];
+
+/// Ports RouteController::save's `$request->validate([...])` (V1\Admin\Server),
+/// returning HTTP 422 with the Chinese literal messages. Fields are checked in
+/// Laravel's declaration order (remarks, match, action) so the reported message is
+/// the first failing field. Returns `None` when the payload is valid.
+fn route_save_validation(params: &HashMap<String, String>) -> Option<ApiError> {
+    let action = optional_string(params, "action");
+    // remarks => required
+    if optional_string(params, "remarks").is_none() {
+        return Some(ApiError::validation_field("remarks", "备注不能为空"));
+    }
+    // match => array|required_unless:action,default_out. `required` treats an absent
+    // or empty array as missing (a non-empty array like ["0"] passes even though
+    // array_filter later drops it), so check raw presence before filtering.
+    if action.as_deref() != Some("default_out") && route_match_values(params).is_empty() {
+        return Some(ApiError::validation_field("match", "匹配值不能为空"));
+    }
+    // action => required|in:block,block_ip,block_port,protocol,dns,route,route_ip,default_out
+    match action.as_deref() {
+        None => Some(ApiError::validation_field("action", "动作类型不能为空")),
+        Some(value) if !ROUTE_ACTIONS.contains(&value) => {
+            Some(ApiError::validation_field("action", "动作类型参数有误"))
+        }
+        Some(_) => None,
+    }
+}
+
 #[derive(Clone)]
 pub struct AdminService {
     db: MySqlPool,
@@ -2971,6 +3009,9 @@ impl AdminService {
         &self,
         params: &HashMap<String, String>,
     ) -> Result<AdminOutput, ApiError> {
+        if let Some(error) = route_save_validation(params) {
+            return Err(error);
+        }
         let now = Utc::now().timestamp();
         // RouteController::save: `default_out` forces an empty match set, everything
         // else array_filter()s out empty match entries before json_encode.
@@ -3862,5 +3903,104 @@ impl AdminService {
             .await?;
         }
         Ok(AdminOutput::Data(json!(true)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn params(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect()
+    }
+
+    fn validation_parts(error: ApiError) -> (String, HashMap<String, Vec<String>>) {
+        match error {
+            ApiError::Validation { message, errors } => (message, errors),
+            other => panic!("expected validation error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn route_save_accepts_valid_payload() {
+        let ok = params(&[
+            ("remarks", "cn"),
+            ("action", "block"),
+            ("match", r#"["1.1.1.1"]"#),
+        ]);
+        assert!(route_save_validation(&ok).is_none());
+    }
+
+    #[test]
+    fn route_save_default_out_needs_no_match() {
+        // required_unless:action,default_out: match is optional once action is default_out.
+        let ok = params(&[("remarks", "fallback"), ("action", "default_out")]);
+        assert!(route_save_validation(&ok).is_none());
+    }
+
+    #[test]
+    fn route_save_nonempty_match_array_passes_required_even_if_falsy() {
+        // Laravel `required` counts a non-empty array; array_filter drops "0" later.
+        let ok = params(&[
+            ("remarks", "cn"),
+            ("action", "block"),
+            ("match", r#"["0"]"#),
+        ]);
+        assert!(route_save_validation(&ok).is_none());
+    }
+
+    #[test]
+    fn route_save_missing_remarks_reports_first() {
+        let error =
+            route_save_validation(&params(&[("action", "block"), ("match", r#"["1.1.1.1"]"#)]))
+                .expect("missing remarks must fail");
+        let (message, errors) = validation_parts(error);
+        assert_eq!(message, "备注不能为空");
+        assert_eq!(errors["remarks"], vec!["备注不能为空".to_string()]);
+    }
+
+    #[test]
+    fn route_save_missing_match_reports_required_unless() {
+        let error = route_save_validation(&params(&[("remarks", "cn"), ("action", "block")]))
+            .expect("missing match must fail");
+        let (message, errors) = validation_parts(error);
+        assert_eq!(message, "匹配值不能为空");
+        assert_eq!(errors["match"], vec!["匹配值不能为空".to_string()]);
+    }
+
+    #[test]
+    fn route_save_missing_action_reports_required() {
+        let error =
+            route_save_validation(&params(&[("remarks", "cn"), ("match", r#"["1.1.1.1"]"#)]))
+                .expect("missing action must fail");
+        let (message, _) = validation_parts(error);
+        assert_eq!(message, "动作类型不能为空");
+    }
+
+    #[test]
+    fn route_save_invalid_action_reports_in_rule() {
+        let error = route_save_validation(&params(&[
+            ("remarks", "cn"),
+            ("action", "teleport"),
+            ("match", r#"["1.1.1.1"]"#),
+        ]))
+        .expect("invalid action must fail");
+        let (message, errors) = validation_parts(error);
+        assert_eq!(message, "动作类型参数有误");
+        assert_eq!(errors["action"], vec!["动作类型参数有误".to_string()]);
+    }
+
+    #[test]
+    fn route_save_empty_payload_reports_first_field() {
+        // Every field fails; Laravel's field order makes remarks the reported message,
+        // and the codebase's single-field 422 shape keys only that first failure.
+        let error = route_save_validation(&params(&[])).expect("empty payload must fail");
+        let (message, errors) = validation_parts(error);
+        assert_eq!(message, "备注不能为空");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors["remarks"], vec!["备注不能为空".to_string()]);
     }
 }
