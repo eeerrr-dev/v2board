@@ -406,7 +406,11 @@ impl AuthService {
             .as_deref()
             .filter(|value| !value.is_empty())
         {
-            format!("{}{}", app_url.trim_end_matches('/'), path)
+            // Raw concatenation, matching AuthController::token2Login's
+            // `config('v2board.app_url') . $redirect`. Laravel does not strip a
+            // trailing slash, so neither do we — an operator's configured app_url is
+            // emitted verbatim into this backend-generated redirect/email link.
+            format!("{app_url}{path}")
         } else {
             path
         }

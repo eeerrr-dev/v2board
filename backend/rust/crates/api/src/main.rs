@@ -1809,8 +1809,11 @@ async fn stripe_public_key(
     Query(query): Query<AuthQuery>,
     headers: HeaderMap,
     Form(payload): Form<StripePublicKeyRequest>,
-) -> Result<Json<LegacyEnvelope<String>>, ApiError> {
+) -> Result<Json<LegacyEnvelope<Option<String>>>, ApiError> {
     let _user = require_user(&state, &headers, query.auth_data).await?;
+    // Only a missing StripeCredit gate is the 500; a gate whose config lacks
+    // stripe_pk_live returns `{"data": null}` at 200, mirroring PHP's null array
+    // access in CommController::getStripePublicKey.
     let public_key = v2board_db::payment::find_stripe_public_key(&state.db, payload.id)
         .await?
         .ok_or_else(|| ApiError::legacy("payment is not found"))?;
@@ -1878,6 +1881,7 @@ async fn user_subscribe(
 
 #[derive(Debug, sqlx::FromRow)]
 struct UserPeriodRow {
+    plan_id: Option<i32>,
     transfer_enable: i64,
     u: i64,
     d: i64,
@@ -1897,7 +1901,7 @@ async fn user_new_period(
     }
     let row = sqlx::query_as::<_, UserPeriodRow>(
         r#"
-        SELECT u.transfer_enable, u.u, u.d, u.expired_at, p.reset_traffic_method
+        SELECT u.plan_id, u.transfer_enable, u.u, u.d, u.expired_at, p.reset_traffic_method
         FROM v2_user u
         LEFT JOIN v2_plan p ON p.id = u.plan_id
         WHERE u.id = ?
@@ -1911,6 +1915,16 @@ async fn user_new_period(
     if row.transfer_enable > row.u + row.d {
         return Err(ApiError::legacy(
             "You have not used up your traffic, you cannot renew your subscription",
+        ));
+    }
+    // A plan-less user cannot renew: both getResetDay and getResetPeriod return null
+    // at `if ($user->plan_id === NULL) return null;`, and UserController::newPeriod
+    // turns either null into abort(500, 'You do not allow to renew the subscription').
+    // The LEFT JOIN alone can't tell plan-less from plan-with-null-method, so gate on
+    // plan_id directly before the method-based reset lookups below.
+    if row.plan_id.is_none() {
+        return Err(ApiError::legacy(
+            "You do not allow to renew the subscription",
         ));
     }
     let expired_at = row
@@ -3236,11 +3250,17 @@ fn reset_day(
     config: &AppConfig,
 ) -> Option<i64> {
     let expired_at = expired_at?;
+    // A plan-less user has no reset schedule: UserService::getResetDay returns null
+    // at `if ($user->plan_id === NULL) return null;` before any method lookup, so a
+    // None plan must NOT fall back to the config default. A resolved plan whose own
+    // reset_traffic_method is NULL still uses the config default (the `unwrap_or`
+    // below), mirroring the `=== NULL` switch arm.
+    let plan = plan?;
     if expired_at <= Utc::now().timestamp() {
         return None;
     }
     let method = plan
-        .and_then(|plan| plan.reset_traffic_method)
+        .reset_traffic_method
         .map(i32::from)
         .unwrap_or(config.reset_traffic_method);
 
@@ -3501,6 +3521,57 @@ fn validate_binary(field: &str, value: Option<i8>) -> Result<(), ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn reset_day_plan_fixture(reset_traffic_method: Option<i8>) -> v2board_db::plan::PlanRow {
+        v2board_db::plan::PlanRow {
+            id: 1,
+            group_id: 1,
+            transfer_enable: 0,
+            device_limit: None,
+            name: "p".to_string(),
+            speed_limit: None,
+            show: 1,
+            sort: None,
+            renew: 1,
+            content: None,
+            month_price: None,
+            quarter_price: None,
+            half_year_price: None,
+            year_price: None,
+            two_year_price: None,
+            three_year_price: None,
+            onetime_price: None,
+            reset_price: None,
+            reset_traffic_method,
+            capacity_limit: None,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn reset_day_returns_none_for_plan_less_user_ignoring_config_default() {
+        let mut config = AppConfig::from_env();
+        // A month-first-day default would otherwise compute a non-null day.
+        config.reset_traffic_method = 0;
+        let future = Utc::now().timestamp() + 30 * 86_400;
+
+        // Plan-less: getResetDay returns null at the `plan_id === NULL` guard, never
+        // the config default.
+        assert_eq!(reset_day(Some(future), None, &config), None);
+        // A resolved plan whose own method is NULL still uses the config default.
+        let null_method = reset_day_plan_fixture(None);
+        assert_eq!(
+            reset_day(Some(future), Some(&null_method), &config),
+            Some(reset_day_by_month_first_day())
+        );
+        // method 2 (no reset) is null even with a plan.
+        let no_reset = reset_day_plan_fixture(Some(2));
+        assert_eq!(reset_day(Some(future), Some(&no_reset), &config), None);
+        // Missing / past expiry is null.
+        assert_eq!(reset_day(None, Some(&null_method), &config), None);
+        assert_eq!(reset_day(Some(1), Some(&null_method), &config), None);
+    }
 
     #[test]
     fn custom_subscribe_route_skips_default_and_registers_custom_path() {
