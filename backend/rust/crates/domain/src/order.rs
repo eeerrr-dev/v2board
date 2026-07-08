@@ -1016,20 +1016,18 @@ impl OrderService {
             return Ok(());
         };
         let has_valid_order = have_valid_order(tx, user.id).await?;
-        let is_commission = match inviter.commission_type {
-            0 => !self.config.commission_first_time_enable || !has_valid_order,
-            1 => true,
-            2 => !has_valid_order,
-            _ => false,
-        };
-        if !is_commission {
+        if !commission_is_eligible(
+            inviter.commission_type,
+            self.config.commission_first_time_enable,
+            has_valid_order,
+        ) {
             return Ok(());
         }
-        let rate = inviter
-            .commission_rate
-            .filter(|rate| *rate > 0)
-            .unwrap_or(self.config.invite_commission);
-        draft.commission_balance = draft.total_amount * (rate as f64 / 100.0);
+        draft.commission_balance = commission_amount(
+            draft.total_amount,
+            inviter.commission_rate,
+            self.config.invite_commission,
+        );
         Ok(())
     }
 
@@ -1226,6 +1224,38 @@ async fn validate_coupon(
         }
     }
     Ok(())
+}
+
+/// Whether the inviter earns commission on this order, mirroring the
+/// `commission_type` switch in OrderService::setInvite (lines 146-157).
+/// `has_valid_order` is whether the buyer already has a completed order, which
+/// gates first-purchase-only commission (types 0 and 2).
+fn commission_is_eligible(
+    commission_type: i8,
+    first_time_enable: bool,
+    has_valid_order: bool,
+) -> bool {
+    match commission_type {
+        // case 0: pay unless first-time gating is on and the buyer already ordered.
+        0 => !first_time_enable || !has_valid_order,
+        // case 1: always pay.
+        1 => true,
+        // case 2: pay only on the buyer's first order.
+        2 => !has_valid_order,
+        // unrecognized type: no commission (the switch leaves $isCommission false).
+        _ => false,
+    }
+}
+
+/// The inviter's commission for an order: `total_amount * rate%`. A per-inviter
+/// `commission_rate` takes effect when set (`if ($inviter->commission_rate)`);
+/// otherwise the global `invite_commission` default applies (OrderService::
+/// setInvite lines 160-164).
+fn commission_amount(total_amount: f64, commission_rate: Option<i32>, default_rate: i32) -> f64 {
+    let rate = commission_rate
+        .filter(|rate| *rate > 0)
+        .unwrap_or(default_rate);
+    total_amount * (rate as f64 / 100.0)
 }
 
 async fn have_valid_order(
@@ -2440,10 +2470,19 @@ async fn alipay_f2f_pay(
     let subject = config_string(&config, "product_name")
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| format!("{} - 订阅", app_config.app_name));
+    // PHP's `$order['total_amount'] / 100` returns an int when the cents divide
+    // evenly (`200/100 → 2`) and a float otherwise (`250/100 → 2.5`); json_encode
+    // then bakes that int-vs-float choice into the RSA2-signed biz_content bytes.
+    // Mirror it so whole-yuan orders sign as `2`, not `2.0`.
+    let total_amount = if order.total_amount % 100 == 0 {
+        json!(order.total_amount / 100)
+    } else {
+        json!(order.total_amount as f64 / 100.0)
+    };
     let biz_content = serde_json::to_string(&json!({
         "subject": subject,
         "out_trade_no": order.trade_no,
-        "total_amount": order.total_amount as f64 / 100.0,
+        "total_amount": total_amount,
     }))
     .map_err(|_| ApiError::internal("failed to build alipay payload"))?;
     let mut params = BTreeMap::from([
@@ -3701,8 +3740,14 @@ mod tests {
 
     #[test]
     fn alipay_f2f_notify_ignores_non_success_trade_status() {
-        // The TRADE_SUCCESS gate runs before signature verification, matching
-        // Laravel, so a WAIT_BUYER_PAY callback is ignored without a key.
+        // The trade_status gate runs before signature verification (like Laravel's
+        // AlipayF2F::notify, which checks trade_status before $gateway->verify), so a
+        // WAIT_BUYER_PAY callback needs no key. The RESPONSE, though, diverges by
+        // design: Laravel returns false here, which PaymentController turns into
+        // abort(500,'fail'); Rust acks with 200 "success" instead. That only changes
+        // whether the gateway retries a non-success/terminal callback — it never marks
+        // an order paid (the money path is identical and separately tested) — so the
+        // safer ack is a deliberate, self-consistent improvement, not a contract break.
         let payment = fixture_payment("AlipayF2F", json!({ "public_key": "unused" }));
         let params = HashMap::from([
             ("out_trade_no".to_string(), "T202607060020".to_string()),
@@ -4026,6 +4071,69 @@ mod tests {
         };
 
         assert!(btcpay_notify(&payment, &input).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn btcpay_notify_accepts_correctly_signed_webhook() {
+        let payment = fixture_payment(
+            "BTCPay",
+            json!({
+                "btcpay_webhook_key": "bp-secret",
+                // Connection-refused loopback port: the downstream invoice fetch fails
+                // fast and deterministically, so the test isolates the HMAC gate.
+                "btcpay_url": "http://127.0.0.1:1/",
+                "btcpay_storeId": "store1",
+                "btcpay_api_key": "apikey",
+            }),
+        );
+        let body = json!({ "invoiceId": "INV-1", "metadata": { "orderId": "T1" } })
+            .to_string()
+            .into_bytes();
+        let sign = format!(
+            "sha256={}",
+            hmac_sha256_hex(b"bp-secret", &body).expect("sign")
+        );
+        let input = PaymentNotifyInput {
+            params: HashMap::new(),
+            body,
+            headers: HashMap::from([("btcpay-sig".to_string(), sign)]),
+        };
+
+        // A correctly-signed body clears the HMAC gate; the only failure left is the
+        // downstream invoice fetch, never a signature rejection. Proves the signed
+        // happy path is accepted, complementing the tampered-signature rejection test.
+        let error = match btcpay_notify(&payment, &input).await {
+            Ok(_) => panic!("signed webhook cannot resolve without the invoice fetch"),
+            Err(error) => error,
+        };
+        assert_eq!(error.to_string(), "Payment gateway request failed");
+    }
+
+    #[test]
+    fn commission_is_eligible_mirrors_setinvite_switch() {
+        // type 0: gated by first-time config AND whether the buyer already ordered.
+        assert!(commission_is_eligible(0, false, true)); // gating off -> always pay
+        assert!(commission_is_eligible(0, true, false)); // gating on, first order
+        assert!(!commission_is_eligible(0, true, true)); // gating on, repeat buyer
+        // type 1: always pay regardless of history.
+        assert!(commission_is_eligible(1, true, true));
+        // type 2: first order only.
+        assert!(commission_is_eligible(2, true, false));
+        assert!(!commission_is_eligible(2, true, true));
+        // unrecognized type: never pay.
+        assert!(!commission_is_eligible(9, false, false));
+    }
+
+    #[test]
+    fn commission_amount_prefers_inviter_rate_then_global_default() {
+        // Per-inviter rate wins when set.
+        assert_eq!(commission_amount(10_000.0, Some(25), 10), 2_500.0);
+        // Zero/None rate falls back to the global invite_commission default.
+        assert_eq!(commission_amount(10_000.0, Some(0), 10), 1_000.0);
+        assert_eq!(commission_amount(10_000.0, None, 10), 1_000.0);
+        // Commission math stays unrounded here (a fractional-cent result survives);
+        // insert_order rounds once at persist.
+        assert!((commission_amount(333.0, Some(10), 10) - 33.3).abs() < 1e-9);
     }
 
     // --- Order-open grant math (the paid -> plan/traffic/expiry side effect).
