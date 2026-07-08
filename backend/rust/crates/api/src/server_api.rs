@@ -7,7 +7,7 @@ use axum::{
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use chrono::{Datelike, Local, TimeZone, Utc};
+use chrono::{Datelike, TimeZone, Utc};
 use redis::AsyncCommands;
 use serde::Serialize;
 use serde_json::json;
@@ -39,7 +39,7 @@ pub(super) async fn server_v1(
         ("uniproxy", "push") => {
             server_push(&state, &input.params, input.body.as_ref(), true, None).await
         }
-        ("uniproxy", "alivelist") => server_alive_list(&state).await,
+        ("uniproxy", "alivelist") => server_alive_list(&state, &input.params).await,
         ("uniproxy", "alive") => server_alive(&state, &input.params, input.body.as_ref()).await,
         ("uniproxy", "config") => server_uniproxy_config(&state, &headers, &input.params).await,
         ("shadowsockstidalab", "user") => {
@@ -385,14 +385,11 @@ async fn server_push(
     let (node_type, node) = if uniproxy {
         load_uniproxy_node(state, params).await?
     } else {
-        let node_type = match params
-            .get("node_type")
-            .map(String::as_str)
-            .map(normalize_server_node_type)
-        {
-            Some(node_type) => node_type,
-            None => fallback_node_type.unwrap_or("shadowsocks").to_string(),
-        };
+        // Legacy Deepbwork/Tidalab submit endpoints hardcode their protocol per-controller
+        // (e.g. DeepbworkController::submit -> ServerVmess::find + trafficFetch(..,'vmess')) and
+        // never honor a request `node_type`. Force the caller's fixed protocol so a submit with a
+        // spoofed node_type cannot load a different protocol's node / write its SERVER_* keys.
+        let node_type = fallback_node_type.unwrap_or("shadowsocks").to_string();
         let node_id = required_i32_param(params, "node_id")?;
         let Some(node) = load_server_node(&state.db, &node_type, node_id).await? else {
             return Ok(Json(json!({ "ret": 0, "msg": "server is not found" })).into_response());
@@ -431,7 +428,14 @@ async fn server_push(
     }
 }
 
-async fn server_alive_list(state: &AppState) -> Result<Response, ApiError> {
+async fn server_alive_list(
+    state: &AppState,
+    params: &HashMap<String, String>,
+) -> Result<Response, ApiError> {
+    // UniProxyController::__construct (UniProxyController.php:21-37) resolves and validates the
+    // node before every action, aborting 500 'server is not exist' on a missing/invalid node_id.
+    // Reproduce that gate here so alivelist matches `alive`/`user`/`push` (which already validate).
+    load_uniproxy_node(state, params).await?;
     let user_ids = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT id
@@ -1171,17 +1175,37 @@ fn parse_traffic_entries(
 
 fn traffic_entries_from_value(value: &serde_json::Value) -> Vec<TrafficEntry> {
     match value {
-        serde_json::Value::Array(items) => items
-            .iter()
-            .filter_map(|item| {
-                let object = item.as_object()?;
-                Some(TrafficEntry {
-                    user_id: object.get("user_id").and_then(value_to_i64)?,
-                    u: object.get("u").and_then(value_to_i64).unwrap_or_default(),
-                    d: object.get("d").and_then(value_to_i64).unwrap_or_default(),
-                })
-            })
-            .collect(),
+        serde_json::Value::Array(items) => {
+            // ShadowsocksTidalabController.php:78-80 folds the array into
+            // `$formatData[$user_id] = [u, d]`, so a repeated user_id is last-write-wins (not
+            // summed). Keep the first-appearance position of each winning user_id, matching PHP's
+            // associative-array key order.
+            let mut order: Vec<i64> = Vec::new();
+            let mut latest: HashMap<i64, TrafficEntry> = HashMap::new();
+            for item in items {
+                let Some(object) = item.as_object() else {
+                    continue;
+                };
+                let Some(user_id) = object.get("user_id").and_then(value_to_i64) else {
+                    continue;
+                };
+                if !latest.contains_key(&user_id) {
+                    order.push(user_id);
+                }
+                latest.insert(
+                    user_id,
+                    TrafficEntry {
+                        user_id,
+                        u: object.get("u").and_then(value_to_i64).unwrap_or_default(),
+                        d: object.get("d").and_then(value_to_i64).unwrap_or_default(),
+                    },
+                );
+            }
+            order
+                .into_iter()
+                .filter_map(|user_id| latest.remove(&user_id))
+                .collect()
+        }
         serde_json::Value::Object(object) => {
             if let Some(user_id) = object.get("user_id").and_then(value_to_i64) {
                 return vec![TrafficEntry {
@@ -1223,15 +1247,11 @@ async fn persist_traffic_fetch(
     node_type: &str,
     entries: &[TrafficEntry],
 ) -> Result<(), ApiError> {
-    // Laravel multiplies traffic by `$server['rate']` as a raw string (TrafficFetchJob:43-44)
-    // and stores it verbatim into the decimal `server_rate` column (StatUserJob). PHP coerces a
-    // non-numeric / empty rate to 0 (so `(u+d)*rate == 0`), NOT to 1 — match that here. This is
-    // the pinned "traffic-charge coercion" contract.
-    let rate = node.rate.parse::<f64>().unwrap_or(0.0);
+    let rate = parse_server_rate(&node.rate);
     let mut conn = state.redis.get_multiplexed_async_connection().await?;
     for entry in entries {
-        let upload = (entry.u as f64 * rate).round() as i64;
-        let download = (entry.d as f64 * rate).round() as i64;
+        let upload = charged_bytes(entry.u, rate);
+        let download = charged_bytes(entry.d, rate);
         let _: () = redis::cmd("HINCRBY")
             .arg("v2board_upload_traffic")
             .arg(entry.user_id)
@@ -1575,12 +1595,29 @@ fn parse_i32_json_list(value: Option<&String>) -> Vec<i32> {
 }
 
 fn today_start_timestamp() -> i64 {
-    let now = Local::now();
-    Local
+    // StatUserJob/StatServerJob bucket `record_at` on Laravel's app timezone (Asia/Shanghai),
+    // not the process TZ. The rust-api container sets no TZ, so chrono::Local would be UTC and
+    // near-midnight pushes would mis-bucket the daily stat rows. Use the pinned +8 offset like
+    // the workers crate (config::app_now/app_timezone).
+    let now = v2board_config::app_now();
+    v2board_config::app_timezone()
         .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
         .single()
         .map(|date| date.timestamp())
         .unwrap_or_else(|| Utc::now().timestamp())
+}
+
+/// Coerce a node's `rate` to a multiplier. Laravel reads `$server['rate']` as a raw string and
+/// PHP coerces a non-numeric / empty value to 0 (so charged traffic becomes 0), NOT to 1 — the
+/// pinned "traffic-charge coercion" contract.
+fn parse_server_rate(rate: &str) -> f64 {
+    rate.parse::<f64>().unwrap_or(0.0)
+}
+
+/// Charged bytes billed against a user's quota: raw counter × node rate, rounded to an integer
+/// for the Redis `v2board_{upload,download}_traffic` accumulators (TrafficFetchJob's `$u * rate`).
+fn charged_bytes(bytes: i64, rate: f64) -> i64 {
+    (bytes as f64 * rate).round() as i64
 }
 
 #[cfg(test)]
@@ -1590,6 +1627,42 @@ mod tests {
 
     fn object(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
         value.as_object().cloned().unwrap()
+    }
+
+    #[test]
+    fn parse_server_rate_coerces_non_numeric_to_zero() {
+        assert_eq!(parse_server_rate("0.5"), 0.5);
+        assert_eq!(parse_server_rate("1"), 1.0);
+        assert_eq!(parse_server_rate("2.5"), 2.5);
+        // PHP coerces empty / non-numeric to 0 (charged traffic becomes 0), never 1.
+        assert_eq!(parse_server_rate(""), 0.0);
+        assert_eq!(parse_server_rate("abc"), 0.0);
+    }
+
+    #[test]
+    fn charged_bytes_multiplies_and_rounds() {
+        assert_eq!(charged_bytes(100, 0.5), 50);
+        assert_eq!(charged_bytes(1_000_000_000, 1.0), 1_000_000_000);
+        // half rounds away from zero (3 * 0.5 = 1.5 -> 2)
+        assert_eq!(charged_bytes(3, 0.5), 2);
+        // rate coerced to 0 zeroes the charge regardless of raw bytes
+        assert_eq!(charged_bytes(9_999, 0.0), 0);
+    }
+
+    #[test]
+    fn traffic_array_dedups_user_id_last_write_wins() {
+        // ShadowsocksTidalabController.php:78-80 last-write-wins per user_id (not summed).
+        let entries = traffic_entries_from_value(&json!([
+            { "user_id": 7, "u": 100, "d": 200 },
+            { "user_id": 9, "u": 1, "d": 2 },
+            { "user_id": 7, "u": 5, "d": 6 },
+        ]));
+        assert_eq!(entries.len(), 2);
+        // first-appearance order preserved (7 then 9); user 7 carries the LAST pair
+        assert_eq!(entries[0].user_id, 7);
+        assert_eq!((entries[0].u, entries[0].d), (5, 6));
+        assert_eq!(entries[1].user_id, 9);
+        assert_eq!((entries[1].u, entries[1].d), (1, 2));
     }
 
     #[test]
