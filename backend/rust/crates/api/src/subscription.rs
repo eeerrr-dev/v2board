@@ -2889,7 +2889,10 @@ fn build_shadowsocks_uri(
     if extra_string(server, "obfs").as_deref() == Some("http") {
         let obfs_settings = extra_json(server, "obfs_settings");
         let host = json_path_string(&obfs_settings, &["host"]).unwrap_or_default();
-        let path = json_path_string(&obfs_settings, &["path"]).unwrap_or_else(|| "/".to_string());
+        // Laravel Helper.php:215 emits `path={$server['obfs-path']}` where obfs-path is the
+        // raw obfs_settings.path (ServerService.php:164, no default), so an unset path renders
+        // an empty `path=` — not "/".
+        let path = json_path_string(&obfs_settings, &["path"]).unwrap_or_default();
         uri.push_str(&format!(
             "?plugin=obfs-local;obfs=http;obfs-host={};path={}",
             host, path
@@ -3478,7 +3481,9 @@ fn append_hysteria_obfs(
     if hysteria2 {
         uri.push_str("&obfs-password=");
     } else {
-        uri.push_str("&obfsParam=");
+        // Laravel Helper.php:391 concatenates "&obfsParam{$obfs_password}" with no '='
+        // separator (a v1 quirk); match it byte-for-byte for the externally-consumed URI.
+        uri.push_str("&obfsParam");
     }
     uri.push_str(&percent_encode(&obfs_password));
 }
