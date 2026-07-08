@@ -336,22 +336,38 @@ async fn handle_cron_tick(
         }
     };
 
-    if let Err(error) = run_scheduled_job(job.task, &state).await {
-        tracing::error!(job = job.name, ?error, "scheduled job failed");
-        let _ = record_worker_metric(&state, job.name, false).await;
-    } else if let Err(error) = record_worker_metric(&state, job.name, true).await {
-        tracing::warn!(
-            job = job.name,
-            ?error,
-            "failed to record scheduled job metric"
-        );
-    }
+    // Run the job in a spawned task so a panic inside it (an unexpected unwrap/index) is caught
+    // as a JoinError instead of unwinding past the lock release — otherwise a panicking job would
+    // leave RUST_SCHEDULER_LOCK_ held for its full 900s TTL and silently stall the minutely
+    // scheduler. The lock is released on every outcome (success, error, panic).
+    let job_state = state.clone();
+    let task = job.task;
+    let job_result = tokio::spawn(async move { run_scheduled_job(task, &job_state).await }).await;
     if let Err(error) = release_scheduler_lock(&state, scheduler_lock).await {
         tracing::warn!(
             job = job.name,
             ?error,
             "failed to release scheduled job lock"
         );
+    }
+    match job_result {
+        Ok(Ok(())) => {
+            if let Err(error) = record_worker_metric(&state, job.name, true).await {
+                tracing::warn!(
+                    job = job.name,
+                    ?error,
+                    "failed to record scheduled job metric"
+                );
+            }
+        }
+        Ok(Err(error)) => {
+            tracing::error!(job = job.name, ?error, "scheduled job failed");
+            let _ = record_worker_metric(&state, job.name, false).await;
+        }
+        Err(error) => {
+            tracing::error!(job = job.name, %error, "scheduled job panicked");
+            let _ = record_worker_metric(&state, job.name, false).await;
+        }
     }
     Ok(())
 }
@@ -891,11 +907,17 @@ async fn reset_traffic(state: &WorkerState) -> anyhow::Result<()> {
     let mut conn = state.redis.get_multiplexed_async_connection().await?;
     let _: () = conn.set_ex("traffic_reset_lock", 1, 300).await?;
     let now = Utc::now().timestamp();
+    // INNER JOIN, not LEFT JOIN: ResetTraffic.php groups existing plans by
+    // reset_traffic_method and only resets users whose plan_id is in one of those
+    // GROUP_CONCAT lists (`whereIn('plan_id', $planIds)`). A user with a NULL or
+    // orphaned plan_id is never in any list, so it is never reset. The join keeps
+    // only users backed by a real plan; a matched row with a NULL method genuinely
+    // means "plan exists but method is NULL" and falls through to the config default.
     let users = sqlx::query_as::<_, ResetUserRow>(
         r#"
         SELECT u.id, u.expired_at, p.reset_traffic_method
         FROM v2_user u
-        LEFT JOIN v2_plan p ON p.id = u.plan_id
+        INNER JOIN v2_plan p ON p.id = u.plan_id
         WHERE u.expired_at IS NOT NULL
           AND u.expired_at > ?
         "#,
