@@ -96,6 +96,61 @@ const userNodeLoadingReadySelector = '[data-testid="node-loading"], #page-contai
 const userTrafficRowsReadySelector = '[data-testid="traffic-table"] tbody tr, .ant-table-tbody tr';
 const userTrafficSurfaceReadySelector = '[data-testid="traffic-card"], .ant-table';
 
+// Admin redesigned-vs-legacy union selectors. The interaction harness runs one
+// run(page) against both the shadcn source build and the frozen antd oracle, so
+// every admin selector must match both DOMs. Shadcn slot/role first, antd class
+// fallback. Provenance: scratchpad admin-dom-map.
+const adminDrawerOpenSelector =
+  '.ant-drawer-open, [data-slot="sheet-content"], .v2board-radix-sheet-content';
+const adminDialogOpenSelector =
+  '.ant-modal, [data-slot="dialog-content"], .v2board-radix-dialog-content';
+const adminOverlayOpenSelector = `${adminDrawerOpenSelector}, ${adminDialogOpenSelector}`;
+const adminFormInputSelector = '.ant-input, [data-slot="input"], [data-slot="textarea"]';
+const adminFormLabelSelector = 'label, [data-slot="label"], [data-slot="form-label"]';
+const adminFormFieldSelector =
+  '.form-group, [data-slot="form-item"], .space-y-1\\.5, .space-y-2, .space-y-3';
+const adminSelectTriggerSelector =
+  '.ant-select-selection, [data-slot="select-trigger"], [role="combobox"]';
+const adminSelectOptionSelector =
+  '.ant-select-dropdown-menu-item, [data-slot="select-item"], [role="option"]';
+const adminSelectDropdownSelector = '.ant-select-dropdown, [data-slot="select-content"]';
+const adminTableRowSelector = '.ant-table-tbody tr, [data-slot="table-row"]';
+const adminMenuItemSelector =
+  '.ant-dropdown-menu-item, [data-slot="dropdown-menu-item"], [role="menuitem"]';
+const adminSwitchSelector = '.ant-switch, [role="switch"], [data-slot="switch"]';
+const adminDrawerTitleSelector =
+  '.ant-drawer-title, [data-slot="sheet-title"], [data-slot="dialog-title"]';
+
+// Distribute a descendant combinator across both selector unions so
+// `scope-a, scope-b` + `child-x, child-y` becomes the full cartesian product
+// rather than mis-parsing as `scope-a` OR `scope-b child-x`.
+function scopedSelectorUnion(scopeSelector, childSelector) {
+  const scopes = scopeSelector
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const children = childSelector
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return scopes.flatMap((scope) => children.map((child) => `${scope} ${child}`)).join(', ');
+}
+const adminDrawerInputSelector = scopedSelectorUnion(adminOverlayOpenSelector, adminFormInputSelector);
+const adminDrawerSelectTriggerSelector = scopedSelectorUnion(
+  adminOverlayOpenSelector,
+  adminSelectTriggerSelector,
+);
+const adminDrawerLabelSelector = scopedSelectorUnion(
+  adminOverlayOpenSelector,
+  'label, [data-slot="label"]',
+);
+const adminDrawerSelectedValueSelector = scopedSelectorUnion(
+  adminOverlayOpenSelector,
+  '.ant-select-selection-selected-value, [data-slot="select-trigger"]:not([data-placeholder])',
+);
+const adminDrawerFooterButtonSelector =
+  '.ant-drawer-open .v2board-drawer-action .ant-btn, .ant-modal-footer .ant-btn, [data-slot="sheet-footer"] button, [data-slot="dialog-footer"] button';
+
 function normalizeParityText(value) {
   return String(value ?? '')
     .trim()
@@ -1763,7 +1818,7 @@ const scenarios = [
     label: 'admin-dashboard',
     path: `/${adminPath}#/dashboard`,
     postReadyDelay: 800,
-    readySelector: '.alert.alert-danger',
+    readySelector: '[role="alert"], .alert.alert-danger',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1782,7 +1837,7 @@ const scenarios = [
     label: 'admin-dashboard-dark',
     path: `/${adminPath}#/dashboard`,
     postReadyDelay: 800,
-    readySelector: '.alert.alert-danger',
+    readySelector: '[role="alert"], .alert.alert-danger',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1790,7 +1845,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-plans',
     path: `/${adminPath}#/plan`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1800,7 +1855,7 @@ const scenarios = [
     label: 'admin-plans-timeout',
     path: `/${adminPath}#/plan`,
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1808,7 +1863,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-orders',
     path: `/${adminPath}#/order`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1818,7 +1873,7 @@ const scenarios = [
     longData: true,
     path: `/${adminPath}#/order`,
     postReadyDelay: 500,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1828,7 +1883,7 @@ const scenarios = [
     label: 'admin-orders-api-500',
     path: `/${adminPath}#/order`,
     postReadyDelay: 500,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1838,7 +1893,7 @@ const scenarios = [
     label: 'admin-orders-timeout',
     path: `/${adminPath}#/order`,
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1846,7 +1901,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-users',
     path: `/${adminPath}#/user`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1856,7 +1911,7 @@ const scenarios = [
     label: 'admin-users-timeout',
     path: `/${adminPath}#/user`,
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1866,7 +1921,7 @@ const scenarios = [
     label: 'admin-users-api-500',
     path: `/${adminPath}#/user`,
     postReadyDelay: 500,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1876,7 +1931,7 @@ const scenarios = [
     label: 'admin-tickets-timeout',
     path: `/${adminPath}#/ticket`,
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1886,7 +1941,7 @@ const scenarios = [
     longData: true,
     path: `/${adminPath}#/user`,
     postReadyDelay: 500,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1894,7 +1949,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-tickets',
     path: `/${adminPath}#/ticket`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1926,7 +1981,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-system',
     path: `/${adminPath}#/queue`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1934,7 +1989,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-server-groups',
     path: `/${adminPath}#/server/group`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1943,7 +1998,7 @@ const scenarios = [
     label: 'admin-server-manage',
     path: `/${adminPath}#/server/manage`,
     postReadyDelay: 300,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/server/group`,
   },
@@ -1953,7 +2008,7 @@ const scenarios = [
     longData: true,
     path: `/${adminPath}#/server/manage`,
     postReadyDelay: 500,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/server/group`,
   },
@@ -1963,7 +2018,7 @@ const scenarios = [
     label: 'admin-server-manage-timeout',
     path: `/${adminPath}#/server/manage`,
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/server/group`,
   },
@@ -1971,7 +2026,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-server-routes',
     path: `/${adminPath}#/server/route`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1979,7 +2034,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-payments',
     path: `/${adminPath}#/config/payment`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1989,7 +2044,7 @@ const scenarios = [
     label: 'admin-payments-timeout',
     path: `/${adminPath}#/config/payment`,
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -1997,7 +2052,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-coupons',
     path: `/${adminPath}#/coupon`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -2007,7 +2062,7 @@ const scenarios = [
     label: 'admin-coupons-timeout',
     path: `/${adminPath}#/coupon`,
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -2015,7 +2070,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-giftcards',
     path: `/${adminPath}#/giftcard`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -2025,7 +2080,7 @@ const scenarios = [
     label: 'admin-giftcards-timeout',
     path: `/${adminPath}#/giftcard`,
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -2033,7 +2088,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-notices',
     path: `/${adminPath}#/notice`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -2043,7 +2098,7 @@ const scenarios = [
     label: 'admin-notices-timeout',
     path: `/${adminPath}#/notice`,
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -2051,7 +2106,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-knowledge',
     path: `/${adminPath}#/knowledge`,
-    readySelector: '.ant-table-tbody tr',
+    readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -2061,7 +2116,7 @@ const scenarios = [
     label: 'admin-knowledge-timeout',
     path: `/${adminPath}#/knowledge`,
     postReadyDelay: 800,
-    readySelector: '.ant-table',
+    readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -4941,6 +4996,37 @@ async function normalizeRedesignedAuthPageState(page) {
   };
 }
 
+// The admin auth surface is a redesigned shadcn island: its title/subtitle render as
+// `<div data-slot=card-*>` (not `<h*>`), and the forgot-password affordance is a `<button>`
+// that opens a Dialog rather than the oracle's `<a>` link. Collapse buttons+links into one
+// order-independent `actions` set (login/forgot mapped to tokens, the brand link that doubles
+// as a title dropped), and fold the identifier input's email->text + placeholder the same way
+// the user auth normalizer does — so the shadcn source and antd oracle converge on the Tier-1
+// contract (auth box present, email+password fields, login+forgot actions, #/login hash).
+function normalizeAdminAuthPageState(state) {
+  const titleTexts = Array.isArray(state?.titleTexts) ? state.titleTexts : [];
+  const actions = [...(state?.buttons ?? []), ...(state?.links ?? [])]
+    .filter((text) => !titleTexts.includes(text))
+    .map((text) => {
+      if (['登入', '登录', 'Login', 'ログイン'].includes(text)) return 'login-action';
+      if (['忘记密码', '忘记密码？'].includes(text)) return 'forgot-password-action';
+      return text;
+    })
+    .filter((text, index, all) => all.indexOf(text) === index)
+    .sort();
+  return {
+    actions,
+    authBoxCount: state?.authBoxCount,
+    controls: (state?.controls ?? []).map((control) => {
+      const behavioral = { ...control };
+      delete behavioral.placeholder;
+      if (behavioral.type === 'email') behavioral.type = 'text';
+      return behavioral;
+    }),
+    hash: state?.hash,
+  };
+}
+
 async function runLoginFormLanguageInteraction(page) {
   await fillFirstVisible(
     page,
@@ -5009,15 +5095,36 @@ async function runAdminLoginFormStateInteraction(page) {
   await fillVisibleAt(page, 'input[type="text"], input:not([type]), input[type="email"]', 0, 'admin@local');
   await fillVisibleAt(page, 'input[type="password"]', 0, '12345678');
   const filled = await authPageState(page);
-  await clickFirstVisibleText(page, 'a', ['忘记密码']);
-  await waitForVisibleElementCountAtLeast(page, '.ant-modal-confirm, .ant-modal', 1);
+  // Redesign renders the forgot affordance as a `<button>` opening a Dialog; oracle uses an
+  // `<a>` opening an antd modal. Union both so one run drives either build.
+  await clickFirstVisibleText(page, 'a, button', ['忘记密码']);
+  await waitForVisibleElementCountAtLeast(
+    page,
+    '[role="dialog"], .ant-modal-confirm, .ant-modal',
+    1,
+  );
   return {
     filled,
     forgotModal: {
-      buttons: await visibleTexts(page, '.ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn', 4),
-      content: await visibleTexts(page, '.ant-modal-confirm-content, .ant-modal-body', 4),
-      modalCount: await visibleCount(page, '.ant-modal-confirm, .ant-modal'),
-      title: await visibleTexts(page, '.ant-modal-confirm-title, .ant-modal-title', 2),
+      buttons: await visibleTexts(
+        page,
+        '[role="dialog"] button, .ant-modal-confirm-btns .ant-btn, .ant-modal .ant-btn',
+        4,
+      ),
+      content: await visibleTexts(
+        page,
+        '[role="dialog"] [data-slot="dialog-description"], [role="dialog"] code, .ant-modal-confirm-content, .ant-modal-body',
+        4,
+      ),
+      modalCount: await visibleCount(
+        page,
+        '[data-slot="dialog-content"], .ant-modal-confirm, .ant-modal',
+      ),
+      title: await visibleTexts(
+        page,
+        '[role="dialog"] [data-slot="dialog-title"], .ant-modal-confirm-title, .ant-modal-title',
+        2,
+      ),
     },
   };
 }
@@ -5026,9 +5133,21 @@ async function runAdminSystemQueueStateInteraction(page) {
   await page.waitForTimeout(150);
   return {
     hash: await page.evaluate(() => window.location.hash),
-    overview: await visibleTexts(page, '.block-title, .font-size-h3', 12),
-    rows: await visibleTexts(page, '.ant-table-tbody tr', 12),
-    tableHeaders: await visibleTexts(page, '.ant-table-thead th', 8),
+    overview: await visibleTexts(
+      page,
+      '[data-testid="queue-page"] [data-slot="card-title"], [data-testid="queue-page"] h2, .block-title, .font-size-h3',
+      12,
+    ),
+    rows: await visibleTexts(
+      page,
+      '[data-testid="queue-workload-table"] tbody tr, .ant-table-tbody tr',
+      12,
+    ),
+    tableHeaders: await visibleTexts(
+      page,
+      '[data-testid="queue-workload-table"] thead th, .ant-table-thead th',
+      8,
+    ),
   };
 }
 
@@ -6646,7 +6765,13 @@ async function runOrderCancelConfirmInteraction(page) {
 
 async function runAdminDashboardCommissionShortcutInteraction(page) {
   const before = await adminDashboardShortcutState(page);
-  await clickVisibleAt(page, '.alert-danger .alert-link', 1);
+  // Redesign exposes the commission alert's action by testid; the oracle renders it as the
+  // second `.alert-danger .alert-link`. Drive whichever this build provides.
+  if ((await visibleCount(page, '[data-testid="dashboard-commission-action"]')) > 0) {
+    await clickFirstVisible(page, '[data-testid="dashboard-commission-action"]');
+  } else {
+    await clickVisibleAt(page, '.alert-danger .alert-link', 1);
+  }
   await page.waitForFunction(() => window.location.hash.includes('/order'), { timeout: 5_000 });
   await waitForPageProperty(page, '__visualParityLastAdminOrderFetchQuery');
   await page.waitForTimeout(150);
@@ -6730,33 +6855,33 @@ async function runAdminPlanCreateDrawerInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新建订阅');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Plan');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '<p>Parity plan body</p>');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, '12.34');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 3, '23.45');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 8, '199.00');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 10, '250');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 11, '7');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 12, '99');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 13, '50');
-  await clickVisibleAt(page, '.ant-drawer-open .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Default');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新建订阅');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Plan');
+  await fillVisibleAt(page, adminDrawerInputSelector, 1, '<p>Parity plan body</p>');
+  await fillVisibleAt(page, adminDrawerInputSelector, 2, '12.34');
+  await fillVisibleAt(page, adminDrawerInputSelector, 3, '23.45');
+  await fillVisibleAt(page, adminDrawerInputSelector, 8, '199.00');
+  await fillVisibleAt(page, adminDrawerInputSelector, 10, '250');
+  await fillVisibleAt(page, adminDrawerInputSelector, 11, '7');
+  await fillVisibleAt(page, adminDrawerInputSelector, 12, '99');
+  await fillVisibleAt(page, adminDrawerInputSelector, 13, '50');
+  await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 0);
+  await waitForVisibleText(page, adminSelectOptionSelector, 'Default');
   const groupDropdown = await adminPlanDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Default']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
-  await clickVisibleAt(page, '.ant-drawer-open .ant-select-selection', 1);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '按月重置');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['Default']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
+  await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 1);
+  await waitForVisibleText(page, adminSelectOptionSelector, '按月重置');
   const resetDropdown = await adminPlanDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['按月重置']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['按月重置']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await clickFirstVisible(page, '.ant-drawer-open .ant-checkbox-wrapper');
   await page.waitForTimeout(100);
   const filled = await adminPlanDrawerState(page);
   await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
   await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanSaveCount', 1);
   await waitForVisibleElementsHidden(page, '.ant-drawer-open');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-title');
+  await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityAdminPlanFetchCount',
@@ -6784,11 +6909,11 @@ async function runAdminPlanSaveFailureInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新建订阅');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Failed Plan');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '<p>Plan failure body</p>');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, '12.34');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 10, '250');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新建订阅');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Failed Plan');
+  await fillVisibleAt(page, adminDrawerInputSelector, 1, '<p>Plan failure body</p>');
+  await fillVisibleAt(page, adminDrawerInputSelector, 2, '12.34');
+  await fillVisibleAt(page, adminDrawerInputSelector, 10, '250');
   await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default']);
   await page.waitForTimeout(100);
   const filled = await adminPlanDrawerState(page);
@@ -6811,10 +6936,10 @@ async function runAdminPlanCreateGroupSelectDropdownInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新建订阅');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新建订阅');
   const before = await legacySelectDropdownState(page, '.ant-drawer-open');
-  await clickVisibleAt(page, '.ant-drawer-open .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Default');
+  await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 0);
+  await waitForVisibleText(page, adminSelectOptionSelector, 'Default');
   await page.waitForTimeout(700);
   const opened = await legacySelectDropdownState(page, '.ant-drawer-open');
   return { before, opened };
@@ -6827,18 +6952,18 @@ async function runAdminPlanResetMethodMatrixInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新建订阅');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Reset Matrix');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '<p>Reset method matrix</p>');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, '10.00');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 9, '2.00');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 10, '128');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新建订阅');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Reset Matrix');
+  await fillVisibleAt(page, adminDrawerInputSelector, 1, '<p>Reset method matrix</p>');
+  await fillVisibleAt(page, adminDrawerInputSelector, 2, '10.00');
+  await fillVisibleAt(page, adminDrawerInputSelector, 9, '2.00');
+  await fillVisibleAt(page, adminDrawerInputSelector, 10, '128');
   await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default']);
   await openLegacySelectByLabel(page, '.ant-drawer-open', '流量重置方式');
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '每年1月1日');
+  await waitForVisibleText(page, adminSelectOptionSelector, '每年1月1日');
   const resetDropdown = await adminPlanDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['每月1号']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['每月1号']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   const monthlyFirst = await adminPlanDrawerState(page);
   await selectLegacyFormOption(page, '.ant-drawer-open', '流量重置方式', ['不重置']);
   const neverReset = await adminPlanDrawerState(page);
@@ -6847,7 +6972,7 @@ async function runAdminPlanResetMethodMatrixInteraction(page) {
   await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
   await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanSaveCount', 1);
   await waitForVisibleElementsHidden(page, '.ant-drawer-open');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-title');
+  await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityAdminPlanFetchCount',
@@ -6874,13 +6999,13 @@ async function runAdminPlanDrawerKeyboardCloseInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新建订阅');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新建订阅');
   const opened = await adminPlanDrawerState(page);
   await focusFirstVisible(page, '.ant-drawer-open');
   const focused = await keyboardFocusState(page);
   await page.keyboard.press('Escape');
   await waitForVisibleElementsHidden(page, '.ant-drawer-open');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-title');
+  await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   const closed = await adminPlanDrawerState(page);
   return { before, closed, focused, opened };
 }
@@ -6896,32 +7021,32 @@ async function runAdminPlanEditDrawerInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '编辑订阅');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '编辑订阅');
   await page.waitForFunction(
     () =>
-      Array.from(document.querySelectorAll('.ant-drawer-open .ant-input')).some(
+      Array.from(document.querySelectorAll(adminDrawerInputSelector)).some(
         (element) => 'value' in element && element.value === 'Pro',
       ),
     { timeout: 5_000 },
   );
   const opened = await adminPlanDrawerState(page);
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Edited Plan');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '<p>Edited plan body</p>');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, '88.88');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 10, '300');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 11, '8');
-  await clickVisibleAt(page, '.ant-drawer-open .ant-select-selection', 1);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '不重置');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Edited Plan');
+  await fillVisibleAt(page, adminDrawerInputSelector, 1, '<p>Edited plan body</p>');
+  await fillVisibleAt(page, adminDrawerInputSelector, 2, '88.88');
+  await fillVisibleAt(page, adminDrawerInputSelector, 10, '300');
+  await fillVisibleAt(page, adminDrawerInputSelector, 11, '8');
+  await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 1);
+  await waitForVisibleText(page, adminSelectOptionSelector, '不重置');
   const resetDropdown = await adminPlanDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['不重置']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['不重置']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await clickFirstVisible(page, '.ant-drawer-open .ant-checkbox-wrapper');
   await page.waitForTimeout(100);
   const edited = await adminPlanDrawerState(page);
   await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
   await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanSaveCount', 1);
   await waitForVisibleElementsHidden(page, '.ant-drawer-open');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-title');
+  await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityAdminPlanFetchCount',
@@ -7100,7 +7225,7 @@ async function openAdminServerNodeDrawerForType(page, typeLabel) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新建节点');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新建节点');
   await page.mouse.move(1, 1);
   await page.waitForTimeout(150);
   return { menuOpened, opened: await adminServerNodeDrawerState(page) };
@@ -7184,17 +7309,17 @@ async function runAdminServerCreateNodeDrawerInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新建节点');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Node');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '1.5');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新建节点');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Node');
+  await fillVisibleAt(page, adminDrawerInputSelector, 1, '1.5');
   await page.waitForTimeout(100);
   const drawerOpened = await adminServerNodeDrawerState(page);
   await page.mouse.move(1, 1);
   await page.waitForTimeout(150);
-  await clickVisibleAt(page, '.ant-drawer-open .ant-select-selection', 1);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Default');
+  await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 1);
+  await waitForVisibleText(page, adminSelectOptionSelector, 'Default');
   const groupDropdown = await adminServerNodeDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Default']);
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['Default']);
   await page.waitForTimeout(150);
   const groupSelected = await adminServerNodeDrawerState(page);
   await closeVisibleAdminServerDrawers(page);
@@ -7219,12 +7344,12 @@ async function runAdminServerVlessRealityMatrixInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新建节点');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity VLess Reality');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '3.5');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, 'vless.example.test');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 3, '443');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 4, '10443');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新建节点');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity VLess Reality');
+  await fillVisibleAt(page, adminDrawerInputSelector, 1, '3.5');
+  await fillVisibleAt(page, adminDrawerInputSelector, 2, 'vless.example.test');
+  await fillVisibleAt(page, adminDrawerInputSelector, 3, '443');
+  await fillVisibleAt(page, adminDrawerInputSelector, 4, '10443');
   await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default']);
   const opened = await adminServerVlessMatrixState(page);
   await selectLegacyFormOption(page, '.ant-drawer-open', '安全性', ['Reality']);
@@ -7282,12 +7407,12 @@ async function runAdminServerNodeSaveFailureInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新建节点');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Failed VLess');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '2.5');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, 'failed-vless.example.test');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 3, '443');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 4, '10443');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新建节点');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Failed VLess');
+  await fillVisibleAt(page, adminDrawerInputSelector, 1, '2.5');
+  await fillVisibleAt(page, adminDrawerInputSelector, 2, 'failed-vless.example.test');
+  await fillVisibleAt(page, adminDrawerInputSelector, 3, '443');
+  await fillVisibleAt(page, adminDrawerInputSelector, 4, '10443');
   await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default'], {
     waitForHidden: false,
   });
@@ -7346,7 +7471,7 @@ async function runAdminServerProtocolFieldMatrixInteraction(page) {
   {
     mark('open Trojan');
     const { menuOpened, opened } = await openAdminServerNodeDrawerForType(page, 'Trojan');
-    await fillVisibleAt(page, '.ant-drawer-open .ant-input', 5, 'trojan-sni.example.test');
+    await fillVisibleAt(page, adminDrawerInputSelector, 5, 'trojan-sni.example.test');
     mark('Trojan select allow insecure');
     await selectLegacyFormOption(page, '.ant-drawer-open', '允许不安全', ['是']);
     mark('Trojan select WebSocket');
@@ -7400,7 +7525,7 @@ async function runAdminServerProtocolFieldMatrixInteraction(page) {
   {
     mark('open AnyTLS');
     const { menuOpened, opened } = await openAdminServerNodeDrawerForType(page, 'AnyTLS');
-    await fillVisibleAt(page, '.ant-drawer-open .ant-input', 5, 'anytls-sni.example.test');
+    await fillVisibleAt(page, adminDrawerInputSelector, 5, 'anytls-sni.example.test');
     snapshots.anytls = {
       filled: await adminServerNodeDrawerState(page),
       menuOpened,
@@ -7495,10 +7620,10 @@ async function runAdminServerEditNodeDrawerInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '编辑节点');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '编辑节点');
   await page.waitForFunction(
     () => {
-      const values = Array.from(document.querySelectorAll('.ant-drawer-open .ant-input')).map(
+      const values = Array.from(document.querySelectorAll(adminDrawerInputSelector)).map(
         (element) => ('value' in element ? element.value : ''),
       );
       return values.includes('Tokyo 01') && values.includes('jp.example.com') && values.includes('8388');
@@ -7506,11 +7631,11 @@ async function runAdminServerEditNodeDrawerInteraction(page) {
     { timeout: 5_000 },
   );
   const opened = await adminServerNodeDrawerState(page);
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Edited Node');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, '2.25');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 2, 'edited-node.example.test');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 3, '9443');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 4, '18388');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Edited Node');
+  await fillVisibleAt(page, adminDrawerInputSelector, 1, '2.25');
+  await fillVisibleAt(page, adminDrawerInputSelector, 2, 'edited-node.example.test');
+  await fillVisibleAt(page, adminDrawerInputSelector, 3, '9443');
+  await fillVisibleAt(page, adminDrawerInputSelector, 4, '18388');
   await page.waitForTimeout(100);
   const edited = await adminServerNodeDrawerState(page);
   await closeVisibleAdminServerDrawers(page);
@@ -7546,10 +7671,10 @@ async function runAdminServerRouteEditModalInteraction(page) {
     'domain:edited.example.com\ngeosite:openai',
   );
   await clickVisibleAt(page, '.ant-modal .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '指定DNS服务器进行解析');
+  await waitForVisibleText(page, adminSelectOptionSelector, '指定DNS服务器进行解析');
   const actionDropdown = await adminServerRouteModalState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['指定DNS服务器进行解析']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['指定DNS服务器进行解析']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillVisibleAt(page, '.ant-modal .ant-input', 2, '1.1.1.1');
   await page.waitForTimeout(100);
   const edited = await adminServerRouteModalState(page);
@@ -7576,10 +7701,10 @@ async function runAdminServerRouteCreateModalInteraction(page) {
     'domain:created.example.com\ngeosite:created',
   );
   await clickVisibleAt(page, '.ant-modal .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '指定DNS服务器进行解析');
+  await waitForVisibleText(page, adminSelectOptionSelector, '指定DNS服务器进行解析');
   const actionDropdown = await adminServerRouteModalState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['指定DNS服务器进行解析']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['指定DNS服务器进行解析']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillVisibleAt(page, '.ant-modal .ant-input', 2, '9.9.9.9');
   await page.waitForTimeout(100);
   const edited = await adminServerRouteModalState(page);
@@ -7708,13 +7833,13 @@ async function runAdminPaymentCreateModalInteraction(page) {
   await page.waitForTimeout(100);
   const opened = await adminPaymentModalState(page);
   await clickFirstVisible(page, '.ant-modal .ant-select-selection');
-  await page.waitForSelector('.ant-select-dropdown-menu-item', {
+  await page.waitForSelector(adminSelectOptionSelector, {
     state: 'visible',
     timeout: 5_000,
   });
   const dropdown = await adminPaymentModalState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['StripeCheckout']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['StripeCheckout']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await page.waitForFunction(() => document.body.textContent.includes('Secret Key'), {
     timeout: 5_000,
   });
@@ -7944,13 +8069,13 @@ async function runAdminOrderAssignModalInteraction(page) {
   const opened = await adminOrderAssignModalState(page);
   await fillVisibleAt(page, '.ant-modal input', 0, 'assign-user@example.com');
   await clickVisibleAt(page, '.ant-modal .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Pro');
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Pro']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await waitForVisibleText(page, adminSelectOptionSelector, 'Pro');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['Pro']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await clickVisibleAt(page, '.ant-modal .ant-select-selection', 1);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '月付');
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['月付']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await waitForVisibleText(page, adminSelectOptionSelector, '月付');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['月付']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillVisibleAt(page, '.ant-modal input', 1, '12.34');
   await page.waitForTimeout(100);
   const filled = await adminOrderAssignModalState(page);
@@ -8262,16 +8387,16 @@ async function runAdminGiftcardCreateModalInteraction(page) {
   await fillVisibleAt(page, '.ant-modal .ant-input', 1, 'GIFT2026');
   const opened = await adminGiftcardModalState(page);
   await clickVisibleAt(page, '.ant-modal .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '兑换订阅套餐');
+  await waitForVisibleText(page, adminSelectOptionSelector, '兑换订阅套餐');
   const typeDropdown = await adminGiftcardModalState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['兑换订阅套餐']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['兑换订阅套餐']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillFirstVisible(page, '.ant-modal input[placeholder="一次性套餐输入0"]', '0');
   await clickVisibleAt(page, '.ant-modal .ant-select-selection', 1);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Pro');
+  await waitForVisibleText(page, adminSelectOptionSelector, 'Pro');
   const planDropdown = await adminGiftcardModalState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Pro']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['Pro']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillFirstVisible(
     page,
     '.ant-modal input[placeholder="限制最大使用次数，用完则无法使用(为空则不限制)"]',
@@ -8506,14 +8631,14 @@ async function runAdminKnowledgeCreateDrawerInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新增知识');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Knowledge');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, 'Parity');
-  await clickVisibleAt(page, '.ant-drawer-open .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'English');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新增知识');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Knowledge');
+  await fillVisibleAt(page, adminDrawerInputSelector, 1, 'Parity');
+  await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 0);
+  await waitForVisibleText(page, adminSelectOptionSelector, 'English');
   const languageDropdown = await adminKnowledgeDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['English']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['English']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillFirstVisible(
     page,
     '.ant-drawer-open textarea.section-container.input',
@@ -8531,7 +8656,7 @@ async function runAdminKnowledgeCreateDrawerInteraction(page) {
   const saved = await adminKnowledgeDrawerState(page);
   await clickVisibleAt(page, '.ant-drawer-open .v2board-drawer-action .ant-btn', 0);
   await waitForVisibleElementsHidden(page, '.ant-drawer-open');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-title');
+  await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   const closed = await adminKnowledgeDrawerState(page);
   return {
     before,
@@ -8555,13 +8680,13 @@ async function runAdminKnowledgeSaveFailureInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '新增知识');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Failed Knowledge');
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 1, 'Parity');
-  await clickVisibleAt(page, '.ant-drawer-open .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'English');
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['English']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '新增知识');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Failed Knowledge');
+  await fillVisibleAt(page, adminDrawerInputSelector, 1, 'Parity');
+  await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 0);
+  await waitForVisibleText(page, adminSelectOptionSelector, 'English');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['English']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillFirstVisible(
     page,
     '.ant-drawer-open textarea.section-container.input',
@@ -8591,16 +8716,16 @@ async function runAdminKnowledgeEditDrawerInteraction(page) {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-drawer-title', '编辑知识');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '编辑知识');
   await page.waitForFunction(
     () =>
-      Array.from(document.querySelectorAll('.ant-drawer-open .ant-input')).some(
+      Array.from(document.querySelectorAll(adminDrawerInputSelector)).some(
         (element) => 'value' in element && element.value === 'Copy Article',
       ),
     { timeout: 5_000 },
   );
   const opened = await adminKnowledgeDrawerState(page);
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'Parity Edited Article');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Edited Article');
   await fillFirstVisible(
     page,
     '.ant-drawer-open textarea.section-container.input',
@@ -8618,7 +8743,7 @@ async function runAdminKnowledgeEditDrawerInteraction(page) {
   const saved = await adminKnowledgeDrawerState(page);
   await clickVisibleAt(page, '.ant-drawer-open .v2board-drawer-action .ant-btn', 0);
   await waitForVisibleElementsHidden(page, '.ant-drawer-open');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-title');
+  await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   const closed = await adminKnowledgeDrawerState(page);
   return {
     before,
@@ -8658,7 +8783,7 @@ async function runAdminUsersFilterFieldSelectDropdownInteraction(page) {
   await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
   const before = await legacySelectDropdownState(page, '.v2board-filter-drawer');
   await clickVisibleAt(page, '.v2board-filter-drawer .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '到期时间');
+  await waitForVisibleText(page, adminSelectOptionSelector, '到期时间');
   await page.waitForTimeout(700);
   const opened = await legacySelectDropdownState(page, '.v2board-filter-drawer');
   return { before, opened };
@@ -8672,8 +8797,8 @@ async function runAdminUsersFilterExpiryPickerInteraction(page) {
   });
   await clickFirstVisible(page, '.v2board-filter-drawer .ant-btn-primary');
   await clickVisibleAt(page, '.v2board-filter-drawer .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '到期时间');
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['到期时间']);
+  await waitForVisibleText(page, adminSelectOptionSelector, '到期时间');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['到期时间']);
   await page.waitForSelector('.v2board-filter-drawer .ant-calendar-picker-input', {
     state: 'visible',
     timeout: 5_000,
@@ -8702,13 +8827,13 @@ async function runAdminUsersPaginationMatrixInteraction(page) {
   }
   page.__visualParityLastAdminUserFetchQuery = null;
   await clickFirstVisible(page, '.ant-pagination-options-size-changer .ant-select-selection');
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '50 条/页');
+  await waitForVisibleText(page, adminSelectOptionSelector, '50 条/页');
   const sizeDropdown = await legacySelectDropdownState(
     page,
     '.ant-pagination-options-size-changer',
   );
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['50 条/页']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['50 条/页']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
   await page.waitForTimeout(250);
   const pageSize50 = await adminTablePaginationState(page, 'user');
@@ -8913,10 +9038,10 @@ async function runAdminUserCreateModalInteraction(page) {
   await fillVisibleAt(page, '.ant-modal .ant-input', 2, 'example.com');
   await fillVisibleAt(page, '.ant-modal .ant-input', 3, 'secret123');
   await clickVisibleAt(page, '.ant-modal .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Pro');
+  await waitForVisibleText(page, adminSelectOptionSelector, 'Pro');
   const planDropdown = await adminUserCreateModalState(page);
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Pro']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['Pro']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await page.waitForTimeout(100);
   const filled = await adminUserCreateModalState(page);
   await clickVisibleAt(page, '.ant-modal-footer .ant-btn-primary', 0);
@@ -8943,7 +9068,7 @@ async function runAdminUserCreatePlanSelectDropdownInteraction(page) {
   await waitForVisibleText(page, '.ant-modal-title', '创建用户');
   const before = await legacySelectDropdownState(page, '.ant-modal');
   await clickVisibleAt(page, '.ant-modal .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Pro');
+  await waitForVisibleText(page, adminSelectOptionSelector, 'Pro');
   await page.waitForTimeout(700);
   const opened = await legacySelectDropdownState(page, '.ant-modal');
   return { before, opened };
@@ -9099,10 +9224,10 @@ async function runAdminUserEditActionInteraction(page) {
   const opened = await adminUserEditActionState(page);
   await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['编辑']);
   await page.waitForSelector('.ant-drawer-open', { state: 'visible', timeout: 5_000 });
-  await waitForVisibleText(page, '.ant-drawer-title', '用户管理');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '用户管理');
   await page.waitForFunction(
     () =>
-      Array.from(document.querySelectorAll('.ant-drawer-open .ant-input')).some(
+      Array.from(document.querySelectorAll(adminDrawerInputSelector)).some(
         (element) => element instanceof HTMLInputElement && element.value === 'visual-user@example.com',
       ),
     { timeout: 5_000 },
@@ -9119,15 +9244,15 @@ async function runAdminUserUpdateValidationFailureInteraction(page) {
   const dropdown = await adminUserEditActionState(page);
   await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['编辑']);
   await page.waitForSelector('.ant-drawer-open', { state: 'visible', timeout: 5_000 });
-  await waitForVisibleText(page, '.ant-drawer-title', '用户管理');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '用户管理');
   await page.waitForFunction(
     () =>
-      Array.from(document.querySelectorAll('.ant-drawer-open .ant-input')).some(
+      Array.from(document.querySelectorAll(adminDrawerInputSelector)).some(
         (element) => element instanceof HTMLInputElement && element.value === 'visual-user@example.com',
       ),
     { timeout: 5_000 },
   );
-  await fillVisibleAt(page, '.ant-drawer-open .ant-input', 0, 'invalid-email');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'invalid-email');
   await page.waitForTimeout(100);
   const edited = await adminUserEditActionState(page);
   await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
@@ -9157,13 +9282,13 @@ async function runAdminUserAssignActionInteraction(page) {
   await waitForVisibleText(page, '.ant-modal-title', '订单分配');
   const modalOpened = await adminOrderAssignModalState(page);
   await clickVisibleAt(page, '.ant-modal .ant-select-selection', 0);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', 'Pro');
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['Pro']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await waitForVisibleText(page, adminSelectOptionSelector, 'Pro');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['Pro']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await clickVisibleAt(page, '.ant-modal .ant-select-selection', 1);
-  await waitForVisibleText(page, '.ant-select-dropdown-menu-item', '月付');
-  await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', ['月付']);
-  await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+  await waitForVisibleText(page, adminSelectOptionSelector, '月付');
+  await clickFirstVisibleText(page, adminSelectOptionSelector, ['月付']);
+  await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   await fillVisibleAt(page, '.ant-modal input', 1, '23.45');
   await page.waitForTimeout(100);
   const filled = await adminOrderAssignModalState(page);
@@ -9280,7 +9405,11 @@ async function adminDashboardShortcutState(page) {
   });
 
   return {
-    alertLinks: await visibleTexts(page, '.alert-danger .alert-link', 4),
+    alertLinks: await visibleTexts(
+      page,
+      '[role="alert"] a, [role="alert"] button, .alert-danger .alert-link',
+      4,
+    ),
     hash: await page.evaluate(() => window.location.hash),
     orderFetchQuery: normalizeAdminOrderFetchQuery(page.__visualParityLastAdminOrderFetchQuery),
     orderFilter,
@@ -9311,7 +9440,7 @@ async function adminTablePaginationState(page, queryNamespace) {
 async function adminPaymentModalState(page) {
   return {
     buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
-    dropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 6),
+    dropdownItems: await visibleTexts(page, adminSelectOptionSelector, 6),
     inputValues: await visibleInputValues(page, '.ant-modal .ant-input'),
     labels: await visibleTexts(page, '.ant-modal label', 12),
     modalCount: await visibleCount(page, '.ant-modal'),
@@ -9348,7 +9477,7 @@ async function adminServerNodeDrawerState(page) {
     dropdownItems: await visibleTexts(page, '.ant-dropdown-menu-item', 10),
     inputValues: await visibleInputValues(page, `${drawerRoots} .ant-input`),
     labels: await visibleTexts(page, `${drawerRoots} .form-group label`, 20),
-    selectDropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 10),
+    selectDropdownItems: await visibleTexts(page, adminSelectOptionSelector, 10),
     selectedValues,
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 8),
     titles: await visibleTexts(page, `${drawerRoots} .ant-drawer-title`, 4),
@@ -9358,7 +9487,7 @@ async function adminServerNodeDrawerState(page) {
 async function adminServerRouteModalState(page) {
   return {
     buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
-    dropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 10),
+    dropdownItems: await visibleTexts(page, adminSelectOptionSelector, 10),
     inputValues: await visibleInputValues(page, '.ant-modal .ant-input'),
     labels: await visibleTexts(page, '.ant-modal .form-group label', 8),
     modalCount: await visibleCount(page, '.ant-modal'),
@@ -9490,9 +9619,9 @@ async function adminUserEditActionState(page) {
   return {
     actionButtons: await visibleTexts(page, '.ant-drawer-open .v2board-drawer-action .ant-btn', 4),
     drawerCount: await visibleCount(page, '.ant-drawer-open'),
-    drawerInputValues: await visibleInputValues(page, '.ant-drawer-open .ant-input'),
+    drawerInputValues: await visibleInputValues(page, adminDrawerInputSelector),
     drawerLabels: await visibleTexts(page, '.ant-drawer-open .form-group label', 20),
-    drawerTitle: await visibleTexts(page, '.ant-drawer-title', 2),
+    drawerTitle: await visibleTexts(page, adminDrawerTitleSelector, 2),
     dropdownItems: await visibleTexts(page, '.ant-dropdown-menu-item', 10),
     selectedValues: await visibleTexts(page, '.ant-drawer-open .ant-select-selection-selected-value', 8),
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
@@ -9503,7 +9632,7 @@ async function adminUserEditActionState(page) {
 async function adminUserCreateModalState(page) {
   return {
     buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
-    dropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 8),
+    dropdownItems: await visibleTexts(page, adminSelectOptionSelector, 8),
     inputValues: await visibleInputValues(page, '.ant-modal .ant-input'),
     labels: await visibleTexts(page, '.ant-modal .form-group label', 8),
     modalCount: await visibleCount(page, '.ant-modal'),
@@ -9723,7 +9852,7 @@ async function adminUsersExtremeViewportState(page) {
   });
   return {
     drawerButtons: await visibleTexts(page, '.v2board-filter-drawer .v2board-drawer-action .ant-btn', 4),
-    drawerTitles: await visibleTexts(page, '.ant-drawer-title', 2),
+    drawerTitles: await visibleTexts(page, adminDrawerTitleSelector, 2),
     layout,
     pageItems: await visibleTexts(page, '.ant-pagination-item', 6),
     tableHeaders: await visibleTexts(page, '.ant-table-thead th', 14),
@@ -9872,7 +10001,12 @@ function normalizeInteractionResult(label, result) {
       placement: normalized.placement,
     };
   }
-  if (label === 'user-session-expired-redirect') {
+  if (
+    label === 'user-session-expired-redirect' ||
+    label === 'admin-session-expired-redirect'
+  ) {
+    // Redesigned login renders its brand/subtitle as card slots (not `<h*>`), so titleTexts
+    // differs; the Tier-1 contract is the 403 keep-token dance + redirect to a single login box.
     return {
       authData: normalized.authData,
       hash: normalized.hash,
@@ -9932,13 +10066,20 @@ function normalizeInteractionResult(label, result) {
   ) {
     return normalizeRedesignedFetchFailureInteractionResult(label, normalized);
   }
-  if (label === 'user-auth-401-no-redirect') {
+  if (label === 'user-auth-401-no-redirect' || label === 'admin-auth-401-no-redirect') {
     return {
       ...normalized,
       dashboardTexts: jsonIncludesAny(normalized.dashboardTexts, ['仪表盘', 'Dashboard'])
         ? ['仪表盘']
         : [],
     };
+  }
+  if (label === 'admin-system-queue-state') {
+    // Redesigned monitoring surface: the overview stat-card layout is Tier-2
+    // presentation (legacy block titles vs shadcn StatCards). The Tier-1 signal
+    // is the workload table (headers + rows) and the /queue route.
+    const { overview: _overview, ...rest } = normalized;
+    return rest;
   }
   if (label === 'user-dashboard-subscribe-drawer') {
     return normalizeDashboardSubscribeDrawerInteractionResult(normalized);
@@ -9973,7 +10114,10 @@ function normalizeInteractionResult(label, result) {
   if (label === 'user-profile-deposit-modal') {
     return normalizeProfileDepositModalInteractionResult(normalized);
   }
-  if (label === 'user-dashboard-dark-mode-persistence') {
+  if (
+    label === 'user-dashboard-dark-mode-persistence' ||
+    label === 'admin-dashboard-dark-mode-persistence'
+  ) {
     return {
       afterEnable: normalizeUserDarkModePersistenceState(normalized.afterEnable),
       afterReload: normalizeUserDarkModePersistenceState(normalized.afterReload),
@@ -10073,6 +10217,45 @@ function normalizeInteractionResult(label, result) {
     label === 'admin-server-v2node-protocol-matrix'
   ) {
     return normalizeAdminServerProtocolMatrixResult(normalized);
+  }
+  if (label === 'admin-dashboard-avatar-dropdown') {
+    // Portaled Radix menu vs Bootstrap dropdown: keep only that the menu toggles open and
+    // exposes a logout action; drop menuClass and trigger-relative geometry (Tier-2).
+    const reduceAvatar = (state) => ({
+      hasLogout: jsonIncludesAny(state?.items, ['Logout', '登出']),
+      menuCount: state?.menuCount,
+    });
+    return { before: reduceAvatar(normalized.before), opened: reduceAvatar(normalized.opened) };
+  }
+  if (label === 'admin-dashboard-commission-shortcut') {
+    // shortcutTexts came from OneUI `.js-classic-nav .font-w600` nav labels (Tier-2). The
+    // contract is the commission order-filter sessionStorage + fetch query and the /order hash.
+    const stripShortcutTexts = (state) => {
+      if (!state) return state;
+      const { shortcutTexts: _shortcutTexts, ...rest } = state;
+      return rest;
+    };
+    return {
+      after: stripShortcutTexts(normalized.after),
+      before: stripShortcutTexts(normalized.before),
+    };
+  }
+  if (label === 'admin-root-page-state') {
+    return normalizeAdminAuthPageState(normalized);
+  }
+  if (label === 'admin-login-form-state') {
+    const forgot = normalized.forgotModal ?? {};
+    return {
+      // Tier-1: identifier+password fields retained their typed values, login+forgot actions
+      // present. Tier-2 (forgot dialog's exact button/description copy) is dropped; we only
+      // pin that a single dialog opened, titled 忘记密码, revealing the reset:password command.
+      filled: normalizeAdminAuthPageState(normalized.filled ?? {}),
+      forgotModal: {
+        hasResetCommand: jsonIncludes(forgot, 'reset:password'),
+        modalCount: forgot.modalCount,
+        title: forgot.title,
+      },
+    };
   }
   return normalized;
 }
@@ -10819,7 +11002,7 @@ function assertUsefulInteraction(label, result) {
   if (
     label === 'admin-system-queue-state' &&
     (!String(result.hash ?? '').includes('/queue') ||
-      result.overview?.length < 4 ||
+      result.overview?.length < 1 ||
       result.tableHeaders?.length < 4 ||
       result.rows?.length < 1)
   ) {
@@ -10855,11 +11038,11 @@ function assertUsefulInteraction(label, result) {
   }
   if (
     label === 'admin-dashboard-avatar-dropdown' &&
+    // Redesigned as a portaled Radix menu: the oracle's Bootstrap `dropdown-menu-right/-lg`
+    // classes and trigger-relative geometry are Tier-2 presentation. Pin only the behavioral
+    // contract — the account menu opens (0 -> 1) and exposes a logout action.
     (result.before?.menuCount !== 0 ||
       result.opened?.menuCount !== 1 ||
-      !result.opened?.menuClass?.includes('dropdown-menu-right') ||
-      !result.opened?.menuClass?.includes('dropdown-menu-lg') ||
-      Math.abs(result.opened?.rightDelta ?? 99) > 1 ||
       !jsonIncludesAny(result.opened?.items, ['Logout', '登出']))
   ) {
     throw new Error(`admin avatar dropdown did not match legacy state: ${JSON.stringify(result)}`);
@@ -13606,6 +13789,26 @@ async function languageDropdownPlacementState(page) {
 }
 
 async function clickHeaderAvatarTrigger(page) {
+  // The redesigned account menu is a Radix DropdownMenu in the sidebar footer:
+  // Radix opens on real pointer events, so a synthetic element.click() is a
+  // no-op. Use Playwright's page.click for the shadcn trigger; the legacy antd
+  // header dropdown still opens fine via a synthetic click.
+  const shadcnVisible = await page.evaluate(() => {
+    const element = document.querySelector('[data-testid="admin-avatar-trigger"]');
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.display !== 'none' &&
+      style.visibility !== 'hidden'
+    );
+  });
+  if (shadcnVisible) {
+    await page.click('[data-testid="admin-avatar-trigger"]');
+    return;
+  }
   const clicked = await page.evaluate(() => {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
@@ -13641,7 +13844,9 @@ async function waitForHeaderAvatarDropdown(page) {
         );
       };
       return Array.from(
-        document.querySelectorAll('#page-header .dropdown-menu.show'),
+        document.querySelectorAll(
+          '[data-testid="admin-avatar-menu"], #page-header .dropdown-menu.show',
+        ),
       ).some(isVisible);
     },
     { timeout: 5_000 },
@@ -13671,11 +13876,15 @@ async function headerAvatarDropdownState(page) {
         width: Math.round(rect.width),
       };
     };
-    const trigger = Array.from(document.querySelectorAll('#page-header button')).find(
-      (element) => element.querySelector('.fa-user-circle') && isVisible(element),
-    );
+    const trigger =
+      Array.from(document.querySelectorAll('[data-testid="admin-avatar-trigger"]')).find(
+        isVisible,
+      ) ??
+      Array.from(document.querySelectorAll('#page-header button')).find(
+        (element) => element.querySelector('.fa-user-circle') && isVisible(element),
+      );
     const visibleMenus = Array.from(
-      document.querySelectorAll('#page-header .dropdown-menu.show'),
+      document.querySelectorAll('[data-testid="admin-avatar-menu"], #page-header .dropdown-menu.show'),
     ).filter(isVisible);
     const menu = visibleMenus[0];
     const triggerRect = trigger ? rectOf(trigger) : undefined;
@@ -14733,7 +14942,7 @@ async function legacySelectDropdownState(page, rootSelector) {
     };
     const visible = (selectorText) =>
       Array.from(document.querySelectorAll(selectorText)).filter(isVisible);
-    const dropdown = visible('.ant-select-dropdown')[0];
+    const dropdown = visible(adminSelectDropdownSelector)[0];
     const trigger =
       visible(`${selector} .ant-select-open`)[0] ?? visible(`${selector} .ant-select`)[0];
     const dropdownRect = dropdown?.getBoundingClientRect();
@@ -14744,8 +14953,8 @@ async function legacySelectDropdownState(page, rootSelector) {
         normalize(element.textContent),
       ),
       dropdownClass: normalize(dropdown?.className),
-      dropdownCount: visible('.ant-select-dropdown').length,
-      dropdownItems: visible('.ant-select-dropdown-menu-item').map((element) =>
+      dropdownCount: visible(adminSelectDropdownSelector).length,
+      dropdownItems: visible(adminSelectOptionSelector).map((element) =>
         normalize(element.textContent),
       ),
       geometry:
@@ -14818,7 +15027,7 @@ async function adminGiftcardModalState(page) {
   return {
     addonTexts: await visibleTexts(page, '.ant-modal .ant-input-group-addon', 6),
     buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
-    dropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 10),
+    dropdownItems: await visibleTexts(page, adminSelectOptionSelector, 10),
     inputValues: await visibleInputValues(page, '.ant-modal input'),
     labels: await visibleTexts(page, '.ant-modal .form-group label', 12),
     modalCount: await visibleCount(page, '.ant-modal'),
@@ -14842,34 +15051,45 @@ async function adminNoticeModalState(page) {
 
 async function adminPlanDrawerState(page) {
   return {
-    actionButtons: await visibleTexts(page, '.ant-drawer-open .v2board-drawer-action .ant-btn', 4),
-    actionDropdownItems: await visibleTexts(page, '.ant-dropdown-menu-item', 10),
-    addonTexts: await visibleTexts(page, '.ant-drawer-open .ant-input-group-addon', 8),
-    drawerCount: await visibleCount(page, '.ant-drawer-open'),
-    dropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 10),
-    forceUpdate: await page.evaluate(() => {
+    actionButtons: await visibleTexts(page, adminDrawerFooterButtonSelector, 4),
+    actionDropdownItems: await visibleTexts(page, adminMenuItemSelector, 10),
+    drawerCount: await visibleCount(page, adminDrawerOpenSelector),
+    dropdownItems: await visibleTexts(page, adminSelectOptionSelector, 10),
+    forceUpdate: await page.evaluate((overlaySelector) => {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none';
       };
-      const wrapper = Array.from(
-        document.querySelectorAll('.ant-drawer-open .ant-checkbox-wrapper'),
-      ).find(isVisible);
-      if (!wrapper) return null;
-      return {
-        checked: Boolean(
-          wrapper.matches('.ant-checkbox-wrapper-checked') ||
-            wrapper.querySelector('.ant-checkbox-checked, input:checked'),
-        ),
-        text: (wrapper.textContent ?? '').trim().replace(/\s+/g, ' '),
-      };
-    }),
-    inputValues: await visibleInputValues(page, '.ant-drawer-open .ant-input'),
-    labels: await visibleTexts(page, '.ant-drawer-open .form-group label', 24),
-    selectedValues: await visibleTexts(page, '.ant-drawer-open .ant-select-selection-selected-value', 6),
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
-    titles: await visibleTexts(page, '.ant-drawer-title', 2),
+      const roots = Array.from(document.querySelectorAll(overlaySelector));
+      for (const root of roots) {
+        const wrapper = Array.from(root.querySelectorAll('.ant-checkbox-wrapper')).find(isVisible);
+        if (wrapper) {
+          return {
+            checked: Boolean(
+              wrapper.matches('.ant-checkbox-wrapper-checked') ||
+                wrapper.querySelector('.ant-checkbox-checked, input:checked'),
+            ),
+          };
+        }
+        const box = Array.from(
+          root.querySelectorAll('[data-slot="checkbox"], [role="checkbox"]'),
+        ).find(isVisible);
+        if (box) {
+          return {
+            checked:
+              box.getAttribute('data-state') === 'checked' ||
+              box.getAttribute('aria-checked') === 'true',
+          };
+        }
+      }
+      return null;
+    }, adminOverlayOpenSelector),
+    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
+    labels: await visibleTexts(page, adminDrawerLabelSelector, 24),
+    selectedValues: await visibleTexts(page, adminDrawerSelectedValueSelector, 6),
+    tableRows: await visibleTexts(page, adminTableRowSelector, 6),
+    titles: await visibleTexts(page, adminDrawerTitleSelector, 2),
   };
 }
 
@@ -14912,14 +15132,14 @@ async function adminKnowledgeDrawerState(page) {
   return {
     actionButtons: await visibleTexts(page, '.ant-drawer-open .v2board-drawer-action .ant-btn', 4),
     drawerCount: await visibleCount(page, '.ant-drawer-open'),
-    dropdownItems: await visibleTexts(page, '.ant-select-dropdown-menu-item', 10),
-    inputValues: await visibleInputValues(page, '.ant-drawer-open .ant-input'),
+    dropdownItems: await visibleTexts(page, adminSelectOptionSelector, 10),
+    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
     labels: await visibleTexts(page, '.ant-drawer-open .form-group label', 8),
     markdownValue: await firstInputValue(page, '.ant-drawer-open textarea.section-container.input'),
     previewTexts: await visibleTexts(page, '.ant-drawer-open .custom-html-style', 4),
     selectedValues: await visibleTexts(page, '.ant-drawer-open .ant-select-selection-selected-value', 4),
     tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
-    titles: await visibleTexts(page, '.ant-drawer-title', 2),
+    titles: await visibleTexts(page, adminDrawerTitleSelector, 2),
   };
 }
 
@@ -15779,7 +15999,14 @@ async function dispatchFirstVisibleTextClick(page, selector, texts) {
 
 async function openLegacySelectByLabel(page, rootSelector, labelText) {
   await page.evaluate(
-    ({ labelText: targetLabel, rootSelector: targetRoot }) => {
+    ({
+      labelText: targetLabel,
+      rootSelector: targetRoot,
+      overlaySelector,
+      fieldSelector,
+      labelSelector,
+      triggerSelector,
+    }) => {
       const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
@@ -15791,30 +16018,46 @@ async function openLegacySelectByLabel(page, rootSelector, labelText) {
           style.visibility !== 'hidden'
         );
       };
-      let roots = Array.from(document.querySelectorAll(targetRoot));
-      if (roots.length === 0 && targetRoot === '.ant-drawer-open') {
+      let roots = Array.from(document.querySelectorAll(`${targetRoot}, ${overlaySelector}`));
+      if (roots.length === 0) {
         roots = [document.body];
       }
+      const clickTrigger = (element) => {
+        if (element instanceof HTMLElement) {
+          element.click();
+          return true;
+        }
+        return false;
+      };
+      const visibleTriggerIn = (container) =>
+        container ? Array.from(container.querySelectorAll(triggerSelector)).find(isVisible) : null;
       for (const root of roots) {
-        const visibleTriggerIn = (container) =>
-          container
-            ? Array.from(container.querySelectorAll('.ant-select-selection')).find(isVisible)
-            : null;
-        const groups = Array.from(root.querySelectorAll('.form-group'));
-        for (const group of groups) {
-          const groupLabels = Array.from(group.querySelectorAll('label')).filter(isVisible);
+        // 1. Field container whose label text matches → its select trigger.
+        const fields = Array.from(root.querySelectorAll(fieldSelector));
+        for (const field of fields) {
+          const fieldLabels = Array.from(field.querySelectorAll(labelSelector)).filter(isVisible);
           if (
-            !groupLabels.some((candidate) =>
+            !fieldLabels.some((candidate) =>
               normalize(candidate.textContent).includes(targetLabel),
             )
           ) {
             continue;
           }
-          const trigger = visibleTriggerIn(group);
-          if (trigger instanceof HTMLElement) {
-            trigger.click();
-            return;
-          }
+          if (clickTrigger(visibleTriggerIn(field))) return;
+        }
+
+        // 2. shadcn htmlFor → control id (SelectTrigger carries the id).
+        const forLabels = Array.from(root.querySelectorAll(labelSelector)).filter(
+          (candidate) =>
+            isVisible(candidate) && normalize(candidate.textContent).includes(targetLabel),
+        );
+        for (const label of forLabels) {
+          const forId = label.getAttribute('for');
+          if (!forId) continue;
+          const target = document.getElementById(forId);
+          if (!target) continue;
+          if (target.matches(triggerSelector) && clickTrigger(target)) return;
+          if (clickTrigger(visibleTriggerIn(target))) return;
         }
 
         const labelCandidates = Array.from(root.querySelectorAll('*'))
@@ -15828,24 +16071,20 @@ async function openLegacySelectByLabel(page, rootSelector, labelText) {
           );
         for (const candidate of labelCandidates) {
           const containers = [
-            candidate.closest('.form-group'),
+            candidate.closest(fieldSelector),
             candidate.parentElement,
             candidate.parentElement?.parentElement,
             candidate.closest('.row'),
           ].filter(Boolean);
           for (const container of containers) {
-            const trigger = visibleTriggerIn(container);
-            if (trigger instanceof HTMLElement) {
-              trigger.click();
-              return;
-            }
+            if (clickTrigger(visibleTriggerIn(container))) return;
           }
         }
 
         const label = labelCandidates[0];
         if (label) {
           const labelRect = label.getBoundingClientRect();
-          const trigger = Array.from(root.querySelectorAll('.ant-select-selection'))
+          const trigger = Array.from(root.querySelectorAll(triggerSelector))
             .filter(isVisible)
             .map((candidate) => {
               const rect = candidate.getBoundingClientRect();
@@ -15858,31 +16097,35 @@ async function openLegacySelectByLabel(page, rootSelector, labelText) {
               };
             })
             .sort((left, right) => left.score - right.score)[0]?.element;
-          if (trigger instanceof HTMLElement) {
-            trigger.click();
-            return;
-          }
+          if (clickTrigger(trigger)) return;
         }
       }
       const diagnostics = roots.map((root) => ({
-        groups: Array.from(root.querySelectorAll('.form-group'))
+        fields: Array.from(root.querySelectorAll(fieldSelector))
           .slice(0, 30)
           .map((element) => normalize(element.textContent)),
-        labels: Array.from(root.querySelectorAll('label'))
+        labels: Array.from(root.querySelectorAll(labelSelector))
           .slice(0, 30)
           .map((element) => normalize(element.textContent)),
-        triggers: Array.from(root.querySelectorAll('.ant-select-selection'))
+        triggers: Array.from(root.querySelectorAll(triggerSelector))
           .filter(isVisible)
           .slice(0, 20)
           .map((element) => normalize(element.textContent)),
       }));
       throw new Error(
-        `No visible legacy select with label ${targetLabel} in ${targetRoot}: ${JSON.stringify(
+        `No visible select with label ${targetLabel} in ${targetRoot}: ${JSON.stringify(
           diagnostics,
         ).slice(0, 3000)}`,
       );
     },
-    { labelText, rootSelector },
+    {
+      labelText,
+      rootSelector,
+      overlaySelector: adminOverlayOpenSelector,
+      fieldSelector: adminFormFieldSelector,
+      labelSelector: adminFormLabelSelector,
+      triggerSelector: adminSelectTriggerSelector,
+    },
   );
 }
 
@@ -15895,15 +16138,15 @@ async function selectLegacyFormOption(
 ) {
   try {
     await openLegacySelectByLabel(page, rootSelector, labelText);
-    await waitForVisibleText(page, '.ant-select-dropdown-menu-item', optionTexts[0]);
-    await clickFirstVisibleText(page, '.ant-select-dropdown-menu-item', optionTexts);
+    await waitForVisibleText(page, adminSelectOptionSelector, optionTexts[0]);
+    await clickFirstVisibleText(page, adminSelectOptionSelector, optionTexts);
     if (waitForHidden) {
       try {
-        await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+        await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
       } catch {
         await page.mouse.click(1, 1).catch(() => undefined);
         await page.waitForTimeout(150);
-        await waitForVisibleElementsHidden(page, '.ant-select-dropdown');
+        await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
       }
     } else {
       await page.waitForTimeout(100);
@@ -16363,7 +16606,7 @@ async function fillFirstVisibleIfPresent(page, selector, value) {
 
 async function waitForVisibleInputByLabel(page, rootSelector, labelText, timeout = 5_000) {
   await page.waitForFunction(
-    ({ labelText: targetLabelText, rootSelector: targetRootSelector }) => {
+    ({ labelText: targetLabelText, rootSelector: targetRootSelector, fieldSelector }) => {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
@@ -16376,10 +16619,10 @@ async function waitForVisibleInputByLabel(page, rootSelector, labelText, timeout
       };
       const root = Array.from(document.querySelectorAll(targetRootSelector)).find(isVisible);
       const group = root
-        ? Array.from(root.querySelectorAll('.form-group')).find(
+        ? Array.from(root.querySelectorAll(fieldSelector)).find(
             (element) =>
               isVisible(element) &&
-              Array.from(element.querySelectorAll('label')).some((label) =>
+              Array.from(element.querySelectorAll('label, [data-slot="label"]')).some((label) =>
                 (label.textContent ?? '').includes(targetLabelText),
               ),
           )
@@ -16391,14 +16634,14 @@ async function waitForVisibleInputByLabel(page, rootSelector, labelText, timeout
           ),
       );
     },
-    { labelText, rootSelector },
+    { labelText, rootSelector, fieldSelector: adminFormFieldSelector },
     { timeout },
   );
 }
 
 async function fillVisibleInputByLabel(page, rootSelector, labelText, value) {
   const domIndex = await page.evaluate(
-    ({ labelText: targetLabelText, rootSelector: targetRootSelector }) => {
+    ({ labelText: targetLabelText, rootSelector: targetRootSelector, fieldSelector }) => {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
@@ -16411,10 +16654,10 @@ async function fillVisibleInputByLabel(page, rootSelector, labelText, value) {
       };
       const root = Array.from(document.querySelectorAll(targetRootSelector)).find(isVisible);
       const group = root
-        ? Array.from(root.querySelectorAll('.form-group')).find(
+        ? Array.from(root.querySelectorAll(fieldSelector)).find(
             (element) =>
               isVisible(element) &&
-              Array.from(element.querySelectorAll('label')).some((label) =>
+              Array.from(element.querySelectorAll('label, [data-slot="label"]')).some((label) =>
                 (label.textContent ?? '').includes(targetLabelText),
               ),
           )
@@ -16429,7 +16672,7 @@ async function fillVisibleInputByLabel(page, rootSelector, labelText, value) {
       }
       return Array.from(document.querySelectorAll('input, textarea')).indexOf(input);
     },
-    { labelText, rootSelector },
+    { labelText, rootSelector, fieldSelector: adminFormFieldSelector },
   );
   await page.locator('input, textarea').nth(domIndex).fill(value);
 }
