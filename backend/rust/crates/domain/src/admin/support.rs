@@ -566,75 +566,97 @@ pub(super) fn server_save_values(
 ) -> Result<Vec<(&'static str, AdminSqlValue)>, ApiError> {
     let mut values = Vec::new();
     push_common_server_values(&mut values, params)?;
+    // Each arm mirrors its Server*Save rule set: `required` columns are pushed
+    // unconditionally (always in `$params`), a handful the controller assigns
+    // after validation are pushed unconditionally with the computed value, and
+    // every remaining `nullable` column is present-gated so an omitted key is left
+    // untouched on update — matching `$server->update($request->validated())`.
     match kind {
         "shadowsocks" => {
             values.push(("cipher", text_value(required_string(params, "cipher")?)));
-            values.push(("obfs", optional_text_value(params, "obfs")));
-            values.push((
-                "obfs_settings",
-                optional_json_text_value(params, "obfs_settings"),
-            ));
+            if param_present(params, "obfs") {
+                values.push(("obfs", optional_text_value(params, "obfs")));
+            }
+            if param_present(params, "obfs_settings") {
+                values.push((
+                    "obfs_settings",
+                    optional_json_text_value(params, "obfs_settings"),
+                ));
+            }
         }
         "trojan" => {
             values.push(("network", text_value(required_string(params, "network")?)));
-            values.push((
-                "network_settings",
-                optional_json_text_value(params, "network_settings"),
-            ));
-            values.push((
-                "allow_insecure",
-                optional_int_value(params, "allow_insecure", 0),
-            ));
-            values.push(("server_name", optional_text_value(params, "server_name")));
+            if param_present(params, "network_settings") {
+                values.push((
+                    "network_settings",
+                    optional_json_text_value(params, "network_settings"),
+                ));
+            }
+            if param_present(params, "allow_insecure") {
+                values.push((
+                    "allow_insecure",
+                    optional_int_value(params, "allow_insecure", 0),
+                ));
+            }
+            if param_present(params, "server_name") {
+                values.push(("server_name", optional_text_value(params, "server_name")));
+            }
         }
         "vmess" => {
+            // ServerVmessSave has no `rules` rule, so the legacy `rules` column is
+            // never written by save (dropped here, not present-gated).
             values.push(("tls", optional_int_value(params, "tls", 0)));
             values.push(("network", text_value(required_string(params, "network")?)));
-            values.push(("rules", optional_json_text_value(params, "rules")));
-            values.push((
+            for key in [
                 "networkSettings",
-                optional_json_text_value(params, "networkSettings"),
-            ));
-            values.push((
                 "tlsSettings",
-                optional_json_text_value(params, "tlsSettings"),
-            ));
-            values.push((
                 "ruleSettings",
-                optional_json_text_value(params, "ruleSettings"),
-            ));
-            values.push((
                 "dnsSettings",
-                optional_json_text_value(params, "dnsSettings"),
-            ));
+            ] {
+                if param_present(params, key) {
+                    values.push((key, optional_json_text_value(params, key)));
+                }
+            }
         }
         "tuic" => {
-            values.push(("server_name", optional_text_value(params, "server_name")));
+            if param_present(params, "server_name") {
+                values.push(("server_name", optional_text_value(params, "server_name")));
+            }
             values.push(("insecure", optional_int_value(params, "insecure", 0)));
             values.push(("disable_sni", optional_int_value(params, "disable_sni", 0)));
-            values.push((
-                "udp_relay_mode",
-                optional_text_value(params, "udp_relay_mode"),
-            ));
+            if param_present(params, "udp_relay_mode") {
+                values.push((
+                    "udp_relay_mode",
+                    optional_text_value(params, "udp_relay_mode"),
+                ));
+            }
             values.push((
                 "zero_rtt_handshake",
                 optional_int_value(params, "zero_rtt_handshake", 0),
             ));
-            values.push((
-                "congestion_control",
-                optional_text_value(params, "congestion_control"),
-            ));
+            if param_present(params, "congestion_control") {
+                values.push((
+                    "congestion_control",
+                    optional_text_value(params, "congestion_control"),
+                ));
+            }
         }
         "hysteria" => {
             values.push(("version", optional_int_value(params, "version", 2)));
+            // up_mbps/down_mbps default to 0 in the controller, so they are always
+            // written; obfs_password is likewise always assigned (null when no obfs).
             values.push(("up_mbps", optional_int_value(params, "up_mbps", 0)));
             values.push(("down_mbps", optional_int_value(params, "down_mbps", 0)));
-            values.push(("obfs", optional_text_value(params, "obfs")));
+            if param_present(params, "obfs") {
+                values.push(("obfs", optional_text_value(params, "obfs")));
+            }
             values.push((
                 "obfs_password",
                 hysteria_obfs_password(params, params.get("obfs")),
             ));
-            values.push(("server_name", optional_text_value(params, "server_name")));
+            if param_present(params, "server_name") {
+                values.push(("server_name", optional_text_value(params, "server_name")));
+            }
             values.push(("insecure", optional_int_value(params, "insecure", 0)));
         }
         "vless" => {
@@ -646,38 +668,60 @@ pub(super) fn server_save_values(
                 flow = None;
             }
             values.push(("tls", AdminSqlValue::Integer(tls)));
-            values.push((
-                "tls_settings",
-                json_value(prepare_tls_settings(params, tls)?),
-            ));
-            values.push(("flow", optional_text(flow)));
+            // tls==2 forces reality settings into $params even when unsubmitted.
+            if tls == 2 || param_present(params, "tls_settings") {
+                values.push((
+                    "tls_settings",
+                    json_value(prepare_tls_settings(params, tls)?),
+                ));
+            }
+            // flow is forced to null when network != tcp; otherwise present-gated.
+            if network != "tcp" || param_present(params, "flow") {
+                values.push(("flow", optional_text(flow)));
+            }
             values.push(("network", text_value(network.clone())));
-            values.push((
-                "network_settings",
-                json_value(prepare_network_settings(
-                    params,
+            if param_present(params, "network_settings") {
+                values.push((
                     "network_settings",
-                    &network,
-                    false,
-                )),
-            ));
-            values.push(("encryption", optional_text(encryption.clone())));
-            values.push((
-                "encryption_settings",
-                json_value(prepare_encryption_settings(
-                    params,
-                    encryption.as_deref(),
-                    false,
-                )?),
-            ));
+                    json_value(prepare_network_settings(
+                        params,
+                        "network_settings",
+                        &network,
+                        false,
+                    )),
+                ));
+            }
+            if param_present(params, "encryption") {
+                values.push(("encryption", optional_text(encryption.clone())));
+            }
+            // mlkem encryption forces encryption_settings into $params.
+            if encryption.as_deref() == Some("mlkem768x25519plus")
+                || param_present(params, "encryption_settings")
+            {
+                values.push((
+                    "encryption_settings",
+                    json_value(prepare_encryption_settings(
+                        params,
+                        encryption.as_deref(),
+                        false,
+                    )?),
+                ));
+            }
+            if param_present(params, "sort") {
+                values.push(("sort", optional_int_or_null_value(params, "sort")));
+            }
         }
         "anytls" => {
-            values.push(("server_name", optional_text_value(params, "server_name")));
+            if param_present(params, "server_name") {
+                values.push(("server_name", optional_text_value(params, "server_name")));
+            }
             values.push(("insecure", optional_int_value(params, "insecure", 0)));
-            values.push((
-                "padding_scheme",
-                optional_decoded_json_text_value(params, "padding_scheme"),
-            ));
+            if param_present(params, "padding_scheme") {
+                values.push((
+                    "padding_scheme",
+                    optional_decoded_json_text_value(params, "padding_scheme"),
+                ));
+            }
         }
         "v2node" => {
             let protocol = required_string(params, "protocol")?;
@@ -689,73 +733,101 @@ pub(super) fn server_save_values(
             }
             let network = required_string(params, "network")?;
             let encryption = optional_string(params, "encryption");
-            let mut flow = optional_string(params, "flow");
-            if network != "tcp" && encryption.as_deref() != Some("mlkem768x25519plus") {
-                flow = None;
+            // Laravel only nulls flow when encryption is *present* and not mlkem
+            // (V2nodeController.php: `... && isset($params['encryption']) && ...`).
+            let force_flow_null = network != "tcp"
+                && encryption.is_some()
+                && encryption.as_deref() != Some("mlkem768x25519plus");
+            let flow = if force_flow_null {
+                None
+            } else {
+                optional_string(params, "flow")
+            };
+            if param_present(params, "listen_ip") {
+                values.push(("listen_ip", optional_text_value(params, "listen_ip")));
             }
-            values.push((
-                "listen_ip",
-                text_value(
-                    optional_string(params, "listen_ip").unwrap_or_else(|| "0.0.0.0".to_string()),
-                ),
-            ));
             values.push(("protocol", text_value(protocol.clone())));
             values.push(("tls", AdminSqlValue::Integer(tls)));
-            values.push((
-                "tls_settings",
-                json_value(prepare_v2node_tls_settings(params, tls)?),
-            ));
-            values.push(("flow", optional_text(flow)));
+            if tls == 2 || param_present(params, "tls_settings") {
+                values.push((
+                    "tls_settings",
+                    json_value(prepare_v2node_tls_settings(params, tls)?),
+                ));
+            }
+            if force_flow_null || param_present(params, "flow") {
+                values.push(("flow", optional_text(flow)));
+            }
             values.push(("network", text_value(network.clone())));
-            values.push((
-                "network_settings",
-                json_value(prepare_network_settings(
-                    params,
+            if param_present(params, "network_settings") {
+                values.push((
                     "network_settings",
-                    &network,
-                    true,
-                )),
-            ));
-            values.push(("encryption", optional_text(encryption.clone())));
-            values.push((
-                "encryption_settings",
-                json_value(prepare_encryption_settings(
-                    params,
-                    encryption.as_deref(),
-                    true,
-                )?),
-            ));
+                    json_value(prepare_network_settings(
+                        params,
+                        "network_settings",
+                        &network,
+                        true,
+                    )),
+                ));
+            }
+            if param_present(params, "encryption") {
+                values.push(("encryption", optional_text(encryption.clone())));
+            }
+            if encryption.as_deref() == Some("mlkem768x25519plus")
+                || param_present(params, "encryption_settings")
+            {
+                values.push((
+                    "encryption_settings",
+                    json_value(prepare_encryption_settings(
+                        params,
+                        encryption.as_deref(),
+                        true,
+                    )?),
+                ));
+            }
             values.push(("disable_sni", optional_int_value(params, "disable_sni", 0)));
-            values.push((
-                "udp_relay_mode",
-                optional_text_value(params, "udp_relay_mode"),
-            ));
+            if param_present(params, "udp_relay_mode") {
+                values.push((
+                    "udp_relay_mode",
+                    optional_text_value(params, "udp_relay_mode"),
+                ));
+            }
             values.push((
                 "zero_rtt_handshake",
                 optional_int_value(params, "zero_rtt_handshake", 0),
             ));
-            values.push((
-                "congestion_control",
-                optional_text_value(params, "congestion_control"),
-            ));
-            values.push((
-                "cipher",
-                optional_text(
-                    optional_string(params, "cipher")
-                        .or_else(|| (protocol == "shadowsocks").then(|| "aes-128-gcm".to_string())),
-                ),
-            ));
+            if param_present(params, "congestion_control") {
+                values.push((
+                    "congestion_control",
+                    optional_text_value(params, "congestion_control"),
+                ));
+            }
+            // cipher defaults to aes-128-gcm for shadowsocks; otherwise present-gated.
+            if protocol == "shadowsocks" || param_present(params, "cipher") {
+                values.push((
+                    "cipher",
+                    optional_text(optional_string(params, "cipher").or_else(|| {
+                        (protocol == "shadowsocks").then(|| "aes-128-gcm".to_string())
+                    })),
+                ));
+            }
             values.push(("up_mbps", optional_int_value(params, "up_mbps", 0)));
             values.push(("down_mbps", optional_int_value(params, "down_mbps", 0)));
-            values.push(("obfs", optional_text_value(params, "obfs")));
+            if param_present(params, "obfs") {
+                values.push(("obfs", optional_text_value(params, "obfs")));
+            }
             values.push((
                 "obfs_password",
                 hysteria_obfs_password(params, params.get("obfs")),
             ));
-            values.push((
-                "padding_scheme",
-                optional_decoded_json_text_value(params, "padding_scheme"),
-            ));
+            if param_present(params, "padding_scheme") {
+                values.push((
+                    "padding_scheme",
+                    optional_decoded_json_text_value(params, "padding_scheme"),
+                ));
+            }
+            if param_present(params, "sort") {
+                values.push(("sort", optional_int_or_null_value(params, "sort")));
+            }
         }
         _ => return Err(ApiError::legacy("Invalid server type")),
     }
@@ -766,16 +838,17 @@ pub(super) fn push_common_server_values(
     values: &mut Vec<(&'static str, AdminSqlValue)>,
     params: &HashMap<String, String>,
 ) -> Result<(), ApiError> {
+    // Every Server*Controller::save writes `$request->validated()`/`validate()`
+    // then `update($params)`/`create($params)`, so only keys the request actually
+    // supplied reach the row. `required` columns are always present; `nullable`/``
+    // columns must be present-gated so a partial update leaves an omitted column
+    // untouched instead of resetting it to a default. `sort` is intentionally
+    // absent here — only vless/v2node declare a rule for it (handled per protocol);
+    // the other protocols never write it, so drag-ordering survives every edit.
     values.push((
         "group_id",
         text_value(required_json_array_string(params, "group_id")?),
     ));
-    values.push((
-        "route_id",
-        optional_json_array_text_value(params, "route_id"),
-    ));
-    values.push(("parent_id", optional_int_or_null_value(params, "parent_id")));
-    values.push(("tags", optional_json_array_text_value(params, "tags")));
     values.push(("name", text_value(required_string(params, "name")?)));
     values.push(("rate", text_value(required_string(params, "rate")?)));
     values.push(("host", text_value(required_string(params, "host")?)));
@@ -784,8 +857,21 @@ pub(super) fn push_common_server_values(
         "server_port",
         AdminSqlValue::Integer(required_i64(params, "server_port")?),
     ));
-    values.push(("show", optional_int_value(params, "show", 0)));
-    values.push(("sort", optional_int_or_null_value(params, "sort")));
+    if param_present(params, "route_id") {
+        values.push((
+            "route_id",
+            optional_json_array_text_value(params, "route_id"),
+        ));
+    }
+    if param_present(params, "parent_id") {
+        values.push(("parent_id", optional_int_or_null_value(params, "parent_id")));
+    }
+    if param_present(params, "tags") {
+        values.push(("tags", optional_json_array_text_value(params, "tags")));
+    }
+    if param_present(params, "show") {
+        values.push(("show", optional_int_value(params, "show", 0)));
+    }
     Ok(())
 }
 
@@ -903,6 +989,19 @@ pub(super) fn validation_error(field: &str, message: &str) -> ApiError {
         message,
         HashMap::from([(field.to_string(), vec![message.to_string()])]),
     )
+}
+
+/// A scalar request value trimmed of surrounding whitespace (Laravel's global
+/// `TrimStrings` middleware), yielding `None` when the key is absent or the
+/// value is empty after trimming. This is the presence test Laravel's
+/// `required`/`nullable`/`integer` rules operate on — note it does NOT treat the
+/// literal string `"null"` as empty (unlike `optional_string`), because Laravel
+/// does not either.
+pub(super) fn present_value<'a>(params: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
+    params
+        .get(key)
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
 }
 
 /// True when `key` (scalar or bracketed array) appears in the request params.
@@ -1475,6 +1574,26 @@ pub(super) fn offset(current: i64, page_size: i64) -> i64 {
     (current - 1) * page_size
 }
 
+/// `ORDER BY` clause for admin list endpoints that accept `sort`/`sort_type`
+/// (coupon/giftcard fetch), mirroring `Coupon::orderBy($sort, $sortType)`: the
+/// direction is whitelisted to ASC/DESC (anything else, including a missing param,
+/// falls back to DESC), and the column defaults to `id` when the param is absent or
+/// empty. The column is backtick-wrapped with any backticks doubled, the same way
+/// Laravel's query grammar quotes an identifier, so an unknown column produces a SQL
+/// error rather than an injection point.
+pub(super) fn admin_sort_clause(params: &HashMap<String, String>) -> String {
+    let direction = match params.get("sort_type").map(String::as_str) {
+        Some("ASC") => "ASC",
+        _ => "DESC",
+    };
+    let column = params
+        .get("sort")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("id");
+    format!("ORDER BY `{}` {direction}", column.replace('`', "``"))
+}
+
 pub(super) fn array_param(
     params: &HashMap<String, String>,
     key: &str,
@@ -1977,6 +2096,176 @@ pub(super) fn validate_config_params(params: &HashMap<String, String>) -> Result
                 "充值奖励格式不正确，必须为充值金额:奖励金额",
             ));
         }
+    }
+    Ok(())
+}
+
+/// Ports `CouponGenerate::rules()`. Every failable rule declares a custom Chinese
+/// message, so this returns the first failure in Laravel's field-declaration
+/// order with the exact message the FormRequest emits (HTTP 422).
+pub(super) fn coupon_generate_validation(params: &HashMap<String, String>) -> Result<(), ApiError> {
+    // generate_count: nullable|integer|max:500
+    if let Some(value) = present_value(params, "generate_count") {
+        let Ok(count) = value.parse::<i64>() else {
+            return Err(validation_error("generate_count", "生成数量必须为数字"));
+        };
+        if count > 500 {
+            return Err(validation_error("generate_count", "生成数量最大为500个"));
+        }
+    }
+    // name: required
+    if present_value(params, "name").is_none() {
+        return Err(validation_error("name", "名称不能为空"));
+    }
+    // type: required|in:1,2
+    match present_value(params, "type") {
+        None => return Err(validation_error("type", "类型不能为空")),
+        Some(value) if !matches!(value, "1" | "2") => {
+            return Err(validation_error("type", "类型格式有误"));
+        }
+        _ => {}
+    }
+    // value: required|integer
+    match present_value(params, "value") {
+        None => return Err(validation_error("value", "金额或比例不能为空")),
+        Some(value) if value.parse::<i64>().is_err() => {
+            return Err(validation_error("value", "金额或比例格式有误"));
+        }
+        _ => {}
+    }
+    // started_at / ended_at: required|integer
+    for (key, required_msg, integer_msg) in [
+        ("started_at", "开始时间不能为空", "开始时间格式有误"),
+        ("ended_at", "结束时间不能为空", "结束时间格式有误"),
+    ] {
+        match present_value(params, key) {
+            None => return Err(validation_error(key, required_msg)),
+            Some(value) if value.parse::<i64>().is_err() => {
+                return Err(validation_error(key, integer_msg));
+            }
+            _ => {}
+        }
+    }
+    // limit_use / limit_use_with_user: nullable|integer
+    for (key, integer_msg) in [
+        ("limit_use", "最大使用次数格式有误"),
+        ("limit_use_with_user", "限制用户使用次数格式有误"),
+    ] {
+        if let Some(value) = present_value(params, key)
+            && value.parse::<i64>().is_err()
+        {
+            return Err(validation_error(key, integer_msg));
+        }
+    }
+    // limit_plan_ids / limit_period: nullable|array. A scalar (non-bracketed)
+    // value fails the `array` rule; a bracketed `key[..]` submission is an array
+    // and passes, as does absence.
+    for (key, array_msg) in [
+        ("limit_plan_ids", "指定订阅格式有误"),
+        ("limit_period", "指定周期格式有误"),
+    ] {
+        if present_value(params, key).is_some() {
+            return Err(validation_error(key, array_msg));
+        }
+    }
+    Ok(())
+}
+
+/// Ports `GiftcardGenerate::rules()`. `value` and `plan_id` use `required_if`, not
+/// `required` — so V2Board's `value.required`/`plan_id.required` custom messages
+/// never fire, and with no `zh-CN/validation.php` lang file the `required_if`,
+/// `integer` fallbacks surface the untranslated key (e.g. `validation.required_if`)
+/// exactly as the real backend does at HTTP 422.
+pub(super) fn giftcard_generate_validation(
+    params: &HashMap<String, String>,
+) -> Result<(), ApiError> {
+    // generate_count: nullable|integer|max:500
+    if let Some(value) = present_value(params, "generate_count") {
+        let Ok(count) = value.parse::<i64>() else {
+            return Err(validation_error("generate_count", "生成数量必须为数字"));
+        };
+        if count > 500 {
+            return Err(validation_error("generate_count", "生成数量最大为500个"));
+        }
+    }
+    // name: required
+    if present_value(params, "name").is_none() {
+        return Err(validation_error("name", "名称不能为空"));
+    }
+    // type: required|in:1,2,3,4,5
+    let card_type = match present_value(params, "type") {
+        None => return Err(validation_error("type", "类型不能为空")),
+        Some(value) if !matches!(value, "1" | "2" | "3" | "4" | "5") => {
+            return Err(validation_error("type", "类型格式有误"));
+        }
+        Some(value) => value,
+    };
+    // value: required_if:type,1,2,3,5 | nullable | integer
+    match present_value(params, "value") {
+        None if matches!(card_type, "1" | "2" | "3" | "5") => {
+            return Err(validation_error("value", "validation.required_if"));
+        }
+        Some(value) if value.parse::<i64>().is_err() => {
+            return Err(validation_error("value", "数值格式有误"));
+        }
+        _ => {}
+    }
+    // plan_id: required_if:type,5 | nullable | integer (no custom messages)
+    match present_value(params, "plan_id") {
+        None if card_type == "5" => {
+            return Err(validation_error("plan_id", "validation.required_if"));
+        }
+        Some(value) if value.parse::<i64>().is_err() => {
+            return Err(validation_error("plan_id", "validation.integer"));
+        }
+        _ => {}
+    }
+    // started_at / ended_at: required|integer
+    for (key, required_msg, integer_msg) in [
+        ("started_at", "开始时间不能为空", "开始时间格式有误"),
+        ("ended_at", "结束时间不能为空", "结束时间格式有误"),
+    ] {
+        match present_value(params, key) {
+            None => return Err(validation_error(key, required_msg)),
+            Some(value) if value.parse::<i64>().is_err() => {
+                return Err(validation_error(key, integer_msg));
+            }
+            _ => {}
+        }
+    }
+    // limit_use: nullable|integer
+    if let Some(value) = present_value(params, "limit_use")
+        && value.parse::<i64>().is_err()
+    {
+        return Err(validation_error("limit_use", "最大使用次数格式有误"));
+    }
+    Ok(())
+}
+
+/// Ports `UserGenerate::rules()`. Only `generate_count` declares custom messages;
+/// `expired_at`/`plan_id` (`integer`) and `email_suffix` (`required`) fall back to
+/// the untranslated validation keys because there is no `zh-CN/validation.php`.
+pub(super) fn user_generate_validation(params: &HashMap<String, String>) -> Result<(), ApiError> {
+    // generate_count: nullable|integer|max:500
+    if let Some(value) = present_value(params, "generate_count") {
+        let Ok(count) = value.parse::<i64>() else {
+            return Err(validation_error("generate_count", "生成数量必须为数字"));
+        };
+        if count > 500 {
+            return Err(validation_error("generate_count", "生成数量最大为500个"));
+        }
+    }
+    // expired_at / plan_id: nullable|integer
+    for key in ["expired_at", "plan_id"] {
+        if let Some(value) = present_value(params, key)
+            && value.parse::<i64>().is_err()
+        {
+            return Err(validation_error(key, "validation.integer"));
+        }
+    }
+    // email_suffix: required
+    if present_value(params, "email_suffix").is_none() {
+        return Err(validation_error("email_suffix", "validation.required"));
     }
     Ok(())
 }
@@ -2732,5 +3021,358 @@ mod tests {
         let (alive_ip, ips) = parse_alive_ip(&raw);
         assert_eq!(alive_ip, 2);
         assert_eq!(ips, "1.2.3.4_7, 5.6.7.8_7");
+    }
+
+    fn params(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect()
+    }
+
+    /// Asserts the error is a 422 validation failure on `field` with `message`
+    /// (which is also the top-level message), mirroring a single-rule FormRequest.
+    fn assert_validation(result: Result<(), ApiError>, field: &str, message: &str) {
+        match result {
+            Err(ApiError::Validation {
+                message: top,
+                errors,
+            }) => {
+                assert_eq!(top, message, "top-level message");
+                assert_eq!(
+                    errors.get(field).map(Vec::as_slice),
+                    Some([message.to_string()].as_slice()),
+                    "errors[{field}]"
+                );
+            }
+            other => panic!("expected 422 validation on {field}, got {other:?}"),
+        }
+    }
+
+    // A complete, valid coupon/giftcard payload used as the baseline that each
+    // test perturbs one field at a time.
+    fn valid_coupon() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("name", "Promo"),
+            ("type", "1"),
+            ("value", "100"),
+            ("started_at", "1700000000"),
+            ("ended_at", "1800000000"),
+        ]
+    }
+
+    #[test]
+    fn coupon_generate_validation_reports_first_failure_in_declaration_order() {
+        // A fully valid single-create payload passes.
+        assert!(coupon_generate_validation(&params(&valid_coupon())).is_ok());
+
+        // generate_count integer then max, ahead of every other field.
+        let mut p = valid_coupon();
+        p.push(("generate_count", "abc"));
+        assert_validation(
+            coupon_generate_validation(&params(&p)),
+            "generate_count",
+            "生成数量必须为数字",
+        );
+        let mut p = valid_coupon();
+        p.push(("generate_count", "501"));
+        assert_validation(
+            coupon_generate_validation(&params(&p)),
+            "generate_count",
+            "生成数量最大为500个",
+        );
+        let mut p = valid_coupon();
+        p.push(("generate_count", "500"));
+        assert!(coupon_generate_validation(&params(&p)).is_ok());
+
+        // Required + enum checks.
+        assert_validation(
+            coupon_generate_validation(&params(&[
+                ("type", "1"),
+                ("value", "1"),
+                ("started_at", "1"),
+                ("ended_at", "1"),
+            ])),
+            "name",
+            "名称不能为空",
+        );
+        assert_validation(
+            coupon_generate_validation(&params(&[
+                ("name", "n"),
+                ("type", "9"),
+                ("value", "1"),
+                ("started_at", "1"),
+                ("ended_at", "1"),
+            ])),
+            "type",
+            "类型格式有误",
+        );
+        assert_validation(
+            coupon_generate_validation(&params(&[
+                ("name", "n"),
+                ("type", "1"),
+                ("started_at", "1"),
+                ("ended_at", "1"),
+            ])),
+            "value",
+            "金额或比例不能为空",
+        );
+        assert_validation(
+            coupon_generate_validation(&params(&[
+                ("name", "n"),
+                ("type", "1"),
+                ("value", "x"),
+                ("started_at", "1"),
+                ("ended_at", "1"),
+            ])),
+            "value",
+            "金额或比例格式有误",
+        );
+
+        // A scalar limit_plan_ids fails `array`; a bracketed one passes.
+        let mut p = valid_coupon();
+        p.push(("limit_plan_ids", "5"));
+        assert_validation(
+            coupon_generate_validation(&params(&p)),
+            "limit_plan_ids",
+            "指定订阅格式有误",
+        );
+        let mut p = valid_coupon();
+        p.push(("limit_plan_ids[0]", "5"));
+        assert!(coupon_generate_validation(&params(&p)).is_ok());
+    }
+
+    #[test]
+    fn giftcard_generate_validation_uses_required_if_and_untranslated_keys() {
+        // type=5 requires value and plan_id; the required_if failure surfaces the
+        // untranslated key, not V2Board's dead `value.required` message.
+        assert_validation(
+            giftcard_generate_validation(&params(&[
+                ("name", "g"),
+                ("type", "5"),
+                ("started_at", "1"),
+                ("ended_at", "1"),
+            ])),
+            "value",
+            "validation.required_if",
+        );
+        assert_validation(
+            giftcard_generate_validation(&params(&[
+                ("name", "g"),
+                ("type", "5"),
+                ("value", "10"),
+                ("started_at", "1"),
+                ("ended_at", "1"),
+            ])),
+            "plan_id",
+            "validation.required_if",
+        );
+        // type=4 needs neither value nor plan_id.
+        assert!(
+            giftcard_generate_validation(&params(&[
+                ("name", "g"),
+                ("type", "4"),
+                ("started_at", "1"),
+                ("ended_at", "1"),
+            ]))
+            .is_ok()
+        );
+        // A non-integer plan_id falls back to `validation.integer`.
+        assert_validation(
+            giftcard_generate_validation(&params(&[
+                ("name", "g"),
+                ("type", "5"),
+                ("value", "10"),
+                ("plan_id", "abc"),
+                ("started_at", "1"),
+                ("ended_at", "1"),
+            ])),
+            "plan_id",
+            "validation.integer",
+        );
+        // type enum covers 1..=5.
+        assert_validation(
+            giftcard_generate_validation(&params(&[("name", "g"), ("type", "6")])),
+            "type",
+            "类型格式有误",
+        );
+    }
+
+    #[test]
+    fn user_generate_validation_requires_suffix_and_integer_checks() {
+        assert!(user_generate_validation(&params(&[("email_suffix", "example.com")])).is_ok());
+        assert_validation(
+            user_generate_validation(&params(&[])),
+            "email_suffix",
+            "validation.required",
+        );
+        assert_validation(
+            user_generate_validation(&params(&[("expired_at", "soon"), ("email_suffix", "x")])),
+            "expired_at",
+            "validation.integer",
+        );
+        assert_validation(
+            user_generate_validation(&params(&[("generate_count", "999"), ("email_suffix", "x")])),
+            "generate_count",
+            "生成数量最大为500个",
+        );
+    }
+
+    /// The required common columns every server save request must supply.
+    fn server_common() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("group_id", "[1]"),
+            ("name", "n"),
+            ("rate", "1"),
+            ("host", "h"),
+            ("port", "1"),
+            ("server_port", "1"),
+        ]
+    }
+
+    fn saved_columns(kind: &str, extra: &[(&str, &str)]) -> Vec<&'static str> {
+        let mut pairs = server_common();
+        pairs.extend_from_slice(extra);
+        server_save_values(kind, &params(&pairs))
+            .unwrap()
+            .into_iter()
+            .map(|(column, _)| column)
+            .collect()
+    }
+
+    #[test]
+    fn server_save_omits_unsubmitted_optional_columns() {
+        // A minimal shadowsocks save writes only required columns — never `sort`,
+        // `show`, or the optional obfs pair — so a partial update preserves them.
+        let cols = saved_columns("shadowsocks", &[("cipher", "aes-128-gcm")]);
+        assert_eq!(
+            cols,
+            vec![
+                "group_id",
+                "name",
+                "rate",
+                "host",
+                "port",
+                "server_port",
+                "cipher"
+            ]
+        );
+        for absent in ["sort", "show", "obfs", "obfs_settings", "route_id", "tags"] {
+            assert!(!cols.contains(&absent), "unexpected column {absent}");
+        }
+
+        // Supplying the optional keys opts them back in.
+        let cols = saved_columns(
+            "shadowsocks",
+            &[
+                ("cipher", "aes-128-gcm"),
+                ("obfs", "http"),
+                ("show", "1"),
+                ("route_id[0]", "2"),
+            ],
+        );
+        for present in ["obfs", "show", "route_id"] {
+            assert!(cols.contains(&present), "missing column {present}");
+        }
+        assert!(!cols.contains(&"sort"));
+    }
+
+    #[test]
+    fn server_save_vmess_never_writes_legacy_rules_column() {
+        let cols = saved_columns("vmess", &[("tls", "1"), ("network", "tcp")]);
+        assert!(cols.contains(&"tls") && cols.contains(&"network"));
+        for absent in [
+            "rules",
+            "networkSettings",
+            "tlsSettings",
+            "ruleSettings",
+            "dnsSettings",
+        ] {
+            assert!(!cols.contains(&absent), "unexpected column {absent}");
+        }
+        // A submitted settings blob is written.
+        let cols = saved_columns(
+            "vmess",
+            &[("tls", "1"), ("network", "tcp"), ("tlsSettings[x]", "1")],
+        );
+        assert!(cols.contains(&"tlsSettings"));
+        assert!(!cols.contains(&"rules"));
+    }
+
+    #[test]
+    fn server_save_hysteria_always_writes_bandwidth_and_obfs_password() {
+        // up_mbps/down_mbps/obfs_password are controller-assigned, so always present;
+        // obfs and server_name are present-gated.
+        let cols = saved_columns("hysteria", &[("version", "2"), ("insecure", "0")]);
+        for always in [
+            "version",
+            "up_mbps",
+            "down_mbps",
+            "obfs_password",
+            "insecure",
+        ] {
+            assert!(cols.contains(&always), "missing column {always}");
+        }
+        for absent in ["obfs", "server_name", "sort", "show"] {
+            assert!(!cols.contains(&absent), "unexpected column {absent}");
+        }
+    }
+
+    #[test]
+    fn server_save_vless_gates_settings_flow_and_sort() {
+        // tcp + tls=0: no forced settings/flow, sort omitted.
+        let base = [("tls", "0"), ("network", "tcp")];
+        let cols = saved_columns("vless", &base);
+        for absent in [
+            "tls_settings",
+            "flow",
+            "sort",
+            "network_settings",
+            "encryption",
+        ] {
+            assert!(!cols.contains(&absent), "unexpected column {absent}");
+        }
+        // tls=2 forces reality tls_settings even when unsubmitted.
+        assert!(
+            saved_columns("vless", &[("tls", "2"), ("network", "tcp")]).contains(&"tls_settings")
+        );
+        // A non-tcp network forces flow (to null).
+        assert!(saved_columns("vless", &[("tls", "0"), ("network", "ws")]).contains(&"flow"));
+        // sort is only written when submitted.
+        let mut with_sort = base.to_vec();
+        with_sort.push(("sort", "5"));
+        assert!(saved_columns("vless", &with_sort).contains(&"sort"));
+    }
+
+    #[test]
+    fn server_save_v2node_defaults_cipher_only_for_shadowsocks() {
+        let ss = saved_columns(
+            "v2node",
+            &[
+                ("protocol", "shadowsocks"),
+                ("tls", "0"),
+                ("network", "tcp"),
+            ],
+        );
+        assert!(ss.contains(&"cipher"));
+        for always in [
+            "protocol",
+            "up_mbps",
+            "down_mbps",
+            "obfs_password",
+            "disable_sni",
+        ] {
+            assert!(ss.contains(&always), "missing column {always}");
+        }
+        for absent in ["listen_ip", "sort", "obfs", "tls_settings"] {
+            assert!(!ss.contains(&absent), "unexpected column {absent}");
+        }
+
+        // vmess protocol never defaults cipher.
+        let vmess = saved_columns(
+            "v2node",
+            &[("protocol", "vmess"), ("tls", "0"), ("network", "tcp")],
+        );
+        assert!(!vmess.contains(&"cipher"));
     }
 }

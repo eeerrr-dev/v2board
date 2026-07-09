@@ -160,7 +160,7 @@ impl AdminService {
             "giftcard/fetch" => self.giftcard_fetch(&params).await,
             "knowledge/fetch" => self.knowledge_fetch(&params).await,
             "knowledge/getCategory" => self.knowledge_categories().await,
-            "server/group/fetch" => self.server_group_fetch().await,
+            "server/group/fetch" => self.server_group_fetch(&params).await,
             "server/route/fetch" => self.server_route_fetch().await,
             "server/manage/getNodes" => self.server_nodes().await,
             "stat/getStat" | "stat/getOverride" => self.stat_summary().await,
@@ -202,8 +202,12 @@ impl AdminService {
             "payment/getPaymentForm" => self.payment_form(&params).await,
             "payment/save" => self.payment_save(&params).await,
             "payment/drop" => {
-                self.delete_by_id("v2_payment", required_i64(&params, "id")?)
-                    .await
+                self.delete_by_id(
+                    "v2_payment",
+                    required_i64(&params, "id")?,
+                    ApiError::legacy("支付方式不存在"),
+                )
+                .await
             }
             "payment/show" => self.payment_show(required_i64(&params, "id")?).await,
             "payment/sort" => {
@@ -213,21 +217,39 @@ impl AdminService {
             "notice/save" => self.notice_save(&params).await,
             "notice/update" => self.notice_update(&params).await,
             "notice/drop" => {
-                self.delete_by_id("v2_notice", required_i64(&params, "id")?)
-                    .await
+                self.delete_by_id(
+                    "v2_notice",
+                    required_i64(&params, "id")?,
+                    ApiError::legacy("公告不存在"),
+                )
+                .await
             }
             "notice/show" => {
-                self.toggle("v2_notice", "show", required_i64(&params, "id")?)
-                    .await
+                self.toggle(
+                    "v2_notice",
+                    "show",
+                    required_i64(&params, "id")?,
+                    ApiError::legacy("公告不存在"),
+                )
+                .await
             }
             "knowledge/save" => self.knowledge_save(&params).await,
             "knowledge/drop" => {
-                self.delete_by_id("v2_knowledge", required_i64(&params, "id")?)
-                    .await
+                self.delete_by_id(
+                    "v2_knowledge",
+                    required_i64(&params, "id")?,
+                    ApiError::legacy("知识不存在"),
+                )
+                .await
             }
             "knowledge/show" => {
-                self.toggle("v2_knowledge", "show", required_i64(&params, "id")?)
-                    .await
+                self.toggle(
+                    "v2_knowledge",
+                    "show",
+                    required_i64(&params, "id")?,
+                    ApiError::legacy("知识不存在"),
+                )
+                .await
             }
             "knowledge/sort" => {
                 self.sort_ids("v2_knowledge", &array_param(&params, "knowledge_ids")?)
@@ -237,24 +259,41 @@ impl AdminService {
             "ticket/close" => self.ticket_close(required_i64(&params, "id")?).await,
             "coupon/generate" => self.coupon_generate(&params).await,
             "coupon/drop" => {
-                self.delete_by_id("v2_coupon", required_i64(&params, "id")?)
-                    .await
+                self.delete_by_id(
+                    "v2_coupon",
+                    required_i64(&params, "id")?,
+                    ApiError::legacy("优惠券不存在"),
+                )
+                .await
             }
             "coupon/show" => {
-                self.toggle("v2_coupon", "show", required_i64(&params, "id")?)
-                    .await
+                self.toggle(
+                    "v2_coupon",
+                    "show",
+                    required_i64(&params, "id")?,
+                    ApiError::legacy("优惠券不存在"),
+                )
+                .await
             }
             "giftcard/generate" => self.giftcard_generate(&params).await,
             "giftcard/drop" => {
-                self.delete_by_id("v2_giftcard", required_i64(&params, "id")?)
-                    .await
+                self.delete_by_id(
+                    "v2_giftcard",
+                    required_i64(&params, "id")?,
+                    ApiError::not_found("礼品卡不存在"),
+                )
+                .await
             }
             "server/group/save" => self.server_group_save(&params).await,
             "server/group/drop" => self.server_group_drop(&params).await,
             "server/route/save" => self.server_route_save(&params).await,
             "server/route/drop" => {
-                self.delete_by_id("v2_server_route", required_i64(&params, "id")?)
-                    .await
+                self.delete_by_id(
+                    "v2_server_route",
+                    required_i64(&params, "id")?,
+                    ApiError::legacy("路由不存在"),
+                )
+                .await
             }
             "server/manage/sort" => self.server_sort(&params).await,
             "order/detail" => self.order_detail(required_i64(&params, "id")?).await,
@@ -279,12 +318,22 @@ impl AdminService {
             _ if is_server_path(&path, "save") => self.server_save(&path, &params).await,
             _ if is_server_path(&path, "drop") => {
                 let table = server_table_from_path(&path)?;
-                self.delete_by_id(table, required_i64(&params, "id")?).await
+                self.delete_by_id(
+                    table,
+                    required_i64(&params, "id")?,
+                    ApiError::legacy("节点ID不存在"),
+                )
+                .await
             }
             _ if is_server_path(&path, "update") => {
                 let table = server_table_from_path(&path)?;
-                self.toggle_or_set_show(table, required_i64(&params, "id")?, &params)
-                    .await
+                self.toggle_or_set_show(
+                    table,
+                    required_i64(&params, "id")?,
+                    &params,
+                    ApiError::legacy("该服务器不存在"),
+                )
+                .await
             }
             _ if is_server_path(&path, "copy") => self.server_copy(&path, &params).await,
             _ => Err(ApiError::not_found("Admin endpoint does not exist")),
@@ -321,8 +370,12 @@ impl AdminService {
             "notice/save" => self.notice_save(&params).await,
             "notice/update" => self.notice_update(&params).await,
             "notice/drop" => {
-                self.delete_by_id("v2_notice", required_i64(&params, "id")?)
-                    .await
+                self.delete_by_id(
+                    "v2_notice",
+                    required_i64(&params, "id")?,
+                    ApiError::legacy("公告不存在"),
+                )
+                .await
             }
             _ => Err(ApiError::not_found("Staff endpoint does not exist")),
         }
@@ -933,7 +986,13 @@ impl AdminService {
         if exists.is_none() {
             return Err(ApiError::legacy("支付方式不存在"));
         }
-        self.toggle("v2_payment", "enable", id).await
+        self.toggle(
+            "v2_payment",
+            "enable",
+            id,
+            ApiError::legacy("支付方式不存在"),
+        )
+        .await
     }
 
     async fn notice_fetch(&self) -> Result<AdminOutput, ApiError> {
@@ -1005,7 +1064,9 @@ impl AdminService {
             values.push(("show", AdminSqlValue::Integer(show)));
         }
         if values.is_empty() {
-            return self.toggle("v2_notice", "show", id).await;
+            return self
+                .toggle("v2_notice", "show", id, ApiError::legacy("公告不存在"))
+                .await;
         }
 
         let mut builder = QueryBuilder::<MySql>::new("UPDATE v2_notice SET ");
@@ -1350,7 +1411,8 @@ impl AdminService {
             .await?;
         let data = fetch_json_list_page(
             &self.db,
-            r#"
+            &format!(
+                r#"
             SELECT JSON_OBJECT(
                 'id', id, 'code', code, 'name', name, 'type', type, 'value', value,
                 'show', `show`, 'limit_use', limit_use, 'limit_use_with_user', limit_use_with_user,
@@ -1358,9 +1420,11 @@ impl AdminService {
                 'started_at', started_at, 'ended_at', ended_at, 'created_at', created_at, 'updated_at', updated_at
             )
             FROM v2_coupon
-            ORDER BY id DESC
+            {}
             LIMIT ? OFFSET ?
             "#,
+                admin_sort_clause(params)
+            ),
             page_size,
             offset(current, page_size),
         )
@@ -1378,16 +1442,19 @@ impl AdminService {
             .await?;
         let data = fetch_json_list_page(
             &self.db,
-            r#"
+            &format!(
+                r#"
             SELECT JSON_OBJECT(
                 'id', id, 'code', code, 'name', name, 'type', type, 'value', value,
                 'plan_id', plan_id, 'limit_use', limit_use, 'used_user_ids', used_user_ids,
                 'started_at', started_at, 'ended_at', ended_at, 'created_at', created_at, 'updated_at', updated_at
             )
             FROM v2_giftcard
-            ORDER BY id DESC
+            {}
             LIMIT ? OFFSET ?
             "#,
+                admin_sort_clause(params)
+            ),
             page_size,
             offset(current, page_size),
         )
@@ -1401,6 +1468,8 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         // Ports CouponController::generate / multiGenerate. A generate_count marks
         // the CSV batch path; otherwise this is a single create (or update by id).
+        // The CouponGenerate FormRequest validates every path before the method body.
+        coupon_generate_validation(params)?;
         let now = Utc::now().timestamp();
         if let Some(count) = optional_i64(params, "generate_count").filter(|count| *count > 0) {
             let field_values = coupon_field_values(params);
@@ -1486,6 +1555,8 @@ impl AdminService {
     ) -> Result<AdminOutput, ApiError> {
         // Ports GiftcardController::generate / multiGenerate. Codes are 16 chars
         // and, in the batch path, retried until unique.
+        // The GiftcardGenerate FormRequest validates every path before the body.
+        giftcard_generate_validation(params)?;
         let now = Utc::now().timestamp();
         if let Some(count) = optional_i64(params, "generate_count").filter(|count| *count > 0) {
             let field_values = giftcard_field_values(params);
@@ -2238,6 +2309,9 @@ impl AdminService {
         params: &HashMap<String, String>,
     ) -> Result<AdminOutput, ApiError> {
         // Ports UserController::generate (:204-236) and multiGenerate (:238-279).
+        // The UserGenerate FormRequest validates before the method body: it makes
+        // email_suffix required and integer-checks generate_count/expired_at/plan_id.
+        user_generate_validation(params)?;
         let now = Utc::now().timestamp();
         let plan = self.generate_plan(params).await?;
         let (plan_id, group_id, transfer_enable, device_limit) = match plan {
@@ -2524,7 +2598,9 @@ impl AdminService {
                 'surplus_amount', o.surplus_amount, 'refund_amount', o.refund_amount,
                 'balance_amount', o.balance_amount, 'surplus_order_ids', CAST(o.surplus_order_ids AS JSON),
                 'status', o.status, 'commission_status', o.commission_status,
-                'commission_balance', o.commission_balance, 'payment_id', o.payment_id,
+                'commission_balance', o.commission_balance,
+                'actual_commission_balance', o.actual_commission_balance,
+                'payment_id', o.payment_id,
                 'paid_at', o.paid_at, 'created_at', o.created_at, 'updated_at', o.updated_at
             )
             FROM v2_order o
@@ -2596,7 +2672,7 @@ impl AdminService {
     }
 
     async fn order_detail(&self, id: i64) -> Result<AdminOutput, ApiError> {
-        let value = fetch_json_one(
+        let mut value = fetch_json_one(
             &self.db,
             r#"
             SELECT JSON_OBJECT(
@@ -2607,7 +2683,9 @@ impl AdminService {
                 'surplus_amount', o.surplus_amount, 'refund_amount', o.refund_amount,
                 'balance_amount', o.balance_amount, 'surplus_order_ids', CAST(o.surplus_order_ids AS JSON),
                 'status', o.status, 'commission_status', o.commission_status,
-                'commission_balance', o.commission_balance, 'payment_id', o.payment_id,
+                'commission_balance', o.commission_balance,
+                'actual_commission_balance', o.actual_commission_balance,
+                'payment_id', o.payment_id,
                 'paid_at', o.paid_at, 'created_at', o.created_at, 'updated_at', o.updated_at
             )
             FROM v2_order o
@@ -2618,6 +2696,87 @@ impl AdminService {
         )
         .await?
         .ok_or_else(|| ApiError::legacy("订单不存在"))?;
+
+        // OrderController::detail always attaches commission_log (the CommissionLog
+        // rows for this order's trade_no; an empty array when there are none).
+        let trade_no = value
+            .get("trade_no")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let commission_rows = sqlx::query_scalar::<_, Json<Value>>(
+            r#"
+            SELECT JSON_OBJECT(
+                'id', id, 'invite_user_id', invite_user_id, 'user_id', user_id,
+                'trade_no', trade_no, 'order_amount', order_amount, 'get_amount', get_amount,
+                'created_at', created_at, 'updated_at', updated_at
+            )
+            FROM v2_commission_log
+            WHERE trade_no = ?
+            "#,
+        )
+        .bind(&trade_no)
+        .fetch_all(&self.db)
+        .await?;
+        let commission_log = json_rows(commission_rows);
+
+        // surplus_orders is attached only when surplus_order_ids is a non-empty array
+        // (PHP `if ($order->surplus_order_ids)` on the array cast).
+        let surplus_ids: Vec<i64> = value
+            .get("surplus_order_ids")
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(Value::as_i64).collect())
+            .unwrap_or_default();
+        let attach_surplus = value
+            .get("surplus_order_ids")
+            .and_then(Value::as_array)
+            .is_some_and(|items| !items.is_empty());
+        let surplus_orders = if attach_surplus {
+            let rows = if surplus_ids.is_empty() {
+                Vec::new()
+            } else {
+                let mut builder = QueryBuilder::<MySql>::new(
+                    r#"
+                    SELECT JSON_OBJECT(
+                        'id', o.id, 'invite_user_id', o.invite_user_id, 'user_id', o.user_id,
+                        'plan_id', o.plan_id, 'coupon_id', o.coupon_id, 'type', o.type, 'period', o.period,
+                        'trade_no', o.trade_no, 'callback_no', o.callback_no, 'total_amount', o.total_amount,
+                        'handling_amount', o.handling_amount, 'discount_amount', o.discount_amount,
+                        'surplus_amount', o.surplus_amount, 'refund_amount', o.refund_amount,
+                        'balance_amount', o.balance_amount, 'surplus_order_ids', CAST(o.surplus_order_ids AS JSON),
+                        'status', o.status, 'commission_status', o.commission_status,
+                        'commission_balance', o.commission_balance,
+                        'actual_commission_balance', o.actual_commission_balance,
+                        'payment_id', o.payment_id,
+                        'paid_at', o.paid_at, 'created_at', o.created_at, 'updated_at', o.updated_at
+                    )
+                    FROM v2_order o
+                    WHERE o.id IN ("#,
+                );
+                {
+                    let mut separated = builder.separated(", ");
+                    for surplus_id in &surplus_ids {
+                        separated.push_bind(*surplus_id);
+                    }
+                }
+                builder.push(")");
+                let rows = builder
+                    .build_query_scalar::<Json<Value>>()
+                    .fetch_all(&self.db)
+                    .await?;
+                json_rows(rows)
+            };
+            Some(rows)
+        } else {
+            None
+        };
+
+        if let Some(object) = value.as_object_mut() {
+            object.insert("commission_log".to_string(), Value::Array(commission_log));
+            if let Some(surplus_orders) = surplus_orders {
+                object.insert("surplus_orders".to_string(), Value::Array(surplus_orders));
+            }
+        }
         Ok(AdminOutput::Data(value))
     }
 
@@ -2931,9 +3090,33 @@ impl AdminService {
         Ok(group_ids)
     }
 
-    async fn server_group_fetch(&self) -> Result<AdminOutput, ApiError> {
+    async fn server_group_fetch(
+        &self,
+        params: &HashMap<String, String>,
+    ) -> Result<AdminOutput, ApiError> {
+        // GroupController::fetch short-circuits when group_id is truthy, returning the
+        // single raw group wrapped in a one-element array (no user_count/server_count
+        // enrichment, `[null]` when the id is not found).
+        if let Some(group_id) = optional_i64(params, "group_id").filter(|id| *id != 0) {
+            let group = fetch_json_one(
+                &self.db,
+                r#"
+                SELECT JSON_OBJECT(
+                    'id', id, 'name', name, 'created_at', created_at, 'updated_at', updated_at
+                )
+                FROM v2_server_group
+                WHERE id = ?
+                LIMIT 1
+                "#,
+                group_id,
+            )
+            .await?
+            .unwrap_or(Value::Null);
+            return Ok(AdminOutput::Data(json!([group])));
+        }
         // server_count counts nodes whose group_id array includes the group,
         // mirroring GroupController::fetch over ServerService::getAllServers.
+        // Laravel returns ServerGroup::get() in natural (id-ascending) order.
         let mut groups = fetch_json_list(
             &self.db,
             r#"
@@ -2943,7 +3126,7 @@ impl AdminService {
                 'server_count', 0
             )
             FROM v2_server_group
-            ORDER BY id DESC
+            ORDER BY id ASC
             "#,
         )
         .await?;
@@ -2998,7 +3181,7 @@ impl AdminService {
                 'created_at', created_at, 'updated_at', updated_at
             )
             FROM v2_server_route
-            ORDER BY id DESC
+            ORDER BY id ASC
             "#
             )
             .await?
@@ -3850,8 +4033,39 @@ impl AdminService {
         Ok(AdminOutput::Data(projected))
     }
 
-    async fn delete_by_id(&self, table: &str, id: i64) -> Result<AdminOutput, ApiError> {
+    /// Existence probe mirroring the `Model::find($id)` + `if (!$model) abort(...)`
+    /// guard every admin drop/show/update runs before mutating. Each caller supplies
+    /// its resource-specific not-found error (message and status differ per resource,
+    /// e.g. giftcard is a 404). `table` must already be validated by ensure_safe_table.
+    /// A row-value probe is used rather than UPDATE rows_affected because MySQL reports
+    /// 0 affected rows when the new value equals the current one, which would falsely
+    /// read as "not found" for an idempotent show/set-show.
+    async fn ensure_row_exists(
+        &self,
+        table: &str,
+        id: i64,
+        not_found: ApiError,
+    ) -> Result<(), ApiError> {
+        let exists: Option<i64> = sqlx::query_scalar(AssertSqlSafe(format!(
+            "SELECT id FROM {table} WHERE id = ?"
+        )))
+        .bind(id)
+        .fetch_optional(&self.db)
+        .await?;
+        if exists.is_none() {
+            return Err(not_found);
+        }
+        Ok(())
+    }
+
+    async fn delete_by_id(
+        &self,
+        table: &str,
+        id: i64,
+        not_found: ApiError,
+    ) -> Result<AdminOutput, ApiError> {
         ensure_safe_table(table)?;
+        self.ensure_row_exists(table, id, not_found).await?;
         sqlx::query(AssertSqlSafe(format!("DELETE FROM {table} WHERE id = ?")))
             .bind(id)
             .execute(&self.db)
@@ -3859,9 +4073,16 @@ impl AdminService {
         Ok(AdminOutput::Data(json!(true)))
     }
 
-    async fn toggle(&self, table: &str, column: &str, id: i64) -> Result<AdminOutput, ApiError> {
+    async fn toggle(
+        &self,
+        table: &str,
+        column: &str,
+        id: i64,
+        not_found: ApiError,
+    ) -> Result<AdminOutput, ApiError> {
         ensure_safe_table(table)?;
         ensure_toggle_column(column)?;
+        self.ensure_row_exists(table, id, not_found).await?;
         sqlx::query(AssertSqlSafe(format!(
             "UPDATE {table} SET `{column}` = IF(`{column}` = 1, 0, 1), updated_at = ? WHERE id = ?"
         )))
@@ -3877,8 +4098,10 @@ impl AdminService {
         table: &str,
         id: i64,
         params: &HashMap<String, String>,
+        not_found: ApiError,
     ) -> Result<AdminOutput, ApiError> {
         ensure_safe_table(table)?;
+        self.ensure_row_exists(table, id, not_found).await?;
         let show = optional_i64(params, "show").unwrap_or(1);
         sqlx::query(AssertSqlSafe(format!(
             "UPDATE {table} SET `show` = ?, updated_at = ? WHERE id = ?"
