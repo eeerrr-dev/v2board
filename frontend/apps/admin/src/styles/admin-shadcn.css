@@ -128,5 +128,7 @@
 /* Redesigned island surfaces (added as each is migrated off the legacy replica). */
 @source '../components/layout/**/*.{ts,tsx}';
 @source '../pages/login.tsx';
+@source '../pages/system.tsx';
+@source '../pages/notices.tsx';
 
 @tailwind utilities source(none);

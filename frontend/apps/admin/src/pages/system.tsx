@@ -1,11 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { CheckCircle2, XCircle } from 'lucide-react';
 import { useQueueStats, useQueueWorkload } from '@/lib/queries';
-import { LegacySpin } from '@/components/legacy-spin';
-import {
-  LegacyStandaloneTable,
-  legacyTableRowKey,
-  type LegacyStandaloneTableHeader,
-} from '@/components/legacy-standalone-table';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageShell } from '@/components/ui/page';
+import { Spinner } from '@/components/ui/spinner';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { DataTable, type DataTableColumn } from '@/components/ui/table';
+
+type QueueWorkloadRow = { name: string; processes: number; length: number; wait: number };
 
 const QUEUE_NAMES: Record<string, string> = {
   order_handle: '订单队列',
@@ -16,29 +18,60 @@ const QUEUE_NAMES: Record<string, string> = {
   traffic_fetch: '流量消费队列',
 };
 
-const headers: LegacyStandaloneTableHeader[] = [
-  { title: '队列名称' },
-  { title: '作业量' },
-  { title: '任务量' },
-  { title: '占用时间', alignRight: true },
+const workloadColumns: DataTableColumn<QueueWorkloadRow>[] = [
+  {
+    id: 'name',
+    meta: { className: 'font-medium text-foreground' },
+    header: () => <span>队列名称</span>,
+    cell: ({ row }) => QUEUE_NAMES[row.original.name] ?? row.original.name,
+  },
+  {
+    id: 'processes',
+    header: () => <span>作业量</span>,
+    cell: ({ row }) => row.original.processes,
+  },
+  {
+    id: 'length',
+    header: () => <span>任务量</span>,
+    cell: ({ row }) => row.original.length,
+  },
+  {
+    id: 'wait',
+    meta: { align: 'right' },
+    header: () => <span>占用时间</span>,
+    cell: ({ row }) => `${row.original.wait}s`,
+  },
 ];
 
-export function startLegacyQueuePolling(
-  refetchStats: () => unknown,
-  refetchWorkload: () => unknown,
-) {
+const POLL_INTERVAL = 3000;
+
+// Preserve the legacy self-scheduling poll: fetch immediately, then re-arm a
+// single setTimeout after each pass (not setInterval, so a slow refetch never
+// stacks). Returns the teardown that clears the pending timer.
+export function startQueuePolling(refetchStats: () => unknown, refetchWorkload: () => unknown) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const getData = () => {
     void refetchStats();
     void refetchWorkload();
     timer = setTimeout(() => {
       getData();
-    }, 3000);
+    }, POLL_INTERVAL);
   };
   getData();
   return () => {
     if (timer !== undefined) clearTimeout(timer);
   };
+}
+
+function StatCard({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <Card>
+      <CardContent className="space-y-3">
+        <div className="text-sm text-muted-foreground">{label}</div>
+        <div className="text-3xl font-semibold tracking-tight text-foreground">{value}</div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function SystemPage() {
@@ -47,89 +80,67 @@ export default function SystemPage() {
   const stats = queueStats.data;
   const workload = queueWorkload.data?.filter((item) => item.name !== 'default');
 
-  useEffect(() => startLegacyQueuePolling(queueStats.refetch, queueWorkload.refetch), []);
+  useEffect(() => startQueuePolling(queueStats.refetch, queueWorkload.refetch), []);
 
   return (
-    <>
-      <LegacySpin loading={!stats}>
-        <div className="block block-rounded ">
-          <div className="block-header block-header-default">
-            <h3 className="block-title">总览</h3>
+    <PageShell data-testid="queue-page">
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold text-foreground">总览</h2>
+        {stats ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="当前作业量" value={stats.jobsPerMinute || '0'} />
+            <StatCard label="近一小时处理量" value={stats.recentJobs || '0'} />
+            <StatCard label="7日内报错数量" value={stats.failedJobs || '0'} />
+            <StatCard
+              label="状态"
+              value={
+                <StatusBadge tone={stats.status ? 'success' : 'destructive'} className="gap-1.5">
+                  {stats.status ? (
+                    <CheckCircle2 className="size-4" />
+                  ) : (
+                    <XCircle className="size-4" />
+                  )}
+                  {stats.status ? '运行中' : '未启动'}
+                </StatusBadge>
+              }
+            />
           </div>
-          <div className="block-content p-0">
-            <div className="row no-gutters">
-              <div className="col-lg-6 col-xl-3 border-right p-4 border-bottom">
-                <div>
-                  <div>当前作业量</div>
-                  <div className="mt-4 font-size-h3">{stats?.jobsPerMinute || '0'}</div>
-                </div>
-              </div>
-              <div className="col-lg-6 col-xl-3 border-right p-4 border-bottom">
-                <div>
-                  <div>近一小时处理量</div>
-                  <div className="mt-4 font-size-h3">{stats?.recentJobs || '0'}</div>
-                </div>
-              </div>
-              <div className="col-lg-6 col-xl-3 border-right p-4 border-bottom">
-                <div>
-                  <div>7日内报错数量</div>
-                  <div className="mt-4 font-size-h3">{stats?.failedJobs || '0'}</div>
-                </div>
-              </div>
-              <div className="col-lg-6 col-xl-3 p-4 border-bottom overflow-hidden">
-                <div>
-                  <div>状态</div>
-                  <div className="mt-4 font-size-h3">
-                    {stats ? (stats.status ? '运行中' : '未启动') : null}
-                  </div>
-                  {stats ? (
-                    stats.status ? (
-                      <i
-                        className="si si-check text-success"
-                        style={{ position: 'absolute', fontSize: 100, right: -20, bottom: -20 }}
-                      />
-                    ) : (
-                      <i
-                        className="si si-close text-danger"
-                        style={{ position: 'absolute', fontSize: 100, right: -20, bottom: -20 }}
-                      />
-                    )
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </LegacySpin>
+        ) : (
+          <LoadingPanel />
+        )}
+      </section>
 
-      <LegacySpin loading={!workload}>
-        <div className="block block-rounded ">
-          <div className="block-header block-header-default">
-            <h3 className="block-title">当前作业详情</h3>
-          </div>
-          <div className="block-content p-0">
-            <LegacyStandaloneTable headers={headers} isEmpty={(workload ?? []).length === 0}>
-              {(workload ?? []).map((row, index) => (
-                <tr
-                  key={index}
-                  className="ant-table-row ant-table-row-level-0"
-                  {...legacyTableRowKey(index)}
-                >
-                  <td className="">{QUEUE_NAMES[row.name]}</td>
-                  <td className="">{row.processes}</td>
-                  <td className="">{row.length}</td>
-                  <td
-                    className="ant-table-align-right ant-table-row-cell-last"
-                    style={{ textAlign: 'right' }}
-                  >
-                    {row.wait}s
-                  </td>
-                </tr>
-              ))}
-            </LegacyStandaloneTable>
-          </div>
-        </div>
-      </LegacySpin>
-    </>
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold text-foreground">当前作业详情</h2>
+        {workload ? (
+          <Card className="overflow-hidden py-0">
+            <CardContent className="p-0">
+              <DataTable
+                columns={workloadColumns}
+                data={workload}
+                getRowKey={(row) => row.name}
+                data-testid="queue-workload-table"
+                empty={workload.length === 0 ? '暂无作业' : undefined}
+                emptyTestId="queue-workload-empty"
+              />
+            </CardContent>
+          </Card>
+        ) : (
+          <LoadingPanel />
+        )}
+      </section>
+    </PageShell>
+  );
+}
+
+function LoadingPanel() {
+  return (
+    <div
+      className="flex min-h-32 items-center justify-center rounded-xl border border-border bg-card"
+      role="status"
+    >
+      <Spinner className="size-5 text-muted-foreground" />
+      <span className="sr-only">加载中</span>
+    </div>
   );
 }
