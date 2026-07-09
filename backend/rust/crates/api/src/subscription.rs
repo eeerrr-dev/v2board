@@ -316,15 +316,16 @@ fn build_clash_subscription(
 }
 
 // Load the Clash/Stash template, preferring an operator custom file over the
-// embedded default (Clash.php:31-35 `\File::exists($customConfig)`). NOTE: no YAML
-// parser is linked into this crate, so the custom file is read as JSON — this
-// covers JSON-encoded custom templates, but a genuine YAML `custom.clash.yaml`
-// cannot be parsed here and falls back to the embedded default. Full YAML custom
-// support needs a YAML dependency (see report).
+// embedded default (Clash.php:31-35 `Yaml::parseFile($customConfig)`). The custom
+// override is parsed as YAML, exactly like Laravel's Symfony\Yaml; because YAML is
+// a superset of JSON, a JSON-encoded custom file still loads. Deserializing into a
+// preserve_order serde_json::Value keeps the operator's key order. When the file is
+// absent or unparseable we fall back to the embedded default — our offline JSON
+// conversion of default.clash.yaml.
 fn load_clash_template(config: &AppConfig, custom_name: &str, embedded: &str) -> Value {
     let custom_path = config.runtime_paths.rules.join(custom_name);
     if let Ok(body) = fs::read_to_string(&custom_path)
-        && let Ok(value) = serde_json::from_str::<Value>(&body)
+        && let Ok(value) = serde_yaml::from_str::<Value>(&body)
     {
         return value;
     }
@@ -3705,6 +3706,45 @@ mod tests {
         assert!(singbox_modern_flag("sing-box 1.12.0"));
         assert!(singbox_modern_flag("sing box 1.12.0"));
         assert!(singbox_modern_flag("sing-box/1.13.2"));
+    }
+
+    #[test]
+    fn clash_custom_yaml_template_is_parsed_and_rendered() {
+        // A genuine YAML custom.clash.yaml (not JSON) — the case that previously
+        // fell back to the embedded default because only JSON was parsed.
+        let custom_yaml = r#"
+mixed-port: 7890
+proxies: []
+proxy-groups:
+  - name: MyCustomGroup
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - "DOMAIN,$app_name.example.com,DIRECT"
+  - "MATCH,MyCustomGroup"
+"#;
+        let template = serde_yaml::from_str::<Value>(custom_yaml).expect("valid YAML");
+        let proxies = vec![json!({"name": "node-a"}), json!({"name": "node-b"})];
+        let rendered = render_clash_document(template, proxies, "AcmeVPN", None);
+
+        // The operator's own group and rules survive, generated proxies are merged
+        // into both the proxies list and the custom group, and $app_name is
+        // substituted after the YAML is dumped.
+        assert!(rendered.contains("MyCustomGroup"));
+        assert!(rendered.contains("node-a") && rendered.contains("node-b"));
+        assert!(rendered.contains("AcmeVPN.example.com"));
+        assert!(!rendered.contains("$app_name"));
+        assert!(rendered.contains("mixed-port"));
+    }
+
+    #[test]
+    fn clash_custom_json_template_still_parses_as_yaml_superset() {
+        // Existing JSON-encoded custom templates keep working, since YAML is a
+        // superset of JSON.
+        let custom_json = r#"{"rules": ["MATCH,DIRECT"], "proxy-groups": []}"#;
+        let template = serde_yaml::from_str::<Value>(custom_json).expect("JSON is valid YAML");
+        assert_eq!(template["rules"][0], json!("MATCH,DIRECT"));
     }
 
     #[test]

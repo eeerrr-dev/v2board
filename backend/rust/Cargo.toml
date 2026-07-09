@@ -44,6 +44,12 @@ serde = { version = "1", features = ["derive"] }
 # the order Laravel emits, instead of serde's default alphabetical (BTreeMap) sort.
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = "0.7"
+# Parses operator-provided `custom.clash.yaml`/`custom.stash.yaml` overrides the
+# way Laravel's Symfony\Yaml does. Deserialized into a preserve_order
+# serde_json::Value so key order matches the source. serde_yaml is in
+# maintenance-only mode upstream but remains the stable, ubiquitous YAML reader;
+# no audit gate flags it.
+serde_yaml = "0.9"
 sha1 = "0.11"
 sha2 = "0.11"
 sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "mysql", "json", "chrono"] }
