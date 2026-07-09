@@ -184,6 +184,18 @@ const adminServerRouteSubmitSelector =
 // antd `.ant-modal` + `操作` row `编辑` link.
 const adminPaymentSaveSelector =
   '.ant-modal-footer .ant-btn-primary, [data-testid="payment-save"]';
+// Config/theme surface. The redesigned config page uses a `config-tab-«key»`
+// button nav (aria-current='page' on the active tab) and `config-«field»`
+// inputs; the theme page uses `theme-card-«key»` Cards. The antd oracle uses
+// `.ant-tabs-tab`, OneUI `.block.border-bottom .form-control` inputs, and
+// `.block-transparent.bg-image` theme cards.
+const adminConfigTabSelector = '.ant-tabs-tab, [data-testid^="config-tab-"]';
+const adminActiveConfigTabSelector =
+  '.ant-tabs-tab-active, [data-testid^="config-tab-"][aria-current="page"]';
+const adminConfigFieldInputSelector =
+  '.block.border-bottom input.form-control, .block.border-bottom textarea.form-control, input[data-testid^="config-"], textarea[data-testid^="config-"]';
+const adminThemeCardTitleSelector =
+  '.block-transparent.bg-image h3, [data-testid^="theme-card-"] [data-slot="card-title"]';
 // Overlay-scoped textarea across both worlds (antd textareas carry `.ant-input`).
 const adminDrawerTextareaSelector = scopedSelectorUnion(
   adminOverlayOpenSelector,
@@ -2024,7 +2036,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-config',
     path: `/${adminPath}#/config/system`,
-    readySelector: '.ant-tabs-tab',
+    readySelector: '[data-testid^="config-tab-"], .ant-tabs-tab',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -2032,7 +2044,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-theme',
     path: `/${adminPath}#/config/theme`,
-    readySelector: '.block-transparent.bg-image',
+    readySelector: '[data-testid^="theme-card-"], .block-transparent.bg-image',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
@@ -6857,10 +6869,10 @@ async function runAdminDashboardAvatarDropdownInteraction(page) {
 
 async function runAdminConfigTabsInteraction(page) {
   const before = await activeTabState(page);
-  await clickVisibleAt(page, '.ant-tabs-tab', 1);
+  await clickVisibleAt(page, adminConfigTabSelector, 1);
   await page.waitForTimeout(250);
   const second = await activeTabState(page);
-  await clickVisibleAt(page, '.ant-tabs-tab', 2);
+  await clickVisibleAt(page, adminConfigTabSelector, 2);
   await page.waitForTimeout(250);
   const third = await activeTabState(page);
   return { before, second, third };
@@ -6870,12 +6882,11 @@ async function runAdminConfigSaveFailureMatrixInteraction(page) {
   const initialConfigFetchCount = page.__visualParityAdminConfigFetchCount ?? 0;
   const initialThemeFetchCount = page.__visualParityAdminThemeFetchCount ?? 0;
   const before = await adminConfigSaveFailureState(page);
-  await fillVisibleAt(
-    page,
-    '.block.border-bottom input.form-control, .block.border-bottom textarea.form-control',
-    0,
-    'Parity Config Failure',
-  );
+  await fillVisibleAt(page, adminConfigFieldInputSelector, 0, 'Parity Config Failure');
+  // The redesigned config field commits on blur (onChange only stages a draft);
+  // the legacy field already saved on the fill's input/change event, so an
+  // explicit blur triggers the source save without adding a second legacy save.
+  await blurVisibleAt(page, adminConfigFieldInputSelector, 0);
   await page.waitForTimeout(150);
   const edited = await adminConfigSaveFailureState(page);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminConfigSaveCount', 1, 7_000);
@@ -6885,16 +6896,16 @@ async function runAdminConfigSaveFailureMatrixInteraction(page) {
   await page.evaluate(() => {
     window.location.hash = '/config/theme';
   });
-  await page.waitForSelector('.block-transparent.bg-image', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector(adminThemeCardTitleSelector, { state: 'visible', timeout: 5_000 });
   await page.waitForTimeout(500);
   const themeBefore = await adminThemeSaveFailureState(page);
   await clickFirstVisibleText(page, 'button', ['主题设置']);
-  await page.waitForSelector('.ant-modal', { state: 'visible', timeout: 5_000 });
-  await waitForVisibleText(page, '.ant-modal-title', '配置默认主题主题');
-  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Theme Failure');
+  await page.waitForSelector(adminOverlayOpenSelector, { state: 'visible', timeout: 5_000 });
+  await waitForVisibleText(page, adminDrawerTitleSelector, '配置默认主题主题');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Theme Failure');
   await page.waitForTimeout(100);
   const themeFilled = await adminThemeSaveFailureState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 1);
+  await clickVisibleAt(page, adminDrawerFooterButtonSelector, 1);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminThemeSaveCount', 1, 5_000);
   await page.waitForTimeout(350);
   const themeFailed = await adminThemeSaveFailureState(page);
@@ -7367,31 +7378,15 @@ async function runAdminTicketsReplyFilterInteraction(page) {
 
 async function runAdminThemeSettingsInteraction(page) {
   await clickFirstVisibleText(page, 'button', ['主题设置']);
-  await page.waitForSelector('.ant-modal', {
+  await page.waitForSelector(adminOverlayOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
-  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Theme Title');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Theme Title');
   await page.waitForTimeout(100);
   const opened = await adminThemeModalState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 0);
-  await page.waitForFunction(
-    () => {
-      const isVisible = (element) => {
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        return (
-          rect.width > 0 &&
-          rect.height > 0 &&
-          style.display !== 'none' &&
-          style.visibility !== 'hidden' &&
-          !element.closest('.ant-dropdown-hidden')
-        );
-      };
-      return !Array.from(document.querySelectorAll('.ant-modal')).some(isVisible);
-    },
-    { timeout: 5_000 },
-  );
+  await clickVisibleAt(page, adminDrawerFooterButtonSelector, 0);
+  await waitForVisibleElementsHidden(page, adminOverlayOpenSelector);
   const closed = await adminThemeModalState(page);
   return { closed, opened };
 }
@@ -9638,35 +9633,32 @@ async function runAdminUsersExtremeViewportMatrixInteraction(page) {
 
 async function adminThemeModalState(page) {
   return {
-    inputValues: await visibleInputValues(page, '.ant-modal .ant-input'),
-    labels: await visibleTexts(page, '.ant-modal label', 10),
-    modalCount: await visibleCount(page, '.ant-modal'),
-    titles: await visibleTexts(page, '.ant-modal-title', 4),
+    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
+    labels: await visibleTexts(page, adminDrawerLabelSelector, 10),
+    modalCount: await visibleCount(page, adminOverlayOpenSelector),
+    titles: await visibleTexts(page, adminDrawerTitleSelector, 4),
   };
 }
 
 async function adminConfigSaveFailureState(page) {
   return {
-    activeTabs: await visibleTexts(page, '.ant-tabs-tab-active', 4),
+    activeTabs: await visibleTexts(page, adminActiveConfigTabSelector, 4),
     blockLoadingCount: await visibleCount(page, '.block-mode-loading'),
-    inputValues: await visibleInputValues(
-      page,
-      '.block.border-bottom input.form-control, .block.border-bottom textarea.form-control',
-    ),
+    inputValues: await visibleInputValues(page, adminConfigFieldInputSelector),
     saveCount: page.__visualParityAdminConfigSaveCount ?? 0,
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 4),
+    tableRows: await visibleTexts(page, adminTableRowSelector, 4),
     toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
   };
 }
 
 async function adminThemeSaveFailureState(page) {
   return {
-    buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
-    inputValues: await visibleInputValues(page, '.ant-modal .ant-input'),
-    modalCount: await visibleCount(page, '.ant-modal'),
+    buttons: await visibleTexts(page, adminDrawerFooterButtonSelector, 4),
+    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
+    modalCount: await visibleCount(page, adminOverlayOpenSelector),
     saveCount: page.__visualParityAdminThemeSaveCount ?? 0,
-    themeCards: await visibleTexts(page, '.block-transparent.bg-image h3', 4),
-    titles: await visibleTexts(page, '.ant-modal-title', 4),
+    themeCards: await visibleTexts(page, adminThemeCardTitleSelector, 4),
+    titles: await visibleTexts(page, adminDrawerTitleSelector, 4),
     toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
   };
 }
@@ -10555,6 +10547,51 @@ function normalizeInteractionResult(label, result) {
       reduced[key] = reducePaymentSnapshot(value);
     }
     return reduced;
+  }
+  if (label === 'admin-config-tabs') {
+    // Compare only which tab is active by its text; the active-tab className
+    // (antd `ant-tabs-tab-active` vs the redesigned nav button classes) is
+    // Tier-2 presentation. The active-tab-changed contract is enforced by the
+    // raw assertion.
+    const reduceTab = (state) => (state ? { text: state.text } : state);
+    return {
+      before: reduceTab(normalized.before),
+      second: reduceTab(normalized.second),
+      third: reduceTab(normalized.third),
+    };
+  }
+  if (label === 'admin-config-save-failure-matrix') {
+    // Reduce the config-form snapshots to their Tier-1 essence. Keep only the
+    // non-empty field values (the redesigned site form renders one fewer empty
+    // <input> than the OneUI oracle — which control renders as a text input is
+    // Tier-2), and drop the intermediate saveCount (the redesigned blur-save
+    // lands before `edited` is read while the legacy debounced save lands after
+    // — timing, covered by configSaveRequests). Reduce each config save request
+    // to the single field the interaction changed: the legacy form re-sends the
+    // whole site group's unchanged currency/currency_symbol values, the
+    // redesigned form saves only app_name — both persist app_name identically,
+    // which the raw assertion pins. Theme snapshots already match on both DOMs.
+    const reduceConfigSnapshot = (state) => {
+      if (!state || typeof state !== 'object') return state;
+      const { blockLoadingCount: _blockLoadingCount, saveCount: _saveCount, ...rest } = state;
+      return {
+        ...rest,
+        inputValues: Array.isArray(rest.inputValues)
+          ? rest.inputValues.filter((value) => value !== '')
+          : rest.inputValues,
+      };
+    };
+    return {
+      ...normalized,
+      before: reduceConfigSnapshot(normalized.before),
+      configFailed: reduceConfigSnapshot(normalized.configFailed),
+      configSaveRequests: Array.isArray(normalized.configSaveRequests)
+        ? normalized.configSaveRequests.map((request) =>
+            request && typeof request === 'object' ? { app_name: request.app_name } : request,
+          )
+        : normalized.configSaveRequests,
+      edited: reduceConfigSnapshot(normalized.edited),
+    };
   }
   if (label === 'admin-plan-edit-drawer') {
     const stripActionDropdownItems = (state) => {
@@ -16057,7 +16094,12 @@ async function activeTabState(page) {
       Array.from(document.querySelectorAll('.ant-tabs-tab-active')).find(isVisible) ??
       Array.from(document.querySelectorAll('.ant-tabs-tab')).find((element) =>
         element.className.includes('active'),
-      );
+      ) ??
+      // Redesigned config page: nav buttons carry aria-current='page' on the
+      // active tab instead of an antd active class.
+      Array.from(
+        document.querySelectorAll('[data-testid^="config-tab-"][aria-current="page"]'),
+      ).find(isVisible);
     if (!active) return null;
     return {
       className: normalizeClassName(active.className),
@@ -17161,6 +17203,11 @@ async function fillVisibleInputByLabel(page, rootSelector, labelText, value) {
 async function fillVisibleAt(page, selector, index, value) {
   const domIndex = await visibleElementDomIndex(page, selector, index);
   await page.locator(selector).nth(domIndex).fill(value);
+}
+
+async function blurVisibleAt(page, selector, index) {
+  const domIndex = await visibleElementDomIndex(page, selector, index);
+  await page.locator(selector).nth(domIndex).blur();
 }
 
 async function captureScenarioWithFreshBrowser(url, scenario, viewport, target) {
