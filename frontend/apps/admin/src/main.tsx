@@ -14,7 +14,6 @@ import {
 import { HashRouter, Navigate, useLocation } from 'react-router';
 import App, { ADMIN_LEGACY_ROUTE_PATHS } from './App';
 import { RouteBoundaryElement } from './components/route-error-boundary';
-import { LegacyConfirmProvider } from './components/legacy-confirm';
 import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
 import { Toaster } from './components/ui/toaster';
 import { applyAdminLegacySettings } from './lib/legacy-settings';
@@ -108,7 +107,6 @@ function Boot() {
           <LegacyRouteGate>
             <App />
           </LegacyRouteGate>
-          <LegacyConfirmProvider />
           <ConfirmDialogProvider />
           <Toaster />
         </RouteBoundaryElement>

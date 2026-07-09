@@ -12,8 +12,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ant-design/charts": "^2.6.7",
-    "@ant-design/icons": "^6.3.2",
     "@hookform/resolvers": "^5.4.0",
     "@radix-ui/react-alert-dialog": "^1.1.18",
     "@radix-ui/react-avatar": "^1.1.11",
@@ -34,12 +32,10 @@
     "@v2board/config": "workspace:*",
     "@v2board/i18n": "workspace:*",
     "@v2board/types": "workspace:*",
-    "antd": "^6.5.0",
     "axios": "catalog:",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dayjs": "catalog:",
-    "darkreader": "4.9.125",
     "echarts": "^6.1.0",
     "i18next": "catalog:",
     "lucide-react": "^1.22.0",

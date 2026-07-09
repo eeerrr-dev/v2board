@@ -309,15 +309,16 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).toContain(
       "import { RouteBoundaryElement } from './components/route-error-boundary';",
     );
-    expect(mainSource).toContain(
-      "import { LegacyConfirmProvider } from './components/legacy-confirm';",
-    );
+    // The legacy antd confirm portal is gone; pages use the shadcn confirm
+    // dialog + island toaster providers instead.
+    expect(mainSource).not.toContain('LegacyConfirmProvider');
+    expect(mainSource).toContain('<ConfirmDialogProvider />');
+    expect(mainSource).toContain('<Toaster />');
     expect(mainSource).toContain('<HashRouter>');
     expect(mainSource).toContain('<LegacyRouteGate>');
     expect(mainSource).toContain('</LegacyRouteGate>');
     expect(mainSource).toContain('<RouteBoundaryElement>');
     expect(mainSource).toContain('<App />');
-    expect(mainSource).toContain('<LegacyConfirmProvider />');
   });
 
   it('does not install a storage-event auth sync listener absent from the bundled admin entry', () => {

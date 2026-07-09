@@ -127,6 +127,7 @@
 @source '../components/ui/**/*.{ts,tsx}';
 /* Redesigned island surfaces (added as each is migrated off the legacy replica). */
 @source '../components/layout/**/*.{ts,tsx}';
+@source '../components/route-error-boundary.tsx';
 @source '../components/user-manage-drawer.tsx';
 @source '../components/user-traffic-modal.tsx';
 @source '../pages/login.tsx';
