@@ -1,9 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
-import { App as AntdApp } from 'antd';
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router';
 import { getNormalizedLegacyHashPath } from '@v2board/config';
 import { AdminLayout } from '@/components/layout/admin-layout';
-import { bindNotificationApi } from '@/lib/api';
 import { getAuthData } from '@/lib/auth';
 import LoginPage from '@/pages/login';
 import DashboardPage from '@/pages/dashboard';
@@ -126,12 +124,9 @@ const ADMIN_ROUTE_ELEMENTS: Record<AdminLegacyRoutePath, ReactNode> = {
 };
 
 export default function App() {
-  const { notification } = AntdApp.useApp();
   const location = useLocation();
   const current = `${location.pathname}${location.search}`;
   const normalized = getNormalizedLegacyHashPath(current, ADMIN_LEGACY_ROUTE_OPTIONS);
-
-  useEffect(() => bindNotificationApi(notification), [notification]);
 
   if (normalized !== current) return <Navigate to={normalized} replace />;
   if (!matchesAdminLegacyRoute(location.pathname)) {

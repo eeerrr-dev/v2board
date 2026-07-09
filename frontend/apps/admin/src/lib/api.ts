@@ -1,13 +1,8 @@
 import { createApiClient } from '@v2board/api-client';
-import type { App } from 'antd';
 import { getAuthData, setAuthData } from './auth';
 import { i18nGet } from './errors';
 import { getAdminApiBaseUrl, getAdminSecurePath } from './legacy-settings';
-
-let notificationApi: ReturnType<typeof App.useApp>['notification'] | null = null;
-export function bindNotificationApi(api: ReturnType<typeof App.useApp>['notification']): void {
-  notificationApi = api;
-}
+import { toast } from './toast';
 
 let redirectingToLogin = false;
 
@@ -61,12 +56,12 @@ export const apiClient = createApiClient({
     // the legacy admin never surfaced these as a global toast.
     if (error.status === 0) return;
     // Faithful to the packaged admin: every non-200 backend response (except the
-    // 403 redirect handled by onUnauthorized) raised a single global
-    // notification with the first validation error or the response message.
-    notificationApi?.error({
-      message: i18nGet('请求失败'),
+    // 403 redirect handled by onUnauthorized) raises a single global
+    // notification with the first validation error or the response message —
+    // now routed through the shadcn island toaster instead of antd.
+    toast.error(i18nGet('请求失败'), {
       description: i18nGet(error.message),
-      duration: 1.5,
+      duration: 1500,
     });
   },
 });

@@ -325,10 +325,15 @@ describe('admin legacy entrypoint', () => {
     expect(mainSource).not.toContain("from './lib/auth'");
   });
 
-  it('keeps the admin Ant Design locale fixed to zh_CN like the bundled admin app', () => {
-    expect(mainSource).toContain("import zhCN from 'antd/locale/zh_CN';");
-    expect(mainSource).toContain('locale={zhCN}');
-    expect(mainSource).not.toContain('antd/locale/en_US');
+  it('no longer wraps the app in the antd ConfigProvider/App runtime', () => {
+    // The admin surfaces are pure shadcn islands; the antd runtime provider and
+    // its zh_CN locale were removed. API-error notifications now route through
+    // the island Toaster instead of antd's static notification API.
+    expect(mainSource).not.toContain("from 'antd'");
+    expect(mainSource).not.toContain('antd/locale/zh_CN');
+    expect(mainSource).not.toContain('ConfigProvider');
+    expect(mainSource).not.toContain('AntdApp');
+    expect(mainSource).toContain('<Toaster />');
   });
 
   it('keeps Ant Design 5 table spin wrappers visible under the legacy admin stylesheet', () => {

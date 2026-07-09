@@ -106,14 +106,16 @@ describe('admin api legacy path resolution', () => {
   });
 
   it('raises a global notification for backend errors but stays silent on transport timeouts', () => {
-    // Faithful to the packaged admin: every non-200 backend response raised a
+    // Faithful to the packaged admin: every non-200 backend response raises a
     // single global notification ("请求失败" + first validation error / message),
-    // while transport-level failures (status 0) showed nothing.
+    // while transport-level failures (status 0) show nothing. The antd static
+    // notification API was replaced by the shadcn island toaster.
     expect(apiSource).toContain('if (error.status === 0) return;');
-    expect(apiSource).toContain('notificationApi?.error({');
-    expect(apiSource).toContain("message: i18nGet('请求失败'),");
+    expect(apiSource).toContain('toast.error(i18nGet(\'请求失败\'), {');
     expect(apiSource).toContain('description: i18nGet(error.message),');
-    expect(apiSource).toContain('duration: 1.5,');
+    expect(apiSource).toContain('duration: 1500,');
+    expect(apiSource).not.toContain('notificationApi');
+    expect(apiSource).not.toContain("from 'antd'");
     expect(apiSource).not.toContain('if (error.status >= 500) {');
   });
 });
