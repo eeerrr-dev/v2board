@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { useOrders, useCancelOrderMutation } from '@/lib/queries';
 import { PLAN_PERIOD_LABELS } from '@/lib/plan-periods';
-import { formatLegacyDateMinuteSlash } from '@v2board/config/format';
+import { formatCentsPlain, formatLegacyDateMinuteSlash } from '@v2board/config/format';
 import { confirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -60,7 +60,7 @@ export default function OrdersPage() {
       sortingFn: 'basic',
       meta: { align: 'right', className: 'font-medium' },
       header: t('order.amount'),
-      cell: ({ row }) => (row.original.total_amount / 100).toFixed(2),
+      cell: ({ row }) => formatCentsPlain(row.original.total_amount),
     },
     {
       header: t('order.status'),

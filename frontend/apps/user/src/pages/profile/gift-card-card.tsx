@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Gift } from 'lucide-react';
 import { ApiError } from '@v2board/api-client';
+import { formatCentsPlain } from '@v2board/config/format';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel } from '@/components/ui/form';
@@ -106,7 +107,7 @@ function redeemGiftcardText(
 ) {
   switch (type) {
     case 1:
-      return t('profile.redeem_balance', { amount: (value / 100).toFixed(2) });
+      return t('profile.redeem_balance', { amount: formatCentsPlain(value) });
     case 2:
       return t('profile.redeem_days', { days: value });
     case 3:

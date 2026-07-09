@@ -11,10 +11,11 @@ describe('HeaderTooltip', () => {
       </TooltipProvider>,
     );
 
-    // Default alignment matches invite's local implementation byte-for-byte.
-    expect(html).toContain(
-      'class="v2board-service-tooltip-trigger inline-flex cursor-help items-center gap-1"',
-    );
+    // The interaction-parity hook class is preserved, and the trigger is
+    // keyboard-focusable (tabIndex) so the help tooltip is reachable without a
+    // pointer — Radix Tooltip.Trigger does not make a bare <span> focusable.
+    expect(html).toContain('v2board-service-tooltip-trigger');
+    expect(html).toContain('tabindex="0"');
     expect(html).toContain('Status');
     expect(html).toContain('<svg');
     expect(html).toContain('size-3.5');
@@ -30,9 +31,8 @@ describe('HeaderTooltip', () => {
         </HeaderTooltip>
       </TooltipProvider>,
     );
-    expect(centered).toContain(
-      'class="v2board-service-tooltip-trigger inline-flex cursor-help items-center gap-1 justify-center"',
-    );
+    expect(centered).toContain('v2board-service-tooltip-trigger');
+    expect(centered).toContain('justify-center');
 
     const endAligned = renderToStaticMarkup(
       <TooltipProvider>

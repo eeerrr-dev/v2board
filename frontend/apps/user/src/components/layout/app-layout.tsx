@@ -34,6 +34,7 @@ import {
   type ThemePreference,
 } from '@/lib/dark-mode';
 import { getLegacyTitle } from '@/lib/legacy-settings';
+import { getLegacyCookie } from '@/lib/legacy-cookie';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
 import { Button } from '@/components/ui/button';
 import {
@@ -123,11 +124,9 @@ const SIDEBAR_STATE_COOKIE = 'sidebar_state';
 // frontend-only Tier-2 nicety, same pattern as the dark_mode cookie).
 function readSidebarDefaultOpen(): boolean {
   if (typeof document === 'undefined') return true;
-  const value = document.cookie
-    .split('; ')
-    .find((part) => part.startsWith(`${SIDEBAR_STATE_COOKIE}=`))
-    ?.slice(SIDEBAR_STATE_COOKIE.length + 1);
-  return value !== 'false';
+  // Reuse the shared cookie reader (same parser dark-mode.ts uses) instead of a
+  // second hand-rolled tokenizer. Absent cookie -> '' -> open by default.
+  return getLegacyCookie(SIDEBAR_STATE_COOKIE) !== 'false';
 }
 
 function findActiveLabel(pathname: string): ParseKeys | undefined {

@@ -10,11 +10,9 @@ const statusBadgeVariants = cva('gap-1.5 border px-2 py-1 font-medium', {
     tone: {
       default: 'border-border bg-secondary text-secondary-foreground',
       destructive: 'border-destructive/30 bg-destructive/10 text-destructive',
-      info: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-300',
-      success:
-        'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300',
-      warning:
-        'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300',
+      info: 'border-info/30 bg-info/10 text-info',
+      success: 'border-success/30 bg-success/10 text-success',
+      warning: 'border-warning/30 bg-warning/10 text-warning',
     },
   },
   defaultVariants: { tone: 'default' },
@@ -25,9 +23,9 @@ const statusDotVariants = cva('size-1.5 rounded-full', {
     tone: {
       default: 'bg-muted-foreground',
       destructive: 'bg-destructive',
-      info: 'bg-sky-500',
-      success: 'bg-emerald-500',
-      warning: 'bg-amber-500',
+      info: 'bg-info',
+      success: 'bg-success',
+      warning: 'bg-warning',
     },
   },
   defaultVariants: { tone: 'default' },

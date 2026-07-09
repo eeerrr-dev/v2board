@@ -9,7 +9,7 @@ import {
   Users,
   WalletCards,
 } from 'lucide-react';
-import { getLocaleAntdMessages } from '@v2board/i18n';
+import { useEmptyDescription } from '@/lib/use-empty-description';
 import { TransferDialog } from '@/components/dialogs/transfer-dialog';
 import { WithdrawDialog } from '@/components/dialogs/withdraw-dialog';
 import { Button } from '@/components/ui/button';
@@ -41,7 +41,7 @@ import { copyText } from '@/lib/legacy-settings';
 import { toast } from '@/lib/toast';
 
 export default function InvitePage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   // Old componentDidMount dispatch order: user/getUserInfo, invite/details,
   // invite/fetch, then comm/config.
@@ -89,7 +89,7 @@ export default function InvitePage() {
     pageSize ?? 10,
   );
   const detailsLoading = details.isFetching;
-  const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
+  const emptyDescription = useEmptyDescription();
   const codeColumns = [
     {
       header: t('invite.code_col'),
@@ -123,7 +123,7 @@ export default function InvitePage() {
     },
     {
       header: t('invite.commission_col'),
-      cell: ({ row }) => (row.original.get_amount / 100).toFixed(2),
+      cell: ({ row }) => formatCentsPlain(row.original.get_amount),
       meta: { align: 'right', className: 'font-medium text-foreground' },
     },
   ] satisfies DataTableColumn<(typeof detailRows)[number]>[];

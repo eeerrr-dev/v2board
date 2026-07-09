@@ -32,18 +32,27 @@
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
   /*
+   * Semantic status tones. shadcn ships no success/warning/info tokens, so the
+   * status surfaces used to hardcode divergent Tailwind ramps — emerald/sky in
+   * status-badge, green/blue in orders/detail — rendering the same state in
+   * different hues. One repaintable token per state (consumed as text-<tone>,
+   * bg-<tone>/10, border-<tone>/30, and solid dots/bars) fixes both the drift
+   * and the non-themeability. Lightness tracks the old -700/-300 text ramps.
+   */
+  --success: oklch(0.55 0.13 163);
+  --warning: oklch(0.56 0.13 70);
+  --info: oklch(0.55 0.16 250);
+  /*
    * shadcn Sidebar primitive tokens. The shell is a full-bleed rail layout:
    * --sidebar paints the left rail sitting against the white content with a
    * 1px --sidebar-border divider — so light --sidebar is deepened one step
    * from upstream's 0.985 (which reads white-on-white next to the content)
-   * and --sidebar-accent is a white pill that echoes the content surface.
-   * --sidebar-primary(-foreground) also diverges from upstream, which ships a
-   * blue accent there; this island stays monochrome, matching --primary.
+   * and --sidebar-accent is a white pill that echoes the content surface. The
+   * island stays monochrome, so the upstream blue --sidebar-primary accent is
+   * dropped rather than tokened (the sidebar active state uses --sidebar-accent).
    */
   --sidebar: oklch(0.97 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(1 0 0);
   --sidebar-accent-foreground: oklch(0.145 0 0);
   --sidebar-border: oklch(0.922 0 0);
@@ -112,13 +121,14 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.77 0.16 163);
+  --warning: oklch(0.82 0.17 82);
+  --info: oklch(0.75 0.15 240);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.922 0 0);
-  --sidebar-primary-foreground: oklch(0.205 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);

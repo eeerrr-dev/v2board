@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { getLocaleAntdMessages } from '@v2board/i18n';
+import { useEmptyDescription } from '@/lib/use-empty-description';
 import type { TicketLevel } from '@v2board/types';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -87,7 +87,7 @@ type TicketFormValues = z.input<typeof ticketFormSchema>;
 type TicketPayload = z.output<typeof ticketFormSchema>;
 
 export default function TicketsPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const ticketsQuery = useTickets();
   const { data, isFetching, isError, refetch } = ticketsQuery;
   const loading = isFetching;
@@ -99,7 +99,7 @@ export default function TicketsPage() {
     defaultValues: { subject: '', level: undefined, message: '' },
   });
   const tickets = data ?? [];
-  const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
+  const emptyDescription = useEmptyDescription();
   const ticketColumns = [
     {
       meta: { className: 'font-medium text-foreground', headerClassName: 'w-16' },

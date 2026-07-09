@@ -3,8 +3,10 @@
 Follow-ups from the 2026-06-30 user-surface shadcn audit. The safe, authored-source
 cleanups already landed (commit `refactor(user): drop dead CSS remnants from shadcn
 island surfaces`). Items 1-3 below were **executed on 2026-07-02** as part of the
-styles-layer audit fixes; items 4-5 remain deliberately deferred design decisions.
-None of the open items have a visual or contract impact today.
+styles-layer audit fixes; item 5 was **executed on 2026-07-09** (semantic status
+tokens). Item 4 remains a deliberately deferred design decision (a review-gated
+homepage-typography redesign). None of the open items have a visual or contract
+impact today.
 
 Severity legend: all items are **nit** — none block the "clean / modern shadcn"
 verdict. Ordered by how self-contained the fix is.
@@ -69,24 +71,24 @@ verdict. Ordered by how self-contained the fix is.
 - **Gate:** `make visual-parity`/`visual-smoke` on `home` + island dialog/sheet titles;
   `styles/globals.test.ts`.
 
-## 5. (Optional) Lift status-badge tones into semantic tokens
+## 5. ~~Lift status tones into semantic tokens~~ — DONE (2026-07-09)
 
-- **File:** [`../components/ui/status-badge.tsx`](../components/ui/status-badge.tsx)
-  lines 13/15/17 (badge tones) and 28-30 (dot tones) hardcode raw Tailwind
-  `sky`/`emerald`/`amber` light+dark ramps for `info`/`success`/`warning`.
-- **Problem:** every other primitive routes color through the island `@theme` token map
-  (`--primary`/`--muted`/`--destructive`); status-badge reaches around it to fixed
-  palette literals, so its tones can't be operator-repainted and can drift from the
-  design system. (Same literals are mirrored in `dashboard.tsx`.)
-- **Why deferred / not a defect:** shadcn/ui ships **no** `--success`/`--warning`/`--info`
-  tokens by default, so hardcoding the ramps is the canonical shadcn approach; the code is
-  correct and fully dark-mode complete. Status-badge rendering is explicitly Tier-2
-  presentation in `AGENTS.md` (not operator-themeable).
-- **Proposed change (design decision):** introduce `--success/--warning/--info`
-  (+`-foreground`) tokens in the island `@theme` map (`user-shadcn.css` /
-  `user-auth-surface.css` light+dark) and reference them here and in `dashboard.tsx`.
-- **Risk:** low; purely additive theming.
-- **Gate:** `status-badge`/`dashboard` vitest, dark-mode visual check.
+- **Was:** [`../components/ui/status-badge.tsx`](../components/ui/status-badge.tsx)
+  (badge + dot tones), `dashboard.tsx` (alerts + progress bar), **and
+  `orders/detail.tsx`** (order-result icon) each hardcoded raw Tailwind light+dark
+  ramps for `info`/`success`/`warning`. The backlog originally under-scoped this to
+  two files; the third (`orders/detail.tsx`) used a *different* hue family
+  (`green`/`yellow`/`blue` vs `sky`/`emerald`/`amber`), so the same semantic state
+  rendered in different colors across surfaces — present-day drift, not just
+  non-themeability.
+- **Done:** added `--success`/`--warning`/`--info` to the island token map
+  ([`user-auth-surface.css`](./user-auth-surface.css) light + dark) and mapped them
+  through `@theme inline` in [`user-shadcn.css`](./user-shadcn.css). All three
+  surfaces now consume `text-<tone>` / `bg-<tone>/10` / `border-<tone>/30` / solid
+  dots+bars — one operator-repaintable, drift-free hue per state, matching how
+  `--destructive` is already handled. No `-foreground` tokens were added (no
+  consumer — dots/bars use the solid tone; badges/icons use it as text). Still
+  Tier-2 presentation; the tone shift was a conscious redesign choice.
 
 ---
 

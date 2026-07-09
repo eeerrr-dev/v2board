@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { getLocaleAntdMessages } from '@v2board/i18n';
+import { useEmptyDescription } from '@/lib/use-empty-description';
 import type { Knowledge, KnowledgeSummary } from '@v2board/types';
 import { ChevronRight, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +31,7 @@ import {
 import { useKnowledge, useKnowledgeDetail } from '@/lib/queries';
 
 export default function KnowledgePage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState('');
   const deferredKeyword = useDeferredValue(searchValue);
   const [searchParams] = useSearchParams();
@@ -65,7 +65,7 @@ export default function KnowledgePage() {
   const detailTitle =
     visibleDetail?.title || (detail.isError ? t('common.error_title') : t('common.loading'));
   const urlIdAppliedRef = useRef(false);
-  const emptyDescription = getLocaleAntdMessages(i18n.language).emptyDescription;
+  const emptyDescription = useEmptyDescription();
 
   useEffect(() => {
     if (urlIdAppliedRef.current) return;

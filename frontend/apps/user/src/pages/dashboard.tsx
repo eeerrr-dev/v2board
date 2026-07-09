@@ -122,10 +122,10 @@ export default function DashboardPage() {
             <Alert
               data-testid="dashboard-alert"
               data-alert-kind="warning"
-              className="border-amber-200 bg-amber-50 text-foreground dark:border-amber-900 dark:bg-amber-950"
+              className="border-warning/30 bg-warning/10 text-foreground"
               role="alert"
             >
-              <Bell className="size-4 text-amber-600 dark:text-amber-300" />
+              <Bell className="size-4 text-warning" />
               <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
                 <span>
                   <strong>{openTicketCount}</strong> {t('dashboard.alert_open_ticket_suffix')}
@@ -145,10 +145,10 @@ export default function DashboardPage() {
             <Alert
               data-testid="dashboard-alert"
               data-alert-kind="info"
-              className="border-sky-200 bg-sky-50 text-foreground dark:border-sky-900 dark:bg-sky-950"
+              className="border-info/30 bg-info/10 text-foreground"
               role="alert"
             >
-              <AlertCircle className="size-4 text-sky-600 dark:text-sky-300" />
+              <AlertCircle className="size-4 text-info" />
               <AlertDescription className="sm:flex sm:flex-row sm:items-center sm:gap-2">
                 <span>{t('dashboard.alert_traffic_rate', { rate: vm.usedPctRounded })}</span>
                 {vm.trafficAlertResetAvailable ? (
@@ -243,7 +243,7 @@ export default function DashboardPage() {
                     value={vm.usedPctClamped}
                     indicatorClassName={cn(
                       vm.trafficTone === 'danger' && 'bg-destructive',
-                      vm.trafficTone === 'warning' && 'bg-amber-500',
+                      vm.trafficTone === 'warning' && 'bg-warning',
                       // Healthy usage stays neutral (shadcn's default primary bar) rather
                       // than a saturated green, so the card reads calm until usage is high.
                       vm.trafficTone === 'success' && 'bg-primary',

@@ -57,6 +57,7 @@ export default function PlansPage() {
         actions={
           <SegmentedControl
             data-testid="plan-tabs"
+            aria-label={t('plan.pick_title')}
             value={filter}
             onValueChange={setFilter}
             items={[

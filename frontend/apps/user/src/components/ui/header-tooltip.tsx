@@ -22,9 +22,14 @@ function HeaderTooltip({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
+        {/* tabIndex makes the bare span focusable: Radix Tooltip.Trigger only
+            wires hover/focus handlers onto its child and does not inject
+            focusability, so without this the help tooltip is pointer-only and
+            unreachable by keyboard / screen-reader users. */}
         <span
+          tabIndex={0}
           className={cn(
-            'v2board-service-tooltip-trigger inline-flex cursor-help items-center gap-1',
+            'v2board-service-tooltip-trigger inline-flex cursor-help items-center gap-1 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
             className,
           )}
         >

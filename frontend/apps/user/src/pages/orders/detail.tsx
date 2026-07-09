@@ -410,12 +410,9 @@ function OrderResult({ status }: { status?: number }) {
         <div
           className={cn(
             'rounded-full border p-3',
-            result.status === 'success' &&
-              'border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300',
-            result.status === 'warning' &&
-              'border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-900 dark:bg-yellow-950 dark:text-yellow-300',
-            result.status === 'info' &&
-              'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300',
+            result.status === 'success' && 'border-success/30 bg-success/10 text-success',
+            result.status === 'warning' && 'border-warning/30 bg-warning/10 text-warning',
+            result.status === 'info' && 'border-info/30 bg-info/10 text-info',
           )}
         >
           {result.icon}
