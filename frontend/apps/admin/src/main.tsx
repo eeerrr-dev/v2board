@@ -19,21 +19,9 @@ import { Toaster } from './components/ui/toaster';
 import { applyAdminLegacySettings } from './lib/legacy-settings';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { redirectToLegacyLogin } from './lib/api';
-import './styles/admin-antd-v3.css';
-import './styles/admin-markdown-editor.css';
-import './styles/admin-icon-fonts.css';
-import './styles/admin-runtime-base.css';
-import './styles/admin-bootstrap-v4.css';
-import './styles/admin-bootstrap-utilities.css';
-import './styles/admin-oneui-core.css';
-import './styles/admin-oneui-utilities.css';
-import './styles/admin-animations.css';
-import './styles/admin-plugin-widgets.css';
-import './styles/admin-app-overrides.css';
-import './styles/antd-v5-compat.css';
-// The redesigned shadcn island layer. Imported LAST so its non-!important
-// utilities win equal-specificity conflicts with the legacy CSS above on source
-// order — the same ordering guarantee the user app relies on.
+// The admin is now a pure shadcn island app: the vendored Bootstrap/OneUI/antd
+// replica stylesheets are gone, so this is the only style entry. It brings its
+// own scoped baseline (admin-island.css) instead of a global Tailwind preflight.
 import './styles/admin-redesigned-surfaces.css';
 
 const legacyHashRouteOptions = {

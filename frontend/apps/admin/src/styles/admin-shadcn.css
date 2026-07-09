@@ -106,42 +106,20 @@
 }
 
 /*
- * MIGRATION-SCOPED candidate scanning.
+ * Candidate scanning.
  *
- * Unlike the user app (fully migrated → broad `../pages`/`../components` globs),
- * the admin is mid-migration: legacy Bootstrap/OneUI surfaces still ship bare
- * class names that ARE Tailwind utilities — `block`, `container`, `badge` — so
- * scanning them would emit e.g. `.block{display:block}` which, loading after the
- * vendored OneUI `.block` card rule, would silently break every legacy `block`
- * card (the login/shell use `block block-rounded`). So scan ONLY island sources:
- * the shared `components/ui` primitives (all islands) plus each surface as it is
- * rewritten. Add a surface's file here the moment it becomes an island, and at
- * teardown — when the legacy layer is deleted — collapse this back to the two
- * broad directory globs the user app uses.
+ * The admin is now fully migrated to shadcn islands and the legacy
+ * Bootstrap/OneUI/antd replica stylesheets are deleted, so the former
+ * migration-scoped per-surface `@source` list has collapsed to the two broad
+ * directory globs the user app uses. There is no longer any vendored `.block`
+ * card rule for an emitted `.block{display:block}` utility to collide with.
  *
  * The extension set is `{ts,tsx}`, not `tsx` alone: shared class-string helpers
  * live in plain `.ts` modules (e.g. `components/ui/dialog-surface.ts`, which
  * owns the dialog centering geometry `fixed top-1/2 left-1/2 -translate-x-1/2
  * -translate-y-1/2`). Scanning `.tsx` only would prune those.
  */
-@source '../components/ui/**/*.{ts,tsx}';
-/* Redesigned island surfaces (added as each is migrated off the legacy replica). */
-@source '../components/layout/**/*.{ts,tsx}';
-@source '../components/route-error-boundary.tsx';
-@source '../components/user-manage-drawer.tsx';
-@source '../components/user-traffic-modal.tsx';
-@source '../pages/login.tsx';
-@source '../pages/system.tsx';
-@source '../pages/notices.tsx';
-@source '../pages/payments.tsx';
-@source '../pages/dashboard.tsx';
-@source '../pages/tickets.tsx';
-@source '../pages/knowledge.tsx';
-@source '../pages/orders.tsx';
-@source '../pages/coupons.tsx';
-@source '../pages/plans.tsx';
-@source '../pages/config.tsx';
-@source '../pages/users.tsx';
-@source '../pages/servers.tsx';
+@source '../components/**/*.{ts,tsx}';
+@source '../pages/**/*.{ts,tsx}';
 
 @tailwind utilities source(none);
