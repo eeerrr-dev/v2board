@@ -196,6 +196,14 @@ const adminConfigFieldInputSelector =
   '.block.border-bottom input.form-control, .block.border-bottom textarea.form-control, input[data-testid^="config-"], textarea[data-testid^="config-"]';
 const adminThemeCardTitleSelector =
   '.block-transparent.bg-image h3, [data-testid^="theme-card-"] [data-slot="card-title"]';
+// Ticket surface. The redesigned admin ticket page is a master-detail island:
+// the `/ticket/:id` chat uses a `ticket-reply-input` Textarea + `ticket-reply-
+// submit` button (antd `.js-chat-input` / `.js-chat-form` fallback), and the
+// `/ticket` list filters reply status through a `ticket-reply-filter`
+// DropdownMenu of checkbox items instead of an antd table-column filter.
+const adminTicketReplyInputSelector = '[data-testid="ticket-reply-input"], .js-chat-input';
+const adminTicketReplyFilterDropdownSelector =
+  '.ant-table-filter-dropdown, [data-slot="dropdown-menu-content"]';
 // Overlay-scoped textarea across both worlds (antd textareas carry `.ant-input`).
 const adminDrawerTextareaSelector = scopedSelectorUnion(
   adminOverlayOpenSelector,
@@ -2028,7 +2036,7 @@ const scenarios = [
     authenticated: true,
     label: 'admin-ticket-detail',
     path: `/${adminPath}#/ticket/7`,
-    readySelector: '.js-chat-input',
+    readySelector: '[data-testid="ticket-reply-input"], .js-chat-input',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/ticket`,
   },
@@ -6652,11 +6660,11 @@ async function runUserTicketErrorMatrixInteraction(page) {
 
 async function runAdminTicketReplySendInteraction(page) {
   const initialTicketFetchCount = page.__visualParityAdminTicketFetchCount ?? 0;
-  await fillFirstVisible(page, '.js-chat-input', 'Parity admin reply send');
+  await fillFirstVisible(page, adminTicketReplyInputSelector, 'Parity admin reply send');
   await page.waitForTimeout(100);
   const filled = await ticketReplyState(page);
 
-  await page.locator('.js-chat-input').first().press('Enter');
+  await page.locator(adminTicketReplyInputSelector).first().press('Enter');
   await page.waitForSelector('.v2board-toast-root, .ant-message-notice, .ant-notification-notice', {
     state: 'visible',
     timeout: 5_000,
@@ -7347,17 +7355,21 @@ async function runAdminMutationFailureMatrixInteraction(page) {
 
 async function runAdminTicketsReplyFilterInteraction(page) {
   const before = await adminTicketsReplyFilterState(page);
-  await clickFirstVisible(page, '.ant-table-column-has-filters .ant-dropdown-trigger');
-  await page.waitForSelector('.ant-table-filter-dropdown', {
+  await openAdminTicketsReplyFilter(page);
+  await page.waitForSelector(adminTicketReplyFilterDropdownSelector, {
     state: 'visible',
     timeout: 5_000,
   });
   const opened = await adminTicketsReplyFilterState(page);
+  // Capture the fetch count before selecting the option: the redesigned checkbox
+  // item refetches immediately on toggle while the antd filter refetches only on
+  // the 确定 confirm, so counting/slicing from here captures the reply_status
+  // fetch on both DOMs.
+  const initialTicketFetchCount = page.__visualParityAdminTicketFetchCount ?? 0;
   await clickAdminTicketsReplyFilterOption(page, '待回复');
   await page.waitForTimeout(100);
   const selected = await adminTicketsReplyFilterState(page);
-  const initialTicketFetchCount = page.__visualParityAdminTicketFetchCount ?? 0;
-  await dispatchFirstVisibleTextClick(page, '.ant-table-filter-dropdown-link.confirm', ['确定']);
+  await confirmAdminTicketsReplyFilter(page);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityAdminTicketFetchCount',
@@ -9841,26 +9853,36 @@ async function adminTicketsReplyFilterState(page) {
     };
     const normalizedText = (element) => (element.textContent ?? '').trim().replace(/\s+/g, ' ');
     const filterDropdowns = Array.from(
-      document.querySelectorAll('.ant-table-filter-dropdown'),
+      document.querySelectorAll('.ant-table-filter-dropdown, [data-slot="dropdown-menu-content"]'),
     ).filter(isVisible);
     const filterItems = Array.from(
-      document.querySelectorAll('.ant-table-filter-dropdown .ant-dropdown-menu-item'),
+      document.querySelectorAll(
+        '.ant-table-filter-dropdown .ant-dropdown-menu-item, [data-slot="dropdown-menu-checkbox-item"]',
+      ),
     )
       .filter(isVisible)
       .slice(0, 4)
       .map((element) => ({
-        checked: Boolean(
-          element.querySelector('.ant-checkbox-checked, .ant-checkbox-wrapper-checked, input:checked'),
-        ),
+        checked:
+          Boolean(
+            element.querySelector('.ant-checkbox-checked, .ant-checkbox-wrapper-checked, input:checked'),
+          ) ||
+          // Radix DropdownMenuCheckboxItem marks its checked state on the item.
+          element.getAttribute('aria-checked') === 'true' ||
+          element.getAttribute('data-state') === 'checked',
         text: normalizedText(element),
       }));
 
     return {
       dropdownCount: filterDropdowns.length,
       filterItems,
-      tableReplyStatusTexts: Array.from(document.querySelectorAll('.ant-table-tbody tr'))
+      tableReplyStatusTexts: Array.from(
+        document.querySelectorAll('.ant-table-tbody tr, [data-slot="table-row"]'),
+      )
         .filter(isVisible)
-        .map((row) => Array.from(row.querySelectorAll('td')).filter(isVisible))
+        .map((row) =>
+          Array.from(row.querySelectorAll('td, [data-slot="table-cell"]')).filter(isVisible),
+        )
         .filter((cells) => cells.length >= 4)
         .slice(0, 4)
         .map((cells) => normalizedText(cells[3])),
@@ -10155,11 +10177,15 @@ async function userTicketCreateModalState(page) {
 
 async function ticketReplyState(page) {
   return {
-    inputValue: await firstInputValue(page, '.js-chat-input'),
-    messageTexts: await visibleTexts(page, '.js-chat-messages', 6),
+    inputValue: await firstInputValue(page, adminTicketReplyInputSelector),
+    messageTexts: await visibleTexts(
+      page,
+      '[data-testid="ticket-chat-messages"], .js-chat-messages',
+      6,
+    ),
     sendButton: await firstElementState(
       page,
-      '[data-testid="ticket-reply-send"], .js-chat-form button, .js-chat-form .ant-btn',
+      '[data-testid="ticket-reply-submit"], [data-testid="ticket-reply-send"], .js-chat-form button, .js-chat-form .ant-btn',
     ),
     toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 4),
   };
@@ -10558,6 +10584,46 @@ function normalizeInteractionResult(label, result) {
       before: reduceTab(normalized.before),
       second: reduceTab(normalized.second),
       third: reduceTab(normalized.third),
+    };
+  }
+  if (label === 'admin-ticket-reply-send') {
+    // Compare only the reply input value per snapshot (staged 'Parity admin
+    // reply send', cleared to '' after send). The send-button state (the
+    // redesigned icon Button vs the legacy affordance the oracle reader doesn't
+    // resolve), the rendered chat messageTexts, and the transient '发送中'
+    // loading toast (dismissed at different times once the reply resolves) are
+    // Tier-2 presentation; the '发送中' loading state, reply payload, and fetch
+    // delta stay pinned by the raw assertion and the untouched replyRequests/
+    // ticketFetchDelta below.
+    const reduceSnapshot = (state) => (state ? { inputValue: state.inputValue } : state);
+    return {
+      ...normalized,
+      filled: reduceSnapshot(normalized.filled),
+      loading: reduceSnapshot(normalized.loading),
+      sent: reduceSnapshot(normalized.sent),
+    };
+  }
+  if (label === 'admin-tickets-reply-filter') {
+    // Both DOMs send the backend filter contract (current/pageSize/status and
+    // the toggled reply_status[]=0). The legacy antd Table additionally leaks
+    // its own pagination chrome — total (the echoed row count) and size (table
+    // density) — into the query string; those are antd-internal presentation,
+    // not backend filter params, so strip them from both sides before
+    // comparing. reply_status[] passthrough stays pinned by the raw assertion.
+    const stripAntdTableParams = (request) =>
+      request && Array.isArray(request.searchParams)
+        ? {
+            ...request,
+            searchParams: request.searchParams.filter(
+              ([key]) => key !== 'total' && key !== 'size',
+            ),
+          }
+        : request;
+    return {
+      ...normalized,
+      filterFetchRequests: Array.isArray(normalized.filterFetchRequests)
+        ? normalized.filterFetchRequests.map(stripAntdTableParams)
+        : normalized.filterFetchRequests,
     };
   }
   if (label === 'admin-config-save-failure-matrix') {
@@ -16704,7 +16770,38 @@ async function clickCouponVerifyButton(page) {
   });
 }
 
+// Open the ticket reply-status filter across both worlds. The redesigned list
+// uses a `ticket-reply-filter` Radix DropdownMenu trigger (needs a real pointer
+// event); the antd oracle uses the table-column filter dropdown trigger.
+async function openAdminTicketsReplyFilter(page) {
+  if ((await visibleCount(page, '[data-testid="ticket-reply-filter"]')) > 0) {
+    await page.click('[data-testid="ticket-reply-filter"]');
+  } else {
+    await clickFirstVisible(page, '.ant-table-column-has-filters .ant-dropdown-trigger');
+  }
+}
+
+// Commit/close the reply-status filter across both worlds. The antd filter
+// applies and closes on its 确定 confirm link; the redesigned checkbox already
+// refetched on toggle, so only close the still-open DropdownMenu with Escape.
+async function confirmAdminTicketsReplyFilter(page) {
+  if ((await visibleCount(page, '.ant-table-filter-dropdown-link.confirm')) > 0) {
+    await dispatchFirstVisibleTextClick(page, '.ant-table-filter-dropdown-link.confirm', ['确定']);
+  } else {
+    await page.keyboard.press('Escape');
+  }
+}
+
 async function clickAdminTicketsReplyFilterOption(page, text) {
+  // Radix DropdownMenuCheckboxItem selects on a real pointer event; the antd
+  // filter option toggles its inner checkbox on a synthetic click.
+  const shadcnItem = page
+    .locator('[data-slot="dropdown-menu-checkbox-item"]', { hasText: text })
+    .first();
+  if ((await shadcnItem.count()) > 0) {
+    await shadcnItem.click();
+    return;
+  }
   await page.evaluate((targetText) => {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
