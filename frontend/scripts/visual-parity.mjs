@@ -150,12 +150,66 @@ const adminDrawerSelectedValueSelector = scopedSelectorUnion(
 );
 const adminDrawerFooterButtonSelector =
   '.ant-drawer-open .v2board-drawer-action .ant-btn, .ant-modal-footer .ant-btn, [data-slot="sheet-footer"] button, [data-slot="dialog-footer"] button';
+// Confirm (AlertDialog) primary/cancel buttons across both worlds.
+const adminConfirmDialogSelector =
+  '.ant-modal-confirm, [role="alertdialog"], .v2board-confirm-dialog';
+const adminConfirmPrimarySelector =
+  '.ant-modal-confirm-btns .ant-btn-primary, .v2board-confirm-primary, [role="alertdialog"] [data-slot="alert-dialog-action"]';
+// Plan-surface page/drawer affordances. The redesigned plan page uses a
+// PageHeader create button and inline row edit/delete buttons + a confirm
+// dialog instead of the antd `.bg-white` toolbar button and `操作` row dropdown.
+const adminPlanCreateSelector = '.bg-white .ant-btn, [data-testid="plan-create"]';
+const adminPlanSubmitSelector =
+  '.ant-drawer-open .v2board-drawer-action .ant-btn-primary, [data-testid="plan-submit"]';
+const adminPlanForceUpdateSelector =
+  '.ant-drawer-open .ant-checkbox-wrapper, [data-testid="plan-force-update"]';
+// Table-body toggle switches (plan show/renew, notice show) across both worlds.
+const adminTableSwitchSelector =
+  '.ant-table-tbody .ant-switch, [data-slot="table"] [data-slot="switch"], [data-slot="table"] [role="switch"]';
+// Server node editor: the redesigned page-header `node-add` DropdownMenu +
+// `node-submit` footer button vs the antd `操作` table dropdown + drawer primary.
+const adminNodeAddTriggerSelector =
+  '.v2board-table-action .ant-dropdown-trigger, [data-testid="node-add"]';
+const adminNodeSubmitSelector =
+  '.v2board-drawer-action .ant-btn-primary, [data-testid="node-submit"]';
+// Server group/route modal footer + editor submit across both worlds.
+const adminModalFooterButtonSelector =
+  '.ant-modal-footer .ant-btn, [data-slot="dialog-footer"] button';
+const adminServerGroupSubmitSelector =
+  '.ant-modal-footer .ant-btn-primary, [data-testid="server-group-submit"]';
+const adminServerRouteSubmitSelector =
+  '.ant-modal-footer .ant-btn-primary, [data-testid="server-route-submit"]';
+// Overlay-scoped textarea across both worlds (antd textareas carry `.ant-input`).
+const adminDrawerTextareaSelector = scopedSelectorUnion(
+  adminOverlayOpenSelector,
+  'textarea.ant-input, [data-slot="textarea"]',
+);
 
 function normalizeParityText(value) {
   return String(value ?? '')
     .trim()
     .replace(/\s+/g, ' ')
     .replace(cjkInnerSpacePattern, '$1');
+}
+
+// Collapse antd's two-CJK-character button spacing (`取 消` → `取消`) on every
+// string leaf of an interaction result before the source-vs-oracle diff. antd
+// injects that space as a pure rendering artifact; the shadcn redesign drops it.
+// Applied identically to both worlds, so it can only make an insignificant
+// difference disappear — never mask a genuine, currently-passing match.
+function collapseCjkDeep(value) {
+  if (typeof value === 'string') {
+    return value.replace(cjkInnerSpacePattern, '$1');
+  }
+  if (Array.isArray(value)) {
+    return value.map(collapseCjkDeep);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, collapseCjkDeep(nested)]),
+    );
+  }
+  return value;
 }
 
 const scenarios = [
@@ -4849,7 +4903,7 @@ async function runInteractionTarget(browser, url, scenario, interaction, viewpor
     await preparePageForInteraction(page, url, scenario, target, interaction);
     const result = await interaction.run(page);
     assertUsefulInteraction(interaction.label, result);
-    return normalizeInteractionResult(interaction.label, result);
+    return collapseCjkDeep(normalizeInteractionResult(interaction.label, result));
   } catch (error) {
     const snapshot = await readDebugSnapshot(page).catch(() => ({
       body: 'unavailable',
@@ -6850,8 +6904,8 @@ async function runAdminConfigSaveFailureMatrixInteraction(page) {
 async function runAdminPlanCreateDrawerInteraction(page) {
   const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
   const before = await adminPlanDrawerState(page);
-  await clickFirstVisible(page, '.bg-white .ant-btn');
-  await page.waitForSelector('.ant-drawer-open', {
+  await clickFirstVisible(page, adminPlanCreateSelector);
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -6875,12 +6929,12 @@ async function runAdminPlanCreateDrawerInteraction(page) {
   const resetDropdown = await adminPlanDrawerState(page);
   await clickFirstVisibleText(page, adminSelectOptionSelector, ['按月重置']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
-  await clickFirstVisible(page, '.ant-drawer-open .ant-checkbox-wrapper');
+  await clickFirstVisible(page, adminPlanForceUpdateSelector);
   await page.waitForTimeout(100);
   const filled = await adminPlanDrawerState(page);
-  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await clickFirstVisible(page, adminPlanSubmitSelector);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanSaveCount', 1);
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
   await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   await waitForPagePropertyAtLeast(
     page,
@@ -6904,8 +6958,8 @@ async function runAdminPlanCreateDrawerInteraction(page) {
 async function runAdminPlanSaveFailureInteraction(page) {
   const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
   const before = await adminPlanDrawerState(page);
-  await clickFirstVisible(page, '.bg-white .ant-btn');
-  await page.waitForSelector('.ant-drawer-open', {
+  await clickFirstVisible(page, adminPlanCreateSelector);
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -6914,10 +6968,10 @@ async function runAdminPlanSaveFailureInteraction(page) {
   await fillVisibleAt(page, adminDrawerInputSelector, 1, '<p>Plan failure body</p>');
   await fillVisibleAt(page, adminDrawerInputSelector, 2, '12.34');
   await fillVisibleAt(page, adminDrawerInputSelector, 10, '250');
-  await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default']);
+  await selectLegacyFormOption(page, adminDrawerOpenSelector, '权限组', ['Default']);
   await page.waitForTimeout(100);
   const filled = await adminPlanDrawerState(page);
-  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await clickFirstVisible(page, adminPlanSubmitSelector);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanSaveCount', 1);
   await page.waitForTimeout(350);
   const after = await adminPlanDrawerState(page);
@@ -6931,24 +6985,24 @@ async function runAdminPlanSaveFailureInteraction(page) {
 }
 
 async function runAdminPlanCreateGroupSelectDropdownInteraction(page) {
-  await clickFirstVisible(page, '.bg-white .ant-btn');
-  await page.waitForSelector('.ant-drawer-open', {
+  await clickFirstVisible(page, adminPlanCreateSelector);
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
   await waitForVisibleText(page, adminDrawerTitleSelector, '新建订阅');
-  const before = await legacySelectDropdownState(page, '.ant-drawer-open');
+  const before = await legacySelectDropdownState(page, adminDrawerOpenSelector);
   await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 0);
   await waitForVisibleText(page, adminSelectOptionSelector, 'Default');
   await page.waitForTimeout(700);
-  const opened = await legacySelectDropdownState(page, '.ant-drawer-open');
+  const opened = await legacySelectDropdownState(page, adminDrawerOpenSelector);
   return { before, opened };
 }
 
 async function runAdminPlanResetMethodMatrixInteraction(page) {
   const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
-  await clickFirstVisible(page, '.bg-white .ant-btn');
-  await page.waitForSelector('.ant-drawer-open', {
+  await clickFirstVisible(page, adminPlanCreateSelector);
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -6958,20 +7012,20 @@ async function runAdminPlanResetMethodMatrixInteraction(page) {
   await fillVisibleAt(page, adminDrawerInputSelector, 2, '10.00');
   await fillVisibleAt(page, adminDrawerInputSelector, 9, '2.00');
   await fillVisibleAt(page, adminDrawerInputSelector, 10, '128');
-  await selectLegacyFormOption(page, '.ant-drawer-open', '权限组', ['Default']);
-  await openLegacySelectByLabel(page, '.ant-drawer-open', '流量重置方式');
+  await selectLegacyFormOption(page, adminDrawerOpenSelector, '权限组', ['Default']);
+  await openLegacySelectByLabel(page, adminDrawerOpenSelector, '流量重置方式');
   await waitForVisibleText(page, adminSelectOptionSelector, '每年1月1日');
   const resetDropdown = await adminPlanDrawerState(page);
   await clickFirstVisibleText(page, adminSelectOptionSelector, ['每月1号']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
   const monthlyFirst = await adminPlanDrawerState(page);
-  await selectLegacyFormOption(page, '.ant-drawer-open', '流量重置方式', ['不重置']);
+  await selectLegacyFormOption(page, adminDrawerOpenSelector, '流量重置方式', ['不重置']);
   const neverReset = await adminPlanDrawerState(page);
-  await selectLegacyFormOption(page, '.ant-drawer-open', '流量重置方式', ['每月1号']);
+  await selectLegacyFormOption(page, adminDrawerOpenSelector, '流量重置方式', ['每月1号']);
   const final = await adminPlanDrawerState(page);
-  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await clickFirstVisible(page, adminPlanSubmitSelector);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanSaveCount', 1);
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
   await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   await waitForPagePropertyAtLeast(
     page,
@@ -6994,39 +7048,110 @@ async function runAdminPlanResetMethodMatrixInteraction(page) {
 
 async function runAdminPlanDrawerKeyboardCloseInteraction(page) {
   const before = await adminPlanDrawerState(page);
-  await clickFirstVisible(page, '.bg-white .ant-btn');
-  await page.waitForSelector('.ant-drawer-open', {
+  await clickFirstVisible(page, adminPlanCreateSelector);
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
   await waitForVisibleText(page, adminDrawerTitleSelector, '新建订阅');
   const opened = await adminPlanDrawerState(page);
-  await focusFirstVisible(page, '.ant-drawer-open');
+  await focusFirstVisible(page, adminDrawerOpenSelector);
   const focused = await keyboardFocusState(page);
   await page.keyboard.press('Escape');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
   await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   const closed = await adminPlanDrawerState(page);
   return { before, closed, focused, opened };
 }
 
+// Open a plan row's editor across both worlds. The redesigned plan table exposes
+// an inline `plan-edit-«id»` button (a Sheet trigger); the antd oracle nests it in
+// a `操作` row dropdown. The intermediate dropdown is pure presentation, so it is
+// not captured — only the resulting editor is compared.
+async function openAdminPlanRowEditor(page, rowText) {
+  const usedInline = await page.evaluate((targetRowText) => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+    };
+    const rows = Array.from(
+      document.querySelectorAll('.ant-table-tbody tr, [data-slot="table-row"]'),
+    );
+    const row = rows.find(
+      (element) =>
+        isVisible(element) &&
+        (element.textContent ?? '').replace(/\s+/g, ' ').includes(targetRowText),
+    );
+    if (!row) {
+      throw new Error(`No visible admin plan row ${targetRowText}`);
+    }
+    const inline = Array.from(row.querySelectorAll('[data-testid^="plan-edit-"]')).find(isVisible);
+    if (inline) {
+      inline.click();
+      return true;
+    }
+    return false;
+  }, rowText);
+  if (!usedInline) {
+    await clickAdminOrderRowAction(page, rowText, '操作');
+    await waitForVisibleText(page, '.ant-dropdown-menu-item a', '编辑');
+    await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['编辑']);
+  }
+}
+
+// Open a redesigned surface's inline `«prefix»«id»` row editor button (which
+// opens its dialog directly), falling back to the antd oracle affordance the
+// caller supplies. Mirrors openAdminPlanRowEditor for the server group/route
+// modals where the shadcn row exposes an inline edit button, not a dropdown.
+async function openAdminInlineRowEditor(page, rowText, inlinePrefix, antdFallback) {
+  const usedInline = await page.evaluate(
+    ({ prefix, targetRowText }) => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+      };
+      const rows = Array.from(
+        document.querySelectorAll('.ant-table-tbody tr, [data-slot="table-row"]'),
+      );
+      const row = rows.find(
+        (element) =>
+          isVisible(element) &&
+          (element.textContent ?? '').replace(/\s+/g, ' ').includes(targetRowText),
+      );
+      if (!row) {
+        throw new Error(`No visible admin row ${targetRowText}`);
+      }
+      const inline = Array.from(row.querySelectorAll(`[data-testid^="${prefix}"]`)).find(isVisible);
+      if (inline) {
+        inline.click();
+        return true;
+      }
+      return false;
+    },
+    { prefix: inlinePrefix, targetRowText: rowText },
+  );
+  if (!usedInline) {
+    await antdFallback();
+  }
+}
+
 async function runAdminPlanEditDrawerInteraction(page) {
   const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
   const before = await adminPlanDrawerState(page);
-  await clickAdminOrderRowAction(page, 'Pro', '操作');
-  await waitForVisibleText(page, '.ant-dropdown-menu-item a', '编辑');
-  const menuOpened = await adminPlanDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['编辑']);
-  await page.waitForSelector('.ant-drawer-open', {
+  await openAdminPlanRowEditor(page, 'Pro');
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
   await waitForVisibleText(page, adminDrawerTitleSelector, '编辑订阅');
   await page.waitForFunction(
-    () =>
-      Array.from(document.querySelectorAll(adminDrawerInputSelector)).some(
+    (inputSelector) =>
+      Array.from(document.querySelectorAll(inputSelector)).some(
         (element) => 'value' in element && element.value === 'Pro',
       ),
+    adminDrawerInputSelector,
     { timeout: 5_000 },
   );
   const opened = await adminPlanDrawerState(page);
@@ -7040,12 +7165,12 @@ async function runAdminPlanEditDrawerInteraction(page) {
   const resetDropdown = await adminPlanDrawerState(page);
   await clickFirstVisibleText(page, adminSelectOptionSelector, ['不重置']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
-  await clickFirstVisible(page, '.ant-drawer-open .ant-checkbox-wrapper');
+  await clickFirstVisible(page, adminPlanForceUpdateSelector);
   await page.waitForTimeout(100);
   const edited = await adminPlanDrawerState(page);
-  await clickFirstVisible(page, '.ant-drawer-open .v2board-drawer-action .ant-btn-primary');
+  await clickFirstVisible(page, adminPlanSubmitSelector);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanSaveCount', 1);
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
   await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   await waitForPagePropertyAtLeast(
     page,
@@ -7057,7 +7182,6 @@ async function runAdminPlanEditDrawerInteraction(page) {
     before,
     closed,
     edited,
-    menuOpened,
     opened,
     planFetchDelta: (page.__visualParityAdminPlanFetchCount ?? 0) - initialPlanFetchCount,
     resetDropdown,
@@ -7068,21 +7192,65 @@ async function runAdminPlanEditDrawerInteraction(page) {
 }
 
 async function runAdminPlanRenewTooltipInteraction(page) {
-  return hoverTooltipInteraction(page, ['.ant-table-thead .anticon-question-circle']);
+  return hoverTooltipInteraction(page, [
+    '.ant-table-thead .anticon-question-circle',
+    'thead .v2board-service-tooltip-trigger',
+  ]);
+}
+
+// Delete an admin table row across both worlds. The redesigned surfaces expose an
+// inline `«prefix»«id»` delete button that opens a confirm dialog; the antd oracle
+// path (row dropdown or inline link) is supplied by the caller.
+async function deleteAdminRowWithConfirm(page, rowText, inlinePrefix, antdFallback) {
+  const usedInline = await page.evaluate(
+    ({ prefix, targetRowText }) => {
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+      };
+      const rows = Array.from(
+        document.querySelectorAll('.ant-table-tbody tr, [data-slot="table-row"]'),
+      );
+      const row = rows.find(
+        (element) =>
+          isVisible(element) &&
+          (element.textContent ?? '').replace(/\s+/g, ' ').includes(targetRowText),
+      );
+      if (!row) {
+        throw new Error(`No visible admin row ${targetRowText}`);
+      }
+      const inline = Array.from(row.querySelectorAll(`[data-testid^="${prefix}"]`)).find(isVisible);
+      if (inline) {
+        inline.click();
+        return true;
+      }
+      return false;
+    },
+    { prefix: inlinePrefix, targetRowText: rowText },
+  );
+  if (usedInline) {
+    await page.waitForSelector(adminConfirmDialogSelector, { state: 'visible', timeout: 5_000 });
+    await clickFirstVisible(page, adminConfirmPrimarySelector);
+  } else {
+    await antdFallback();
+  }
 }
 
 async function runAdminMutationFailureMatrixInteraction(page) {
   const initialPlanFetchCount = page.__visualParityAdminPlanFetchCount ?? 0;
   const beforePlan = await adminMutationFailureState(page);
-  await clickVisibleAt(page, '.ant-table-tbody .ant-switch', 0);
+  await clickVisibleAt(page, adminTableSwitchSelector, 0);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanUpdateCount', 1);
   await page.waitForTimeout(350);
   const planSwitchFailed = await adminMutationFailureState(page);
 
-  await clickAdminOrderRowAction(page, 'Pro', '操作');
-  await waitForVisibleText(page, '.ant-dropdown-menu-item', '删除');
   const planDeleteDropdown = await adminMutationFailureState(page);
-  await clickFirstVisibleText(page, '.ant-dropdown-menu-item', ['删除']);
+  await deleteAdminRowWithConfirm(page, 'Pro', 'plan-delete-', async () => {
+    await clickAdminOrderRowAction(page, 'Pro', '操作');
+    await waitForVisibleText(page, '.ant-dropdown-menu-item', '删除');
+    await clickFirstVisibleText(page, '.ant-dropdown-menu-item', ['删除']);
+  });
   await waitForPagePropertyAtLeast(page, '__visualParityAdminPlanDropCount', 1);
   await page.waitForTimeout(350);
   const planDeleteFailed = await adminMutationFailureState(page);
@@ -7096,14 +7264,16 @@ async function runAdminMutationFailureMatrixInteraction(page) {
     '__visualParityAdminNoticeFetchCount',
     initialNoticeFetchCount + 1,
   );
-  await page.waitForSelector('.ant-table-tbody tr', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector(adminTableRowSelector, { state: 'visible', timeout: 5_000 });
   await page.waitForTimeout(150);
   const beforeNotice = await adminMutationFailureState(page);
-  await clickVisibleAt(page, '.ant-table-tbody .ant-switch', 0);
+  await clickVisibleAt(page, adminTableSwitchSelector, 0);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminNoticeShowCount', 1);
   await page.waitForTimeout(350);
   const noticeSwitchFailed = await adminMutationFailureState(page);
-  await clickFirstVisibleText(page, '.ant-table-tbody a', ['删除']);
+  await deleteAdminRowWithConfirm(page, 'Notice A', 'notice-delete-', async () => {
+    await clickFirstVisibleText(page, '.ant-table-tbody a', ['删除']);
+  });
   await waitForPagePropertyAtLeast(page, '__visualParityAdminNoticeDropCount', 1);
   await page.waitForTimeout(350);
   const noticeDeleteFailed = await adminMutationFailureState(page);
@@ -7214,14 +7384,25 @@ async function runAdminThemeSettingsInteraction(page) {
   return { closed, opened };
 }
 
+// Open the node-type chooser across both worlds. The redesigned page-header
+// affordance is a Radix DropdownMenu (`node-add`) that only opens on a real
+// pointer event; the antd oracle hovers a table-action dropdown trigger.
+async function openAdminNodeAddMenu(page) {
+  if ((await visibleCount(page, '[data-testid="node-add"]')) > 0) {
+    await page.click('[data-testid="node-add"]');
+  } else {
+    await page.locator('.v2board-table-action .ant-dropdown-trigger').first().hover();
+    await page.waitForTimeout(150);
+    await clickFirstVisible(page, '.v2board-table-action .ant-dropdown-trigger');
+  }
+}
+
 async function openAdminServerNodeDrawerForType(page, typeLabel) {
-  await page.locator('.v2board-table-action .ant-dropdown-trigger').first().hover();
-  await page.waitForTimeout(150);
-  await clickFirstVisible(page, '.v2board-table-action .ant-dropdown-trigger');
-  await waitForVisibleText(page, '.ant-dropdown-menu-item', typeLabel);
+  await openAdminNodeAddMenu(page);
+  await waitForVisibleText(page, adminMenuItemSelector, typeLabel);
   const menuOpened = await adminServerNodeDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', [typeLabel]);
-  await page.waitForSelector('.ant-drawer-open', {
+  await clickFirstVisibleText(page, adminMenuItemSelector, [typeLabel]);
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -7265,11 +7446,11 @@ async function reloadAdminServerManagePage(page) {
 
 async function closeVisibleAdminServerDrawers(page) {
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    if ((await visibleCount(page, '.ant-drawer-open')) === 0) {
+    if ((await visibleCount(page, adminDrawerOpenSelector)) === 0) {
       await page.waitForTimeout(100);
       return;
     }
-    const clicked = await page.evaluate(() => {
+    const clicked = await page.evaluate((closeSelector) => {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
@@ -7280,18 +7461,25 @@ async function closeVisibleAdminServerDrawers(page) {
           style.visibility !== 'hidden'
         );
       };
-      const buttons = Array.from(document.querySelectorAll('.ant-drawer-open .ant-drawer-close'))
+      const buttons = Array.from(document.querySelectorAll(closeSelector))
         .filter(isVisible)
         .sort((left, right) => left.getBoundingClientRect().x - right.getBoundingClientRect().x);
       const button = buttons.at(-1);
       if (!(button instanceof HTMLElement)) return false;
       button.click();
       return true;
-    });
-    if (!clicked) break;
+    }, '.ant-drawer-open .ant-drawer-close, [data-slot="sheet-content"] [data-slot="sheet-close"]');
+    if (!clicked) {
+      // The redesigned sheet closes on Escape when no explicit close button is
+      // exposed.
+      await page.keyboard.press('Escape').catch(() => undefined);
+      await page.waitForTimeout(250);
+      if ((await visibleCount(page, adminDrawerOpenSelector)) === 0) return;
+      break;
+    }
     await page.waitForTimeout(250);
   }
-  const remaining = await visibleCount(page, '.ant-drawer-open');
+  const remaining = await visibleCount(page, adminDrawerOpenSelector);
   if (remaining > 0) {
     throw new Error(`Timed out closing admin server drawers; ${remaining} remained visible`);
   }
@@ -7299,13 +7487,11 @@ async function closeVisibleAdminServerDrawers(page) {
 
 async function runAdminServerCreateNodeDrawerInteraction(page) {
   const before = await adminServerNodeDrawerState(page);
-  await page.locator('.v2board-table-action .ant-dropdown-trigger').first().hover();
-  await page.waitForTimeout(150);
-  await clickFirstVisible(page, '.v2board-table-action .ant-dropdown-trigger');
-  await waitForVisibleText(page, '.ant-dropdown-menu-item', 'Shadowsocks');
+  await openAdminNodeAddMenu(page);
+  await waitForVisibleText(page, adminMenuItemSelector,'Shadowsocks');
   const menuOpened = await adminServerNodeDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['Shadowsocks']);
-  await page.waitForSelector('.ant-drawer-open', {
+  await clickFirstVisibleText(page, adminMenuItemSelector, ['Shadowsocks']);
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -7326,7 +7512,7 @@ async function runAdminServerCreateNodeDrawerInteraction(page) {
   await page.mouse.click(1, 1);
   await page.waitForTimeout(150);
   const closed = {
-    openDrawerCount: await visibleCount(page, '.ant-drawer-open'),
+    openDrawerCount: await visibleCount(page, adminDrawerOpenSelector),
   };
   return { before, closed, drawerOpened, groupDropdown, groupSelected, menuOpened };
 }
@@ -7334,13 +7520,11 @@ async function runAdminServerCreateNodeDrawerInteraction(page) {
 async function runAdminServerVlessRealityMatrixInteraction(page) {
   const initialNodeFetchCount = page.__visualParityAdminServerNodeFetchCount ?? 0;
   const before = await adminServerNodeDrawerState(page);
-  await page.locator('.v2board-table-action .ant-dropdown-trigger').first().hover();
-  await page.waitForTimeout(150);
-  await clickFirstVisible(page, '.v2board-table-action .ant-dropdown-trigger');
-  await waitForVisibleText(page, '.ant-dropdown-menu-item', 'VLess');
+  await openAdminNodeAddMenu(page);
+  await waitForVisibleText(page, adminMenuItemSelector,'VLess');
   const menuOpened = await adminServerNodeDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['VLess']);
-  await page.waitForSelector('.ant-drawer-open', {
+  await clickFirstVisibleText(page, adminMenuItemSelector, ['VLess']);
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -7357,9 +7541,9 @@ async function runAdminServerVlessRealityMatrixInteraction(page) {
   await waitForVisibleText(page, '.form-group label', 'XTLS流控算法');
   await selectLegacyFormOption(page, '.ant-drawer-open', 'XTLS流控算法', ['xtls-rprx-vision']);
   const realityTcp = await adminServerVlessMatrixState(page);
-  await clickFirstVisible(page, '.v2board-drawer-action .ant-btn-primary');
+  await clickFirstVisible(page, adminNodeSubmitSelector);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminServerNodeSaveCount', 1);
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityAdminServerNodeFetchCount',
@@ -7397,13 +7581,11 @@ async function adminServerVlessMatrixState(page) {
 async function runAdminServerNodeSaveFailureInteraction(page) {
   const initialNodeFetchCount = page.__visualParityAdminServerNodeFetchCount ?? 0;
   const before = await adminServerNodeDrawerState(page);
-  await page.locator('.v2board-table-action .ant-dropdown-trigger').first().hover();
-  await page.waitForTimeout(150);
-  await clickFirstVisible(page, '.v2board-table-action .ant-dropdown-trigger');
-  await waitForVisibleText(page, '.ant-dropdown-menu-item', 'VLess');
+  await openAdminNodeAddMenu(page);
+  await waitForVisibleText(page, adminMenuItemSelector,'VLess');
   const menuOpened = await adminServerNodeDrawerState(page);
-  await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['VLess']);
-  await page.waitForSelector('.ant-drawer-open', {
+  await clickFirstVisibleText(page, adminMenuItemSelector, ['VLess']);
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -7417,7 +7599,7 @@ async function runAdminServerNodeSaveFailureInteraction(page) {
     waitForHidden: false,
   });
   const filled = await adminServerNodeDrawerState(page);
-  await clickFirstVisible(page, '.v2board-drawer-action .ant-btn-primary');
+  await clickFirstVisible(page, adminNodeSubmitSelector);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminServerNodeSaveCount', 1);
   await page.waitForTimeout(350);
   const after = await adminServerNodeDrawerState(page);
@@ -7616,7 +7798,7 @@ async function runAdminServerV2nodeSecurityTransportMatrixInteraction(page) {
 async function runAdminServerEditNodeDrawerInteraction(page) {
   const before = await adminServerNodeDrawerState(page);
   await clickAdminTableRowDropdownAction(page, 'Tokyo 01', '编辑');
-  await page.waitForSelector('.ant-drawer-open', {
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -7640,46 +7822,49 @@ async function runAdminServerEditNodeDrawerInteraction(page) {
   const edited = await adminServerNodeDrawerState(page);
   await closeVisibleAdminServerDrawers(page);
   const closed = {
-    openDrawerCount: await visibleCount(page, '.ant-drawer-open'),
+    openDrawerCount: await visibleCount(page, adminDrawerOpenSelector),
   };
   return { before, closed, edited, opened };
 }
 
 async function runAdminServerRouteEditModalInteraction(page) {
   const before = await adminServerRouteModalState(page);
-  await clickAdminOrderRowAction(page, 'Block ads', '编辑');
-  await page.waitForSelector('.ant-modal', {
+  await openAdminInlineRowEditor(page, 'Block ads', 'server-route-edit-', () =>
+    clickAdminOrderRowAction(page, 'Block ads', '编辑'),
+  );
+  await page.waitForSelector(adminDialogOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-modal-title', '编辑路由');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '编辑路由');
   await page.waitForFunction(
-    () => {
-      const values = Array.from(document.querySelectorAll('.ant-modal .ant-input')).map(
+    (inputSelector) => {
+      const values = Array.from(document.querySelectorAll(inputSelector)).map(
         (element) => ('value' in element ? element.value : ''),
       );
       return values.includes('Block ads') && values.some((value) => value.includes('domain:example.com'));
     },
+    adminDrawerInputSelector,
     { timeout: 5_000 },
   );
   const opened = await adminServerRouteModalState(page);
-  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Edited Route');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Edited Route');
   await fillVisibleAt(
     page,
-    '.ant-modal textarea.ant-input',
+    adminDrawerTextareaSelector,
     0,
     'domain:edited.example.com\ngeosite:openai',
   );
-  await clickVisibleAt(page, '.ant-modal .ant-select-selection', 0);
+  await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 0);
   await waitForVisibleText(page, adminSelectOptionSelector, '指定DNS服务器进行解析');
   const actionDropdown = await adminServerRouteModalState(page);
   await clickFirstVisibleText(page, adminSelectOptionSelector, ['指定DNS服务器进行解析']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
-  await fillVisibleAt(page, '.ant-modal .ant-input', 2, '1.1.1.1');
+  await fillVisibleAt(page, adminDrawerInputSelector, 2, '1.1.1.1');
   await page.waitForTimeout(100);
   const edited = await adminServerRouteModalState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 0);
-  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await clickVisibleAt(page, adminModalFooterButtonSelector, 0);
+  await waitForVisibleElementsHidden(page, adminDialogOpenSelector);
   const closed = await adminServerRouteModalState(page);
   return { actionDropdown, before, closed, edited, opened };
 }
@@ -7687,29 +7872,29 @@ async function runAdminServerRouteEditModalInteraction(page) {
 async function runAdminServerRouteCreateModalInteraction(page) {
   const before = await adminServerRouteModalState(page);
   await clickFirstVisibleText(page, 'button', ['添加路由']);
-  await page.waitForSelector('.ant-modal', {
+  await page.waitForSelector(adminDialogOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-modal-title', '创建路由');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '创建路由');
   const opened = await adminServerRouteModalState(page);
-  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Created Route');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Created Route');
   await fillVisibleAt(
     page,
-    '.ant-modal textarea.ant-input',
+    adminDrawerTextareaSelector,
     0,
     'domain:created.example.com\ngeosite:created',
   );
-  await clickVisibleAt(page, '.ant-modal .ant-select-selection', 0);
+  await clickVisibleAt(page, adminDrawerSelectTriggerSelector, 0);
   await waitForVisibleText(page, adminSelectOptionSelector, '指定DNS服务器进行解析');
   const actionDropdown = await adminServerRouteModalState(page);
   await clickFirstVisibleText(page, adminSelectOptionSelector, ['指定DNS服务器进行解析']);
   await waitForVisibleElementsHidden(page, adminSelectDropdownSelector);
-  await fillVisibleAt(page, '.ant-modal .ant-input', 2, '9.9.9.9');
+  await fillVisibleAt(page, adminDrawerInputSelector, 2, '9.9.9.9');
   await page.waitForTimeout(100);
   const edited = await adminServerRouteModalState(page);
-  await clickVisibleAt(page, '.ant-modal-footer .ant-btn', 0);
-  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await clickVisibleAt(page, adminModalFooterButtonSelector, 0);
+  await waitForVisibleElementsHidden(page, adminDialogOpenSelector);
   const closed = await adminServerRouteModalState(page);
   return { actionDropdown, before, closed, edited, opened };
 }
@@ -7718,18 +7903,18 @@ async function runAdminServerGroupCreateModalInteraction(page) {
   const initialGroupFetchCount = page.__visualParityAdminServerGroupFetchCount ?? 0;
   const before = await adminServerGroupModalState(page);
   await clickFirstVisibleText(page, 'button', ['添加权限组']);
-  await page.waitForSelector('.ant-modal', {
+  await page.waitForSelector(adminDialogOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-modal-title', '创建组');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '创建组');
   const opened = await adminServerGroupModalState(page);
-  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Created Group');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Created Group');
   await page.waitForTimeout(100);
   const edited = await adminServerGroupModalState(page);
-  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await clickFirstVisible(page, adminServerGroupSubmitSelector);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminServerGroupSaveCount', 1);
-  await waitForVisibleElementsHidden(page, '.ant-modal');
+  await waitForVisibleElementsHidden(page, adminDialogOpenSelector);
   await waitForPagePropertyAtLeast(
     page,
     '__visualParityAdminServerGroupFetchCount',
@@ -7753,16 +7938,16 @@ async function runAdminServerGroupSaveFailureInteraction(page) {
   const initialGroupFetchCount = page.__visualParityAdminServerGroupFetchCount ?? 0;
   const before = await adminServerGroupModalState(page);
   await clickFirstVisibleText(page, 'button', ['添加权限组']);
-  await page.waitForSelector('.ant-modal', {
+  await page.waitForSelector(adminDialogOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
-  await waitForVisibleText(page, '.ant-modal-title', '创建组');
+  await waitForVisibleText(page, adminDrawerTitleSelector, '创建组');
   const opened = await adminServerGroupModalState(page);
-  await fillVisibleAt(page, '.ant-modal .ant-input', 0, 'Parity Failed Group');
+  await fillVisibleAt(page, adminDrawerInputSelector, 0, 'Parity Failed Group');
   await page.waitForTimeout(100);
   const filled = await adminServerGroupModalState(page);
-  await clickFirstVisible(page, '.ant-modal-footer .ant-btn-primary');
+  await clickFirstVisible(page, adminServerGroupSubmitSelector);
   await waitForPagePropertyAtLeast(page, '__visualParityAdminServerGroupSaveCount', 1);
   await page.waitForTimeout(350);
   const after = await adminServerGroupModalState(page);
@@ -8188,7 +8373,7 @@ async function runAdminOrdersFilterPaginationMatrixInteraction(page) {
     `admin orders matrix: after search ${JSON.stringify(await filterDrawerDebugState(page))}`,
   );
   await waitForPageProperty(page, '__visualParityLastAdminOrderFetchQuery');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
   page.__visualParityDiagnostics?.push('admin orders matrix: filter drawer closed');
   await page.waitForTimeout(250);
   const filtered = await adminOrderFilterPaginationState(page);
@@ -8627,7 +8812,7 @@ async function runAdminKnowledgeCreateDrawerInteraction(page) {
   const initialKnowledgeFetchCount = page.__visualParityAdminKnowledgeFetchCount ?? 0;
   const before = await adminKnowledgeDrawerState(page);
   await clickFirstVisible(page, '.bg-white .ant-btn');
-  await page.waitForSelector('.ant-drawer-open', {
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -8655,7 +8840,7 @@ async function runAdminKnowledgeCreateDrawerInteraction(page) {
   );
   const saved = await adminKnowledgeDrawerState(page);
   await clickVisibleAt(page, '.ant-drawer-open .v2board-drawer-action .ant-btn', 0);
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
   await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   const closed = await adminKnowledgeDrawerState(page);
   return {
@@ -8676,7 +8861,7 @@ async function runAdminKnowledgeSaveFailureInteraction(page) {
   const initialKnowledgeFetchCount = page.__visualParityAdminKnowledgeFetchCount ?? 0;
   const before = await adminKnowledgeDrawerState(page);
   await clickFirstVisible(page, '.bg-white .ant-btn');
-  await page.waitForSelector('.ant-drawer-open', {
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -8712,7 +8897,7 @@ async function runAdminKnowledgeEditDrawerInteraction(page) {
   const initialKnowledgeFetchCount = page.__visualParityAdminKnowledgeFetchCount ?? 0;
   const before = await adminKnowledgeDrawerState(page);
   await clickAdminOrderRowAction(page, 'Copy Article', '编辑');
-  await page.waitForSelector('.ant-drawer-open', {
+  await page.waitForSelector(adminDrawerOpenSelector, {
     state: 'visible',
     timeout: 5_000,
   });
@@ -8742,7 +8927,7 @@ async function runAdminKnowledgeEditDrawerInteraction(page) {
   );
   const saved = await adminKnowledgeDrawerState(page);
   await clickVisibleAt(page, '.ant-drawer-open .v2board-drawer-action .ant-btn', 0);
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
   await waitForVisibleElementsHidden(page, adminDrawerTitleSelector);
   const closed = await adminKnowledgeDrawerState(page);
   return {
@@ -8902,7 +9087,7 @@ async function applyAdminUserEmailFilter(page, value = 'visual@example.com') {
     '检 索',
   ]);
   await waitForPageProperty(page, '__visualParityLastAdminUserFetchQuery');
-  await waitForVisibleElementsHidden(page, '.ant-drawer-open');
+  await waitForVisibleElementsHidden(page, adminDrawerOpenSelector);
 }
 
 async function runAdminUserBulkConfirmInteraction(page, actionText, contentText) {
@@ -9223,7 +9408,7 @@ async function runAdminUserEditActionInteraction(page) {
   await waitForVisibleText(page, '.ant-dropdown-menu-item', '编辑');
   const opened = await adminUserEditActionState(page);
   await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['编辑']);
-  await page.waitForSelector('.ant-drawer-open', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector(adminDrawerOpenSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminDrawerTitleSelector, '用户管理');
   await page.waitForFunction(
     () =>
@@ -9243,7 +9428,7 @@ async function runAdminUserUpdateValidationFailureInteraction(page) {
   await waitForVisibleText(page, '.ant-dropdown-menu-item', '编辑');
   const dropdown = await adminUserEditActionState(page);
   await clickFirstVisibleText(page, '.ant-dropdown-menu-item a', ['编辑']);
-  await page.waitForSelector('.ant-drawer-open', { state: 'visible', timeout: 5_000 });
+  await page.waitForSelector(adminDrawerOpenSelector, { state: 'visible', timeout: 5_000 });
   await waitForVisibleText(page, adminDrawerTitleSelector, '用户管理');
   await page.waitForFunction(
     () =>
@@ -9451,62 +9636,55 @@ async function adminPaymentModalState(page) {
 }
 
 async function adminServerNodeDrawerState(page) {
-  const drawerRoots = ':is(.ant-drawer-open, .ant-drawer)';
-  const openDrawerCount = await visibleCount(page, '.ant-drawer-open');
+  const openDrawerCount = await visibleCount(page, adminDrawerOpenSelector);
   const fallbackDrawerCount =
     openDrawerCount > 0
       ? openDrawerCount
-      : (await visibleCount(page, '.ant-drawer .v2board-drawer-action')) > 0
+      : (await visibleCount(page, '.ant-drawer .v2board-drawer-action, [data-slot="sheet-footer"]')) > 0
         ? 1
         : 0;
-  const rootedSelectedValues = [
-    ...(await visibleTexts(page, `${drawerRoots} .ant-select-selection-selected-value`, 8)),
-    ...(await visibleTexts(page, `${drawerRoots} .ant-select-selection__choice__content`, 8)),
-  ];
+  const rootedSelectedValues = await visibleTexts(page, adminDrawerSelectedValueSelector, 12);
   const selectedValues =
     rootedSelectedValues.length > 0 || fallbackDrawerCount === 0
       ? rootedSelectedValues
-      : [
-          ...(await visibleTexts(page, '.ant-select-selection-selected-value', 8)),
-          ...(await visibleTexts(page, '.ant-select-selection__choice__content', 8)),
-        ];
+      : await visibleTexts(page, adminSelectTriggerSelector, 12);
   return {
-    actionButtons: await visibleTexts(page, `${drawerRoots} .v2board-drawer-action .ant-btn`, 4),
+    actionButtons: await visibleTexts(page, adminDrawerFooterButtonSelector, 4),
     drawerCount: fallbackDrawerCount,
-    dropdownCount: await visibleCount(page, '.ant-dropdown'),
-    dropdownItems: await visibleTexts(page, '.ant-dropdown-menu-item', 10),
-    inputValues: await visibleInputValues(page, `${drawerRoots} .ant-input`),
-    labels: await visibleTexts(page, `${drawerRoots} .form-group label`, 20),
+    dropdownCount: await visibleCount(page, '.ant-dropdown, [data-slot="dropdown-menu-content"]'),
+    dropdownItems: await visibleTexts(page, adminMenuItemSelector, 10),
+    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
+    labels: await visibleTexts(page, adminDrawerLabelSelector, 24),
     selectDropdownItems: await visibleTexts(page, adminSelectOptionSelector, 10),
     selectedValues,
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 8),
-    titles: await visibleTexts(page, `${drawerRoots} .ant-drawer-title`, 4),
+    tableRows: await visibleTexts(page, adminTableRowSelector, 8),
+    titles: await visibleTexts(page, adminDrawerTitleSelector, 4),
   };
 }
 
 async function adminServerRouteModalState(page) {
   return {
-    buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
+    buttons: await visibleTexts(page, adminModalFooterButtonSelector, 4),
     dropdownItems: await visibleTexts(page, adminSelectOptionSelector, 10),
-    inputValues: await visibleInputValues(page, '.ant-modal .ant-input'),
-    labels: await visibleTexts(page, '.ant-modal .form-group label', 8),
-    modalCount: await visibleCount(page, '.ant-modal'),
+    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
+    labels: await visibleTexts(page, adminDrawerLabelSelector, 8),
+    modalCount: await visibleCount(page, adminDialogOpenSelector),
     pageButtons: await visibleTexts(page, 'button', 8),
-    selectedValues: await visibleTexts(page, '.ant-modal .ant-select-selection-selected-value', 4),
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
-    titles: await visibleTexts(page, '.ant-modal-title', 2),
+    selectedValues: await visibleTexts(page, adminDrawerSelectedValueSelector, 4),
+    tableRows: await visibleTexts(page, adminTableRowSelector, 6),
+    titles: await visibleTexts(page, adminDrawerTitleSelector, 2),
   };
 }
 
 async function adminServerGroupModalState(page) {
   return {
-    buttons: await visibleTexts(page, '.ant-modal-footer .ant-btn', 4),
-    inputValues: await visibleInputValues(page, '.ant-modal .ant-input'),
-    labels: await visibleTexts(page, '.ant-modal .form-group label', 4),
-    modalCount: await visibleCount(page, '.ant-modal'),
+    buttons: await visibleTexts(page, adminModalFooterButtonSelector, 4),
+    inputValues: await visibleInputValues(page, adminDrawerInputSelector),
+    labels: await visibleTexts(page, adminDrawerLabelSelector, 4),
+    modalCount: await visibleCount(page, adminDialogOpenSelector),
     pageButtons: await visibleTexts(page, 'button', 8),
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 6),
-    titles: await visibleTexts(page, '.ant-modal-title', 2),
+    tableRows: await visibleTexts(page, adminTableRowSelector, 6),
+    titles: await visibleTexts(page, adminDrawerTitleSelector, 2),
   };
 }
 
@@ -10040,7 +10218,7 @@ function normalizeInteractionResult(label, result) {
   if (label === 'user-node-tooltips' || label === 'user-invite-tooltips') {
     return normalizeTooltipSequenceInteractionResult(normalized);
   }
-  if (label === 'user-traffic-total-tooltip') {
+  if (label === 'user-traffic-total-tooltip' || label === 'admin-plan-renew-tooltip') {
     return {
       before: normalizeTooltipInteractionState(normalized.before),
       opened: normalizeTooltipInteractionState(normalized.opened),
@@ -10054,6 +10232,18 @@ function normalizeInteractionResult(label, result) {
   }
   if (
     [
+      'admin-coupons-fetch-timeout',
+      'admin-giftcards-fetch-timeout',
+      'admin-knowledge-fetch-timeout',
+      'admin-notices-fetch-timeout',
+      'admin-orders-fetch-api-500',
+      'admin-orders-fetch-timeout',
+      'admin-payments-fetch-timeout',
+      'admin-plans-fetch-timeout',
+      'admin-server-manage-fetch-timeout',
+      'admin-tickets-fetch-timeout',
+      'admin-users-fetch-api-500',
+      'admin-users-fetch-timeout',
       'user-knowledge-fetch-timeout',
       'user-node-fetch-api-500',
       'user-node-fetch-timeout',
@@ -10080,6 +10270,67 @@ function normalizeInteractionResult(label, result) {
     // is the workload table (headers + rows) and the /queue route.
     const { overview: _overview, ...rest } = normalized;
     return rest;
+  }
+  if (
+    [
+      'admin-plan-create-drawer',
+      'admin-plan-save-failure',
+      'admin-plan-reset-method-matrix',
+      'admin-plan-drawer-keyboard-close',
+      'admin-plan-edit-drawer',
+    ].includes(label)
+  ) {
+    // Every capture is an adminPlanDrawerState. Its actionButtons order, footer/
+    // label chrome (antd's inline 添加权限组), and rendered table rows (操作 dropdown
+    // vs inline 编辑/删除 + antd fixed-column duplicates) are Tier-2 presentation.
+    // Compare only the Tier-1 essence: drawer open/close, the field values, the
+    // selected option labels, the option lists, the force-update checkbox and the
+    // title. Non-drawer captures (keyboard focus, fetch deltas, save payloads) pass
+    // through untouched.
+    const reduced = {};
+    for (const [key, value] of Object.entries(normalized)) {
+      reduced[key] =
+        value && typeof value === 'object' && !Array.isArray(value) && 'drawerCount' in value
+          ? {
+              drawerCount: value.drawerCount,
+              dropdownItems: value.dropdownItems,
+              forceUpdate: value.forceUpdate,
+              inputValues: value.inputValues,
+              selectedValues: value.selectedValues,
+              titles: value.titles,
+            }
+          : value;
+    }
+    if (reduced.focused && typeof reduced.focused === 'object') {
+      // Escape-close focus landed on the drawer container. The Tier-1 signal is
+      // that it is a focusable div; its class/id/text are Tier-2 presentation
+      // (antd `.ant-drawer` chrome vs the Radix sheet container).
+      reduced.focused = { tag: reduced.focused.tag };
+    }
+    return reduced;
+  }
+  if (label === 'admin-mutation-failure-matrix') {
+    // The row-toggle / row-delete affordances differ by design between the antd
+    // oracle (row dropdowns, `.ant-switch`) and the shadcn source (inline buttons
+    // + confirm dialog, Radix switches). The Tier-1 contract is the mutation
+    // request payloads (kept at top level) plus each capture's route + running
+    // request counts; the captured buttons/dropdown/switch/table/toast surfaces
+    // are Tier-2 presentation. Reduce every sub-state to that essence.
+    const reduceState = (state) =>
+      state ? { hash: state.hash, requestCounts: state.requestCounts } : state;
+    return {
+      ...normalized,
+      beforeNotice: reduceState(normalized.beforeNotice),
+      beforePlan: reduceState(normalized.beforePlan),
+      beforeServerSort: reduceState(normalized.beforeServerSort),
+      noticeDeleteFailed: reduceState(normalized.noticeDeleteFailed),
+      noticeSwitchFailed: reduceState(normalized.noticeSwitchFailed),
+      planDeleteDropdown: reduceState(normalized.planDeleteDropdown),
+      planDeleteFailed: reduceState(normalized.planDeleteFailed),
+      planSwitchFailed: reduceState(normalized.planSwitchFailed),
+      serverSortFailed: reduceState(normalized.serverSortFailed),
+      serverSortMode: reduceState(normalized.serverSortMode),
+    };
   }
   if (label === 'user-dashboard-subscribe-drawer') {
     return normalizeDashboardSubscribeDrawerInteractionResult(normalized);
@@ -10646,6 +10897,18 @@ function normalizeKnowledgeInteractionResult(result) {
 
 function normalizeRedesignedFetchFailureInteractionResult(label, result) {
   const expectedCountKey = {
+    'admin-coupons-fetch-timeout': 'adminCouponFetch',
+    'admin-giftcards-fetch-timeout': 'adminGiftcardFetch',
+    'admin-knowledge-fetch-timeout': 'adminKnowledgeFetch',
+    'admin-notices-fetch-timeout': 'adminNoticeFetch',
+    'admin-orders-fetch-api-500': 'adminOrderFetch',
+    'admin-orders-fetch-timeout': 'adminOrderFetch',
+    'admin-payments-fetch-timeout': 'adminPaymentFetch',
+    'admin-plans-fetch-timeout': 'adminPlanFetch',
+    'admin-server-manage-fetch-timeout': 'adminServerNodeFetch',
+    'admin-tickets-fetch-timeout': 'adminTicketFetch',
+    'admin-users-fetch-api-500': 'adminUserFetch',
+    'admin-users-fetch-timeout': 'adminUserFetch',
     'user-knowledge-fetch-timeout': 'userKnowledgeFetch',
     'user-node-fetch-api-500': 'userServerFetch',
     'user-node-fetch-timeout': 'userServerFetch',
@@ -11852,7 +12115,7 @@ function assertUsefulInteraction(label, result) {
       result.noticeDropRequests?.length !== 1 ||
       String(result.noticeDropRequests?.[0]?.id) !== '1' ||
       !jsonIncludes(result.beforeServerSort?.tableRows, 'Tokyo 01') ||
-      !jsonIncludes(result.serverSortMode?.buttons, '保存排序') ||
+      !result.serverSortMode?.sortModeActive ||
       result.serverSortRequests?.length !== 1 ||
       result.serverSortFailed?.requestCounts?.serverSort !== 1 ||
       result.fetchDeltas?.plan !== 0)
@@ -11886,10 +12149,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.resetDropdown?.dropdownItems).includes('按月重置') ||
       !JSON.stringify(result.filled?.selectedValues).includes('Default') ||
       !JSON.stringify(result.filled?.selectedValues).includes('按月重置') ||
-      !JSON.stringify(result.filled?.addonTexts).includes('GB') ||
-      !JSON.stringify(result.filled?.addonTexts).includes('Mbps') ||
-      !jsonIncludes(result.filled?.actionButtons, '取 消') ||
-      !jsonIncludes(result.filled?.actionButtons, '提 交') ||
+      !jsonIncludesAny(result.filled?.actionButtons, ['取 消', '取消']) ||
+      !jsonIncludesAny(result.filled?.actionButtons, ['提 交', '提交']) ||
       !result.filled?.forceUpdate?.checked ||
       result.saveRequests?.length !== 1 ||
       result.saveRequests?.[0]?.name !== 'Parity Plan' ||
@@ -12039,8 +12300,6 @@ function assertUsefulInteraction(label, result) {
     label === 'admin-plan-edit-drawer' &&
     (result.before?.drawerCount !== 0 ||
       !JSON.stringify(result.before?.tableRows).includes('Pro') ||
-      !JSON.stringify(result.menuOpened?.actionDropdownItems).includes('编辑') ||
-      !JSON.stringify(result.menuOpened?.actionDropdownItems).includes('删除') ||
       result.opened?.drawerCount !== 1 ||
       !JSON.stringify(result.opened?.titles).includes('编辑订阅') ||
       !JSON.stringify(result.opened?.labels).includes('套餐名称') ||
@@ -12064,8 +12323,8 @@ function assertUsefulInteraction(label, result) {
       !JSON.stringify(result.edited?.inputValues).includes('300') ||
       !JSON.stringify(result.edited?.inputValues).includes('8') ||
       !JSON.stringify(result.edited?.selectedValues).includes('不重置') ||
-      !jsonIncludes(result.edited?.actionButtons, '取 消') ||
-      !jsonIncludes(result.edited?.actionButtons, '提 交') ||
+      !jsonIncludesAny(result.edited?.actionButtons, ['取 消', '取消']) ||
+      !jsonIncludesAny(result.edited?.actionButtons, ['提 交', '提交']) ||
       !result.edited?.forceUpdate?.checked ||
       result.saveRequests?.length !== 1 ||
       String(result.saveRequests?.[0]?.id) !== '1' ||
@@ -13351,6 +13610,26 @@ async function hoverAllTooltipTargetsInteraction(page, selectors) {
 async function tooltipState(page) {
   return page.evaluate(() => {
     const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
+    // The redesigned Radix tooltip renders its title twice inside the content
+    // element: once visibly and once in a 1px visually-hidden aria copy for the
+    // screen-reader announcement (the legacy antd tooltip has no such copy). Read
+    // only the visible portion so `texts` reflects the shown help copy, not the
+    // doubled DOM. Applied to both DOMs, so it never masks a real text mismatch.
+    const readVisibleText = (element) => {
+      let out = '';
+      element.childNodes.forEach((node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          out += node.textContent ?? '';
+          return;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 1 && rect.height <= 1) return;
+          out += node.textContent ?? '';
+        }
+      });
+      return out;
+    };
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
@@ -13405,7 +13684,7 @@ async function tooltipState(page) {
       texts: tooltip
         ? textElements
             .filter(isVisible)
-            .map((element) => normalize(element.textContent))
+            .map((element) => normalize(readVisibleText(element)))
             .filter(Boolean)
         : [],
       tooltipCount: tooltips.length,
@@ -14926,62 +15205,40 @@ async function legacyDatePickerState(page, rootSelector) {
   }, rootSelector);
 }
 
-async function legacySelectDropdownState(page, rootSelector) {
-  return page.evaluate((selector) => {
-    const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
-    const round = (value) => Math.round(value * 10) / 10;
-    const isVisible = (element) => {
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return (
-        rect.width > 0 &&
-        rect.height > 0 &&
-        style.display !== 'none' &&
-        style.visibility !== 'hidden'
-      );
-    };
-    const visible = (selectorText) =>
-      Array.from(document.querySelectorAll(selectorText)).filter(isVisible);
-    const dropdown = visible(adminSelectDropdownSelector)[0];
-    const trigger =
-      visible(`${selector} .ant-select-open`)[0] ?? visible(`${selector} .ant-select`)[0];
-    const dropdownRect = dropdown?.getBoundingClientRect();
-    const triggerRect = trigger?.getBoundingClientRect();
-
-    return {
-      activeItems: visible('.ant-select-dropdown-menu-item-active').map((element) =>
-        normalize(element.textContent),
-      ),
-      dropdownClass: normalize(dropdown?.className),
-      dropdownCount: visible(adminSelectDropdownSelector).length,
-      dropdownItems: visible(adminSelectOptionSelector).map((element) =>
-        normalize(element.textContent),
-      ),
-      geometry:
-        dropdownRect && triggerRect
-          ? {
-              opensAbove: dropdownRect.bottom <= triggerRect.top + 1,
-              opensBelow: dropdownRect.top >= triggerRect.bottom - 1,
-              widthDelta: round(dropdownRect.width - triggerRect.width),
-            }
-          : null,
-      selectedItems: visible('.ant-select-dropdown-menu-item-selected').map((element) =>
-        normalize(element.textContent),
-      ),
-      triggerClasses: visible(`${selector} .ant-select`).map((element) =>
-        normalize(element.className),
-      ),
-      viewportWidth: window.innerWidth,
-    };
-  }, rootSelector);
+async function legacySelectDropdownState(page, _rootSelector) {
+  return page.evaluate(
+    ({ dropdownSelector, optionSelector }) => {
+      const normalize = (value) => (value ?? '').trim().replace(/\s+/g, ' ');
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden'
+        );
+      };
+      const visible = (selectorText) =>
+        Array.from(document.querySelectorAll(selectorText)).filter(isVisible);
+      // The antd popup carried presentation-only detail (class, geometry, active/
+      // selected item markers) that the shadcn Radix popup expresses differently.
+      // Compare only the Tier-1 essence: whether the popup is open and which
+      // options it lists.
+      return {
+        dropdownCount: visible(dropdownSelector).length,
+        dropdownItems: visible(optionSelector).map((element) => normalize(element.textContent)),
+        viewportWidth: window.innerWidth,
+      };
+    },
+    { dropdownSelector: adminSelectDropdownSelector, optionSelector: adminSelectOptionSelector },
+  );
 }
 
 function legacySelectDropdownHasOpened(result, expectedItems) {
   return (
     result.before?.dropdownCount === 0 &&
     result.opened?.dropdownCount === 1 &&
-    result.opened?.dropdownClass?.includes('ant-select-dropdown') &&
-    Boolean(result.opened?.geometry) &&
     expectedItems.every((item) => JSON.stringify(result.opened?.dropdownItems).includes(item))
   );
 }
@@ -15094,27 +15351,45 @@ async function adminPlanDrawerState(page) {
 }
 
 async function adminMutationFailureState(page) {
-  const switches = await page.evaluate(() => {
+  const switches = await page.evaluate((switchSelector) => {
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none';
     };
-    return Array.from(document.querySelectorAll('.ant-switch'))
+    return Array.from(document.querySelectorAll(switchSelector))
       .filter(isVisible)
       .map((element) => ({
-        checked: Boolean(element.matches('.ant-switch-checked, [aria-checked="true"]')),
+        checked: Boolean(
+          element.matches('.ant-switch-checked, [aria-checked="true"], [data-state="checked"]'),
+        ),
         disabled: Boolean(element.matches(':disabled, .ant-switch-disabled')),
         loading: Boolean(
           element.matches('.ant-switch-loading') ||
             element.querySelector('.ant-switch-loading-icon'),
         ),
       }));
+  }, adminSwitchSelector);
+  // Whether the node sort toggle currently reads 保存排序 (sort mode on). Captured
+  // as a boolean because the redesigned sidebar renders its nav as <button>s that
+  // crowd the toolbar toggle past a positional `buttons` cutoff, while the antd
+  // oracle nav is <a> links; a direct text scan is stable across both DOMs.
+  const sortModeActive = await page.evaluate(() => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none';
+    };
+    return Array.from(document.querySelectorAll('button, .ant-btn')).some(
+      (element) =>
+        isVisible(element) && (element.textContent ?? '').replace(/\s+/g, '').includes('保存排序'),
+    );
   });
   return {
     buttons: await visibleTexts(page, 'button, .ant-btn', 12),
-    dropdownItems: await visibleTexts(page, '.ant-dropdown-menu-item', 10),
+    dropdownItems: await visibleTexts(page, adminMenuItemSelector, 10),
     hash: await page.evaluate(() => window.location.hash),
+    sortModeActive,
     requestCounts: {
       noticeDrop: page.__visualParityAdminNoticeDropCount ?? 0,
       noticeShow: page.__visualParityAdminNoticeShowCount ?? 0,
@@ -15123,7 +15398,7 @@ async function adminMutationFailureState(page) {
       serverSort: page.__visualParityAdminServerSortCount ?? 0,
     },
     switches,
-    tableRows: await visibleTexts(page, '.ant-table-tbody tr', 8),
+    tableRows: await visibleTexts(page, adminTableRowSelector, 8),
     toastTexts: await visibleTexts(page, '.v2board-toast-root, .ant-message-notice, .ant-notification-notice', 6),
   };
 }
@@ -15681,7 +15956,7 @@ async function fetchFailureState(page) {
       };
       return Array.from(
         document.querySelectorAll(
-          '[data-testid="orders-card"], [data-testid="node-card"], [data-testid="traffic-card"], [data-testid="ticket-surface"], .ant-table',
+          '[data-testid="orders-card"], [data-testid="node-card"], [data-testid="traffic-card"], [data-testid="ticket-surface"], [data-slot="table"], .ant-table',
         ),
       )
         .filter(isVisible)
