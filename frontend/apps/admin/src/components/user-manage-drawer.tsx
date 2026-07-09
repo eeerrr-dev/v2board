@@ -1,16 +1,35 @@
-import { useEffect, useState } from 'react';
-import dayjs, { type Dayjs } from 'dayjs';
+import { useEffect, useState, type ReactNode } from 'react';
+import dayjs from 'dayjs';
+import { CircleHelp } from 'lucide-react';
 import type { AdminUserRow, AdminUserUpdatePayload } from '@v2board/types';
 import { BYTE_GB } from '@v2board/config/format';
 import { useAdminPlans, useAdminUserInfo, useUpdateUserMutation } from '@/lib/queries';
-import { LegacyButton } from './legacy-button';
-import { LegacyDrawer } from './legacy-drawer';
-import { LegacyInput, LegacyInputGroup, LegacyTextArea } from './legacy-input';
-import { LegacyLoadingIcon, LegacyQuestionCircleIcon } from './legacy-ant-icon';
-import { LegacyDatePicker } from './legacy-date-picker';
-import { LegacySelect, type LegacySelectOption, type LegacySelectValue } from './legacy-select';
-import { LegacyTooltip } from './legacy-tooltip';
-import { LegacySwitch } from './legacy-switch';
+import { Button } from '@/components/ui/button';
+import { Input, type InputProps } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 type UserManageFormValues = Omit<Partial<AdminUserRow>, 'expired_at' | 'is_admin' | 'is_staff'> & {
   invite_user_email?: string | null;
@@ -22,20 +41,14 @@ type UserManageFormValues = Omit<Partial<AdminUserRow>, 'expired_at' | 'is_admin
   is_staff?: 0 | 1;
 };
 
+// The GB / cents scaling and the expired_at passthrough below are the Tier-1
+// save contract with `/user/update` — keep the exact coercions byte-identical.
 function scaledRounded(value: unknown, multiplier: number) {
   return Math.round(Number(value) * multiplier);
 }
 
 function scaled(value: unknown, multiplier: number) {
   return Number(value) * multiplier;
-}
-
-function legacyDefaultValue(value: unknown) {
-  return value === null ? undefined : (value as string | number | readonly string[] | undefined);
-}
-
-function legacyExpiredAtDefaultValue(value: UserManageFormValues['expired_at']) {
-  return (value !== null && dayjs(1000 * Number(value))) as Dayjs | false;
 }
 
 function toFormValues(user: Partial<AdminUserRow> & Record<string, unknown>): UserManageFormValues {
@@ -75,16 +88,50 @@ function toPayload(values: UserManageFormValues, id: number): AdminUserUpdatePay
   } as unknown as AdminUserUpdatePayload;
 }
 
-const LEGACY_ACCOUNT_STATUS_OPTIONS: LegacySelectOption[] = [
-  { value: 1, label: '封禁' },
-  { value: 0, label: '正常' },
+// The expired_at field persists as unix SECONDS (string on edit, or the original
+// number when untouched). Convert to a `YYYY-MM-DD` value for the native date
+// input and back to a seconds string on change, mirroring the legacy
+// dayjs(1000 * sec) / dayjs(value).format('X') round-trip.
+function toDateInput(value: UserManageFormValues['expired_at']) {
+  return value == null ? '' : dayjs(1000 * Number(value)).format('YYYY-MM-DD');
+}
+
+function fromDateInput(value: string) {
+  return value ? dayjs(value).format('X') : null;
+}
+
+const PLAN_NONE = 'null';
+
+const ACCOUNT_STATUS_OPTIONS = [
+  { value: '1', label: '封禁' },
+  { value: '0', label: '正常' },
 ];
 
-const LEGACY_COMMISSION_TYPE_OPTIONS: LegacySelectOption[] = [
-  { value: 0, label: '跟随系统设置' },
-  { value: 1, label: '循环返利' },
-  { value: 2, label: '首次返利' },
+const COMMISSION_TYPE_OPTIONS = [
+  { value: '0', label: '跟随系统设置' },
+  { value: '1', label: '循环返利' },
+  { value: '2', label: '首次返利' },
 ];
+
+function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function SuffixInput({ suffix, ...props }: InputProps & { suffix: string }) {
+  return (
+    <div className="relative">
+      <Input className="pr-10" {...props} />
+      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+        {suffix}
+      </span>
+    </div>
+  );
+}
 
 export function UserManageDrawer({
   userId,
@@ -102,9 +149,9 @@ export function UserManageDrawer({
   const plans = useAdminPlans();
   const update = useUpdateUserMutation();
   const current = user.data as (Partial<AdminUserRow> & Record<string, unknown>) | undefined;
-  const planOptions: LegacySelectOption[] = [
-    { value: null, label: '无' },
-    ...(plans.data?.map((plan) => ({ value: plan.id, label: plan.name })) ?? []),
+  const planOptions = [
+    { value: PLAN_NONE, label: '无' },
+    ...(plans.data?.map((plan) => ({ value: String(plan.id), label: plan.name })) ?? []),
   ];
 
   useEffect(() => {
@@ -135,243 +182,270 @@ export function UserManageDrawer({
         await onSaved?.();
         hide();
       })
-      // Errors are surfaced by the global onError handler (legacy parity); keep the drawer open.
+      // Errors are surfaced by the global onError handler; keep the drawer open.
       .catch(() => undefined);
   };
 
+  const commissionType = parseInt(String(values?.commission_type));
+  const commissionTypeValue = Number.isNaN(commissionType) ? undefined : String(commissionType);
+
   return (
-    <LegacyDrawer
-      id="user"
-      cancelText="取消"
-      width="80%"
-      title="用户管理"
-      open={open}
-      onClose={hide}
-    >
-      {values?.email ? (
-        <div>
-          <div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">邮箱</label>
-              <LegacyInput
-                className="ant-input"
-                placeholder="请输入邮箱"
-                defaultValue={values.email}
-                onChange={(event) => formChange('email', event.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">邀请人邮箱</label>
-              <LegacyInput
-                className="ant-input"
-                placeholder="请输入邀请人邮箱"
-                defaultValue={legacyDefaultValue(values.invite_user_email)}
-                onChange={(event) => formChange('invite_user_email', event.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">密码</label>
-              <LegacyInput
-                className="ant-input"
-                defaultValue={values.password}
-                placeholder="如需修改密码请输入"
-                onChange={(event) => formChange('password', event.target.value)}
-              />
-            </div>
-            <div className="row">
-              <div className="form-group col-md-6 col-xs-12">
-                <label>余额</label>
-                <LegacyInputGroup
+    <Sheet open={open} onOpenChange={(next) => (!next ? hide() : undefined)}>
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+        data-testid="user-manage-drawer"
+      >
+        <SheetHeader className="border-b border-border px-6 py-4">
+          <SheetTitle>用户管理</SheetTitle>
+        </SheetHeader>
+
+        {values?.email ? (
+          <TooltipProvider delayDuration={100}>
+            <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
+              <Field label="邮箱">
+                <Input
+                  placeholder="请输入邮箱"
+                  value={values.email ?? ''}
+                  onChange={(event) => formChange('email', event.target.value)}
+                  data-testid="user-drawer-email"
+                />
+              </Field>
+              <Field label="邀请人邮箱">
+                <Input
+                  placeholder="请输入邀请人邮箱"
+                  value={values.invite_user_email ?? ''}
+                  onChange={(event) => formChange('invite_user_email', event.target.value)}
+                />
+              </Field>
+              <Field label="密码">
+                <Input
+                  placeholder="如需修改密码请输入"
+                  value={values.password ?? ''}
+                  onChange={(event) => formChange('password', event.target.value)}
+                />
+              </Field>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="余额">
+                  <SuffixInput
+                    type="number"
+                    suffix="¥"
+                    placeholder="余额"
+                    value={values.balance ?? ''}
+                    onChange={(event) =>
+                      formChange('balance', event.target.value as unknown as number)
+                    }
+                  />
+                </Field>
+                <Field label="推广佣金">
+                  <SuffixInput
+                    type="number"
+                    suffix="¥"
+                    placeholder="推广佣金"
+                    value={values.commission_balance ?? ''}
+                    onChange={(event) =>
+                      formChange('commission_balance', event.target.value as unknown as number)
+                    }
+                  />
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="已用上行">
+                  <SuffixInput
+                    type="number"
+                    suffix="GB"
+                    placeholder="已用上行"
+                    value={values.u ?? ''}
+                    onChange={(event) => formChange('u', event.target.value as unknown as number)}
+                  />
+                </Field>
+                <Field label="已用下行">
+                  <SuffixInput
+                    type="number"
+                    suffix="GB"
+                    placeholder="已用下行"
+                    value={values.d ?? ''}
+                    onChange={(event) => formChange('d', event.target.value as unknown as number)}
+                  />
+                </Field>
+              </div>
+
+              <Field label="流量">
+                <SuffixInput
                   type="number"
-                  addonAfter="¥"
-                  placeholder="余额"
-                  defaultValue={legacyDefaultValue(values.balance)}
+                  suffix="GB"
+                  placeholder="请输入流量"
+                  value={values.transfer_enable ?? ''}
                   onChange={(event) =>
-                    formChange('balance', event.target.value as unknown as number)
+                    formChange('transfer_enable', event.target.value as unknown as number)
                   }
                 />
-              </div>
-              <div className="form-group col-md-6 col-xs-12">
-                <label>推广佣金</label>
-                <LegacyInputGroup
-                  type="number"
-                  addonAfter="¥"
-                  placeholder="推广佣金"
-                  defaultValue={legacyDefaultValue(values.commission_balance)}
+              </Field>
+              <Field label="设备数限制">
+                <Input
+                  placeholder="留空则不限制"
+                  value={values.device_limit ?? ''}
                   onChange={(event) =>
-                    formChange('commission_balance', event.target.value as unknown as number)
+                    formChange('device_limit', event.target.value as unknown as number)
                   }
                 />
-              </div>
-            </div>
-            <div className="row">
-              <div className="form-group col-md-6 col-xs-12">
-                <label>已用上行</label>
-                <LegacyInputGroup
-                  type="number"
-                  addonAfter="GB"
-                  placeholder="已用上行"
-                  defaultValue={legacyDefaultValue(values.u)}
-                  onChange={(event) => formChange('u', event.target.value as unknown as number)}
-                />
-              </div>
-              <div className="form-group col-md-6 col-xs-12">
-                <label>已用下行</label>
-                <LegacyInputGroup
-                  type="number"
-                  addonAfter="GB"
-                  placeholder="已用下行"
-                  defaultValue={legacyDefaultValue(values.d)}
-                  onChange={(event) => formChange('d', event.target.value as unknown as number)}
-                />
-              </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">流量</label>
-              <LegacyInputGroup
-                type="number"
-                addonAfter="GB"
-                defaultValue={legacyDefaultValue(values.transfer_enable)}
-                placeholder="请输入流量"
-                onChange={(event) =>
-                  formChange('transfer_enable', event.target.value as unknown as number)
-                }
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">设备数限制</label>
-              <LegacyInput
-                className="ant-input"
-                placeholder="留空则不限制"
-                defaultValue={legacyDefaultValue(values.device_limit)}
-                onChange={(event) =>
-                  formChange('device_limit', event.target.value as unknown as number)
-                }
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">到期时间</label>
-              <div>
-                <LegacyDatePicker
+              </Field>
+              <Field label="到期时间">
+                <Input
+                  type="date"
                   placeholder="长期有效"
-                  defaultValue={legacyExpiredAtDefaultValue(values.expired_at)}
-                  style={{ width: '100%' }}
-                  onChange={(value) => formChange('expired_at', value ? value.format('X') : null)}
+                  value={toDateInput(values.expired_at)}
+                  onChange={(event) => formChange('expired_at', fromDateInput(event.target.value))}
+                  data-testid="user-drawer-expired"
                 />
-              </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">订阅计划</label>
-              <LegacySelect
-                placeholder="请选择用户订阅计划"
-                style={{ width: '100%' }}
-                defaultValue={(values.plan_id || null) as LegacySelectValue}
-                options={planOptions}
-                onChange={(value) => formChange('plan_id', value as number | null)}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">账户状态</label>
-              <LegacySelect
-                style={{ width: '100%' }}
-                defaultValue={values.banned ? 1 : 0}
-                options={LEGACY_ACCOUNT_STATUS_OPTIONS}
-                onChange={(value) => formChange('banned', value as 0 | 1)}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">推荐返利类型</label>
-              <LegacySelect
-                style={{ width: '100%' }}
-                defaultValue={parseInt(values.commission_type as string)}
-                options={LEGACY_COMMISSION_TYPE_OPTIONS}
-                onChange={(value) => formChange('commission_type', value)}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">推荐返利比例</label>
-              <LegacyInputGroup
-                addonAfter="%"
-                defaultValue={legacyDefaultValue(values.commission_rate)}
-                placeholder="请输入推荐返利比例(为空则跟随站点设置返利比例)"
-                onChange={(event) =>
-                  formChange('commission_rate', event.target.value as unknown as number)
+              </Field>
+              <Field label="订阅计划">
+                <Select
+                  value={values.plan_id ? String(values.plan_id) : PLAN_NONE}
+                  onValueChange={(value) =>
+                    formChange('plan_id', value === PLAN_NONE ? null : Number(value))
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="请选择用户订阅计划" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {planOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="账户状态">
+                <Select
+                  value={String(values.banned ? 1 : 0)}
+                  onValueChange={(value) => formChange('banned', Number(value) as 0 | 1)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ACCOUNT_STATUS_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="推荐返利类型">
+                <Select
+                  value={commissionTypeValue}
+                  onValueChange={(value) => formChange('commission_type', Number(value))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="请选择推荐返利类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COMMISSION_TYPE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="推荐返利比例">
+                <SuffixInput
+                  suffix="%"
+                  placeholder="请输入推荐返利比例(为空则跟随站点设置返利比例)"
+                  value={values.commission_rate ?? ''}
+                  onChange={(event) =>
+                    formChange('commission_rate', event.target.value as unknown as number)
+                  }
+                />
+              </Field>
+              <Field
+                label={
+                  <span className="inline-flex items-center gap-1">
+                    专享折扣比例
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          tabIndex={0}
+                          className="inline-flex cursor-help items-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        >
+                          <CircleHelp className="size-3.5 text-muted-foreground" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>设置后该用户购买任何订阅将始终享受该折扣</TooltipContent>
+                    </Tooltip>
+                  </span>
                 }
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">
-                专享折扣比例{' '}
-                <LegacyTooltip title="设置后该用户购买任何订阅将始终享受该折扣" placement="top">
-                  <LegacyQuestionCircleIcon />
-                </LegacyTooltip>
-              </label>
-              <LegacyInputGroup
-                addonAfter="%"
-                defaultValue={legacyDefaultValue(values.discount)}
-                placeholder="请输入专享折扣比例"
-                onChange={(event) =>
-                  formChange('discount', event.target.value as unknown as number)
-                }
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">限速</label>
-              <LegacyInputGroup
-                addonAfter="Mbps"
-                defaultValue={legacyDefaultValue(values.speed_limit)}
-                placeholder="留空则不限制"
-                onChange={(event) => formChange('speed_limit', event.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">是否管理员</label>
-              <div>
-                <LegacySwitch
+              >
+                <SuffixInput
+                  suffix="%"
+                  placeholder="请输入专享折扣比例"
+                  value={values.discount ?? ''}
+                  onChange={(event) =>
+                    formChange('discount', event.target.value as unknown as number)
+                  }
+                />
+              </Field>
+              <Field label="限速">
+                <SuffixInput
+                  suffix="Mbps"
+                  placeholder="留空则不限制"
+                  value={values.speed_limit ?? ''}
+                  onChange={(event) => formChange('speed_limit', event.target.value)}
+                />
+              </Field>
+              <div className="flex items-center justify-between">
+                <Label>是否管理员</Label>
+                <Switch
                   checked={Boolean(values.is_admin)}
-                  onChange={(value) => formChange('is_admin', value ? 1 : 0)}
+                  onCheckedChange={(checked) => formChange('is_admin', checked ? 1 : 0)}
+                  aria-label="是否管理员"
                 />
               </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">是否员工</label>
-              <div>
-                <LegacySwitch
+              <div className="flex items-center justify-between">
+                <Label>是否员工</Label>
+                <Switch
                   checked={Boolean(values.is_staff)}
-                  onChange={(value) => formChange('is_staff', value ? 1 : 0)}
+                  onCheckedChange={(checked) => formChange('is_staff', checked ? 1 : 0)}
+                  aria-label="是否员工"
                 />
               </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">备注</label>
-              <div>
-                <LegacyTextArea
-                  className="ant-input"
+              <Field label="备注">
+                <Textarea
                   rows={4}
                   placeholder="请在这里记录.."
-                  defaultValue={legacyDefaultValue(values.remarks)}
+                  value={values.remarks ?? ''}
                   onChange={(event) => formChange('remarks', event.target.value)}
                 />
-              </div>
+              </Field>
             </div>
+
+            <SheetFooter className="flex-row justify-end gap-2 border-t border-border px-6 py-4">
+              <Button variant="outline" onClick={hide}>
+                取消
+              </Button>
+              <Button
+                onClick={() => !update.isPending && submit()}
+                disabled={update.isPending}
+                loading={update.isPending}
+                data-testid="user-manage-submit"
+              >
+                提交
+              </Button>
+            </SheetFooter>
+          </TooltipProvider>
+        ) : (
+          <div className="flex flex-1 items-center justify-center py-10" role="status">
+            <Spinner className="size-6 text-muted-foreground" />
+            <span className="sr-only">加载中</span>
           </div>
-          <div className="v2board-drawer-action">
-            <LegacyButton className="ant-btn" style={{ marginRight: 8 }} onClick={hide}>
-              取消
-            </LegacyButton>
-            <LegacyButton
-              className={`ant-btn ant-btn-primary${update.isPending ? ' ant-btn-loading' : ''}`}
-              disabled={update.isPending}
-              onClick={() => !update.isPending && submit()}
-            >
-              {update.isPending ? <LegacyLoadingIcon /> : null}
-              提交
-            </LegacyButton>
-          </div>
-        </div>
-      ) : (
-        <LegacyLoadingIcon style={{ fontSize: 24, color: '#415A94' }} />
-      )}
-    </LegacyDrawer>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }

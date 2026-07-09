@@ -1,8 +1,28 @@
-import { useEffect, useMemo, useState, type AnchorHTMLAttributes } from 'react';
-import { App } from 'antd';
-import dayjs, { type Dayjs } from 'dayjs';
+import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
+import dayjs from 'dayjs';
 import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
+import {
+  Activity,
+  ArrowDown,
+  ArrowUp,
+  Ban,
+  ChevronDown,
+  ChevronsUpDown,
+  Copy,
+  FileSpreadsheet,
+  ListFilter,
+  Mail,
+  Pencil,
+  Plus,
+  ReceiptText,
+  RefreshCw,
+  SlidersHorizontal,
+  Trash2,
+  UserPlus,
+  UsersRound,
+  X,
+} from 'lucide-react';
 import type { AdminFilter } from '@v2board/api-client';
 import type { AdminUserRow, PlanPeriod } from '@v2board/types';
 import { formatDateMinuteSlash, formatDateTime } from '@v2board/config/format';
@@ -19,74 +39,63 @@ import {
   useSendMailToUsersMutation,
   useServerGroups,
 } from '@/lib/queries';
-import { legacyCopyText } from '@/lib/legacy-copy';
 import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
-import { LegacyFilterDrawer, type LegacyFilterKey } from '@/components/legacy-filter-drawer';
-import { LegacySpin } from '@/components/legacy-spin';
-import { legacyHref } from '@/lib/legacy-href';
-import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
-import { LegacyButton } from '@/components/legacy-button';
-import { LegacyDatePicker } from '@/components/legacy-date-picker';
+import { confirmDialog } from '@/components/ui/confirm-dialog';
+import { toast } from '@/lib/toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import {
-  LegacyAccountBookIcon,
-  LegacyCaretDownIcon,
-  LegacyCopyIcon,
-  LegacyDeleteIcon,
-  LegacyEditIcon,
-  LegacyFileExcelIcon,
-  LegacyFilterIcon,
-  LegacyLoadingIcon,
-  LegacyMailIcon,
-  LegacyPlusIcon,
-  LegacyReloadIcon,
-  LegacySelectIcon,
-  LegacySolutionIcon,
-  LegacyStopIcon,
-  LegacyUserAddIcon,
-  LegacyUsergroupAddIcon,
-} from '@/components/legacy-ant-icon';
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/shadcn-dialog';
 import {
-  LegacyStandaloneTable,
-  LegacyTablePagination,
-  legacyTableRowKey,
-  type LegacyStandaloneTableHeader,
-  type LegacyTablePaginationChange,
-} from '@/components/legacy-standalone-table';
-import { LegacyModal } from '@/components/legacy-modal';
-import { legacyConfirm } from '@/components/legacy-confirm';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PageHeader, PageShell } from '@/components/ui/page';
+import { PaginationControl } from '@/components/ui/pagination';
 import {
-  LegacySelect,
-  type LegacySelectOption,
-  type LegacySelectValue,
-} from '@/components/legacy-select';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
-  LegacyDropdown,
-  LegacyDropdownMenu,
-  LegacyDropdownMenuItem,
-  LEGACY_DROPDOWN_CLICK_TRIGGER,
-} from '@/components/legacy-dropdown';
-import { LegacyTooltip } from '@/components/legacy-tooltip';
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Spinner } from '@/components/ui/spinner';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { Textarea } from '@/components/ui/textarea';
 import {
-  LegacyInput,
-  LegacyInputCompactGroup,
-  LegacyInputGroup,
-  LegacyTextArea,
-} from '@/components/legacy-input';
-import { LegacyBadge } from '@/components/legacy-badge';
-import { LegacyTag } from '@/components/legacy-tag';
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
+import { cn } from '@/lib/cn';
 
-type QueryState = {
+interface QueryState {
   current: number;
   pageSize: number;
-  pageSizeOptions?: number[];
-  showSizeChanger?: boolean;
-  size?: 'small';
-  total?: number;
   filter: AdminFilter[];
   sort?: string;
   sort_type?: 'ASC' | 'DESC';
-};
+}
 
 interface PlanOption {
   label: string;
@@ -114,17 +123,25 @@ interface AssignOrderSubmit {
   total_amount?: string;
 }
 
-function assignOrderSubmit(email?: string): AssignOrderSubmit {
-  return {
-    email: email || undefined,
-    plan_id: undefined,
-    period: undefined,
-    total_amount: undefined,
-  };
+interface FilterField {
+  key: string;
+  title: string;
+  condition: string[];
+  type?: 'text' | 'select' | 'date';
+  options?: { label: string; value: string | number }[];
 }
 
-const LEGACY_HABIT_KEY = 'habit';
-const LEGACY_USER_PAGE_SIZE_KEY = 'user_manage_page_size';
+const PLAN_NONE = 'null';
+
+const PAGE_SIZE_OPTIONS = [10, 50, 100, 150];
+
+const PAGINATION_LABELS = {
+  itemsPerPage: '条/页',
+  nextPage: '下一页',
+  nextWindow: '向后 5 页',
+  previousPage: '上一页',
+  previousWindow: '向前 5 页',
+};
 
 const PERIOD_TEXT: Record<string, string> = {
   month_price: '月付',
@@ -137,64 +154,32 @@ const PERIOD_TEXT: Record<string, string> = {
   reset_price: '流量重置包',
 };
 
-const GENERATE_USER_EMPTY_PLAN_OPTION: LegacySelectOption = { value: null, label: '无' };
-
-const PERIOD_OPTIONS: LegacySelectOption[] = Object.keys(PERIOD_TEXT).map((period) => ({
+const PERIOD_OPTIONS = Object.keys(PERIOD_TEXT).map((period) => ({
   value: period,
   label: PERIOD_TEXT[period] ?? period,
 }));
 
-function planSelectOptions(plans: PlanOption[], includeEmpty = false): LegacySelectOption[] {
-  return [
-    ...(includeEmpty ? [GENERATE_USER_EMPTY_PLAN_OPTION] : []),
-    ...plans.map((plan) => ({ value: plan.value, label: plan.label })),
-  ];
+function assignOrderSubmit(email?: string): AssignOrderSubmit {
+  return {
+    email: email || undefined,
+    plan_id: undefined,
+    period: undefined,
+    total_amount: undefined,
+  };
 }
 
-function readLegacyHabit(key: string): unknown {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    const stored = window.localStorage.getItem(LEGACY_HABIT_KEY);
-    if (!stored) return undefined;
-    const parsed = JSON.parse(stored) as Record<string, unknown>;
-    return parsed?.[key];
-  } catch {
-    return undefined;
-  }
-}
-
-function writeLegacyHabit(key: string, value: unknown) {
-  if (typeof window === 'undefined') return;
-  try {
-    const stored = window.localStorage.getItem(LEGACY_HABIT_KEY);
-    if (stored) {
-      const legacyHabit = stored as unknown as Record<string, unknown>;
-      legacyHabit[key] = value;
-      window.localStorage.setItem(LEGACY_HABIT_KEY, JSON.stringify(legacyHabit));
-    } else {
-      window.localStorage.setItem(LEGACY_HABIT_KEY, JSON.stringify({ [key]: value }));
-    }
-  } catch {
-    window.localStorage.setItem(LEGACY_HABIT_KEY, JSON.stringify({ [key]: value }));
-  }
-}
-
-function legacyDisabledAnchorProps(disabled: boolean): AnchorHTMLAttributes<HTMLAnchorElement> {
-  return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;
-}
-
-function readLegacyUserPageSize() {
-  const pageSize = Number(readLegacyHabit(LEGACY_USER_PAGE_SIZE_KEY));
-  return Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 10;
-}
-
+// Cross-page Tier-1 contract: the order manager (and the dashboard) seed an
+// AdminFilter[] into sessionStorage then navigate to /user. Read it on mount,
+// apply it as the initial filter, and clear it.
 function readStoredUserFilter(): AdminFilter[] {
   if (typeof window === 'undefined') return [];
   const stored = window.sessionStorage.getItem('v2board-admin-user-filter');
   if (!stored) return [];
   window.sessionStorage.removeItem('v2board-admin-user-filter');
   try {
-    return JSON.parse(stored) as AdminFilter[];
+    const parsed = JSON.parse(stored) as AdminFilter[] | { filter?: AdminFilter[] };
+    if (Array.isArray(parsed)) return parsed;
+    return Array.isArray(parsed.filter) ? parsed.filter : [];
   } catch {
     return [];
   }
@@ -212,36 +197,22 @@ function downloadText(name: string, buffer: unknown) {
 }
 
 function downloadGeneratedUserCsv(buffer: unknown) {
-  const blob = new Blob([buffer as BlobPart], { type: 'text/plain,charset=UTF-8' });
-  const url = window.URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.style.display = 'none';
-  anchor.download = `USER ${dayjs().format('YYYY-MM-DD HH:mm:ss')}.csv`;
-  anchor.click();
-  window.URL.revokeObjectURL(url);
+  downloadText(`USER ${dayjs().format('YYYY-MM-DD HH:mm:ss')}.csv`, buffer);
 }
 
-const LEGACY_SORTABLE_CELL_CLASS = 'ant-table-column-has-actions ant-table-column-has-sorters';
-const LEGACY_USER_PAGE_SIZE_OPTIONS = [10, 50, 100, 150];
-
-function userRowKey(index: number) {
-  return legacyTableRowKey(index);
-}
-
-function legacyUserTableRows<T>(rows: T[], current: number, pageSize: number) {
-  if (rows.length <= pageSize) return rows;
-  const page = Math.max(current || 1, 1);
-  return rows.slice((page - 1) * pageSize, page * pageSize);
+function planSelectItems(plans: PlanOption[], includeEmpty = false) {
+  return [
+    ...(includeEmpty ? [{ value: PLAN_NONE, label: '无' }] : []),
+    ...plans.map((plan) => ({ value: String(plan.value), label: plan.label })),
+  ];
 }
 
 export default function UsersPage() {
-  const { message } = App.useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<QueryState>(() => ({
     current: 1,
-    pageSize: readLegacyUserPageSize(),
+    pageSize: 10,
     filter: readStoredUserFilter(),
   }));
   const users = useAdminUsers(query);
@@ -258,14 +229,9 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<AdminUserRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [mailOpen, setMailOpen] = useState(false);
-  const [toolbarDropdownVisible, setToolbarDropdownVisible] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [assigning, setAssigning] = useState<AdminUserRow | null>(null);
   const [trafficUser, setTrafficUser] = useState<AdminUserRow | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    user: AdminUserRow;
-    top: number;
-    left: number;
-  } | null>(null);
 
   useEffect(
     () => () => {
@@ -275,12 +241,8 @@ export default function UsersPage() {
     [queryClient],
   );
 
-  const planOptions = useMemo(
+  const planOptions = useMemo<PlanOption[]>(
     () => plans.data?.map((plan) => ({ label: plan.name, value: plan.id })) ?? [],
-    [plans.data],
-  );
-  const filterPlanOptions = useMemo(
-    () => plans.data?.map((plan) => ({ key: plan.name, value: plan.id })) ?? [],
     [plans.data],
   );
 
@@ -290,7 +252,7 @@ export default function UsersPage() {
     return map;
   }, [groups.data]);
 
-  const filterKeys = useMemo<LegacyFilterKey[]>(
+  const filterFields = useMemo<FilterField[]>(
     () => [
       { key: 'email', title: '邮箱', condition: ['模糊'] },
       { key: 'id', title: '用户ID', condition: ['=', '>=', '>', '<', '<='] },
@@ -299,7 +261,10 @@ export default function UsersPage() {
         title: '订阅',
         condition: ['='],
         type: 'select',
-        options: [{ key: '无订阅', value: 'null' }, ...filterPlanOptions],
+        options: [
+          { label: '无订阅', value: PLAN_NONE },
+          ...planOptions.map((plan) => ({ label: plan.label, value: plan.value })),
+        ],
       },
       { key: 'transfer_enable', title: '流量', condition: ['>=', '>', '<', '<='] },
       { key: 'd', title: '下行', condition: ['>=', '>', '<', '<='] },
@@ -312,8 +277,8 @@ export default function UsersPage() {
         condition: ['='],
         type: 'select',
         options: [
-          { key: '正常', value: 0 },
-          { key: '封禁', value: 1 },
+          { label: '正常', value: 0 },
+          { label: '封禁', value: 1 },
         ],
       },
       { key: 'invite_by_email', title: '邀请人邮箱', condition: ['模糊'] },
@@ -325,470 +290,392 @@ export default function UsersPage() {
         condition: ['='],
         type: 'select',
         options: [
-          { key: '是', value: 1 },
-          { key: '否', value: 0 },
+          { label: '是', value: 1 },
+          { label: '否', value: 0 },
         ],
       },
     ],
-    [filterPlanOptions],
+    [planOptions],
   );
+
+  const data = users.data?.data ?? [];
+  const total = users.data?.total ?? 0;
 
   const setFilter = (filter: AdminFilter[]) =>
     setQuery((state) => ({ ...state, current: 1, filter }));
 
+  const sortBy = (key: string) =>
+    setQuery((state) => ({
+      ...state,
+      current: 1,
+      sort: key,
+      sort_type: state.sort === key && state.sort_type === 'ASC' ? 'DESC' : 'ASC',
+    }));
+
   const jumpOrderFilter = (key: string, condition: string, value: string | number) => {
     window.sessionStorage.setItem(
       'v2board-admin-order-filter',
-      JSON.stringify({ filter: [{ key, condition, value }], total: users.data?.total }),
+      JSON.stringify({ filter: [{ key, condition, value }], total }),
     );
     navigate('/order');
   };
 
-  const resetUserSecret = (row: AdminUserRow) =>
-    void legacyConfirm({
+  const resetUserSecret = async (row: AdminUserRow) => {
+    const confirmed = await confirmDialog({
       title: '重置安全信息',
-      content: `确定要重置${row.email}的安全信息吗？`,
-      okText: '确定',
+      description: `确定要重置${row.email}的安全信息吗？`,
+      confirmText: '确定',
       cancelText: '取消',
-      onOk: () => {
-        void resetSecret
-          .mutateAsync(row.id)
-          .then(() => {
-            message.success('重置成功');
-            void users.refetch();
-          })
-          .catch(() => undefined);
-      },
     });
+    if (!confirmed) return;
+    resetSecret
+      .mutateAsync(row.id)
+      .then(() => {
+        toast.success('重置成功');
+        void users.refetch();
+      })
+      .catch(() => undefined);
+  };
 
-  const deleteUser = (row: AdminUserRow) =>
-    void legacyConfirm({
+  const deleteUser = async (row: AdminUserRow) => {
+    const confirmed = await confirmDialog({
       title: '删除用户',
-      content: `确定要删除${row.email}的用户信息吗？`,
-      okText: '确定',
+      description: `确定要删除${row.email}的用户信息吗？`,
+      confirmText: '确定',
       cancelText: '取消',
-      onOk: () => {
-        void remove
-          .mutateAsync(row.id)
-          .then(() => {
-            message.success('删除成功');
-            void users.refetch();
-          })
-          .catch(() => undefined);
-      },
     });
+    if (!confirmed) return;
+    remove
+      .mutateAsync(row.id)
+      .then(() => {
+        toast.success('删除成功');
+        void users.refetch();
+      })
+      .catch(() => undefined);
+  };
+
+  const copySubscribeUrl = (row: AdminUserRow) => {
+    void navigator.clipboard?.writeText(row.subscribe_url);
+  };
 
   const runUserAction = (key: string, row: AdminUserRow) => {
-    setContextMenu(null);
     if (key === 'edit') setEditing(row);
     if (key === 'assign') setAssigning(row);
-    if (key === 'copy') {
-      legacyCopyText(row.subscribe_url);
-    }
-    if (key === 'reset') resetUserSecret(row);
+    if (key === 'copy') copySubscribeUrl(row);
+    if (key === 'reset') void resetUserSecret(row);
     if (key === 'orders') jumpOrderFilter('user_id', '=', row.id);
     if (key === 'invite') setFilter([{ key: 'invite_user_id', condition: '=', value: row.id }]);
     if (key === 'traffic') setTrafficUser(row);
-    if (key === 'delete') deleteUser(row);
+    if (key === 'delete') void deleteUser(row);
   };
 
-  const data = users.data?.data ?? [];
-  const sortUserTable = (sort: string) =>
-    setQuery((state) => ({
-      ...state,
-      current: 1,
-      pageSizeOptions: LEGACY_USER_PAGE_SIZE_OPTIONS,
-      showSizeChanger: true,
-      size: 'small',
-      sort,
-      sort_type: state.sort === sort && state.sort_type === 'ASC' ? 'DESC' : 'ASC',
-    }));
-  const sortableHeader = (title: string, sort: string): LegacyStandaloneTableHeader => ({
-    title,
-    className: LEGACY_SORTABLE_CELL_CLASS,
-    onClick: () => sortUserTable(sort),
-    sortOrder: query.sort === sort ? query.sort_type : undefined,
-    sortable: true,
-  });
-  const headers: LegacyStandaloneTableHeader[] = [
-    sortableHeader('ID', 'id'),
-    { title: '邮箱' },
-    sortableHeader('状态', 'banned'),
-    sortableHeader('订阅', 'plan_id'),
-    sortableHeader('权限组', 'group_id'),
-    sortableHeader('已用(G)', 'total_used'),
-    sortableHeader('流量(G)', 'transfer_enable'),
-    sortableHeader('设备数', 'updated_at'),
-    sortableHeader('到期时间', 'expired_at'),
-    sortableHeader('余额', 'balance'),
-    sortableHeader('佣金', 'commission_balance'),
-    sortableHeader('加入时间', 'created_at'),
-    { title: '操作', alignRight: true, fixedRight: true },
-  ];
+  const exportCsv = () => {
+    const toastId = toast.loading('导出中');
+    dumpCsv
+      .mutateAsync(query.filter)
+      .then((response) => {
+        toast.dismiss(toastId);
+        downloadText(`${formatDateTime(Date.now() / 1000)}.csv`, response.buffer);
+      })
+      .catch(() => {
+        toast.dismiss(toastId);
+      });
+  };
 
-  const updateTablePagination = (pagination: LegacyTablePaginationChange) =>
-    setQuery((state) => {
-      writeLegacyHabit(LEGACY_USER_PAGE_SIZE_KEY, pagination.pageSize);
-      return { ...state, sort_type: state.sort_type ?? 'DESC', ...pagination };
+  const bulkBan = async () => {
+    const confirmed = await confirmDialog({
+      title: '提醒',
+      description: '确定要进行封禁吗？',
+      confirmText: '确定',
+      cancelText: '取消',
     });
+    if (!confirmed) return;
+    banUsers
+      .mutateAsync(query.filter)
+      .then(() => void users.refetch())
+      .catch(() => undefined);
+  };
 
-  const renderUserEmail = (row: AdminUserRow) => {
-    const legacyOnlineAt = (row as AdminUserRow & { t?: number | null }).t;
-    const online = !(Date.now() / 1000 - 600 > Number(legacyOnlineAt));
+  const bulkDelete = async () => {
+    const confirmed = await confirmDialog({
+      title: '提醒',
+      description: '确定要进行删除吗？',
+      confirmText: '确定',
+      cancelText: '取消',
+    });
+    if (!confirmed) return;
+    deleteAll
+      .mutateAsync(query.filter)
+      .then(() => void users.refetch())
+      .catch(() => undefined);
+  };
+
+  const sortHeader = (label: string, key: string) => () => {
+    const active = query.sort === key;
+    const Icon = active ? (query.sort_type === 'ASC' ? ArrowUp : ArrowDown) : ChevronsUpDown;
     return (
-      <LegacyTooltip
-        placement="top"
-        title={legacyOnlineAt ? `最后在线${formatDateTime(Number(legacyOnlineAt))}` : '从未在线'}
+      <button
+        type="button"
+        className="inline-flex items-center gap-1.5 rounded-sm outline-none transition-colors select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        onClick={() => sortBy(key)}
       >
-        <span>
-          <LegacyBadge status={online ? 'success' : 'default'} />
-          {row.email}
-        </span>
-      </LegacyTooltip>
+        {label}
+        <Icon className={cn('size-3.5', !active && 'opacity-50')} aria-hidden="true" />
+      </button>
     );
   };
 
-  const renderUserDeviceLimit = (row: AdminUserRow) => {
+  const renderEmail = (row: AdminUserRow) => {
+    const onlineAt = (row as AdminUserRow & { t?: number | null }).t;
+    const online = !(Date.now() / 1000 - 600 > Number(onlineAt));
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-2">
+            <span
+              className={cn('size-2 shrink-0 rounded-full', online ? 'bg-success' : 'bg-muted-foreground')}
+            />
+            {row.email}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          {onlineAt ? `最后在线${formatDateTime(Number(onlineAt))}` : '从未在线'}
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+
+  const renderDeviceLimit = (row: AdminUserRow) => {
     const deviceCount = row.alive_ip !== null ? row.alive_ip : 0;
     const deviceLimit = row.device_limit !== null ? row.device_limit : '∞';
     const text = `${deviceCount} / ${deviceLimit}`;
     return row.ips ? (
-      <LegacyTooltip placement="top" title={row.ips}>
-        {text}
-      </LegacyTooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="tabular-nums">{text}</span>
+        </TooltipTrigger>
+        <TooltipContent>{row.ips}</TooltipContent>
+      </Tooltip>
     ) : (
-      text
+      <span className="tabular-nums">{text}</span>
     );
   };
 
-  const renderUserExpiredAt = (value: number | null) => (
-    <LegacyTag color={value !== null && value < Date.now() / 1000 ? 'red' : 'green'}>
-      {value ? formatDateMinuteSlash(value) : value === null ? '长期有效' : '-'}
-    </LegacyTag>
-  );
+  const renderExpiredAt = (value: number | null) => {
+    const expired = value !== null && value < Date.now() / 1000;
+    return (
+      <StatusBadge tone={expired ? 'destructive' : 'success'}>
+        {value ? formatDateMinuteSlash(value) : value === null ? '长期有效' : '-'}
+      </StatusBadge>
+    );
+  };
 
-  const renderUserActions = (row: AdminUserRow) => (
-    <LegacyDropdown
-      trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
-      overlay={
-        <LegacyDropdownMenu>
-          <LegacyDropdownMenuItem key="edit" onContextMenu={(event) => event.stopPropagation()}>
-            <a onClick={() => runUserAction('edit', row)}>
-              <LegacyEditIcon /> 编辑
-            </a>
-          </LegacyDropdownMenuItem>
-          <LegacyDropdownMenuItem key="assign" onContextMenu={(event) => event.stopPropagation()}>
-            <a onClick={() => runUserAction('assign', row)}>
-              <LegacyPlusIcon /> 分配订单
-            </a>
-          </LegacyDropdownMenuItem>
-          <LegacyDropdownMenuItem
-            key="copy"
-            keepOpenOnClick
-            onClick={(event) => event.stopPropagation()}
-          >
-            <a onClick={() => runUserAction('copy', row)}>
-              <LegacyCopyIcon /> 复制订阅URL
-            </a>
-          </LegacyDropdownMenuItem>
-          <LegacyDropdownMenuItem key="reset">
-            <a onClick={() => runUserAction('reset', row)}>
-              <LegacyReloadIcon /> 重置UUID及订阅URL
-            </a>
-          </LegacyDropdownMenuItem>
-          <LegacyDropdownMenuItem key="orders" onClick={() => runUserAction('orders', row)}>
-            <a>
-              <LegacyAccountBookIcon /> TA的订单
-            </a>
-          </LegacyDropdownMenuItem>
-          <LegacyDropdownMenuItem key="invite" onClick={() => runUserAction('invite', row)}>
-            <a>
-              <LegacyUsergroupAddIcon /> TA的邀请
-            </a>
-          </LegacyDropdownMenuItem>
-          <LegacyDropdownMenuItem key="traffic" onContextMenu={(event) => event.stopPropagation()}>
-            <a onClick={() => runUserAction('traffic', row)}>
-              <LegacySolutionIcon /> TA的流量记录
-            </a>
-          </LegacyDropdownMenuItem>
-          <LegacyDropdownMenuItem key="delete">
-            <a onClick={() => runUserAction('delete', row)}>
-              <LegacyDeleteIcon /> 删除用户
-            </a>
-          </LegacyDropdownMenuItem>
-        </LegacyDropdownMenu>
-      }
-    >
-      <a ref={legacyHref()}>
-        操作 <LegacyCaretDownIcon />
-      </a>
-    </LegacyDropdown>
-  );
-
-  const visibleRows = legacyUserTableRows(data, query.current, query.pageSize);
+  const columns: DataTableColumn<AdminUserRow>[] = [
+    {
+      id: 'id',
+      meta: { className: 'text-muted-foreground tabular-nums' },
+      header: sortHeader('ID', 'id'),
+      cell: ({ row }) => row.original.id,
+    },
+    {
+      id: 'email',
+      meta: { className: 'font-medium text-foreground' },
+      header: () => <span>邮箱</span>,
+      cell: ({ row }) => renderEmail(row.original),
+    },
+    {
+      id: 'banned',
+      header: sortHeader('状态', 'banned'),
+      cell: ({ row }) => (
+        <StatusBadge tone={row.original.banned ? 'destructive' : 'success'}>
+          {row.original.banned ? '封禁' : '正常'}
+        </StatusBadge>
+      ),
+    },
+    {
+      id: 'plan_id',
+      header: sortHeader('订阅', 'plan_id'),
+      cell: ({ row }) => row.original.plan_name || '-',
+    },
+    {
+      id: 'group_id',
+      header: sortHeader('权限组', 'group_id'),
+      cell: ({ row }) =>
+        row.original.group_id != null ? (groupMap.get(row.original.group_id) ?? '-') : '-',
+    },
+    {
+      id: 'total_used',
+      meta: { align: 'right' },
+      header: sortHeader('已用(G)', 'total_used'),
+      cell: ({ row }) => {
+        const over =
+          parseFloat(String(row.original.total_used)) >
+          parseFloat(String(row.original.transfer_enable));
+        return (
+          <StatusBadge tone={over ? 'destructive' : 'success'}>{row.original.total_used}</StatusBadge>
+        );
+      },
+    },
+    {
+      id: 'transfer_enable',
+      meta: { align: 'right', className: 'tabular-nums' },
+      header: sortHeader('流量(G)', 'transfer_enable'),
+      cell: ({ row }) => row.original.transfer_enable,
+    },
+    {
+      id: 'device',
+      meta: { align: 'right' },
+      header: sortHeader('设备数', 'updated_at'),
+      cell: ({ row }) => renderDeviceLimit(row.original),
+    },
+    {
+      id: 'expired_at',
+      header: sortHeader('到期时间', 'expired_at'),
+      cell: ({ row }) => renderExpiredAt(row.original.expired_at),
+    },
+    {
+      id: 'balance',
+      meta: { align: 'right', className: 'tabular-nums' },
+      header: sortHeader('余额', 'balance'),
+      cell: ({ row }) => row.original.balance,
+    },
+    {
+      id: 'commission_balance',
+      meta: { align: 'right', className: 'tabular-nums' },
+      header: sortHeader('佣金', 'commission_balance'),
+      cell: ({ row }) => row.original.commission_balance,
+    },
+    {
+      id: 'created_at',
+      meta: { align: 'right', className: 'text-muted-foreground tabular-nums' },
+      header: sortHeader('加入时间', 'created_at'),
+      cell: ({ row }) => formatDateMinuteSlash(row.original.created_at),
+    },
+    {
+      id: 'actions',
+      meta: { align: 'right' },
+      header: () => <span>操作</span>,
+      cell: ({ row }) => <UserRowActions row={row.original} onAction={runUserAction} />,
+    },
+  ];
 
   return (
-    <>
-      <LegacySpin loading={legacyFetchLoading(users.isFetching, users.error)}>
-        <div className="block border-bottom">
-          <div className="bg-white">
-            <div className="v2board-table-action" style={{ padding: 15 }}>
-              <LegacyTooltip
-                title="Tips：可以使用过滤器过滤后再使用操作对过滤的用户进行操作。"
-                placement="right"
-              >
-                <div className="ant-btn-group">
-                  <LegacyFilterDrawer
-                    key={query.filter.length}
-                    value={query.filter}
-                    keys={filterKeys}
-                    onChange={setFilter}
-                  >
-                    <LegacyButton
-                      className={`ant-btn${query.filter.length > 0 ? ' ant-btn-primary' : ''}`}
-                    >
-                      <LegacyFilterIcon />
-                      <span> 过滤器</span>
-                    </LegacyButton>
-                  </LegacyFilterDrawer>
-                  <LegacyDropdown
-                    visible={toolbarDropdownVisible}
-                    onVisibleChange={setToolbarDropdownVisible}
-                    overlay={
-                      <LegacyDropdownMenu>
-                        <LegacyDropdownMenuItem key="csv">
-                          <a
-                            onClick={() => {
-                              message.loading('导出中');
-                              void dumpCsv
-                                .mutateAsync(query.filter)
-                                .then((response) => {
-                                  message.destroy();
-                                  downloadText(
-                                    `${formatDateTime(Date.now() / 1000)}.csv`,
-                                    response.buffer,
-                                  );
-                                })
-                                .catch(() => {
-                                  message.destroy();
-                                });
-                            }}
-                          >
-                            <LegacyFileExcelIcon /> 导出CSV
-                          </a>
-                        </LegacyDropdownMenuItem>
-                        <LegacyDropdownMenuItem key="mail">
-                          <a
-                            onClick={() => {
-                              setToolbarDropdownVisible(false);
-                              setMailOpen(true);
-                            }}
-                          >
-                            <LegacyMailIcon /> 发送邮件
-                          </a>
-                        </LegacyDropdownMenuItem>
-                        <LegacyDropdownMenuItem key="ban" disabled={!query.filter.length}>
-                          <a
-                            {...legacyDisabledAnchorProps(!query.filter.length)}
-                            onClick={() => {
-                              void legacyConfirm({
-                                title: '提醒',
-                                content: '确定要进行封禁吗？',
-                                okText: '确定',
-                                cancelText: '取消',
-                                onOk: () => {
-                                  void banUsers
-                                    .mutateAsync(query.filter)
-                                    .then(() => {
-                                      void users.refetch();
-                                    })
-                                    .catch(() => undefined);
-                                },
-                              });
-                            }}
-                          >
-                            <LegacyStopIcon /> 批量封禁
-                          </a>
-                        </LegacyDropdownMenuItem>
-                        <LegacyDropdownMenuItem key="delete" disabled={!query.filter.length}>
-                          <a
-                            {...legacyDisabledAnchorProps(!query.filter.length)}
-                            onClick={() => {
-                              void legacyConfirm({
-                                title: '提醒',
-                                content: '确定要进行删除吗？',
-                                okText: '确定',
-                                cancelText: '取消',
-                                onOk: () => {
-                                  void deleteAll
-                                    .mutateAsync(query.filter)
-                                    .then(() => {
-                                      void users.refetch();
-                                    })
-                                    .catch(() => undefined);
-                                },
-                              });
-                            }}
-                          >
-                            <LegacyDeleteIcon /> 批量删除
-                          </a>
-                        </LegacyDropdownMenuItem>
-                      </LegacyDropdownMenu>
-                    }
-                  >
-                    <LegacyButton className="ant-btn">
-                      <LegacySelectIcon />
-                      操作
-                    </LegacyButton>
-                  </LegacyDropdown>
-                </div>
-              </LegacyTooltip>
-              <LegacyButton className="ant-btn ml-2" onClick={() => setCreating(true)}>
-                <LegacyUserAddIcon />
-              </LegacyButton>
-            </div>
-            <LegacyStandaloneTable
-              className="v2board-table"
-              headers={headers}
-              isEmpty={visibleRows.length === 0}
-              scrollX={1500}
-              scrollPositionRight={false}
-              fixedRightRowHeight={54}
-              pagination={
-                <LegacyTablePagination
-                  current={query.current}
-                  pageSize={query.pageSize}
-                  total={users.data?.total}
-                  pageSizeOptions={LEGACY_USER_PAGE_SIZE_OPTIONS}
-                  onChange={updateTablePagination}
-                />
-              }
-              fixedRightChildren={visibleRows.map((row, index) => (
-                <tr
-                  key={index}
-                  className="ant-table-row ant-table-row-level-0"
-                  style={{ height: 54 }}
-                  {...userRowKey(index)}
+    <PageShell data-testid="users-page">
+      <PageHeader
+        title="用户管理"
+        actions={
+          <Button onClick={() => setCreating(true)} data-testid="user-create">
+            <UserPlus className="size-4" />
+            创建用户
+          </Button>
+        }
+      />
+
+      <TooltipProvider delayDuration={100}>
+        <Card className="overflow-hidden py-0">
+          <CardContent className="p-0">
+            <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant={query.filter.length ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setFilterOpen(true)}
+                  data-testid="user-filter-open"
                 >
-                  <td
-                    className="ant-table-align-right ant-table-row-cell-last"
-                    style={{ textAlign: 'right' }}
-                  >
-                    {renderUserActions(row)}
-                  </td>
-                </tr>
-              ))}
-            >
-              {visibleRows.map((row, index) => {
-                const usedOverLimit =
-                  parseFloat(String(row.total_used)) > parseFloat(String(row.transfer_enable));
-                return (
-                  <tr
-                    key={index}
-                    className="ant-table-row ant-table-row-level-0"
-                    onClick={() => setContextMenu(null)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      setContextMenu({ user: row, top: event.clientY, left: event.clientX });
-                    }}
-                    {...userRowKey(index)}
-                  >
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{row.id}</td>
-                    <td className="">{renderUserEmail(row)}</td>
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>
-                      <LegacyTag color={row.banned ? 'red' : 'green'}>
-                        {row.banned ? '封禁' : '正常'}
-                      </LegacyTag>
-                    </td>
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{row.plan_name || '-'}</td>
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>
-                      {row.group_id != null ? (groupMap.get(row.group_id) ?? '-') : '-'}
-                    </td>
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>
-                      <LegacyTag color={usedOverLimit ? 'red' : 'green'}>
-                        {row.total_used}
-                      </LegacyTag>
-                    </td>
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{row.transfer_enable}</td>
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{renderUserDeviceLimit(row)}</td>
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>
-                      {renderUserExpiredAt(row.expired_at)}
-                    </td>
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{row.balance}</td>
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>{row.commission_balance}</td>
-                    <td className={LEGACY_SORTABLE_CELL_CLASS}>
-                      {formatDateMinuteSlash(row.created_at)}
-                    </td>
-                    <td
-                      className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
-                      style={{ textAlign: 'right' }}
+                  <ListFilter className="size-4" />
+                  过滤器
+                  {query.filter.length ? (
+                    <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary-foreground text-xs text-primary">
+                      {query.filter.length}
+                    </span>
+                  ) : null}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" data-testid="user-bulk-actions">
+                      <SlidersHorizontal className="size-4" />
+                      操作
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={exportCsv} data-testid="user-export-csv">
+                      <FileSpreadsheet className="size-4" />
+                      导出CSV
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setMailOpen(true)} data-testid="user-send-mail">
+                      <Mail className="size-4" />
+                      发送邮件
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!query.filter.length}
+                      onClick={() => void bulkBan()}
+                      data-testid="user-bulk-ban"
                     >
-                      {renderUserActions(row)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </LegacyStandaloneTable>
-            <div
-              id="v2board-table-dropdown"
-              className="ant-dropdown ant-dropdown-placement-bottomLeft"
-              style={{
-                display: contextMenu ? 'unset' : 'none',
-                position: 'fixed',
-                top: contextMenu?.top ?? 0,
-                left: contextMenu?.left ?? 0,
-              }}
-              onClick={() => setContextMenu(null)}
-            >
-              <ul className="ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical">
-                <li className="ant-dropdown-menu-item">
-                  <a onClick={() => contextMenu && runUserAction('edit', contextMenu.user)}>
-                    <LegacyEditIcon /> 编辑
-                  </a>
-                </li>
-                <li className="ant-dropdown-menu-item">
-                  <a onClick={() => contextMenu && runUserAction('assign', contextMenu.user)}>
-                    <LegacyPlusIcon /> 分配订单
-                  </a>
-                </li>
-                <li className="ant-dropdown-menu-item">
-                  <a onClick={() => contextMenu && runUserAction('copy', contextMenu.user)}>
-                    <LegacyCopyIcon /> 复制订阅URL
-                  </a>
-                </li>
-                <li className="ant-dropdown-menu-item">
-                  <a
-                    style={{ color: '#ff4d4f' }}
-                    onClick={() => contextMenu && runUserAction('reset', contextMenu.user)}
+                      <Ban className="size-4" />
+                      批量封禁
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      disabled={!query.filter.length}
+                      onClick={() => void bulkDelete()}
+                      data-testid="user-bulk-delete"
+                    >
+                      <Trash2 className="size-4" />
+                      批量删除
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {query.filter.length ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFilter([])}
+                    data-testid="user-filter-reset"
                   >
-                    <LegacyReloadIcon /> 重置UUID及订阅URL
-                  </a>
-                </li>
-                <li className="ant-dropdown-menu-item">
-                  <a onClick={() => contextMenu && runUserAction('orders', contextMenu.user)}>
-                    <LegacyAccountBookIcon /> TA的订单
-                  </a>
-                </li>
-                <li className="ant-dropdown-menu-item">
-                  <a onClick={() => contextMenu && runUserAction('invite', contextMenu.user)}>
-                    <LegacyUsergroupAddIcon /> TA的邀请
-                  </a>
-                </li>
-                <li className="ant-dropdown-menu-item">
-                  <a onClick={() => contextMenu && runUserAction('traffic', contextMenu.user)}>
-                    <LegacySolutionIcon /> TA的流量记录
-                  </a>
-                </li>
-                <li className="ant-dropdown-menu-item">
-                  <a onClick={() => contextMenu && runUserAction('delete', contextMenu.user)}>
-                    <LegacyDeleteIcon /> 删除用户
-                  </a>
-                </li>
-              </ul>
+                    清除筛选
+                  </Button>
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Tips：可以使用过滤器过滤后再使用操作对过滤的用户进行操作。
+              </p>
             </div>
-          </div>
-        </div>
-      </LegacySpin>
+
+            <DataTable
+              columns={columns}
+              data={data}
+              getRowKey={(row) => row.id}
+              className="min-w-[1280px]"
+              data-testid="users-table"
+              empty={data.length === 0 ? '暂无用户' : undefined}
+              emptyTestId="users-empty"
+              virtualizer={{ enabled: data.length > VIRTUALIZE_MIN_ROWS }}
+            />
+
+            {total > 0 ? (
+              <PaginationControl
+                current={query.current}
+                pageSize={query.pageSize}
+                total={total}
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                labels={PAGINATION_LABELS}
+                onChange={(page, pageSize) =>
+                  setQuery((state) => ({ ...state, current: page, pageSize }))
+                }
+                testIds={{ page: 'user-page', pageSize: 'user-page-size' }}
+              />
+            ) : null}
+          </CardContent>
+        </Card>
+      </TooltipProvider>
+
+      <UserFilterSheet
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        fields={filterFields}
+        value={query.filter}
+        onApply={setFilter}
+      />
 
       <UserManageDrawer
         userId={editing?.id}
@@ -825,7 +712,7 @@ export default function UsersPage() {
           sendMail
             .mutateAsync({ filter: query.filter, ...values })
             .then(() => {
-              message.success('已加入队列执行');
+              toast.success('已加入队列执行');
               setMailOpen(false);
             })
             .catch(() => undefined)
@@ -839,7 +726,289 @@ export default function UsersPage() {
         open={trafficUser != null}
         onClose={() => setTrafficUser(null)}
       />
-    </>
+
+      {users.isPending ? (
+        <div className="flex justify-center py-6" role="status">
+          <Spinner className="size-5 text-muted-foreground" />
+          <span className="sr-only">加载中</span>
+        </div>
+      ) : null}
+    </PageShell>
+  );
+}
+
+function UserRowActions({
+  row,
+  onAction,
+}: {
+  row: AdminUserRow;
+  onAction: (key: string, row: AdminUserRow) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" data-testid={`user-actions-${row.id}`}>
+          操作
+          <ChevronDown className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onAction('edit', row)} data-testid={`user-edit-${row.id}`}>
+          <Pencil className="size-4" />
+          编辑
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAction('assign', row)}>
+          <Plus className="size-4" />
+          分配订单
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAction('copy', row)} data-testid={`user-copy-${row.id}`}>
+          <Copy className="size-4" />
+          复制订阅URL
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAction('reset', row)}>
+          <RefreshCw className="size-4" />
+          重置UUID及订阅URL
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAction('orders', row)}>
+          <ReceiptText className="size-4" />
+          TA的订单
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAction('invite', row)}>
+          <UsersRound className="size-4" />
+          TA的邀请
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAction('traffic', row)}>
+          <Activity className="size-4" />
+          TA的流量记录
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => onAction('delete', row)}
+          data-testid={`user-delete-${row.id}`}
+        >
+          <Trash2 className="size-4" />
+          删除用户
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function FieldRow({ label, children }: { label: ReactNode; children: ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function AmountInput({
+  suffix,
+  ...props
+}: ComponentProps<typeof Input> & { suffix: string }) {
+  return (
+    <div className="relative">
+      <Input className="pr-8" {...props} />
+      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+        {suffix}
+      </span>
+    </div>
+  );
+}
+
+function UserFilterSheet({
+  open,
+  onOpenChange,
+  fields,
+  value,
+  onApply,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  fields: FilterField[];
+  value: AdminFilter[];
+  onApply: (filter: AdminFilter[]) => void;
+}) {
+  const [rows, setRows] = useState<AdminFilter[]>(value);
+
+  useEffect(() => {
+    if (open) setRows(value);
+  }, [open, value]);
+
+  const fieldOf = (key: string) => fields.find((field) => field.key === key) ?? fields[0]!;
+
+  const addRow = () => {
+    const field = fields[0]!;
+    setRows((current) => [...current, { key: field.key, condition: field.condition[0]!, value: '' }]);
+  };
+
+  const removeRow = (index: number) =>
+    setRows((current) => current.filter((_, itemIndex) => itemIndex !== index));
+
+  const update = (index: number, patch: Partial<AdminFilter>) =>
+    setRows((current) => current.map((row, itemIndex) => (itemIndex === index ? { ...row, ...patch } : row)));
+
+  const changeField = (index: number, key: string) => {
+    const field = fieldOf(key);
+    update(index, { key, condition: field.condition[0]!, value: '' });
+  };
+
+  const apply = () => {
+    onApply(rows.filter((row) => row.value !== '' && row.value != null));
+    onOpenChange(false);
+  };
+
+  const reset = () => {
+    setRows([]);
+    onApply([]);
+    onOpenChange(false);
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
+        data-testid="user-filter-sheet"
+      >
+        <SheetHeader className="border-b border-border px-6 py-4">
+          <SheetTitle>过滤器</SheetTitle>
+        </SheetHeader>
+
+        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
+          {rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">点击下方按钮添加过滤条件。</p>
+          ) : null}
+          {rows.map((row, index) => {
+            const field = fieldOf(row.key);
+            return (
+              <div key={index} className="space-y-2 rounded-md border border-border p-3">
+                <div className="flex items-center gap-2">
+                  <Select value={row.key} onValueChange={(key) => changeField(index, key)}>
+                    <SelectTrigger className="flex-1" data-testid={`user-filter-field-${index}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {fields.map((item) => (
+                        <SelectItem key={item.key} value={item.key}>
+                          {item.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={row.condition}
+                    onValueChange={(condition) => update(index, { condition })}
+                  >
+                    <SelectTrigger className="w-24" data-testid={`user-filter-condition-${index}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {field.condition.map((condition) => (
+                        <SelectItem key={condition} value={condition}>
+                          {condition}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-9 shrink-0 text-muted-foreground"
+                    aria-label="删除条件"
+                    onClick={() => removeRow(index)}
+                    data-testid={`user-filter-remove-${index}`}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </div>
+                <FilterValueInput
+                  index={index}
+                  field={field}
+                  value={row.value}
+                  onChange={(next) => update(index, { value: next })}
+                />
+              </div>
+            );
+          })}
+
+          <Button variant="outline" onClick={addRow} data-testid="user-filter-add">
+            <Plus className="size-4" />
+            添加条件
+          </Button>
+        </div>
+
+        <SheetFooter className="flex-row justify-end gap-2 border-t border-border px-6 py-4">
+          <Button variant="outline" onClick={reset} data-testid="user-filter-reset-all">
+            重置
+          </Button>
+          <Button onClick={apply} data-testid="user-filter-apply">
+            确定
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function FilterValueInput({
+  index,
+  field,
+  value,
+  onChange,
+}: {
+  index: number;
+  field: FilterField;
+  value: AdminFilter['value'];
+  onChange: (value: AdminFilter['value']) => void;
+}) {
+  if (field.type === 'select') {
+    const options = field.options ?? [];
+    const current = value == null ? undefined : options.find((option) => String(option.value) === String(value));
+    return (
+      <Select
+        value={current ? String(current.value) : undefined}
+        onValueChange={(next) => {
+          const option = options.find((item) => String(item.value) === next);
+          onChange(option ? option.value : next);
+        }}
+      >
+        <SelectTrigger className="w-full" data-testid={`user-filter-value-${index}`}>
+          <SelectValue placeholder="请选择" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={String(option.value)} value={String(option.value)}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  if (field.type === 'date') {
+    return (
+      <Input
+        type="datetime-local"
+        value={value ? dayjs(1000 * Number(value)).format('YYYY-MM-DDTHH:mm') : ''}
+        onChange={(event) =>
+          onChange(event.target.value ? dayjs(event.target.value).format('X') : '')
+        }
+        data-testid={`user-filter-value-${index}`}
+      />
+    );
+  }
+
+  return (
+    <Input
+      placeholder="欲检索内容"
+      value={value == null ? '' : String(value)}
+      onChange={(event) => onChange(event.target.value)}
+      data-testid={`user-filter-value-${index}`}
+    />
   );
 }
 
@@ -857,6 +1026,7 @@ function GenerateUserModal({
   onSubmit: (values: GenerateUserSubmit) => Promise<void>;
 }) {
   const [submit, setSubmit] = useState<GenerateUserSubmit>({});
+
   useEffect(() => {
     if (!open) setSubmit({});
   }, [open]);
@@ -866,100 +1036,100 @@ function GenerateUserModal({
     onClose();
   };
 
-  const setSubmitField = <K extends keyof GenerateUserSubmit>(
-    key: K,
-    value: GenerateUserSubmit[K],
-  ) => {
+  const setField = <K extends keyof GenerateUserSubmit>(key: K, value: GenerateUserSubmit[K]) =>
     setSubmit((state) => ({ ...state, [key]: value }));
-  };
 
-  const onDateChange = (date: Dayjs | null) => {
-    setSubmitField('expired_at', date ? date.format('X') : null);
-  };
+  const planItems = planSelectItems(plans, true);
 
   return (
-    <LegacyModal
-      visible={open}
-      onCancel={close}
-      title="创建用户"
-      cancelText="取消"
-      okText="生成"
-      okButtonProps={{ loading }}
-      onOk={() => onSubmit({ ...submit })}
-    >
-      <div>
-        <div className="form-group">
-          <label htmlFor="example-text-input-alt">邮箱</label>
-          <LegacyInputCompactGroup>
-            {!submit.generate_count && (
-              <LegacyInput
-                className="ant-input"
-                placeholder="账号（批量生成请留空）"
-                style={{ width: '45%' }}
-                value={submit.email_prefix}
-                onChange={(event) => setSubmitField('email_prefix', event.target.value)}
+    <Dialog open={open} onOpenChange={(next) => (!next ? close() : undefined)}>
+      <DialogContent data-testid="user-generate-dialog">
+        <DialogHeader>
+          <DialogTitle>创建用户</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <FieldRow label="邮箱">
+            <div className="flex items-center gap-2">
+              {!submit.generate_count ? (
+                <Input
+                  placeholder="账号（批量生成请留空）"
+                  value={submit.email_prefix ?? ''}
+                  onChange={(event) => setField('email_prefix', event.target.value)}
+                  data-testid="generate-email-prefix"
+                />
+              ) : null}
+              <span className="text-muted-foreground">@</span>
+              <Input
+                placeholder="域"
+                value={submit.email_suffix ?? ''}
+                onChange={(event) => setField('email_suffix', event.target.value)}
+                data-testid="generate-email-suffix"
               />
-            )}
-            <LegacyInput
-              className="ant-input"
-              placeholder="@"
-              style={{ width: '10%', textAlign: 'center' }}
-              disabled
+            </div>
+          </FieldRow>
+          <FieldRow label="密码">
+            <Input
+              placeholder="留空则密码与邮箱相同"
+              value={submit.password ?? ''}
+              onChange={(event) => setField('password', event.target.value)}
             />
-            <LegacyInput
-              className="ant-input"
-              placeholder="域"
-              style={{ width: '45%' }}
-              value={submit.email_suffix}
-              onChange={(event) => setSubmitField('email_suffix', event.target.value)}
-            />
-          </LegacyInputCompactGroup>
-        </div>
-        <div className="form-group">
-          <label htmlFor="example-text-input-alt">密码</label>
-          <LegacyInput
-            className="ant-input"
-            value={submit.password}
-            placeholder="留空则密码与邮箱相同"
-            onChange={(event) => setSubmitField('password', event.target.value)}
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="example-text-input-alt">到期时间</label>
-          <div>
-            <LegacyDatePicker
+          </FieldRow>
+          <FieldRow label="到期时间">
+            <Input
+              type="date"
               placeholder="请选择用户到期日期，为空则不限制到期时间"
-              defaultValue={submit.expired_at ? dayjs(1000 * Number(submit.expired_at)) : undefined}
-              style={{ width: '100%' }}
-              onChange={onDateChange}
+              value={submit.expired_at ? dayjs(1000 * Number(submit.expired_at)).format('YYYY-MM-DD') : ''}
+              onChange={(event) =>
+                setField('expired_at', event.target.value ? dayjs(event.target.value).format('X') : null)
+              }
+              data-testid="generate-expired"
             />
-          </div>
+          </FieldRow>
+          <FieldRow label="订阅计划">
+            <Select
+              value={submit.plan_id != null ? String(submit.plan_id) : PLAN_NONE}
+              onValueChange={(value) => setField('plan_id', value === PLAN_NONE ? null : Number(value))}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="请选择用户订阅计划" />
+              </SelectTrigger>
+              <SelectContent>
+                {planItems.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FieldRow>
+          {!submit.email_prefix ? (
+            <FieldRow label="生成数量">
+              <Input
+                placeholder="如果为批量生成请输入生成数量"
+                value={submit.generate_count ?? ''}
+                onChange={(event) => setField('generate_count', event.target.value)}
+                data-testid="generate-count"
+              />
+            </FieldRow>
+          ) : null}
         </div>
-        <div className="form-group">
-          <label htmlFor="example-text-input-alt">订阅计划</label>
-          <LegacySelect
-            placeholder="请选择用户订阅计划"
-            style={{ width: '100%' }}
-            value={(submit.plan_id || null) as LegacySelectValue}
-            options={planSelectOptions(plans, true)}
-            onChange={(planId) =>
-              setSubmitField('plan_id', planId as GenerateUserSubmit['plan_id'])
-            }
-          />
-        </div>
-        {!submit.email_prefix && (
-          <div className="form-group">
-            <label htmlFor="example-text-input-alt">生成数量</label>
-            <LegacyInput
-              className="ant-input"
-              value={submit.generate_count}
-              placeholder="如果为批量生成请输入生成数量"
-              onChange={(event) => setSubmitField('generate_count', event.target.value)}
-            />
-          </div>
-        )}
-      </div>
-    </LegacyModal>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={close}>
+            取消
+          </Button>
+          <Button
+            onClick={() => void onSubmit({ ...submit })}
+            disabled={loading}
+            loading={loading}
+            data-testid="generate-submit"
+          >
+            生成
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -977,42 +1147,56 @@ function SendMailModal({
   onSubmit: (values: SendMailSubmit) => Promise<void>;
 }) {
   const [submit, setSubmit] = useState<SendMailSubmit>({});
+
+  useEffect(() => {
+    if (!open) setSubmit({});
+  }, [open]);
+
   return (
-    <LegacyModal
-      visible={open}
-      title="发送邮件"
-      onOk={() => onSubmit(submit)}
-      okButtonProps={{ loading }}
-      onCancel={onClose}
-    >
-      <div className="form-group">
-        <label htmlFor="example-text-input-alt">收件人</label>
-        <LegacyInput
-          className="ant-input"
-          disabled
-          value={filter.length ? '过滤用户' : '全部用户'}
-        />
-      </div>
-      <div className="form-group">
-        <label htmlFor="example-text-input-alt">主题</label>
-        <LegacyInput
-          className="ant-input"
-          placeholder="请输入邮件主题"
-          value={submit.subject}
-          onChange={(event) => setSubmit((state) => ({ ...state, subject: event.target.value }))}
-        />
-      </div>
-      <div className="form-group">
-        <label htmlFor="example-text-input-alt">发送内容</label>
-        <LegacyTextArea
-          className="ant-input"
-          rows={12}
-          value={submit.content}
-          placeholder="请输入邮件内容"
-          onChange={(event) => setSubmit((state) => ({ ...state, content: event.target.value }))}
-        />
-      </div>
-    </LegacyModal>
+    <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
+      <DialogContent data-testid="user-send-mail-dialog">
+        <DialogHeader>
+          <DialogTitle>发送邮件</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <FieldRow label="收件人">
+            <Input disabled value={filter.length ? '过滤用户' : '全部用户'} />
+          </FieldRow>
+          <FieldRow label="主题">
+            <Input
+              placeholder="请输入邮件主题"
+              value={submit.subject ?? ''}
+              onChange={(event) => setSubmit((state) => ({ ...state, subject: event.target.value }))}
+              data-testid="send-mail-subject"
+            />
+          </FieldRow>
+          <FieldRow label="发送内容">
+            <Textarea
+              rows={12}
+              placeholder="请输入邮件内容"
+              value={submit.content ?? ''}
+              onChange={(event) => setSubmit((state) => ({ ...state, content: event.target.value }))}
+              data-testid="send-mail-content"
+            />
+          </FieldRow>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            onClick={() => void onSubmit(submit)}
+            disabled={loading}
+            loading={loading}
+            data-testid="send-mail-submit"
+          >
+            确定
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1028,10 +1212,9 @@ function AssignOrderModal({
   const queryClient = useQueryClient();
   const assign = useAssignOrderMutation();
   const [submit, setSubmit] = useState<AssignOrderSubmit>(() => assignOrderSubmit());
+
   useEffect(() => {
-    if (user) {
-      setSubmit(assignOrderSubmit(user.email));
-    }
+    if (user) setSubmit(assignOrderSubmit(user.email));
   }, [user]);
 
   const close = () => {
@@ -1039,69 +1222,94 @@ function AssignOrderModal({
     onClose();
   };
 
-  const setSubmitField = <K extends keyof typeof submit>(key: K, value: (typeof submit)[K]) => {
+  const setField = <K extends keyof AssignOrderSubmit>(key: K, value: AssignOrderSubmit[K]) =>
     setSubmit((state) => ({ ...state, [key]: value }));
+
+  const doAssign = () => {
+    // total_amount stays the raw entered value; the api-client applies the ×100
+    // cents conversion. Preserving the raw payload here is the contract.
+    assign
+      .mutateAsync(submit)
+      .then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }))
+      .then(close)
+      .catch(() => undefined);
   };
 
   return (
-    <LegacyModal
-      title="订单分配"
-      visible={Boolean(user)}
-      onCancel={close}
-      okText={assign.isPending ? <LegacyLoadingIcon /> : '确定'}
-      cancelText="取消"
-      onOk={() => {
-        assign
-          .mutateAsync(submit)
-          .then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }))
-          .then(close)
-          .catch(() => undefined);
-      }}
-    >
-      <div className="form-group">
-        <label htmlFor="example-text-input-alt">用户邮箱</label>
-        <LegacyInput
-          className="ant-input"
-          placeholder="请输入用户邮箱"
-          value={submit.email}
-          onChange={(event) => setSubmitField('email', event.target.value)}
-        />
-      </div>
-      <div className="form-group">
-        <label htmlFor="example-text-input-alt">请选择订阅</label>
-        <div>
-          <LegacySelect
-            value={submit.plan_id}
-            style={{ width: '100%' }}
-            placeholder="请选择订阅"
-            options={planSelectOptions(plans)}
-            onChange={(plan_id) =>
-              setSubmitField('plan_id', plan_id as AssignOrderSubmit['plan_id'])
-            }
-          />
+    <Dialog open={Boolean(user)} onOpenChange={(next) => (!next ? close() : undefined)}>
+      <DialogContent data-testid="user-assign-dialog">
+        <DialogHeader>
+          <DialogTitle>订单分配</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <FieldRow label="用户邮箱">
+            <Input
+              placeholder="请输入用户邮箱"
+              value={submit.email ?? ''}
+              onChange={(event) => setField('email', event.target.value)}
+              data-testid="assign-email"
+            />
+          </FieldRow>
+          <FieldRow label="请选择订阅">
+            <Select
+              value={submit.plan_id != null ? String(submit.plan_id) : undefined}
+              onValueChange={(value) => setField('plan_id', Number(value))}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="请选择订阅" />
+              </SelectTrigger>
+              <SelectContent>
+                {plans.map((plan) => (
+                  <SelectItem key={plan.value} value={String(plan.value)}>
+                    {plan.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FieldRow>
+          <FieldRow label="请选择周期">
+            <Select
+              value={submit.period}
+              onValueChange={(value) => setField('period', value as PlanPeriod)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="请选择周期" />
+              </SelectTrigger>
+              <SelectContent>
+                {PERIOD_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FieldRow>
+          <FieldRow label="支付金额">
+            <AmountInput
+              suffix="¥"
+              placeholder="请输入需要支付的金额"
+              value={submit.total_amount ?? ''}
+              onChange={(event) => setField('total_amount', event.target.value)}
+              data-testid="assign-amount"
+            />
+          </FieldRow>
         </div>
-      </div>
-      <div className="form-group">
-        <label htmlFor="example-text-input-alt">请选择周期</label>
-        <div>
-          <LegacySelect
-            value={submit.period}
-            style={{ width: '100%' }}
-            placeholder="请选择周期"
-            options={PERIOD_OPTIONS}
-            onChange={(period) => setSubmitField('period', period as AssignOrderSubmit['period'])}
-          />
-        </div>
-      </div>
-      <div className="form-group">
-        <label htmlFor="example-text-input-alt">支付金额</label>
-        <LegacyInputGroup
-          placeholder="请输入需要支付的金额"
-          addonAfter="¥"
-          value={submit.total_amount}
-          onChange={(event) => setSubmitField('total_amount', event.target.value)}
-        />
-      </div>
-    </LegacyModal>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={close}>
+            取消
+          </Button>
+          <Button
+            onClick={doAssign}
+            disabled={assign.isPending}
+            loading={assign.isPending}
+            data-testid="assign-submit"
+          >
+            确定
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

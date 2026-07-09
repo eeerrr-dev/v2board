@@ -127,6 +127,8 @@
 @source '../components/ui/**/*.{ts,tsx}';
 /* Redesigned island surfaces (added as each is migrated off the legacy replica). */
 @source '../components/layout/**/*.{ts,tsx}';
+@source '../components/user-manage-drawer.tsx';
+@source '../components/user-traffic-modal.tsx';
 @source '../pages/login.tsx';
 @source '../pages/system.tsx';
 @source '../pages/notices.tsx';
@@ -138,5 +140,6 @@
 @source '../pages/coupons.tsx';
 @source '../pages/plans.tsx';
 @source '../pages/config.tsx';
+@source '../pages/users.tsx';
 
 @tailwind utilities source(none);
