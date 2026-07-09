@@ -141,5 +141,6 @@
 @source '../pages/plans.tsx';
 @source '../pages/config.tsx';
 @source '../pages/users.tsx';
+@source '../pages/servers.tsx';
 
 @tailwind utilities source(none);

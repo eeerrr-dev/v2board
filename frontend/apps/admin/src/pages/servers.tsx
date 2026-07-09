@@ -1,15 +1,31 @@
-import { cloneElement, useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  CSSProperties,
-  HTMLAttributes,
-  MouseEvent as ReactMouseEvent,
-  ReactElement,
-  ReactNode,
+import {
+  cloneElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactElement,
+  type ReactNode,
+  type SetStateAction,
 } from 'react';
-import { createPortal } from 'react-dom';
-import { App, Form } from 'antd';
-import type { FormInstance } from 'antd';
 import { useLocation } from 'react-router';
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  Copy,
+  Database,
+  ExternalLink,
+  ListFilter,
+  Loader2,
+  Pencil,
+  Plus,
+  Trash2,
+  User,
+  X,
+} from 'lucide-react';
+import { admin } from '@v2board/api-client';
 import {
   useCopyServerMutation,
   useDropServerGroupMutation,
@@ -23,58 +39,62 @@ import {
   useSortServerNodesMutation,
   useUpdateServerMutation,
 } from '@/lib/queries';
-import { admin } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
-import { legacyCopyText } from '@/lib/legacy-copy';
-import { useFixedColumnRowHeights } from '@/lib/use-fixed-column-row-heights';
-import { LegacySpin } from '@/components/legacy-spin';
-import { legacyHref } from '@/lib/legacy-href';
-import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
-import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
-import { LegacyButton } from '@/components/legacy-button';
-import { LegacyDrawer } from '@/components/legacy-drawer';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/cn';
+import { confirmDialog } from '@/components/ui/confirm-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { HeaderTooltip } from '@/components/ui/header-tooltip';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PageHeader, PageShell } from '@/components/ui/page';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import {
-  LegacyCaretDownIcon,
-  LegacyCaretUpIcon,
-  LegacyCopyIcon,
-  LegacyDatabaseIcon,
-  LegacyDeleteIcon,
-  LegacyEditIcon,
-  LegacyFilterIcon,
-  LegacyFormIcon,
-  LegacyLinkIcon,
-  LegacyLoadingIcon,
-  LegacyPlusIcon,
-  LegacyQuestionCircleIcon,
-  LegacyReadIcon,
-  LegacyUserIcon,
-} from '@/components/legacy-ant-icon';
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/shadcn-dialog';
 import {
-  LegacyInput,
-  LegacyInputGroup,
-  LegacyTextArea,
-} from '@/components/legacy-input';
-import { LegacyCheckbox } from '@/components/legacy-checkbox';
-import { LegacyEmpty } from '@/components/legacy-empty';
-import { LegacySwitch } from '@/components/legacy-switch';
-import { LegacyModal } from '@/components/legacy-modal';
-import { LegacyTooltip } from '@/components/legacy-tooltip';
-import { LegacyAceJsonEditor } from '@/components/legacy-ace-editor';
-import { LegacyBadge } from '@/components/legacy-badge';
-import { LegacyTag } from '@/components/legacy-tag';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
-  LegacySelect,
-  type LegacySelectOption,
-  type LegacySelectValue,
-} from '@/components/legacy-select';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
-  LegacyTablePagination,
-  LegacyStandaloneTable,
-  legacyTableRowKey as legacyRowKey,
-  type LegacyTablePaginationChange,
-  type LegacyStandaloneTableHeader,
-} from '@/components/legacy-standalone-table';
-import { LegacyDivider } from '@/components/legacy-divider';
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { DataTable, VIRTUALIZE_MIN_ROWS, type DataTableColumn } from '@/components/ui/table';
+
+// The admin server manager is a redesigned shadcn island. The Tier-1 contract is
+// the shared backend + the live proxy nodes that consume the per-protocol node
+// config: every field key/default/coercion in the exported pure helpers below
+// (getLegacyServerInitialValues, prepareLegacyServerPayload, the option/default
+// tables, createServerSortPayload, applyServerNodeColumnControls, …) is preserved
+// byte-for-byte. Only the UI layer moved from the legacy antd/Bootstrap replica to
+// shadcn/Radix. Legacy DOM byte-pins are retired.
+
+type SelectValueType = string | number | null | undefined;
+type SelectOption = { value: string | number | null; label: string };
 
 const SERVER_TYPES: admin.ServerTypeName[] = [
   'v2node',
@@ -115,6 +135,12 @@ const AVAILABLE_STATUS: Record<number, 'error' | 'warning' | 'processing'> = {
   2: 'processing',
 };
 
+const AVAILABLE_STATUS_DOT: Record<'error' | 'warning' | 'processing', string> = {
+  error: 'bg-destructive',
+  warning: 'bg-amber-500',
+  processing: 'bg-sky-500',
+};
+
 type RouteActionTextMap = Record<string, string> &
   Record<
     'block' | 'block_ip' | 'block_port' | 'protocol' | 'dns' | 'route' | 'route_ip' | 'default_out',
@@ -132,20 +158,20 @@ const ROUTE_ACTION_TEXT: RouteActionTextMap = {
   default_out: '自定义默认出站',
 };
 
-const LEGACY_BINARY_SELECT_OPTIONS: LegacySelectOption[] = [
+const LEGACY_BINARY_SELECT_OPTIONS: SelectOption[] = [
   { value: 0, label: '否' },
   { value: 1, label: '是' },
 ];
 
-const LEGACY_TLS_SUPPORT_OPTIONS: LegacySelectOption[] = [
+const LEGACY_TLS_SUPPORT_OPTIONS: SelectOption[] = [
   { value: 0, label: '不支持' },
   { value: 1, label: '支持' },
 ];
 
-const LEGACY_SECURITY_NONE_OPTION: LegacySelectOption = { value: 0, label: '无' };
-const LEGACY_SECURITY_TLS_OPTION: LegacySelectOption = { value: 1, label: 'TLS' };
-const LEGACY_SECURITY_REALITY_OPTION: LegacySelectOption = { value: 2, label: 'Reality' };
-const LEGACY_STREAM_NETWORK_OPTIONS: LegacySelectOption[] = [
+const LEGACY_SECURITY_NONE_OPTION: SelectOption = { value: 0, label: '无' };
+const LEGACY_SECURITY_TLS_OPTION: SelectOption = { value: 1, label: 'TLS' };
+const LEGACY_SECURITY_REALITY_OPTION: SelectOption = { value: 2, label: 'Reality' };
+const LEGACY_STREAM_NETWORK_OPTIONS: SelectOption[] = [
   { value: 'tcp', label: 'TCP' },
   { value: 'ws', label: 'WebSocket' },
   { value: 'grpc', label: 'gRPC' },
@@ -153,12 +179,12 @@ const LEGACY_STREAM_NETWORK_OPTIONS: LegacySelectOption[] = [
   { value: 'httpupgrade', label: 'HTTPUpgrade' },
   { value: 'xhttp', label: 'XHTTP' },
 ];
-const LEGACY_TROJAN_NETWORK_OPTIONS: LegacySelectOption[] = [
+const LEGACY_TROJAN_NETWORK_OPTIONS: SelectOption[] = [
   { value: 'tcp', label: 'TCP' },
   { value: 'ws', label: 'WebSocket' },
   { value: 'grpc', label: 'gRPC' },
 ];
-const LEGACY_V2NODE_PROTOCOL_OPTIONS: LegacySelectOption[] = [
+const LEGACY_V2NODE_PROTOCOL_OPTIONS: SelectOption[] = [
   { value: 'anytls', label: 'AnyTLS' },
   { value: 'hysteria2', label: 'Hysteria2' },
   { value: 'shadowsocks', label: 'Shadowsocks' },
@@ -167,31 +193,31 @@ const LEGACY_V2NODE_PROTOCOL_OPTIONS: LegacySelectOption[] = [
   { value: 'vless', label: 'VLess' },
   { value: 'vmess', label: 'VMess' },
 ];
-const LEGACY_V2NODE_SHADOWSOCKS_NETWORK_OPTIONS: LegacySelectOption[] = [
+const LEGACY_V2NODE_SHADOWSOCKS_NETWORK_OPTIONS: SelectOption[] = [
   { value: 'tcp', label: 'TCP' },
   { value: 'http', label: 'HTTP伪装' },
 ];
-const LEGACY_V2NODE_TRANSPORT_OPTIONS: LegacySelectOption[] = [
+const LEGACY_V2NODE_TRANSPORT_OPTIONS: SelectOption[] = [
   { value: 'tcp', label: 'TCP' },
   { value: 'ws', label: 'WebSocket' },
   { value: 'grpc', label: 'gRPC' },
   { value: 'httpupgrade', label: 'HTTPUpgrade' },
   { value: 'xhttp', label: 'XHTTP' },
 ];
-const LEGACY_HYSTERIA2_OBFS_OPTIONS: LegacySelectOption[] = [
+const LEGACY_HYSTERIA2_OBFS_OPTIONS: SelectOption[] = [
   { value: null, label: '无' },
   { value: 'salamander', label: 'salamander' },
 ];
-const LEGACY_TUIC_RELAY_MODE_OPTIONS: LegacySelectOption[] = [
+const LEGACY_TUIC_RELAY_MODE_OPTIONS: SelectOption[] = [
   { value: 'native', label: 'native' },
   { value: 'quic', label: 'quic' },
 ];
-const LEGACY_TUIC_CONGESTION_CONTROL_OPTIONS: LegacySelectOption[] = [
+const LEGACY_TUIC_CONGESTION_CONTROL_OPTIONS: SelectOption[] = [
   { value: 'cubic', label: 'cubic' },
   { value: 'new_reno', label: 'new_reno' },
   { value: 'bbr', label: 'bbr' },
 ];
-const LEGACY_SHADOWSOCKS_CIPHER_OPTIONS: LegacySelectOption[] = [
+const LEGACY_SHADOWSOCKS_CIPHER_OPTIONS: SelectOption[] = [
   { value: 'aes-128-gcm', label: 'aes-128-gcm' },
   { value: 'aes-192-gcm', label: 'aes-192-gcm' },
   { value: 'aes-256-gcm', label: 'aes-256-gcm' },
@@ -199,39 +225,39 @@ const LEGACY_SHADOWSOCKS_CIPHER_OPTIONS: LegacySelectOption[] = [
   { value: '2022-blake3-aes-128-gcm', label: '2022-blake3-aes-128-gcm' },
   { value: '2022-blake3-aes-256-gcm', label: '2022-blake3-aes-256-gcm' },
 ];
-const LEGACY_SHADOWSOCKS_OBFS_OPTIONS: LegacySelectOption[] = [
+const LEGACY_SHADOWSOCKS_OBFS_OPTIONS: SelectOption[] = [
   { value: '', label: '无' },
   { value: 'http', label: 'HTTP' },
 ];
-const LEGACY_VLESS_ENCRYPTION_OPTIONS: LegacySelectOption[] = [
+const LEGACY_VLESS_ENCRYPTION_OPTIONS: SelectOption[] = [
   { value: null, label: '无' },
   { value: 'mlkem768x25519plus', label: 'MLKEM768X25519PLUS' },
 ];
-const LEGACY_VLESS_FLOW_NONE_OPTIONS: LegacySelectOption[] = [{ value: null, label: '无' }];
-const LEGACY_VLESS_FLOW_OPTIONS: LegacySelectOption[] = [
+const LEGACY_VLESS_FLOW_NONE_OPTIONS: SelectOption[] = [{ value: null, label: '无' }];
+const LEGACY_VLESS_FLOW_OPTIONS: SelectOption[] = [
   ...LEGACY_VLESS_FLOW_NONE_OPTIONS,
   { value: 'xtls-rprx-vision', label: 'xtls-rprx-vision' },
 ];
-const LEGACY_HYSTERIA_VERSION_OPTIONS: LegacySelectOption[] = [
+const LEGACY_HYSTERIA_VERSION_OPTIONS: SelectOption[] = [
   { value: 1, label: 'v1' },
   { value: 2, label: 'v2' },
 ];
-const LEGACY_HYSTERIA_V1_OBFS_OPTIONS: LegacySelectOption[] = [
+const LEGACY_HYSTERIA_V1_OBFS_OPTIONS: SelectOption[] = [
   { value: null, label: '无' },
   { value: 'xplus', label: 'xplus' },
 ];
-const LEGACY_TLS_CERT_MODE_OPTIONS: LegacySelectOption[] = [
+const LEGACY_TLS_CERT_MODE_OPTIONS: SelectOption[] = [
   { value: 'self', label: '自签名' },
   { value: 'http', label: 'HTTP申请' },
   { value: 'dns', label: 'DNS申请' },
   { value: 'none', label: '无证书(关闭TLS)' },
 ];
-const LEGACY_PROXY_PROTOCOL_OPTIONS: LegacySelectOption[] = [
+const LEGACY_PROXY_PROTOCOL_OPTIONS: SelectOption[] = [
   { value: 0, label: '0' },
   { value: 1, label: '1' },
   { value: 2, label: '2' },
 ];
-const LEGACY_TLS_FINGERPRINT_OPTIONS: LegacySelectOption[] = [
+const LEGACY_TLS_FINGERPRINT_OPTIONS: SelectOption[] = [
   { value: 'chrome', label: 'Chrome' },
   { value: 'firefox', label: 'Firefox' },
   { value: 'safari', label: 'Safari' },
@@ -241,17 +267,17 @@ const LEGACY_TLS_FINGERPRINT_OPTIONS: LegacySelectOption[] = [
   { value: '360', label: '360' },
   { value: 'qq', label: 'QQ' },
 ];
-const LEGACY_ECH_MODE_OPTIONS: LegacySelectOption[] = [
+const LEGACY_ECH_MODE_OPTIONS: SelectOption[] = [
   { value: '', label: '无' },
   { value: 'cloudflare', label: 'Cloudflare' },
   { value: 'custom', label: '自定义 SNI' },
 ];
-const LEGACY_ENCRYPTION_MODE_OPTIONS: LegacySelectOption[] = [
+const LEGACY_ENCRYPTION_MODE_OPTIONS: SelectOption[] = [
   { value: 'native', label: 'native' },
   { value: 'xorpub', label: 'xorpub' },
   { value: 'random', label: 'random' },
 ];
-const LEGACY_ENCRYPTION_RTT_OPTIONS: LegacySelectOption[] = [
+const LEGACY_ENCRYPTION_RTT_OPTIONS: SelectOption[] = [
   { value: '0rtt', label: '0rtt' },
   { value: '1rtt', label: '1rtt' },
 ];
@@ -462,7 +488,7 @@ function writeLegacyHabit(key: string, value: unknown) {
   try {
     const stored = window.localStorage.getItem(LEGACY_HABIT_KEY);
     if (stored) {
-      const legacyHabit = stored as unknown as Record<string, unknown>;
+      const legacyHabit = JSON.parse(stored) as Record<string, unknown>;
       legacyHabit[key] = value;
       window.localStorage.setItem(LEGACY_HABIT_KEY, JSON.stringify(legacyHabit));
     } else {
@@ -471,200 +497,6 @@ function writeLegacyHabit(key: string, value: unknown) {
   } catch {
     window.localStorage.setItem(LEGACY_HABIT_KEY, JSON.stringify({ [key]: value }));
   }
-}
-
-interface LegacyDropdownCoords {
-  left: number;
-  top: number;
-  minWidth: number;
-}
-
-type LegacyDropdownTrigger = 'click' | 'hover';
-
-type LegacyDropdownChildProps = {
-  className?: string;
-  onClick?: (event: ReactMouseEvent<HTMLElement>) => void;
-  onMouseEnter?: (event: ReactMouseEvent<HTMLElement>) => void;
-  onMouseLeave?: (event: ReactMouseEvent<HTMLElement>) => void;
-};
-
-interface LegacyDropdownProps {
-  children: ReactElement<LegacyDropdownChildProps>;
-  closeOnOverlayClick?: boolean;
-  overlay: ReactNode | ((context: { open: boolean; close: () => void }) => ReactNode);
-  trigger?: LegacyDropdownTrigger | LegacyDropdownTrigger[];
-}
-
-interface LegacyDropdownMenuItemProps {
-  children?: ReactNode;
-  onClick?: (event: ReactMouseEvent<HTMLLIElement>) => void;
-  onContextMenu?: (event: ReactMouseEvent<HTMLLIElement>) => void;
-  style?: CSSProperties;
-}
-
-const LEGACY_DROPDOWN_CLICK_TRIGGER = 'click' satisfies LegacyDropdownTrigger;
-const LEGACY_DROPDOWN_HOVER_CLOSE_DELAY = 100;
-const LEGACY_DROPDOWN_OFFSET = 4;
-
-function dropdownTriggerModes(trigger: LegacyDropdownProps['trigger']) {
-  return Array.isArray(trigger) ? trigger : trigger ? [trigger] : ['hover'];
-}
-
-function legacyDropdownClassName(open: boolean) {
-  return [
-    'ant-dropdown',
-    'ant-dropdown-placement-bottomLeft',
-    open ? undefined : 'ant-dropdown-hidden',
-  ]
-    .filter(Boolean)
-    .join(' ');
-}
-
-function mergeClassName(...values: Array<string | undefined | false>) {
-  return values.filter(Boolean).join(' ');
-}
-
-function LegacyDropdown({ children, closeOnOverlayClick = true, overlay, trigger }: LegacyDropdownProps) {
-  const [open, setOpen] = useState(false);
-  const [hasOpened, setHasOpened] = useState(false);
-  const [coords, setCoords] = useState<LegacyDropdownCoords>();
-  const popupRef = useRef<HTMLDivElement | null>(null);
-  const closeTimer = useRef<number | undefined>(undefined);
-  const triggerModes = dropdownTriggerModes(trigger);
-  const opensOnClick = triggerModes.includes('click');
-  const opensOnHover = triggerModes.includes('hover');
-
-  const clearCloseTimer = () => {
-    if (closeTimer.current !== undefined) {
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = undefined;
-    }
-  };
-
-  const openFromElement = (element: HTMLElement) => {
-    const rect = element.getBoundingClientRect();
-    clearCloseTimer();
-    setCoords({
-      left: rect.left,
-      top: rect.bottom + LEGACY_DROPDOWN_OFFSET,
-      minWidth: rect.width,
-    });
-    setHasOpened(true);
-    setOpen(true);
-  };
-
-  const scheduleHoverClose = () => {
-    if (!opensOnHover) return;
-    clearCloseTimer();
-    closeTimer.current = window.setTimeout(() => setOpen(false), LEGACY_DROPDOWN_HOVER_CLOSE_DELAY);
-  };
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (!target) return;
-      if (popupRef.current?.contains(target)) return;
-      if (target.closest('.ant-dropdown-trigger')) return;
-      setOpen(false);
-    };
-
-    document.addEventListener('click', closeOnOutsideClick);
-    return () => document.removeEventListener('click', closeOnOutsideClick);
-  }, [open]);
-
-  useEffect(() => {
-    return () => clearCloseTimer();
-  }, []);
-
-  const triggerElement = cloneElement(children, {
-    className: mergeClassName(
-      children.props.className,
-      'ant-dropdown-trigger',
-      open && 'ant-dropdown-open',
-    ),
-    onClick: (event: ReactMouseEvent<HTMLElement>) => {
-      children.props.onClick?.(event);
-      if (!opensOnClick) return;
-      if (open) {
-        setOpen(false);
-      } else {
-        openFromElement(event.currentTarget);
-      }
-    },
-    onMouseEnter: (event: ReactMouseEvent<HTMLElement>) => {
-      children.props.onMouseEnter?.(event);
-      if (opensOnHover) openFromElement(event.currentTarget);
-    },
-    onMouseLeave: (event: ReactMouseEvent<HTMLElement>) => {
-      children.props.onMouseLeave?.(event);
-      scheduleHoverClose();
-    },
-  });
-
-  return (
-    <>
-      {triggerElement}
-      {hasOpened && coords && typeof document !== 'undefined'
-        ? createPortal(
-            <div
-              ref={popupRef}
-              className={legacyDropdownClassName(open)}
-              style={{
-                display: open ? undefined : 'none',
-                position: 'fixed',
-                top: coords.top,
-                left: coords.left,
-                minWidth: coords.minWidth,
-              }}
-              onClick={() => {
-                if (closeOnOverlayClick) setOpen(false);
-              }}
-              onClickCapture={() => {
-                if (closeOnOverlayClick) setOpen(false);
-              }}
-              onMouseDownCapture={() => {
-                if (closeOnOverlayClick) setOpen(false);
-              }}
-              onMouseEnter={clearCloseTimer}
-              onMouseLeave={scheduleHoverClose}
-            >
-              {typeof overlay === 'function'
-                ? overlay({ open, close: () => setOpen(false) })
-                : overlay}
-            </div>,
-            document.body,
-          )
-        : null}
-    </>
-  );
-}
-
-function LegacyDropdownMenu({ children }: { children: ReactNode }) {
-  return (
-    <ul className="ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical">
-      {children}
-    </ul>
-  );
-}
-
-function LegacyDropdownMenuItem({
-  children,
-  onClick,
-  onContextMenu,
-  style,
-}: LegacyDropdownMenuItemProps) {
-  return (
-    <li
-      className="ant-dropdown-menu-item"
-      role="menuitem"
-      style={style}
-      onClick={onClick}
-      onContextMenu={onContextMenu}
-    >
-      {children}
-    </li>
-  );
 }
 
 // Node ID column filter values; the legacy onFilter matched `node.type === value.toLowerCase()`.
@@ -684,219 +516,15 @@ interface NodeFilterItem {
   value: string;
 }
 
-// Faithful reconstruction of the antd v3 Table column filter dropdown: a checkable menu with
-// apply-on-confirm (确定) and reset (重置) semantics. Pending selection resets to the applied
-// filter each time the dropdown opens, matching antd.
-function NodeFilterDropdown({
-  open,
-  items,
-  value,
-  onApply,
-  close,
-}: {
-  open: boolean;
-  items: NodeFilterItem[];
-  value: string[];
-  onApply: (next: string[]) => void;
-  close: () => void;
-}) {
-  const [pending, setPending] = useState<string[]>(value);
-  useEffect(() => {
-    if (open) setPending(value);
-  }, [open, value]);
-  const toggle = (target: string) =>
-    setPending((prev) =>
-      prev.includes(target) ? prev.filter((item) => item !== target) : [...prev, target],
-    );
-  return (
-    <div className="ant-table-filter-dropdown">
-      <ul
-        className="ant-dropdown-menu ant-dropdown-menu-without-submenu ant-dropdown-menu-root ant-dropdown-menu-vertical"
-        role="menu"
-        tabIndex={0}
-      >
-        {items.map((item) => {
-          const checked = pending.includes(item.value);
-          return (
-            <li
-              className={mergeClassName(
-                'ant-dropdown-menu-item',
-                checked && 'ant-dropdown-menu-item-selected',
-              )}
-              role="menuitem"
-              key={item.value}
-              onClick={() => toggle(item.value)}
-            >
-              <LegacyCheckbox checked={checked} />
-              <span>{item.text}</span>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="ant-table-filter-dropdown-btns">
-        <a
-          className="ant-table-filter-dropdown-link confirm"
-          onClick={() => {
-            onApply(pending);
-            close();
-          }}
-        >
-          确定
-        </a>
-        <a
-          className="ant-table-filter-dropdown-link clear"
-          onClick={() => {
-            setPending([]);
-            onApply([]);
-            close();
-          }}
-        >
-          重置
-        </a>
-      </div>
-    </div>
-  );
-}
-
 function readLegacyServerPageSize() {
   const pageSize = Number(readLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY));
   return Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 10;
 }
 
-export default function ServersPage() {
-  const location = useLocation();
-  if (location.pathname === '/server/group') return <ServerGroupPage />;
-  if (location.pathname === '/server/route') return <ServerRoutePage />;
-  if (location.pathname === '/server/manage') return <ServerManagePage />;
-
-  return null;
-}
-
-function ServerGroupPage() {
-  const groups = useServerGroups();
-  const drop = useDropServerGroupMutation();
-  const groupItems = groups.data ?? [];
-  const headers: LegacyStandaloneTableHeader[] = [
-    { title: '组ID' },
-    { title: '组名称' },
-    { title: '用户数量' },
-    { title: '节点数量' },
-    { title: '操作', alignRight: true },
-  ];
-
-  return (
-    <>
-      <div className="d-flex justify-content-between align-items-center" />
-      <LegacySpin loading={groups.isFetching}>
-        <div className="block block-rounded">
-          <div className="bg-white">
-            <div style={{ padding: 15 }}>
-              <ServerGroupModal>
-                <LegacyButton className="ant-btn">
-                  <LegacyPlusIcon />
-                  <span> 添加权限组</span>
-                </LegacyButton>
-              </ServerGroupModal>
-            </div>
-            <LegacyStandaloneTable headers={headers} isEmpty={groupItems.length === 0}>
-              {groupItems.map((record, index) => (
-                <tr
-                  key={index}
-                  className="ant-table-row ant-table-row-level-0"
-                  {...legacyRowKey(index)}
-                >
-                  <td className="">{record.id}</td>
-                  <td className="">{record.name}</td>
-                  <td className="">
-                    <LegacyUserIcon style={{ cursor: 'move' }} /> {record.user_count}
-                  </td>
-                  <td className="">
-                    <LegacyDatabaseIcon style={{ cursor: 'move' }} /> {record.server_count}
-                  </td>
-                  <td
-                    className="ant-table-align-right ant-table-row-cell-last"
-                    style={{ textAlign: 'right' }}
-                  >
-                    <div>
-                      <ServerGroupModal key={record.id} record={record}>
-                        <a ref={legacyHref()}>编辑</a>
-                      </ServerGroupModal>
-                      <LegacyDivider type="vertical" />
-                      <a
-                        ref={legacyHref()}
-                        onClick={() =>
-                          drop.mutate(record.id, {
-                            onSuccess: () => {
-                              void groups.refetch();
-                            },
-                          })
-                        }
-                      >
-                        删除
-                      </a>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </LegacyStandaloneTable>
-          </div>
-        </div>
-      </LegacySpin>
-    </>
-  );
-}
-
-export function ServerGroupModal({
-  record,
-  children,
-}: {
-  record?: admin.ServerGroup;
-  children: ReactElement<{ onClick?: () => void }>;
-}) {
-  const groups = useServerGroups();
-  const save = useSaveServerGroupMutation();
-  const [visible, setVisible] = useState(false);
-  const [submit, setSubmit] = useState<Partial<admin.ServerGroup>>(record ?? {});
-
-  const open = () => {
-    setVisible(true);
-  };
-
-  const saveGroup = async () => {
-    await save.mutateAsync({ ...submit });
-    await groups.refetch();
-    setVisible(false);
-  };
-
-  return (
-    <>
-      {cloneElement(children, { onClick: open })}
-      <LegacyModal
-        title={`${submit.id ? '编辑组' : '创建组'}`}
-        visible={visible}
-        onCancel={() => setVisible(false)}
-        onOk={() => {
-          if (groups.isFetching) return;
-          void saveGroup();
-        }}
-        okText={groups.isFetching ? <LegacyLoadingIcon /> : '提交'}
-        cancelText="取消"
-      >
-        <div>
-          <div className="form-group">
-            <label htmlFor="example-text-input-alt">组名</label>
-            <LegacyInput
-              className="ant-input"
-              placeholder="请输入组名"
-              value={submit.name}
-              onChange={(event) => setSubmit((value) => ({ ...value, name: event.target.value }))}
-            />
-          </div>
-        </div>
-      </LegacyModal>
-    </>
-  );
-}
+// ---------------------------------------------------------------------------
+// Pure contract helpers (Tier-1). Names, signatures and behavior are preserved
+// byte-for-byte from the legacy replica; only the UI around them changed.
+// ---------------------------------------------------------------------------
 
 function getRouteMatchLabel(value: admin.ServerRoute['match'] | undefined) {
   if (!value || value.length === 0) return '无规则时默认';
@@ -916,236 +544,6 @@ function getRouteMatchPlaceholder(action: string | undefined) {
     return '127.0.0.1(单一匹配)\n10.0.0.0/8(范围匹配)\ngeoip:cn(预定义列表匹配)';
   }
   return 'example.com(关键字匹配)\ndomain:example.com(子域名匹配)\ngeosite:netflix(预定义域名列表)';
-}
-
-function ServerRoutePage() {
-  const routes = useServerRoutes();
-  const drop = useDropServerRouteMutation();
-  const routeItems = routes.data ?? [];
-  const headers: LegacyStandaloneTableHeader[] = [
-    { title: 'ID' },
-    { title: '备注' },
-    { title: '匹配数量' },
-    { title: '动作' },
-    { title: '操作', alignRight: true },
-  ];
-
-  return (
-    <>
-      <div className="d-flex justify-content-between align-items-center" />
-      <LegacySpin loading={routes.isFetching}>
-        <div className="block block-rounded">
-          <div className="bg-white">
-            <div style={{ padding: 15 }}>
-              <ServerRouteModal>
-                <LegacyButton className="ant-btn">
-                  <LegacyPlusIcon />
-                  <span> 添加路由</span>
-                </LegacyButton>
-              </ServerRouteModal>
-            </div>
-            <LegacyStandaloneTable headers={headers} isEmpty={routeItems.length === 0}>
-              {routeItems.map((record, index) => (
-                <tr
-                  key={index}
-                  className="ant-table-row ant-table-row-level-0"
-                  {...legacyRowKey(index)}
-                >
-                  <td className="">{record.id}</td>
-                  <td className="">{record.remarks}</td>
-                  <td className="">{getRouteMatchLabel(record.match)}</td>
-                  <td className="">{ROUTE_ACTION_TEXT[record.action]}</td>
-                  <td
-                    className="ant-table-align-right ant-table-row-cell-last"
-                    style={{ textAlign: 'right' }}
-                  >
-                    <div>
-                      <ServerRouteModal key={record.id} route={record}>
-                        <a ref={legacyHref()}>编辑</a>
-                      </ServerRouteModal>
-                      <LegacyDivider type="vertical" />
-                      <a
-                        ref={legacyHref()}
-                        onClick={() =>
-                          drop.mutate(record.id, {
-                            onSuccess: () => {
-                              void routes.refetch();
-                            },
-                          })
-                        }
-                      >
-                        删除
-                      </a>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </LegacyStandaloneTable>
-          </div>
-        </div>
-      </LegacySpin>
-    </>
-  );
-}
-
-function ServerRouteModal({
-  route: initialRoute,
-  children,
-}: {
-  route?: admin.ServerRoute;
-  children: ReactElement<{ onClick?: () => void }>;
-}) {
-  const routes = useServerRoutes();
-  const save = useSaveServerRouteMutation();
-  const [visible, setVisible] = useState(false);
-  const [route, setRoute] = useState<Partial<admin.ServerRoute>>(initialRoute ?? {});
-  const routeActionOptions: LegacySelectOption[] = [
-    { value: 'block', label: ROUTE_ACTION_TEXT.block },
-    { value: 'block_ip', label: ROUTE_ACTION_TEXT.block_ip },
-    { value: 'block_port', label: ROUTE_ACTION_TEXT.block_port },
-    { value: 'protocol', label: ROUTE_ACTION_TEXT.protocol },
-    { value: 'dns', label: ROUTE_ACTION_TEXT.dns },
-    { value: 'route', label: ROUTE_ACTION_TEXT.route },
-    { value: 'route_ip', label: ROUTE_ACTION_TEXT.route_ip },
-    { value: 'default_out', label: ROUTE_ACTION_TEXT.default_out },
-  ];
-
-  const open = () => {
-    setVisible(true);
-  };
-
-  const saveRoute = async () => {
-    const payload = { ...route };
-    if (Array.isArray(payload.match)) {
-      payload.match = payload.match.filter(Boolean);
-    } else if (payload.match && typeof payload.match === 'string') {
-      payload.match = payload.match.split(',').filter(Boolean);
-    } else {
-      payload.match = [];
-    }
-    await save.mutateAsync(payload);
-    await routes.refetch();
-    setVisible(false);
-  };
-
-  return (
-    <>
-      {cloneElement(children, { onClick: open })}
-      <LegacyModal
-        title={`${route.id ? '编辑路由' : '创建路由'}`}
-        visible={visible}
-        onCancel={() => setVisible(false)}
-        onOk={() => {
-          if (routes.isFetching) return;
-          void saveRoute();
-        }}
-        okText={routes.isFetching ? <LegacyLoadingIcon /> : '提交'}
-        cancelText="取消"
-      >
-        <div>
-          <div className="form-group">
-            <label htmlFor="example-text-input-alt">备注</label>
-            <LegacyInput
-              className="ant-input"
-              placeholder="请输入备注"
-              value={route.remarks}
-              onChange={(event) => setRoute((value) => ({ ...value, remarks: event.target.value }))}
-            />
-          </div>
-          {route.action !== 'default_out' ? (
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">
-                匹配值
-                <a href="https://xtls.github.io/config/routing.html#ruleobject">
-                  <LegacyLinkIcon />
-                  填写参考
-                </a>
-              </label>
-              <LegacyTextArea
-                className="ant-input"
-                rows={5}
-                placeholder={getRouteMatchPlaceholder(route.action)}
-                value={getRouteMatchTextareaValue(route.match)}
-                onChange={(event) =>
-                  setRoute((value) => ({
-                    ...value,
-                    match: event.target.value?.split('\n'),
-                  }))
-                }
-              />
-            </div>
-          ) : null}
-          <div className="form-group">
-            <label htmlFor="example-text-input-alt">动作</label>
-            <div>
-              <LegacySelect
-                value={route.action}
-                placeholder="请选择动作"
-                style={{ width: '100%' }}
-                options={routeActionOptions}
-                onChange={(value) => setRoute((route) => ({ ...route, action: value as string }))}
-              />
-            </div>
-          </div>
-          {route.action === 'dns' ? (
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">DNS服务器</label>
-              <LegacyInput
-                className="ant-input"
-                placeholder="请输入用于解析的DNS服务器地址"
-                value={legacyInputValue(route.action_value)}
-                onChange={(event) =>
-                  setRoute((value) => ({ ...value, action_value: event.target.value }))
-                }
-              />
-            </div>
-          ) : null}
-          {route.action === 'route' ||
-          route.action === 'route_ip' ||
-          route.action === 'default_out' ? (
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">
-                Xray出站配置
-                <a href="https://xtls.github.io/config/outbound.html">
-                  <LegacyLinkIcon />
-                  填写参考
-                </a>
-              </label>
-              <LegacyTextArea
-                className="ant-input"
-                rows={8}
-                placeholder={JSON.stringify(
-                  {
-                    tag: 'ss_out',
-                    sendThrough: '0.0.0.0',
-                    protocol: 'shadowsocks',
-                    settings: {
-                      email: 'love@xray.com',
-                      address: '8.8.8.8',
-                      port: 5555,
-                      method: 'chacha20-ietf-poly1305',
-                      password: 'abcdefghijklmnopqrstuvwxyz',
-                      level: 0,
-                    },
-                  },
-                  null,
-                  4,
-                )}
-                value={legacyInputValue(route.action_value)}
-                onChange={(event) =>
-                  setRoute((value) => ({ ...value, action_value: event.target.value }))
-                }
-              />
-            </div>
-          ) : null}
-        </div>
-      </LegacyModal>
-    </>
-  );
-}
-
-function getServerTypeTag(type: string, label: ReactNode) {
-  return <LegacyTag color={SERVER_TYPE_COLORS[type]}>{label}</LegacyTag>;
 }
 
 function getLegacyAvailableStatus(status?: number | null) {
@@ -1204,11 +602,6 @@ export function moveServerNodeByLegacyDragIndexes(
   return next;
 }
 
-function isLegacyMobile() {
-  if (typeof window === 'undefined') return false;
-  return window.navigator.userAgent.toLowerCase().includes('mobile');
-}
-
 export function shouldPromptLegacyServerSortClick(target: EventTarget | null) {
   if (!(target instanceof Element)) return false;
   if (target.closest('.nav-main-link')) return true;
@@ -1265,1092 +658,6 @@ export function installLegacyServerSortPrompt(message = LEGACY_SERVER_SORT_PROMP
     document.removeEventListener('click', warnBeforeRouteClick, true);
     window.removeEventListener('hashchange', warnBeforeHashChange);
   };
-}
-
-function LegacyServerSortPrompt({ when }: { when: boolean }) {
-  useEffect(() => {
-    if (!when) return undefined;
-    return installLegacyServerSortPrompt();
-  }, [when]);
-
-  return null;
-}
-
-function LegacyNodeEditMenuTrigger({
-  type,
-  record,
-  nodes,
-  groups,
-  routes,
-  onSaved,
-  children,
-}: {
-  type: admin.ServerTypeName;
-  record?: Partial<admin.ServerNode>;
-  nodes: admin.ServerNode[];
-  groups: admin.ServerGroup[];
-  routes: admin.ServerRoute[];
-  onSaved: () => void | Promise<unknown>;
-  children: ReactElement<{ onClick?: (event: ReactMouseEvent<HTMLElement>) => void }>;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <>
-      {cloneElement(children, {
-        onClick: (event: ReactMouseEvent<HTMLElement>) => {
-          children.props.onClick?.(event);
-          setOpen(true);
-        },
-      })}
-      <NodeEditDrawer
-        open={open}
-        type={type}
-        id={record?.id}
-        record={record}
-        nodes={nodes}
-        groups={groups}
-        routes={routes}
-        onSaved={onSaved}
-        onClose={() => setOpen(false)}
-      />
-    </>
-  );
-}
-
-function LegacyServerMobileNodeList({
-  nodes,
-  actionMenu,
-  onToggleNodeShow,
-}: {
-  nodes: admin.ServerNode[];
-  actionMenu: (node: admin.ServerNode) => ReactNode;
-  onToggleNodeShow: (node: admin.ServerNode) => void;
-}) {
-  return (
-    <div className="ant-list ant-list-vertical ant-list-split v2board-table">
-      <div className="ant-spin-nested-loading">
-        <div className="ant-spin-container">
-          {nodes.length ? (
-            <ul className="ant-list-items">
-              {nodes.map((node) => (
-                <li
-                  key={node.id}
-                  className={`ant-list-item ant-list-item-no-flex v2board_node_mobile ${
-                    node.parent_id ? 'child_node' : ''
-                  }`}
-                >
-                  <div className="ant-list-item-main">
-                    <div className="ant-list-item-meta">
-                      <div className="ant-list-item-meta-content">
-                        <h4 className="ant-list-item-meta-title">
-                          <LegacyBadge
-                            status={getLegacyAvailableStatus(node.available_status)}
-                          />
-                          {node.name}
-                        </h4>
-                        <div className="ant-list-item-meta-description">
-                          {node.host}:{node.port}
-                        </div>
-                      </div>
-                    </div>
-                    <ul className="ant-list-item-action">
-                      <li>
-                        <span>
-                          {getServerTypeTag(
-                            node.type,
-                            node.parent_id ? `${node.id} => ${node.parent_id}` : node.id,
-                          )}
-                          <LegacyTag>
-                            <LegacyUserIcon /> {node.online || 0}
-                          </LegacyTag>
-                          <LegacyTag>{node.rate} x</LegacyTag>
-                        </span>
-                      </li>
-                    </ul>
-                  </div>
-                  <div className="ant-list-item-extra">
-                    <LegacySwitch
-                      size="small"
-                      checked={parseInt(String(node.show), 10) as unknown as boolean}
-                      onChange={() => onToggleNodeShow(node)}
-                    />
-                    <LegacyDivider type="vertical" />
-                    <span>
-                      <LegacyDropdown
-                        trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
-                        overlay={actionMenu(node)}
-                      >
-                        <a ref={legacyHref()}>
-                          操作 <LegacyCaretDownIcon />
-                        </a>
-                      </LegacyDropdown>
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="ant-list-empty-text">
-              <LegacyEmpty />
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ServerManagePage() {
-  const nodes = useServerNodes();
-  const groups = useServerGroups();
-  const routes = useServerRoutes();
-  const update = useUpdateServerMutation();
-  const drop = useDropServerMutation();
-  const copy = useCopyServerMutation();
-  const sort = useSortServerNodesMutation();
-  const [searchKey, setSearchKey] = useState<string | undefined>();
-  const [sortMode, setSortMode] = useState(false);
-  const [onlineSort, setOnlineSort] = useState<'' | 'ascend' | 'descend'>('');
-  const [typeFilter, setTypeFilter] = useState<string[]>([]);
-  const [groupFilter, setGroupFilter] = useState<string[]>([]);
-  const [orderedNodes, setOrderedNodes] = useState<admin.ServerNode[]>(() => nodes.data ?? []);
-  const [sortingLoading, setSortingLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(readLegacyServerPageSize);
-  const [contextRecord, setContextRecord] = useState<admin.ServerNode | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ top: number; left: number } | null>(null);
-  const orderRef = useRef(orderedNodes);
-  const mobile = isLegacyMobile();
-
-  useEffect(() => {
-    if (nodes.data) {
-      setOrderedNodes(nodes.data);
-      setSortingLoading(false);
-      setSortMode(false);
-    }
-  }, [nodes.data]);
-
-  orderRef.current = orderedNodes;
-
-  const searchedNodes =
-    searchKey && orderedNodes
-      ? orderedNodes.filter((node) => JSON.stringify(node).includes(searchKey))
-      : orderedNodes;
-  // The legacy column sorter/filters live on the antd Table, which does not exist in drag-sort
-  // mode; reorder operates on the raw list there, so the column controls only apply when browsing.
-  const filteredNodes = sortMode
-    ? searchedNodes
-    : applyServerNodeColumnControls(searchedNodes, { typeFilter, groupFilter, onlineSort });
-
-  const sortServerNodes = (fromIndex: number, toIndex: number) => {
-    setOrderedNodes(moveServerNodeByLegacyDragIndexes(orderRef.current, fromIndex, toIndex));
-  };
-
-  const groupName = (ids: admin.ServerNode['group_id']) =>
-    ids.map((id) => groups.data?.find((group) => group.id === Number(id))?.name).filter(Boolean);
-
-  const toggleNodeShow = (row: admin.ServerNode) => {
-    const checked = parseInt(String(row.show), 10);
-    update.mutate(
-      {
-        type: row.type as admin.ServerTypeName,
-        id: row.id,
-        key: 'show',
-        value: checked ? 0 : 1,
-      },
-      {
-        onSuccess: () => {
-          void nodes.refetch();
-        },
-      },
-    );
-  };
-
-  const runNodeAction = (key: string, row: admin.ServerNode) => {
-    setContextMenu(null);
-    if (key === 'copy') {
-      copy.mutate(
-        { type: row.type as admin.ServerTypeName, id: row.id },
-        {
-          onSuccess: () => {
-            void nodes.refetch();
-          },
-        },
-      );
-    }
-    if (key === 'delete') {
-      drop.mutate(
-        { type: row.type as admin.ServerTypeName, id: row.id },
-        {
-          onSuccess: () => {
-            void nodes.refetch();
-          },
-        },
-      );
-    }
-  };
-
-  const actionMenu = (row: admin.ServerNode) => (
-    <LegacyDropdownMenu>
-      <LegacyDropdownMenuItem onContextMenu={(event) => event.stopPropagation()}>
-        <LegacyNodeEditMenuTrigger
-          key={row.id}
-          type={row.type as admin.ServerTypeName}
-          record={row}
-          nodes={nodes.data ?? []}
-          groups={groups.data ?? []}
-          routes={routes.data ?? []}
-          onSaved={() => nodes.refetch()}
-        >
-          <a>
-            <LegacyEditIcon /> 编辑
-          </a>
-        </LegacyNodeEditMenuTrigger>
-      </LegacyDropdownMenuItem>
-      <LegacyDropdownMenuItem onClick={() => runNodeAction('copy', row)}>
-        <LegacyCopyIcon /> 复制
-      </LegacyDropdownMenuItem>
-      <LegacyDropdownMenuItem
-        style={{ color: '#ff4d4f' }}
-        onClick={() => runNodeAction('delete', row)}
-      >
-        <LegacyDeleteIcon /> 删除
-      </LegacyDropdownMenuItem>
-    </LegacyDropdownMenu>
-  );
-
-  const tableClassName = [
-    'ant-table',
-    'ant-table-default',
-    filteredNodes.length ? '' : 'ant-table-empty',
-    'ant-table-scroll-position-left',
-  ]
-    .filter(Boolean)
-    .join(' ');
-  const pageCount = Math.max(1, Math.ceil(filteredNodes.length / pageSize));
-  const activePage = Math.min(currentPage, pageCount);
-  const visibleNodes = sortMode
-    ? filteredNodes
-    : filteredNodes.slice((activePage - 1) * pageSize, activePage * pageSize);
-  const manageFixedColumnHeights = useFixedColumnRowHeights(visibleNodes.length);
-  const changeServerPagination = (pagination: LegacyTablePaginationChange) => {
-    setCurrentPage(pagination.current);
-    if (pagination.pageSize !== pageSize) {
-      setPageSize(pagination.pageSize);
-      writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, pagination.pageSize);
-    }
-  };
-  const rowHandlers = (record: admin.ServerNode) =>
-    sortMode
-      ? {}
-      : ({
-          onClick: () => setContextMenu(null),
-          onContextMenu: (event: ReactMouseEvent<HTMLTableRowElement>) => {
-            event.preventDefault();
-            setContextRecord(record);
-            setContextMenu({ top: event.clientY, left: event.clientX });
-          },
-        } satisfies HTMLAttributes<HTMLTableRowElement>);
-  const actionCell = (row: admin.ServerNode) => (
-    <div>
-      <LegacyDropdown
-        closeOnOverlayClick={false}
-        trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
-        overlay={actionMenu(row)}
-      >
-        <a ref={legacyHref()}>
-          操作 <LegacyCaretDownIcon />
-        </a>
-      </LegacyDropdown>
-    </div>
-  );
-  const headerColumn = (title: ReactNode, sorter?: ReactNode) => (
-    <span className="ant-table-header-column">
-      <div>
-        <span className="ant-table-column-title">{title}</span>
-        {sorter ?? <span className="ant-table-column-sorter" />}
-      </div>
-    </span>
-  );
-  const filterDropdown = (
-    active: boolean,
-    items: NodeFilterItem[],
-    value: string[],
-    onApply: (next: string[]) => void,
-  ) => (
-    <LegacyDropdown
-      closeOnOverlayClick={false}
-      trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}
-      overlay={({ open, close }) => (
-        <NodeFilterDropdown
-          open={open}
-          items={items}
-          value={value}
-          onApply={onApply}
-          close={close}
-        />
-      )}
-    >
-      <LegacyFilterIcon
-        filled
-        title="筛选"
-        tabIndex={-1}
-        className={active ? 'ant-table-filter-selected' : undefined}
-      />
-    </LegacyDropdown>
-  );
-  const cycleOnlineSort = () => {
-    setCurrentPage(1);
-    setOnlineSort((current) =>
-      current === '' ? 'ascend' : current === 'ascend' ? 'descend' : '',
-    );
-  };
-  const applyTypeFilter = (next: string[]) => {
-    setCurrentPage(1);
-    setTypeFilter(next);
-  };
-  const applyGroupFilter = (next: string[]) => {
-    setCurrentPage(1);
-    setGroupFilter(next);
-  };
-  const sorterIcon = (
-    <span className="ant-table-column-sorter">
-      <div
-        title="排序"
-        className="ant-table-column-sorter-inner ant-table-column-sorter-inner-full"
-      >
-        <LegacyCaretUpIcon
-          className={`ant-table-column-sorter-up ${onlineSort === 'ascend' ? 'on' : 'off'}`}
-        />
-        <LegacyCaretDownIcon
-          className={`ant-table-column-sorter-down ${onlineSort === 'descend' ? 'on' : 'off'}`}
-        />
-      </div>
-    </span>
-  );
-  const contextDropdown = (
-    <div
-      id="v2board-table-dropdown"
-      className="ant-dropdown ant-dropdown-placement-bottomLeft"
-      style={{
-        display: contextMenu && !sortMode ? 'unset' : 'none',
-        position: 'fixed',
-        top: contextMenu?.top ?? 0,
-        left: contextMenu?.left ?? 0,
-      }}
-      onClick={() => setContextMenu(null)}
-    >
-      <ul className="ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical">
-        <li className="ant-dropdown-menu-item">
-          {contextRecord ? (
-            <LegacyNodeEditMenuTrigger
-              key={Math.random()}
-              type={contextRecord.type as admin.ServerTypeName}
-              record={contextRecord}
-              nodes={nodes.data ?? []}
-              groups={groups.data ?? []}
-              routes={routes.data ?? []}
-              onSaved={() => nodes.refetch()}
-            >
-              <a>
-                <LegacyFormIcon /> 编辑
-              </a>
-            </LegacyNodeEditMenuTrigger>
-          ) : null}
-        </li>
-        <li className="ant-dropdown-menu-item">
-          <a onClick={() => contextRecord && runNodeAction('copy', contextRecord)}>
-            <LegacyCopyIcon /> 复制
-          </a>
-        </li>
-        <li className="ant-dropdown-menu-item">
-          <a
-            style={{ color: '#ff4d4f' }}
-            onClick={() => contextRecord && runNodeAction('delete', contextRecord)}
-          >
-            <LegacyDeleteIcon /> 删除
-          </a>
-        </li>
-      </ul>
-    </div>
-  );
-
-  return (
-    <LegacySpin loading={legacyFetchLoading(nodes.isFetching, nodes.error) || sortingLoading}>
-      <LegacyServerSortPrompt when={sortMode} />
-      <div className="block block-bottom undefined">
-        <div className="bg-white">
-          <div className="v2board-table-action" style={{ padding: 15 }}>
-            <LegacyDropdown
-              closeOnOverlayClick={false}
-              overlay={
-                <LegacyDropdownMenu>
-                  {SERVER_TYPES.map((type) => (
-                    <LegacyDropdownMenuItem key={type}>
-                      <LegacyNodeEditMenuTrigger
-                        key={Math.random()}
-                        type={type}
-                        nodes={nodes.data ?? []}
-                        groups={groups.data ?? []}
-                        routes={routes.data ?? []}
-                        onSaved={() => nodes.refetch()}
-                      >
-                        <a ref={legacyHref()}>{getServerTypeTag(type, SERVER_TYPE_LABELS[type])}</a>
-                      </LegacyNodeEditMenuTrigger>
-                    </LegacyDropdownMenuItem>
-                  ))}
-                </LegacyDropdownMenu>
-              }
-            >
-              <LegacyButton className="ant-btn">
-                <LegacyPlusIcon />
-              </LegacyButton>
-            </LegacyDropdown>
-            <LegacyInput
-              placeholder="输入任意关键字搜索"
-              style={{ width: 200 }}
-              className="ant-input ml-2"
-              onChange={(event) => {
-                setSearchKey(event.target.value);
-                setCurrentPage(1);
-              }}
-            />
-            {!mobile && (
-              <LegacyButton
-                style={{ float: 'right' }}
-                className="ant-btn ant-btn-primary"
-                onClick={() => {
-                  if (!sortMode) {
-                    setSortMode(true);
-                    return;
-                  }
-                  setSortingLoading(true);
-                  sort.mutate(createServerSortPayload(orderedNodes), {
-                    onSuccess: () => {
-                      void nodes.refetch();
-                    },
-                    onSettled: () => setSortingLoading(false),
-                  });
-                }}
-              >
-                {sortMode ? '保存排序' : '编辑排序'}
-              </LegacyButton>
-            )}
-          </div>
-          {mobile ? (
-            <LegacyServerMobileNodeList
-              nodes={filteredNodes}
-              actionMenu={actionMenu}
-              onToggleNodeShow={toggleNodeShow}
-            />
-          ) : (
-            <LegacyDragSort
-              onDragEnd={(fromIndex, toIndex) => sortServerNodes(fromIndex, toIndex)}
-              nodeSelector="tr"
-              handleSelector="i"
-            >
-              <div className="ant-table-wrapper">
-                <div className="ant-spin-nested-loading">
-                  <div className="ant-spin-container">
-                    <div className={tableClassName}>
-                      <div className="ant-table-content">
-                        <div className="ant-table-scroll">
-                          <div
-                            tabIndex={-1}
-                            className="ant-table-body"
-                            style={{ overflowX: 'scroll' }}
-                          >
-                            <table
-                              ref={manageFixedColumnHeights.mainTableRef}
-                              className="ant-table-fixed"
-                              style={{ width: 1300 }}
-                            >
-                              <colgroup>
-                                <col style={{ width: 150, minWidth: 150 }} />
-                                <col />
-                                <col />
-                                <col />
-                                <col style={{ width: 130, minWidth: 130 }} />
-                                <col />
-                                <col />
-                                <col style={{ width: 100, minWidth: 100 }} />
-                              </colgroup>
-                              {sortMode ? (
-                                <>
-                                  <thead className="ant-table-thead">
-                                    <tr>
-                                      <th
-                                        className="ant-table-align-left"
-                                        style={{ textAlign: 'left' }}
-                                      >
-                                        {headerColumn('排序')}
-                                      </th>
-                                      <th className="ant-table-row-cell-break-word">
-                                        {headerColumn('节点ID')}
-                                      </th>
-                                      <th className="">{headerColumn('节点')}</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="ant-table-tbody">
-                                    {visibleNodes.map((node, index) => (
-                                      <tr
-                                        {...legacyRowKey(index)}
-                                        key={index}
-                                        className={`ant-table-row ant-table-row-level-0${node.parent_id ? ' child_node' : ''}`}
-                                      >
-                                        <td>
-                                          <div>
-                                            <span style={{ cursor: 'move' }} title="拖动排序">
-                                              <LegacyMenuIcon />
-                                            </span>
-                                          </div>
-                                        </td>
-                                        <td>
-                                          {getServerTypeTag(
-                                            node.type,
-                                            node.parent_id
-                                              ? `${node.id} => ${node.parent_id}`
-                                              : node.id,
-                                          )}
-                                        </td>
-                                        <td>{node.name}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </>
-                              ) : (
-                                <>
-                                  <thead className="ant-table-thead">
-                                    <tr>
-                                      <th className="ant-table-column-has-actions ant-table-column-has-filters ant-table-row-cell-break-word">
-                                        {headerColumn('节点ID')}
-                                        {filterDropdown(
-                                          typeFilter.length > 0,
-                                          NODE_TYPE_FILTERS,
-                                          typeFilter,
-                                          applyTypeFilter,
-                                        )}
-                                      </th>
-                                      <th className="">{headerColumn('显隐')}</th>
-                                      <th className="">
-                                        {headerColumn(
-                                          <span>
-                                            <span>
-                                              节点 <LegacyQuestionCircleIcon />
-                                            </span>
-                                          </span>,
-                                        )}
-                                      </th>
-                                      <th className="">{headerColumn('地址')}</th>
-                                      <th
-                                        className={mergeClassName(
-                                          'ant-table-column-has-actions ant-table-column-has-sorters ant-table-align-left ant-table-row-cell-break-word',
-                                          onlineSort && 'ant-table-column-sort',
-                                        )}
-                                        style={{ textAlign: 'left' }}
-                                      >
-                                        <span className="ant-table-header-column">
-                                          <div
-                                            className="ant-table-column-sorters"
-                                            onClick={cycleOnlineSort}
-                                          >
-                                            <span className="ant-table-column-title">
-                                              <span>
-                                                <span>
-                                                  人数 <LegacyQuestionCircleIcon />
-                                                </span>
-                                              </span>
-                                            </span>
-                                            {sorterIcon}
-                                          </div>
-                                        </span>
-                                      </th>
-                                      <th
-                                        className="ant-table-align-center"
-                                        style={{ textAlign: 'center' }}
-                                      >
-                                        {headerColumn(
-                                          <span>
-                                            倍率 <LegacyQuestionCircleIcon />
-                                          </span>,
-                                        )}
-                                      </th>
-                                      <th className="ant-table-column-has-actions ant-table-column-has-filters">
-                                        {headerColumn('权限组')}
-                                        {filterDropdown(
-                                          groupFilter.length > 0,
-                                          (groups.data ?? []).map((group) => ({
-                                            text: group.name,
-                                            value: String(group.id),
-                                          })),
-                                          groupFilter,
-                                          applyGroupFilter,
-                                        )}
-                                      </th>
-                                      <th
-                                        className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-break-word ant-table-row-cell-last"
-                                        style={{ textAlign: 'right' }}
-                                      >
-                                        {headerColumn('操作')}
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="ant-table-tbody">
-                                    {visibleNodes.map((node, index) => {
-                                      const checked = parseInt(String(node.show), 10);
-                                      return (
-                                        <tr
-                                          {...legacyRowKey(index)}
-                                          {...rowHandlers(node)}
-                                          key={index}
-                                          className={`ant-table-row ant-table-row-level-0${node.parent_id ? ' child_node' : ''}`}
-                                        >
-                                          <td>
-                                            {getServerTypeTag(
-                                              node.type,
-                                              node.parent_id
-                                                ? `${node.id} => ${node.parent_id}`
-                                                : node.id,
-                                            )}
-                                          </td>
-                                          <td>
-                                            <LegacySwitch
-                                              size="small"
-                                              checked={checked as unknown as boolean}
-                                              onChange={() => toggleNodeShow(node)}
-                                            />
-                                          </td>
-                                          <td>
-                                            <LegacyBadge
-                                              status={getLegacyAvailableStatus(
-                                                node.available_status,
-                                              )}
-                                            />
-                                            <span>{node.name}</span>
-                                          </td>
-                                          <td>
-                                            <span
-                                              style={{ cursor: 'pointer' }}
-                                              onClick={() => {
-                                                legacyCopyText(node.host);
-                                              }}
-                                            >
-                                              {node.host}:{node.port}
-                                            </span>
-                                          </td>
-                                          <td
-                                            className={mergeClassName(
-                                              'ant-table-align-left',
-                                              onlineSort && 'ant-table-column-sort',
-                                            )}
-                                            style={{ textAlign: 'left' }}
-                                          >
-                                            <LegacyUserIcon /> {node.online || 0}
-                                          </td>
-                                          <td
-                                            className="ant-table-align-center"
-                                            style={{ textAlign: 'center' }}
-                                          >
-                                            <LegacyTag style={{ minWidth: 60 }}>
-                                              {node.rate} x
-                                            </LegacyTag>
-                                          </td>
-                                          <td>
-                                            {groupName(node.group_id).map((name) => (
-                                              <LegacyTag key={name}>{name}</LegacyTag>
-                                            ))}
-                                          </td>
-                                          <td
-                                            className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
-                                            style={{ textAlign: 'right' }}
-                                          >
-                                            {actionCell(node)}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </>
-                              )}
-                            </table>
-                          </div>
-                          {filteredNodes.length === 0 && (
-                            <div className="ant-table-placeholder">
-                              <LegacyEmpty />
-                            </div>
-                          )}
-                        </div>
-                        {!sortMode && (
-                          <>
-                            <div className="ant-table-fixed-right">
-                              <div className="ant-table-body-outer">
-                                <div className="ant-table-body-inner">
-                                  <table
-                                    ref={manageFixedColumnHeights.fixedTableRef}
-                                    className="ant-table-fixed"
-                                  >
-                                    <colgroup>
-                                      <col style={{ width: 100, minWidth: 100 }} />
-                                    </colgroup>
-                                    <thead className="ant-table-thead">
-                                      <tr style={{ height: 54 }}>
-                                        <th
-                                          className="ant-table-align-right ant-table-row-cell-break-word ant-table-row-cell-last"
-                                          style={{ textAlign: 'right' }}
-                                        >
-                                          {headerColumn('操作')}
-                                        </th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="ant-table-tbody">
-                                      {visibleNodes.map((node, index) => (
-                                        <tr
-                                          {...legacyRowKey(index)}
-                                          key={index}
-                                          className={`ant-table-row ant-table-row-level-0${node.parent_id ? ' child_node' : ''}`}
-                                        >
-                                          <td
-                                            className="ant-table-align-right ant-table-row-cell-last"
-                                            style={{ textAlign: 'right' }}
-                                          >
-                                            {actionCell(node)}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {!sortMode && filteredNodes.length > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <LegacyTablePagination
-                      current={activePage}
-                      mini={false}
-                      pageSize={pageSize}
-                      pageSizeOptions={[10, 50, 100, 500]}
-                      total={filteredNodes.length}
-                      onChange={changeServerPagination}
-                    />
-                  </div>
-                )}
-              </div>
-              {contextDropdown}
-            </LegacyDragSort>
-          )}
-        </div>
-      </div>
-    </LegacySpin>
-  );
-}
-
-function NodeEditDrawer({
-  open,
-  type,
-  id,
-  record,
-  nodes,
-  groups,
-  routes,
-  onSaved,
-  onClose,
-}: {
-  open: boolean;
-  type: admin.ServerTypeName;
-  id?: number;
-  record?: Partial<admin.ServerNode>;
-  nodes: admin.ServerNode[];
-  groups: admin.ServerGroup[];
-  routes: admin.ServerRoute[];
-  onSaved?: () => void | Promise<unknown>;
-  onClose: () => void;
-}) {
-  const { notification } = App.useApp();
-  const [form] = Form.useForm();
-  const [saving, setSaving] = useState(false);
-  const [childDrawer, setChildDrawer] = useState<{
-    open: boolean;
-    title?: string;
-    field?: string;
-  }>({ open: false });
-  const parentCandidates = nodes.filter((node) => node.type === type && node.id !== id);
-  const parentOptions: LegacySelectOption[] = [
-    { value: '', label: '无' },
-    ...parentCandidates.map((node) => ({ value: node.id, label: node.name })),
-  ];
-  const groupOptions: LegacySelectOption[] = groups.map((group) => ({
-    value: String(group.id),
-    label: group.name,
-  }));
-  const routeOptions: LegacySelectOption[] = routes.map((route) => ({
-    value: route.id,
-    label: route.id,
-  }));
-
-  const showChildDrawer = (title?: string, field?: string) => {
-    setChildDrawer((current) => ({
-      open: !current.open,
-      title,
-      field,
-    }));
-  };
-  const initialValues = getLegacyServerInitialValues(type, record);
-
-  return (
-    <LegacyDrawer
-      id="server"
-      maskClosable
-      open={open}
-      title={id ? '编辑节点' : '新建节点'}
-      onClose={onClose}
-      width="80%"
-    >
-      <Form
-        component={false}
-        form={form}
-        initialValues={initialValues}
-        onFinish={async (values) => {
-          setSaving(true);
-          try {
-            const payload = prepareLegacyServerPayload(type, values, id);
-            await admin.saveServer(apiClient, type, payload);
-            await onSaved?.();
-            onClose();
-          } catch (e) {
-            // Client-side payload validation stays inline; backend API errors are
-            // surfaced by the global onError handler (legacy parity).
-            if (e instanceof SyntaxError) {
-              // Legacy parity: invalid transport-config JSON raised a notification, not a message.
-              notification.error({ message: '请求失败', description: '传输协议配置格式有误' });
-            }
-          } finally {
-            setSaving(false);
-          }
-        }}
-      >
-        <div>
-          <div className="row">
-            <div className="form-group col-8">
-              <label>节点名称</label>
-              <Form.Item noStyle name="name">
-                <LegacyInput className="ant-input" placeholder="请输入节点名称" />
-              </Form.Item>
-            </div>
-            <div className="form-group col-4">
-              <label>倍率</label>
-              <Form.Item noStyle name="rate">
-                <LegacyInputGroup addonAfter="x" placeholder="请输入节点倍率" />
-              </Form.Item>
-            </div>
-          </div>
-          <div className="form-group">
-            <label>节点标签</label>
-            <Form.Item
-              noStyle
-              name="tags"
-              getValueFromEvent={normalizeLegacyNullableArray}
-              getValueProps={(value) => ({ value: Array.isArray(value) ? value : [] })}
-            >
-              <LegacySelect
-                mode="tags"
-                style={{ width: '100%' }}
-                placeholder="输入后回车添加标签"
-                options={[]}
-              />
-            </Form.Item>
-          </div>
-          <div className="form-group">
-            <label>
-              权限组{' '}
-              <LegacyTooltip>
-                <a ref={legacyHref('javascript:(0);')}>添加权限组</a>
-              </LegacyTooltip>
-            </label>
-            <Form.Item noStyle name="group_id">
-              <LegacySelect
-                mode="multiple"
-                placeholder="请选择权限组"
-                style={{ width: '100%' }}
-                options={groupOptions}
-              />
-            </Form.Item>
-          </div>
-          {type === 'v2node' ? (
-            <div className="row">
-              <div className="form-group col-md-6 col-xs-12">
-                <label>连接地址</label>
-                <Form.Item noStyle name="host">
-                  <LegacyInput className="ant-input" placeholder="地址或IP" />
-                </Form.Item>
-              </div>
-              <div className="form-group col-md-6 col-xs-12">
-                <label>监听地址</label>
-                <Form.Item noStyle name="listen_ip">
-                  <LegacyInput className="ant-input" placeholder="地址或IP默认为0.0.0.0" />
-                </Form.Item>
-              </div>
-            </div>
-          ) : type === 'vmess' || type === 'vless' ? (
-            <div className="row">
-              <div className="form-group col-md-8 col-xs-12">
-                <label>节点地址</label>
-                <Form.Item noStyle name="host">
-                  <LegacyInput className="ant-input" placeholder="请输入连接地址" />
-                </Form.Item>
-              </div>
-              {type === 'vmess' ? (
-                <VmessTlsField showChildDrawer={showChildDrawer} />
-              ) : (
-                <VlessSecurityField form={form} showChildDrawer={showChildDrawer} />
-              )}
-            </div>
-          ) : (
-            <div className="row">
-              <div className="form-group col-md-12 col-xs-12">
-                <label>节点地址</label>
-                <Form.Item noStyle name="host">
-                  <LegacyInput className="ant-input" placeholder="地址或IP" />
-                </Form.Item>
-              </div>
-            </div>
-          )}
-          {type === 'trojan' || type === 'hysteria' || type === 'tuic' || type === 'anytls' ? (
-            <div className="row">
-              <div className="form-group col-md-4 col-xs-12">
-                <label>连接端口</label>
-                <Form.Item noStyle name="port">
-                  <LegacyInput className="ant-input" placeholder="用户连接端口" />
-                </Form.Item>
-              </div>
-              <div className="form-group col-md-4 col-xs-12">
-                <label>服务端口</label>
-                <Form.Item noStyle name="server_port">
-                  <LegacyInput className="ant-input" placeholder="服务端开放端口" />
-                </Form.Item>
-              </div>
-              {type === 'trojan' ? <TrojanAllowInsecureField /> : <ServerInsecureField />}
-            </div>
-          ) : type === 'v2node' ? (
-            <div className="row">
-              <div className="form-group col-md-6 col-xs-12">
-                <label>连接端口</label>
-                <Form.Item noStyle name="port">
-                  <LegacyInput className="ant-input" placeholder="用户连接端口" />
-                </Form.Item>
-              </div>
-              <div className="form-group col-md-6 col-xs-12">
-                <label>服务端口</label>
-                <Form.Item noStyle name="server_port">
-                  <LegacyInput className="ant-input" placeholder="服务端开放端口" />
-                </Form.Item>
-              </div>
-            </div>
-          ) : (
-            <div className="row">
-              <div className="form-group col-md-6 col-xs-12">
-                <label>连接端口</label>
-                <Form.Item noStyle name="port">
-                  <LegacyInput className="ant-input" placeholder="用户连接端口" />
-                </Form.Item>
-              </div>
-              <div className="form-group col-md-6 col-xs-12">
-                <label>服务端口</label>
-                <Form.Item noStyle name="server_port">
-                  <LegacyInput className="ant-input" placeholder="非NAT同连接端口" />
-                </Form.Item>
-              </div>
-            </div>
-          )}
-        </div>
-        <ServerTypeFields
-          editing={Boolean(id)}
-          type={type}
-          form={form}
-          showChildDrawer={showChildDrawer}
-        />
-        <div className="form-group">
-          <label>
-            <LegacyTooltip placement="top">
-              父节点{' '}
-              <a
-                target="_blank"
-                href="https://docs.v2board.com/use/node.html#父节点与子节点关系"
-                rel="noreferrer"
-              >
-                {type === 'vmess' || type === 'vless' ? <LegacyReadIcon /> : '更多解答'}
-              </a>
-            </LegacyTooltip>
-          </label>
-          <Form.Item noStyle name="parent_id" getValueProps={(value) => ({ value: value || '' })}>
-            <LegacySelect style={{ width: '100%' }} options={parentOptions} />
-          </Form.Item>
-        </div>
-        <div className="form-group">
-          <label>路由组</label>
-          <Form.Item
-            noStyle
-            name="route_id"
-            getValueFromEvent={normalizeLegacyNullableArray}
-            getValueProps={(value) => ({ value: Array.isArray(value) ? value : [] })}
-          >
-            <LegacySelect
-              mode="multiple"
-              placeholder="请选择路由组"
-              style={{ width: '100%' }}
-              options={routeOptions}
-            />
-          </Form.Item>
-        </div>
-        <Form.Item noStyle name="show">
-          <LegacyInput className="ant-input" type="hidden" />
-        </Form.Item>
-        {type === 'v2node' ? (
-          <div className="form-group">
-            <label>一键安装指令</label>
-            <Form.Item noStyle name="install_command">
-              <LegacyTextArea
-                className="ant-input"
-                rows={4}
-                readOnly
-                style={{ backgroundColor: '#f5f5f5a0', cursor: 'text' }}
-              />
-            </Form.Item>
-          </div>
-        ) : null}
-        {childDrawer.field ? (
-          <LegacyDrawer
-            closable={false}
-            id="server"
-            width="80%"
-            title={childDrawer.title}
-            open={childDrawer.open}
-            onClose={() => showChildDrawer()}
-          >
-            <ServerChildDrawerField type={type} field={childDrawer.field} form={form} />
-          </LegacyDrawer>
-        ) : null}
-      </Form>
-      <div className="v2board-drawer-action">
-        <LegacyButton className="ant-btn" style={{ marginRight: 8 }} onClick={onClose}>
-          取消
-        </LegacyButton>
-        <LegacyButton
-          className={`ant-btn ant-btn-primary${saving ? ' ant-btn-loading' : ''}`}
-          onClick={() => form.submit()}
-        >
-          {saving ? <LegacyLoadingIcon /> : null}
-          提交
-        </LegacyButton>
-      </div>
-    </LegacyDrawer>
-  );
 }
 
 function parseLegacyJsonPayloadField(payload: Record<string, unknown>, field: string) {
@@ -2456,7 +763,7 @@ export function getLegacyV2nodeSecurityValue(protocol: unknown, tls: unknown) {
   return protocolValue && LEGACY_V2NODE_SECURITY_FALLBACK_PROTOCOLS.includes(protocolValue) ? 1 : 0;
 }
 
-function getLegacyV2nodeSecurityOptions(protocol: unknown): LegacySelectOption[] {
+function getLegacyV2nodeSecurityOptions(protocol: unknown): SelectOption[] {
   const protocolValue = protocol == null ? null : String(protocol);
   return [
     ...(protocolValue === 'vless' || protocolValue === 'vmess'
@@ -2469,11 +776,11 @@ function getLegacyV2nodeSecurityOptions(protocol: unknown): LegacySelectOption[]
   ];
 }
 
-function getLegacyV2nodeTransportOptions(protocol: unknown): LegacySelectOption[] {
+function getLegacyV2nodeTransportOptions(protocol: unknown): SelectOption[] {
   return protocol === 'trojan' ? LEGACY_TROJAN_NETWORK_OPTIONS : LEGACY_V2NODE_TRANSPORT_OPTIONS;
 }
 
-function getLegacyVlessFlowOptions(network: unknown): LegacySelectOption[] {
+function getLegacyVlessFlowOptions(network: unknown): SelectOption[] {
   return String(network) === 'tcp' ? LEGACY_VLESS_FLOW_OPTIONS : LEGACY_VLESS_FLOW_NONE_OPTIONS;
 }
 
@@ -2483,14 +790,6 @@ export function getLegacyNumericSelectValue(value: unknown, fallback = 0) {
 
 export function getLegacyBinarySelectValue(value: unknown) {
   return getLegacyNumericSelectValue(value) ? 1 : 0;
-}
-
-function legacyNumericSelectValueProps(value: unknown, fallback = 0) {
-  return { value: getLegacyNumericSelectValue(value, fallback) };
-}
-
-function legacyBinarySelectValueProps(value: unknown) {
-  return { value: getLegacyBinarySelectValue(value) };
 }
 
 function normalizeLegacySettings(
@@ -2513,510 +812,1758 @@ function normalizeLegacySettings(
   return { ...defaults };
 }
 
+// The item-level defaults antd's <Form.Item initialValue> registered on mount but
+// that getLegacyServerInitialValues intentionally does not carry (its unit test
+// pins the exact shapes). Applied only when the store has no value yet, exactly
+// like antd. Form-level initial values still win.
+function getNodeInitialValues(
+  type: admin.ServerTypeName,
+  record?: Partial<admin.ServerNode>,
+): Record<string, unknown> {
+  const base = getLegacyServerInitialValues(type, record);
+  const itemDefaults: Record<string, unknown> = {};
+  if (type === 'trojan') itemDefaults.allow_insecure = 0;
+  if (type === 'shadowsocks') itemDefaults.obfs = '';
+  if (type === 'v2node') {
+    const protocol = (record as Record<string, unknown> | undefined)?.protocol;
+    if (protocol === 'shadowsocks') itemDefaults.cipher = 'aes-128-gcm';
+    if (protocol === 'tuic') {
+      itemDefaults.udp_relay_mode = 'native';
+      itemDefaults.congestion_control = 'cubic';
+    }
+  }
+  return { ...itemDefaults, ...base };
+}
+
 function legacyText(value: unknown) {
   return value == null ? '' : String(value);
 }
 
-function legacySelectValue(value: unknown): LegacySelectValue | undefined {
-  if (value == null) return undefined;
-  return typeof value === 'number' || typeof value === 'string' ? value : String(value);
-}
-
-function legacyInputValue(value: unknown) {
-  return value as string | number | readonly string[] | undefined;
+function inputValue(value: unknown) {
+  return value == null ? '' : (value as string | number);
 }
 
 function legacyBool(value: unknown) {
   return parseInt(String(value ?? 0), 10) !== 0;
 }
 
-function ServerChildDrawerField({
-  type,
-  field,
-  form,
+// ---------------------------------------------------------------------------
+// Shared shadcn form primitives.
+// ---------------------------------------------------------------------------
+
+interface NodeForm {
+  values: Record<string, unknown>;
+  setField: (name: string | [string, string], value: unknown) => void;
+  setFields: (partial: Record<string, unknown>) => void;
+  setValues: Dispatch<SetStateAction<Record<string, unknown>>>;
+}
+
+// Round-trips a typed (string | number | null) select value through Radix Select,
+// which only speaks non-empty strings, by keying options on their index and mapping
+// back to the original typed value on change so prepareLegacyServerPayload keeps
+// receiving the exact type it always did.
+function NodeSelect({
+  value,
+  options,
+  placeholder,
+  onChange,
+  className,
+  id,
+  testId,
 }: {
-  type: admin.ServerTypeName;
-  field: string;
-  form: FormInstance;
+  value: SelectValueType;
+  options: SelectOption[];
+  placeholder?: string;
+  onChange: (value: string | number | null) => void;
+  className?: string;
+  id?: string;
+  testId?: string;
 }) {
-  const network = Form.useWatch('network', form);
-  const tls = Form.useWatch('tls', form);
-  const encryption = Form.useWatch('encryption', form);
-  const settings = Form.useWatch(field, form);
+  const selectedIndex = options.findIndex((option) => option.value === value);
+  return (
+    <Select
+      value={selectedIndex >= 0 ? String(selectedIndex) : undefined}
+      onValueChange={(next) => {
+        const option = options[Number(next)];
+        onChange(option ? option.value : null);
+      }}
+    >
+      <SelectTrigger id={id} className={cn('w-full', className)} data-testid={testId}>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option, index) => (
+          <SelectItem key={index} value={String(index)}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
-  if (field === 'network_settings' || field === 'networkSettings') {
-    return (
-      <div id="v2ray-protocol">
-        <div className="form-group">
-          <label>
-            协议详细配置
-            <a href="https://www.v2ray.com/chapter_02/05_transport.html">
-              <LegacyLinkIcon />
-              参考
-            </a>
-          </label>
-          <Form.Item noStyle name={field}>
-            <LegacyAceJsonEditor placeholder={getLegacyNetworkSettingsPlaceholder(type, network)} />
-          </Form.Item>
-        </div>
-      </div>
-    );
+function MultiCheckboxField({
+  options,
+  value,
+  onChange,
+  testId,
+  emptyText,
+}: {
+  options: { value: string; label: string }[];
+  value: string[];
+  onChange: (value: string[]) => void;
+  testId?: string;
+  emptyText?: string;
+}) {
+  if (!options.length) {
+    return <p className="text-sm text-muted-foreground">{emptyText ?? '暂无可选项'}</p>;
   }
-
-  if (field === 'padding_scheme') {
-    return (
-      <div id="anytls-padding-scheme">
-        <div className="form-group">
-          <Form.Item noStyle name="padding_scheme">
-            <LegacyTextArea
-              className="ant-input"
-              rows={8}
-              placeholder={ANYTLS_PADDING_SCHEME_PLACEHOLDER}
+  const toggle = (option: string, checked: boolean) => {
+    onChange(checked ? [...value, option] : value.filter((item) => item !== option));
+  };
+  return (
+    <div
+      className="flex flex-wrap gap-x-4 gap-y-2 rounded-md border border-input p-3"
+      data-testid={testId}
+    >
+      {options.map((option) => {
+        const checked = value.includes(option.value);
+        return (
+          <label
+            key={option.value}
+            className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
+          >
+            <Checkbox
+              checked={checked}
+              onCheckedChange={(next) => toggle(option.value, next === true)}
             />
-          </Form.Item>
-        </div>
-      </div>
-    );
-  }
+            {option.label}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
-  if (field === 'tls_settings' || field === 'tlsSettings') {
-    return (
-      <LegacyTlsSettingsField
-        field={field}
-        form={form}
-        settings={settings}
-        tls={tls}
-        certApply={field === 'tls_settings'}
+function TagsInput({
+  value,
+  onChange,
+  placeholder,
+  testId,
+}: {
+  value: string[];
+  onChange: (value: string[]) => void;
+  placeholder?: string;
+  testId?: string;
+}) {
+  const [draft, setDraft] = useState('');
+  const add = () => {
+    const tag = draft.trim();
+    setDraft('');
+    if (!tag || value.includes(tag)) return;
+    onChange([...value, tag]);
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-input p-2">
+      {value.map((tag) => (
+        <Badge key={tag} variant="secondary" className="gap-1">
+          {tag}
+          <button
+            type="button"
+            aria-label={`移除标签 ${tag}`}
+            onClick={() => onChange(value.filter((item) => item !== tag))}
+          >
+            <X className="size-3" />
+          </button>
+        </Badge>
+      ))}
+      <input
+        className="min-w-24 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        value={draft}
+        data-testid={testId}
+        placeholder={value.length ? '' : placeholder}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            add();
+          }
+        }}
+        onBlur={add}
       />
-    );
-  }
-
-  if (field === 'encryption_settings') {
-    return (
-      <LegacyEncryptionSettingsField form={form} settings={settings} encryption={encryption} />
-    );
-  }
-
-  return (
-    <Form.Item noStyle name={field}>
-      <LegacyTextArea className="ant-input" rows={8} />
-    </Form.Item>
+    </div>
   );
 }
 
-function LegacyTlsSettingsField({
-  field,
-  form,
-  settings,
-  tls,
-  certApply,
+function ServerTypeTag({ type, children }: { type: string; children: ReactNode }) {
+  return (
+    <Badge
+      className="border-transparent text-white"
+      style={{ backgroundColor: SERVER_TYPE_COLORS[type] }}
+    >
+      {children}
+    </Badge>
+  );
+}
+
+function AvailabilityDot({ status }: { status?: number | null }) {
+  const tone = getLegacyAvailableStatus(status);
+  if (!tone) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className={cn('inline-block size-2 shrink-0 rounded-full', AVAILABLE_STATUS_DOT[tone])}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page dispatch.
+// ---------------------------------------------------------------------------
+
+export default function ServersPage() {
+  const location = useLocation();
+  if (location.pathname === '/server/group') return <ServerGroupPage />;
+  if (location.pathname === '/server/route') return <ServerRoutePage />;
+  if (location.pathname === '/server/manage') return <ServerManagePage />;
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Server groups.
+// ---------------------------------------------------------------------------
+
+function ServerGroupPage() {
+  const groups = useServerGroups();
+  const save = useSaveServerGroupMutation();
+  const drop = useDropServerGroupMutation();
+  const data = groups.data ?? [];
+
+  const saveGroup = async (payload: Partial<admin.ServerGroup>) => {
+    await save.mutateAsync({ ...payload });
+    await groups.refetch();
+  };
+
+  const removeGroup = async (record: admin.ServerGroup) => {
+    const confirmed = await confirmDialog({
+      title: '警告',
+      description: '确定要删除该权限组吗？',
+      confirmText: '确定',
+      cancelText: '取消',
+    });
+    if (!confirmed) return;
+    drop.mutate(record.id, {
+      onSuccess: () => {
+        void groups.refetch();
+      },
+    });
+  };
+
+  const columns: DataTableColumn<admin.ServerGroup>[] = [
+    {
+      id: 'id',
+      meta: { className: 'text-muted-foreground tabular-nums' },
+      header: () => <span>组ID</span>,
+      cell: ({ row }) => row.original.id,
+    },
+    {
+      id: 'name',
+      meta: { className: 'font-medium text-foreground' },
+      header: () => <span>组名称</span>,
+      cell: ({ row }) => row.original.name,
+    },
+    {
+      id: 'user_count',
+      header: () => <span>用户数量</span>,
+      cell: ({ row }) => (
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <User className="size-4 text-muted-foreground" /> {row.original.user_count}
+        </span>
+      ),
+    },
+    {
+      id: 'server_count',
+      header: () => <span>节点数量</span>,
+      cell: ({ row }) => (
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <Database className="size-4 text-muted-foreground" /> {row.original.server_count}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      meta: { align: 'right' },
+      header: () => <span>操作</span>,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end gap-1">
+          <ServerGroupModal record={row.original} pending={save.isPending} onSave={saveGroup}>
+            <Button variant="ghost" size="sm" data-testid={`server-group-edit-${row.original.id}`}>
+              <Pencil className="size-4" />
+              编辑
+            </Button>
+          </ServerGroupModal>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={() => void removeGroup(row.original)}
+            data-testid={`server-group-delete-${row.original.id}`}
+          >
+            <Trash2 className="size-4" />
+            删除
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <PageShell data-testid="server-group-page">
+      <PageHeader
+        title="权限组管理"
+        actions={
+          <ServerGroupModal pending={save.isPending} onSave={saveGroup}>
+            <Button data-testid="server-group-create">
+              <Plus className="size-4" />
+              添加权限组
+            </Button>
+          </ServerGroupModal>
+        }
+      />
+
+      <Card className="overflow-hidden py-0">
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={data}
+            getRowKey={(row) => row.id}
+            className="min-w-[720px]"
+            data-testid="server-groups-table"
+            empty={data.length === 0 ? '暂无权限组' : undefined}
+            emptyTestId="server-groups-empty"
+          />
+        </CardContent>
+      </Card>
+
+      {groups.isFetching ? (
+        <div className="flex justify-center py-6" role="status">
+          <Spinner className="size-5 text-muted-foreground" />
+          <span className="sr-only">加载中</span>
+        </div>
+      ) : null}
+    </PageShell>
+  );
+}
+
+function ServerGroupModal({
+  record,
+  pending,
+  onSave,
+  children,
 }: {
-  field: string;
-  form: FormInstance;
-  settings: unknown;
-  tls: unknown;
-  certApply: boolean;
+  record?: admin.ServerGroup;
+  pending: boolean;
+  onSave: (payload: Partial<admin.ServerGroup>) => Promise<unknown>;
+  children: ReactElement<{ onClick?: () => void }>;
 }) {
-  const value = normalizeLegacySettings(settings, LEGACY_TLS_SETTINGS_DEFAULTS);
-  const tlsValue = parseInt(String(tls ?? 0), 10);
-  const change = (key: string, next: unknown) => {
-    form.setFieldsValue({ [field]: { ...value, [key]: next } });
+  const [open, setOpen] = useState(false);
+  const [submit, setSubmit] = useState<Partial<admin.ServerGroup>>(record ?? {});
+
+  const openModal = () => {
+    setSubmit(record ?? {});
+    setOpen(true);
+  };
+
+  const saveGroup = async () => {
+    await onSave({ ...submit });
+    setOpen(false);
   };
 
   return (
-    <div>
-      <div className="form-group">
-        <label>Server Name(SNI)</label>
-        <LegacyInput
-          className="ant-input"
-          value={legacyText(value.server_name)}
-          onChange={(event) => change('server_name', event.target.value)}
-          placeholder={tlsValue === 2 ? 'REALITY必填，与后端保持一致' : ''}
-        />
-      </div>
-      {tlsValue === 1 && certApply ? (
-        <div className="form-group">
-          <label>证书模式Cert Mode</label>
-          <LegacySelect
-            value={legacySelectValue(value.cert_mode ?? 'self')}
-            style={{ width: '100%' }}
-            options={LEGACY_TLS_CERT_MODE_OPTIONS}
-            onChange={(next) => change('cert_mode', next)}
-          />
-        </div>
-      ) : null}
-      {value.cert_mode === 'dns' && certApply ? (
-        <div className="form-group">
-          <label>
-            DNS解析提供商Provider{' '}
-            <a
-              target="_blank"
-              href="https://go-acme.github.io/lego/dns/index.html"
-              rel="noreferrer"
+    <>
+      {cloneElement(children, { onClick: openModal })}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent data-testid="server-group-editor">
+          <DialogHeader>
+            <DialogTitle>{submit.id ? '编辑组' : '创建组'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="server-group-name">组名</Label>
+            <Input
+              id="server-group-name"
+              placeholder="请输入组名"
+              value={inputValue(submit.name)}
+              onChange={(event) => setSubmit((value) => ({ ...value, name: event.target.value }))}
+              data-testid="server-group-name"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={() => void saveGroup()}
+              disabled={pending}
+              data-testid="server-group-submit"
             >
-              填写参考
-            </a>
-          </label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.provider)}
-            onChange={(event) => change('provider', event.target.value)}
-            placeholder="书写格式cloudflare"
-          />
-        </div>
-      ) : null}
-      {value.cert_mode === 'dns' && certApply ? (
-        <div className="form-group">
-          <label>DNS env</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.dns_env)}
-            onChange={(event) => change('dns_env', event.target.value)}
-            placeholder="书写格式CF_DNS_API_TOKEN=xxxxxxx如有多条使用逗号,分隔"
-          />
-        </div>
-      ) : null}
-      {tlsValue === 1 && value.cert_mode !== 'none' && certApply ? (
-        <div className="form-group">
-          <label>证书公钥文件地址Cert File Path</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.cert_file)}
-            onChange={(event) => change('cert_file', event.target.value)}
-            placeholder="留空在/etc/v2node/目录自动生成"
-          />
-        </div>
-      ) : null}
-      {tlsValue === 1 && value.cert_mode !== 'none' && certApply ? (
-        <div className="form-group">
-          <label>证书私钥文件地址Key File Path</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.key_file)}
-            onChange={(event) => change('key_file', event.target.value)}
-            placeholder="留空在/etc/v2node/目录自动生成"
-          />
-        </div>
-      ) : null}
-      {tlsValue === 2 ? (
-        <div className="form-group">
-          <label>Server Address</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.dest)}
-            onChange={(event) => change('dest', event.target.value)}
-            placeholder="REALITY目标地址,默认使用SNI"
-          />
-        </div>
-      ) : null}
-      {tlsValue === 2 ? (
-        <div className="form-group">
-          <label>Server Port</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.server_port)}
-            onChange={(event) => change('server_port', event.target.value)}
-            placeholder="REALITY目标端口,默认443"
-          />
-        </div>
-      ) : null}
-      {tlsValue === 2 ? (
-        <div className="form-group">
-          <label>Proxy Protocol</label>
-          <LegacySelect
-            value={parseInt(String(value.xver ?? 0), 10) || 0}
-            style={{ width: '100%' }}
-            options={LEGACY_PROXY_PROTOCOL_OPTIONS}
-            onChange={(next) => change('xver', next)}
-          />
-        </div>
-      ) : null}
-      {tlsValue === 2 ? (
-        <div className="form-group">
-          <label>Private Key</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.private_key)}
-            onChange={(event) => change('private_key', event.target.value)}
-            placeholder="留空自动生成"
-          />
-        </div>
-      ) : null}
-      {tlsValue === 2 ? (
-        <div className="form-group">
-          <label>Public Key</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.public_key)}
-            onChange={(event) => change('public_key', event.target.value)}
-            placeholder="留空自动生成"
-          />
-        </div>
-      ) : null}
-      {tlsValue === 2 ? (
-        <div className="form-group">
-          <label>ShortId</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.short_id)}
-            onChange={(event) => change('short_id', event.target.value)}
-            placeholder="留空自动生成"
-          />
-        </div>
-      ) : null}
-      <div className="form-group">
-        <label>FingerPrint</label>
-        <LegacySelect
-          value={legacySelectValue(value.fingerprint)}
-          style={{ width: '100%' }}
-          options={LEGACY_TLS_FINGERPRINT_OPTIONS}
-          onChange={(next) => change('fingerprint', next)}
-          placeholder="TLS指纹默认Chrome"
-        />
-      </div>
-      {tlsValue === 1 && certApply ? (
-        <div className="form-group">
-          <label>Reject unknown sni</label>
-          <div>
-            <LegacySwitch
-              checked={legacyBool(value.reject_unknown_sni)}
-              onChange={(checked) => change('reject_unknown_sni', checked ? '1' : '0')}
-            />
-          </div>
-        </div>
-      ) : null}
-      <div className="form-group">
-        <label>Allow Insecure</label>
-        <div>
-          <LegacySwitch
-            checked={legacyBool(value.allow_insecure)}
-            onChange={(checked) => change('allow_insecure', checked ? '1' : '0')}
-          />
-        </div>
-      </div>
-      <div className="form-group">
-        <label>ECH (Encrypted Client Hello)</label>
-        <LegacySelect
-          value={legacyText(value.ech)}
-          style={{ width: '100%' }}
-          options={LEGACY_ECH_MODE_OPTIONS}
-          onChange={(next) => change('ech', next)}
-          placeholder="选择 ECH 模式"
-        />
-      </div>
-      {value.ech === 'cloudflare' ? (
-        <div
-          className="form-group"
-          style={{
-            background: '#f6ffed',
-            padding: '8px 12px',
-            borderRadius: 4,
-            border: '1px solid #b7eb8f',
-          }}
-        >
-          <span style={{ color: '#52c41a' }}>
-            ✓ Cloudflare 托管 ECH，密钥由 Cloudflare 自动管理，客户端从 DNS
-            自动获取配置，服务端无需配置
-          </span>
-        </div>
-      ) : null}
-      {value.ech === 'custom' ? (
-        <div className="form-group">
-          <label>ECH Server Name (伪装域名/外层SNI)</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.ech_server_name)}
-            onChange={(event) => change('ech_server_name', event.target.value)}
-            placeholder="必填"
-          />
-        </div>
-      ) : null}
-      {value.ech === 'custom' ? (
-        <div className="form-group">
-          <label>ECH Key (服务端私钥)</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.ech_key)}
-            onChange={(event) => change('ech_key', event.target.value)}
-            placeholder="留空自动生成"
-          />
-        </div>
-      ) : null}
-      {value.ech === 'custom' ? (
-        <div className="form-group">
-          <label>ECH Config (客户端配置)</label>
-          <LegacyInput
-            className="ant-input"
-            value={legacyText(value.ech_config)}
-            onChange={(event) => change('ech_config', event.target.value)}
-            placeholder="留空自动生成"
-          />
-        </div>
-      ) : null}
-    </div>
+              {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+              提交
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
-function LegacyEncryptionSettingsField({
-  form,
-  settings,
-}: {
-  form: FormInstance;
-  settings: unknown;
-  encryption: unknown;
-}) {
-  const value = useMemo(
-    () => normalizeLegacySettings(settings, LEGACY_ENCRYPTION_SETTINGS_DEFAULTS),
-    [settings],
+// ---------------------------------------------------------------------------
+// Server routes.
+// ---------------------------------------------------------------------------
+
+function ServerRoutePage() {
+  const routes = useServerRoutes();
+  const save = useSaveServerRouteMutation();
+  const drop = useDropServerRouteMutation();
+  const data = routes.data ?? [];
+
+  const saveRoute = async (route: Partial<admin.ServerRoute>) => {
+    const payload = { ...route };
+    if (Array.isArray(payload.match)) {
+      payload.match = payload.match.filter(Boolean);
+    } else if (payload.match && typeof payload.match === 'string') {
+      payload.match = payload.match.split(',').filter(Boolean);
+    } else {
+      payload.match = [];
+    }
+    await save.mutateAsync(payload);
+    await routes.refetch();
+  };
+
+  const removeRoute = async (record: admin.ServerRoute) => {
+    const confirmed = await confirmDialog({
+      title: '警告',
+      description: '确定要删除该路由吗？',
+      confirmText: '确定',
+      cancelText: '取消',
+    });
+    if (!confirmed) return;
+    drop.mutate(record.id, {
+      onSuccess: () => {
+        void routes.refetch();
+      },
+    });
+  };
+
+  const columns: DataTableColumn<admin.ServerRoute>[] = [
+    {
+      id: 'id',
+      meta: { className: 'text-muted-foreground tabular-nums' },
+      header: () => <span>ID</span>,
+      cell: ({ row }) => row.original.id,
+    },
+    {
+      id: 'remarks',
+      meta: { className: 'font-medium text-foreground' },
+      header: () => <span>备注</span>,
+      cell: ({ row }) => row.original.remarks,
+    },
+    {
+      id: 'match',
+      header: () => <span>匹配数量</span>,
+      cell: ({ row }) => getRouteMatchLabel(row.original.match),
+    },
+    {
+      id: 'action',
+      header: () => <span>动作</span>,
+      cell: ({ row }) => ROUTE_ACTION_TEXT[row.original.action],
+    },
+    {
+      id: 'actions',
+      meta: { align: 'right' },
+      header: () => <span>操作</span>,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end gap-1">
+          <ServerRouteModal route={row.original} pending={save.isPending} onSave={saveRoute}>
+            <Button variant="ghost" size="sm" data-testid={`server-route-edit-${row.original.id}`}>
+              <Pencil className="size-4" />
+              编辑
+            </Button>
+          </ServerRouteModal>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={() => void removeRoute(row.original)}
+            data-testid={`server-route-delete-${row.original.id}`}
+          >
+            <Trash2 className="size-4" />
+            删除
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <PageShell data-testid="server-route-page">
+      <PageHeader
+        title="路由管理"
+        actions={
+          <ServerRouteModal pending={save.isPending} onSave={saveRoute}>
+            <Button data-testid="server-route-create">
+              <Plus className="size-4" />
+              添加路由
+            </Button>
+          </ServerRouteModal>
+        }
+      />
+
+      <Card className="overflow-hidden py-0">
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={data}
+            getRowKey={(row) => row.id}
+            className="min-w-[720px]"
+            data-testid="server-routes-table"
+            empty={data.length === 0 ? '暂无路由' : undefined}
+            emptyTestId="server-routes-empty"
+          />
+        </CardContent>
+      </Card>
+
+      {routes.isFetching ? (
+        <div className="flex justify-center py-6" role="status">
+          <Spinner className="size-5 text-muted-foreground" />
+          <span className="sr-only">加载中</span>
+        </div>
+      ) : null}
+    </PageShell>
   );
-  useEffect(() => {
-    form.setFieldsValue({ encryption_settings: value });
-  }, [form, value]);
-  const change = (key: string, next: unknown) => {
-    form.setFieldsValue({ encryption_settings: { ...value, [key]: next } });
+}
+
+function ServerRouteModal({
+  route: initialRoute,
+  pending,
+  onSave,
+  children,
+}: {
+  route?: admin.ServerRoute;
+  pending: boolean;
+  onSave: (route: Partial<admin.ServerRoute>) => Promise<unknown>;
+  children: ReactElement<{ onClick?: () => void }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [route, setRoute] = useState<Partial<admin.ServerRoute>>(initialRoute ?? {});
+  const routeActionOptions: SelectOption[] = [
+    { value: 'block', label: ROUTE_ACTION_TEXT.block },
+    { value: 'block_ip', label: ROUTE_ACTION_TEXT.block_ip },
+    { value: 'block_port', label: ROUTE_ACTION_TEXT.block_port },
+    { value: 'protocol', label: ROUTE_ACTION_TEXT.protocol },
+    { value: 'dns', label: ROUTE_ACTION_TEXT.dns },
+    { value: 'route', label: ROUTE_ACTION_TEXT.route },
+    { value: 'route_ip', label: ROUTE_ACTION_TEXT.route_ip },
+    { value: 'default_out', label: ROUTE_ACTION_TEXT.default_out },
+  ];
+
+  const openModal = () => {
+    setRoute(initialRoute ?? {});
+    setOpen(true);
+  };
+
+  const saveRoute = async () => {
+    await onSave(route);
+    setOpen(false);
   };
 
   return (
-    <div>
-      <div className="form-group">
-        <label>Mode</label>
-        <LegacySelect
-          value={legacyText(value.mode) || 'native'}
-          style={{ width: '100%' }}
-          options={LEGACY_ENCRYPTION_MODE_OPTIONS}
-          onChange={(next) => change('mode', next)}
+    <>
+      {cloneElement(children, { onClick: openModal })}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto" data-testid="server-route-editor">
+          <DialogHeader>
+            <DialogTitle>{route.id ? '编辑路由' : '创建路由'}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="server-route-remarks">备注</Label>
+              <Input
+                id="server-route-remarks"
+                placeholder="请输入备注"
+                value={inputValue(route.remarks)}
+                onChange={(event) => setRoute((value) => ({ ...value, remarks: event.target.value }))}
+                data-testid="server-route-remarks"
+              />
+            </div>
+
+            {route.action !== 'default_out' ? (
+              <div className="space-y-2">
+                <Label htmlFor="server-route-match" className="flex items-center gap-2">
+                  匹配值
+                  <a
+                    className="inline-flex items-center gap-1 text-primary"
+                    href="https://xtls.github.io/config/routing.html#ruleobject"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="size-3.5" />
+                    填写参考
+                  </a>
+                </Label>
+                <Textarea
+                  id="server-route-match"
+                  rows={5}
+                  className="font-mono text-xs"
+                  placeholder={getRouteMatchPlaceholder(route.action)}
+                  value={getRouteMatchTextareaValue(route.match)}
+                  onChange={(event) =>
+                    setRoute((value) => ({ ...value, match: event.target.value?.split('\n') }))
+                  }
+                  data-testid="server-route-match"
+                />
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <Label>动作</Label>
+              <NodeSelect
+                value={route.action}
+                placeholder="请选择动作"
+                options={routeActionOptions}
+                onChange={(value) => setRoute((current) => ({ ...current, action: value as string }))}
+                testId="server-route-action"
+              />
+            </div>
+
+            {route.action === 'dns' ? (
+              <div className="space-y-2">
+                <Label htmlFor="server-route-dns">DNS服务器</Label>
+                <Input
+                  id="server-route-dns"
+                  placeholder="请输入用于解析的DNS服务器地址"
+                  value={inputValue(route.action_value)}
+                  onChange={(event) =>
+                    setRoute((value) => ({ ...value, action_value: event.target.value }))
+                  }
+                  data-testid="server-route-action-value"
+                />
+              </div>
+            ) : null}
+
+            {route.action === 'route' ||
+            route.action === 'route_ip' ||
+            route.action === 'default_out' ? (
+              <div className="space-y-2">
+                <Label htmlFor="server-route-outbound" className="flex items-center gap-2">
+                  Xray出站配置
+                  <a
+                    className="inline-flex items-center gap-1 text-primary"
+                    href="https://xtls.github.io/config/outbound.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="size-3.5" />
+                    填写参考
+                  </a>
+                </Label>
+                <Textarea
+                  id="server-route-outbound"
+                  rows={8}
+                  className="font-mono text-xs"
+                  placeholder={JSON.stringify(
+                    {
+                      tag: 'ss_out',
+                      sendThrough: '0.0.0.0',
+                      protocol: 'shadowsocks',
+                      settings: {
+                        email: 'love@xray.com',
+                        address: '8.8.8.8',
+                        port: 5555,
+                        method: 'chacha20-ietf-poly1305',
+                        password: 'abcdefghijklmnopqrstuvwxyz',
+                        level: 0,
+                      },
+                    },
+                    null,
+                    4,
+                  )}
+                  value={inputValue(route.action_value)}
+                  onChange={(event) =>
+                    setRoute((value) => ({ ...value, action_value: event.target.value }))
+                  }
+                  data-testid="server-route-action-value"
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={() => void saveRoute()}
+              disabled={pending}
+              data-testid="server-route-submit"
+            >
+              {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+              提交
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Server nodes.
+// ---------------------------------------------------------------------------
+
+function ServerSortPrompt({ when }: { when: boolean }) {
+  useEffect(() => {
+    if (!when) return undefined;
+    return installLegacyServerSortPrompt();
+  }, [when]);
+  return null;
+}
+
+function NodeFilterMenu({
+  items,
+  value,
+  active,
+  onApply,
+}: {
+  items: NodeFilterItem[];
+  value: string[];
+  active: boolean;
+  onApply: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<string[]>(value);
+  useEffect(() => {
+    if (open) setPending(value);
+  }, [open, value]);
+  const toggle = (target: string) =>
+    setPending((prev) =>
+      prev.includes(target) ? prev.filter((item) => item !== target) : [...prev, target],
+    );
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="筛选"
+          className={cn(
+            'ml-1 inline-flex size-6 items-center justify-center rounded-sm outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            active ? 'text-primary' : 'text-muted-foreground',
+          )}
+        >
+          <ListFilter className="size-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-40">
+        <div className="max-h-64 overflow-y-auto py-1">
+          {items.map((item) => (
+            <label
+              key={item.value}
+              className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+            >
+              <Checkbox
+                checked={pending.includes(item.value)}
+                onCheckedChange={() => toggle(item.value)}
+              />
+              <span>{item.text}</span>
+            </label>
+          ))}
+        </div>
+        <DropdownMenuSeparator />
+        <div className="flex items-center justify-between px-2 py-1">
+          <button
+            type="button"
+            className="text-sm text-primary"
+            onClick={() => {
+              onApply(pending);
+              setOpen(false);
+            }}
+          >
+            确定
+          </button>
+          <button
+            type="button"
+            className="text-sm text-muted-foreground"
+            onClick={() => {
+              setPending([]);
+              onApply([]);
+              setOpen(false);
+            }}
+          >
+            重置
+          </button>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function OnlineSortHeader({
+  sort,
+  onCycle,
+}: {
+  sort: '' | 'ascend' | 'descend';
+  onCycle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1.5 rounded-sm outline-none transition-colors select-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      onClick={onCycle}
+    >
+      <HeaderTooltip title="在线人数">人数</HeaderTooltip>
+      {sort === 'ascend' ? (
+        <ArrowUp className="size-3.5" />
+      ) : sort === 'descend' ? (
+        <ArrowDown className="size-3.5" />
+      ) : (
+        <ArrowUp className="size-3.5 opacity-40" />
+      )}
+    </button>
+  );
+}
+
+function ServerManagePage() {
+  const nodes = useServerNodes();
+  const groups = useServerGroups();
+  const routes = useServerRoutes();
+  const update = useUpdateServerMutation();
+  const drop = useDropServerMutation();
+  const copy = useCopyServerMutation();
+  const sort = useSortServerNodesMutation();
+  const [searchKey, setSearchKey] = useState<string | undefined>();
+  const [sortMode, setSortMode] = useState(false);
+  const [onlineSort, setOnlineSort] = useState<'' | 'ascend' | 'descend'>('');
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [groupFilter, setGroupFilter] = useState<string[]>([]);
+  const [orderedNodes, setOrderedNodes] = useState<admin.ServerNode[]>(() => nodes.data ?? []);
+  const [sortingLoading, setSortingLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(readLegacyServerPageSize);
+  const [editing, setEditing] = useState<{
+    type: admin.ServerTypeName;
+    record?: admin.ServerNode;
+    key: number;
+  } | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const orderRef = useRef(orderedNodes);
+
+  useEffect(() => {
+    if (nodes.data) {
+      setOrderedNodes(nodes.data);
+      setSortingLoading(false);
+      setSortMode(false);
+    }
+  }, [nodes.data]);
+
+  orderRef.current = orderedNodes;
+
+  const searchedNodes =
+    searchKey && orderedNodes
+      ? orderedNodes.filter((node) => JSON.stringify(node).includes(searchKey))
+      : orderedNodes;
+  // The legacy column sorter/filters lived on the antd Table, which is hidden in
+  // sort mode; reorder operates on the raw list there, so the column controls only
+  // apply when browsing.
+  const filteredNodes = sortMode
+    ? searchedNodes
+    : applyServerNodeColumnControls(searchedNodes, { typeFilter, groupFilter, onlineSort });
+
+  const pageCount = Math.max(1, Math.ceil(filteredNodes.length / pageSize));
+  const activePage = Math.min(currentPage, pageCount);
+  const visibleNodes = sortMode
+    ? filteredNodes
+    : filteredNodes.slice((activePage - 1) * pageSize, activePage * pageSize);
+
+  const groupName = (ids: admin.ServerNode['group_id']) =>
+    ids.map((id) => groups.data?.find((group) => group.id === Number(id))?.name).filter(Boolean);
+
+  const openEditor = (type: admin.ServerTypeName, record?: admin.ServerNode) => {
+    setEditing({ type, record, key: Date.now() });
+    setDrawerOpen(true);
+  };
+
+  const toggleNodeShow = (row: admin.ServerNode) => {
+    const checked = parseInt(String(row.show), 10);
+    update.mutate(
+      {
+        type: row.type as admin.ServerTypeName,
+        id: row.id,
+        key: 'show',
+        value: checked ? 0 : 1,
+      },
+      {
+        onSuccess: () => {
+          void nodes.refetch();
+        },
+      },
+    );
+  };
+
+  const copyNode = (row: admin.ServerNode) => {
+    copy.mutate(
+      { type: row.type as admin.ServerTypeName, id: row.id },
+      {
+        onSuccess: () => {
+          void nodes.refetch();
+        },
+      },
+    );
+  };
+
+  const removeNode = async (row: admin.ServerNode) => {
+    const confirmed = await confirmDialog({
+      title: '警告',
+      description: '确定要删除该节点吗？',
+      confirmText: '确定',
+      cancelText: '取消',
+    });
+    if (!confirmed) return;
+    drop.mutate(
+      { type: row.type as admin.ServerTypeName, id: row.id },
+      {
+        onSuccess: () => {
+          void nodes.refetch();
+        },
+      },
+    );
+  };
+
+  const copyHost = (host: string) => {
+    void navigator.clipboard?.writeText(host);
+    toast.success('复制成功');
+  };
+
+  const moveNode = (id: number, direction: -1 | 1) => {
+    const list = orderRef.current;
+    const index = list.findIndex((node) => node.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= list.length) return;
+    setOrderedNodes(moveServerNodeByLegacyDragIndexes(list, index, target));
+  };
+
+  const cycleOnlineSort = () => {
+    setCurrentPage(1);
+    setOnlineSort((current) => (current === '' ? 'ascend' : current === 'ascend' ? 'descend' : ''));
+  };
+
+  const applyTypeFilter = (next: string[]) => {
+    setCurrentPage(1);
+    setTypeFilter(next);
+  };
+
+  const applyGroupFilter = (next: string[]) => {
+    setCurrentPage(1);
+    setGroupFilter(next);
+  };
+
+  const saveSort = () => {
+    if (!sortMode) {
+      setSortMode(true);
+      return;
+    }
+    setSortingLoading(true);
+    sort.mutate(createServerSortPayload(orderedNodes), {
+      onSuccess: () => {
+        void nodes.refetch();
+      },
+      onSettled: () => setSortingLoading(false),
+    });
+  };
+
+  const changePage = (page: number, nextSize: number) => {
+    setCurrentPage(page);
+    if (nextSize !== pageSize) {
+      setPageSize(nextSize);
+      writeLegacyHabit(LEGACY_SERVER_PAGE_SIZE_KEY, nextSize);
+    }
+  };
+
+  const idColumn: DataTableColumn<admin.ServerNode> = {
+    id: 'node_id',
+    header: () => (
+      <span className="inline-flex items-center">
+        节点ID
+        <NodeFilterMenu
+          items={NODE_TYPE_FILTERS}
+          value={typeFilter}
+          active={typeFilter.length > 0}
+          onApply={applyTypeFilter}
+        />
+      </span>
+    ),
+    cell: ({ row }) => (
+      <ServerTypeTag type={row.original.type}>
+        {row.original.parent_id ? `${row.original.id} => ${row.original.parent_id}` : row.original.id}
+      </ServerTypeTag>
+    ),
+  };
+
+  const sortColumns: DataTableColumn<admin.ServerNode>[] = [
+    {
+      id: 'sort',
+      meta: { align: 'center' },
+      header: () => <span>排序</span>,
+      cell: ({ row }) => {
+        const index = orderedNodes.findIndex((node) => node.id === row.original.id);
+        return (
+          <div className="flex items-center justify-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              disabled={index <= 0}
+              onClick={() => moveNode(row.original.id, -1)}
+              aria-label="上移"
+            >
+              <ArrowUp className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              disabled={index < 0 || index >= orderedNodes.length - 1}
+              onClick={() => moveNode(row.original.id, 1)}
+              aria-label="下移"
+            >
+              <ArrowDown className="size-4" />
+            </Button>
+          </div>
+        );
+      },
+    },
+    idColumn,
+    {
+      id: 'name',
+      meta: { className: 'font-medium text-foreground' },
+      header: () => <span>节点</span>,
+      cell: ({ row }) => row.original.name,
+    },
+  ];
+
+  const browseColumns: DataTableColumn<admin.ServerNode>[] = [
+    idColumn,
+    {
+      id: 'show',
+      meta: { align: 'center' },
+      header: () => <span>显隐</span>,
+      cell: ({ row }) => (
+        <Switch
+          checked={Boolean(parseInt(String(row.original.show), 10))}
+          onCheckedChange={() => toggleNodeShow(row.original)}
+          aria-label={`切换「${row.original.name}」显隐`}
+        />
+      ),
+    },
+    {
+      id: 'node',
+      meta: { className: 'font-medium text-foreground' },
+      header: () => <HeaderTooltip title="节点名称">节点</HeaderTooltip>,
+      cell: ({ row }) => (
+        <span className="inline-flex items-center gap-2">
+          <AvailabilityDot status={row.original.available_status} />
+          {row.original.name}
+        </span>
+      ),
+    },
+    {
+      id: 'host',
+      header: () => <span>地址</span>,
+      cell: ({ row }) => (
+        <button
+          type="button"
+          className="cursor-pointer text-left tabular-nums"
+          onClick={() => copyHost(row.original.host)}
+        >
+          {row.original.host}:{row.original.port}
+        </button>
+      ),
+    },
+    {
+      id: 'online',
+      header: () => <OnlineSortHeader sort={onlineSort} onCycle={cycleOnlineSort} />,
+      cell: ({ row }) => (
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <User className="size-4 text-muted-foreground" /> {row.original.online || 0}
+        </span>
+      ),
+    },
+    {
+      id: 'rate',
+      meta: { align: 'center' },
+      header: () => <HeaderTooltip title="流量倍率" className="justify-center">倍率</HeaderTooltip>,
+      cell: ({ row }) => (
+        <Badge variant="secondary" className="min-w-14 justify-center tabular-nums">
+          {row.original.rate} x
+        </Badge>
+      ),
+    },
+    {
+      id: 'group',
+      header: () => (
+        <span className="inline-flex items-center">
+          权限组
+          <NodeFilterMenu
+            items={(groups.data ?? []).map((group) => ({
+              text: group.name,
+              value: String(group.id),
+            }))}
+            value={groupFilter}
+            active={groupFilter.length > 0}
+            onApply={applyGroupFilter}
+          />
+        </span>
+      ),
+      cell: ({ row }) => (
+        <div className="flex flex-wrap gap-1">
+          {groupName(row.original.group_id).map((name) => (
+            <Badge key={name} variant="secondary">
+              {name}
+            </Badge>
+          ))}
+        </div>
+      ),
+    },
+    {
+      id: 'actions',
+      meta: { align: 'right' },
+      header: () => <span>操作</span>,
+      cell: ({ row }) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" data-testid={`node-actions-${row.original.id}`}>
+              操作
+              <ChevronDown className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => openEditor(row.original.type as admin.ServerTypeName, row.original)}
+              data-testid={`node-edit-${row.original.id}`}
+            >
+              <Pencil className="size-4" />
+              编辑
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => copyNode(row.original)}
+              data-testid={`node-copy-${row.original.id}`}
+            >
+              <Copy className="size-4" />
+              复制
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => void removeNode(row.original)}
+              data-testid={`node-delete-${row.original.id}`}
+            >
+              <Trash2 className="size-4" />
+              删除
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ];
+
+  const columns = sortMode ? sortColumns : browseColumns;
+  const emptyText = filteredNodes.length === 0 ? '暂无节点' : undefined;
+
+  return (
+    <PageShell data-testid="server-manage-page">
+      <ServerSortPrompt when={sortMode} />
+      <PageHeader
+        title="节点管理"
+        actions={
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button data-testid="node-add">
+                  <Plus className="size-4" />
+                  添加节点
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {SERVER_TYPES.map((type) => (
+                  <DropdownMenuItem
+                    key={type}
+                    onClick={() => openEditor(type)}
+                    data-testid={`node-add-${type}`}
+                  >
+                    <ServerTypeTag type={type}>{SERVER_TYPE_LABELS[type]}</ServerTypeTag>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              variant={sortMode ? 'default' : 'outline'}
+              onClick={saveSort}
+              data-testid="node-sort-toggle"
+            >
+              {sortMode ? '保存排序' : '编辑排序'}
+            </Button>
+          </>
+        }
+      />
+
+      <div className="w-full sm:max-w-xs">
+        <Input
+          placeholder="输入任意关键字搜索"
+          onChange={(event) => {
+            setSearchKey(event.target.value);
+            setCurrentPage(1);
+          }}
+          data-testid="node-search"
         />
       </div>
-      <div className="row">
-        <div className="form-group col-md-6 col-xs-12">
-          <label>RTT</label>
-          <LegacySelect
-            value={legacyText(value.rtt) || '0rtt'}
-            style={{ width: '100%' }}
-            options={LEGACY_ENCRYPTION_RTT_OPTIONS}
-            onChange={(next) => change('rtt', next)}
-          />
+
+      <TooltipProvider delayDuration={100}>
+        <Card className="overflow-hidden py-0">
+          <CardContent className="p-0">
+            <DataTable
+              columns={columns}
+              data={visibleNodes}
+              getRowKey={(row) => row.id}
+              className="min-w-[1080px]"
+              data-testid="server-nodes-table"
+              empty={emptyText}
+              emptyTestId="server-nodes-empty"
+              virtualizer={{ enabled: visibleNodes.length > VIRTUALIZE_MIN_ROWS }}
+            />
+          </CardContent>
+        </Card>
+      </TooltipProvider>
+
+      {!sortMode && filteredNodes.length > 0 ? (
+        <ServerPagination
+          current={activePage}
+          pageSize={pageSize}
+          total={filteredNodes.length}
+          onChange={changePage}
+        />
+      ) : null}
+
+      {nodes.isFetching || sortingLoading ? (
+        <div className="flex justify-center py-6" role="status">
+          <Spinner className="size-5 text-muted-foreground" />
+          <span className="sr-only">加载中</span>
         </div>
-        {value.rtt === '0rtt' ? (
-          <div className="form-group col-md-6 col-xs-12">
-            <label>Ticket time</label>
-            <LegacyInput
-              className="ant-input"
-              value={legacyText(value.ticket)}
-              onChange={(event) => change('ticket', event.target.value)}
-              placeholder="最长允许时间"
+      ) : null}
+
+      <NodeEditDrawer
+        open={drawerOpen}
+        editKey={editing?.key ?? 0}
+        type={editing?.type ?? 'v2node'}
+        record={editing?.record}
+        nodes={nodes.data ?? []}
+        groups={groups.data ?? []}
+        routes={routes.data ?? []}
+        onSaved={() => nodes.refetch()}
+        onClose={() => setDrawerOpen(false)}
+      />
+    </PageShell>
+  );
+}
+
+const SERVER_PAGE_SIZE_OPTIONS = [10, 50, 100, 500];
+
+function ServerPagination({
+  current,
+  pageSize,
+  total,
+  onChange,
+}: {
+  current: number;
+  pageSize: number;
+  total: number;
+  onChange: (page: number, pageSize: number) => void;
+}) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-3">
+      <span className="text-sm text-muted-foreground">共 {total} 条</span>
+      <Select
+        value={String(pageSize)}
+        onValueChange={(value) => onChange(1, Number(value))}
+      >
+        <SelectTrigger className="h-9 w-28" data-testid="node-page-size">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {SERVER_PAGE_SIZE_OPTIONS.map((size) => (
+            <SelectItem key={size} value={String(size)}>
+              {size} 条/页
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={current <= 1}
+          onClick={() => onChange(current - 1, pageSize)}
+        >
+          上一页
+        </Button>
+        <span className="px-2 text-sm tabular-nums" data-testid="node-page">
+          {current} / {pageCount}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={current >= pageCount}
+          onClick={() => onChange(current + 1, pageSize)}
+        >
+          下一页
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Node editor drawer.
+// ---------------------------------------------------------------------------
+
+function NodeEditDrawer({
+  open,
+  editKey,
+  type,
+  record,
+  nodes,
+  groups,
+  routes,
+  onSaved,
+  onClose,
+}: {
+  open: boolean;
+  editKey: number;
+  type: admin.ServerTypeName;
+  record?: admin.ServerNode;
+  nodes: admin.ServerNode[];
+  groups: admin.ServerGroup[];
+  routes: admin.ServerRoute[];
+  onSaved?: () => void | Promise<unknown>;
+  onClose: () => void;
+}) {
+  const id = record?.id;
+  const [values, setValues] = useState<Record<string, unknown>>(() =>
+    getNodeInitialValues(type, record),
+  );
+  const [saving, setSaving] = useState(false);
+  const [childDrawer, setChildDrawer] = useState<{ open: boolean; title?: string; field?: string }>(
+    { open: false },
+  );
+
+  // Reseed the form to the exact legacy initial values every time the drawer is
+  // (re)opened for a node/type, mirroring antd's fresh Form initialValues.
+  useEffect(() => {
+    if (open) {
+      setValues(getNodeInitialValues(type, record));
+      setChildDrawer({ open: false });
+    }
+    // editKey changes on every open; type/record are captured with it.
+  }, [editKey, open]);
+
+  const setField = (name: string | [string, string], value: unknown) => {
+    setValues((prev) => {
+      if (Array.isArray(name)) {
+        const [parent, child] = name;
+        const parentValue =
+          prev[parent] && typeof prev[parent] === 'object'
+            ? { ...(prev[parent] as Record<string, unknown>) }
+            : {};
+        parentValue[child] = value;
+        return { ...prev, [parent]: parentValue };
+      }
+      return { ...prev, [name]: value };
+    });
+  };
+  const setFields = (partial: Record<string, unknown>) =>
+    setValues((prev) => ({ ...prev, ...partial }));
+  const form: NodeForm = { values, setField, setFields, setValues };
+
+  const parentCandidates = nodes.filter((node) => node.type === type && node.id !== id);
+  const parentOptions: SelectOption[] = [
+    { value: '', label: '无' },
+    ...parentCandidates.map((node) => ({ value: node.id, label: node.name })),
+  ];
+  const groupOptions = groups.map((group) => ({ value: String(group.id), label: group.name }));
+  const routeOptions = routes.map((route) => ({
+    value: String(route.id),
+    label: String(route.id),
+  }));
+
+  const showChildDrawer = (title?: string, field?: string) => {
+    setChildDrawer((current) => ({ open: !current.open, title, field }));
+  };
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      const payload = prepareLegacyServerPayload(type, values, id);
+      await admin.saveServer(apiClient, type, payload);
+      await onSaved?.();
+      onClose();
+    } catch (e) {
+      // Client-side payload validation stays inline; backend API errors are
+      // surfaced by the global onError handler (legacy parity).
+      if (e instanceof SyntaxError) {
+        // Legacy parity: invalid transport-config JSON surfaced an error toast.
+        toast.error('传输协议配置格式有误');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectedGroups = Array.isArray(values.group_id)
+    ? (values.group_id as unknown[]).map(String)
+    : [];
+  const selectedRoutes = Array.isArray(values.route_id)
+    ? (values.route_id as unknown[]).map(String)
+    : [];
+  const tags = Array.isArray(values.tags) ? (values.tags as string[]) : [];
+
+  return (
+    <Sheet open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
+      <SheetContent
+        side="right"
+        className="w-full gap-0 overflow-y-auto sm:max-w-3xl"
+        data-testid="node-editor"
+      >
+        <SheetHeader>
+          <SheetTitle>{id ? '编辑节点' : '新建节点'}</SheetTitle>
+        </SheetHeader>
+
+        <div className="space-y-5 px-4 pb-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="node-name">节点名称</Label>
+              <Input
+                id="node-name"
+                placeholder="请输入节点名称"
+                value={inputValue(values.name)}
+                onChange={(event) => setField('name', event.target.value)}
+                data-testid="node-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="node-rate">倍率</Label>
+              <div className="relative">
+                <Input
+                  id="node-rate"
+                  className="pr-8"
+                  placeholder="请输入节点倍率"
+                  value={inputValue(values.rate)}
+                  onChange={(event) => setField('rate', event.target.value)}
+                  data-testid="node-rate"
+                />
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+                  x
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>节点标签</Label>
+            <TagsInput
+              value={tags}
+              onChange={(next) => setField('tags', normalizeLegacyNullableArray(next))}
+              placeholder="输入后回车添加标签"
+              testId="node-tags"
             />
           </div>
-        ) : null}
+
+          <div className="space-y-2">
+            <Label>权限组</Label>
+            <MultiCheckboxField
+              options={groupOptions}
+              value={selectedGroups}
+              onChange={(next) => setField('group_id', next)}
+              testId="node-group-ids"
+              emptyText="暂无可选权限组"
+            />
+          </div>
+
+          <NodeAddressFields form={form} type={type} showChildDrawer={showChildDrawer} />
+          <NodePortFields form={form} type={type} />
+
+          <ServerTypeFields
+            editing={Boolean(id)}
+            type={type}
+            form={form}
+            showChildDrawer={showChildDrawer}
+          />
+
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              父节点
+              <a
+                className="inline-flex items-center gap-1 text-sm text-primary"
+                target="_blank"
+                href="https://docs.v2board.com/use/node.html#父节点与子节点关系"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="size-3.5" />
+                更多解答
+              </a>
+            </Label>
+            <NodeSelect
+              value={(values.parent_id as SelectValueType) || ''}
+              options={parentOptions}
+              onChange={(value) => setField('parent_id', value)}
+              testId="node-parent"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>路由组</Label>
+            <MultiCheckboxField
+              options={routeOptions}
+              value={selectedRoutes}
+              onChange={(next) =>
+                setField('route_id', normalizeLegacyNullableArray(next.map(Number)))
+              }
+              testId="node-route-ids"
+              emptyText="暂无可选路由组"
+            />
+          </div>
+
+          {type === 'v2node' ? (
+            <div className="space-y-2">
+              <Label htmlFor="node-install-command">一键安装指令</Label>
+              <Textarea
+                id="node-install-command"
+                rows={4}
+                readOnly
+                className="cursor-text bg-muted/40 font-mono text-xs"
+                value={inputValue(values.install_command)}
+                data-testid="node-install-command"
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <SheetFooter>
+          <Button onClick={() => void submit()} disabled={saving} data-testid="node-submit">
+            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+            提交
+          </Button>
+          <Button variant="outline" onClick={onClose}>
+            取消
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+
+      {childDrawer.field ? (
+        <Sheet open={childDrawer.open} onOpenChange={(next) => (next ? undefined : showChildDrawer())}>
+          <SheetContent
+            side="right"
+            className="w-full gap-0 overflow-y-auto sm:max-w-2xl"
+            data-testid="node-child-editor"
+          >
+            <SheetHeader>
+              <SheetTitle>{childDrawer.title}</SheetTitle>
+            </SheetHeader>
+            <div className="space-y-4 px-4 pb-4">
+              <NodeChildField type={type} field={childDrawer.field} form={form} />
+            </div>
+            <SheetFooter>
+              <Button onClick={() => showChildDrawer()}>完成</Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      ) : null}
+    </Sheet>
+  );
+}
+
+function NodeAddressFields({
+  form,
+  type,
+  showChildDrawer,
+}: {
+  form: NodeForm;
+  type: admin.ServerTypeName;
+  showChildDrawer: (title?: string, field?: string) => void;
+}) {
+  const { values, setField } = form;
+  if (type === 'v2node') {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="node-host">连接地址</Label>
+          <Input
+            id="node-host"
+            placeholder="地址或IP"
+            value={inputValue(values.host)}
+            onChange={(event) => setField('host', event.target.value)}
+            data-testid="node-host"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="node-listen-ip">监听地址</Label>
+          <Input
+            id="node-listen-ip"
+            placeholder="地址或IP默认为0.0.0.0"
+            value={inputValue(values.listen_ip)}
+            onChange={(event) => setField('listen_ip', event.target.value)}
+            data-testid="node-listen-ip"
+          />
+        </div>
       </div>
-      <div className="form-group">
-        <label>Server Padding</label>
-        <LegacyInput
-          className="ant-input"
-          value={legacyText(value.server_padding)}
-          onChange={(event) => change('server_padding', event.target.value)}
-          placeholder="留空使用默认值100-111-1111.75-0-111.50-0-3333"
-        />
+    );
+  }
+  if (type === 'vmess' || type === 'vless') {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="space-y-2 sm:col-span-2">
+          <Label htmlFor="node-host">节点地址</Label>
+          <Input
+            id="node-host"
+            placeholder="请输入连接地址"
+            value={inputValue(values.host)}
+            onChange={(event) => setField('host', event.target.value)}
+            data-testid="node-host"
+          />
+        </div>
+        {type === 'vmess' ? (
+          <VmessTlsField form={form} showChildDrawer={showChildDrawer} />
+        ) : (
+          <VlessSecurityField form={form} showChildDrawer={showChildDrawer} />
+        )}
       </div>
-      <div className="form-group">
-        <label>Private Key</label>
-        <LegacyInput
-          className="ant-input"
-          value={legacyText(value.private_key)}
-          onChange={(event) => change('private_key', event.target.value)}
-          placeholder="留空自动生成，需抗量子加密请自行替换"
-        />
-      </div>
-      <div className="form-group">
-        <label>Client Padding</label>
-        <LegacyInput
-          className="ant-input"
-          value={legacyText(value.client_padding)}
-          onChange={(event) => change('client_padding', event.target.value)}
-          placeholder="留空使用默认值100-111-1111.75-0-111.50-0-3333"
-        />
-      </div>
-      <div className="form-group">
-        <label>Password</label>
-        <LegacyInput
-          className="ant-input"
-          value={legacyText(value.password)}
-          onChange={(event) => change('password', event.target.value)}
-          placeholder="留空自动生成，需抗量子加密请自行替换"
-        />
-      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="node-host">节点地址</Label>
+      <Input
+        id="node-host"
+        placeholder="地址或IP"
+        value={inputValue(values.host)}
+        onChange={(event) => setField('host', event.target.value)}
+        data-testid="node-host"
+      />
     </div>
   );
 }
 
-function TrojanAllowInsecureField() {
+function NodePortFields({ form, type }: { form: NodeForm; type: admin.ServerTypeName }) {
+  const { values, setField } = form;
+  const portInput = (name: string, label: string, placeholder: string, testId: string) => (
+    <div className="space-y-2">
+      <Label htmlFor={testId}>{label}</Label>
+      <Input
+        id={testId}
+        placeholder={placeholder}
+        value={inputValue(values[name])}
+        onChange={(event) => setField(name, event.target.value)}
+        data-testid={testId}
+      />
+    </div>
+  );
+
+  if (type === 'trojan' || type === 'hysteria' || type === 'tuic' || type === 'anytls') {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {portInput('port', '连接端口', '用户连接端口', 'node-port')}
+        {portInput('server_port', '服务端口', '服务端开放端口', 'node-server-port')}
+        {type === 'trojan' ? <TrojanAllowInsecureField form={form} /> : <ServerInsecureField form={form} />}
+      </div>
+    );
+  }
+  if (type === 'v2node') {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {portInput('port', '连接端口', '用户连接端口', 'node-port')}
+        {portInput('server_port', '服务端口', '服务端开放端口', 'node-server-port')}
+      </div>
+    );
+  }
   return (
-    <div className="form-group col-md-4 col-xs-12">
-      <label>
-        <LegacyTooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">
-          允许不安全 <LegacyQuestionCircleIcon />
-        </LegacyTooltip>
-      </label>
-      <Form.Item
-        noStyle
-        name="allow_insecure"
-        initialValue={0}
-        getValueProps={legacyBinarySelectValueProps}
-      >
-        <LegacySelect
-          placeholder="允许不安全"
-          style={{ width: '100%' }}
-          options={LEGACY_BINARY_SELECT_OPTIONS}
-        />
-      </Form.Item>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {portInput('port', '连接端口', '用户连接端口', 'node-port')}
+      {portInput('server_port', '服务端口', '非NAT同连接端口', 'node-server-port')}
     </div>
   );
 }
 
-function ServerInsecureField() {
+function ChildFieldLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <div className="form-group col-md-4 col-xs-12">
-      <label>
-        <LegacyTooltip placement="top" title="使用自签名证书需要允许不安全，用户才可以连接">
-          允许不安全 <LegacyQuestionCircleIcon />
-        </LegacyTooltip>
-      </label>
-      <Form.Item
-        noStyle
-        name="insecure"
-        initialValue={0}
-        getValueProps={legacyBinarySelectValueProps}
-      >
-        <LegacySelect
-          placeholder="允许不安全"
-          style={{ width: '100%' }}
-          options={LEGACY_BINARY_SELECT_OPTIONS}
-        />
-      </Form.Item>
+    <button type="button" className="text-sm text-primary" onClick={onClick}>
+      {label}
+    </button>
+  );
+}
+
+function TrojanAllowInsecureField({ form }: { form: NodeForm }) {
+  return (
+    <div className="space-y-2">
+      <Label>
+        <HeaderTooltip title="使用自签名证书需要允许不安全，用户才可以连接">允许不安全</HeaderTooltip>
+      </Label>
+      <NodeSelect
+        value={getLegacyBinarySelectValue(form.values.allow_insecure)}
+        options={LEGACY_BINARY_SELECT_OPTIONS}
+        placeholder="允许不安全"
+        onChange={(value) => form.setField('allow_insecure', value)}
+        testId="node-allow-insecure"
+      />
+    </div>
+  );
+}
+
+function ServerInsecureField({ form }: { form: NodeForm }) {
+  return (
+    <div className="space-y-2">
+      <Label>
+        <HeaderTooltip title="使用自签名证书需要允许不安全，用户才可以连接">允许不安全</HeaderTooltip>
+      </Label>
+      <NodeSelect
+        value={getLegacyBinarySelectValue(form.values.insecure)}
+        options={LEGACY_BINARY_SELECT_OPTIONS}
+        placeholder="允许不安全"
+        onChange={(value) => form.setField('insecure', value)}
+        testId="node-insecure"
+      />
     </div>
   );
 }
 
 function VmessTlsField({
+  form,
   showChildDrawer,
 }: {
+  form: NodeForm;
   showChildDrawer: (title?: string, field?: string) => void;
 }) {
   return (
-    <div className="form-group col-md-4 col-xs-12">
-      <label>
-        TLS{' '}
-        <a ref={legacyHref()} onClick={() => showChildDrawer('编辑TLS配置', 'tlsSettings')}>
-          编辑配置
-        </a>
-      </label>
-      <Form.Item noStyle name="tls" initialValue={0} getValueProps={legacyBinarySelectValueProps}>
-        <LegacySelect
-          placeholder="是否支持TLS"
-          style={{ width: '100%' }}
-          options={LEGACY_TLS_SUPPORT_OPTIONS}
-        />
-      </Form.Item>
+    <div className="space-y-2">
+      <Label className="flex items-center gap-2">
+        TLS
+        <ChildFieldLink label="编辑配置" onClick={() => showChildDrawer('编辑TLS配置', 'tlsSettings')} />
+      </Label>
+      <NodeSelect
+        value={getLegacyBinarySelectValue(form.values.tls)}
+        options={LEGACY_TLS_SUPPORT_OPTIONS}
+        placeholder="是否支持TLS"
+        onChange={(value) => form.setField('tls', value)}
+        testId="node-tls"
+      />
     </div>
   );
 }
@@ -3025,31 +2572,27 @@ function VlessSecurityField({
   form,
   showChildDrawer,
 }: {
-  form: FormInstance;
+  form: NodeForm;
   showChildDrawer: (title?: string, field?: string) => void;
 }) {
-  const security = Form.useWatch('tls', form);
-
+  const security = form.values.tls;
   return (
-    <div className="form-group col-md-4 col-xs-12">
-      <label>
-        安全性{' '}
+    <div className="space-y-2">
+      <Label className="flex items-center gap-2">
+        安全性
         {parseInt(String(security ?? 0), 10) !== 0 ? (
-          <a ref={legacyHref()} onClick={() => showChildDrawer('编辑安全性配置', 'tls_settings')}>
-            编辑配置
-          </a>
+          <ChildFieldLink
+            label="编辑配置"
+            onClick={() => showChildDrawer('编辑安全性配置', 'tls_settings')}
+          />
         ) : null}
-      </label>
-      <Form.Item noStyle name="tls" initialValue={0} getValueProps={legacyNumericSelectValueProps}>
-        <LegacySelect
-          style={{ width: '100%' }}
-          options={[
-            LEGACY_SECURITY_NONE_OPTION,
-            LEGACY_SECURITY_TLS_OPTION,
-            LEGACY_SECURITY_REALITY_OPTION,
-          ]}
-        />
-      </Form.Item>
+      </Label>
+      <NodeSelect
+        value={getLegacyNumericSelectValue(form.values.tls)}
+        options={[LEGACY_SECURITY_NONE_OPTION, LEGACY_SECURITY_TLS_OPTION, LEGACY_SECURITY_REALITY_OPTION]}
+        onChange={(value) => form.setField('tls', value)}
+        testId="node-vless-security"
+      />
     </div>
   );
 }
@@ -3058,250 +2601,277 @@ function V2nodeFields({
   form,
   showChildDrawer,
 }: {
-  form: FormInstance;
+  form: NodeForm;
   showChildDrawer: (title?: string, field?: string) => void;
 }) {
-  const protocol = Form.useWatch('protocol', form);
-  const tls = Form.useWatch('tls', form);
-  const obfs = Form.useWatch('obfs', form);
-  const encryption = Form.useWatch('encryption', form);
+  const { values, setField, setFields, setValues } = form;
+  const protocol = values.protocol;
+  const tls = values.tls;
+  const obfs = values.obfs;
+  const encryption = values.encryption;
   const protocolValue = protocol == null ? null : String(protocol);
   const securityValue = getLegacyV2nodeSecurityValue(protocolValue, tls);
 
-  const changeProtocol = (value: LegacySelectValue) => {
+  // Mirror antd Form.Item initialValue registering on mount when a protocol's
+  // fields appear: seed the item-level defaults getLegacyServerInitialValues
+  // intentionally omits, only when the store has no value yet.
+  useEffect(() => {
+    setValues((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      if (protocolValue === 'shadowsocks' && next.cipher == null) {
+        next.cipher = 'aes-128-gcm';
+        changed = true;
+      }
+      if (protocolValue === 'tuic') {
+        if (next.udp_relay_mode == null) {
+          next.udp_relay_mode = 'native';
+          changed = true;
+        }
+        if (next.congestion_control == null) {
+          next.congestion_control = 'cubic';
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [protocolValue, setValues]);
+
+  const changeProtocol = (value: string | number | null) => {
     const nextProtocol = value == null ? '' : String(value);
-    form.setFieldsValue({
+    setFields({
       protocol: nextProtocol,
       ...(LEGACY_TLS_FORCED_PROTOCOLS.includes(nextProtocol) ? { tls: 1 } : {}),
     });
   };
 
   return (
-    <>
-      <div className="row">
-        <div className="form-group col-md-6 col-xs-12">
-          <label>节点协议</label>
-          <Form.Item noStyle name="protocol">
-            <LegacySelect
-              style={{ width: '100%' }}
-              options={LEGACY_V2NODE_PROTOCOL_OPTIONS}
-              onChange={changeProtocol}
-            />
-          </Form.Item>
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label>节点协议</Label>
+          <NodeSelect
+            value={protocolValue}
+            options={LEGACY_V2NODE_PROTOCOL_OPTIONS}
+            onChange={changeProtocol}
+            testId="node-protocol"
+          />
         </div>
         {protocolValue != null && protocolValue !== 'shadowsocks' ? (
-          <div className="form-group col-md-6 col-xs-12">
-            <label>
-              安全性{' '}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              安全性
               {securityValue ? (
-                <a
-                  ref={legacyHref()}
+                <ChildFieldLink
+                  label="编辑配置"
                   onClick={() => showChildDrawer('编辑安全性配置', 'tls_settings')}
-                >
-                  编辑配置
-                </a>
+                />
               ) : null}
-            </label>
-            <Form.Item
-              noStyle
-              name="tls"
-              initialValue={0}
-              getValueProps={(value) => ({
-                value: getLegacyV2nodeSecurityValue(protocolValue, value),
-              })}
-            >
-              <LegacySelect
-                style={{ width: '100%' }}
-                options={getLegacyV2nodeSecurityOptions(protocolValue)}
-              />
-            </Form.Item>
+            </Label>
+            <NodeSelect
+              value={getLegacyV2nodeSecurityValue(protocolValue, tls)}
+              options={getLegacyV2nodeSecurityOptions(protocolValue)}
+              onChange={(value) => setField('tls', value)}
+              testId="node-v2node-security"
+            />
           </div>
         ) : null}
       </div>
+
       {protocolValue === 'shadowsocks' ? (
-        <div className="row">
-          <div className="form-group col-md-12 col-xs-12">
-            <label>
-              传输协议{' '}
-              <a
-                ref={legacyHref()}
-                onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
-              >
-                编辑配置
-              </a>
-            </label>
-            <Form.Item noStyle name="network" initialValue="tcp">
-              <LegacySelect
-                placeholder="选择传输协议"
-                style={{ width: '100%' }}
-                options={LEGACY_V2NODE_SHADOWSOCKS_NETWORK_OPTIONS}
-              />
-            </Form.Item>
-          </div>
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            传输协议
+            <ChildFieldLink
+              label="编辑配置"
+              onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
+            />
+          </Label>
+          <NodeSelect
+            value={(values.network as SelectValueType) ?? 'tcp'}
+            options={LEGACY_V2NODE_SHADOWSOCKS_NETWORK_OPTIONS}
+            placeholder="选择传输协议"
+            onChange={(value) => setField('network', value)}
+            testId="node-v2node-network"
+          />
         </div>
       ) : null}
+
       {protocolValue != null &&
       protocolValue !== 'hysteria2' &&
       protocolValue !== 'shadowsocks' &&
       protocolValue !== 'tuic' ? (
-        <div className="row">
-          <div className="form-group col-md-12 col-xs-12">
-            <label>
-              传输协议{' '}
-              <a
-                ref={legacyHref()}
-                onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
-              >
-                编辑配置
-              </a>
-            </label>
-            <Form.Item noStyle name="network" initialValue="tcp">
-              <LegacySelect
-                placeholder="选择传输协议"
-                style={{ width: '100%' }}
-                options={getLegacyV2nodeTransportOptions(protocolValue)}
-              />
-            </Form.Item>
-          </div>
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            传输协议
+            <ChildFieldLink
+              label="编辑配置"
+              onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
+            />
+          </Label>
+          <NodeSelect
+            value={(values.network as SelectValueType) ?? 'tcp'}
+            options={getLegacyV2nodeTransportOptions(protocolValue)}
+            placeholder="选择传输协议"
+            onChange={(value) => setField('network', value)}
+            testId="node-v2node-network"
+          />
         </div>
       ) : null}
+
       {protocolValue === 'anytls' ? (
-        <div className="row">
-          <div className="form-group col-md-12 col-xs-12">
-            <label>
-              <a
-                ref={legacyHref()}
-                onClick={() => showChildDrawer('编辑填充方案', 'padding_scheme')}
-              >
-                编辑填充方案
-              </a>
-            </label>
-          </div>
+        <div>
+          <ChildFieldLink
+            label="编辑填充方案"
+            onClick={() => showChildDrawer('编辑填充方案', 'padding_scheme')}
+          />
         </div>
       ) : null}
+
       {protocolValue === 'hysteria2' ? (
         <>
-          <div className="row">
-            <div className="form-group col-md-6 col-xs-12">
-              <label>混淆方式obfs</label>
-              <Form.Item noStyle name="obfs">
-                <LegacySelect style={{ width: '100%' }} options={LEGACY_HYSTERIA2_OBFS_OPTIONS} />
-              </Form.Item>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>混淆方式obfs</Label>
+              <NodeSelect
+                value={(values.obfs as SelectValueType) ?? null}
+                options={LEGACY_HYSTERIA2_OBFS_OPTIONS}
+                onChange={(value) => setField('obfs', value)}
+                testId="node-obfs"
+              />
             </div>
             {obfs === 'salamander' ? (
-              <div className="form-group col-md-6 col-xs-12">
-                <label>混淆密码obfs_password</label>
-                <Form.Item noStyle name="obfs_password">
-                  <LegacyInput className="ant-input" placeholder="留空自动生成" />
-                </Form.Item>
+              <div className="space-y-2">
+                <Label htmlFor="node-obfs-password">混淆密码obfs_password</Label>
+                <Input
+                  id="node-obfs-password"
+                  placeholder="留空自动生成"
+                  value={inputValue(values.obfs_password)}
+                  onChange={(event) => setField('obfs_password', event.target.value)}
+                />
               </div>
             ) : null}
           </div>
-          <div className="form-group">
-            <label>上行带宽</label>
-            <Form.Item noStyle name="up_mbps">
-              <LegacyInputGroup addonAfter="Mbps" placeholder="服务端发送带宽,留空或填0使用BBR" />
-            </Form.Item>
-          </div>
-          <div className="form-group">
-            <label>下行带宽</label>
-            <Form.Item noStyle name="down_mbps">
-              <LegacyInputGroup addonAfter="Mbps" placeholder="服务端接收带宽,留空或填0使用BBR" />
-            </Form.Item>
-          </div>
+          <BandwidthFields form={form} />
         </>
       ) : null}
+
       {protocolValue === 'tuic' ? (
         <>
-          <div className="row">
-            <div className="form-group col-md-6 col-xs-12">
-              <label>禁用SNI</label>
-              <Form.Item
-                noStyle
-                name="disable_sni"
-                initialValue={0}
-                getValueProps={legacyBinarySelectValueProps}
-              >
-                <LegacySelect style={{ width: '100%' }} options={LEGACY_BINARY_SELECT_OPTIONS} />
-              </Form.Item>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>禁用SNI</Label>
+              <NodeSelect
+                value={getLegacyBinarySelectValue(values.disable_sni)}
+                options={LEGACY_BINARY_SELECT_OPTIONS}
+                onChange={(value) => setField('disable_sni', value)}
+                testId="node-disable-sni"
+              />
             </div>
-            <div className="form-group col-md-6 col-xs-12">
-              <label>数据包中继模式</label>
-              <Form.Item noStyle name="udp_relay_mode" initialValue="native">
-                <LegacySelect style={{ width: '100%' }} options={LEGACY_TUIC_RELAY_MODE_OPTIONS} />
-              </Form.Item>
+            <div className="space-y-2">
+              <Label>数据包中继模式</Label>
+              <NodeSelect
+                value={(values.udp_relay_mode as SelectValueType) ?? 'native'}
+                options={LEGACY_TUIC_RELAY_MODE_OPTIONS}
+                onChange={(value) => setField('udp_relay_mode', value)}
+                testId="node-udp-relay-mode"
+              />
             </div>
           </div>
-          <div className="row">
-            <div className="form-group col-md-6 col-xs-12">
-              <label>拥塞控制算法</label>
-              <Form.Item noStyle name="congestion_control" initialValue="cubic">
-                <LegacySelect
-                  style={{ width: '100%' }}
-                  options={LEGACY_TUIC_CONGESTION_CONTROL_OPTIONS}
-                />
-              </Form.Item>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>拥塞控制算法</Label>
+              <NodeSelect
+                value={(values.congestion_control as SelectValueType) ?? 'cubic'}
+                options={LEGACY_TUIC_CONGESTION_CONTROL_OPTIONS}
+                onChange={(value) => setField('congestion_control', value)}
+                testId="node-congestion-control"
+              />
             </div>
-            <div className="form-group col-md-6 col-xs-12">
-              <label>客户端启用 0-RTT</label>
-              <Form.Item
-                noStyle
-                name="zero_rtt_handshake"
-                initialValue={0}
-                getValueProps={legacyBinarySelectValueProps}
-              >
-                <LegacySelect style={{ width: '100%' }} options={LEGACY_BINARY_SELECT_OPTIONS} />
-              </Form.Item>
+            <div className="space-y-2">
+              <Label>客户端启用 0-RTT</Label>
+              <NodeSelect
+                value={getLegacyBinarySelectValue(values.zero_rtt_handshake)}
+                options={LEGACY_BINARY_SELECT_OPTIONS}
+                onChange={(value) => setField('zero_rtt_handshake', value)}
+                testId="node-zero-rtt"
+              />
             </div>
           </div>
         </>
       ) : null}
+
       {protocolValue === 'shadowsocks' ? (
-        <div className="form-group">
-          <label>加密算法</label>
-          <Form.Item noStyle name="cipher" initialValue="aes-128-gcm">
-            <LegacySelect style={{ width: '100%' }} options={LEGACY_SHADOWSOCKS_CIPHER_OPTIONS} />
-          </Form.Item>
+        <div className="space-y-2">
+          <Label>加密算法</Label>
+          <NodeSelect
+            value={(values.cipher as SelectValueType) ?? 'aes-128-gcm'}
+            options={LEGACY_SHADOWSOCKS_CIPHER_OPTIONS}
+            onChange={(value) => setField('cipher', value)}
+            testId="node-cipher"
+          />
         </div>
       ) : null}
+
       {protocolValue === 'vless' ? (
         <>
-          <div className="row">
-            <div className="form-group col-md-12 col-xs-12">
-              <label>
-                加密方式{' '}
-                {encryption ? (
-                  <a
-                    ref={legacyHref()}
-                    onClick={() => showChildDrawer('编辑加密配置', 'encryption_settings')}
-                  >
-                    编辑配置
-                  </a>
-                ) : null}
-              </label>
-              <Form.Item noStyle name="encryption">
-                <LegacySelect
-                  placeholder="选择加密方式"
-                  style={{ width: '100%' }}
-                  options={LEGACY_VLESS_ENCRYPTION_OPTIONS}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              加密方式
+              {encryption ? (
+                <ChildFieldLink
+                  label="编辑配置"
+                  onClick={() => showChildDrawer('编辑加密配置', 'encryption_settings')}
                 />
-              </Form.Item>
-            </div>
+              ) : null}
+            </Label>
+            <NodeSelect
+              value={(values.encryption as SelectValueType) ?? null}
+              options={LEGACY_VLESS_ENCRYPTION_OPTIONS}
+              placeholder="选择加密方式"
+              onChange={(value) => setField('encryption', value)}
+              testId="node-encryption"
+            />
           </div>
-          <div className="row">
-            <div className="form-group col-md-12 col-xs-12">
-              <label>XTLS流控算法</label>
-              <Form.Item noStyle name="flow">
-                <LegacySelect
-                  placeholder="选择XTLS流控算法"
-                  style={{ width: '100%' }}
-                  options={LEGACY_VLESS_FLOW_OPTIONS}
-                />
-              </Form.Item>
-            </div>
+          <div className="space-y-2">
+            <Label>XTLS流控算法</Label>
+            <NodeSelect
+              value={(values.flow as SelectValueType) ?? null}
+              options={LEGACY_VLESS_FLOW_OPTIONS}
+              placeholder="选择XTLS流控算法"
+              onChange={(value) => setField('flow', value)}
+              testId="node-flow"
+            />
           </div>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function BandwidthFields({ form }: { form: NodeForm }) {
+  const { values, setField } = form;
+  const field = (name: string, label: string, placeholder: string) => (
+    <div className="space-y-2">
+      <Label htmlFor={`node-${name}`}>{label}</Label>
+      <div className="relative">
+        <Input
+          id={`node-${name}`}
+          className="pr-16"
+          placeholder={placeholder}
+          value={inputValue(values[name])}
+          onChange={(event) => setField(name, event.target.value)}
+        />
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+          Mbps
+        </span>
+      </div>
+    </div>
+  );
+  return (
+    <>
+      {field('up_mbps', '上行带宽', '服务端发送带宽,留空或填0使用BBR')}
+      {field('down_mbps', '下行带宽', '服务端接收带宽,留空或填0使用BBR')}
     </>
   );
 }
@@ -3314,329 +2884,710 @@ function ServerTypeFields({
 }: {
   editing: boolean;
   type: admin.ServerTypeName;
-  form: FormInstance;
+  form: NodeForm;
   showChildDrawer: (title?: string, field?: string) => void;
 }) {
-  const shadowsocksObfs = Form.useWatch('obfs', form);
-  const vlessNetwork = Form.useWatch('network', form);
-  const vlessEncryption = Form.useWatch('encryption', form);
-  const hysteriaVersion = Form.useWatch('version', form);
-  const hysteriaObfs = Form.useWatch('obfs', form);
-  const tuicDisableSni = Form.useWatch('disable_sni', form);
+  const { values, setField } = form;
 
   if (type === 'v2node') {
     return <V2nodeFields form={form} showChildDrawer={showChildDrawer} />;
   }
 
   if (type === 'shadowsocks') {
+    const shadowsocksObfs = values.obfs;
+    const obfsSettings = (values.obfs_settings as Record<string, unknown> | undefined) ?? {};
     return (
-      <>
-        <div className="form-group">
-          <label>加密算法</label>
-          <Form.Item
-            noStyle
-            name="cipher"
-            initialValue={editing ? undefined : 'chacha20-ietf-poly1305'}
-          >
-            <LegacySelect style={{ width: '100%' }} options={LEGACY_SHADOWSOCKS_CIPHER_OPTIONS} />
-          </Form.Item>
+      <div className="space-y-5">
+        <div className="space-y-2">
+          <Label>加密算法</Label>
+          <NodeSelect
+            value={(values.cipher as SelectValueType) ?? (editing ? undefined : 'chacha20-ietf-poly1305')}
+            options={LEGACY_SHADOWSOCKS_CIPHER_OPTIONS}
+            onChange={(value) => setField('cipher', value)}
+            testId="node-cipher"
+          />
         </div>
-        <div className="form-group">
-          <label>混淆</label>
-          <Form.Item noStyle name="obfs" initialValue="">
-            <LegacySelect style={{ width: '100%' }} options={LEGACY_SHADOWSOCKS_OBFS_OPTIONS} />
-          </Form.Item>
-          <div>
-            {shadowsocksObfs === 'http' ? (
-              <div className="row mt-2">
-                <div className="form-group col-4 mb-0">
-                  <Form.Item noStyle name={['obfs_settings', 'path']}>
-                    <LegacyInput className="ant-input" placeholder="路径" />
-                  </Form.Item>
-                </div>
-                <div className="form-group col-8 mb-0">
-                  <Form.Item noStyle name={['obfs_settings', 'host']}>
-                    <LegacyInput className="ant-input" placeholder="Host" />
-                  </Form.Item>
-                </div>
+        <div className="space-y-2">
+          <Label>混淆</Label>
+          <NodeSelect
+            value={(values.obfs as SelectValueType) ?? ''}
+            options={LEGACY_SHADOWSOCKS_OBFS_OPTIONS}
+            onChange={(value) => setField('obfs', value)}
+            testId="node-obfs"
+          />
+          {shadowsocksObfs === 'http' ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Input
+                  placeholder="路径"
+                  value={inputValue(obfsSettings.path)}
+                  onChange={(event) => setField(['obfs_settings', 'path'], event.target.value)}
+                  data-testid="node-obfs-path"
+                />
               </div>
-            ) : null}
-          </div>
-        </div>
-      </>
-    );
-  }
-  if (type === 'vmess') {
-    return (
-      <div className="row">
-        <div className="form-group col-md-12 col-xs-12">
-          <label>
-            传输协议{' '}
-            <a
-              ref={legacyHref()}
-              onClick={() => showChildDrawer('编辑协议配置', 'networkSettings')}
-            >
-              编辑配置
-            </a>
-          </label>
-          <Form.Item noStyle name="network">
-            <LegacySelect
-              placeholder="选择传输协议"
-              style={{ width: '100%' }}
-              options={LEGACY_STREAM_NETWORK_OPTIONS}
-            />
-          </Form.Item>
+              <div className="space-y-2 sm:col-span-2">
+                <Input
+                  placeholder="Host"
+                  value={inputValue(obfsSettings.host)}
+                  onChange={(event) => setField(['obfs_settings', 'host'], event.target.value)}
+                  data-testid="node-obfs-host"
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     );
   }
-  if (type === 'trojan') {
+
+  if (type === 'vmess') {
     return (
-      <>
-        <div className="form-group">
-          <label>服务器名称指示(sni)</label>
-          <Form.Item noStyle name="server_name">
-            <LegacyInput className="ant-input" placeholder="当节点地址与证书不一致时用于证书验证" />
-          </Form.Item>
-        </div>
-        <div className="row">
-          <div className="form-group col-md-12 col-xs-12">
-            <label>
-              传输协议{' '}
-              <a
-                ref={legacyHref()}
-                onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
-              >
-                编辑配置
-              </a>
-            </label>
-            <Form.Item noStyle name="network">
-              <LegacySelect
-                placeholder="选择传输协议"
-                style={{ width: '100%' }}
-                options={LEGACY_TROJAN_NETWORK_OPTIONS}
-              />
-            </Form.Item>
-          </div>
-        </div>
-      </>
+      <div className="space-y-2">
+        <Label className="flex items-center gap-2">
+          传输协议
+          <ChildFieldLink
+            label="编辑配置"
+            onClick={() => showChildDrawer('编辑协议配置', 'networkSettings')}
+          />
+        </Label>
+        <NodeSelect
+          value={values.network as SelectValueType}
+          options={LEGACY_STREAM_NETWORK_OPTIONS}
+          placeholder="选择传输协议"
+          onChange={(value) => setField('network', value)}
+          testId="node-network"
+        />
+      </div>
     );
   }
-  if (type === 'tuic') {
+
+  if (type === 'trojan') {
     return (
-      <>
-        <div className="row">
-          <div className="form-group col-md-6 col-xs-12">
-            <label>禁用SNI</label>
-            <Form.Item
-              noStyle
-              name="disable_sni"
-              initialValue={0}
-              getValueProps={legacyBinarySelectValueProps}
-            >
-              <LegacySelect style={{ width: '100%' }} options={LEGACY_BINARY_SELECT_OPTIONS} />
-            </Form.Item>
+      <div className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="node-server-name">服务器名称指示(sni)</Label>
+          <Input
+            id="node-server-name"
+            placeholder="当节点地址与证书不一致时用于证书验证"
+            value={inputValue(values.server_name)}
+            onChange={(event) => setField('server_name', event.target.value)}
+            data-testid="node-server-name"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            传输协议
+            <ChildFieldLink
+              label="编辑配置"
+              onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
+            />
+          </Label>
+          <NodeSelect
+            value={values.network as SelectValueType}
+            options={LEGACY_TROJAN_NETWORK_OPTIONS}
+            placeholder="选择传输协议"
+            onChange={(value) => setField('network', value)}
+            testId="node-network"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (type === 'tuic') {
+    const tuicDisableSni = values.disable_sni;
+    return (
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>禁用SNI</Label>
+            <NodeSelect
+              value={getLegacyBinarySelectValue(values.disable_sni)}
+              options={LEGACY_BINARY_SELECT_OPTIONS}
+              onChange={(value) => setField('disable_sni', value)}
+              testId="node-disable-sni"
+            />
           </div>
-          <div className="form-group col-md-6 col-xs-12">
-            <label>数据包中继模式</label>
-            <Form.Item noStyle name="udp_relay_mode" initialValue="native">
-              <LegacySelect style={{ width: '100%' }} options={LEGACY_TUIC_RELAY_MODE_OPTIONS} />
-            </Form.Item>
+          <div className="space-y-2">
+            <Label>数据包中继模式</Label>
+            <NodeSelect
+              value={(values.udp_relay_mode as SelectValueType) ?? 'native'}
+              options={LEGACY_TUIC_RELAY_MODE_OPTIONS}
+              onChange={(value) => setField('udp_relay_mode', value)}
+              testId="node-udp-relay-mode"
+            />
           </div>
         </div>
         {parseInt(String(tuicDisableSni ?? 0), 10) ? null : (
-          <div className="form-group">
-            <label>服务器名称指示(sni)</label>
-            <Form.Item noStyle name="server_name">
-              <LegacyInput
-                className="ant-input"
-                placeholder="当节点地址与证书不一致时用于证书验证"
-              />
-            </Form.Item>
+          <div className="space-y-2">
+            <Label htmlFor="node-server-name">服务器名称指示(sni)</Label>
+            <Input
+              id="node-server-name"
+              placeholder="当节点地址与证书不一致时用于证书验证"
+              value={inputValue(values.server_name)}
+              onChange={(event) => setField('server_name', event.target.value)}
+              data-testid="node-server-name"
+            />
           </div>
         )}
-        <div className="row">
-          <div className="form-group col-md-6 col-xs-12">
-            <label>拥塞控制算法</label>
-            <Form.Item noStyle name="congestion_control" initialValue="cubic">
-              <LegacySelect
-                style={{ width: '100%' }}
-                options={LEGACY_TUIC_CONGESTION_CONTROL_OPTIONS}
-              />
-            </Form.Item>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>拥塞控制算法</Label>
+            <NodeSelect
+              value={(values.congestion_control as SelectValueType) ?? 'cubic'}
+              options={LEGACY_TUIC_CONGESTION_CONTROL_OPTIONS}
+              onChange={(value) => setField('congestion_control', value)}
+              testId="node-congestion-control"
+            />
           </div>
-          <div className="form-group col-md-6 col-xs-12">
-            <label>客户端启用 0-RTT</label>
-            <Form.Item
-              noStyle
-              name="zero_rtt_handshake"
-              initialValue={0}
-              getValueProps={legacyBinarySelectValueProps}
-            >
-              <LegacySelect style={{ width: '100%' }} options={LEGACY_BINARY_SELECT_OPTIONS} />
-            </Form.Item>
+          <div className="space-y-2">
+            <Label>客户端启用 0-RTT</Label>
+            <NodeSelect
+              value={getLegacyBinarySelectValue(values.zero_rtt_handshake)}
+              options={LEGACY_BINARY_SELECT_OPTIONS}
+              onChange={(value) => setField('zero_rtt_handshake', value)}
+              testId="node-zero-rtt"
+            />
           </div>
         </div>
-      </>
+      </div>
     );
   }
-  if (type === 'vless') {
-    return (
-      <>
-        <div className="row">
-          <div className="form-group col-md-12 col-xs-12">
-            <label>
-              传输协议{' '}
-              <a
-                ref={legacyHref()}
-                onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
-              >
-                编辑配置
-              </a>
-            </label>
-            <Form.Item noStyle name="network">
-              <LegacySelect
-                placeholder="选择传输协议"
-                style={{ width: '100%' }}
-                options={LEGACY_STREAM_NETWORK_OPTIONS}
-              />
-            </Form.Item>
-          </div>
-        </div>
-        <div className="row">
-          <div className="form-group col-md-12 col-xs-12">
-            <label>
-              加密方式{' '}
-              {vlessEncryption ? (
-                <a
-                  ref={legacyHref()}
-                  onClick={() => showChildDrawer('编辑加密配置', 'encryption_settings')}
-                >
-                  编辑配置
-                </a>
-              ) : null}
-            </label>
-            <Form.Item noStyle name="encryption">
-              <LegacySelect
-                placeholder="选择加密方式"
-                style={{ width: '100%' }}
-                options={LEGACY_VLESS_ENCRYPTION_OPTIONS}
-              />
-            </Form.Item>
-          </div>
-        </div>
-        <div className="row">
-          <div className="form-group col-md-12 col-xs-12">
-            <label>XTLS流控算法</label>
-            <Form.Item noStyle name="flow">
-              <LegacySelect
-                placeholder="选择XTLS流控算法"
-                style={{ width: '100%' }}
-                options={getLegacyVlessFlowOptions(vlessNetwork)}
-              />
-            </Form.Item>
-          </div>
-        </div>
-      </>
-    );
-  }
-  if (type === 'hysteria') {
-    const version = parseInt(String(hysteriaVersion ?? 1), 10);
-    const obfs = hysteriaObfs == null ? null : String(hysteriaObfs);
 
+  if (type === 'vless') {
+    const vlessNetwork = values.network;
+    const vlessEncryption = values.encryption;
     return (
-      <>
-        <div className="row">
-          <div className="form-group col-md-3 col-xs-12">
-            <label>HYSTERIA版本</label>
-            <Form.Item
-              noStyle
-              name="version"
-              initialValue={1}
-              getValueProps={(value) => legacyNumericSelectValueProps(value, 1)}
-            >
-              <LegacySelect style={{ width: '100%' }} options={LEGACY_HYSTERIA_VERSION_OPTIONS} />
-            </Form.Item>
+      <div className="space-y-5">
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            传输协议
+            <ChildFieldLink
+              label="编辑配置"
+              onClick={() => showChildDrawer('编辑协议配置', 'network_settings')}
+            />
+          </Label>
+          <NodeSelect
+            value={values.network as SelectValueType}
+            options={LEGACY_STREAM_NETWORK_OPTIONS}
+            placeholder="选择传输协议"
+            onChange={(value) => setField('network', value)}
+            testId="node-network"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            加密方式
+            {vlessEncryption ? (
+              <ChildFieldLink
+                label="编辑配置"
+                onClick={() => showChildDrawer('编辑加密配置', 'encryption_settings')}
+              />
+            ) : null}
+          </Label>
+          <NodeSelect
+            value={(values.encryption as SelectValueType) ?? null}
+            options={LEGACY_VLESS_ENCRYPTION_OPTIONS}
+            placeholder="选择加密方式"
+            onChange={(value) => setField('encryption', value)}
+            testId="node-encryption"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>XTLS流控算法</Label>
+          <NodeSelect
+            value={(values.flow as SelectValueType) ?? null}
+            options={getLegacyVlessFlowOptions(vlessNetwork)}
+            placeholder="选择XTLS流控算法"
+            onChange={(value) => setField('flow', value)}
+            testId="node-flow"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (type === 'hysteria') {
+    const version = parseInt(String(values.version ?? 1), 10);
+    const obfs = values.obfs == null ? null : String(values.obfs);
+    return (
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <div className="space-y-2">
+            <Label>HYSTERIA版本</Label>
+            <NodeSelect
+              value={getLegacyNumericSelectValue(values.version, 1)}
+              options={LEGACY_HYSTERIA_VERSION_OPTIONS}
+              onChange={(value) => setField('version', value)}
+              testId="node-version"
+            />
           </div>
         </div>
-        <div className="form-group">
-          <label>服务器名称指示(sni)</label>
-          <Form.Item noStyle name="server_name">
-            <LegacyInput className="ant-input" placeholder="当节点地址与证书不一致时用于证书验证" />
-          </Form.Item>
+        <div className="space-y-2">
+          <Label htmlFor="node-server-name">服务器名称指示(sni)</Label>
+          <Input
+            id="node-server-name"
+            placeholder="当节点地址与证书不一致时用于证书验证"
+            value={inputValue(values.server_name)}
+            onChange={(event) => setField('server_name', event.target.value)}
+            data-testid="node-server-name"
+          />
         </div>
-        <div className="row">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {version === 1 ? (
-            <div className="form-group col-md-6 col-xs-12">
-              <label>混淆方式obfs</label>
-              <Form.Item noStyle name="obfs">
-                <LegacySelect style={{ width: '100%' }} options={LEGACY_HYSTERIA_V1_OBFS_OPTIONS} />
-              </Form.Item>
+            <div className="space-y-2">
+              <Label>混淆方式obfs</Label>
+              <NodeSelect
+                value={(values.obfs as SelectValueType) ?? null}
+                options={LEGACY_HYSTERIA_V1_OBFS_OPTIONS}
+                onChange={(value) => setField('obfs', value)}
+                testId="node-obfs"
+              />
             </div>
           ) : null}
           {version === 1 && obfs === 'xplus' ? (
-            <div className="form-group col-md-6 col-xs-12">
-              <label>混淆密码obfsParam</label>
-              <Form.Item noStyle name="obfs_password">
-                <LegacyInput className="ant-input" placeholder="留空自动生成" />
-              </Form.Item>
+            <div className="space-y-2">
+              <Label htmlFor="node-obfs-password">混淆密码obfsParam</Label>
+              <Input
+                id="node-obfs-password"
+                placeholder="留空自动生成"
+                value={inputValue(values.obfs_password)}
+                onChange={(event) => setField('obfs_password', event.target.value)}
+              />
             </div>
           ) : null}
           {version === 2 ? (
-            <div className="form-group col-md-6 col-xs-12">
-              <label>混淆方式obfs</label>
-              <Form.Item noStyle name="obfs">
-                <LegacySelect style={{ width: '100%' }} options={LEGACY_HYSTERIA2_OBFS_OPTIONS} />
-              </Form.Item>
+            <div className="space-y-2">
+              <Label>混淆方式obfs</Label>
+              <NodeSelect
+                value={(values.obfs as SelectValueType) ?? null}
+                options={LEGACY_HYSTERIA2_OBFS_OPTIONS}
+                onChange={(value) => setField('obfs', value)}
+                testId="node-obfs"
+              />
             </div>
           ) : null}
           {version === 2 && obfs === 'salamander' ? (
-            <div className="form-group col-md-6 col-xs-12">
-              <label>混淆密码obfs_password</label>
-              <Form.Item noStyle name="obfs_password">
-                <LegacyInput className="ant-input" placeholder="留空自动生成" />
-              </Form.Item>
+            <div className="space-y-2">
+              <Label htmlFor="node-obfs-password">混淆密码obfs_password</Label>
+              <Input
+                id="node-obfs-password"
+                placeholder="留空自动生成"
+                value={inputValue(values.obfs_password)}
+                onChange={(event) => setField('obfs_password', event.target.value)}
+              />
             </div>
           ) : null}
         </div>
-        <div className="form-group">
-          <label>上行带宽</label>
-          <Form.Item noStyle name="up_mbps">
-            <LegacyInputGroup addonAfter="Mbps" placeholder="服务端发送带宽,留空或填0使用BBR" />
-          </Form.Item>
-        </div>
-        <div className="form-group">
-          <label>下行带宽</label>
-          <Form.Item noStyle name="down_mbps">
-            <LegacyInputGroup addonAfter="Mbps" placeholder="服务端接收带宽,留空或填0使用BBR" />
-          </Form.Item>
-        </div>
-      </>
+        <BandwidthFields form={form} />
+      </div>
     );
   }
+
   if (type === 'anytls') {
     return (
-      <>
-        <div className="form-group">
-          <label>服务器名称指示(sni)</label>
-          <Form.Item noStyle name="server_name">
-            <LegacyInput className="ant-input" placeholder="当节点地址与证书不一致时用于证书验证" />
-          </Form.Item>
+      <div className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="node-server-name">服务器名称指示(sni)</Label>
+          <Input
+            id="node-server-name"
+            placeholder="当节点地址与证书不一致时用于证书验证"
+            value={inputValue(values.server_name)}
+            onChange={(event) => setField('server_name', event.target.value)}
+            data-testid="node-server-name"
+          />
         </div>
-        <div className="row">
-          <div className="form-group col-md-12 col-xs-12">
-            <label>
-              <a
-                ref={legacyHref()}
-                onClick={() => showChildDrawer('编辑填充方案', 'padding_scheme')}
-              >
-                编辑填充方案
-              </a>
-            </label>
-          </div>
+        <div>
+          <ChildFieldLink
+            label="编辑填充方案"
+            onClick={() => showChildDrawer('编辑填充方案', 'padding_scheme')}
+          />
         </div>
-      </>
+      </div>
     );
   }
+
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Child config drawers.
+// ---------------------------------------------------------------------------
+
+function NodeChildField({
+  type,
+  field,
+  form,
+}: {
+  type: admin.ServerTypeName;
+  field: string;
+  form: NodeForm;
+}) {
+  const { values, setField } = form;
+
+  if (field === 'network_settings' || field === 'networkSettings') {
+    return (
+      <div className="space-y-2">
+        <Label className="flex items-center gap-2">
+          协议详细配置
+          <a
+            className="inline-flex items-center gap-1 text-sm text-primary"
+            href="https://www.v2ray.com/chapter_02/05_transport.html"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <ExternalLink className="size-3.5" />
+            参考
+          </a>
+        </Label>
+        <Textarea
+          rows={12}
+          className="font-mono text-xs"
+          placeholder={getLegacyNetworkSettingsPlaceholder(type, values.network)}
+          value={inputValue(values[field])}
+          onChange={(event) => setField(field, event.target.value)}
+          data-testid="node-network-settings"
+        />
+      </div>
+    );
+  }
+
+  if (field === 'padding_scheme') {
+    return (
+      <div className="space-y-2">
+        <Textarea
+          rows={12}
+          className="font-mono text-xs"
+          placeholder={ANYTLS_PADDING_SCHEME_PLACEHOLDER}
+          value={inputValue(values.padding_scheme)}
+          onChange={(event) => setField('padding_scheme', event.target.value)}
+          data-testid="node-padding-scheme"
+        />
+      </div>
+    );
+  }
+
+  if (field === 'tls_settings' || field === 'tlsSettings') {
+    return <TlsSettingsField field={field} form={form} certApply={field === 'tls_settings'} />;
+  }
+
+  if (field === 'encryption_settings') {
+    return <EncryptionSettingsField form={form} />;
+  }
+
+  return (
+    <Textarea
+      rows={12}
+      className="font-mono text-xs"
+      value={inputValue(values[field])}
+      onChange={(event) => setField(field, event.target.value)}
+    />
+  );
+}
+
+function TlsSettingsField({
+  field,
+  form,
+  certApply,
+}: {
+  field: string;
+  form: NodeForm;
+  certApply: boolean;
+}) {
+  const settings = form.values[field];
+  const tls = form.values.tls;
+  const value = normalizeLegacySettings(settings, LEGACY_TLS_SETTINGS_DEFAULTS);
+  const tlsValue = parseInt(String(tls ?? 0), 10);
+  const change = (key: string, next: unknown) => {
+    form.setFields({ [field]: { ...value, [key]: next } });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Server Name(SNI)</Label>
+        <Input
+          value={legacyText(value.server_name)}
+          onChange={(event) => change('server_name', event.target.value)}
+          placeholder={tlsValue === 2 ? 'REALITY必填，与后端保持一致' : ''}
+        />
+      </div>
+      {tlsValue === 1 && certApply ? (
+        <div className="space-y-2">
+          <Label>证书模式Cert Mode</Label>
+          <NodeSelect
+            value={(value.cert_mode as SelectValueType) ?? 'self'}
+            options={LEGACY_TLS_CERT_MODE_OPTIONS}
+            onChange={(next) => change('cert_mode', next)}
+          />
+        </div>
+      ) : null}
+      {value.cert_mode === 'dns' && certApply ? (
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            DNS解析提供商Provider
+            <a
+              className="text-sm text-primary"
+              target="_blank"
+              href="https://go-acme.github.io/lego/dns/index.html"
+              rel="noopener noreferrer"
+            >
+              填写参考
+            </a>
+          </Label>
+          <Input
+            value={legacyText(value.provider)}
+            onChange={(event) => change('provider', event.target.value)}
+            placeholder="书写格式cloudflare"
+          />
+        </div>
+      ) : null}
+      {value.cert_mode === 'dns' && certApply ? (
+        <div className="space-y-2">
+          <Label>DNS env</Label>
+          <Input
+            value={legacyText(value.dns_env)}
+            onChange={(event) => change('dns_env', event.target.value)}
+            placeholder="书写格式CF_DNS_API_TOKEN=xxxxxxx如有多条使用逗号,分隔"
+          />
+        </div>
+      ) : null}
+      {tlsValue === 1 && value.cert_mode !== 'none' && certApply ? (
+        <div className="space-y-2">
+          <Label>证书公钥文件地址Cert File Path</Label>
+          <Input
+            value={legacyText(value.cert_file)}
+            onChange={(event) => change('cert_file', event.target.value)}
+            placeholder="留空在/etc/v2node/目录自动生成"
+          />
+        </div>
+      ) : null}
+      {tlsValue === 1 && value.cert_mode !== 'none' && certApply ? (
+        <div className="space-y-2">
+          <Label>证书私钥文件地址Key File Path</Label>
+          <Input
+            value={legacyText(value.key_file)}
+            onChange={(event) => change('key_file', event.target.value)}
+            placeholder="留空在/etc/v2node/目录自动生成"
+          />
+        </div>
+      ) : null}
+      {tlsValue === 2 ? (
+        <div className="space-y-2">
+          <Label>Server Address</Label>
+          <Input
+            value={legacyText(value.dest)}
+            onChange={(event) => change('dest', event.target.value)}
+            placeholder="REALITY目标地址,默认使用SNI"
+          />
+        </div>
+      ) : null}
+      {tlsValue === 2 ? (
+        <div className="space-y-2">
+          <Label>Server Port</Label>
+          <Input
+            value={legacyText(value.server_port)}
+            onChange={(event) => change('server_port', event.target.value)}
+            placeholder="REALITY目标端口,默认443"
+          />
+        </div>
+      ) : null}
+      {tlsValue === 2 ? (
+        <div className="space-y-2">
+          <Label>Proxy Protocol</Label>
+          <NodeSelect
+            value={parseInt(String(value.xver ?? 0), 10) || 0}
+            options={LEGACY_PROXY_PROTOCOL_OPTIONS}
+            onChange={(next) => change('xver', next)}
+          />
+        </div>
+      ) : null}
+      {tlsValue === 2 ? (
+        <div className="space-y-2">
+          <Label>Private Key</Label>
+          <Input
+            value={legacyText(value.private_key)}
+            onChange={(event) => change('private_key', event.target.value)}
+            placeholder="留空自动生成"
+          />
+        </div>
+      ) : null}
+      {tlsValue === 2 ? (
+        <div className="space-y-2">
+          <Label>Public Key</Label>
+          <Input
+            value={legacyText(value.public_key)}
+            onChange={(event) => change('public_key', event.target.value)}
+            placeholder="留空自动生成"
+          />
+        </div>
+      ) : null}
+      {tlsValue === 2 ? (
+        <div className="space-y-2">
+          <Label>ShortId</Label>
+          <Input
+            value={legacyText(value.short_id)}
+            onChange={(event) => change('short_id', event.target.value)}
+            placeholder="留空自动生成"
+          />
+        </div>
+      ) : null}
+      <div className="space-y-2">
+        <Label>FingerPrint</Label>
+        <NodeSelect
+          value={value.fingerprint as SelectValueType}
+          options={LEGACY_TLS_FINGERPRINT_OPTIONS}
+          onChange={(next) => change('fingerprint', next)}
+          placeholder="TLS指纹默认Chrome"
+        />
+      </div>
+      {tlsValue === 1 && certApply ? (
+        <div className="space-y-2">
+          <Label>Reject unknown sni</Label>
+          <div>
+            <Switch
+              checked={legacyBool(value.reject_unknown_sni)}
+              onCheckedChange={(checked) => change('reject_unknown_sni', checked ? '1' : '0')}
+            />
+          </div>
+        </div>
+      ) : null}
+      <div className="space-y-2">
+        <Label>Allow Insecure</Label>
+        <div>
+          <Switch
+            checked={legacyBool(value.allow_insecure)}
+            onCheckedChange={(checked) => change('allow_insecure', checked ? '1' : '0')}
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label>ECH (Encrypted Client Hello)</Label>
+        <NodeSelect
+          value={legacyText(value.ech)}
+          options={LEGACY_ECH_MODE_OPTIONS}
+          onChange={(next) => change('ech', next)}
+          placeholder="选择 ECH 模式"
+        />
+      </div>
+      {value.ech === 'cloudflare' ? (
+        <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-600 dark:border-emerald-900 dark:bg-emerald-950/40">
+          ✓ Cloudflare 托管 ECH，密钥由 Cloudflare 自动管理，客户端从 DNS 自动获取配置，服务端无需配置
+        </div>
+      ) : null}
+      {value.ech === 'custom' ? (
+        <div className="space-y-2">
+          <Label>ECH Server Name (伪装域名/外层SNI)</Label>
+          <Input
+            value={legacyText(value.ech_server_name)}
+            onChange={(event) => change('ech_server_name', event.target.value)}
+            placeholder="必填"
+          />
+        </div>
+      ) : null}
+      {value.ech === 'custom' ? (
+        <div className="space-y-2">
+          <Label>ECH Key (服务端私钥)</Label>
+          <Input
+            value={legacyText(value.ech_key)}
+            onChange={(event) => change('ech_key', event.target.value)}
+            placeholder="留空自动生成"
+          />
+        </div>
+      ) : null}
+      {value.ech === 'custom' ? (
+        <div className="space-y-2">
+          <Label>ECH Config (客户端配置)</Label>
+          <Input
+            value={legacyText(value.ech_config)}
+            onChange={(event) => change('ech_config', event.target.value)}
+            placeholder="留空自动生成"
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function EncryptionSettingsField({ form }: { form: NodeForm }) {
+  const settings = form.values.encryption_settings;
+  const value = useMemo(
+    () => normalizeLegacySettings(settings, LEGACY_ENCRYPTION_SETTINGS_DEFAULTS),
+    [settings],
+  );
+  // Seed the store with the normalized defaults when the drawer opens, mirroring
+  // the legacy field's effect. Guarded so equal content stops the update loop.
+  useEffect(() => {
+    if (JSON.stringify(form.values.encryption_settings) !== JSON.stringify(value)) {
+      form.setFields({ encryption_settings: value });
+    }
+  }, [value, form]);
+  const change = (key: string, next: unknown) => {
+    form.setFields({ encryption_settings: { ...value, [key]: next } });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Mode</Label>
+        <NodeSelect
+          value={legacyText(value.mode) || 'native'}
+          options={LEGACY_ENCRYPTION_MODE_OPTIONS}
+          onChange={(next) => change('mode', next)}
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label>RTT</Label>
+          <NodeSelect
+            value={legacyText(value.rtt) || '0rtt'}
+            options={LEGACY_ENCRYPTION_RTT_OPTIONS}
+            onChange={(next) => change('rtt', next)}
+          />
+        </div>
+        {value.rtt === '0rtt' ? (
+          <div className="space-y-2">
+            <Label>Ticket time</Label>
+            <Input
+              value={legacyText(value.ticket)}
+              onChange={(event) => change('ticket', event.target.value)}
+              placeholder="最长允许时间"
+            />
+          </div>
+        ) : null}
+      </div>
+      <div className="space-y-2">
+        <Label>Server Padding</Label>
+        <Input
+          value={legacyText(value.server_padding)}
+          onChange={(event) => change('server_padding', event.target.value)}
+          placeholder="留空使用默认值100-111-1111.75-0-111.50-0-3333"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Private Key</Label>
+        <Input
+          value={legacyText(value.private_key)}
+          onChange={(event) => change('private_key', event.target.value)}
+          placeholder="留空自动生成，需抗量子加密请自行替换"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Client Padding</Label>
+        <Input
+          value={legacyText(value.client_padding)}
+          onChange={(event) => change('client_padding', event.target.value)}
+          placeholder="留空使用默认值100-111-1111.75-0-111.50-0-3333"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Password</Label>
+        <Input
+          value={legacyText(value.password)}
+          onChange={(event) => change('password', event.target.value)}
+          placeholder="留空自动生成，需抗量子加密请自行替换"
+        />
+      </div>
+    </div>
+  );
 }
