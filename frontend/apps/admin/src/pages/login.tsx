@@ -83,7 +83,7 @@ export default function LoginPage() {
   }, [navigate, redirect]);
 
   return (
-    <div className="v2board-island relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
+    <div className="v2board-island v2board-auth-box relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
       {backgroundUrl ? (
         <div
           aria-hidden

@@ -57,6 +57,14 @@ describe('Admin LoginPage', () => {
     window.settings = undefined;
   });
 
+  it('renders the .v2board-auth-box hook that api.ts polls to restore auth after a 403', () => {
+    // Tier-1 behavioral hook: on a 403, api.ts clears auth, redirects to #/login,
+    // then re-sets the token once `document.querySelector('.v2board-auth-box')`
+    // resolves. It is also the visual harness readySelector. It must stay present.
+    const { container } = render(<LoginPage />);
+    expect(container.querySelector('.v2board-auth-box')).not.toBeNull();
+  });
+
   it('renders the admin sign-in copy and no secure-path field', () => {
     render(<LoginPage />);
 
