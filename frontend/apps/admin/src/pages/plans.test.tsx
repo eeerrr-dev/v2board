@@ -1,422 +1,248 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PlansPage from './plans';
 
-const plansSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), 'plans.tsx'),
-  'utf8',
-);
-const adminQueriesSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'),
-  'utf8',
-);
+// The admin subscription-plan manager is a redesigned shadcn island (PageHeader
+// + DataTable + Sheet editor) replacing the antd drawer / drag-sort / ant-table
+// replica. Legacy DOM and source byte-pins are retired; the drag handle is
+// swapped for accessible move buttons. What stays covered is the Tier-1
+// contract anchored on the shared backend: the /plan/fetch shape, the
+// /plan/save payload with every field passed through verbatim (per-period
+// prices stay raw strings — the ×100 cents scaling lives in the api-client — and
+// untouched/emptied prices stay `null`), group_id, the /plan/sort id-list
+// reorder, the /plan/drop id, and the /plan/update { id, [key]: value } toggles.
+
+function makePlans() {
+  return [
+    {
+      id: 1,
+      sort: 1,
+      show: 1,
+      renew: 0,
+      name: '基础套餐',
+      count: 3,
+      transfer_enable: 100,
+      device_limit: null,
+      group_id: 2,
+      month_price: 12.34,
+      quarter_price: null,
+      half_year_price: 56.78,
+      year_price: 100,
+      two_year_price: null,
+      three_year_price: null,
+      onetime_price: 300,
+      reset_price: null,
+      content: '<p>features</p>',
+      speed_limit: null,
+      capacity_limit: null,
+      reset_traffic_method: null,
+      created_at: 1,
+      updated_at: 1,
+    },
+    {
+      id: 2,
+      sort: 2,
+      show: 0,
+      renew: 1,
+      name: '高级套餐',
+      count: 0,
+      transfer_enable: 200,
+      device_limit: 3,
+      group_id: 2,
+      month_price: 20,
+      quarter_price: null,
+      half_year_price: null,
+      year_price: null,
+      two_year_price: null,
+      three_year_price: null,
+      onetime_price: null,
+      reset_price: null,
+      content: null,
+      speed_limit: null,
+      capacity_limit: null,
+      reset_traffic_method: null,
+      created_at: 1,
+      updated_at: 1,
+    },
+  ];
+}
+
+const mocks = vi.hoisted(() => ({
+  data: [] as ReturnType<typeof makePlans>,
+  groups: [{ id: 2, name: '默认权限组' }],
+  refetch: vi.fn(),
+  saveMutateAsync: vi.fn(),
+  dropMutate: vi.fn(),
+  updateMutate: vi.fn(),
+  sortMutate: vi.fn(),
+  confirm: vi.fn(),
+}));
 
 vi.mock('@/lib/queries', () => ({
   useAdminPlans: () => ({
-    isLoading: false,
     isFetching: false,
-    data: [
-      {
-        id: 1,
-        sort: 1,
-        show: 1,
-        renew: 0,
-        name: '基础套餐',
-        count: 3,
-        transfer_enable: 100,
-        device_limit: null,
-        group_id: 2,
-        month_price: 12.34,
-        quarter_price: null,
-        half_year_price: 56.78,
-        year_price: 100,
-        two_year_price: null,
-        three_year_price: null,
-        onetime_price: 300,
-        reset_price: null,
-        content: '<p>features</p>',
-        speed_limit: null,
-        capacity_limit: null,
-        reset_traffic_method: null,
-        created_at: 1,
-        updated_at: 1,
-      },
-    ],
-  }),
-  useServerGroups: () => ({
-    data: [{ id: 2, name: '默认权限组' }],
-    isFetching: false,
-    refetch: vi.fn(),
-  }),
-  useConfig: () => ({
-    data: { site: { currency_symbol: '¥' }, currency_symbol: '¥' },
-  }),
-  useSavePlanMutation: () => ({
-    mutateAsync: vi.fn(),
     isPending: false,
+    error: undefined,
+    refetch: mocks.refetch,
+    data: mocks.data,
   }),
-  useSaveServerGroupMutation: () => ({
-    mutateAsync: vi.fn(),
-  }),
-  useDropPlanMutation: () => ({
-    mutate: vi.fn(),
-  }),
-  useUpdatePlanMutation: () => ({
-    mutate: vi.fn(),
-  }),
-  useSortPlansMutation: () => ({
-    mutate: vi.fn(),
-    isPending: false,
-  }),
+  useServerGroups: () => ({ data: mocks.groups, isFetching: false, refetch: vi.fn() }),
+  useConfig: () => ({ data: { site: { currency_symbol: '¥' } }, refetch: vi.fn() }),
+  useSavePlanMutation: () => ({ mutateAsync: mocks.saveMutateAsync, isPending: false }),
+  useDropPlanMutation: () => ({ mutate: mocks.dropMutate }),
+  useUpdatePlanMutation: () => ({ mutate: mocks.updateMutate }),
+  useSortPlansMutation: () => ({ mutate: mocks.sortMutate, isPending: false }),
 }));
 
-describe('PlansPage legacy subscription management', () => {
-  it('renders the original plan table shell, columns, actions, and formatted prices', () => {
-    const html = renderToStaticMarkup(<PlansPage />);
+vi.mock('@/components/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
 
-    expect(html).toContain('d-flex justify-content-between align-items-center');
-    expect(html).toContain('block block-rounded');
-    expect(html).toContain('bg-white');
-    expect(html).toContain('class="ant-btn"');
-    expect(html).toContain('aria-label="图标: plus"');
-    expect(html).toContain('class="ant-table-wrapper"');
-    expect(html).toContain('class="ant-table-fixed" style="width:1300px"');
-    expect(html).toContain('class="ant-table-fixed-right"');
-    expect(html).toContain(
-      'class="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last" style="text-align:right"',
-    );
-    expect(html).toContain('class="ant-switch-small ant-switch ant-switch-checked"');
-    expect(html).toContain('aria-label="图标: menu"');
-    expect(html).toContain('aria-label="图标: user"');
-    expect(html).toContain('aria-label="图标: caret-down"');
-    expect(html).toContain('添加订阅');
-    expect(html).toContain('排序');
-    expect(html).toContain('销售状态');
-    expect(html).toContain('续费');
-    expect(html).toContain('名称');
-    expect(html).toContain('统计');
-    expect(html).toContain('流量');
-    expect(html).toContain('设备数限制');
-    expect(html).toContain('月付');
-    expect(html).toContain('季付');
-    expect(html).toContain('半年付');
-    expect(html).toContain('年付');
-    expect(html).toContain('两年付');
-    expect(html).toContain('三年付');
-    expect(html).toContain('一次性');
-    expect(html).toContain('重置包');
-    expect(html).toContain('权限组');
-    expect(html).toContain('操作');
-    expect(html).toContain('基础套餐');
-    expect(html).toContain('100 GB');
-    expect(html).toContain('12.34');
-    expect(html).toContain('56.78');
-    expect(html).toContain('100.00');
-    expect(html).toContain('300.00');
-    expect(html).toContain('默认权限组');
-    expect(html).toContain('class="ant-tag"');
-    expect(html).not.toContain('ant-card');
-    expect(html).not.toContain('ant-table-cell');
-    expect(html).not.toContain('css-dev-only');
-    expect(html).not.toContain('ant-typography');
+describe('PlansPage', () => {
+  beforeEach(() => {
+    mocks.data = makePlans();
+    mocks.groups = [{ id: 2, name: '默认权限组' }];
+    mocks.refetch.mockReset().mockResolvedValue(undefined);
+    mocks.saveMutateAsync.mockReset().mockResolvedValue(undefined);
+    mocks.dropMutate.mockReset();
+    mocks.updateMutate.mockReset();
+    mocks.sortMutate.mockReset();
+    mocks.confirm.mockReset().mockResolvedValue(true);
+    // Radix Select pointer + scroll shims for happy-dom.
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+    window.HTMLElement.prototype.setPointerCapture = vi.fn();
+    window.HTMLElement.prototype.releasePointerCapture = vi.fn();
   });
 
-  it('preserves the original row right-click edit/delete menu', () => {
-    expect(plansSource).toContain('id="v2board-table-dropdown"');
-    expect(plansSource).toContain(
-      'ant-dropdown-menu ant-dropdown-menu-light ant-dropdown-menu-root ant-dropdown-menu-vertical',
-    );
-    expect(plansSource).toContain('onContextMenu={(event) => {');
-    expect(plansSource).toContain('event.preventDefault()');
-    expect(plansSource).toContain('event.clientY');
-    expect(plansSource).toContain('event.clientX');
-    expect(plansSource).toContain("display: contextMenu ? 'unset' : 'none'");
-    expect(plansSource).not.toContain('d-none');
+  it('renders plan rows with name, traffic, formatted prices and group', () => {
+    render(<PlansPage />);
+    const table = screen.getByTestId('plans-table');
+    expect(within(table).getByText('基础套餐')).toBeInTheDocument();
+    expect(within(table).getByText('100 GB')).toBeInTheDocument();
+    // Prices are formatted to two decimals; null prices render '-'.
+    expect(within(table).getByText('12.34')).toBeInTheDocument();
+    expect(within(table).getByText('56.78')).toBeInTheDocument();
+    expect(within(table).getByText('100.00')).toBeInTheDocument();
+    expect(within(table).getByText('300.00')).toBeInTheDocument();
+    expect(within(table).getAllByText('默认权限组').length).toBeGreaterThan(0);
   });
 
-  it('keeps the legacy action dropdown delete color on the menu item', () => {
-    expect(plansSource).toContain('LegacyDropdownMenu,');
-    expect(plansSource).toContain('LegacyDropdownMenuItem,');
-    expect(plansSource).not.toContain("import type { DropdownProps } from 'antd';");
-    expect(plansSource).not.toContain('popupRender={() => overlay}');
-    expect(plansSource).not.toContain('<Menu>');
-    expect(plansSource).toContain('trigger={LEGACY_DROPDOWN_CLICK_TRIGGER}');
-    expect(plansSource).toContain('overlay={');
-    expect(plansSource).toContain(
-      '<LegacyDropdownMenuItem key="edit" onContextMenu={(event) => event.stopPropagation()}>',
-    );
-    expect(plansSource).toContain('key="delete"');
-    expect(plansSource).toContain("style={{ color: '#ff4d4f' }}");
-    expect(plansSource).toContain('onClick={() => dropPlan(record.id)}');
-    expect(plansSource).toContain('<LegacyEditIcon /> 编辑');
-    expect(plansSource).toContain('<LegacyDeleteIcon /> 删除');
-    expect(plansSource).not.toContain("key: 'delete',");
-    expect(plansSource).not.toContain('menu={{');
-    expect(plansSource).not.toContain("<span style={{ color: '#ff4d4f' }}>");
-    expect(plansSource).not.toContain('<DeleteOutlined');
-    expect(plansSource).not.toContain('<EditOutlined');
+  it('creates a plan passing prices through verbatim, keeping untouched prices null', async () => {
+    const user = userEvent.setup();
+    render(<PlansPage />);
+
+    await user.click(screen.getByTestId('plan-create'));
+    const sheet = await screen.findByTestId('plan-editor');
+    await user.type(within(sheet).getByTestId('plan-name'), '新套餐');
+    // Decimal prices go through fireEvent to avoid number-input keystroke quirks.
+    fireEvent.change(within(sheet).getByTestId('plan-price-month_price'), {
+      target: { value: '12.34' },
+    });
+    await user.click(within(sheet).getByTestId('plan-submit'));
+
+    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalled());
+    const payload = mocks.saveMutateAsync.mock.calls[0]![0];
+    // Page forwards the raw yuan string; the ×100 cents scaling is the
+    // api-client's job (serializePlanForSave).
+    expect(payload).toMatchObject({ name: '新套餐', month_price: '12.34' });
+    // Untouched prices stay null so the api-client leaves them null (not NaN).
+    expect(payload.quarter_price).toBeNull();
+    expect(payload.year_price).toBeNull();
+    expect(payload.onetime_price).toBeNull();
+    expect(payload.reset_price).toBeNull();
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalled());
   });
 
-  it('keeps the legacy plan table without an explicit rowKey', () => {
-    expect(plansSource).toContain('<LegacyStandaloneTable');
-    expect(plansSource).toContain('scrollX={1300}');
-    expect(plansSource).toContain('scrollPositionRight={false}');
-    expect(plansSource).toContain('fixedRightRowHeight={54}');
-    expect(plansSource).toContain('style={{ height: 54 }}');
-    expect(plansSource).toContain('fixedRightChildren={order.map((record, index) => (');
-    expect(plansSource).toContain(
-      'className="ant-table-align-right ant-table-row-cell-last"',
-    );
-    expect(plansSource).toContain(
-      'className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"',
-    );
-    expect(plansSource).toContain('<LegacyDragSort');
-    expect(plansSource).toContain('nodeSelector="tr"');
-    expect(plansSource).toContain('handleSelector="i"');
-    expect(plansSource).toContain("<LegacyMenuIcon style={{ cursor: 'move' }} />");
-    expect(plansSource).toContain('{...legacyTableRowKey(index)}');
-    expect(plansSource).not.toContain('<Table<Plan>');
-    expect(plansSource).not.toContain('tableLayout="auto"');
-    expect(plansSource).not.toContain('pagination={false}');
-    expect(plansSource).not.toContain('data-sort-index');
-    expect(plansSource).not.toContain('data-row-key');
-    expect(plansSource).not.toContain('rowKey="id"');
+  it('clears an emptied price back to null on edit', async () => {
+    const user = userEvent.setup();
+    render(<PlansPage />);
+
+    await user.click(screen.getByTestId('plan-edit-1'));
+    const sheet = await screen.findByTestId('plan-editor');
+    expect(within(sheet).getByTestId('plan-name')).toHaveValue('基础套餐');
+    fireEvent.change(within(sheet).getByTestId('plan-price-month_price'), {
+      target: { value: '' },
+    });
+    await user.click(within(sheet).getByTestId('plan-submit'));
+
+    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalled());
+    const payload = mocks.saveMutateAsync.mock.calls[0]![0];
+    expect(payload.id).toBe(1);
+    expect(payload.month_price).toBeNull();
   });
 
-  it('keeps the original plan sort loading and force-update payload shape', () => {
-    expect(plansSource).toContain(
-      'const [legacySortLoading, setLegacySortLoading] = useState(false);',
-    );
-    expect(plansSource).toContain('setLegacySortLoading(true);');
-    expect(plansSource.indexOf('setLegacySortLoading(true);')).toBeLessThan(
-      plansSource.indexOf('setOrder(next);'),
-    );
-    expect(plansSource).toContain(
-      'loading={legacyFetchLoading(plans.isFetching, plans.error) || legacySortLoading}',
-    );
-    expect(plansSource).not.toContain('loading={plans.isFetching || sort.isPending}');
-    expect(plansSource).not.toContain('plans.isLoading');
-    expect(plansSource).not.toContain('loading={Boolean(');
-    expect(plansSource).toContain('const sortPlan = (fromIndex: number, toIndex: number) => {');
-    expect(plansSource).toContain('next.splice(toIndex + 1, 0, moved);');
-    expect(plansSource).toContain('next.splice(fromIndex + 1, 1);');
-    expect(plansSource).not.toContain('next.force_update = next.force_update ? 1 : 0');
-    expect(plansSource).toContain('force_update?: boolean');
-    expect(plansSource).toContain(
-      "onChange={(event) => change('force_update', event.target.checked)}",
-    );
-    expect(plansSource).not.toContain('checked={Boolean(submit.force_update)}');
+  it('sends the selected group_id as a number', async () => {
+    const user = userEvent.setup();
+    render(<PlansPage />);
+
+    await user.click(screen.getByTestId('plan-create'));
+    const sheet = await screen.findByTestId('plan-editor');
+    await user.click(within(sheet).getByTestId('plan-group'));
+    await user.click(await screen.findByRole('option', { name: '默认权限组' }));
+    await user.click(within(sheet).getByTestId('plan-submit'));
+
+    await waitFor(() => expect(mocks.saveMutateAsync).toHaveBeenCalled());
+    expect(mocks.saveMutateAsync.mock.calls[0]![0].group_id).toBe(2);
   });
 
-  it('submits the original drawer state instead of rewriting prices in the page component', () => {
-    expect(plansSource).toContain('await onSave({ ...submit });');
-    expect(plansSource).toContain('await save.mutateAsync(payload);\n    await plans.refetch();');
-    expect(plansSource).not.toContain('await save.mutateAsync(payload);\n    void plans.refetch();');
-    expect(plansSource).not.toContain('serializePlan(');
-    expect(plansSource).not.toContain('Math.round(100 * Number(next[key]))');
-  });
+  it('reorders with sort.mutate over the new id order, then refetches', async () => {
+    const user = userEvent.setup();
+    render(<PlansPage />);
 
-  it('keeps plan mutations fetching from the page after successful requests', () => {
-    const sortStart = plansSource.indexOf('sort.mutate(\n      next.map((plan) => plan.id),');
-    const sortRefetch = plansSource.indexOf('void plans.refetch().finally', sortStart);
-    const dropStart = plansSource.indexOf('drop.mutate(id, {');
-    const dropRefetch = plansSource.indexOf('void plans.refetch();', dropStart);
-    const updateStart = plansSource.indexOf('update.mutate(');
-    const updateRefetch = plansSource.indexOf('void plans.refetch();', updateStart);
-
-    expect(sortStart).toBeGreaterThan(-1);
-    expect(sortRefetch).toBeGreaterThan(sortStart);
-    expect(dropStart).toBeGreaterThan(-1);
-    expect(dropRefetch).toBeGreaterThan(dropStart);
-    expect(updateStart).toBeGreaterThan(-1);
-    expect(updateRefetch).toBeGreaterThan(updateStart);
-
-    for (const [start, end] of [
-      ['export function useSavePlanMutation()', 'export function useDropPlanMutation()'],
-      ['export function useDropPlanMutation()', 'export function useUpdatePlanMutation()'],
-      ['export function useUpdatePlanMutation()', 'export function useSortPlansMutation()'],
-      ['export function useSortPlansMutation()', 'export function useUpdateUserMutation()'],
-    ] as const) {
-      const hook = adminQueriesSource.slice(
-        adminQueriesSource.indexOf(start),
-        adminQueriesSource.indexOf(end),
-      );
-      expect(hook).not.toContain('onSuccess');
-      expect(hook).not.toContain('adminKeys.plans');
-    }
-  });
-
-  it('keeps the original drawer record lifetime instead of resetting on each open', () => {
-    expect(plansSource).toContain(
-      'const [submit, setSubmit] = useState<EditablePlan>(() => ({ ...(record ?? emptyPlan()) }));',
+    // Move the first row (id 1) down → new order [2, 1].
+    await user.click(within(screen.getByTestId('plans-table')).getAllByLabelText('下移')[0]!);
+    expect(mocks.sortMutate).toHaveBeenCalledWith(
+      [2, 1],
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
-    expect(plansSource).not.toContain('setSubmit({ ...(record ?? emptyPlan()) });');
-    expect(plansSource).not.toContain('[record, visible]');
-    expect(plansSource).toContain('key={record.id}');
+    mocks.sortMutate.mock.calls[0]![1].onSuccess();
+    expect(mocks.refetch).toHaveBeenCalled();
   });
 
-  it('keeps the original editor-mounted config and server-group fetches', () => {
-    expect(plansSource).toContain('useCallback,');
-    expect(plansSource).toContain("const config = useConfig('site');");
-    expect(plansSource).toContain('const refetchConfig = config.refetch;');
-    expect(plansSource).toContain('const refetchGroups = groups.refetch;');
-    expect(plansSource).toContain('const refetchPlanEditorDependencies = useCallback(() => {');
-    expect(plansSource).toContain('void refetchConfig();');
-    expect(plansSource).toContain('void refetchGroups();');
-    expect(plansSource).toContain(
-      'useEffect(() => {\n    onLegacyMount();\n  }, [onLegacyMount]);',
-    );
-    expect(plansSource).toContain('onLegacyMount={refetchPlanEditorDependencies}');
-  });
+  it('toggles the show and renew flags by id with the inverted value', async () => {
+    const user = userEvent.setup();
+    render(<PlansPage />);
 
-  it('keeps the original create-server-group modal from the plan drawer link', () => {
-    expect(plansSource).toContain("import { ServerGroupModal } from './servers';");
-    expect(plansSource).toContain(
-      "<ServerGroupModal>\n                <a ref={legacyHref('javascript:(0);')}>添加权限组</a>\n              </ServerGroupModal>",
+    // show is 1 → toggles to 0.
+    await user.click(screen.getByLabelText('切换「基础套餐」销售状态'));
+    expect(mocks.updateMutate).toHaveBeenCalledWith(
+      { id: 1, key: 'show', value: 0 },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
-    expect(plansSource).not.toContain(
-      "权限组 <a ref={legacyHref('javascript:(0);')}>添加权限组</a>",
+    mocks.updateMutate.mock.calls[0]![1].onSuccess();
+    expect(mocks.refetch).toHaveBeenCalled();
+
+    // renew is 0 → toggles to 1.
+    await user.click(screen.getByLabelText('切换「基础套餐」续费'));
+    expect(mocks.updateMutate).toHaveBeenCalledWith(
+      { id: 1, key: 'renew', value: 1 },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
   });
 
-  it('keeps the original direct drawer input bindings', () => {
-    // Save errors are surfaced by the global onError handler (legacy parity), so the
-    // editor no longer needs App.useApp / message.error.
-    expect(plansSource).not.toContain("import { App } from 'antd';");
-    expect(plansSource).not.toContain("import { App, Divider, Row, Col } from 'antd';");
-    expect(plansSource).toContain("import { LegacyDrawer } from '@/components/legacy-drawer';");
-    expect(plansSource).toContain('LegacyInputGroup,');
-    expect(plansSource).toContain('LegacyTextArea,');
-    expect(plansSource).toContain('LegacyLoadingIcon,');
-    expect(plansSource).toContain(
-      "import { LegacySelect, type LegacySelectOption } from '@/components/legacy-select';",
+  it('drops a plan by id only after the confirm dialog resolves true', async () => {
+    const user = userEvent.setup();
+    render(<PlansPage />);
+
+    await user.click(screen.getByTestId('plan-delete-1'));
+    await waitFor(() => expect(mocks.confirm).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(mocks.dropMutate).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
+      ),
     );
-    expect(plansSource).toContain('<LegacyDrawer');
-    expect(plansSource).toContain('<LegacyInput');
-    expect(plansSource).toContain('<LegacyTextArea');
-    expect(plansSource).toContain('<LegacyInputGroup');
-    expect(plansSource).toContain('<LegacySelect');
-    expect(plansSource).toContain('function LegacyPlanPriceRow');
-    expect(plansSource).toContain('function LegacyPlanPriceCol');
-    expect(plansSource).toContain("import { LegacyDivider } from '@/components/legacy-divider';");
-    expect(plansSource).toContain('<LegacyDivider>');
-    expect(plansSource).toContain('<LegacyDivider />');
-    expect(plansSource).not.toContain('function LegacyPlanDivider');
-    expect(plansSource).toContain('className="ant-row"');
-    expect(plansSource).toContain('className={`ant-col ant-col-md-${md}`}');
-    expect(plansSource).not.toContain('className="ant-divider ant-divider-horizontal"');
-    expect(plansSource).not.toContain('ant-divider-with-text-center');
-    expect(plansSource).toContain('<LegacyInfoCircleIcon />');
-    expect(plansSource).toContain('LegacyInfoCircleIcon,');
-    expect(plansSource).toContain('value={legacyInputValue(submit.name)}');
-    expect(plansSource).toContain('value={legacyInputValue(submit.content)}');
-    expect(plansSource).toContain(
-      'value={submit.month_price !== null ? submit.month_price : undefined}',
-    );
-    expect(plansSource).toContain('value={submit.transfer_enable}');
-    expect(plansSource).toContain('value={submit.device_limit}');
-    expect(plansSource).toContain('value={legacyInputValue(value)}');
-    expect(plansSource).toContain('function legacyInputValue(value: unknown)');
-    expect(plansSource).toContain('className="ant-btn"');
-    expect(plansSource).toContain(
-      "className={`ant-btn ant-btn-primary${saveLoading ? ' ant-btn-loading' : ''}`}",
-    );
-    expect(plansSource).toContain('{saveLoading ? <LegacyLoadingIcon /> : null}');
-    expect(plansSource).not.toContain('<Drawer');
-    expect(plansSource).not.toContain('<Input');
-    expect(plansSource).not.toContain('<Button');
-    expect(plansSource).not.toContain('<Select');
-    expect(plansSource).not.toContain('<Checkbox');
-    expect(plansSource).not.toContain('<Row');
-    expect(plansSource).not.toContain('<Col');
-    expect(plansSource).not.toContain('<Divider');
-    expect(plansSource).not.toContain('@ant-design/icons');
-    expect(plansSource).not.toContain('InfoCircleOutlined');
+    mocks.dropMutate.mock.calls[0]![1].onSuccess();
+    expect(mocks.refetch).toHaveBeenCalled();
   });
 
-  it('keeps the original legacy tooltip placements for plan hints', () => {
-    expect(plansSource).toContain("import { LegacyTooltip } from '@/components/legacy-tooltip';");
-    expect(plansSource).toContain(
-      '<LegacyTooltip title="将金额留空则不会进行出售" placement="top">',
-    );
-    expect(plansSource).toMatch(
-      /<LegacyTooltip\s+title="勾选后变更的流量、限速、权限组将应用到该套餐下的用户"\s+placement="top"/,
-    );
-    expect(plansSource).toContain(
-      '<LegacyTooltip placement="top" title="在订阅停止销售时，已购用户是否可以续费">',
-    );
-    expect(plansSource).not.toContain("Tooltip } from 'antd'");
-    expect(plansSource).not.toContain('<Tooltip');
-  });
+  it('does not drop a plan when the confirm dialog is dismissed', async () => {
+    mocks.confirm.mockResolvedValue(false);
+    const user = userEvent.setup();
+    render(<PlansPage />);
 
-  it('keeps the original site currency-symbol handoff for plan editors', () => {
-    expect(plansSource).toContain('currencySymbol?: string;');
-    expect(plansSource).toContain('currencySymbol={config.data?.site?.currency_symbol}');
-    expect(plansSource).not.toContain("currency_symbol ?? config.data?.currency_symbol ?? ''");
-    expect(plansSource).not.toContain("config.data?.site?.currency_symbol ?? ''");
-  });
-
-  it('keeps the original switch and reset-method option value wiring', () => {
-    expect(plansSource).toContain(
-      'const renderPlanSwitch = (checked: 0 | 1, onClick: () => void) => {',
-    );
-    expect(plansSource).toContain("import { LegacySwitch } from '@/components/legacy-switch';");
-    expect(plansSource).toContain(
-      '<LegacySwitch size="small" checked={parseInt(String(checked), 10)} onChange={onClick} />',
-    );
-    expect(plansSource).not.toContain('const enabled = Boolean(parseInt(String(checked), 10));');
-    expect(plansSource).not.toContain('aria-checked={enabled}');
-    expect(plansSource).not.toContain('className={`ant-switch-small ant-switch${enabled ?');
-    expect(plansSource).not.toContain('<Switch');
-    expect(plansSource).not.toContain('checked={Boolean(parseInt(String(value), 10))}');
-    expect(plansSource).toContain('const LEGACY_RESET_TRAFFIC_OPTIONS: LegacySelectOption[] = [');
-    expect(plansSource).toContain("{ value: null, label: '跟随系统设置' }");
-    expect(plansSource).toContain('跟随系统设置');
-    expect(plansSource).toContain("{ value: 4, label: '按年重置' }");
-    expect(plansSource).toContain('按年重置');
-  });
-
-  it('keeps the original plan update key/value dispatch shape', () => {
-    const hook = adminQueriesSource.slice(
-      adminQueriesSource.indexOf('export function useUpdatePlanMutation()'),
-      adminQueriesSource.indexOf('export function useSortPlansMutation()'),
-    );
-
-    expect(plansSource).toContain(
-      "const updatePlan = (id: number, key: 'show' | 'renew', value: 0 | 1) => {",
-    );
-    expect(plansSource).toContain('update.mutate(\n      { id, key, value },');
-    expect(plansSource).not.toContain('{ id, [key]: value }');
-    expect(hook).toContain(
-      "mutationFn: (vars: { id: number; key: 'show' | 'renew'; value: 0 | 1 }) =>",
-    );
-    expect(hook).toContain('admin.updatePlan(apiClient, vars.id, vars.key, vars.value)');
-    expect(hook).not.toContain('show?:');
-    expect(hook).not.toContain('renew?:');
-    expect(hook).not.toContain('vars.show');
-    expect(hook).not.toContain('vars.renew');
-  });
-
-  it('renders server groups with the original tag component styling', () => {
-    expect(plansSource).toContain("import { LegacyTag } from '@/components/legacy-tag';");
-    expect(plansSource).toContain('<LegacyTag key={group.id}>');
-    expect(plansSource).not.toContain('className="ant-tag"');
-    expect(plansSource).toContain('const tags: ReactNode[] = [];');
-    expect(plansSource).toContain('group.id === parseInt(String(value), 10)');
-    expect(plansSource).toContain('{group.name}');
-    expect(plansSource).toContain('return tags;');
-    expect(plansSource).not.toContain('Tag,');
-    expect(plansSource).not.toContain('tags.push(<Tag>{group.name}</Tag>)');
-    expect(plansSource).not.toContain('return group ? <Tag>{group}</Tag> : null;');
-  });
-
-  it('keeps the original null-only price formatter behavior', () => {
-    expect(plansSource).toContain('function formatPrice(value: number | null) {');
-    expect(plansSource).toContain("return value !== null ? value.toFixed(2) : '-';");
-    expect(plansSource).not.toContain('value !== null && value !== undefined');
-    expect(plansSource).not.toContain('Number(value).toFixed(2)');
+    await user.click(screen.getByTestId('plan-delete-1'));
+    await waitFor(() => expect(mocks.confirm).toHaveBeenCalled());
+    expect(mocks.dropMutate).not.toHaveBeenCalled();
   });
 });

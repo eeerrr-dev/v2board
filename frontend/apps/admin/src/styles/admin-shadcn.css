@@ -136,5 +136,6 @@
 @source '../pages/knowledge.tsx';
 @source '../pages/orders.tsx';
 @source '../pages/coupons.tsx';
+@source '../pages/plans.tsx';
 
 @tailwind utilities source(none);
