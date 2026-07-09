@@ -132,5 +132,6 @@
 @source '../pages/notices.tsx';
 @source '../pages/payments.tsx';
 @source '../pages/dashboard.tsx';
+@source '../pages/tickets.tsx';
 
 @tailwind utilities source(none);

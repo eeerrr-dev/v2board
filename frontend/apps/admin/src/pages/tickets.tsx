@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
-import { createPortal } from 'react-dom';
-import { App } from 'antd';
-import type { FilterValue } from 'antd/es/table/interface';
+import { useEffect, useRef, useState } from 'react';
 import dayjs from 'dayjs';
+import { Activity, CircleX, Filter, MessageSquare, Send, User } from 'lucide-react';
 import type { Ticket } from '@v2board/types';
 import { useParams } from 'react-router';
+import type { admin } from '@v2board/api-client';
 import {
   useAdminTicket,
   useAdminTickets,
@@ -12,129 +11,92 @@ import {
   useCloseTicketMutation,
   useReplyTicketMutation,
 } from '@/lib/queries';
-import type { AdminPageQuery } from '@v2board/api-client';
 import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
-import { LegacySpin } from '@/components/legacy-spin';
-import { legacyHref } from '@/lib/legacy-href';
-import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
-import { LegacyFilterIcon, LegacySolutionIcon, LegacyUserIcon } from '@/components/legacy-ant-icon';
+import { confirmDialog } from '@/components/ui/confirm-dialog';
+import { toast } from '@/lib/toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import {
-  LegacyStandaloneTable,
-  LegacyTablePagination,
-  legacyTableRowKey,
-  type LegacyStandaloneTableHeader,
-  type LegacyTablePaginationChange,
-} from '@/components/legacy-standalone-table';
-import { LegacyTooltip } from '@/components/legacy-tooltip';
-import { LegacyRadio } from '@/components/legacy-radio';
-import { LegacyCheckbox } from '@/components/legacy-checkbox';
-import { LegacyBadge } from '@/components/legacy-badge';
-import { LegacyDivider } from '@/components/legacy-divider';
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { PageHeader, PageShell } from '@/components/ui/page';
+import { PaginationControl } from '@/components/ui/pagination';
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Spinner } from '@/components/ui/spinner';
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { DataTable, type DataTableColumn } from '@/components/ui/table';
 
-type TicketQuery = AdminPageQuery & {
-  size?: 'small';
-  total?: number;
+// The extra keys (status / email / reply_status) are the same admin ticket-fetch
+// filters the legacy console sent; `fetchTickets` spreads the whole query into
+// the request params, so their names/shapes are the preserved data contract.
+type TicketQuery = admin.AdminPageQuery & {
   status?: number;
   email?: string;
-  reply_status?: FilterValue | null;
+  reply_status?: number[] | null;
 };
 
-function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTMLAnchorElement> {
-  return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;
-}
+const PAGINATION_LABELS = {
+  itemsPerPage: '条/页',
+  nextPage: '下一页',
+  nextWindow: '向后 5 页',
+  previousPage: '上一页',
+  previousWindow: '向前 5 页',
+};
+
+const REPLY_STATUS_OPTIONS = [
+  { label: '已回复', value: 1 },
+  { label: '待回复', value: 0 },
+];
+
+const TICKET_LEVELS: Record<number, { label: string; tone: StatusTone }> = {
+  0: { label: '低', tone: 'default' },
+  1: { label: '中', tone: 'warning' },
+  2: { label: '高', tone: 'destructive' },
+};
 
 function formatMinute(value: number) {
   return dayjs(1000 * value).format('YYYY/MM/DD HH:mm');
 }
 
-function ticketLevelName(value: number) {
-  return ['低', '中', '高'][value];
-}
-
-function filterValueIncludes(value: FilterValue | null | undefined, option: number) {
-  return Array.isArray(value) && value.includes(option);
-}
-
-function LegacyTicketReplyStatusFilterDropdown({
-  open,
-  value,
-  onClear,
-  onConfirm,
-  onToggle,
-}: {
-  open: boolean;
-  value: FilterValue | null | undefined;
-  onClear: () => void;
-  onConfirm: () => void;
-  onToggle: (value: number) => void;
-}) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted || typeof document === 'undefined') return null;
-
-  return createPortal(
-    <div
-      className={`ant-dropdown  ant-dropdown-placement-bottomRight${open ? '' : ' ant-dropdown-hidden'}`}
-    >
-      <div className="ant-table-filter-dropdown">
-        <ul
-          className="ant-dropdown-menu ant-dropdown-menu-without-submenu ant-dropdown-menu-root ant-dropdown-menu-vertical"
-          role="menu"
-          tabIndex={0}
-        >
-          {[
-            { label: '已回复', value: 1 },
-            { label: '待回复', value: 0 },
-          ].map((item) => {
-            const checked = filterValueIncludes(value, item.value);
-            return (
-              <li key={item.value} className="ant-dropdown-menu-item" role="menuitem">
-                <LegacyCheckbox
-                  checked={checked}
-                  value=""
-                  onChange={() => onToggle(item.value)}
-                />
-                <span>{item.label}</span>
-              </li>
-            );
-          })}
-        </ul>
-        <div className="ant-table-filter-dropdown-btns">
-          <a className="ant-table-filter-dropdown-link confirm" onClick={onConfirm}>
-            确定
-          </a>
-          <a className="ant-table-filter-dropdown-link clear" onClick={onClear}>
-            重置
-          </a>
-        </div>
-      </div>
-    </div>,
-    document.body,
+function renderTicketStatus(row: Ticket) {
+  // Backend-field interpretation preserved from the replica: a closed ticket
+  // wins over reply_status; otherwise reply_status 1/0 reads replied/awaiting.
+  if (row.status === 1) {
+    return (
+      <StatusBadge tone="success" showDot>
+        已关闭
+      </StatusBadge>
+    );
+  }
+  return row.reply_status ? (
+    <StatusBadge tone="info" showDot>
+      已回复
+    </StatusBadge>
+  ) : (
+    <StatusBadge tone="destructive" showDot>
+      待回复
+    </StatusBadge>
   );
-}
-
-export function startLegacyTicketPolling(refetch: () => unknown) {
-  let timer: number | undefined;
-  const check = () => {
-    timer = window.setTimeout(() => {
-      void refetch();
-      check();
-    }, 5000);
-  };
-  check();
-  return () => {
-    if (timer !== undefined) window.clearTimeout(timer);
-  };
 }
 
 export default function TicketsPage() {
   const { ticket_id: ticketId } = useParams();
-  if (ticketId) return <TicketChatPage ticketId={ticketId} />;
+  if (ticketId) return <TicketChatStandalone ticketId={ticketId} />;
   return <TicketListPage />;
 }
 
@@ -143,323 +105,377 @@ function TicketListPage() {
   const tickets = useAdminTickets(query);
   const closeTicket = useCloseTicketMutation();
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [chatTicketId, setChatTicketId] = useState<number | null>(null);
   const data = tickets.data?.data ?? [];
-  const [replyStatusFilterOpen, setReplyStatusFilterOpen] = useState(false);
-  const [replyStatusFilterValue, setReplyStatusFilterValue] = useState<FilterValue | null>(
-    query.reply_status ?? null,
-  );
+  const total = tickets.data?.total ?? 0;
+  const replyStatus = query.reply_status ?? [];
 
-  const filter = (
-    key: keyof TicketQuery,
-    value: TicketQuery[keyof TicketQuery],
-    extra?: Partial<TicketQuery>,
-  ) => {
-    setQuery((current) => ({
-      ...current,
-      current: 1,
-      pageSize: 10,
-      ...extra,
-      [key]: value,
-    }));
+  const patchQuery = (patch: Partial<TicketQuery>) => {
+    setQuery((current) => ({ ...current, current: 1, ...patch }));
   };
 
-  const onSearch = (key: keyof TicketQuery, value: string) => {
+  const onEmailSearch = (value: string) => {
     clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => filter(key, value), 300);
+    searchTimer.current = setTimeout(() => patchQuery({ email: value || undefined }), 300);
   };
 
-  const toggleReplyStatusFilterValue = (value: number) => {
-    setReplyStatusFilterValue((current) => {
-      const values = Array.isArray(current) ? current : [];
-      const next = filterValueIncludes(values, value)
-        ? values.filter((item) => item !== value)
-        : [...values, value];
-      return next.length ? next : null;
+  const toggleReplyStatus = (value: number, checked: boolean) => {
+    const next = checked
+      ? [...replyStatus, value]
+      : replyStatus.filter((item) => item !== value);
+    patchQuery({ reply_status: next.length ? next : null });
+  };
+
+  const closeTicketRow = async (row: Ticket) => {
+    const confirmed = await confirmDialog({
+      title: '关闭工单',
+      description: `确定要关闭工单「${row.subject}」吗？`,
+      confirmText: '关闭',
+    });
+    if (!confirmed) return;
+    closeTicket.mutate(row.id, {
+      onSuccess: () => {
+        toast.success('工单已关闭');
+        void tickets.refetch();
+      },
     });
   };
 
-  const confirmReplyStatusFilter = () => {
-    setReplyStatusFilterOpen(false);
-    setQuery((current) => ({
-      current: 1,
-      pageSize: 10,
-      total: tickets.data?.total,
-      size: 'small',
-      ...(current.status === undefined ? {} : { status: current.status }),
-      ...(current.email === undefined ? {} : { email: current.email }),
-      reply_status: replyStatusFilterValue,
-    }));
-  };
-
-  const clearReplyStatusFilter = () => {
-    setReplyStatusFilterOpen(false);
-    setReplyStatusFilterValue(null);
-    filter('reply_status', null);
-  };
-
-  const updateTablePagination = (pagination: LegacyTablePaginationChange) =>
-    setQuery((current) => ({
-      ...current,
-      ...pagination,
-    }));
-
-  const toChat = (id: number) => {
-    const url = `${window.location.origin}${window.location.pathname}#/ticket/${id}`;
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    if (!userAgent.includes('mobile') && !userAgent.includes('ipad')) {
-      window.open(
-        url,
-        '_blank',
-        'height=600,width=800,top=0,left=0,toolbar=no,menubar=no,scrollbars=no,resizable=no,location=no,status=no',
-      );
-      return;
-    }
-
-    window.location.href = url;
-  };
-
-  const headers: LegacyStandaloneTableHeader[] = [
-    { title: '#' },
-    { title: '主题' },
-    { title: '工单级别' },
+  const columns: DataTableColumn<Ticket>[] = [
     {
-      title: '工单状态',
-      className:
-        query.status !== 1
-          ? 'ant-table-column-has-actions ant-table-column-has-filters'
-          : undefined,
-      suffix:
-        query.status !== 1 ? (
-          <LegacyFilterIcon
-            filled
-            title="筛选"
-            tabIndex={-1}
-            className="ant-dropdown-trigger"
-            onClick={() => setReplyStatusFilterOpen((current) => !current)}
-          />
-        ) : undefined,
+      id: 'id',
+      meta: { className: 'text-muted-foreground tabular-nums' },
+      header: () => <span>#</span>,
+      cell: ({ row }) => row.original.id,
     },
-    { title: '创建时间' },
-    { title: '最后回复' },
-    { title: '操作', alignRight: true, fixedRight: true },
+    {
+      id: 'subject',
+      meta: { className: 'font-medium text-foreground' },
+      header: () => <span>主题</span>,
+      cell: ({ row }) => row.original.subject,
+    },
+    {
+      id: 'level',
+      header: () => <span>工单级别</span>,
+      cell: ({ row }) => {
+        const level = TICKET_LEVELS[row.original.level] ?? TICKET_LEVELS[0]!;
+        return <StatusBadge tone={level.tone}>{level.label}</StatusBadge>;
+      },
+    },
+    {
+      id: 'status',
+      header: () => <span>工单状态</span>,
+      cell: ({ row }) => renderTicketStatus(row.original),
+    },
+    {
+      id: 'created_at',
+      meta: { className: 'text-muted-foreground tabular-nums' },
+      header: () => <span>创建时间</span>,
+      cell: ({ row }) => formatMinute(row.original.created_at),
+    },
+    {
+      id: 'updated_at',
+      meta: { className: 'text-muted-foreground tabular-nums' },
+      header: () => <span>最后回复</span>,
+      cell: ({ row }) => formatMinute(row.original.updated_at),
+    },
+    {
+      id: 'actions',
+      meta: { align: 'right' },
+      header: () => <span>操作</span>,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setChatTicketId(row.original.id)}
+            data-testid={`ticket-view-${row.original.id}`}
+          >
+            <MessageSquare className="size-4" />
+            查看
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            disabled={row.original.status === 1}
+            onClick={() => void closeTicketRow(row.original)}
+            data-testid={`ticket-close-${row.original.id}`}
+          >
+            <CircleX className="size-4" />
+            关闭
+          </Button>
+        </div>
+      ),
+    },
   ];
 
-  const renderTicketStatus = (value: 0 | 1, row: Ticket) =>
-    row.status === 1 ? (
-      <LegacyBadge status="success" text="已关闭" />
-    ) : (
-      <LegacyBadge status={value ? 'processing' : 'error'} text={value ? '已回复' : '待回复'} />
-    );
-
-  const renderTicketActions = (row: Ticket) => (
-    <div>
-      <a ref={legacyHref()} onClick={() => toChat(row.id)}>
-        查看
-      </a>
-      <LegacyDivider type="vertical" />
-      <a
-        {...legacyDisabledAnchorProps(row.status)}
-        ref={legacyHref()}
-        onClick={() =>
-          closeTicket.mutate(row.id, {
-            onSuccess: () => {
-              void tickets.refetch();
-            },
-          })
-        }
-      >
-        关闭
-      </a>
-    </div>
-  );
-
   return (
-    <LegacySpin loading={legacyFetchLoading(tickets.isFetching, tickets.error)}>
-      <div className="block border-bottom">
-        <div className="bg-white">
-          <div className="p-3">
-            <LegacyRadio.Group
-              value={query.status}
-              onChange={(event) => filter('status', Number(event.target.value))}
-            >
-              <LegacyRadio.Button value={0}>已开启</LegacyRadio.Button>
-              <LegacyRadio.Button value={1}>已关闭</LegacyRadio.Button>
-            </LegacyRadio.Group>
-            <div style={{ float: 'right' }}>
-              <input
+    <PageShell data-testid="tickets-page">
+      <PageHeader title="工单管理" />
+
+      <Card className="overflow-hidden py-0">
+        <CardContent className="p-0">
+          <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+            <SegmentedControl
+              aria-label="工单状态筛选"
+              value={String(query.status ?? 0)}
+              onValueChange={(value) => patchQuery({ status: Number(value), reply_status: null })}
+              items={[
+                { label: '已开启', value: '0' },
+                { label: '已关闭', value: '1' },
+              ]}
+            />
+            <div className="flex items-center gap-2">
+              {query.status !== 1 ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" data-testid="ticket-reply-filter">
+                      <Filter className="size-4" />
+                      筛选
+                      {replyStatus.length ? (
+                        <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                          {replyStatus.length}
+                        </span>
+                      ) : null}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>回复状态</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {REPLY_STATUS_OPTIONS.map((option) => (
+                      <DropdownMenuCheckboxItem
+                        key={option.value}
+                        checked={replyStatus.includes(option.value)}
+                        onSelect={(event) => event.preventDefault()}
+                        onCheckedChange={(checked) => toggleReplyStatus(option.value, checked)}
+                      >
+                        {option.label}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              <Input
                 placeholder="输入邮箱搜索"
-                type="text"
-                className="ant-input"
-                defaultValue=""
-                onChange={(event) => onSearch('email', event.target.value)}
+                className="w-full sm:w-56"
+                onChange={(event) => onEmailSearch(event.target.value)}
+                data-testid="ticket-email-search"
               />
             </div>
           </div>
-          <LegacyStandaloneTable
-            headers={headers}
-            isEmpty={data.length === 0}
-            scrollX={900}
-            scrollPositionRight="desktop"
-            pagination={
-              <LegacyTablePagination
-                current={query.current ?? 1}
-                pageSize={query.pageSize ?? 10}
-                total={tickets.data?.total}
-                onChange={updateTablePagination}
-              />
-            }
-            fixedRightChildren={data.map((row, index) => (
-              <tr
-                key={index}
-                className="ant-table-row ant-table-row-level-0"
-                {...legacyTableRowKey(index)}
-              >
-                <td
-                  className="ant-table-align-right ant-table-row-cell-last"
-                  style={{ textAlign: 'right' }}
-                >
-                  {renderTicketActions(row)}
-                </td>
-              </tr>
-            ))}
-          >
-            {data.map((row, index) => (
-              <tr
-                key={index}
-                className="ant-table-row ant-table-row-level-0"
-                {...legacyTableRowKey(index)}
-              >
-                <td className="">{row.id}</td>
-                <td className="">{row.subject}</td>
-                <td className="">{ticketLevelName(row.level)}</td>
-                <td className="">{renderTicketStatus(row.reply_status, row)}</td>
-                <td className="">{formatMinute(row.created_at)}</td>
-                <td className="">{formatMinute(row.updated_at)}</td>
-                <td
-                  className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
-                  style={{ textAlign: 'right' }}
-                >
-                  {renderTicketActions(row)}
-                </td>
-              </tr>
-            ))}
-          </LegacyStandaloneTable>
-          {query.status !== 1 ? (
-            <LegacyTicketReplyStatusFilterDropdown
-              open={replyStatusFilterOpen}
-              value={replyStatusFilterValue}
-              onToggle={toggleReplyStatusFilterValue}
-              onConfirm={confirmReplyStatusFilter}
-              onClear={clearReplyStatusFilter}
+
+          <DataTable
+            columns={columns}
+            data={data}
+            getRowKey={(row) => row.id}
+            className="min-w-[840px]"
+            data-testid="tickets-table"
+            empty={data.length === 0 ? '暂无工单' : undefined}
+            emptyTestId="tickets-empty"
+          />
+
+          {total > 0 ? (
+            <PaginationControl
+              current={query.current ?? 1}
+              pageSize={query.pageSize ?? 10}
+              total={total}
+              labels={PAGINATION_LABELS}
+              onChange={(page, pageSize) =>
+                setQuery((current) => ({ ...current, current: page, pageSize }))
+              }
+              testIds={{ page: 'ticket-page', pageSize: 'ticket-page-size' }}
             />
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Sheet
+        open={chatTicketId !== null}
+        onOpenChange={(open) => {
+          if (!open) setChatTicketId(null);
+        }}
+      >
+        <SheetContent
+          side="right"
+          className="flex w-full flex-col gap-0 p-0 sm:max-w-xl"
+          data-testid="ticket-chat"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>工单详情</SheetTitle>
+          </SheetHeader>
+          {chatTicketId !== null ? <TicketChat ticketId={chatTicketId} /> : null}
+        </SheetContent>
+      </Sheet>
+
+      {tickets.isPending ? (
+        <div className="flex justify-center py-6" role="status">
+          <Spinner className="size-5 text-muted-foreground" />
+          <span className="sr-only">加载中</span>
         </div>
-      </div>
-    </LegacySpin>
+      ) : null}
+    </PageShell>
   );
 }
 
-function TicketChatPage({ ticketId }: { ticketId: string }) {
-  const { message: messageApi } = App.useApp();
+// The /ticket/:ticket_id route renders OUTSIDE AdminLayout's SidebarProvider, so
+// there is no ancestor `.v2board-island` to resolve the shadcn design tokens.
+// Unlike the in-shell list, this standalone route must carry the island
+// membership class itself; dark mode still follows the <html>.dark flip.
+function TicketChatStandalone({ ticketId }: { ticketId: string }) {
+  return (
+    <div className="v2board-island flex h-screen justify-center bg-muted/40 text-foreground sm:p-6">
+      <div className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-border bg-card sm:rounded-xl sm:border sm:shadow-sm">
+        <TicketChat ticketId={ticketId} />
+      </div>
+    </div>
+  );
+}
+
+function TicketChat({ ticketId }: { ticketId: number | string }) {
   const ticket = useAdminTicket(ticketId);
   const reply = useReplyTicketMutation();
-  const [message, setMessage] = useState<string | undefined>(undefined);
+  const [message, setMessage] = useState('');
   const [userOpen, setUserOpen] = useState(false);
   const [trafficOpen, setTrafficOpen] = useState(false);
   const chatRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const messageCount = ticket.data?.message!.length;
+  const current = ticket.data;
+  const messageCount = current?.message?.length;
+
+  useAdminUserInfo(current?.user_id);
 
   useEffect(() => {
     const chat = chatRef.current;
-    if (!chat) return;
-    chat.scrollTo(0, chat.scrollHeight);
+    if (chat) chat.scrollTo(0, chat.scrollHeight);
   }, [messageCount]);
 
   useEffect(() => {
-    return startLegacyTicketPolling(ticket.refetch);
+    // Live refresh while the conversation is open (cadence is Tier-2).
+    const timer = window.setInterval(() => void ticket.refetch(), 5000);
+    return () => window.clearInterval(timer);
   }, [ticket.refetch]);
 
   const sendReply = async () => {
-    if (reply.isPending) return;
-    const replyMessageKey = 'v2board-admin-ticket-reply';
-    const closeReplyMessage = messageApi.open({
-      content: '发送中',
-      duration: 0,
-      key: replyMessageKey,
-      type: 'loading',
-    });
+    if (reply.isPending || !message.trim()) return;
+    const toastId = toast.loading('发送中');
     try {
       await reply.mutateAsync({ id: ticketId, message });
     } finally {
-      closeReplyMessage();
+      toast.dismiss(toastId);
     }
     await ticket.refetch();
-    if (inputRef.current) inputRef.current.value = '';
+    setMessage('');
   };
 
-  const current = ticket.data;
   const emptyNotice = current ? undefined : ticket.isError ? '工单不存在' : '加载中...';
-  useAdminUserInfo(current?.user_id);
 
   return (
-    <div>
-      <div className="block-content-full bg-gray-lighter p-3">
-        <span className="tag___12_9H">{current?.subject ?? emptyNotice}</span>
-        <div className="ctrl___UqDJ7">
-          <LegacyTooltip title="用户管理" placement="left">
-            <LegacyUserIcon onClick={() => current?.user_id && setUserOpen(true)} />
-          </LegacyTooltip>
-          <LegacyDivider type="vertical" />
-          <LegacyTooltip title="TA的流量记录" placement="left">
-            <LegacySolutionIcon onClick={() => current?.user_id && setTrafficOpen(true)} />
-          </LegacyTooltip>
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="min-w-0">
+          <div className="truncate text-base font-semibold text-foreground">
+            {current?.subject ?? '工单详情'}
+          </div>
+          {current ? (
+            <div className="text-xs text-muted-foreground">工单 #{current.id}</div>
+          ) : null}
         </div>
+        <TooltipProvider delayDuration={100}>
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
+                  aria-label="用户管理"
+                  disabled={!current?.user_id}
+                  onClick={() => current?.user_id && setUserOpen(true)}
+                >
+                  <User className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>用户管理</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
+                  aria-label="TA的流量记录"
+                  disabled={!current?.user_id}
+                  onClick={() => current?.user_id && setTrafficOpen(true)}
+                >
+                  <Activity className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>TA的流量记录</TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
       </div>
+
       <div
-        className="bg-white js-chat-messages block-content block-content-full text-wrap-break-word overflow-y-auto content___DW5w1"
         ref={chatRef}
+        data-testid="ticket-chat-messages"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto break-words px-4 py-4"
       >
-        {current?.message!.map((item, index) =>
+        {current?.message?.map((item, index) =>
           item.is_me ? (
-            <div key={index}>
-              <div className="font-size-sm text-muted my-2 text-right">
+            <div key={index} className="flex flex-col items-end">
+              <div className="mb-1 text-xs text-muted-foreground">
                 {formatMinute(item.created_at)}
               </div>
-              <div className="text-right ml-4">
-                <div className="d-inline-block bg-gray-lighter px-3 py-2 mb-2 mw-100 rounded text-left">
-                  {item.message}
-                </div>
+              <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm text-foreground">
+                {item.message}
               </div>
             </div>
           ) : (
-            <div key={index}>
-              <div className="font-size-sm text-muted my-2">{formatMinute(item.created_at)}</div>
-              <div className="mr-4">
-                <div className="d-inline-block bg-success-lighter px-3 py-2 mb-2 mw-100 rounded text-left">
-                  {item.message}
-                </div>
+            <div key={index} className="flex flex-col items-start">
+              <div className="mb-1 text-xs text-muted-foreground">
+                {formatMinute(item.created_at)}
+              </div>
+              <div className="max-w-[85%] rounded-lg border border-success/20 bg-success/10 px-3 py-2 text-sm text-foreground">
+                {item.message}
               </div>
             </div>
           ),
         )}
         {emptyNotice ? (
-          <div className="font-size-sm text-muted my-2 text-center">{emptyNotice}</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">{emptyNotice}</div>
         ) : null}
       </div>
-      <div className="js-chat-form block-content p-2 bg-body-dark input___1j_ND">
-        <input
-          ref={inputRef}
-          type="text"
-          className="js-chat-input bg-body-dark border-0 form-control form-control-alt"
-          placeholder="输入内容回复工单..."
-          onChange={(event) => setMessage(event.target.value)}
-          onKeyDown={(event) => {
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-            if (event.keyCode === 13) void sendReply();
-          }}
-        />
+
+      <div className="border-t border-border p-3">
+        <div className="flex items-end gap-2">
+          <Textarea
+            rows={1}
+            value={message}
+            placeholder="输入内容回复工单..."
+            className="max-h-40 min-h-9 resize-none"
+            onChange={(event) => setMessage(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void sendReply();
+              }
+            }}
+            data-testid="ticket-reply-input"
+          />
+          <Button
+            size="icon"
+            className="size-9 shrink-0"
+            aria-label="发送"
+            disabled={reply.isPending || !message.trim()}
+            onClick={() => void sendReply()}
+            data-testid="ticket-reply-submit"
+          >
+            <Send className="size-4" />
+          </Button>
+        </div>
       </div>
+
       <UserTrafficModal
         key={current?.user_id}
         userId={current?.user_id}

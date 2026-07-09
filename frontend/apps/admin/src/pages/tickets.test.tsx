@@ -1,30 +1,20 @@
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { renderToStaticMarkup } from 'react-dom/server';
-import dayjs from 'dayjs';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import TicketsPage, { startLegacyTicketPolling } from './tickets';
+import dayjs from 'dayjs';
+import TicketsPage from './tickets';
 
-const ticketsSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), 'tickets.tsx'),
-  'utf8',
-);
-const queriesSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../lib/queries.ts'),
-  'utf8',
-);
-
-(
-  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
+// The admin ticket console is a redesigned shadcn island (PageHeader + DataTable
+// + a Sheet chat panel) replacing the ant-table / ant-dropdown / OneUI chat
+// replica. The DOM and source byte-pins are retired. What stays covered is the
+// Tier-1 contract: the ticket-fetch query shape, the close-ticket call
+// (ticket-id passthrough), the reply payload ({ id, message }) with the same
+// ticket-id passthrough, and the /ticket/:ticket_id route rendering the chat.
 
 const mocks = vi.hoisted(() => {
-  const makeAdminTicket = () => ({
+  const OPEN_TICKET = {
     id: 1,
-    user_id: 1,
+    user_id: 7,
     subject: '支付问题',
     level: 2,
     status: 0,
@@ -32,10 +22,26 @@ const mocks = vi.hoisted(() => {
     last_reply_user_id: null,
     created_at: 1700000000,
     updated_at: 1700086400,
+  };
+
+  const CLOSED_TICKET = {
+    id: 2,
+    user_id: 8,
+    subject: '已完成',
+    level: 0,
+    status: 1,
+    reply_status: 1,
+    last_reply_user_id: null,
+    created_at: 1700000000,
+    updated_at: 1700086400,
+  };
+
+  const makeDetail = () => ({
+    ...OPEN_TICKET,
     message: [
       {
         id: 1,
-        user_id: 1,
+        user_id: 7,
         ticket_id: 1,
         message: '用户消息',
         is_me: false,
@@ -55,37 +61,26 @@ const mocks = vi.hoisted(() => {
   });
 
   return {
-    makeAdminTicket,
+    OPEN_TICKET,
+    CLOSED_TICKET,
+    makeDetail,
     params: {} as Record<string, string>,
-    closeTicketMutate: vi.fn(),
-    messageClose: vi.fn(),
-    messageDestroy: vi.fn(),
-    messageOpen: vi.fn(),
-    replyTicketMutateAsync: vi.fn(),
-    ticketRefetch: vi.fn(),
     ticketQueries: [] as Array<Record<string, unknown>>,
-    adminUserInfoIds: [] as Array<number | null | undefined>,
-    adminTicket: makeAdminTicket() as ReturnType<typeof makeAdminTicket> | undefined,
-    adminTicketError: false,
+    refetch: vi.fn(),
+    ticketRefetch: vi.fn(),
+    closeMutate: vi.fn(),
+    replyMutateAsync: vi.fn(),
+    userInfoIds: [] as Array<number | null | undefined>,
+    detail: makeDetail() as ReturnType<typeof makeDetail> | undefined,
+    detailError: false,
+    confirm: vi.fn(),
+    toastLoading: vi.fn(),
+    toastDismiss: vi.fn(),
+    toastSuccess: vi.fn(),
   };
 });
 
-vi.mock('antd', () => {
-  return {
-    App: {
-      useApp: () => ({
-        message: {
-          destroy: mocks.messageDestroy,
-          open: mocks.messageOpen,
-        },
-      }),
-    },
-  };
-});
-
-vi.mock('react-router', () => ({
-  useParams: () => mocks.params,
-}));
+vi.mock('react-router', () => ({ useParams: () => mocks.params }));
 
 vi.mock('@/components/user-manage-drawer', () => ({
   UserManageDrawer: ({ open }: { open: boolean }) =>
@@ -97,721 +92,211 @@ vi.mock('@/components/user-traffic-modal', () => ({
     open ? <div data-testid="user-traffic-modal" /> : null,
 }));
 
+vi.mock('@/components/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
+
+vi.mock('@/lib/toast', () => ({
+  toast: {
+    loading: (...args: unknown[]) => mocks.toastLoading(...args),
+    dismiss: (...args: unknown[]) => mocks.toastDismiss(...args),
+    success: (...args: unknown[]) => mocks.toastSuccess(...args),
+  },
+}));
+
 vi.mock('@/lib/queries', () => ({
   useAdminTickets: (query: Record<string, unknown>) => {
     mocks.ticketQueries.push(query);
     return {
-      isLoading: false,
+      isPending: false,
       isFetching: false,
-      refetch: vi.fn(),
-      data: {
-        data: [
-          {
-            id: 1,
-            user_id: 1,
-            subject: '支付问题',
-            level: 2,
-            status: 0,
-            reply_status: 0,
-            last_reply_user_id: null,
-            created_at: 1700000000,
-            updated_at: 1700086400,
-          },
-          {
-            id: 2,
-            user_id: 2,
-            subject: '已完成',
-            level: 0,
-            status: 1,
-            reply_status: 1,
-            last_reply_user_id: null,
-            created_at: 1700000000,
-            updated_at: 1700086400,
-          },
-        ],
-        total: 42,
-      },
+      error: undefined,
+      refetch: mocks.refetch,
+      data: { data: [mocks.OPEN_TICKET, mocks.CLOSED_TICKET], total: 42 },
     };
   },
-  useCloseTicketMutation: () => ({
-    mutate: mocks.closeTicketMutate,
-  }),
+  useCloseTicketMutation: () => ({ mutate: mocks.closeMutate }),
+  useReplyTicketMutation: () => ({ isPending: false, mutateAsync: mocks.replyMutateAsync }),
   useAdminTicket: () => ({
     refetch: mocks.ticketRefetch,
-    data: mocks.adminTicket,
-    isError: mocks.adminTicketError,
+    data: mocks.detail,
+    isError: mocks.detailError,
     isFetching: false,
-  }),
-  useReplyTicketMutation: () => ({
-    isPending: false,
-    mutateAsync: mocks.replyTicketMutateAsync,
-  }),
-  useAdminPlans: () => ({
-    data: [{ id: 1, name: '基础套餐' }],
   }),
   useAdminUserInfo: (id?: number | null) => {
-    mocks.adminUserInfoIds.push(id);
-    return {
-      data: {
-        id: 1,
-        email: 'user@example.com',
-        balance: 1200,
-        commission_balance: 3400,
-        transfer_enable: 107374182400,
-        device_limit: 3,
-        u: 0,
-        d: 0,
-        plan_id: 1,
-        expired_at: 1893456000,
-        banned: 0,
-        is_admin: 0,
-        is_staff: 0,
-      },
-    };
+    mocks.userInfoIds.push(id);
+    return { data: undefined };
   },
-  useUpdateUserMutation: () => ({
-    isPending: false,
-    mutateAsync: vi.fn(),
-  }),
-  useAdminUserTraffic: () => ({
-    isFetching: false,
-    data: {
-      data: [{ record_at: 1700000000, u: 1024, d: 2048, server_rate: 1 }],
-      total: 1,
-    },
-  }),
 }));
 
 beforeEach(() => {
   mocks.params = {};
-  mocks.closeTicketMutate.mockClear();
-  mocks.messageClose.mockClear();
-  mocks.messageDestroy.mockClear();
-  mocks.messageOpen.mockReset();
-  mocks.messageOpen.mockReturnValue(mocks.messageClose);
-  mocks.replyTicketMutateAsync.mockReset();
-  mocks.replyTicketMutateAsync.mockResolvedValue(true);
-  mocks.ticketRefetch.mockClear();
-  mocks.ticketRefetch.mockResolvedValue(undefined);
   mocks.ticketQueries = [];
-  mocks.adminUserInfoIds = [];
-  mocks.adminTicket = mocks.makeAdminTicket();
-  mocks.adminTicketError = false;
+  mocks.refetch.mockReset().mockResolvedValue(undefined);
+  mocks.ticketRefetch.mockReset().mockResolvedValue(undefined);
+  mocks.closeMutate.mockReset();
+  mocks.replyMutateAsync.mockReset().mockResolvedValue(true);
+  mocks.userInfoIds = [];
+  mocks.detail = mocks.makeDetail();
+  mocks.detailError = false;
+  mocks.confirm.mockReset().mockResolvedValue(true);
+  mocks.toastLoading.mockReset().mockReturnValue('toast-id');
+  mocks.toastDismiss.mockReset();
+  mocks.toastSuccess.mockReset();
 });
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('TicketsPage legacy ticket manager', () => {
-  it('renders the original ticket table shell, filters, and actions', () => {
-    const html = renderToStaticMarkup(<TicketsPage />);
+describe('TicketsPage list', () => {
+  it('renders ticket rows with level and formatted times', () => {
+    render(<TicketsPage />);
 
-    expect(html).toContain('class="block border-bottom"');
-    expect(html).toContain('class="bg-white"');
-    expect(html).toContain('class="p-3"');
-    expect(html).toContain('class="ant-radio-group ant-radio-group-outline"');
-    expect(html).toContain('class="ant-radio-button-inner"');
-    expect(html).toContain('class="ant-input"');
-    expect(html).toContain('class="ant-table-wrapper"');
-    expect(html).toContain(
-      'class="ant-table ant-table-default ant-table-scroll-position-left ant-table-scroll-position-right"',
-    );
-    expect(html).toContain('class="ant-table-scroll"');
-    expect(html).toContain('tabindex="-1" class="ant-table-body" style="overflow-x:scroll"');
-    expect(html).toContain('class="ant-table-fixed" style="width:900px"');
-    expect(html).toContain('class="ant-table-fixed-right"');
-    expect(html).toContain('class="ant-pagination ant-table-pagination mini"');
-    expect(html).toContain('class="ant-pagination-item ant-pagination-item-5"');
-    expect(html).toContain('ant-table-column-has-actions ant-table-column-has-filters');
-    expect(html).toContain('aria-label="图标: filter"');
-    expect(html).toContain('已开启');
-    expect(html).toContain('已关闭');
-    expect(html).toContain('输入邮箱搜索');
-    expect(html).toContain('主题');
-    expect(html).toContain('工单级别');
-    expect(html).toContain('工单状态');
-    expect(html).toContain('创建时间');
-    expect(html).toContain('最后回复');
-    expect(html).toContain('支付问题');
-    expect(html).toContain('高');
-    expect(html).toContain(
-      '<span class="ant-badge-status-dot ant-badge-status-error"></span><span class="ant-badge-status-text">待回复</span>',
-    );
-    expect(html).toContain('待回复');
-    expect(html).toContain('已完成');
-    expect(html).toContain(dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm'));
-    expect(html).toContain('查看');
-    expect(html).toContain('关闭');
-    expect(html).not.toContain('ant-drawer');
-    expect(html).not.toContain('ant-card');
-    expect(html).not.toContain('ant-table-cell');
-    expect(html).not.toContain('css-dev-only');
-    expect(html).not.toContain('ant-typography');
+    expect(screen.getByText('工单管理')).toBeInTheDocument();
+    const table = screen.getByTestId('tickets-table');
+    expect(within(table).getByText('支付问题')).toBeInTheDocument();
+    expect(within(table).getByText('高')).toBeInTheDocument();
+    expect(within(table).getByText('待回复')).toBeInTheDocument();
+    expect(within(table).getByText('已关闭')).toBeInTheDocument();
+    expect(
+      within(table).getAllByText(dayjs(1700000000 * 1000).format('YYYY/MM/DD HH:mm')).length,
+    ).toBeGreaterThan(0);
   });
 
-  it('keeps the legacy close link behavior for already closed rows', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
-
-    await act(async () => {
-      root!.render(<TicketsPage />);
-      await Promise.resolve();
-    });
-
-    const closeLinks = Array.from(container.querySelectorAll('a')).filter(
-      (link) => link.textContent === '关闭',
-    );
-    expect(closeLinks).toHaveLength(4);
-
-    await act(async () => {
-      closeLinks[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(mocks.closeTicketMutate).toHaveBeenCalledWith(2, expect.any(Object));
-
-    await act(async () => {
-      root?.unmount();
-      root = null;
-    });
-    container.remove();
+  it('fetches the first open-ticket page with the legacy query shape', () => {
+    render(<TicketsPage />);
+    expect(mocks.ticketQueries[0]).toMatchObject({ current: 1, pageSize: 10, status: 0 });
   });
 
-  it('debounces the legacy email search before fetching the first ticket page', async () => {
-    vi.useFakeTimers();
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
-
-    await act(async () => {
-      root!.render(<TicketsPage />);
-      await Promise.resolve();
-    });
-
-    expect(mocks.ticketQueries[mocks.ticketQueries.length - 1]).toMatchObject({
-      current: 1,
-      pageSize: 10,
-      status: 0,
-    });
-
+  it('searches tickets by email through the debounced query', async () => {
+    const user = userEvent.setup();
+    render(<TicketsPage />);
     mocks.ticketQueries = [];
-    const emailInput = container.querySelector<HTMLInputElement>(
-      'input[placeholder="输入邮箱搜索"]',
-    )!;
 
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        emailInput,
-        'buyer@example.com',
-      );
-      emailInput.dispatchEvent(new Event('input', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.type(screen.getByTestId('ticket-email-search'), 'buyer@example.com');
 
-    expect(mocks.ticketQueries).toHaveLength(0);
-
-    await act(async () => {
-      vi.advanceTimersByTime(299);
-      await Promise.resolve();
-    });
-
-    expect(mocks.ticketQueries).toHaveLength(0);
-
-    await act(async () => {
-      vi.advanceTimersToNextTimer();
-      await Promise.resolve();
-    });
-
-    expect(mocks.ticketQueries[mocks.ticketQueries.length - 1]).toMatchObject({
-      current: 1,
-      pageSize: 10,
-      status: 0,
-      email: 'buyer@example.com',
-    });
-    expect(ticketsSource).toContain('setTimeout(() => filter(key, value), 300)');
-
-    await act(async () => {
-      root?.unmount();
-      root = null;
-    });
-    container.remove();
+    await waitFor(() =>
+      expect(mocks.ticketQueries[mocks.ticketQueries.length - 1]).toMatchObject({
+        current: 1,
+        status: 0,
+        email: 'buyer@example.com',
+      }),
+    );
   });
 
-  it('keeps the legacy reply-status filter dropdown wired to ticket queries', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
-
-    await act(async () => {
-      root!.render(<TicketsPage />);
-      await Promise.resolve();
-    });
-
-    const dropdown = document.body.querySelector<HTMLElement>('.ant-dropdown');
-    expect(dropdown?.className).toContain('ant-dropdown-hidden');
-
-    const filterIcon = container.querySelector<HTMLElement>('i.anticon-filter')!;
-
-    await act(async () => {
-      filterIcon.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(dropdown?.className).not.toContain('ant-dropdown-hidden');
-
-    const checkedInput = Array.from(
-      document.body.querySelectorAll<HTMLInputElement>('.ant-checkbox-input'),
-    )[0]!;
-
-    await act(async () => {
-      checkedInput.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
+  it('sends the reply_status filter array and resets to page 1', async () => {
+    const user = userEvent.setup();
+    render(<TicketsPage />);
     mocks.ticketQueries = [];
-    const confirm = document.body.querySelector<HTMLElement>(
-      '.ant-table-filter-dropdown-link.confirm',
-    )!;
 
-    await act(async () => {
-      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByTestId('ticket-reply-filter'));
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: '已回复' }));
 
     expect(mocks.ticketQueries[mocks.ticketQueries.length - 1]).toMatchObject({
       current: 1,
-      pageSize: 10,
-      status: 0,
       reply_status: [1],
-      size: 'small',
-      total: 42,
     });
-
-    await act(async () => {
-      root?.unmount();
-      root = null;
-    });
-    container.remove();
   });
 
-  it('keeps the bundled anchor disabled prop shape for ticket close links', () => {
-    expect(ticketsSource).toContain('type AnchorHTMLAttributes');
-    expect(ticketsSource).toContain(
-      'function legacyDisabledAnchorProps(disabled: unknown): AnchorHTMLAttributes<HTMLAnchorElement>',
-    );
-    expect(ticketsSource).toContain(
-      'return { disabled } as unknown as AnchorHTMLAttributes<HTMLAnchorElement>;',
-    );
-    expect(ticketsSource).toContain('{...legacyDisabledAnchorProps(row.status)}');
-    expect(ticketsSource).not.toContain('...(row.status ? { disabled: true } : {})');
-  });
-
-  it('uses the original fetchLoading-style page spinner for ticket refetches', () => {
-    expect(ticketsSource).toContain(
-      '<LegacySpin loading={legacyFetchLoading(tickets.isFetching, tickets.error)}>',
-    );
-    expect(ticketsSource).not.toContain('loading={tickets.isLoading}');
-  });
-
-  it('keeps ticket list and chat queries on the shared legacy admin query defaults', () => {
-    expect(queriesSource).toContain('queryFn: () => admin.fetchTickets(apiClient, query),');
-    expect(queriesSource).toContain(
-      'queryFn: () => admin.ticketDetail(apiClient, id as number | string),',
-    );
-    expect(queriesSource).not.toContain('legacyTicketQueryOptions');
-    expect(queriesSource).not.toContain('staleTime: 30_000');
-    expect(queriesSource).not.toContain('refetchOnMount: false');
-  });
-
-  it('keeps the original desktop ticket chat popup behavior', () => {
-    expect(ticketsSource).toContain(
-      'const url = `${window.location.origin}${window.location.pathname}#/ticket/${id}`;',
-    );
-    expect(ticketsSource).toContain('const userAgent = window.navigator.userAgent.toLowerCase();');
-    expect(ticketsSource).toContain("!userAgent.includes('mobile') && !userAgent.includes('ipad')");
-    expect(ticketsSource).toContain('window.open(');
-    expect(ticketsSource).toContain("'_blank'");
-    expect(ticketsSource).toContain(
-      "'height=600,width=800,top=0,left=0,toolbar=no,menubar=no,scrollbars=no,resizable=no,location=no,status=no'",
-    );
-    expect(ticketsSource).toContain('window.location.href = url;');
-    expect(ticketsSource).not.toContain('navigate(`/ticket/${id}`)');
-  });
-
-  it('keeps ticket close fetching from the list page after success', () => {
-    const closeBlock = queriesSource.slice(
-      queriesSource.indexOf('export function useCloseTicketMutation()'),
-      queriesSource.indexOf('export function useSaveNoticeMutation()'),
-    );
-    const closeStart = ticketsSource.indexOf('closeTicket.mutate(row.id, {');
-    const closeRefetch = ticketsSource.indexOf('void tickets.refetch();', closeStart);
-
-    expect(closeStart).toBeGreaterThan(-1);
-    expect(closeRefetch).toBeGreaterThan(closeStart);
-    expect(closeBlock).not.toContain('onSuccess');
-    expect(closeBlock).not.toContain(
-      "queryClient.invalidateQueries({ queryKey: ['admin', 'tickets'] })",
-    );
-  });
-
-  it('keeps the legacy ticket table without an explicit rowKey', () => {
-    expect(ticketsSource).toContain('<LegacyStandaloneTable');
-    expect(ticketsSource).toContain('LegacyTablePagination,');
-    expect(ticketsSource).toContain('type LegacyTablePaginationChange,');
-    expect(ticketsSource).toContain(
-      'const updateTablePagination = (pagination: LegacyTablePaginationChange) =>',
-    );
-    expect(ticketsSource).toContain('scrollX={900}');
-    expect(ticketsSource).toContain('<LegacyTablePagination');
-    expect(ticketsSource).toContain('current={query.current ?? 1}');
-    expect(ticketsSource).toContain('pageSize={query.pageSize ?? 10}');
-    expect(ticketsSource).toContain('total={tickets.data?.total}');
-    expect(ticketsSource).toContain('onChange={updateTablePagination}');
-    expect(ticketsSource).toContain('{...legacyTableRowKey(index)}');
-    expect(ticketsSource).not.toContain('<Table<Ticket>');
-    expect(ticketsSource).not.toContain('tableLayout="auto"');
-    expect(ticketsSource).not.toContain('rowKey="id"');
-  });
-
-  it('keeps the original ticket query shape without AntD5 pagination prop rewrites', () => {
-    expect(ticketsSource).toContain('total?: number;');
-    expect(ticketsSource).toContain('setQuery((current) => ({');
-    expect(ticketsSource).toContain('...current,');
-    expect(ticketsSource).toContain('[key]: value,');
-    expect(ticketsSource).toContain('current: 1,');
-    expect(ticketsSource).toContain('pageSize: 10,');
-    expect(ticketsSource).toContain('...pagination,');
-    expect(ticketsSource).not.toContain('current: pagination.current');
-    expect(ticketsSource).not.toContain('pageSize: pagination.pageSize');
-  });
-
-  it('renders the bundled ticket table with the legacy pagination node', () => {
-    expect(ticketsSource).toContain('isEmpty={data.length === 0}');
-    expect(ticketsSource).toContain('total={tickets.data?.total}');
-    expect(ticketsSource).not.toContain('pagination={{');
-  });
-
-  it('updates the ticket query from the legacy table pagination controls', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
-
-    await act(async () => {
-      root!.render(<TicketsPage />);
-      await Promise.resolve();
-    });
-
+  it('switches to closed tickets and drops the reply-status filter control', async () => {
+    const user = userEvent.setup();
+    render(<TicketsPage />);
     mocks.ticketQueries = [];
-    const pageTwo = container.querySelector<HTMLElement>('.ant-pagination-item-2')!;
 
-    await act(async () => {
-      pageTwo.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await user.click(screen.getByRole('radio', { name: '已关闭' }));
 
     expect(mocks.ticketQueries[mocks.ticketQueries.length - 1]).toMatchObject({
-      current: 2,
-      pageSize: 10,
-      total: 42,
-      status: 0,
+      current: 1,
+      status: 1,
     });
-
-    await act(async () => {
-      root?.unmount();
-      root = null;
-    });
-    container.remove();
+    expect(screen.queryByTestId('ticket-reply-filter')).not.toBeInTheDocument();
   });
 
-  it('uses the bundled reply-status filter header and dropdown shape', () => {
-    expect(ticketsSource).toContain("'ant-table-column-has-actions ant-table-column-has-filters'");
-    expect(ticketsSource).toContain('<LegacyFilterIcon');
-    expect(ticketsSource).toContain('filled');
-    expect(ticketsSource).toContain('title="筛选"');
-    expect(ticketsSource).toContain('className="ant-dropdown-trigger"');
-    expect(ticketsSource).toContain('ant-table-filter-dropdown');
-    expect(ticketsSource).toContain('ant-table-filter-dropdown-link confirm');
-    expect(ticketsSource).toContain('setQuery((current) => ({');
-    expect(ticketsSource).toContain('reply_status: replyStatusFilterValue');
-    expect(ticketsSource).toContain("size: 'small'");
-    expect(ticketsSource).toContain('total: tickets.data?.total');
-    expect(ticketsSource).not.toContain('filters: (query.status !== 1 && [');
-    expect(ticketsSource).not.toContain("]) as ColumnType<Ticket>['filters'],");
-  });
+  it('closes a ticket by id after the confirm dialog resolves true, then refetches', async () => {
+    const user = userEvent.setup();
+    render(<TicketsPage />);
 
-  it('keeps the original vertical divider markup in ticket action columns', () => {
-    expect(ticketsSource).toContain("import { LegacyDivider } from '@/components/legacy-divider';");
-    expect(ticketsSource.match(/<LegacyDivider type="vertical" \/>/g)).toHaveLength(2);
-    expect(ticketsSource).not.toContain(
-      '<div className="ant-divider ant-divider-vertical" role="separator" />',
-    );
-    expect(ticketsSource).not.toContain('<span className="ant-divider ant-divider-vertical"');
-  });
-
-  it('renders /ticket/:ticket_id as the original chat window', () => {
-    mocks.params = { ticket_id: '1' };
-    const html = renderToStaticMarkup(<TicketsPage />);
-
-    expect(html).toContain('block-content-full bg-gray-lighter p-3');
-    expect(html).toContain('tag___12_9H');
-    expect(html).toContain('ctrl___UqDJ7');
-    expect(html).toContain('支付问题');
-    expect(html).toContain('js-chat-messages');
-    expect(html).toContain('content___DW5w1');
-    expect(html).toContain('用户消息');
-    expect(html).toContain('客服回复');
-    expect(html).toContain('bg-success-lighter');
-    expect(html).toContain('bg-gray-lighter px-3');
-    expect(html).toContain('js-chat-form');
-    expect(html).toContain('input___1j_ND');
-    expect(html).toContain('输入内容回复工单...');
-    expect(ticketsSource).toContain('setUserOpen(true)');
-    expect(ticketsSource).toContain('<UserManageDrawer');
-    expect(ticketsSource).toContain("import { LegacyTooltip } from '@/components/legacy-tooltip';");
-    expect(ticketsSource).toContain('<LegacyTooltip title="用户管理" placement="left">');
-    expect(ticketsSource).toContain('<LegacyTooltip title="TA的流量记录" placement="left">');
-    expect(ticketsSource).not.toContain("Tooltip } from 'antd'");
-    expect(ticketsSource).not.toContain('<Tooltip');
-    expect(html).toContain('aria-label="图标: user"');
-    expect(html).toContain('class="anticon anticon-user"');
-    expect(ticketsSource).toContain(
-      '<LegacyUserIcon onClick={() => current?.user_id && setUserOpen(true)} />',
-    );
-    expect(ticketsSource).not.toContain('@ant-design/icons');
-    expect(ticketsSource).not.toContain('UserOutlined');
-    expect(ticketsSource).not.toContain(
-      '<span onClick={() => current?.user_id && setUserOpen(true)}>',
-    );
-    expect(mocks.adminUserInfoIds).toContain(1);
-    expect(ticketsSource).toContain('setTrafficOpen(true)');
-    expect(ticketsSource).toContain('<UserTrafficModal');
-    expect(html).toContain('aria-label="图标: solution"');
-    expect(html).toContain('class="anticon anticon-solution"');
-    expect(ticketsSource).toContain(
-      '<LegacySolutionIcon onClick={() => current?.user_id && setTrafficOpen(true)} />',
-    );
-    expect(ticketsSource).not.toContain('SolutionOutlined');
-    expect(ticketsSource).not.toContain(
-      '<span onClick={() => current?.user_id && setTrafficOpen(true)}>',
-    );
-    expect(ticketsSource).toContain('key={current?.user_id}');
-    expect(ticketsSource).toContain("const replyMessageKey = 'v2board-admin-ticket-reply';");
-    expect(ticketsSource).toContain('const closeReplyMessage = messageApi.open({');
-    expect(ticketsSource).toContain("content: '发送中'");
-    expect(ticketsSource).toContain('duration: 0');
-    expect(ticketsSource).toContain("type: 'loading'");
-    expect(ticketsSource).toContain('closeReplyMessage();');
-    expect(html).not.toContain('ant-drawer');
-    expect(html).not.toContain('ant-card');
-  });
-
-  it('keeps the old admin chat shell visible when ticket fetch fails', () => {
-    mocks.params = { ticket_id: '1' };
-    mocks.adminTicket = undefined;
-    mocks.adminTicketError = true;
-
-    const html = renderToStaticMarkup(<TicketsPage />);
-
-    expect(html).toContain('工单不存在');
-    expect(html).toContain('block-content-full bg-gray-lighter p-3');
-    expect(html).toContain('tag___12_9H');
-    expect(html).toContain('ctrl___UqDJ7');
-    expect(html).toContain('js-chat-messages');
-    expect(html).toContain('content___DW5w1');
-    expect(html).toContain('js-chat-form');
-    expect(html).toContain('input___1j_ND');
-    expect(html).toContain('js-chat-input bg-body-dark border-0 form-control form-control-alt');
-    expect(html).toContain('输入内容回复工单...');
-    expect(html).not.toContain('加载中...');
-    expect(html).not.toContain('ant-empty');
-    expect(html).not.toContain('暂无数据');
-    expect(html).not.toContain('支付问题');
-    expect(mocks.adminUserInfoIds).toContain(undefined);
-  });
-
-  it('renders visible loading text before the admin ticket fetch resolves', () => {
-    mocks.params = { ticket_id: '1' };
-    mocks.adminTicket = undefined;
-    mocks.adminTicketError = false;
-
-    const html = renderToStaticMarkup(<TicketsPage />);
-
-    expect(html).toContain('加载中...');
-    expect(html).toContain('tag___12_9H');
-    expect(html).toContain('font-size-sm text-muted my-2 text-center');
-  });
-
-  it('sends admin chat replies on Enter, refetches, and clears the legacy input', async () => {
-    mocks.params = { ticket_id: '1' };
-    const originalSetTimeout = window.setTimeout.bind(window);
-    const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation(
-      ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-        if (timeout === 5000) return 1 as unknown as ReturnType<typeof window.setTimeout>;
-        return originalSetTimeout(handler, timeout, ...args);
-      }) as typeof window.setTimeout,
-    );
-    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout').mockImplementation(() => undefined);
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
-
-    try {
-      await act(async () => {
-        root!.render(<TicketsPage />);
-        await Promise.resolve();
-      });
-
-      const input = container.querySelector<HTMLInputElement>('.js-chat-input')!;
-
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-          input,
-          'Parity admin reply send',
-        );
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        await Promise.resolve();
-      });
-
-      const enter = new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' });
-      Object.defineProperty(enter, 'keyCode', { value: 13 });
-
-      await act(async () => {
-        input.dispatchEvent(enter);
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-
-      expect(mocks.messageOpen).toHaveBeenCalledWith({
-        content: '发送中',
-        duration: 0,
-        key: 'v2board-admin-ticket-reply',
-        type: 'loading',
-      });
-      expect(mocks.replyTicketMutateAsync).toHaveBeenCalledWith({
-        id: '1',
-        message: 'Parity admin reply send',
-      });
-      expect(mocks.messageClose).toHaveBeenCalledTimes(1);
-      expect(mocks.ticketRefetch).toHaveBeenCalledTimes(1);
-      expect(input.value).toBe('');
-      expect(mocks.messageOpen.mock.invocationCallOrder[0]).toBeLessThan(
-        mocks.replyTicketMutateAsync.mock.invocationCallOrder[0]!,
-      );
-      expect(mocks.replyTicketMutateAsync.mock.invocationCallOrder[0]).toBeLessThan(
-        mocks.messageClose.mock.invocationCallOrder[0]!,
-      );
-      expect(mocks.messageClose.mock.invocationCallOrder[0]).toBeLessThan(
-        mocks.ticketRefetch.mock.invocationCallOrder[0]!,
-      );
-
-      await act(async () => {
-        root?.unmount();
-        root = null;
-      });
-      container.remove();
-    } finally {
-      if (root) {
-        await act(async () => root?.unmount());
-      }
-      container.remove();
-      setTimeoutSpy.mockRestore();
-      clearTimeoutSpy.mockRestore();
-    }
-  });
-
-  it('keeps the old chat reply message state lifetime', () => {
-    const replyBlock = ticketsSource.slice(
-      ticketsSource.indexOf('const sendReply = async () => {'),
-      ticketsSource.indexOf('const current = ticket.data;'),
-    );
-    const mutationBlock = queriesSource.slice(
-      queriesSource.indexOf('export function useReplyTicketMutation()'),
-      queriesSource.indexOf('export function useCloseTicketMutation()'),
-    );
-
-    expect(ticketsSource).toContain(
-      'const [message, setMessage] = useState<string | undefined>(undefined);',
-    );
-    expect(replyBlock).toContain('await reply.mutateAsync({ id: ticketId, message });');
-    expect(replyBlock).toContain("const replyMessageKey = 'v2board-admin-ticket-reply';");
-    expect(replyBlock).toContain('const closeReplyMessage = messageApi.open({');
-    expect(replyBlock).toContain('closeReplyMessage();');
-    expect(replyBlock).toContain('await ticket.refetch();');
-    expect(replyBlock).toContain("if (inputRef.current) inputRef.current.value = '';");
-    expect(replyBlock.indexOf('await reply.mutateAsync({ id: ticketId, message });')).toBeLessThan(
-      replyBlock.indexOf('closeReplyMessage();'),
-    );
-    expect(replyBlock.indexOf('closeReplyMessage();')).toBeLessThan(
-      replyBlock.indexOf('await ticket.refetch();'),
-    );
-    expect(replyBlock.indexOf('await ticket.refetch();')).toBeLessThan(
-      replyBlock.indexOf("if (inputRef.current) inputRef.current.value = '';"),
-    );
-    expect(ticketsSource).not.toContain("setMessage('');");
-    expect(ticketsSource).not.toContain('void ticket.refetch();\n    if (inputRef.current)');
-    expect(mutationBlock).not.toContain(
-      "queryClient.invalidateQueries({ queryKey: ['admin', 'tickets'] })",
-    );
-  });
-
-  it('keys ticket messages by the legacy list index without introducing a message id fallback', () => {
-    const messageSource = ticketsSource.slice(
-      ticketsSource.indexOf('{current?.message!.map((item, index) =>'),
-      ticketsSource.indexOf(
-        '<div className="js-chat-form',
-        ticketsSource.indexOf('{current?.message!.map((item, index) =>'),
+    await user.click(screen.getByTestId('ticket-close-1'));
+    await waitFor(() => expect(mocks.confirm).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(mocks.closeMutate).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
       ),
     );
-
-    expect(messageSource).toContain('{current?.message!.map((item, index) =>');
-    expect(messageSource).not.toContain('key={item.id}');
-    expect(messageSource).toContain('key={index}');
-    expect(ticketsSource).not.toContain('current?.message?.map');
-    expect(ticketsSource).not.toContain('ticket.data?.message?.length');
-    expect(ticketsSource).toContain('ticket.data?.message!.length');
+    mocks.closeMutate.mock.calls[0]![1].onSuccess();
+    expect(mocks.refetch).toHaveBeenCalled();
   });
 
-  it('scrolls the bundled admin chat window to the latest message', () => {
-    expect(ticketsSource).toContain('chat.scrollTo(0, chat.scrollHeight)');
-    expect(ticketsSource).toContain('[messageCount]');
+  it('does not close a ticket when the confirm dialog is dismissed', async () => {
+    mocks.confirm.mockResolvedValue(false);
+    const user = userEvent.setup();
+    render(<TicketsPage />);
+
+    await user.click(screen.getByTestId('ticket-close-1'));
+    await waitFor(() => expect(mocks.confirm).toHaveBeenCalled());
+    expect(mocks.closeMutate).not.toHaveBeenCalled();
   });
 
-  it('polls the bundled admin chat ticket every five seconds like the old class component', () => {
-    const timeoutHandlers: Array<() => void> = [];
-    const timeoutIds = [
-      {} as ReturnType<typeof window.setTimeout>,
-      {} as ReturnType<typeof window.setTimeout>,
-    ];
-    const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation((handler) => {
-      if (typeof handler === 'function') timeoutHandlers.push(handler);
-      return timeoutIds[timeoutHandlers.length - 1] ?? timeoutIds[0]!;
-    });
-    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout').mockImplementation(() => undefined);
+  it('disables the close action for an already closed ticket', () => {
+    render(<TicketsPage />);
+    expect(screen.getByTestId('ticket-close-2')).toBeDisabled();
+  });
 
-    try {
-      const stopPolling = startLegacyTicketPolling(mocks.ticketRefetch);
+  it('opens the chat panel from a row and replies with { id, message }', async () => {
+    const user = userEvent.setup();
+    render(<TicketsPage />);
 
-      expect(ticketsSource).toContain('startLegacyTicketPolling(ticket.refetch)');
-      expect(ticketsSource).toContain('5000');
-      expect(ticketsSource).toContain('window.setTimeout');
-      expect(ticketsSource).toContain('window.clearTimeout');
-      expect(ticketsSource).not.toContain('window.setInterval');
-      expect(queriesSource).not.toContain('refetchInterval: 5000');
-      expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 5000);
+    await user.click(screen.getByTestId('ticket-view-1'));
+    const panel = await screen.findByTestId('ticket-chat');
+    expect(within(panel).getByText('用户消息')).toBeInTheDocument();
+    expect(within(panel).getByText('客服回复')).toBeInTheDocument();
 
-      timeoutHandlers[0]?.();
+    await user.type(within(panel).getByTestId('ticket-reply-input'), '这是回复');
+    await user.click(within(panel).getByTestId('ticket-reply-submit'));
 
-      expect(mocks.ticketRefetch).toHaveBeenCalledTimes(1);
-      expect(setTimeoutSpy).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(mocks.replyMutateAsync).toHaveBeenCalledWith({ id: 1, message: '这是回复' }),
+    );
+    expect(mocks.ticketRefetch).toHaveBeenCalled();
+    expect(mocks.replyMutateAsync.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.ticketRefetch.mock.invocationCallOrder[0]!,
+    );
+  });
+});
 
-      stopPolling();
+describe('TicketsPage standalone chat route', () => {
+  it('renders /ticket/:ticket_id as the chat view and passes the ticket id through', async () => {
+    mocks.params = { ticket_id: '1' };
+    const user = userEvent.setup();
+    render(<TicketsPage />);
 
-      expect(clearTimeoutSpy).toHaveBeenCalledWith(timeoutIds[1]);
-    } finally {
-      setTimeoutSpy.mockRestore();
-      clearTimeoutSpy.mockRestore();
-    }
+    expect(screen.getByText('支付问题')).toBeInTheDocument();
+    expect(screen.getByText('用户消息')).toBeInTheDocument();
+    expect(mocks.userInfoIds).toContain(7);
+
+    await user.type(screen.getByTestId('ticket-reply-input'), 'hi');
+    await user.click(screen.getByTestId('ticket-reply-submit'));
+
+    await waitFor(() =>
+      expect(mocks.replyMutateAsync).toHaveBeenCalledWith({ id: '1', message: 'hi' }),
+    );
+  });
+
+  it('shows the not-found notice when the ticket fails to load', () => {
+    mocks.params = { ticket_id: '1' };
+    mocks.detail = undefined;
+    mocks.detailError = true;
+    render(<TicketsPage />);
+
+    expect(screen.getByText('工单不存在')).toBeInTheDocument();
+  });
+
+  it('shows the loading notice before the ticket resolves', () => {
+    mocks.params = { ticket_id: '1' };
+    mocks.detail = undefined;
+    mocks.detailError = false;
+    render(<TicketsPage />);
+
+    expect(screen.getByText('加载中...')).toBeInTheDocument();
   });
 });
