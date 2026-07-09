@@ -1,23 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { App } from 'antd';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
+import { Loader2 } from 'lucide-react';
 import type { AdminConfig, AdminConfigFlat, AdminConfigGroups, Plan } from '@v2board/types';
 import type { AdminThemeField, AdminThemeInfo } from '@v2board/api-client';
-import { LegacyButton } from '@/components/legacy-button';
-import {
-  LegacyInput as LegacyAntInput,
-  LegacyInputGroup,
-  LegacyTextArea as LegacyAntTextArea,
-} from '@/components/legacy-input';
-import { LegacyLoadingIcon } from '@/components/legacy-ant-icon';
-import {
-  LegacySelect,
-  type LegacySelectOption,
-  type LegacySelectValue,
-} from '@/components/legacy-select';
-import { LegacyModal } from '@/components/legacy-modal';
-import { LegacySwitch } from '@/components/legacy-switch';
-import { LegacyTabs } from '@/components/legacy-tabs';
 import {
   useAdminPlans,
   useConfig,
@@ -30,18 +15,1304 @@ import {
   useThemeTemplates,
   useThemes,
 } from '@/lib/queries';
-
-const THEME_BACKGROUND =
-  'https://images.unsplash.com/photo-1567095761054-7a02e69e5c43?ixlib=rb-1.2.1&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=1374&q=80';
+import { cn } from '@/lib/cn';
+import { toast } from '@/lib/toast';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/shadcn-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PageHeader, PageShell } from '@/components/ui/page';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 
 type ConfigGroupKey = keyof AdminConfigGroups;
 type ConfigState = Partial<Record<ConfigGroupKey, Record<string, unknown>>> & Partial<AdminConfig>;
+
+const DOCS_SEPARATION_URL =
+  'https://docs.v2board.com/use/advanced.html#%E5%89%8D%E7%AB%AF%E5%88%86%E7%A6%BB';
+
+const SECTIONS: { key: ConfigGroupKey; title: string }[] = [
+  { key: 'site', title: '站点' },
+  { key: 'safe', title: '安全' },
+  { key: 'subscribe', title: '订阅' },
+  { key: 'deposit', title: '充值' },
+  { key: 'ticket', title: '工单' },
+  { key: 'invite', title: '邀请&佣金' },
+  { key: 'frontend', title: '个性化' },
+  { key: 'server', title: '节点' },
+  { key: 'email', title: '邮件' },
+  { key: 'telegram', title: 'Telegram' },
+  { key: 'app', title: 'APP' },
+];
 
 export default function ConfigPage() {
   const location = useLocation();
   if (location.pathname === '/config/theme') return <ThemeConfigPage />;
   return <SystemConfigPage />;
 }
+
+// ---------------------------------------------------------------------------
+// System config (grouped setting fields, auto-saved per field to /config/save)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-field save context. Every setter forwards the exact backend key
+ * (byte-for-byte) plus its legacy-coerced value; the backend `/config/save`
+ * merges any subset of keys, so a `{ [key]: value }` payload is the contract.
+ */
+interface FormCtx {
+  get: (group: ConfigGroupKey, field: string) => unknown;
+  /** Update local state only (keeps a controlled input in sync while typing). */
+  setDraft: (group: ConfigGroupKey, field: string, value: unknown) => void;
+  /** Update local state and immediately persist (toggles / selects). */
+  commit: (group: ConfigGroupKey, field: string, value: unknown) => void;
+  /** Persist a value for the given key (text inputs commit on blur). */
+  save: (field: string, value: unknown) => void;
+}
+
+function SystemConfigPage() {
+  const config = useConfig();
+  const plans = useAdminPlans();
+  const emailTemplates = useEmailTemplates();
+  useThemeTemplates();
+  const saveConfig = useSaveConfigMutation();
+  const webhook = useSetTelegramWebhookMutation();
+  const testMail = useTestSendMailMutation();
+  const [active, setActive] = useState<ConfigGroupKey>('site');
+  const [state, setState] = useState<ConfigState>(() => (config.data ?? {}) as ConfigState);
+
+  useEffect(() => {
+    if (config.data) setState(config.data as ConfigState);
+  }, [config.data]);
+
+  const update = (group: ConfigGroupKey, field: string, value: unknown) => {
+    setState((current) => ({
+      ...current,
+      [group]: {
+        ...((current[group] as Record<string, unknown> | undefined) ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveField = (field: string, value: unknown) => {
+    saveConfig
+      .mutateAsync({ [field]: value } as Partial<AdminConfigFlat>)
+      .then(() => {
+        toast.success('保存成功');
+        void config.refetch();
+      })
+      .catch(() => undefined);
+  };
+
+  const ctx: FormCtx = {
+    get: (group, field) => (state[group] as Record<string, unknown> | undefined)?.[field],
+    setDraft: update,
+    commit: (group, field, value) => {
+      update(group, field, value);
+      saveField(field, value);
+    },
+    save: saveField,
+  };
+
+  const sendTestMail = () => {
+    testMail
+      .mutateAsync()
+      .then((result) => {
+        const log = result.log;
+        if (log?.error) {
+          toast.error('发送失败', { description: log.error });
+        } else {
+          toast.success('发送成功', { description: `收信地址：${log?.email ?? ''}` });
+        }
+      })
+      .catch(() => undefined);
+  };
+
+  const setWebhook = () => {
+    webhook
+      .mutateAsync()
+      .then(() => toast.success('webhook 设置成功'))
+      .catch(() => undefined);
+  };
+
+  if (config.isPending) {
+    return (
+      <PageShell data-testid="config-page">
+        <div className="flex justify-center py-16" role="status">
+          <Spinner className="size-6 text-muted-foreground" />
+          <span className="sr-only">加载中</span>
+        </div>
+      </PageShell>
+    );
+  }
+
+  return (
+    <PageShell data-testid="config-page">
+      <PageHeader title="系统配置" description="所有配置修改后会自动保存并对全站生效。" />
+
+      <div className="grid gap-6 lg:grid-cols-[180px_1fr] lg:items-start">
+        <nav
+          className="flex flex-row flex-wrap gap-1 lg:sticky lg:top-4 lg:flex-col"
+          aria-label="配置分组"
+        >
+          {SECTIONS.map((section) => (
+            <button
+              key={section.key}
+              type="button"
+              onClick={() => setActive(section.key)}
+              aria-current={active === section.key ? 'page' : undefined}
+              data-testid={`config-tab-${section.key}`}
+              className={cn(
+                'rounded-md px-3 py-2 text-left text-sm font-medium transition-colors',
+                active === section.key
+                  ? 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+              )}
+            >
+              {section.title}
+            </button>
+          ))}
+        </nav>
+
+        <div className="min-w-0 space-y-6">
+          {active === 'site' ? <SiteSection ctx={ctx} plans={plans.data ?? []} /> : null}
+          {active === 'safe' ? <SafeSection ctx={ctx} /> : null}
+          {active === 'subscribe' ? <SubscribeSection ctx={ctx} /> : null}
+          {active === 'deposit' ? <DepositSection ctx={ctx} /> : null}
+          {active === 'ticket' ? <TicketSection ctx={ctx} /> : null}
+          {active === 'invite' ? <InviteSection ctx={ctx} /> : null}
+          {active === 'frontend' ? <FrontendSection ctx={ctx} /> : null}
+          {active === 'server' ? <ServerSection ctx={ctx} /> : null}
+          {active === 'email' ? (
+            <EmailSection
+              ctx={ctx}
+              templates={emailTemplates.data ?? []}
+              onTest={sendTestMail}
+              testing={testMail.isPending}
+            />
+          ) : null}
+          {active === 'telegram' ? (
+            <TelegramSection ctx={ctx} onWebhook={setWebhook} webhookPending={webhook.isPending} />
+          ) : null}
+          {active === 'app' ? <AppSection ctx={ctx} /> : null}
+        </div>
+      </div>
+    </PageShell>
+  );
+}
+
+// --- Shared field primitives ----------------------------------------------
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="divide-y divide-border">{children}</CardContent>
+    </Card>
+  );
+}
+
+function SettingRow({
+  title,
+  description,
+  indent,
+  children,
+}: {
+  title: string;
+  description?: string;
+  indent?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-2 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6',
+        indent && 'sm:pl-6',
+      )}
+    >
+      <div className="space-y-1 sm:max-w-md">
+        <div className="text-sm font-medium text-foreground">{title}</div>
+        {description ? (
+          <p className="text-xs leading-5 text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+      <div className="w-full sm:w-72 sm:shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function SwitchRow({
+  ctx,
+  group,
+  field,
+  title,
+  description,
+  indent,
+}: {
+  ctx: FormCtx;
+  group: ConfigGroupKey;
+  field: string;
+  title: string;
+  description?: string;
+  indent?: boolean;
+}) {
+  return (
+    <SettingRow title={title} description={description} indent={indent}>
+      <div className="flex h-10 items-center sm:justify-end">
+        <Switch
+          checked={isLegacyChecked(ctx.get(group, field))}
+          onCheckedChange={(checked) => ctx.commit(group, field, checked ? 1 : 0)}
+          aria-label={title}
+          data-testid={`config-${field}`}
+        />
+      </div>
+    </SettingRow>
+  );
+}
+
+function TextRow({
+  ctx,
+  group,
+  field,
+  title,
+  description,
+  placeholder,
+  type,
+  suffix,
+  indent,
+  coerce,
+}: {
+  ctx: FormCtx;
+  group: ConfigGroupKey;
+  field: string;
+  title: string;
+  description?: string;
+  placeholder?: string;
+  type?: string;
+  suffix?: string;
+  indent?: boolean;
+  coerce?: (value: string) => unknown;
+}) {
+  return (
+    <SettingRow title={title} description={description} indent={indent}>
+      <div className={suffix ? 'relative' : undefined}>
+        <Input
+          type={type}
+          className={suffix ? 'pr-10' : undefined}
+          placeholder={placeholder}
+          aria-label={title}
+          data-testid={`config-${field}`}
+          value={toText(ctx.get(group, field))}
+          onChange={(event) => ctx.setDraft(group, field, event.target.value)}
+          onBlur={(event) =>
+            ctx.save(field, coerce ? coerce(event.target.value) : event.target.value)
+          }
+        />
+        {suffix ? (
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+            {suffix}
+          </span>
+        ) : null}
+      </div>
+    </SettingRow>
+  );
+}
+
+function TextareaRow({
+  ctx,
+  group,
+  field,
+  title,
+  description,
+  placeholder,
+  rows,
+  indent,
+  coerce,
+}: {
+  ctx: FormCtx;
+  group: ConfigGroupKey;
+  field: string;
+  title: string;
+  description?: string;
+  placeholder?: string;
+  rows: number;
+  indent?: boolean;
+  coerce?: (value: string) => unknown;
+}) {
+  return (
+    <SettingRow title={title} description={description} indent={indent}>
+      <Textarea
+        rows={rows}
+        placeholder={placeholder}
+        aria-label={title}
+        data-testid={`config-${field}`}
+        value={toText(ctx.get(group, field))}
+        onChange={(event) => ctx.setDraft(group, field, event.target.value)}
+        onBlur={(event) =>
+          ctx.save(field, coerce ? coerce(event.target.value) : event.target.value)
+        }
+      />
+    </SettingRow>
+  );
+}
+
+function SelectRow({
+  ctx,
+  group,
+  field,
+  title,
+  description,
+  placeholder,
+  options,
+  fallback,
+  indent,
+}: {
+  ctx: FormCtx;
+  group: ConfigGroupKey;
+  field: string;
+  title: string;
+  description?: string;
+  placeholder?: string;
+  options: { value: string; label: string }[];
+  fallback?: string;
+  indent?: boolean;
+}) {
+  const raw = ctx.get(group, field);
+  const current = raw == null || raw === '' ? fallback : String(raw);
+  return (
+    <SettingRow title={title} description={description} indent={indent}>
+      <Select value={current} onValueChange={(value) => ctx.commit(group, field, value)}>
+        <SelectTrigger
+          className="w-full"
+          aria-label={title}
+          data-testid={`config-${field}`}
+        >
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </SettingRow>
+  );
+}
+
+const ORDER_EVENT_OPTIONS = [
+  { value: '0', label: '不执行任何动作' },
+  { value: '1', label: '重置用户流量' },
+];
+
+function WarningAlert({ children }: { children: ReactNode }) {
+  return (
+    <Alert className="border-warning/30 bg-warning/10 text-warning">
+      <AlertDescription className="text-warning">{children}</AlertDescription>
+    </Alert>
+  );
+}
+
+function SeparationLink() {
+  return (
+    <a className="font-semibold underline" href={DOCS_SEPARATION_URL}>
+      前后分离
+    </a>
+  );
+}
+
+// --- Sections --------------------------------------------------------------
+
+function SiteSection({ ctx, plans }: { ctx: FormCtx; plans: Plan[] }) {
+  const tryOutOff = String(ctx.get('site', 'try_out_plan_id') ?? 0) === '0';
+  return (
+    <Section title="站点">
+      <TextRow
+        ctx={ctx}
+        group="site"
+        field="app_name"
+        title="站点名称"
+        description="用于显示需要站点名称的地方。"
+        placeholder="请输入站点名称"
+      />
+      <TextRow
+        ctx={ctx}
+        group="site"
+        field="app_description"
+        title="站点描述"
+        description="用于显示需要站点描述的地方。"
+        placeholder="请输入站点描述"
+      />
+      <TextRow
+        ctx={ctx}
+        group="site"
+        field="app_url"
+        title="站点网址"
+        description="当前网站最新网址，将会在邮件等需要用于网址处体现。"
+        placeholder="请输入站点URL，末尾不要/"
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="site"
+        field="force_https"
+        title="强制HTTPS"
+        description="当站点没有使用HTTPS，CDN或反代开启强制HTTPS时需要开启。"
+      />
+      <TextRow
+        ctx={ctx}
+        group="site"
+        field="logo"
+        title="LOGO"
+        description="用于显示需要LOGO的地方。"
+        placeholder="请输入LOGO URL，末尾不要/"
+      />
+      <TextareaRow
+        ctx={ctx}
+        group="site"
+        field="subscribe_url"
+        title="订阅URL"
+        description="用于订阅所使用，留空则为站点URL。如需多个订阅URL随机获取请使用逗号进行分割。"
+        placeholder="请输入订阅URL，末尾不要/。逗号分割支持多域名"
+        rows={4}
+      />
+      <TextRow
+        ctx={ctx}
+        group="site"
+        field="subscribe_path"
+        title="订阅路径"
+        description="用于订阅所使用，留空则为/api/v1/client/subscribe。如需更换不同的订阅路径请设置。"
+        placeholder="/api/v1/client/subscribe"
+      />
+      <TextRow
+        ctx={ctx}
+        group="site"
+        field="tos_url"
+        title="用户条款(TOS)URL"
+        description="用于跳转到用户条款(TOS)"
+        placeholder="请输入用户条款URL，末尾不要/"
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="site"
+        field="stop_register"
+        title="停止新用户注册"
+        description="开启后任何人都将无法进行注册。"
+      />
+      <SelectRow
+        ctx={ctx}
+        group="site"
+        field="try_out_plan_id"
+        title="注册试用"
+        description="选择需要试用的订阅，如果没有选项请先前往订阅管理添加。"
+        placeholder="请选择试用订阅"
+        fallback="0"
+        options={[
+          { value: '0', label: '关闭' },
+          ...plans.map((plan) => ({ value: String(plan.id), label: plan.name })),
+        ]}
+      />
+      {tryOutOff ? null : (
+        <TextRow
+          ctx={ctx}
+          group="site"
+          field="try_out_hour"
+          title="试用时间(小时)"
+          placeholder="请输入"
+          indent
+        />
+      )}
+      <TextRow
+        ctx={ctx}
+        group="site"
+        field="currency"
+        title="货币单位"
+        description="仅用于展示使用，更改后系统中所有的货币单位都将发生变更。"
+        placeholder="CNY"
+      />
+      <TextRow
+        ctx={ctx}
+        group="site"
+        field="currency_symbol"
+        title="货币符号"
+        description="仅用于展示使用，更改后系统中所有的货币单位都将发生变更。"
+        placeholder="¥"
+      />
+    </Section>
+  );
+}
+
+function SafeSection({ ctx }: { ctx: FormCtx }) {
+  return (
+    <Section title="安全">
+      <SwitchRow
+        ctx={ctx}
+        group="safe"
+        field="email_verify"
+        title="邮箱验证"
+        description="开启后将会强制要求用户进行邮箱验证。"
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="safe"
+        field="email_gmail_limit_enable"
+        title="禁止使用Gmail多别名"
+        description="开启后Gmail多别名将无法注册。"
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="safe"
+        field="safe_mode_enable"
+        title="安全模式"
+        description="开启后除了站点URL以外的绑定本站点的域名访问都将会被403。"
+      />
+      <TextRow
+        ctx={ctx}
+        group="safe"
+        field="secure_path"
+        title="后台路径"
+        description="后台管理路径，修改后将会改变原有的admin路径"
+        placeholder="admin"
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="safe"
+        field="email_whitelist_enable"
+        title="邮箱后缀白名单"
+        description="开启后在名单中的邮箱后缀才允许进行注册。"
+      />
+      {isLegacyChecked(ctx.get('safe', 'email_whitelist_enable')) ? (
+        <TextareaRow
+          ctx={ctx}
+          group="safe"
+          field="email_whitelist_suffix"
+          title="白名单后缀"
+          description="请使用逗号进行分割，如：qq.com,gmail.com。"
+          placeholder="请输入后缀域名，逗号分割 如：qq.com,gmail.com"
+          rows={4}
+          indent
+          coerce={splitComma}
+        />
+      ) : null}
+      <SwitchRow
+        ctx={ctx}
+        group="safe"
+        field="recaptcha_enable"
+        title="防机器人"
+        description="开启后将会使用Google reCAPTCHA防止机器人。"
+      />
+      {isLegacyChecked(ctx.get('safe', 'recaptcha_enable')) ? (
+        <>
+          <TextRow
+            ctx={ctx}
+            group="safe"
+            field="recaptcha_key"
+            title="密钥"
+            description="在Google reCAPTCHA申请的密钥。"
+            placeholder="请输入"
+            indent
+          />
+          <TextRow
+            ctx={ctx}
+            group="safe"
+            field="recaptcha_site_key"
+            title="网站密钥"
+            description="在Google reCAPTCH申请的网站密钥。"
+            placeholder="请输入"
+            indent
+          />
+        </>
+      ) : null}
+      <SwitchRow
+        ctx={ctx}
+        group="safe"
+        field="register_limit_by_ip_enable"
+        title="IP注册限制"
+        description="开启后如果IP注册账户达到规则要求将会被限制注册，请注意IP判断可能因为CDN或前置代理导致问题。"
+      />
+      {isLegacyChecked(ctx.get('safe', 'register_limit_by_ip_enable')) ? (
+        <>
+          <TextRow
+            ctx={ctx}
+            group="safe"
+            field="register_limit_count"
+            title="次数"
+            description="达到注册次数后开启惩罚。"
+            placeholder="请输入"
+            indent
+          />
+          <TextRow
+            ctx={ctx}
+            group="safe"
+            field="register_limit_expire"
+            title="惩罚时间(分钟)"
+            description="需要等待惩罚时间过后才可以再次注册。"
+            placeholder="请输入"
+            indent
+          />
+        </>
+      ) : null}
+      <SwitchRow
+        ctx={ctx}
+        group="safe"
+        field="password_limit_enable"
+        title="防爆破限制"
+        description="开启后如果该账户尝试登陆失败次数过多将会被限制。"
+      />
+      {isLegacyChecked(ctx.get('safe', 'password_limit_enable')) ? (
+        <>
+          <TextRow
+            ctx={ctx}
+            group="safe"
+            field="password_limit_count"
+            title="次数"
+            description="达到失败次数后开启惩罚。"
+            placeholder="请输入"
+            indent
+          />
+          <TextRow
+            ctx={ctx}
+            group="safe"
+            field="password_limit_expire"
+            title="惩罚时间(分钟)"
+            description="需要等待惩罚时间过后才可以再次登陆。"
+            placeholder="请输入"
+            indent
+          />
+        </>
+      ) : null}
+    </Section>
+  );
+}
+
+function SubscribeSection({ ctx }: { ctx: FormCtx }) {
+  const timedExpire = String(ctx.get('subscribe', 'show_subscribe_method') ?? 0) === '2';
+  return (
+    <Section title="订阅">
+      <SwitchRow
+        ctx={ctx}
+        group="subscribe"
+        field="plan_change_enable"
+        title="允许用户更改订阅"
+        description="开启后用户将会可以对订阅计划进行变更。"
+      />
+      <SelectRow
+        ctx={ctx}
+        group="subscribe"
+        field="reset_traffic_method"
+        title="月流量重置方式"
+        description="全局流量重置方式，默认每月1号。可以在订阅管理为订阅单独设置。"
+        placeholder="请选择订阅重置方式"
+        fallback="0"
+        options={[
+          { value: '0', label: '每月1号' },
+          { value: '1', label: '按月重置' },
+          { value: '2', label: '不重置' },
+          { value: '3', label: '每年1月1日' },
+          { value: '4', label: '按年重置' },
+        ]}
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="subscribe"
+        field="surplus_enable"
+        title="开启折抵方案"
+        description="开启后用户更换订阅将会由系统对原有订阅进行折抵，方案参考文档。"
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="subscribe"
+        field="allow_new_period"
+        title="允许提前开启流量周期"
+        description="开启后用户流量用尽时可以选择扣除订阅时长为代价重置流量，按月重置时扣除本周期剩余订阅时长，每月1号重置时扣除整月时间30天。"
+      />
+      <SelectRow
+        ctx={ctx}
+        group="subscribe"
+        field="new_order_event_id"
+        title="当订阅新购时触发事件"
+        description="新购订阅完成时将触发该任务。"
+        placeholder="请选择事件"
+        fallback="0"
+        options={ORDER_EVENT_OPTIONS}
+      />
+      <SelectRow
+        ctx={ctx}
+        group="subscribe"
+        field="renew_order_event_id"
+        title="当订阅续费时触发事件"
+        description="续费订阅完成时将触发该任务。"
+        placeholder="请选择事件"
+        fallback="0"
+        options={ORDER_EVENT_OPTIONS}
+      />
+      <SelectRow
+        ctx={ctx}
+        group="subscribe"
+        field="change_order_event_id"
+        title="当订阅变更时触发事件"
+        description="变更订阅完成时将触发该任务。"
+        placeholder="请选择事件"
+        fallback="0"
+        options={ORDER_EVENT_OPTIONS}
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="subscribe"
+        field="show_info_to_server_enable"
+        title="在订阅中展示订阅信息"
+        description="开启后将会在用户订阅节点时输出订阅信息。"
+      />
+      <SelectRow
+        ctx={ctx}
+        group="subscribe"
+        field="show_subscribe_method"
+        title="订阅链接生效模式"
+        description="用户获取订阅链接后的有效期。"
+        placeholder="请选择"
+        fallback="0"
+        options={[
+          { value: '0', label: '永久有效' },
+          { value: '1', label: '一次性有效' },
+          { value: '2', label: '限时有效' },
+        ]}
+      />
+      {timedExpire ? (
+        <TextRow
+          ctx={ctx}
+          group="subscribe"
+          field="show_subscribe_expire"
+          title="订阅链接有效时间(分钟)"
+          description="订阅链接获取后经过该时间将失效。"
+          placeholder="请输入"
+          indent
+        />
+      ) : null}
+    </Section>
+  );
+}
+
+function DepositSection({ ctx }: { ctx: FormCtx }) {
+  return (
+    <Section title="充值">
+      <TextareaRow
+        ctx={ctx}
+        group="deposit"
+        field="deposit_bounus"
+        title="充值奖励"
+        description="充值一定金额可以获得的奖励。"
+        placeholder={'请输入 充值金额:奖励金额,逗号分割\n如 50:18,100:38, 200:88'}
+        rows={2}
+        coerce={splitComma}
+      />
+    </Section>
+  );
+}
+
+function TicketSection({ ctx }: { ctx: FormCtx }) {
+  return (
+    <Section title="工单">
+      <SelectRow
+        ctx={ctx}
+        group="ticket"
+        field="ticket_status"
+        title="工单设置"
+        description="请选择工单的状态。"
+        fallback="0"
+        options={[
+          { value: '0', label: '完全开放工单' },
+          { value: '1', label: '仅限有付费订单用户' },
+          { value: '2', label: '完全禁止工单' },
+        ]}
+      />
+    </Section>
+  );
+}
+
+function InviteSection({ ctx }: { ctx: FormCtx }) {
+  return (
+    <Section title="邀请&佣金">
+      <SwitchRow
+        ctx={ctx}
+        group="invite"
+        field="invite_force"
+        title="开启强制邀请"
+        description="开启后只有被邀请的用户才可以进行注册。"
+      />
+      <TextRow
+        ctx={ctx}
+        group="invite"
+        field="invite_commission"
+        title="邀请佣金百分比"
+        description="默认全局的佣金分配比例，你可以在用户管理单独配置单个比例。"
+        placeholder="请输入"
+        coerce={parseLegacyInteger}
+      />
+      <TextRow
+        ctx={ctx}
+        group="invite"
+        field="invite_gen_limit"
+        title="用户可创建邀请码上限"
+        placeholder="请输入"
+        coerce={parseLegacyInteger}
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="invite"
+        field="invite_never_expire"
+        title="邀请码永不失效"
+        description="开启后邀请码被使用后将不会失效，否则使用过后即失效。"
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="invite"
+        field="commission_first_time_enable"
+        title="佣金仅首次发放"
+        description="开启后被邀请人首次支付时才会产生佣金，可以在用户管理对用户进行单独配置。"
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="invite"
+        field="commission_auto_check_enable"
+        title="佣金自动确认"
+        description="开启后佣金将会在订单完成3日后自动进行确认。"
+      />
+      <TextRow
+        ctx={ctx}
+        group="invite"
+        field="commission_withdraw_limit"
+        title="提现单申请门槛(元)"
+        description="小于门槛金额的提现单将不会被提交。"
+        placeholder="请输入"
+      />
+      <TextareaRow
+        ctx={ctx}
+        group="invite"
+        field="commission_withdraw_method"
+        title="提现方式"
+        description="可以支持的提现方式。"
+        placeholder="请输入后缀域名，逗号分割 如：支付宝,USDT,贝宝"
+        rows={4}
+        coerce={splitComma}
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="invite"
+        field="withdraw_close_enable"
+        title="关闭提现"
+        description="关闭后将禁止用户申请提现，且邀请佣金将会直接进入用户余额。"
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="invite"
+        field="commission_distribution_enable"
+        title="三级分销"
+        description="开启后将佣金将按照设置的3成比例进行分成，三成比例合计请不要>100%。"
+      />
+      {isLegacyChecked(ctx.get('invite', 'commission_distribution_enable')) ? (
+        <>
+          <TextRow
+            ctx={ctx}
+            group="invite"
+            field="commission_distribution_l1"
+            title="一级邀请人比例"
+            placeholder="请输入比例如：50"
+            indent
+          />
+          <TextRow
+            ctx={ctx}
+            group="invite"
+            field="commission_distribution_l2"
+            title="二级邀请人比例"
+            placeholder="请输入比例如：30"
+            indent
+          />
+          <TextRow
+            ctx={ctx}
+            group="invite"
+            field="commission_distribution_l3"
+            title="三级邀请人比例"
+            placeholder="请输入比例如：20"
+            indent
+          />
+        </>
+      ) : null}
+    </Section>
+  );
+}
+
+function FrontendSection({ ctx }: { ctx: FormCtx }) {
+  return (
+    <div className="space-y-4">
+      <WarningAlert>
+        如果你采用前后分离的方式部署V2board管理端，那么本页配置将不会生效。了解
+        <SeparationLink />
+      </WarningAlert>
+      <Section title="个性化">
+        <LightDarkRow
+          ctx={ctx}
+          group="frontend"
+          field="frontend_theme_sidebar"
+          title="边栏风格"
+        />
+        <LightDarkRow ctx={ctx} group="frontend" field="frontend_theme_header" title="头部风格" />
+        <SelectRow
+          ctx={ctx}
+          group="frontend"
+          field="frontend_theme_color"
+          title="主题色"
+          fallback="default"
+          options={[
+            { value: 'default', label: '默认' },
+            { value: 'black', label: '黑色' },
+            { value: 'darkblue', label: '暗蓝色' },
+            { value: 'green', label: '奶绿色' },
+          ]}
+        />
+        <TextRow
+          ctx={ctx}
+          group="frontend"
+          field="frontend_background_url"
+          title="背景"
+          description="将会在后台登录页面进行展示。"
+          placeholder="https://xxxxx.com/wallpaper.png"
+        />
+      </Section>
+    </div>
+  );
+}
+
+function LightDarkRow({
+  ctx,
+  group,
+  field,
+  title,
+}: {
+  ctx: FormCtx;
+  group: ConfigGroupKey;
+  field: string;
+  title: string;
+}) {
+  const isLight = ctx.get(group, field) === 'light';
+  return (
+    <SettingRow title={title}>
+      <div className="flex h-10 items-center gap-2 sm:justify-end">
+        <span className="text-sm text-muted-foreground">暗</span>
+        <Switch
+          checked={isLight}
+          onCheckedChange={(checked) => ctx.commit(group, field, checked ? 'light' : 'dark')}
+          aria-label={title}
+          data-testid={`config-${field}`}
+        />
+        <span className="text-sm text-muted-foreground">亮</span>
+      </div>
+    </SettingRow>
+  );
+}
+
+function ServerSection({ ctx }: { ctx: FormCtx }) {
+  return (
+    <Section title="节点">
+      <TextRow
+        ctx={ctx}
+        group="server"
+        field="server_api_url"
+        title="节点对接API地址"
+        description="v2node节点一键对接专用地址。"
+        placeholder="请输入"
+      />
+      <TextRow
+        ctx={ctx}
+        group="server"
+        field="server_token"
+        title="通讯密钥"
+        description="V2board与节点通讯的密钥，以便数据不会被他人获取。"
+        placeholder="请输入"
+      />
+      <TextRow
+        ctx={ctx}
+        group="server"
+        field="server_pull_interval"
+        title="节点拉取动作轮询间隔"
+        description="节点从面板获取数据的间隔频率。"
+        placeholder="请输入"
+        type="number"
+        suffix="秒"
+      />
+      <TextRow
+        ctx={ctx}
+        group="server"
+        field="server_push_interval"
+        title="节点推送动作轮询间隔"
+        description="节点推送数据到面板的间隔频率。"
+        placeholder="请输入"
+        type="number"
+        suffix="秒"
+      />
+      <TextRow
+        ctx={ctx}
+        group="server"
+        field="server_node_report_min_traffic"
+        title="节点用户流量上报最低阈值"
+        description="每次推送动作仅累计使用流量高于阈值的用户信息会被上报，未上报流量会累计"
+        placeholder="请输入"
+        type="number"
+        suffix="Kb"
+      />
+      <TextRow
+        ctx={ctx}
+        group="server"
+        field="server_device_online_min_traffic"
+        title="节点用户设备数统计最低阈值"
+        description="每次推送动作仅上报流量高于阈值的在线设备IP地址会被节点统计"
+        placeholder="请输入"
+        type="number"
+        suffix="Kb"
+      />
+      <SwitchRow
+        ctx={ctx}
+        group="server"
+        field="device_limit_mode"
+        title="全局设备数限制采用宽松模式"
+        description="开启后同一IP地址使用多个节点只统计为一个设备"
+      />
+    </Section>
+  );
+}
+
+function EmailSection({
+  ctx,
+  templates,
+  onTest,
+  testing,
+}: {
+  ctx: FormCtx;
+  templates: string[];
+  onTest: () => void;
+  testing: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      <WarningAlert>
+        如果你更改了本页配置，需要对队列服务进行重启。另外本页配置优先级高于.env中邮件配置。
+      </WarningAlert>
+      <Section title="邮件">
+        <TextRow
+          ctx={ctx}
+          group="email"
+          field="email_host"
+          title="SMTP服务器地址"
+          description="由邮件服务商提供的服务地址"
+          placeholder="请输入"
+        />
+        <TextRow
+          ctx={ctx}
+          group="email"
+          field="email_port"
+          title="SMTP服务端口"
+          description="常见的端口有25, 465, 587"
+          placeholder="请输入"
+        />
+        <TextRow
+          ctx={ctx}
+          group="email"
+          field="email_encryption"
+          title="SMTP加密方式"
+          description="465端口加密方式一般为SSL，587端口加密方式一般为TLS"
+          placeholder="请输入"
+        />
+        <TextRow
+          ctx={ctx}
+          group="email"
+          field="email_username"
+          title="SMTP账号"
+          description="由邮件服务商提供的账号"
+          placeholder="请输入"
+        />
+        <TextRow
+          ctx={ctx}
+          group="email"
+          field="email_password"
+          title="SMTP密码"
+          description="由邮件服务商提供的密码"
+          placeholder="请输入"
+        />
+        <TextRow
+          ctx={ctx}
+          group="email"
+          field="email_from_address"
+          title="发件地址"
+          description="由邮件服务商提供的发件地址"
+          placeholder="请输入"
+        />
+        <SelectRow
+          ctx={ctx}
+          group="email"
+          field="email_template"
+          title="邮件模板"
+          description="你可以在文档查看如何自定义邮件模板"
+          options={templates.map((template) => ({ value: template, label: template }))}
+        />
+        <SettingRow title="发送测试邮件" description="邮件将会发送到当前登陆用户邮箱">
+          <Button onClick={onTest} disabled={testing} data-testid="config-test-mail">
+            {testing ? <Loader2 className="size-4 animate-spin" /> : null}
+            发送测试邮件
+          </Button>
+        </SettingRow>
+      </Section>
+    </div>
+  );
+}
+
+function TelegramSection({
+  ctx,
+  onWebhook,
+  webhookPending,
+}: {
+  ctx: FormCtx;
+  onWebhook: () => void;
+  webhookPending: boolean;
+}) {
+  const hasToken = Boolean(ctx.get('telegram', 'telegram_bot_token'));
+  return (
+    <Section title="Telegram">
+      <TextRow
+        ctx={ctx}
+        group="telegram"
+        field="telegram_bot_token"
+        title="机器人Token"
+        description="请输入由Botfather提供的token。"
+        placeholder="0000000000:xxxxxxxxx_xxxxxxxxxxxxxxx"
+      />
+      {hasToken ? (
+        <SettingRow
+          title="设置Webhook"
+          description="对机器人进行Webhook设置，不设置将无法收到Telegram通知。"
+        >
+          <Button
+            onClick={onWebhook}
+            disabled={webhookPending}
+            data-testid="config-set-webhook"
+          >
+            {webhookPending ? <Loader2 className="size-4 animate-spin" /> : null}
+            一键设置
+          </Button>
+        </SettingRow>
+      ) : null}
+      <SwitchRow
+        ctx={ctx}
+        group="telegram"
+        field="telegram_bot_enable"
+        title="开启机器人通知"
+        description="开启后bot将会对绑定了telegram的管理员和用户进行基础通知。"
+      />
+      <TextRow
+        ctx={ctx}
+        group="telegram"
+        field="telegram_discuss_link"
+        title="群组地址"
+        description="填写后将会在用户端展示，或者被用于需要的地方。"
+        placeholder="https://t.me/xxxxxx"
+      />
+    </Section>
+  );
+}
+
+function AppSection({ ctx }: { ctx: FormCtx }) {
+  return (
+    <div className="space-y-4">
+      <WarningAlert>用于自有客户端(APP)的版本管理及更新</WarningAlert>
+      <Section title="APP">
+        <AppEntryRow
+          ctx={ctx}
+          title="Windows"
+          description="Windows端版本号及下载地址"
+          versionField="windows_version"
+          urlField="windows_download_url"
+          urlPlaceholder="https://xxxx.com/xxx.exe"
+        />
+        <AppEntryRow
+          ctx={ctx}
+          title="macOS"
+          description="macOS端版本号及下载地址"
+          versionField="macos_version"
+          urlField="macos_download_url"
+          urlPlaceholder="https://xxxx.com/xxx.dmg"
+        />
+        <AppEntryRow
+          ctx={ctx}
+          title="Android"
+          description="Android端版本号及下载地址"
+          versionField="android_version"
+          urlField="android_download_url"
+          urlPlaceholder="https://xxxx.com/xxx.apk"
+        />
+      </Section>
+    </div>
+  );
+}
+
+function AppEntryRow({
+  ctx,
+  title,
+  description,
+  versionField,
+  urlField,
+  urlPlaceholder,
+}: {
+  ctx: FormCtx;
+  title: string;
+  description: string;
+  versionField: string;
+  urlField: string;
+  urlPlaceholder: string;
+}) {
+  return (
+    <SettingRow title={title} description={description}>
+      <div className="space-y-2">
+        <Input
+          placeholder="1.0.0"
+          aria-label={`${title}版本号`}
+          data-testid={`config-${versionField}`}
+          value={toText(ctx.get('app', versionField))}
+          onChange={(event) => ctx.setDraft('app', versionField, event.target.value)}
+          onBlur={(event) => ctx.save(versionField, event.target.value)}
+        />
+        <Input
+          placeholder={urlPlaceholder}
+          aria-label={`${title}下载地址`}
+          data-testid={`config-${urlField}`}
+          value={toText(ctx.get('app', urlField))}
+          onChange={(event) => ctx.setDraft('app', urlField, event.target.value)}
+          onBlur={(event) => ctx.save(urlField, event.target.value)}
+        />
+      </div>
+    </SettingRow>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Theme config (/config/theme): theme manager cards + per-theme settings dialog
+// ---------------------------------------------------------------------------
 
 function ThemeConfigPage() {
   const themes = useThemes();
@@ -61,64 +1332,48 @@ function ThemeConfigPage() {
 
   if (loading) {
     return (
-      <div className="content content-full text-center pt-5">
-        <div className="spinner-grow text-primary" role="status">
-          <span className="sr-only">Loading...</span>
+      <PageShell data-testid="config-page">
+        <div className="flex justify-center py-16" role="status">
+          <Spinner className="size-6 text-muted-foreground" />
+          <span className="sr-only">加载中</span>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <>
-      <div key="theme-warning" className="row">
-        <div className="col-lg-12">
-          <div className="alert alert-warning mb-0 mb-md-4" role="alert">
-            <p className="mb-0">
-              如果你采用前后分离的方式部署V2board，那么主题配置将不会生效。了解
-              <b>
-                <a href="https://docs.v2board.com/use/advanced.html#%E5%89%8D%E7%AB%AF%E5%88%86%E7%A6%BB">
-                  前后分离
-                </a>
-              </b>
-            </p>
-          </div>
-        </div>
+    <PageShell data-testid="config-page">
+      <PageHeader title="主题配置" />
+      <WarningAlert>
+        如果你采用前后分离的方式部署V2board，那么主题配置将不会生效。了解
+        <SeparationLink />
+      </WarningAlert>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {Object.entries(themeItems).map(([key, theme]) => (
+          <Card key={key} data-testid={`theme-card-${key}`}>
+            <CardHeader>
+              <CardTitle>{theme.name}</CardTitle>
+              <CardDescription>{theme.description}</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              <Button
+                variant={active === key ? 'secondary' : 'default'}
+                disabled={active === key}
+                onClick={() => activateTheme(key)}
+                data-testid={`theme-activate-${key}`}
+              >
+                {active === key ? '当前主题' : '激活主题'}
+              </Button>
+              <ThemeSettingsButton
+                themeKey={key}
+                theme={theme}
+                onSaved={() => themes.refetch()}
+              />
+            </CardContent>
+          </Card>
+        ))}
       </div>
-      {Object.entries(themeItems).map(([key, theme]) => {
-        return (
-          <div
-            key={key}
-            className="block block-transparent bg-image mb-0 mb-md-3 bg-primary"
-            style={{ backgroundImage: `url(${THEME_BACKGROUND})` }}
-          >
-            <div className="block-content block-content-full bg-gd-white-op-l">
-              <div className="d-md-flex justify-content-md-between align-items-md-center">
-                <div className="p-2 py-4">
-                  <h3 className="font-size-h4 font-w400 text-black mb-1">{theme.name}</h3>
-                  <p className="text-black-75 mb-0">{theme.description}</p>
-                </div>
-                <div className="p-2 py-4">
-                  <button
-                    type="button"
-                    className="btn btn-sm rounded-pill btn-outline-light px-3 mr-2"
-                    onClick={() => activateTheme(key)}
-                    disabled={active === key}
-                  >
-                    {active === key ? '当前主题' : '激活主题'}
-                  </button>
-                  <ThemeSettingsButton
-                    themeKey={key}
-                    theme={theme}
-                    onSaved={() => themes.refetch()}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </>
+    </PageShell>
   );
 }
 
@@ -131,115 +1386,130 @@ function ThemeSettingsButton({
   theme: AdminThemeInfo;
   onSaved: () => void | Promise<unknown>;
 }) {
-  const { message } = App.useApp();
   const getConfig = useThemeConfigMutation();
   const saveConfig = useSaveThemeConfigMutation();
-  const [visible, setVisible] = useState(false);
+  const [open, setOpen] = useState(false);
   const [params, setParams] = useState<Record<string, unknown>>({});
 
   const show = () => {
-    setVisible(true);
+    setOpen(true);
     getConfig
       .mutateAsync(themeKey)
       .then((data) => setParams(data))
       .catch(() => undefined);
   };
 
-  const hide = () => {
-    setVisible(false);
-    setParams({});
-  };
-
   const save = async () => {
     try {
       await saveConfig.mutateAsync({ name: themeKey, config: encodeLegacyThemeConfig(params) });
       await onSaved();
-      message.success('保存成功');
+      toast.success('保存成功');
+      setOpen(false);
     } catch {
-      // Legacy theme settings keep the modal open without showing a local error toast.
+      // Keep the dialog open on failure, matching the legacy quiet behavior.
     }
   };
 
   return (
     <>
-      <button
-        type="button"
-        className="btn btn-sm rounded-pill btn-outline-light px-3"
-        onClick={show}
-      >
+      <Button variant="outline" onClick={show} data-testid={`theme-settings-${themeKey}`}>
         主题设置
-      </button>
-      <LegacyModal
-        title={`配置${theme.name}主题`}
-        visible={visible}
-        onCancel={hide}
-        okButtonProps={{ loading: saveConfig.isPending }}
-        onOk={save}
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setParams({});
+        }}
       >
-        {(theme.configs ?? []).map((field) => (
-          <div className="form-group">
-            <label>{field.label}</label>
-            <ThemeField
-              field={field}
-              value={params[field.field_name]}
-              onChange={(value) => setParams((state) => ({ ...state, [field.field_name]: value }))}
-            />
+        <DialogContent className="sm:max-w-lg" data-testid="theme-settings-dialog">
+          <DialogHeader>
+            <DialogTitle>{`配置${theme.name}主题`}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {(theme.configs ?? []).map((field) => (
+              <div className="space-y-2" key={field.field_name}>
+                <Label htmlFor={`theme-${field.field_name}`}>{field.label}</Label>
+                <ThemeField
+                  id={`theme-${field.field_name}`}
+                  field={field}
+                  value={params[field.field_name]}
+                  onChange={(value) =>
+                    setParams((state) => ({ ...state, [field.field_name]: value }))
+                  }
+                />
+              </div>
+            ))}
           </div>
-        ))}
-      </LegacyModal>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={() => void save()}
+              disabled={saveConfig.isPending}
+              data-testid="theme-settings-save"
+            >
+              {saveConfig.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+              确定
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
 function ThemeField({
+  id,
   field,
   value,
   onChange,
 }: {
+  id: string;
   field: AdminThemeField;
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
   if (field.field_type === 'select') {
-    const options = field.select_options as Record<string, string>;
-    const selectOptions: LegacySelectOption[] = Object.keys(options).map((key) => ({
-      value: key,
-      label: options[key] ?? '',
-    }));
+    const options = (field.select_options ?? {}) as Record<string, string>;
     return (
-      <div>
-        <LegacySelect
-          style={{ width: '100%' }}
-          placeholder={field.placeholder}
-          value={value as LegacySelectValue | undefined}
-          options={selectOptions}
-          onChange={(next) => onChange(next)}
-        />
-      </div>
+      <Select
+        value={value == null ? undefined : String(value)}
+        onValueChange={(next) => onChange(next)}
+      >
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue placeholder={field.placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {Object.keys(options).map((key) => (
+            <SelectItem key={key} value={key}>
+              {options[key] ?? ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     );
   }
   if (field.field_type === 'textarea') {
     return (
-      <LegacyAntTextArea
+      <Textarea
+        id={id}
         rows={5}
-        className="ant-input"
         placeholder={field.placeholder}
         value={toText(value)}
         onChange={(event) => onChange(event.target.value)}
       />
     );
   }
-  if (field.field_type === 'input') {
-    return (
-      <LegacyAntInput
-        className="ant-input"
-        placeholder={field.placeholder}
-        value={toText(value)}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    );
-  }
-  return undefined;
+  return (
+    <Input
+      id={id}
+      placeholder={field.placeholder}
+      value={toText(value)}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
 }
 
 function encodeLegacyThemeConfig(params: Record<string, unknown>) {
@@ -249,1125 +1519,11 @@ function encodeLegacyThemeConfig(params: Record<string, unknown>) {
   return window.btoa(unescape(encodeURIComponent(json)));
 }
 
-function SystemConfigPage() {
-  const { message, notification } = App.useApp();
-  const config = useConfig();
-  const plans = useAdminPlans();
-  const emailTemplates = useEmailTemplates();
-  useThemeTemplates();
-  const save = useSaveConfigMutation();
-  const webhook = useSetTelegramWebhookMutation();
-  const testMail = useTestSendMailMutation();
-  const [activeTab, setActiveTab] = useState<ConfigGroupKey>('site');
-  const [state, setState] = useState<ConfigState>(() => (config.data ?? {}) as ConfigState);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (config.data) setState(config.data as ConfigState);
-  }, [config.data]);
-
-  useEffect(
-    () => () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    },
-    [],
-  );
-
-  const group = (key: ConfigGroupKey) => (state[key] ?? {}) as Record<string, unknown>;
-  const value = (key: ConfigGroupKey, field: string) => group(key)[field];
-
-  const scheduleSave = (parentKey: ConfigGroupKey, nextGroup: Record<string, unknown>) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      saveTimer.current = null;
-      save
-        .mutateAsync(nextGroup as Partial<AdminConfigFlat>)
-        .then(() => {
-          message.success('保存成功');
-          void config.refetch();
-        })
-        .catch(() => undefined);
-    }, 1500);
-  };
-
-  const setConfigValue = (parentKey: ConfigGroupKey, field: string, nextValue: unknown) => {
-    setState((current) => {
-      const nextGroup = {
-        ...((current[parentKey] as Record<string, unknown> | undefined) ?? {}),
-        [field]: nextValue,
-      };
-      scheduleSave(parentKey, nextGroup);
-      return {
-        ...current,
-        [parentKey]: nextGroup,
-      };
-    });
-  };
-
-  const sendTestMail = () => {
-    testMail
-      .mutateAsync()
-      .then((result) => {
-        const log = result.log;
-        const failed = Boolean(log?.error);
-        const title = failed ? '发送失败' : '发送成功';
-        const content = (
-          <div>
-            {log?.error ? (
-              <div>
-                <span>失败原因:</span>
-                <span>{log.error}</span>
-              </div>
-            ) : null}
-            <div>
-              <span>收信地址:</span>
-              <span>{log?.email}</span>
-            </div>
-            <div>
-              <span>发信服务器:</span>
-              <span>{log?.config!.host}</span>
-            </div>
-            <div>
-              <span>发信端口:</span>
-              <span>{log?.config!.port}</span>
-            </div>
-            <div>
-              <span>发信加密方式:</span>
-              <span>{log?.config!.encryption}</span>
-            </div>
-            <div>
-              <span>发信用户名:</span>
-              <span>{log?.config!.username}</span>
-            </div>
-          </div>
-        );
-        const notice = {
-          title,
-          content,
-          message: title,
-          description: content,
-        };
-        notification[failed ? 'error' : 'success'](notice);
-        console.log(result);
-      })
-      .catch(() => undefined);
-  };
-
-  const setWebhook = () => {
-    webhook
-      .mutateAsync()
-      .then(() => message.success('webhook 设置成功'))
-      .catch(() => undefined);
-  };
-
-  return (
-    <div className={`mb-0 block border-bottom ${config.isFetching ? 'block-mode-loading' : ''}`}>
-      <LegacyTabs
-        defaultActiveKey={activeTab}
-        onChange={(key) => setActiveTab(key as ConfigGroupKey)}
-        size="large"
-      >
-        <LegacyTabs.TabPane tab="站点" key="site">
-          <div className="">
-            <ConfigItem title="站点名称" description="用于显示需要站点名称的地方。">
-              <LegacyInput
-                placeholder="请输入站点名称"
-                value={value('site', 'app_name')}
-                onChange={(next) => setConfigValue('site', 'app_name', next)}
-              />
-            </ConfigItem>
-            <ConfigItem title="站点描述" description="用于显示需要站点描述的地方。">
-              <LegacyInput
-                placeholder="请输入站点描述"
-                value={value('site', 'app_description')}
-                onChange={(next) => setConfigValue('site', 'app_description', next)}
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="站点网址"
-              description="当前网站最新网址，将会在邮件等需要用于网址处体现。"
-            >
-              <LegacyInput
-                placeholder="请输入站点URL，末尾不要/"
-                value={value('site', 'app_url')}
-                onChange={(next) => setConfigValue('site', 'app_url', next)}
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="强制HTTPS"
-              description="当站点没有使用HTTPS，CDN或反代开启强制HTTPS时需要开启。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('site', 'force_https'))}
-                onChange={(checked) => setConfigValue('site', 'force_https', checked ? 1 : 0)}
-              />
-            </ConfigItem>
-            <ConfigItem title="LOGO" description="用于显示需要LOGO的地方。">
-              <LegacyInput
-                placeholder="请输入LOGO URL，末尾不要/"
-                value={value('site', 'logo')}
-                onChange={(next) => setConfigValue('site', 'logo', next)}
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="订阅URL"
-              description="用于订阅所使用，留空则为站点URL。如需多个订阅URL随机获取请使用逗号进行分割。"
-            >
-              <LegacyTextarea
-                rows={4}
-                placeholder="请输入订阅URL，末尾不要/。逗号分割支持多域名"
-                value={value('site', 'subscribe_url')}
-                onChange={(next) => setConfigValue('site', 'subscribe_url', next)}
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="订阅路径"
-              description="用于订阅所使用，留空则为/api/v1/client/subscribe。如需更换不同的订阅路径请设置。"
-            >
-              <LegacyInput
-                placeholder="/api/v1/client/subscribe"
-                value={value('site', 'subscribe_path')}
-                onChange={(next) => setConfigValue('site', 'subscribe_path', next)}
-              />
-            </ConfigItem>
-            <ConfigItem title="用户条款(TOS)URL" description="用于跳转到用户条款(TOS)">
-              <LegacyInput
-                placeholder="请输入用户条款URL，末尾不要/"
-                value={value('site', 'tos_url')}
-                onChange={(next) => setConfigValue('site', 'tos_url', next)}
-              />
-            </ConfigItem>
-            <ConfigItem title="停止新用户注册" description="开启后任何人都将无法进行注册。">
-              <LegacySwitch
-                checked={isLegacyChecked(value('site', 'stop_register'))}
-                onChange={(checked) => setConfigValue('site', 'stop_register', checked ? 1 : 0)}
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="注册试用"
-              description="选择需要试用的订阅，如果没有选项请先前往订阅管理添加。"
-            >
-              <select
-                className="form-control"
-                value={legacySelectValue(value('site', 'try_out_plan_id'))}
-                placeholder="请选择试用订阅"
-                onChange={(event) => setConfigValue('site', 'try_out_plan_id', event.target.value)}
-              >
-                <option value={0}>关闭</option>
-                {(plans.data ?? []).map((plan: Plan) => (
-                  <option key={Math.random()} value={plan.id}>
-                    {plan.name}
-                  </option>
-                ))}
-              </select>
-            </ConfigItem>
-            {value('site', 'try_out_plan_id') === 0 ? null : (
-              <ConfigItem isChildren title="试用时间(小时)">
-                <LegacyInput
-                  placeholder="请输入"
-                  value={value('site', 'try_out_hour')}
-                  onChange={(next) => setConfigValue('site', 'try_out_hour', next)}
-                />
-              </ConfigItem>
-            )}
-            <ConfigItem
-              title="货币单位"
-              description="仅用于展示使用，更改后系统中所有的货币单位都将发生变更。"
-            >
-              <LegacyInput
-                placeholder="CNY"
-                value={value('site', 'currency')}
-                onChange={(next) => setConfigValue('site', 'currency', next)}
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="货币符号"
-              description="仅用于展示使用，更改后系统中所有的货币单位都将发生变更。"
-            >
-              <LegacyInput
-                placeholder="¥"
-                value={value('site', 'currency_symbol')}
-                onChange={(next) => setConfigValue('site', 'currency_symbol', next)}
-              />
-            </ConfigItem>
-          </div>
-        </LegacyTabs.TabPane>
-
-        <LegacyTabs.TabPane tab="安全" key="safe">
-          <div className="">
-            <ConfigItem title="邮箱验证" description="开启后将会强制要求用户进行邮箱验证。">
-              <LegacySwitch
-                checked={isLegacyChecked(value('safe', 'email_verify'))}
-                onChange={(checked) => setConfigValue('safe', 'email_verify', checked ? 1 : 0)}
-              />
-            </ConfigItem>
-            <ConfigItem title="禁止使用Gmail多别名" description="开启后Gmail多别名将无法注册。">
-              <LegacySwitch
-                checked={isLegacyChecked(value('safe', 'email_gmail_limit_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('safe', 'email_gmail_limit_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="安全模式"
-              description="开启后除了站点URL以外的绑定本站点的域名访问都将会被403。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('safe', 'safe_mode_enable'))}
-                onChange={(checked) => setConfigValue('safe', 'safe_mode_enable', checked ? 1 : 0)}
-              />
-            </ConfigItem>
-            <ConfigItem title="后台路径" description="后台管理路径，修改后将会改变原有的admin路径">
-              <LegacyInput
-                placeholder="admin"
-                value={value('safe', 'secure_path')}
-                onChange={(next) => setConfigValue('safe', 'secure_path', next)}
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="邮箱后缀白名单"
-              description="开启后在名单中的邮箱后缀才允许进行注册。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('safe', 'email_whitelist_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('safe', 'email_whitelist_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            {value('safe', 'email_whitelist_enable') ? (
-              <ConfigItem
-                isChildren
-                title="白名单后缀"
-                description="请使用逗号进行分割，如：qq.com,gmail.com。"
-              >
-                <LegacyTextarea
-                  rows={4}
-                  placeholder="请输入后缀域名，逗号分割 如：qq.com,gmail.com"
-                  value={value('safe', 'email_whitelist_suffix')}
-                  onChange={(next) =>
-                    setConfigValue('safe', 'email_whitelist_suffix', splitComma(next))
-                  }
-                />
-              </ConfigItem>
-            ) : null}
-            <ConfigItem title="防机器人" description="开启后将会使用Google reCAPTCHA防止机器人。">
-              <LegacySwitch
-                checked={isLegacyChecked(value('safe', 'recaptcha_enable'))}
-                onChange={(checked) => setConfigValue('safe', 'recaptcha_enable', checked ? 1 : 0)}
-              />
-            </ConfigItem>
-            {value('safe', 'recaptcha_enable') ? (
-              <>
-                <ConfigItem isChildren title="密钥" description="在Google reCAPTCHA申请的密钥。">
-                  <LegacyInput
-                    placeholder="请输入"
-                    value={value('safe', 'recaptcha_key')}
-                    onChange={(next) => setConfigValue('safe', 'recaptcha_key', next)}
-                  />
-                </ConfigItem>
-                <ConfigItem
-                  isChildren
-                  title="网站密钥"
-                  description="在Google reCAPTCH申请的网站密钥。"
-                >
-                  <LegacyInput
-                    placeholder="请输入"
-                    value={value('safe', 'recaptcha_site_key')}
-                    onChange={(next) => setConfigValue('safe', 'recaptcha_site_key', next)}
-                  />
-                </ConfigItem>
-              </>
-            ) : null}
-            <ConfigItem
-              title="IP注册限制"
-              description="开启后如果IP注册账户达到规则要求将会被限制注册，请注意IP判断可能因为CDN或前置代理导致问题。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('safe', 'register_limit_by_ip_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('safe', 'register_limit_by_ip_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            {value('safe', 'register_limit_by_ip_enable') ? (
-              <>
-                <ConfigItem isChildren title="次数" description="达到注册次数后开启惩罚。">
-                  <LegacyInput
-                    placeholder="请输入"
-                    value={value('safe', 'register_limit_count')}
-                    onChange={(next) => setConfigValue('safe', 'register_limit_count', next)}
-                  />
-                </ConfigItem>
-                <ConfigItem
-                  isChildren
-                  title="惩罚时间(分钟)"
-                  description="需要等待惩罚时间过后才可以再次注册。"
-                >
-                  <LegacyInput
-                    placeholder="请输入"
-                    value={value('safe', 'register_limit_expire')}
-                    onChange={(next) => setConfigValue('safe', 'register_limit_expire', next)}
-                  />
-                </ConfigItem>
-              </>
-            ) : null}
-            <ConfigItem
-              title="防爆破限制"
-              description="开启后如果该账户尝试登陆失败次数过多将会被限制。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('safe', 'password_limit_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('safe', 'password_limit_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            {value('safe', 'password_limit_enable') ? (
-              <>
-                <ConfigItem isChildren title="次数" description="达到失败次数后开启惩罚。">
-                  <LegacyInput
-                    placeholder="请输入"
-                    value={value('safe', 'password_limit_count')}
-                    onChange={(next) => setConfigValue('safe', 'password_limit_count', next)}
-                  />
-                </ConfigItem>
-                <ConfigItem
-                  isChildren
-                  title="惩罚时间(分钟)"
-                  description="需要等待惩罚时间过后才可以再次登陆。"
-                >
-                  <LegacyInput
-                    placeholder="请输入"
-                    value={value('safe', 'password_limit_expire')}
-                    onChange={(next) => setConfigValue('safe', 'password_limit_expire', next)}
-                  />
-                </ConfigItem>
-              </>
-            ) : null}
-          </div>
-        </LegacyTabs.TabPane>
-
-        <LegacyTabs.TabPane tab="订阅" key="subscribe">
-          <div className="">
-            <ConfigItem
-              title="允许用户更改订阅"
-              description="开启后用户将会可以对订阅计划进行变更。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('subscribe', 'plan_change_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('subscribe', 'plan_change_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="月流量重置方式"
-              description="全局流量重置方式，默认每月1号。可以在订阅管理为订阅单独设置。"
-            >
-              <select
-                className="form-control"
-                value={legacySelectValue(value('subscribe', 'reset_traffic_method'))}
-                placeholder="请选择订阅重置方式"
-                onChange={(event) =>
-                  setConfigValue('subscribe', 'reset_traffic_method', event.target.value)
-                }
-              >
-                <option value={0}>每月1号</option>
-                <option value={1}>按月重置</option>
-                <option value={2}>不重置</option>
-                <option value={3}>每年1月1日</option>
-                <option value={4}>按年重置</option>
-              </select>
-            </ConfigItem>
-            <ConfigItem
-              title="开启折抵方案"
-              description="开启后用户更换订阅将会由系统对原有订阅进行折抵，方案参考文档。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('subscribe', 'surplus_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('subscribe', 'surplus_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="允许提前开启流量周期"
-              description="开启后用户流量用尽时可以选择扣除订阅时长为代价重置流量，按月重置时扣除本周期剩余订阅时长，每月1号重置时扣除整月时间30天。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('subscribe', 'allow_new_period'))}
-                onChange={(checked) =>
-                  setConfigValue('subscribe', 'allow_new_period', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            <OrderEventSelect
-              title="当订阅新购时触发事件"
-              description="新购订阅完成时将触发该任务。"
-              value={value('subscribe', 'new_order_event_id')}
-              onChange={(next) => setConfigValue('subscribe', 'new_order_event_id', next)}
-            />
-            <OrderEventSelect
-              title="当订阅续费时触发事件"
-              description="续费订阅完成时将触发该任务。"
-              value={value('subscribe', 'renew_order_event_id')}
-              onChange={(next) => setConfigValue('subscribe', 'renew_order_event_id', next)}
-            />
-            <OrderEventSelect
-              title="当订阅变更时触发事件"
-              description="变更订阅完成时将触发该任务。"
-              value={value('subscribe', 'change_order_event_id')}
-              onChange={(next) => setConfigValue('subscribe', 'change_order_event_id', next)}
-            />
-            <ConfigItem
-              title="在订阅中展示订阅信息"
-              description="开启后将会在用户订阅节点时输出订阅信息。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('subscribe', 'show_info_to_server_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('subscribe', 'show_info_to_server_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem title="订阅链接生效模式" description="用户获取订阅链接后的有效期。">
-              <select
-                className="form-control"
-                value={legacySelectValue(value('subscribe', 'show_subscribe_method'))}
-                placeholder="请选择"
-                onChange={(event) =>
-                  setConfigValue('subscribe', 'show_subscribe_method', event.target.value)
-                }
-              >
-                <option value={0}>永久有效</option>
-                <option value={1}>一次性有效</option>
-                <option value={2}>限时有效</option>
-              </select>
-            </ConfigItem>
-            {value('subscribe', 'show_subscribe_method') == 2 ? (
-              <ConfigItem
-                isChildren
-                title="订阅链接有效时间(分钟)"
-                description="订阅链接获取后经过该时间将失效。"
-              >
-                <LegacyInput
-                  placeholder="请输入"
-                  value={value('subscribe', 'show_subscribe_expire')}
-                  onChange={(next) => setConfigValue('safe', 'show_subscribe_expire', next)}
-                />
-              </ConfigItem>
-            ) : null}
-          </div>
-        </LegacyTabs.TabPane>
-
-        <LegacyTabs.TabPane tab="充值" key="deposit">
-          <div className="">
-            <ConfigItem title="充值奖励" description="充值一定金额可以获得的奖励。">
-              <LegacyTextarea
-                rows={2}
-                placeholder={'请输入 充值金额:奖励金额,逗号分割\n如 50:18,100:38, 200:88'}
-                value={value('deposit', 'deposit_bounus')}
-                onChange={(next) => setConfigValue('deposit', 'deposit_bounus', splitComma(next))}
-              />
-            </ConfigItem>
-          </div>
-        </LegacyTabs.TabPane>
-
-        <LegacyTabs.TabPane tab="工单" key="ticket">
-          <div className="">
-            <ConfigItem title="工单设置" description="请选择工单的状态。">
-              <select
-                className="form-control"
-                value={legacySelectValue(value('ticket', 'ticket_status') || 0)}
-                onChange={(event) => setConfigValue('ticket', 'ticket_status', event.target.value)}
-              >
-                <option value={0}>完全开放工单</option>
-                <option value={1}>仅限有付费订单用户</option>
-                <option value={2}>完全禁止工单</option>
-              </select>
-            </ConfigItem>
-          </div>
-        </LegacyTabs.TabPane>
-
-        <LegacyTabs.TabPane tab="邀请&佣金" key="invite">
-          <div className="">
-            <ConfigItem title="开启强制邀请" description="开启后只有被邀请的用户才可以进行注册。">
-              <LegacySwitch
-                checked={isLegacyChecked(value('invite', 'invite_force'))}
-                onChange={(checked) => setConfigValue('invite', 'invite_force', checked ? 1 : 0)}
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="邀请佣金百分比"
-              description="默认全局的佣金分配比例，你可以在用户管理单独配置单个比例。"
-            >
-              <LegacyInput
-                placeholder="请输入"
-                value={value('invite', 'invite_commission')}
-                onChange={(next) =>
-                  setConfigValue('invite', 'invite_commission', parseLegacyInteger(next))
-                }
-              />
-            </ConfigItem>
-            <ConfigItem title="用户可创建邀请码上限">
-              <LegacyInput
-                placeholder="请输入"
-                value={value('invite', 'invite_gen_limit')}
-                onChange={(next) =>
-                  setConfigValue('invite', 'invite_gen_limit', parseLegacyInteger(next))
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="邀请码永不失效"
-              description="开启后邀请码被使用后将不会失效，否则使用过后即失效。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('invite', 'invite_never_expire'))}
-                onChange={(checked) =>
-                  setConfigValue('invite', 'invite_never_expire', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="佣金仅首次发放"
-              description="开启后被邀请人首次支付时才会产生佣金，可以在用户管理对用户进行单独配置。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('invite', 'commission_first_time_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('invite', 'commission_first_time_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="佣金自动确认"
-              description="开启后佣金将会在订单完成3日后自动进行确认。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('invite', 'commission_auto_check_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('invite', 'commission_auto_check_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem title="提现单申请门槛(元)" description="小于门槛金额的提现单将不会被提交。">
-              <LegacyInput
-                placeholder="请输入"
-                value={value('invite', 'commission_withdraw_limit')}
-                onChange={(next) => setConfigValue('invite', 'commission_withdraw_limit', next)}
-              />
-            </ConfigItem>
-            <ConfigItem title="提现方式" description="可以支持的提现方式。">
-              <LegacyTextarea
-                rows={4}
-                placeholder="请输入后缀域名，逗号分割 如：支付宝,USDT,贝宝"
-                value={value('invite', 'commission_withdraw_method')}
-                onChange={(next) =>
-                  setConfigValue('invite', 'commission_withdraw_method', splitComma(next))
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="关闭提现"
-              description="关闭后将禁止用户申请提现，且邀请佣金将会直接进入用户余额。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('invite', 'withdraw_close_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('invite', 'withdraw_close_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="三级分销"
-              description="开启后将佣金将按照设置的3成比例进行分成，三成比例合计请不要>100%。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('invite', 'commission_distribution_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('invite', 'commission_distribution_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            {isLegacyChecked(value('invite', 'commission_distribution_enable')) ? (
-              <>
-                <ConfigItem isChildren title="一级邀请人比例">
-                  <LegacyInput
-                    placeholder="请输入比例如：50"
-                    value={value('invite', 'commission_distribution_l1')}
-                    onChange={(next) =>
-                      setConfigValue('invite', 'commission_distribution_l1', next)
-                    }
-                  />
-                </ConfigItem>
-                <ConfigItem isChildren title="二级邀请人比例">
-                  <LegacyInput
-                    placeholder="请输入比例如：30"
-                    value={value('invite', 'commission_distribution_l2')}
-                    onChange={(next) =>
-                      setConfigValue('invite', 'commission_distribution_l2', next)
-                    }
-                  />
-                </ConfigItem>
-                <ConfigItem isChildren title="三级邀请人比例">
-                  <LegacyInput
-                    placeholder="请输入比例如：20"
-                    value={value('invite', 'commission_distribution_l3')}
-                    onChange={(next) =>
-                      setConfigValue('invite', 'commission_distribution_l3', next)
-                    }
-                  />
-                </ConfigItem>
-              </>
-            ) : null}
-          </div>
-        </LegacyTabs.TabPane>
-
-        <LegacyTabs.TabPane tab="个性化" key="frontend">
-          <div className="block-content">
-            <div className="row">
-              <div className="col-lg-12">
-                <div className="alert alert-warning" role="alert">
-                  <p className="mb-0">
-                    如果你采用前后分离的方式部署V2board管理端，那么本页配置将不会生效。了解
-                    <b>
-                      <a href="https://docs.v2board.com/use/advanced.html#%E5%89%8D%E7%AB%AF%E5%88%86%E7%A6%BB">
-                        前后分离
-                      </a>
-                    </b>
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="">
-              <ConfigItem title="边栏风格">
-                <LegacySwitch
-                  checkedChildren="亮"
-                  unCheckedChildren="暗"
-                  checked={value('frontend', 'frontend_theme_sidebar') === 'light'}
-                  onChange={(checked) =>
-                    setConfigValue('site', 'frontend_theme_sidebar', checked ? 'light' : 'dark')
-                  }
-                />
-              </ConfigItem>
-              <ConfigItem title="头部风格">
-                <LegacySwitch
-                  checkedChildren="亮"
-                  unCheckedChildren="暗"
-                  checked={value('frontend', 'frontend_theme_header') === 'light'}
-                  onChange={(checked) =>
-                    setConfigValue('site', 'frontend_theme_header', checked ? 'light' : 'dark')
-                  }
-                />
-              </ConfigItem>
-              <ConfigItem title="主题色">
-                <select
-                  className="form-control"
-                  defaultValue={legacySelectValue(value('frontend', 'frontend_theme_color'))}
-                  onChange={(event) =>
-                    setConfigValue('frontend', 'frontend_theme_color', event.target.value)
-                  }
-                >
-                  <option value="default">默认</option>
-                  <option value="black">黑色</option>
-                  <option value="darkblue">暗蓝色</option>
-                  <option value="green">奶绿色</option>
-                </select>
-              </ConfigItem>
-              <ConfigItem title="背景" description="将会在后台登录页面进行展示。">
-                <LegacyInput
-                  placeholder="https://xxxxx.com/wallpaper.png"
-                  value={value('frontend', 'frontend_background_url')}
-                  onChange={(next) => setConfigValue('frontend', 'frontend_background_url', next)}
-                />
-              </ConfigItem>
-            </div>
-          </div>
-        </LegacyTabs.TabPane>
-
-        <LegacyTabs.TabPane tab="节点" key="server">
-          <div className="">
-            <ConfigItem title="节点对接API地址" description="v2node节点一键对接专用地址。">
-              <LegacyInput
-                placeholder="请输入"
-                value={value('server', 'server_api_url')}
-                onChange={(next) => setConfigValue('server', 'server_api_url', next)}
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="通讯密钥"
-              description="V2board与节点通讯的密钥，以便数据不会被他人获取。"
-            >
-              <LegacyInput
-                placeholder="请输入"
-                value={value('server', 'server_token')}
-                onChange={(next) => setConfigValue('server', 'server_token', next)}
-              />
-            </ConfigItem>
-            <ConfigItem title="节点拉取动作轮询间隔" description="节点从面板获取数据的间隔频率。">
-              <LegacyInputGroup
-                addonAfter="秒"
-                size="large"
-                type="number"
-                placeholder="请输入"
-                defaultValue={toText(value('server', 'server_pull_interval'))}
-                onChange={(event) =>
-                  setConfigValue('server', 'server_pull_interval', event.target.value)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem title="节点推送动作轮询间隔" description="节点推送数据到面板的间隔频率。">
-              <LegacyInputGroup
-                addonAfter="秒"
-                size="large"
-                type="number"
-                placeholder="请输入"
-                defaultValue={toText(value('server', 'server_push_interval'))}
-                onChange={(event) =>
-                  setConfigValue('server', 'server_push_interval', event.target.value)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="节点用户流量上报最低阈值"
-              description="每次推送动作仅累计使用流量高于阈值的用户信息会被上报，未上报流量会累计"
-            >
-              <LegacyInputGroup
-                addonAfter="Kb"
-                size="large"
-                type="number"
-                placeholder="请输入"
-                defaultValue={toText(value('server', 'server_node_report_min_traffic'))}
-                onChange={(event) =>
-                  setConfigValue('server', 'server_node_report_min_traffic', event.target.value)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="节点用户设备数统计最低阈值"
-              description="每次推送动作仅上报流量高于阈值的在线设备IP地址会被节点统计"
-            >
-              <LegacyInputGroup
-                addonAfter="Kb"
-                size="large"
-                type="number"
-                placeholder="请输入"
-                defaultValue={toText(value('server', 'server_device_online_min_traffic'))}
-                onChange={(event) =>
-                  setConfigValue('server', 'server_device_online_min_traffic', event.target.value)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="全局设备数限制采用宽松模式"
-              description="开启后同一IP地址使用多个节点只统计为一个设备"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('server', 'device_limit_mode'))}
-                onChange={(checked) =>
-                  setConfigValue('server', 'device_limit_mode', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-          </div>
-        </LegacyTabs.TabPane>
-
-        <LegacyTabs.TabPane tab="邮件" key="email">
-          <div className="block-content">
-            <div className="row">
-              <div className="col-lg-12">
-                <div className="alert alert-warning" role="alert">
-                  <p className="mb-0">
-                    如果你更改了本页配置，需要对队列服务进行重启。另外本页配置优先级高于.env中邮件配置。
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="">
-              <ConfigItem title="SMTP服务器地址" description="由邮件服务商提供的服务地址">
-                <LegacyInput
-                  placeholder="请输入"
-                  value={value('email', 'email_host')}
-                  onChange={(next) => setConfigValue('email', 'email_host', next)}
-                />
-              </ConfigItem>
-              <ConfigItem title="SMTP服务端口" description="常见的端口有25, 465, 587">
-                <LegacyInput
-                  placeholder="请输入"
-                  value={value('email', 'email_port')}
-                  onChange={(next) => setConfigValue('email', 'email_port', next)}
-                />
-              </ConfigItem>
-              <ConfigItem
-                title="SMTP加密方式"
-                description="465端口加密方式一般为SSL，587端口加密方式一般为TLS"
-              >
-                <LegacyInput
-                  placeholder="请输入"
-                  value={value('email', 'email_encryption')}
-                  onChange={(next) => setConfigValue('email', 'email_encryption', next)}
-                />
-              </ConfigItem>
-              <ConfigItem title="SMTP账号" description="由邮件服务商提供的账号">
-                <LegacyInput
-                  placeholder="请输入"
-                  value={value('email', 'email_username')}
-                  onChange={(next) => setConfigValue('email', 'email_username', next)}
-                />
-              </ConfigItem>
-              <ConfigItem title="SMTP密码" description="由邮件服务商提供的密码">
-                <LegacyInput
-                  placeholder="请输入"
-                  value={value('email', 'email_password')}
-                  onChange={(next) => setConfigValue('email', 'email_password', next)}
-                />
-              </ConfigItem>
-              <ConfigItem title="发件地址" description="由邮件服务商提供的发件地址">
-                <LegacyInput
-                  placeholder="请输入"
-                  value={value('email', 'email_from_address')}
-                  onChange={(next) => setConfigValue('email', 'email_from_address', next)}
-                />
-              </ConfigItem>
-              <ConfigItem title="邮件模板" description="你可以在文档查看如何自定义邮件模板">
-                <select
-                  className="form-control"
-                  value={legacySelectValue(value('email', 'email_template'))}
-                  onChange={(event) =>
-                    setConfigValue('email', 'email_template', event.target.value)
-                  }
-                >
-                  {(emailTemplates.data ?? []).map((template) => (
-                    <option key={Math.random()} value={template}>
-                      {template}
-                    </option>
-                  ))}
-                </select>
-              </ConfigItem>
-              <ConfigItem title="发送测试邮件" description="邮件将会发送到当前登陆用户邮箱">
-                <LegacyButton
-                  className={`ant-btn ant-btn-primary${testMail.isPending ? ' ant-btn-loading' : ''}`}
-                  onClick={sendTestMail}
-                >
-                  {testMail.isPending ? <LegacyLoadingIcon /> : null}
-                  发送测试邮件
-                </LegacyButton>
-              </ConfigItem>
-            </div>
-          </div>
-        </LegacyTabs.TabPane>
-
-        <LegacyTabs.TabPane tab="Telegram" key="telegram">
-          <div className="">
-            <ConfigItem title="机器人Token" description="请输入由Botfather提供的token。">
-              <LegacyInput
-                placeholder="0000000000:xxxxxxxxx_xxxxxxxxxxxxxxx"
-                value={value('telegram', 'telegram_bot_token')}
-                onChange={(next) => setConfigValue('telegram', 'telegram_bot_token', next)}
-              />
-            </ConfigItem>
-            {value('telegram', 'telegram_bot_token') ? (
-              <ConfigItem
-                title="设置Webhook"
-                description="对机器人进行Webhook设置，不设置将无法收到Telegram通知。"
-              >
-                <LegacyButton
-                  className={`ant-btn ant-btn-primary${webhook.isPending ? ' ant-btn-loading' : ''}`}
-                  onClick={setWebhook}
-                  disabled={webhook.isPending}
-                >
-                  {webhook.isPending ? <LegacyLoadingIcon /> : null}
-                  一键设置
-                </LegacyButton>
-              </ConfigItem>
-            ) : null}
-            <ConfigItem
-              title="开启机器人通知"
-              description="开启后bot将会对绑定了telegram的管理员和用户进行基础通知。"
-            >
-              <LegacySwitch
-                checked={isLegacyChecked(value('telegram', 'telegram_bot_enable'))}
-                onChange={(checked) =>
-                  setConfigValue('telegram', 'telegram_bot_enable', checked ? 1 : 0)
-                }
-              />
-            </ConfigItem>
-            <ConfigItem
-              title="群组地址"
-              description="填写后将会在用户端展示，或者被用于需要的地方。"
-            >
-              <LegacyInput
-                placeholder="https://t.me/xxxxxx"
-                value={value('telegram', 'telegram_discuss_link')}
-                onChange={(next) => setConfigValue('telegram', 'telegram_discuss_link', next)}
-              />
-            </ConfigItem>
-          </div>
-        </LegacyTabs.TabPane>
-
-        <LegacyTabs.TabPane tab="APP" key="app">
-          <div className="block-content">
-            <div className="row">
-              <div className="col-lg-12">
-                <div className="alert alert-warning" role="alert">
-                  <p className="mb-0">用于自有客户端(APP)的版本管理及更新</p>
-                </div>
-              </div>
-            </div>
-            <div className="">
-              <ConfigItem title="Windows" description="Windows端版本号及下载地址">
-                <LegacyInput
-                  placeholder="1.0.0"
-                  value={value('app', 'windows_version')}
-                  onChange={(next) => setConfigValue('app', 'windows_version', next)}
-                />
-                <LegacyInput
-                  className="form-control mt-1"
-                  placeholder="https://xxxx.com/xxx.exe"
-                  value={value('app', 'windows_download_url')}
-                  onChange={(next) => setConfigValue('app', 'windows_download_url', next)}
-                />
-              </ConfigItem>
-              <ConfigItem title="macOS" description="macOS端版本号及下载地址">
-                <LegacyInput
-                  placeholder="1.0.0"
-                  value={value('app', 'macos_version')}
-                  onChange={(next) => setConfigValue('app', 'macos_version', next)}
-                />
-                <LegacyInput
-                  className="form-control mt-1"
-                  placeholder="https://xxxx.com/xxx.dmg"
-                  value={value('app', 'macos_download_url')}
-                  onChange={(next) => setConfigValue('app', 'macos_download_url', next)}
-                />
-              </ConfigItem>
-              <ConfigItem title="Android" description="Android端版本号及下载地址">
-                <LegacyInput
-                  placeholder="1.0.0"
-                  value={value('app', 'android_version')}
-                  onChange={(next) => setConfigValue('app', 'android_version', next)}
-                />
-                <LegacyInput
-                  className="form-control mt-1"
-                  placeholder="https://xxxx.com/xxx.apk"
-                  value={value('app', 'android_download_url')}
-                  onChange={(next) => setConfigValue('app', 'android_download_url', next)}
-                />
-              </ConfigItem>
-            </div>
-          </div>
-        </LegacyTabs.TabPane>
-      </LegacyTabs>
-    </div>
-  );
-}
-
-function ConfigItem({
-  title,
-  description,
-  isChildren,
-  children,
-}: {
-  title: string;
-  description?: string;
-  isChildren?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={`row ${isChildren ? 'v2board-config-children' : ''}`}
-      style={{ padding: '20px', borderBottom: '1px solid #eee' }}
-    >
-      <div className="col-lg-6">
-        <div style={{ fontWeight: 'bold', marginBottom: 5 }}>{title}</div>
-        <div style={{ fontSize: 12, marginBottom: 5, color: '#666' }}>{description}</div>
-      </div>
-      <div className="col-lg-6 text-right">{children}</div>
-    </div>
-  );
-}
-
-function LegacyInput({
-  value,
-  placeholder,
-  className = 'form-control',
-  onChange,
-}: {
-  value: unknown;
-  placeholder?: string;
-  className?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <input
-      type="text"
-      className={className}
-      placeholder={placeholder}
-      defaultValue={toText(value)}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  );
-}
-
-function LegacyTextarea({
-  value,
-  placeholder,
-  rows,
-  onChange,
-}: {
-  value: unknown;
-  placeholder?: string;
-  rows: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <textarea
-      rows={rows}
-      {...{ type: 'text' }}
-      className="form-control"
-      placeholder={placeholder}
-      defaultValue={toText(value)}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  );
-}
-
-function OrderEventSelect({
-  title,
-  description,
-  value,
-  onChange,
-}: {
-  title: string;
-  description: string;
-  value: unknown;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <ConfigItem title={title} description={description}>
-      <select
-        className="form-control"
-        value={legacySelectValue(value)}
-        placeholder="请选择事件"
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value={0}>不执行任何动作</option>
-        <option value={1}>重置用户流量</option>
-      </select>
-    </ConfigItem>
-  );
-}
+// --- Legacy value coercions (kept byte-identical as backend contract) -------
 
 function toText(value: unknown) {
   if (Array.isArray(value)) return value.join(',');
   return value == null ? '' : String(value);
-}
-
-function legacySelectValue(value: unknown) {
-  return value as string | number | readonly string[] | undefined;
 }
 
 function splitComma(value: string) {
