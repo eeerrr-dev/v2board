@@ -133,5 +133,6 @@
 @source '../pages/payments.tsx';
 @source '../pages/dashboard.tsx';
 @source '../pages/tickets.tsx';
+@source '../pages/knowledge.tsx';
 
 @tailwind utilities source(none);

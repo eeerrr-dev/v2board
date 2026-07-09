@@ -1,17 +1,8 @@
-import {
-  cloneElement,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactElement,
-} from 'react';
-import { App } from 'antd';
+import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react';
 import dayjs from 'dayjs';
-import MarkdownIt from 'markdown-it';
 import { admin } from '@v2board/api-client';
 import type { Knowledge, KnowledgeSummary } from '@v2board/types';
+import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { apiClient } from '@/lib/api';
 import {
   useAdminKnowledge,
@@ -21,28 +12,38 @@ import {
   useShowKnowledgeMutation,
   useSortKnowledgeMutation,
 } from '@/lib/queries';
-import { LegacySpin } from '@/components/legacy-spin';
-import { legacyHref } from '@/lib/legacy-href';
-import { legacyFetchLoading } from '@/lib/legacy-fetch-loading';
-import { LegacyDragSort, LegacyMenuIcon } from '@/components/legacy-drag-sort';
-import { LegacyButton } from '@/components/legacy-button';
-import { legacyConfirm } from '@/components/legacy-confirm';
-import { LegacyLoadingIcon, LegacyPlusIcon } from '@/components/legacy-ant-icon';
-import { LegacySelect } from '@/components/legacy-select';
-import { LegacyInput } from '@/components/legacy-input';
-import { LegacyDrawer } from '@/components/legacy-drawer';
+import { confirmDialog } from '@/components/ui/confirm-dialog';
+import { toast } from '@/lib/toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PageHeader, PageShell } from '@/components/ui/page';
 import {
-  LegacyStandaloneTable,
-  legacyTableRowKey,
-  type LegacyStandaloneTableHeader,
-} from '@/components/legacy-standalone-table';
-import { LegacyDivider } from '@/components/legacy-divider';
-import { LegacySwitch } from '@/components/legacy-switch';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { DataTable, type DataTableColumn } from '@/components/ui/table';
 
 type SaveKnowledgePayload = Parameters<typeof admin.saveKnowledge>[1];
 
-const legacyAdminMarkdown = new MarkdownIt({ html: true, linkify: true, typographer: true });
-const LEGACY_KNOWLEDGE_I18N_TEXT = {
+// Article language options. The values are the backend locale strings that ride
+// along in the save payload; the list is sorted by key for a stable, deterministic
+// order (preserving the legacy console's sorted-locale behavior).
+const KNOWLEDGE_LOCALE_TEXT = {
   'zh-CN': '简体中文',
   'zh-TW': '繁體中文',
   'en-US': 'English',
@@ -50,893 +51,46 @@ const LEGACY_KNOWLEDGE_I18N_TEXT = {
   'vi-VN': 'Tiếng Việt',
   'ko-KR': '한국어',
 } as const;
-type LegacyKnowledgeLocale = keyof typeof LEGACY_KNOWLEDGE_I18N_TEXT;
-const LEGACY_KNOWLEDGE_LOCALES = (
-  Object.keys(LEGACY_KNOWLEDGE_I18N_TEXT) as LegacyKnowledgeLocale[]
-).sort();
-const LEGACY_KNOWLEDGE_LOCALE_OPTIONS = LEGACY_KNOWLEDGE_LOCALES.map((locale) => ({
-  value: locale,
-  label: LEGACY_KNOWLEDGE_I18N_TEXT[locale],
-}));
 
-function renderLegacyAdminMarkdown(markdown: string) {
-  return legacyAdminMarkdown.render(markdown);
-}
-
-function normalizeLegacyMarkdownValue(value: unknown) {
-  if (typeof value === 'undefined') return '';
-  return (typeof value === 'string' ? value : String(value).toString()).replace(/\u21b5/g, '\n');
-}
-
-const LEGACY_MARKDOWN_LABELS = {
-  enUS: {
-    clearTip: 'Are you sure you want to clear all contents?',
-    btnHeader: 'Header',
-    btnClear: 'Clear',
-    btnBold: 'Bold',
-    btnItalic: 'Italic',
-    btnUnderline: 'Underline',
-    btnStrikethrough: 'Strikethrough',
-    btnUnordered: 'Unordered list',
-    btnOrdered: 'Ordered list',
-    btnQuote: 'Quote',
-    btnLineBreak: 'Line break',
-    btnInlineCode: 'Inline code',
-    btnCode: 'Code',
-    btnTable: 'Table',
-    btnImage: 'Image',
-    btnLink: 'Link',
-    btnUndo: 'Undo',
-    btnRedo: 'Redo',
-    btnFullScreen: 'Full screen',
-    btnExitFullScreen: 'Exit full screen',
-    btnModeEditor: 'Only display editor',
-    btnModePreview: 'Only display preview',
-    btnModeAll: 'Display both editor and preview',
-  },
-  zhCN: {
-    clearTip: '您确定要清空所有内容吗？',
-    btnHeader: '标题',
-    btnClear: '清空',
-    btnBold: '加粗',
-    btnItalic: '斜体',
-    btnUnderline: '下划线',
-    btnStrikethrough: '删除线',
-    btnUnordered: '无序列表',
-    btnOrdered: '有序列表',
-    btnQuote: '引用',
-    btnLineBreak: '换行',
-    btnInlineCode: '行内代码',
-    btnCode: '代码块',
-    btnTable: '表格',
-    btnImage: '图片',
-    btnLink: '链接',
-    btnUndo: '撤销',
-    btnRedo: '重做',
-    btnFullScreen: '全屏',
-    btnExitFullScreen: '退出全屏',
-    btnModeEditor: '仅显示编辑器',
-    btnModePreview: '仅显示预览',
-    btnModeAll: '显示编辑器与预览',
-  },
-} as const;
-type LegacyMarkdownLocaleKey = keyof typeof LEGACY_MARKDOWN_LABELS;
-
-function normalizeLegacyMarkdownLocale(locale?: string) {
-  if (!locale) return null;
-  const parts = locale.split('-');
-  const key = `${parts[0]}${parts.length > 1 ? parts[parts.length - 1]?.toUpperCase() : ''}`;
-  return key in LEGACY_MARKDOWN_LABELS ? (key as LegacyMarkdownLocaleKey) : null;
-}
-
-function getLegacyMarkdownLabels() {
-  if (typeof navigator === 'undefined') return LEGACY_MARKDOWN_LABELS.enUS;
-  const browserNavigator = navigator as Navigator & { browserLanguage?: string };
-  const locale =
-    normalizeLegacyMarkdownLocale(browserNavigator.language) ??
-    normalizeLegacyMarkdownLocale(browserNavigator.browserLanguage);
-  return LEGACY_MARKDOWN_LABELS[locale ?? 'enUS'];
-}
-
-const LEGACY_TABLE_ROWS = 4;
-const LEGACY_TABLE_COLS = 6;
-const LEGACY_TABLE_CELL_GAP = 3;
-const LEGACY_TABLE_CELL_STEP = 23;
-const LEGACY_LOGGER_MAX_SIZE = 100;
-const LEGACY_LOGGER_INTERVAL = 600;
-
-type LegacyMarkdownView = { md: boolean; html: boolean };
-type LegacyHeaderTag = `h${1 | 2 | 3 | 4 | 5 | 6}`;
-type LegacySelection = { start: number; end: number; selected: string };
-type LegacySelectionRange = { start: number; end: number };
-type LegacyShortcutKey = 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey';
-type LegacySyncScrollSource = 'md' | 'html';
-
-function legacyTableMarkdown(row: number, col: number) {
-  const head = ['|'];
-  const divider = ['|'];
-  const data = ['|'];
-  for (let index = 1; index <= col; index += 1) {
-    head.push(' Head |');
-    divider.push(' --- |');
-    data.push(' Data |');
-  }
-
-  let rows = '';
-  for (let index = 1; index <= row; index += 1) {
-    rows += `\n${data.join('')}`;
-  }
-
-  return `${head.join('')}\n${divider.join('')}${rows}`;
-}
-
-function legacyListMarkdown(type: 'ordered' | 'unordered', selected: string) {
-  let text = selected;
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-  if (text.substr(0, 1) !== '\n') {
-    text = `\n${text}`;
-  }
-  if (type === 'unordered') {
-    return text.length > 1 ? text.replace(/\n/g, '\n* ').trim() : '* ';
-  }
-
-  let index = 1;
-  return text.length > 1 ? text.replace(/\n/g, () => `\n${index++}. `).trim() : '1. ';
-}
-
-function LegacyMarkdownEditor({
-  value,
-  onChange,
-}: {
-  value?: unknown;
-  onChange: (value: string) => void;
-}) {
-  const text = normalizeLegacyMarkdownValue(value);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const htmlWrapperRef = useRef<HTMLDivElement | null>(null);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const composingRef = useRef(false);
-  const shouldSyncScrollRef = useRef<LegacySyncScrollSource>('md');
-  const hasContentChangedRef = useRef(true);
-  const isSyncingScrollRef = useRef(false);
-  const scrollScaleRef = useRef(1);
-  const loggerInitRef = useRef(text);
-  const loggerTimerRef = useRef<number | null>(null);
-  const undoStackRef = useRef<string[]>([]);
-  const redoStackRef = useRef<string[]>([]);
-  const lastPopRef = useRef<string | null>(null);
-  const [view, setView] = useState<LegacyMarkdownView>({ md: true, html: true });
-  const [fullScreen, setFullScreen] = useState(false);
-  const [headerMenuVisible, setHeaderMenuVisible] = useState(false);
-  const [tableMenuVisible, setTableMenuVisible] = useState(false);
-  const [tableHover, setTableHover] = useState<{ row: number; col: number } | null>(null);
-  const [, setUndoStack] = useState<string[]>([]);
-  const [redoStack, setRedoStack] = useState<string[]>([]);
-  const html = useMemo(() => renderLegacyAdminMarkdown(text), [text]);
-  const labels = useMemo(() => getLegacyMarkdownLabels(), []);
-
-  useEffect(
-    () => () => {
-      if (loggerTimerRef.current) {
-        window.clearTimeout(loggerTimerRef.current);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    hasContentChangedRef.current = true;
-  }, [text]);
-
-  const nextViewInfo = () => {
-    if (view.md && view.html) {
-      return { view: { md: true, html: false }, icon: 'keyboard', title: labels.btnModeEditor };
-    }
-    if (view.md) {
-      return { view: { md: false, html: true }, icon: 'visibility', title: labels.btnModePreview };
-    }
-    return {
-      view: { md: true, html: true },
-      icon: 'view-split',
-      title: labels.btnModeAll,
-    };
-  };
-
-  const getSelection = (): LegacySelection => {
-    const textarea = textareaRef.current;
-    const start = textarea?.selectionStart ?? text.length;
-    const end = textarea?.selectionEnd ?? text.length;
-    return { start, end, selected: text.slice(start, end) };
-  };
-
-  const syncLoggerStacks = (nextUndoStack: string[], nextRedoStack = redoStackRef.current) => {
-    undoStackRef.current = nextUndoStack;
-    redoStackRef.current = nextRedoStack;
-    setUndoStack(nextUndoStack);
-    setRedoStack(nextRedoStack);
-  };
-
-  const pushLoggerRecord = (nextText: string) => {
-    const nextStack = [...undoStackRef.current, nextText].slice(-LEGACY_LOGGER_MAX_SIZE);
-    undoStackRef.current = nextStack;
-    setUndoStack(nextStack);
-  };
-
-  const pauseLogger = () => {
-    if (!loggerTimerRef.current) return;
-    window.clearTimeout(loggerTimerRef.current);
-    loggerTimerRef.current = null;
-  };
-
-  const recordLoggerChange = (nextText: string, immediate = false) => {
-    if (undoStackRef.current[undoStackRef.current.length - 1] === nextText) return;
-    if (lastPopRef.current !== null && lastPopRef.current === nextText) return;
-
-    redoStackRef.current = [];
-    setRedoStack([]);
-
-    if (immediate) {
-      pushLoggerRecord(nextText);
-      lastPopRef.current = null;
-      return;
-    }
-
-    pauseLogger();
-    loggerTimerRef.current = window.setTimeout(() => {
-      if (undoStackRef.current[undoStackRef.current.length - 1] !== nextText) {
-        pushLoggerRecord(nextText);
-      }
-      lastPopRef.current = null;
-      loggerTimerRef.current = null;
-    }, LEGACY_LOGGER_INTERVAL);
-  };
-
-  const applyTextChange = (nextText: string, immediate = true) => {
-    if (nextText === text) return;
-    const normalizedNextText = normalizeLegacyMarkdownValue(nextText);
-    hasContentChangedRef.current = true;
-    recordLoggerChange(normalizedNextText, immediate);
-    onChange(normalizedNextText);
-  };
-
-  const handleSyncScroll = (source: LegacySyncScrollSource) => {
-    if (source !== shouldSyncScrollRef.current) return;
-    const textarea = textareaRef.current;
-    const htmlWrapper = htmlWrapperRef.current;
-    if (!textarea || !htmlWrapper) return;
-
-    if (hasContentChangedRef.current) {
-      scrollScaleRef.current = textarea.scrollHeight / htmlWrapper.scrollHeight;
-      hasContentChangedRef.current = false;
-    }
-    if (isSyncingScrollRef.current) return;
-
-    isSyncingScrollRef.current = true;
-    requestAnimationFrame(() => {
-      const nextTextarea = textareaRef.current;
-      const nextHtmlWrapper = htmlWrapperRef.current;
-      if (nextTextarea && nextHtmlWrapper) {
-        if (source === 'md') {
-          nextHtmlWrapper.scrollTop = nextTextarea.scrollTop / scrollScaleRef.current;
-        } else {
-          nextTextarea.scrollTop = nextHtmlWrapper.scrollTop * scrollScaleRef.current;
-        }
-      }
-      isSyncingScrollRef.current = false;
-    });
-  };
-
-  const replaceSelection = (
-    replacement: string,
-    selection = getSelection(),
-    nextSelection?: LegacySelectionRange,
-  ) => {
-    applyTextChange(`${text.slice(0, selection.start)}${replacement}${text.slice(selection.end)}`);
-    if (nextSelection) {
-      restoreSelection(selection.start + nextSelection.start, selection.start + nextSelection.end);
-    }
-  };
-
-  const restoreSelection = (start: number, end = start) => {
-    window.setTimeout(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      textarea.setSelectionRange(start, end, 'forward');
-      textarea.focus();
-    });
-  };
-
-  const matchesLegacyShortcut = (
-    event: KeyboardEvent<HTMLTextAreaElement>,
-    key: string,
-    keyCode: number,
-    withKeys: LegacyShortcutKey[],
-    aliasCommand = false,
-  ) => {
-    const modifierState = {
-      ctrlKey: event.ctrlKey || (aliasCommand && event.metaKey),
-      metaKey: event.metaKey,
-      altKey: event.altKey,
-      shiftKey: event.shiftKey,
-    };
-
-    if (withKeys.length > 0) {
-      for (const withKey of withKeys) {
-        if (!modifierState[withKey]) return false;
-      }
-    } else if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-      return false;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-    return event.key ? event.key === key : event.keyCode === keyCode;
-  };
-
-  const wrapSelection = (before: string, after = before) => {
-    const selection = getSelection();
-    replaceSelection(`${before}${selection.selected}${after}`, selection, {
-      start: before.length,
-      end: before.length + selection.selected.length,
-    });
-  };
-
-  const insertMarkdownBlock = (before: string, after = '') => {
-    const selection = getSelection();
-    replaceSelection(`${before}${selection.selected}${after}`, selection, {
-      start: before.length,
-      end: before.length + selection.selected.length,
-    });
-  };
-
-  const insertLegacyNewBlock = (
-    markdown: string,
-    selection = getSelection(),
-    nextSelection?: LegacySelectionRange,
-  ) => {
-    const lines = text.split('\n');
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-    const beforeLines = text.substr(0, selection.start).split('\n');
-    const col = beforeLines[beforeLines.length - 1]?.length ?? 0;
-    const curLine = lines[beforeLines.length - 1] ?? '';
-    let replacement = markdown;
-    let selectionOffset = nextSelection;
-
-    if (col > 0 && curLine.length > 0) {
-      replacement = `\n${replacement}`;
-      if (selectionOffset) {
-        selectionOffset = {
-          start: selectionOffset.start + 1,
-          end: selectionOffset.end + 1,
-        };
-      }
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-    const afterText = text.substr(selection.end);
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-    if (afterText.trim() !== '' && afterText.substr(0, 2) !== '\n\n') {
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-      if (afterText.substr(0, 1) !== '\n') {
-        replacement += '\n';
-      }
-      replacement += '\n';
-    }
-
-    replaceSelection(replacement, selection, selectionOffset);
-    if (!selectionOffset) {
-      restoreSelection(selection.start);
-    }
-  };
-
-  const insertHeader = (tag: LegacyHeaderTag) => {
-    insertMarkdownBlock(`\n${'#'.repeat(Number(tag.slice(1)))} `, '\n');
-    setHeaderMenuVisible(false);
-  };
-
-  const insertTable = (row: number, col: number) => {
-    insertLegacyNewBlock(legacyTableMarkdown(row, col));
-    setTableMenuVisible(false);
-    setTableHover(null);
-  };
-
-  const insertImage = (label = '') => {
-    const selection = getSelection();
-    replaceSelection(`![${selection.selected || label}]()`, selection, {
-      start: 2,
-      end: selection.selected.length + 2,
-    });
-  };
-
-  const clearMarkdown = () => {
-    if (text !== '' && window.confirm && typeof window.confirm === 'function') {
-      const confirmed = window.confirm(labels.clearTip);
-      if (confirmed) applyTextChange('');
-    }
-  };
-
-  const handleEditorKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-    if ((event.keyCode === 13 || event.key === 'Enter') && !composingRef.current) {
-      const textarea = event.currentTarget;
-      const cursor = textarea.selectionStart;
-      const value = textarea.value;
-      const lines = value.split('\n');
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-      const beforeLines = value.substr(0, cursor).split('\n');
-      const curLine = lines[beforeLines.length - 1] ?? '';
-      const removeCurrentListPrefix = () => {
-        const lineStart = cursor - curLine.length;
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-        applyTextChange(`${value.substr(0, lineStart)}${value.substr(cursor)}`);
-        restoreSelection(lineStart);
-        event.preventDefault();
-      };
-      const insertNextListPrefix = (prefix: string) => {
-        const insertion = `\n${prefix}`;
-        applyTextChange(`${value.slice(0, cursor)}${insertion}${value.slice(cursor)}`);
-        restoreSelection(cursor + prefix.length + 1);
-        event.preventDefault();
-      };
-      const unordered = curLine.match(/^(\s*?)\* /);
-      if (unordered) {
-        if (/^(\s*?)\* $/.test(curLine)) {
-          removeCurrentListPrefix();
-        } else {
-          insertNextListPrefix(unordered[0]);
-        }
-        return;
-      }
-
-      const ordered = curLine.match(/^(\s*?)(\d+)\. /);
-      if (ordered) {
-        if (/^(\s*?)(\d+)\. $/.test(curLine)) {
-          removeCurrentListPrefix();
-        } else {
-          insertNextListPrefix(`${ordered[1]}${Number.parseInt(ordered[2]!, 10) + 1}. `);
-        }
-        return;
-      }
-    }
-
-    const selection = getSelection();
-    const applyShortcut = (callback: () => void) => {
-      event.preventDefault();
-      callback();
-    };
-
-    if (matchesLegacyShortcut(event, 'b', 66, ['ctrlKey'], true)) {
-      applyShortcut(() => wrapSelection('**'));
-      return;
-    }
-    if (matchesLegacyShortcut(event, 'i', 73, ['ctrlKey'], true)) {
-      applyShortcut(() => wrapSelection('*'));
-      return;
-    }
-    if (matchesLegacyShortcut(event, 'u', 85, ['ctrlKey'])) {
-      applyShortcut(() => wrapSelection('++'));
-      return;
-    }
-    if (matchesLegacyShortcut(event, 'd', 68, ['ctrlKey'], true)) {
-      applyShortcut(() => wrapSelection('~~'));
-      return;
-    }
-    if (matchesLegacyShortcut(event, '8', 56, ['ctrlKey', 'shiftKey'], true)) {
-      const markdown = legacyListMarkdown('unordered', selection.selected);
-      applyShortcut(() => {
-        insertLegacyNewBlock(markdown, selection, {
-          start: markdown.length,
-          end: markdown.length,
-        });
-      });
-      return;
-    }
-    if (matchesLegacyShortcut(event, '7', 55, ['ctrlKey', 'shiftKey'], true)) {
-      const markdown = legacyListMarkdown('ordered', selection.selected);
-      applyShortcut(() => {
-        insertLegacyNewBlock(markdown, selection, {
-          start: markdown.length,
-          end: markdown.length,
-        });
-      });
-      return;
-    }
-    if (matchesLegacyShortcut(event, 'k', 75, ['ctrlKey'], true)) {
-      applyShortcut(() =>
-        replaceSelection(`[${selection.selected}]()`, selection, {
-          start: 1,
-          end: selection.selected.length + 1,
-        }),
-      );
-      return;
-    }
-    if (matchesLegacyShortcut(event, 'y', 89, ['ctrlKey'])) {
-      applyShortcut(redoMarkdown);
-      return;
-    }
-    if (matchesLegacyShortcut(event, 'z', 90, ['metaKey', 'shiftKey'])) {
-      applyShortcut(redoMarkdown);
-      return;
-    }
-    if (matchesLegacyShortcut(event, 'z', 90, ['ctrlKey'], true)) {
-      applyShortcut(undoMarkdown);
-    }
-  };
-
-  const bindImageInput = (node: HTMLInputElement | null) => {
-    imageInputRef.current = node;
-    if (!node) return;
-    node.setAttribute('type', 'file');
-    node.setAttribute('accept', '');
-    node.setAttribute(
-      'style',
-      'position: absolute; z-index: -1; left: 0px; top: 0px; width: 0px; height: 0px; opacity: 0;',
-    );
-  };
-
-  const undoMarkdown = () => {
-    pauseLogger();
-    const nextUndoStack = [...undoStackRef.current];
-    const nextRedoStack = [...redoStackRef.current];
-    const popped = nextUndoStack.pop();
-    let previous: string;
-
-    if (popped === undefined) {
-      previous = loggerInitRef.current;
-    } else if (popped !== text) {
-      nextRedoStack.push(popped);
-      previous = popped;
-    } else {
-      const next = nextUndoStack.pop();
-      nextRedoStack.push(popped);
-      previous = next === undefined ? loggerInitRef.current : next;
-    }
-
-    lastPopRef.current = previous;
-    syncLoggerStacks(nextUndoStack, nextRedoStack);
-    onChange(previous);
-  };
-
-  const redoMarkdown = () => {
-    const nextRedoStack = [...redoStackRef.current];
-    const next = nextRedoStack.pop();
-    if (next === undefined) return;
-
-    lastPopRef.current = next;
-    syncLoggerStacks(undoStackRef.current, nextRedoStack);
-    pushLoggerRecord(next);
-    onChange(next);
-  };
-
-  const mode = nextViewInfo();
-
-  return (
-    <div className={`rc-md-editor ${fullScreen ? 'full' : ''} `} style={{ height: 500 }}>
-      <div className="rc-md-navigation visible">
-        <div className="navigation-nav left">
-          <div className="button-wrap">
-            <span
-              className="button button-type-header"
-              title={labels.btnHeader}
-              onMouseEnter={() => setHeaderMenuVisible(true)}
-              onMouseLeave={() => setHeaderMenuVisible(false)}
-            >
-              <i className="rmel-iconfont rmel-icon-font-size" />
-              <div
-                className={`drop-wrap ${headerMenuVisible ? 'show' : 'hidden'}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setHeaderMenuVisible(false);
-                }}
-              >
-                <ul className="header-list">
-                  <li className="list-item">
-                    <h1 onClick={() => insertHeader('h1')}>H1</h1>
-                  </li>
-                  <li className="list-item">
-                    <h2 onClick={() => insertHeader('h2')}>H2</h2>
-                  </li>
-                  <li className="list-item">
-                    <h3 onClick={() => insertHeader('h3')}>H3</h3>
-                  </li>
-                  <li className="list-item">
-                    <h4 onClick={() => insertHeader('h4')}>H4</h4>
-                  </li>
-                  <li className="list-item">
-                    <h5 onClick={() => insertHeader('h5')}>H5</h5>
-                  </li>
-                  <li className="list-item">
-                    <h6 onClick={() => insertHeader('h6')}>H6</h6>
-                  </li>
-                </ul>
-              </div>
-            </span>
-            <span
-              className="button button-type-bold"
-              title={labels.btnBold}
-              onClick={() => wrapSelection('**')}
-            >
-              <i className="rmel-iconfont rmel-icon-bold" />
-            </span>
-            <span
-              className="button button-type-italic"
-              title={labels.btnItalic}
-              onClick={() => wrapSelection('*')}
-            >
-              <i className="rmel-iconfont rmel-icon-italic" />
-            </span>
-            <span
-              className="button button-type-underline"
-              title={labels.btnUnderline}
-              onClick={() => wrapSelection('++')}
-            >
-              <i className="rmel-iconfont rmel-icon-underline" />
-            </span>
-            <span
-              className="button button-type-strikethrough"
-              title={labels.btnStrikethrough}
-              onClick={() => wrapSelection('~~')}
-            >
-              <i className="rmel-iconfont rmel-icon-strikethrough" />
-            </span>
-            <span
-              className="button button-type-unordered"
-              title={labels.btnUnordered}
-              onClick={() => {
-                const selection = getSelection();
-                const markdown = legacyListMarkdown('unordered', selection.selected);
-                insertLegacyNewBlock(markdown, selection, {
-                  start: markdown.length,
-                  end: markdown.length,
-                });
-              }}
-            >
-              <i className="rmel-iconfont rmel-icon-list-unordered" />
-            </span>
-            <span
-              className="button button-type-ordered"
-              title={labels.btnOrdered}
-              onClick={() => {
-                const selection = getSelection();
-                const markdown = legacyListMarkdown('ordered', selection.selected);
-                insertLegacyNewBlock(markdown, selection, {
-                  start: markdown.length,
-                  end: markdown.length,
-                });
-              }}
-            >
-              <i className="rmel-iconfont rmel-icon-list-ordered" />
-            </span>
-            <span
-              className="button button-type-quote"
-              title={labels.btnQuote}
-              onClick={() => insertMarkdownBlock('\n> ', '\n')}
-            >
-              <i className="rmel-iconfont rmel-icon-quote" />
-            </span>
-            <span
-              className="button button-type-wrap"
-              title={labels.btnLineBreak}
-              onClick={() => insertLegacyNewBlock('---', getSelection(), { start: 3, end: 3 })}
-            >
-              <i className="rmel-iconfont rmel-icon-wrap" />
-            </span>
-            <span
-              className="button button-type-code-inline"
-              title={labels.btnInlineCode}
-              onClick={() => wrapSelection('`')}
-            >
-              <i className="rmel-iconfont rmel-icon-code" />
-            </span>
-            <span
-              className="button button-type-code-block"
-              title={labels.btnCode}
-              onClick={() => insertMarkdownBlock('\n```\n', '\n```\n')}
-            >
-              <i className="rmel-iconfont rmel-icon-code-block" />
-            </span>
-            <span
-              className="button button-type-table"
-              title={labels.btnTable}
-              onMouseEnter={() => setTableMenuVisible(true)}
-              onMouseLeave={() => {
-                setTableMenuVisible(false);
-                setTableHover(null);
-              }}
-            >
-              <i className="rmel-iconfont rmel-icon-grid" />
-              <div
-                className={`drop-wrap ${tableMenuVisible ? 'show' : 'hidden'}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setTableMenuVisible(false);
-                  setTableHover(null);
-                }}
-              >
-                <ul
-                  className="table-list wrap"
-                  style={{
-                    width: LEGACY_TABLE_CELL_STEP * LEGACY_TABLE_COLS - LEGACY_TABLE_CELL_GAP,
-                    height: LEGACY_TABLE_CELL_STEP * LEGACY_TABLE_ROWS - LEGACY_TABLE_CELL_GAP,
-                  }}
-                >
-                  {Array.from({ length: LEGACY_TABLE_ROWS }).map((_, row) =>
-                    Array.from({ length: LEGACY_TABLE_COLS }).map((__, col) => (
-                      <li
-                        key={`${row}-${col}`}
-                        className={`list-item ${
-                          tableHover && row <= tableHover.row && col <= tableHover.col
-                            ? 'active'
-                            : ''
-                        }`}
-                        style={{
-                          top: LEGACY_TABLE_CELL_STEP * row,
-                          left: LEGACY_TABLE_CELL_STEP * col,
-                        }}
-                        onMouseOver={() => setTableHover({ row, col })}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          insertTable(row + 1, col + 1);
-                        }}
-                      />
-                    )),
-                  )}
-                </ul>
-              </div>
-            </span>
-            <span
-              className="button button-type-image"
-              title={labels.btnImage}
-              style={{ position: 'relative' }}
-              onClick={() => insertImage()}
-            >
-              <i className="rmel-iconfont rmel-icon-image" />
-              <input
-                ref={bindImageInput}
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0];
-                  if (file) insertImage(file.name);
-                  event.currentTarget.value = '';
-                }}
-              />
-            </span>
-            <span
-              className="button button-type-link"
-              title={labels.btnLink}
-              onClick={() => {
-                const selection = getSelection();
-                replaceSelection(`[${selection.selected}]()`, selection, {
-                  start: 1,
-                  end: selection.selected.length + 1,
-                });
-              }}
-            >
-              <i className="rmel-iconfont rmel-icon-link" />
-            </span>
-            <span
-              className="button button-type-clear"
-              title={labels.btnClear}
-              onClick={clearMarkdown}
-            >
-              <i className="rmel-iconfont rmel-icon-delete" />
-            </span>
-            <span
-              className={`button button-type-undo ${
-                loggerInitRef.current !== text ? '' : 'disabled'
-              }`}
-              title={labels.btnUndo}
-              onClick={undoMarkdown}
-            >
-              <i className="rmel-iconfont rmel-icon-undo" />
-            </span>
-            <span
-              className={`button button-type-redo ${redoStack.length ? '' : 'disabled'}`}
-              title={labels.btnRedo}
-              onClick={redoMarkdown}
-            >
-              <i className="rmel-iconfont rmel-icon-redo" />
-            </span>
-          </div>
-        </div>
-        <div className="navigation-nav right">
-          <div className="button-wrap">
-            <span
-              className="button button-type-mode"
-              title={mode.title}
-              onClick={() => setView(mode.view)}
-            >
-              <i className={`rmel-iconfont rmel-icon-${mode.icon}`} />
-            </span>
-            <span
-              className="button button-type-fullscreen"
-              title={fullScreen ? labels.btnExitFullScreen : labels.btnFullScreen}
-              onClick={() => setFullScreen((current) => !current)}
-            >
-              <i
-                className={`rmel-iconfont rmel-icon-${
-                  fullScreen ? 'fullscreen-exit' : 'fullscreen'
-                }`}
-              />
-            </span>
-          </div>
-        </div>
-      </div>
-      <div className="editor-container">
-        <section className={`section sec-md ${view.md ? 'visible' : 'in-visible'}`}>
-          <textarea
-            ref={textareaRef}
-            name="textarea"
-            value={text}
-            className="section-container input "
-            wrap="hard"
-            onChange={(event) => applyTextChange(event.target.value, false)}
-            onScroll={() => handleSyncScroll('md')}
-            onMouseOver={() => {
-              shouldSyncScrollRef.current = 'md';
-            }}
-            onKeyDown={handleEditorKeyDown}
-            onCompositionStart={() => {
-              composingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              composingRef.current = false;
-            }}
-          />
-        </section>
-        <section className={`section sec-html ${view.html ? 'visible' : 'in-visible'}`}>
-          <div
-            ref={htmlWrapperRef}
-            className="section-container html-wrap"
-            onMouseOver={() => {
-              shouldSyncScrollRef.current = 'html';
-            }}
-            onScroll={() => handleSyncScroll('html')}
-          >
-            <div className="custom-html-style" dangerouslySetInnerHTML={{ __html: html }} />
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
+const KNOWLEDGE_LOCALE_OPTIONS = (
+  Object.keys(KNOWLEDGE_LOCALE_TEXT) as (keyof typeof KNOWLEDGE_LOCALE_TEXT)[]
+)
+  .sort()
+  .map((locale) => ({ value: locale, label: KNOWLEDGE_LOCALE_TEXT[locale] }));
 
 function KnowledgeEditor({
   id,
+  categories,
+  saveLoading,
   children,
   onSave,
   onSaved,
-  saveLoading,
 }: {
   id?: number;
+  categories: string[];
+  saveLoading?: boolean;
   children: ReactElement<{ onClick?: () => void }>;
   onSave: (payload: SaveKnowledgePayload) => Promise<unknown>;
   onSaved: () => void | Promise<unknown>;
-  saveLoading?: boolean;
 }) {
-  const { message } = App.useApp();
-  const [visible, setVisible] = useState(false);
+  const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [knowledge, setKnowledge] = useState<Partial<Knowledge>>({});
-  const [editorKey, setEditorKey] = useState(Math.random());
 
+  // Opening for an existing article fetches its full detail (GET /knowledge/fetch
+  // with { id }) so edits round-trip every field back through the save payload.
   const show = async () => {
-    setVisible(true);
-    setEditorKey(Math.random());
+    setOpen(true);
     if (!id) {
       setKnowledge({});
       return;
     }
-
     setLoading(true);
     try {
       setKnowledge(await admin.knowledgeDetail(apiClient, id));
     } finally {
       setLoading(false);
     }
-  };
-
-  const hide = () => {
-    setVisible(false);
-    setKnowledge({});
   };
 
   const formChange = (key: keyof Knowledge, value: unknown) => {
@@ -946,81 +100,109 @@ function KnowledgeEditor({
   const save = async () => {
     await onSave({ ...knowledge });
     await onSaved();
-    message.success('保存成功');
+    setOpen(false);
+    toast.success('保存成功');
   };
 
   return (
     <>
       {cloneElement(children, { onClick: show })}
-      <LegacyDrawer
-        width="80%"
-        id="knowledge"
-        open={visible}
-        title={id ? '编辑知识' : '新增知识'}
-        onClose={hide}
-      >
-        {loading ? (
-          <LegacyLoadingIcon />
-        ) : (
-          <div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">标题</label>
-              <LegacyInput
-                className="ant-input"
-                placeholder="请输入知识标题"
-                value={knowledge.title}
-                onChange={(event) => formChange('title', event.target.value)}
-              />
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent
+          side="right"
+          className="w-full gap-0 overflow-y-auto sm:max-w-2xl"
+          data-testid="knowledge-editor"
+        >
+          <SheetHeader>
+            <SheetTitle>{id ? '编辑知识' : '新增知识'}</SheetTitle>
+          </SheetHeader>
+
+          {loading ? (
+            <div className="flex justify-center py-16" role="status">
+              <Spinner className="size-5 text-muted-foreground" />
+              <span className="sr-only">加载中</span>
             </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">分类</label>
-              <LegacyInput
-                className="ant-input"
-                placeholder="请输入分类，分类将会自动归集"
-                value={knowledge.category}
-                onChange={(event) => formChange('category', event.target.value)}
-              />
+          ) : (
+            <div className="space-y-4 px-4 pb-4">
+              <div className="space-y-2">
+                <Label htmlFor="knowledge-title">标题</Label>
+                <Input
+                  id="knowledge-title"
+                  placeholder="请输入知识标题"
+                  value={knowledge.title ?? ''}
+                  onChange={(event) => formChange('title', event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="knowledge-category">分类</Label>
+                <Input
+                  id="knowledge-category"
+                  list="knowledge-category-options"
+                  placeholder="请输入分类，分类将会自动归集"
+                  value={knowledge.category ?? ''}
+                  onChange={(event) => formChange('category', event.target.value)}
+                />
+                <datalist id="knowledge-category-options">
+                  {categories.map((category) => (
+                    <option key={category} value={category} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="knowledge-language">语言</Label>
+                <Select
+                  value={knowledge.language}
+                  onValueChange={(value) => formChange('language', value)}
+                >
+                  <SelectTrigger id="knowledge-language" className="w-full">
+                    <SelectValue placeholder="请选择知识语言" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {KNOWLEDGE_LOCALE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="knowledge-body">内容</Label>
+                <Textarea
+                  id="knowledge-body"
+                  rows={18}
+                  className="font-mono text-sm"
+                  placeholder="请输入知识内容，支持 Markdown"
+                  value={knowledge.body ?? ''}
+                  onChange={(event) => formChange('body', event.target.value)}
+                  data-testid="knowledge-body"
+                />
+              </div>
             </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">语言</label>
-              <LegacySelect
-                placeholder="请选择知识语言"
-                style={{ width: '100%' }}
-                defaultValue={knowledge.language || 1}
-                options={LEGACY_KNOWLEDGE_LOCALE_OPTIONS}
-                onChange={(value) => formChange('language', value)}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="example-text-input-alt">内容</label>
-              <LegacyMarkdownEditor
-                key={editorKey}
-                value={knowledge.body}
-                onChange={(value) => formChange('body', value)}
-              />
-            </div>
-          </div>
-        )}
-        <div className="v2board-drawer-action">
-          <LegacyButton className="ant-btn" style={{ marginRight: 8 }} onClick={hide}>
-            取消
-          </LegacyButton>
-          <LegacyButton
-            className={`ant-btn ant-btn-primary${saveLoading ? ' ant-btn-loading' : ''}`}
-            onClick={() => void save()}
-          >
-            {saveLoading ? <LegacyLoadingIcon /> : null}
-            提交
-          </LegacyButton>
-        </div>
-      </LegacyDrawer>
+          )}
+
+          <SheetFooter>
+            <Button
+              onClick={() => void save()}
+              disabled={saveLoading || loading}
+              data-testid="knowledge-submit"
+            >
+              {saveLoading ? <Loader2 className="size-4 animate-spin" /> : null}
+              提交
+            </Button>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              取消
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }
 
 export default function KnowledgePage() {
   const list = useAdminKnowledge();
-  useAdminKnowledgeCategories();
+  const categories = useAdminKnowledgeCategories();
   const save = useSaveKnowledgeMutation();
   const drop = useDropKnowledgeMutation();
   const show = useShowKnowledgeMutation();
@@ -1028,31 +210,33 @@ export default function KnowledgePage() {
   const [orderedKnowledge, setOrderedKnowledge] = useState<KnowledgeSummary[]>(
     () => list.data ?? [],
   );
-  const [sortingLoading, setSortingLoading] = useState(false);
+  const [sortLoading, setSortLoading] = useState(false);
   const orderRef = useRef(orderedKnowledge);
 
   useEffect(() => {
     if (list.data) {
       setOrderedKnowledge(list.data);
-      setSortingLoading(false);
+      setSortLoading(false);
     }
   }, [list.data]);
 
   orderRef.current = orderedKnowledge;
 
-  const sortKnowledge = (fromIndex: number, toIndex: number) => {
-    const next = [...orderRef.current];
-    const moved = next[fromIndex];
-    if (!moved) return;
-    if (fromIndex < toIndex) {
-      next.splice(toIndex + 1, 0, moved);
-      next.splice(fromIndex, 1);
-    } else {
-      next.splice(toIndex, 0, moved);
-      next.splice(fromIndex + 1, 1);
-    }
-    setSortingLoading(true);
+  // Adjacent-swap reorder. The drag handle is retired for accessible move
+  // buttons, but the persisted contract is unchanged: sort.mutate receives the
+  // full id list in the new order, then the page refetches.
+  const moveKnowledge = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    const current = orderRef.current;
+    if (target < 0 || target >= current.length) return;
+    const next = [...current];
+    const a = next[index];
+    const b = next[target];
+    if (!a || !b) return;
+    next[index] = b;
+    next[target] = a;
     setOrderedKnowledge(next);
+    setSortLoading(true);
     sort.mutate(
       next.map((knowledge) => knowledge.id),
       {
@@ -1063,135 +247,155 @@ export default function KnowledgePage() {
     );
   };
 
-  const saveKnowledge = (payload: SaveKnowledgePayload) => save.mutateAsync(payload);
-  const refetchKnowledge = () => list.refetch();
+  const removeKnowledge = async (row: KnowledgeSummary) => {
+    const confirmed = await confirmDialog({
+      title: '警告',
+      description: '确定要删除该条项目吗？',
+      confirmText: '确定',
+    });
+    if (!confirmed) return;
+    await drop.mutateAsync(row.id);
+    void list.refetch();
+  };
 
-  const headers: LegacyStandaloneTableHeader[] = [
-    { title: '排序' },
-    { title: '文章ID' },
-    { title: '显示' },
-    { title: '标题' },
-    { title: '分类' },
-    { title: '更新时间', alignRight: true },
-    { title: '操作', alignRight: true, fixedRight: true },
+  const columns: DataTableColumn<KnowledgeSummary>[] = [
+    {
+      id: 'id',
+      meta: { className: 'text-muted-foreground tabular-nums' },
+      header: () => <span>文章ID</span>,
+      cell: ({ row }) => row.original.id,
+    },
+    {
+      id: 'show',
+      meta: { align: 'center' },
+      header: () => <span>显示</span>,
+      cell: ({ row }) => (
+        <Switch
+          checked={Boolean(row.original.show)}
+          onCheckedChange={() =>
+            show.mutate(row.original.id, {
+              onSuccess: () => {
+                void list.refetch();
+              },
+            })
+          }
+          aria-label={`切换「${row.original.title}」显示`}
+        />
+      ),
+    },
+    {
+      id: 'title',
+      meta: { className: 'font-medium text-foreground' },
+      header: () => <span>标题</span>,
+      cell: ({ row }) => row.original.title,
+    },
+    {
+      id: 'category',
+      meta: { className: 'text-muted-foreground' },
+      header: () => <span>分类</span>,
+      cell: ({ row }) => row.original.category,
+    },
+    {
+      id: 'updated_at',
+      meta: { align: 'right', className: 'text-muted-foreground tabular-nums' },
+      header: () => <span>更新时间</span>,
+      cell: ({ row }) => dayjs(1000 * row.original.updated_at).format('YYYY/MM/DD HH:mm'),
+    },
+    {
+      id: 'actions',
+      meta: { align: 'right' },
+      header: () => <span>操作</span>,
+      cell: ({ row }) => {
+        const index = orderedKnowledge.findIndex((item) => item.id === row.original.id);
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              disabled={index <= 0}
+              onClick={() => moveKnowledge(index, -1)}
+              aria-label="上移"
+            >
+              <ArrowUp className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              disabled={index < 0 || index >= orderedKnowledge.length - 1}
+              onClick={() => moveKnowledge(index, 1)}
+              aria-label="下移"
+            >
+              <ArrowDown className="size-4" />
+            </Button>
+            <KnowledgeEditor
+              id={row.original.id}
+              categories={categories.data ?? []}
+              saveLoading={save.isPending}
+              onSave={(payload) => save.mutateAsync(payload)}
+              onSaved={() => list.refetch()}
+            >
+              <Button variant="ghost" size="sm" data-testid={`knowledge-edit-${row.original.id}`}>
+                <Pencil className="size-4" />
+                编辑
+              </Button>
+            </KnowledgeEditor>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => void removeKnowledge(row.original)}
+              data-testid={`knowledge-delete-${row.original.id}`}
+            >
+              <Trash2 className="size-4" />
+              删除
+            </Button>
+          </div>
+        );
+      },
+    },
   ];
 
-  const renderKnowledgeShowSwitch = (value: 0 | 1 | undefined, row: KnowledgeSummary) => (
-    <LegacySwitch
-      size="small"
-      onChange={() =>
-        show.mutate(row.id, {
-          onSuccess: () => {
-            void list.refetch();
-          },
-        })
-      }
-      checked={value as unknown as boolean}
-    />
-  );
-
-  const renderKnowledgeActions = (row: KnowledgeSummary) => (
-    <>
-      <KnowledgeEditor
-        id={row.id}
-        onSave={saveKnowledge}
-        onSaved={refetchKnowledge}
-        saveLoading={save.isPending}
-      >
-        <a ref={legacyHref()}>编辑</a>
-      </KnowledgeEditor>
-      <LegacyDivider type="vertical" />
-      <a
-        ref={legacyHref()}
-        onClick={() => {
-          void legacyConfirm({
-            title: '警告',
-            content: '确定要删除该条项目吗？',
-            onOk: () => {
-              void drop.mutateAsync(row.id).then(() => {
-                void list.refetch();
-              });
-            },
-            okText: '确定',
-            cancelText: '取消',
-          });
-        }}
-      >
-        删除
-      </a>
-    </>
-  );
-
   return (
-    <LegacySpin loading={legacyFetchLoading(list.isFetching, list.error) || sortingLoading}>
-      <div className="block border-bottom">
-        <div className="bg-white">
-          <div style={{ padding: 15 }}>
-            <KnowledgeEditor
-              onSave={saveKnowledge}
-              onSaved={refetchKnowledge}
-              saveLoading={save.isPending}
-            >
-              <LegacyButton className="ant-btn">
-                <LegacyPlusIcon />
-                <span>新增</span>
-              </LegacyButton>
-            </KnowledgeEditor>
-          </div>
-          <LegacyDragSort
-            onDragEnd={(fromIndex, toIndex) => sortKnowledge(fromIndex, toIndex)}
-            nodeSelector="tr"
-            handleSelector="i"
+    <PageShell data-testid="knowledge-page">
+      <PageHeader
+        title="知识库管理"
+        actions={
+          <KnowledgeEditor
+            categories={categories.data ?? []}
+            saveLoading={save.isPending}
+            onSave={(payload) => save.mutateAsync(payload)}
+            onSaved={() => list.refetch()}
           >
-            <LegacyStandaloneTable
-              headers={headers}
-              isEmpty={orderedKnowledge.length === 0}
-              scrollX={750}
-              scrollPositionRight="desktop"
-              fixedRightChildren={orderedKnowledge.map((row, index) => (
-                <tr
-                  key={index}
-                  className="ant-table-row ant-table-row-level-0"
-                  style={{ height: 54 }}
-                  {...legacyTableRowKey(index)}
-                >
-                  <td
-                    className="ant-table-align-right ant-table-row-cell-last"
-                    style={{ textAlign: 'right' }}
-                  >
-                    {renderKnowledgeActions(row)}
-                  </td>
-                </tr>
-              ))}
-            >
-              {orderedKnowledge.map((row, index) => (
-                <tr
-                  key={index}
-                  className="ant-table-row ant-table-row-level-0"
-                  {...legacyTableRowKey(index)}
-                >
-                  <td className="">
-                    <LegacyMenuIcon style={{ cursor: 'move' }} />
-                  </td>
-                  <td className="">{row.id}</td>
-                  <td className="">{renderKnowledgeShowSwitch(row.show, row)}</td>
-                  <td className="">{row.title}</td>
-                  <td className="">{row.category}</td>
-                  <td className="ant-table-align-right" style={{ textAlign: 'right' }}>
-                    {dayjs(1000 * row.updated_at).format('YYYY/MM/DD HH:mm')}
-                  </td>
-                  <td
-                    className="ant-table-fixed-columns-in-body ant-table-align-right ant-table-row-cell-last"
-                    style={{ textAlign: 'right' }}
-                  >
-                    {renderKnowledgeActions(row)}
-                  </td>
-                </tr>
-              ))}
-            </LegacyStandaloneTable>
-          </LegacyDragSort>
+            <Button data-testid="knowledge-create">
+              <Plus className="size-4" />
+              新增
+            </Button>
+          </KnowledgeEditor>
+        }
+      />
+
+      <Card className="overflow-hidden py-0">
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={orderedKnowledge}
+            getRowKey={(row) => row.id}
+            className="min-w-[820px]"
+            data-testid="knowledge-table"
+            empty={orderedKnowledge.length === 0 ? '暂无知识' : undefined}
+            emptyTestId="knowledge-empty"
+          />
+        </CardContent>
+      </Card>
+
+      {sortLoading || list.isPending ? (
+        <div className="flex justify-center py-6" role="status">
+          <Spinner className="size-5 text-muted-foreground" />
+          <span className="sr-only">加载中</span>
         </div>
-      </div>
-    </LegacySpin>
+      ) : null}
+    </PageShell>
   );
 }
