@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import * as echarts from 'echarts';
-import 'echarts/theme/vintage';
 import type { ECharts, EChartsOption } from 'echarts';
+import { AlertTriangle, List, ShoppingBag, SlidersHorizontal, TrendingUp, UserPlus, Users } from 'lucide-react';
 import type { AdminFilter } from '@v2board/api-client';
 import type { OrderStatPoint, ServerRankItem, UserRankItem } from '@v2board/types';
 import {
@@ -15,172 +15,89 @@ import {
   useStatUserToday,
 } from '@/lib/queries';
 import { getAdminApiBaseUrl } from '@/lib/legacy-settings';
-import { legacyHref } from '@/lib/legacy-href';
-
-type EmptyOrderChartElement = HTMLDivElement & {
-  __v2boardEmptyOrderChartCleanup?: () => void;
-};
+import { useDarkMode } from '@/lib/dark-mode';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageShell } from '@/components/ui/page';
 
 function formatCent(value?: number) {
   return value ? (value / 100).toFixed(2) : '0.00';
 }
 
-function useChart<T>(
-  data: T[] | undefined,
-  render: (element: HTMLDivElement, data: T[]) => ECharts,
-  chartObjectRef: RefObject<ECharts | undefined>,
-  onRendered?: () => void | (() => void),
-) {
+// Token-aware echarts host. The legacy darkreader canvas baseline and manual
+// window-resize wiring are retired: dark mode re-inits with the built-in dark
+// theme (background kept transparent so the Card fill shows through) and a
+// ResizeObserver keeps the chart sized to its Card.
+function EChart({ option, className }: { option: EChartsOption; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<ECharts | undefined>(undefined);
+  const dark = useDarkMode();
 
   useEffect(() => {
-    if (!ref.current || !data) return undefined;
-    chartObjectRef.current = render(ref.current, data);
-    const cleanup = onRendered?.();
-    return () => {
-      if (typeof cleanup === 'function') cleanup();
-    };
-  }, [chartObjectRef, data, onRendered, render]);
-
-  return ref;
-}
-
-function clearEmptyOrderChartBaseline(element: EmptyOrderChartElement) {
-  element.__v2boardEmptyOrderChartCleanup?.();
-  delete element.__v2boardEmptyOrderChartCleanup;
-  element.querySelector('.v2board-empty-order-chart-canvas')?.remove();
-}
-
-function renderEmptyOrderChartBaseline(element: EmptyOrderChartElement) {
-  clearEmptyOrderChartBaseline(element);
-
-  const canvas = document.createElement('canvas');
-  canvas.className = 'v2board-empty-order-chart-canvas';
-  element.append(canvas);
-
-  const paint = () => {
-    const width = Math.max(1, Math.round(element.clientWidth - 6));
-    const scale = window.devicePixelRatio || 1;
-    canvas.width = width * scale;
-    canvas.height = scale;
-
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    context.setTransform(scale, 0, 0, scale, 0, 0);
-    context.clearRect(0, 0, width, 1);
-    context.fillStyle = document.documentElement.dataset.darkreaderMode
-      ? 'rgb(160, 152, 137)'
-      : '#6e7079';
-    context.fillRect(0, 0, width, 1);
-  };
-
-  const observer = new MutationObserver(paint);
-  observer.observe(document.documentElement, {
-    attributeFilter: ['data-darkreader-mode', 'data-darkreader-scheme'],
-    attributes: true,
-  });
-
-  window.addEventListener('resize', paint);
-  element.__v2boardEmptyOrderChartCleanup = () => {
-    observer.disconnect();
-    window.removeEventListener('resize', paint);
-  };
-
-  paint();
-  requestAnimationFrame(paint);
-}
-
-function renderOrderChart(element: HTMLDivElement, data: OrderStatPoint[]) {
-  const chart = echarts.init(element, 'vintage', { renderer: 'svg' });
-  if (data.length === 0) {
-    element.classList.add('v2board-empty-order-chart');
-    element.style.position = '';
-    renderEmptyOrderChartBaseline(element);
-    return chart;
-  }
-  element.classList.remove('v2board-empty-order-chart');
-  clearEmptyOrderChartBaseline(element);
-
-  const option: EChartsOption & {
-    legend: { data: string[]; left: string; z: number };
-    xAxis: {
-      boundaryGap: boolean;
-      data: string[];
-      type: string;
-    };
-    series: { name: string; type: 'line'; smooth: boolean; data: number[] }[];
-  } = {
-    tooltip: { trigger: 'axis' },
-    legend: { data: [], left: '0', z: 4 },
-    grid: { left: '1%', right: '1%', bottom: '3%', containLabel: true },
-    xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: [],
-    },
-    yAxis: { type: 'value' },
-    series: [],
-  };
-
-  data.forEach((point) => {
-    if (!option.legend.data.includes(point.type)) option.legend.data.push(point.type);
-    if (!option.xAxis.data.includes(point.date)) option.xAxis.data.push(point.date);
-    const series = option.series.find((item) => item.name === point.type);
-    if (series) {
-      series.data.push(point.value);
-    } else {
-      option.series.push({
-        name: point.type,
-        type: 'line',
-        smooth: true,
-        data: [point.value],
-      });
+    if (!ref.current) return undefined;
+    const chart = echarts.init(ref.current, dark ? 'dark' : undefined, { renderer: 'svg' });
+    chartRef.current = chart;
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => chart.resize());
+      observer.observe(ref.current);
     }
-  });
+    return () => {
+      observer?.disconnect();
+      chart.dispose();
+      chartRef.current = undefined;
+    };
+  }, [dark]);
 
-  chart.setOption(option);
-  element.style.position = '';
-  return chart;
+  useEffect(() => {
+    chartRef.current?.setOption({ backgroundColor: 'transparent', ...option }, true);
+  }, [option]);
+
+  return <div ref={ref} className={className} />;
 }
 
-function renderRankChart<T extends ServerRankItem | UserRankItem>(
-  element: HTMLDivElement,
+function buildOrderOption(data: OrderStatPoint[]): EChartsOption {
+  const legend: string[] = [];
+  const xAxis: string[] = [];
+  const series: { name: string; type: 'line'; smooth: boolean; data: number[] }[] = [];
+  data.forEach((point) => {
+    if (!legend.includes(point.type)) legend.push(point.type);
+    if (!xAxis.includes(point.date)) xAxis.push(point.date);
+    const existing = series.find((item) => item.name === point.type);
+    if (existing) existing.data.push(point.value);
+    else series.push({ name: point.type, type: 'line', smooth: true, data: [point.value] });
+  });
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { data: legend, left: '0', z: 4 },
+    grid: { left: '1%', right: '1%', bottom: '3%', containLabel: true },
+    xAxis: { type: 'category', boundaryGap: false, data: xAxis },
+    yAxis: { type: 'value' },
+    series,
+  };
+}
+
+function buildRankOption<T extends ServerRankItem | UserRankItem>(
   data: T[],
   getName: (item: T) => string,
-) {
-  const chart = echarts.init(element);
-  const option: EChartsOption & {
-    yAxis: { type: string; data: string[] };
-    series: { data: number[]; type: 'bar' }[];
-  } = {
+): EChartsOption {
+  const names: string[] = [];
+  const totals: number[] = [];
+  [...data].reverse().forEach((item) => {
+    names.push(getName(item));
+    totals.push(item.total);
+  });
+  return {
     tooltip: {
       trigger: 'axis',
       formatter: (params) => `${(params as Array<{ value: unknown }>)[0]!.value} GB`,
     },
     grid: { top: '1%', left: '1%', right: '1%', bottom: '3%', containLabel: true },
     xAxis: { type: 'value' },
-    yAxis: { type: 'category', data: [] },
-    series: [{ data: [], type: 'bar' }],
+    yAxis: { type: 'category', data: names },
+    series: [{ data: totals, type: 'bar' }],
   };
-
-  data.reverse().forEach((item) => {
-    option.yAxis.data.push(getName(item));
-    const series = option.series[0];
-    if (series) series.data.push(item.total);
-  });
-
-  chart.setOption(option);
-  element.style.position = '';
-  return chart;
-}
-
-function renderServerRankChart(element: HTMLDivElement, data: ServerRankItem[]) {
-  return renderRankChart(element, data, (item) => item.server_name);
-}
-
-function renderUserRankChart(element: HTMLDivElement, data: UserRankItem[]) {
-  return renderRankChart(element, data, (item) => item.email);
 }
 
 function useQueueStatus() {
@@ -202,6 +119,13 @@ const PENDING_COMMISSION_ORDER_FILTER: AdminFilter[] = [
   { key: 'commission_balance', condition: '>', value: '0' },
 ];
 
+const SHORTCUTS = [
+  { title: '系统设置', to: '/config/system', icon: SlidersHorizontal },
+  { title: '订单管理', to: '/order', icon: List },
+  { title: '订阅管理', to: '/plan', icon: ShoppingBag },
+  { title: '用户管理', to: '/user', icon: Users },
+];
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const queueStatus = useQueueStatus();
@@ -214,11 +138,6 @@ export default function DashboardPage() {
   const config = useConfig('site');
   const currency = config.data?.site?.currency;
   const data = stat.data;
-  const orderChartObj = useRef<ECharts | undefined>(undefined);
-  const serverLastRankChartObj = useRef<ECharts | undefined>(undefined);
-  const serverTodayRankChartObj = useRef<ECharts | undefined>(undefined);
-  const userTodayRankChartObj = useRef<ECharts | undefined>(undefined);
-  const userLastRankChartObj = useRef<ECharts | undefined>(undefined);
 
   const goPendingCommissionOrders = () => {
     window.sessionStorage.setItem(
@@ -228,278 +147,164 @@ export default function DashboardPage() {
     navigate('/order');
   };
 
-  const resizeAllCharts = useCallback(() => {
-    orderChartObj.current!.resize();
-    serverLastRankChartObj.current!.resize();
-    serverTodayRankChartObj.current!.resize();
-    userTodayRankChartObj.current!.resize();
-    userLastRankChartObj.current!.resize();
-  }, []);
-  const registerLegacyOrderChartResize = useCallback(() => {
-    window.addEventListener('resize', resizeAllCharts);
-    return () => {
-      // The bundled class component removes `this.chartResize.bind(this)`,
-      // which is not the listener it added. Keep that no-op removal shape.
-      window.removeEventListener('resize', () => resizeAllCharts());
-    };
-  }, [resizeAllCharts]);
+  const orderOption = useMemo(() => buildOrderOption(order.data ?? []), [order.data]);
+  const serverTodayOption = useMemo(
+    () => buildRankOption(serverToday.data ?? [], (item) => item.server_name),
+    [serverToday.data],
+  );
+  const serverLastOption = useMemo(
+    () => buildRankOption(serverLast.data ?? [], (item) => item.server_name),
+    [serverLast.data],
+  );
+  const userTodayOption = useMemo(
+    () => buildRankOption(userToday.data ?? [], (item) => item.email),
+    [userToday.data],
+  );
+  const userLastOption = useMemo(
+    () => buildRankOption(userLast.data ?? [], (item) => item.email),
+    [userLast.data],
+  );
 
-  const orderChart = useChart(
-    order.data,
-    renderOrderChart,
-    orderChartObj,
-    registerLegacyOrderChartResize,
-  );
-  const serverLastRankChart = useChart(
-    serverLast.data,
-    renderServerRankChart,
-    serverLastRankChartObj,
-  );
-  const serverTodayRankChart = useChart(
-    serverToday.data,
-    renderServerRankChart,
-    serverTodayRankChartObj,
-  );
-  const userTodayRankChart = useChart(userToday.data, renderUserRankChart, userTodayRankChartObj);
-  const userLastRankChart = useChart(userLast.data, renderUserRankChart, userLastRankChartObj);
+  const rankCharts = [
+    { title: '今日节点流量排行', option: serverTodayOption },
+    { title: '昨日节点流量排行', option: serverLastOption },
+    { title: '今日用户流量排行', option: userTodayOption },
+    { title: '昨日用户流量排行', option: userLastOption },
+  ];
 
   return (
-    <>
+    <PageShell data-testid="dashboard-page">
       {queueStatus && queueStatus !== 'running' ? (
-        <div className="row">
-          <div className="col-lg-12">
-            <div className="alert alert-danger" role="alert">
-              <p className="mb-0">当前队列服务运行异常，可能会导致业务无法使用。</p>
-            </div>
-          </div>
-        </div>
+        <Alert variant="destructive" data-testid="dashboard-queue-alert">
+          <AlertTriangle className="size-4" />
+          <AlertDescription>当前队列服务运行异常，可能会导致业务无法使用。</AlertDescription>
+        </Alert>
       ) : null}
 
       {data?.ticket_pending_total ? (
-        <div className="alert alert-danger" role="alert">
-          <p className="mb-0">
-            有 {data.ticket_pending_total} 条工单等待处理{' '}
-            <a
-              className="alert-link"
-              ref={legacyHref('javascript:void(0)')}
+        <Alert variant="destructive" data-testid="dashboard-ticket-alert">
+          <AlertTriangle className="size-4" />
+          <AlertDescription className="flex flex-wrap items-center gap-1">
+            <span>有 {data.ticket_pending_total} 条工单等待处理</span>
+            <Button
+              variant="link"
+              className="h-auto p-0 text-sm text-destructive"
               onClick={() => navigate('/ticket')}
             >
               立即处理
-            </a>
-          </p>
-        </div>
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : null}
 
       {data?.commission_pending_total ? (
-        <div className="alert alert-danger" role="alert">
-          <p className="mb-0">
-            有 {data.commission_pending_total} 笔佣金等待确认{' '}
-            <a
-              className="alert-link"
-              ref={legacyHref('javascript:void(0)')}
+        <Alert variant="destructive" data-testid="dashboard-commission-alert">
+          <AlertTriangle className="size-4" />
+          <AlertDescription className="flex flex-wrap items-center gap-1">
+            <span>有 {data.commission_pending_total} 笔佣金等待确认</span>
+            <Button
+              variant="link"
+              className="h-auto p-0 text-sm text-destructive"
               onClick={goPendingCommissionOrders}
+              data-testid="dashboard-commission-action"
             >
               立即处理
-            </a>
-          </p>
-        </div>
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : null}
 
-      <div className="mb-0 block border-bottom js-classic-nav d-none d-sm-block">
-        <div className="block-content block-content-full">
-          <div className="row no-gutters border">
-            <div className="col-sm-6 col-xl-3 js-appear-enabled animated" data-toggle="appear">
-              <a
-                className="block block-bordered block-link-pop text-center mb-0"
-                onClick={() => navigate('/config/system')}
-              >
-                <div className="block-content block-content-full text-center">
-                  <i className="fa-2x si si-equalizer text-primary d-none d-sm-inline-block mb-3" />
-                  <div className="font-w600 text-uppercase">系统设置</div>
-                </div>
-              </a>
-            </div>
-            <div className="col-sm-6 col-xl-3 js-appear-enabled animated" data-toggle="appear">
-              <a
-                className="block block-bordered block-link-pop text-center mb-0"
-                onClick={() => navigate('/order')}
-              >
-                <div className="block-content block-content-full text-center">
-                  <i className="fa-2x si si-list text-primary d-none d-sm-inline-block mb-3" />
-                  <div className="font-w600 text-uppercase">订单管理</div>
-                </div>
-              </a>
-            </div>
-            <div className="col-sm-6 col-xl-3 js-appear-enabled animated" data-toggle="appear">
-              <a
-                className="block block-bordered block-link-pop text-center mb-0"
-                onClick={() => navigate('/plan')}
-              >
-                <div className="block-content block-content-full text-center">
-                  <i className="fa-2x si si-bag text-primary d-none d-sm-inline-block mb-3" />
-                  <div className="font-w600 text-uppercase">订阅管理</div>
-                </div>
-              </a>
-            </div>
-            <div className="col-sm-6 col-xl-3 js-appear-enabled animated" data-toggle="appear">
-              <a
-                className="block block-bordered block-link-pop text-center mb-0"
-                onClick={() => navigate('/user')}
-              >
-                <div className="block-content block-content-full text-center">
-                  <i className="fa-2x si si-users text-primary d-none d-sm-inline-block mb-3" />
-                  <div className="font-w600 text-uppercase">用户管理</div>
-                </div>
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="row no-gutters">
-        <div className="col-lg-12 js-appear-enabled animated" data-toggle="appear">
-          <div className="block border-bottom mb-0 v2board-stats-bar">
-            <div className="block-content">
-              <div className="d-flex align-items-center">
-                <div className="pr-4 pr-sm-5 pl-0 pl-sm-3 ">
-                  <i className="fa fa-users fa-2x text-gray-light float-right" />
-                  <div className="text-muted mb-1" style={{ width: '120px' }}>
-                    在线人数
-                  </div>
-                  <div className="display-4 text-black font-w300 mb-2">
-                    {data?.online_user ? data.online_user : '0'}
-                  </div>
-                </div>
-                <div className="pr-4 pr-sm-5 pl-0 pl-sm-3 ">
-                  <i className="fa fa-chart-line fa-2x text-gray-light float-right" />
-                  <p className="text-muted w-75 mb-1">今日收入</p>
-                  <p className="display-4 text-black font-w300 mb-2">
-                    {formatCent(data?.day_income)}
-                    <span className="font-size-h5 font-w600 text-muted">{currency}</span>
-                  </p>
-                </div>
-                <div className="pr-4 pr-sm-5 pl-0 pl-sm-3 ">
-                  <i className="fa fa-user fa-2x text-gray-light float-right" />
-                  <div className="text-muted mb-1" style={{ width: '120px' }}>
-                    实时注册
-                  </div>
-                  <div className="display-4 text-black font-w300 mb-2">
-                    {data?.day_register_total ? data.day_register_total : '0'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-lg-12 js-appear-enabled animated" data-toggle="appear">
-          <div
-            className="block border-bottom mb-0 v2board-stats-bar"
-            onScroll={(event) => console.log(event.currentTarget.scrollLeft)}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {SHORTCUTS.map((shortcut) => (
+          <button
+            key={shortcut.to}
+            type="button"
+            onClick={() => navigate(shortcut.to)}
+            className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card px-6 py-6 text-card-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
-            <div className="block-content block-content-full">
-              <div className="d-flex align-items-center">
-                <div className="pr-4 pr-sm-5 pl-0 pl-sm-3">
-                  <p className="fs-3 text-dark mb-0">
-                    {formatCent(data?.month_income)} {currency}
-                  </p>
-                  <p className="text-muted mb-0">本月收入</p>
-                </div>
-                <div className="px-4 px-sm-5 border-start">
-                  <p className="fs-3 text-dark mb-0">
-                    {formatCent(data?.last_month_income)} {currency}
-                  </p>
-                  <p className="text-muted mb-0">上月收入</p>
-                </div>
-                <div className="px-4 px-sm-5 border-start">
-                  <p className="fs-3 text-dark mb-0">
-                    {formatCent(data?.commission_last_month_payout)} {currency}
-                  </p>
-                  <p className="text-muted mb-0">上月佣金支出</p>
-                </div>
-                <div className="px-4 px-sm-5 border-start">
-                  <p className="fs-3 text-dark mb-0">{data?.month_register_total || '-'}</p>
-                  <p className="text-muted mb-0">本月新增用户</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-lg-12 js-appear-enabled animated" data-toggle="appear">
-          <div className="block border-bottom mb-0">
-            <div
-              className="px-sm-3 pt-sm-3 py-3 clearfix"
-              id="orderChart"
-              style={{ height: 400 }}
-              ref={orderChart}
-            />
-          </div>
-        </div>
-
-        <div className="row mt-xl-3">
-          <div className="col-lg-6 js-appear-enabled animated pr-xl-1" data-toggle="appear">
-            <div className="block border-bottom">
-              <div className="block-header block-header-default">
-                <h3 className="block-title">今日节点流量排行</h3>
-              </div>
-              <div className="block-content">
-                <div
-                  className="px-sm-3 pt-sm-3 py-3 clearfix"
-                  id="serverTodayRankChart"
-                  style={{ height: 400 }}
-                  ref={serverTodayRankChart}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="col-lg-6 js-appear-enabled animated" data-toggle="appear">
-            <div className="block border-bottom">
-              <div className="block-header block-header-default">
-                <h3 className="block-title">昨日节点流量排行</h3>
-              </div>
-              <div className="block-content">
-                <div
-                  className="px-sm-3 pt-sm-3 py-3 clearfix"
-                  id="serverLastRankChart"
-                  style={{ height: 400 }}
-                  ref={serverLastRankChart}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="col-lg-6 js-appear-enabled animated pr-xl-1" data-toggle="appear">
-            <div className="block border-bottom">
-              <div className="block-header block-header-default">
-                <h3 className="block-title">今日用户流量排行</h3>
-              </div>
-              <div className="block-content">
-                <div
-                  className="px-sm-3 pt-sm-3 py-3 clearfix"
-                  id="userTodayRankChart"
-                  style={{ height: 400 }}
-                  ref={userTodayRankChart}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="col-lg-6 js-appear-enabled animated" data-toggle="appear">
-            <div className="block border-bottom">
-              <div className="block-header block-header-default">
-                <h3 className="block-title">昨日用户流量排行</h3>
-              </div>
-              <div className="block-content">
-                <div
-                  className="px-sm-3 pt-sm-3 py-3 clearfix"
-                  id="userLastRankChart"
-                  style={{ height: 400 }}
-                  ref={userLastRankChart}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+            <shortcut.icon className="size-6 text-primary" />
+            <span className="text-sm font-medium">{shortcut.title}</span>
+          </button>
+        ))}
       </div>
-    </>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard icon={<Users className="size-5" />} label="在线人数" value={data?.online_user || '0'} />
+        <StatCard
+          icon={<TrendingUp className="size-5" />}
+          label="今日收入"
+          value={
+            <>
+              {formatCent(data?.day_income)}
+              <span className="ml-1 text-sm font-medium text-muted-foreground">{currency}</span>
+            </>
+          }
+        />
+        <StatCard
+          icon={<UserPlus className="size-5" />}
+          label="实时注册"
+          value={data?.day_register_total || '0'}
+        />
+      </div>
+
+      <Card>
+        <CardContent className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+          <MiniStat label="本月收入" value={`${formatCent(data?.month_income)} ${currency ?? ''}`} />
+          <MiniStat label="上月收入" value={`${formatCent(data?.last_month_income)} ${currency ?? ''}`} />
+          <MiniStat
+            label="上月佣金支出"
+            value={`${formatCent(data?.commission_last_month_payout)} ${currency ?? ''}`}
+          />
+          <MiniStat label="本月新增用户" value={data?.month_register_total || '-'} />
+        </CardContent>
+      </Card>
+
+      <Card className="overflow-hidden">
+        <CardHeader>
+          <CardTitle>订单统计</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <EChart option={orderOption} className="h-[360px] w-full" />
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        {rankCharts.map((chart) => (
+          <Card key={chart.title} className="overflow-hidden">
+            <CardHeader>
+              <CardTitle>{chart.title}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <EChart option={chart.option} className="h-[360px] w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+
+function StatCard({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
+  return (
+    <Card>
+      <CardContent className="flex items-start justify-between gap-3">
+        <div className="space-y-2">
+          <div className="text-sm text-muted-foreground">{label}</div>
+          <div className="text-3xl font-semibold tracking-tight text-foreground">{value}</div>
+        </div>
+        <div className="flex size-10 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          {icon}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-xl font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="text-sm text-muted-foreground">{label}</div>
+    </div>
   );
 }
