@@ -26,7 +26,7 @@ describe('admin Vite dev optimizer', () => {
       "cacheDir: '../../node_modules/.vite/admin-white-screen-recovery-37'",
     );
     expect(viteConfigSource).toContain('optimizeDeps: {');
-    expect(viteConfigSource).toContain('legacyNavigationRedirectPlugin()');
+    expect(viteConfigSource).toContain('legacyNavigationRedirectPlugin(');
     expect(viteConfigSource).toContain('legacyViteClientStubPlugin()');
     expect(viteConfigSource).toContain('rejectPackagedAdminAssetsPlugin()');
     expect(viteConfigSource).toContain('stripViteClientPlugin()');
@@ -43,7 +43,7 @@ describe('admin Vite dev optimizer', () => {
   it('disables Vite HMR so open legacy pages are not half-refreshed while clicking', () => {
     expect(sharedViteConfigSource).toContain('hmr: false');
     expect(sharedViteConfigSource).not.toContain('overlay: false');
-    expect(sharedViteConfigSource).toContain('export function legacyNavigationRedirectPlugin()');
+    expect(sharedViteConfigSource).toContain('export function legacyNavigationRedirectPlugin(');
     expect(sharedViteConfigSource).toContain('location: `/#${pathname}${url.search}`');
     expect(sharedViteConfigSource).toContain("'content-length': '0'");
     expect(sharedViteConfigSource).toContain('export function stripViteClientPlugin()');

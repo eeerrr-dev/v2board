@@ -1,49 +1,102 @@
-import { disable as disableDarkReader, enable as enableDarkReader } from 'darkreader';
+import { useSyncExternalStore } from 'react';
+import { getLegacyCookie, setLegacyCookie } from './legacy-cookie';
 
 const DARK_MODE_KEY = 'dark_mode';
-const LEGACY_DARK_READER_OPTIONS = {
-  brightness: 100,
-  contrast: 90,
-  sepia: 10,
-};
+const listeners = new Set<() => void>();
 
-export function isDarkModeEnabled(): boolean {
-  return getLegacyCookie(DARK_MODE_KEY) === '1';
+export type ThemePreference = 'system' | 'light' | 'dark';
+
+// The persisted preference. The frontend-only `dark_mode` cookie stays the single
+// storage key: 'dark' → '1' and 'light' → '0' keep the legacy binary values, and
+// 'system' (or an absent/unknown cookie) means "follow the OS". Reading tolerates
+// both the words and the legacy 1/0 so existing users, the store, and the
+// pre-paint script in index.html / dashboard.blade.php all agree.
+export function readThemePreference(): ThemePreference {
+  const raw = getLegacyCookie(DARK_MODE_KEY);
+  if (raw === '1' || raw === 'dark') return 'dark';
+  if (raw === '0' || raw === 'light') return 'light';
+  return 'system';
 }
 
-export function applyDarkMode(enabled = isDarkModeEnabled()): void {
-  if (enabled) {
-    enableDarkReader(LEGACY_DARK_READER_OPTIONS);
-  } else {
-    disableDarkReader();
-  }
+// Whether the OS currently asks for a dark UI. Guarded so SSR / a jsdom without
+// matchMedia degrade to light instead of throwing.
+export function systemPrefersDark(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+// The concrete theme for a preference: an explicit choice wins, 'system' defers
+// to the OS.
+export function resolveDarkMode(preference: ThemePreference = readThemePreference()): boolean {
+  if (preference === 'dark') return true;
+  if (preference === 'light') return false;
+  return systemPrefersDark();
+}
+
+// The applied theme = whether the `.dark` class is really on <html>. Subscribers
+// (the trigger icon, the toaster) read this, so they always reflect what is on
+// screen and can never get stuck on a stale cookie snapshot.
+export function isDarkModeApplied(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.documentElement.classList.contains('dark');
+}
+
+export function applyDarkMode(enabled = resolveDarkMode()): void {
+  document.documentElement.classList.toggle('dark', enabled);
+  document.documentElement.style.colorScheme = enabled ? 'dark' : 'light';
+}
+
+// React to OS theme changes while the preference is 'system' — the whole point
+// of the "system" option is that the site tracks the OS live. One shared handler
+// re-applies the class and notifies every subscriber; explicit light/dark ignore
+// the OS.
+function handleSystemThemeChange(): void {
+  if (readThemePreference() !== 'system') return;
+  applyDarkMode(resolveDarkMode('system'));
+  listeners.forEach((listener) => listener());
 }
 
 export function applyInitialDarkMode(): void {
-  if (isDarkModeEnabled()) {
-    applyDarkMode(true);
+  applyDarkMode(resolveDarkMode());
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    window
+      .matchMedia('(prefers-color-scheme: dark)')
+      .addEventListener('change', handleSystemThemeChange);
   }
 }
 
+// Persist a preference and apply it immediately. 'system' re-defers to the OS.
+export function setThemePreference(preference: ThemePreference): void {
+  applyDarkMode(resolveDarkMode(preference));
+  setLegacyCookie(
+    DARK_MODE_KEY,
+    preference === 'dark' ? '1' : preference === 'light' ? '0' : 'system',
+  );
+  listeners.forEach((listener) => listener());
+}
+
+export function subscribeDarkMode(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function useDarkMode(): boolean {
+  return useSyncExternalStore(subscribeDarkMode, isDarkModeApplied, isDarkModeApplied);
+}
+
+export function useThemePreference(): ThemePreference {
+  return useSyncExternalStore(subscribeDarkMode, readThemePreference, readThemePreference);
+}
+
+// Transitional compatibility shims for the still-legacy AdminLayout, written
+// against the darkreader-era boolean API. Removed once the shell is rewritten as
+// a shadcn island onto the token API above.
+export function isDarkModeEnabled(): boolean {
+  return isDarkModeApplied();
+}
+
 export function setDarkMode(enabled: boolean): void {
-  applyDarkMode(enabled);
-  setLegacyCookie(DARK_MODE_KEY, enabled ? 1 : 0);
-}
-
-function getLegacyCookie(name: string): string {
-  if (typeof document === 'undefined') return '';
-  return document.cookie.split('; ').reduce((value, item) => {
-    const [key, raw] = item.split('=');
-    if (key !== name || raw === undefined) return value;
-    try {
-      return decodeURIComponent(raw);
-    } catch {
-      return value;
-    }
-  }, '');
-}
-
-function setLegacyCookie(name: string, value: string | number, minutes = 525600): void {
-  const expires = new Date(Date.now() + minutes * 60_000).toUTCString();
-  document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires};path=/`;
+  setThemePreference(enabled ? 'dark' : 'light');
 }

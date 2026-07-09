@@ -1,154 +1,178 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { LogIn } from 'lucide-react';
 import { passport, user } from '@v2board/api-client';
 import { apiClient } from '@/lib/api';
 import { getAuthData, setAuthData } from '@/lib/auth';
 import { getAdminBackgroundUrl, getAdminLogo, getAdminTitle } from '@/lib/legacy-settings';
-import { legacyHref } from '@/lib/legacy-href';
-import { LegacyLoadingIcon } from '@/components/legacy-ant-icon';
-import { legacyInfo } from '@/components/legacy-confirm';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/shadcn-dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+
+const loginSchema = z.object({
+  email: z.string().trim().min(1, '请输入邮箱'),
+  password: z.string().min(1, '请输入密码'),
+});
+
+type LoginValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const [submitting, setSubmitting] = useState(false);
-  const emailRef = useRef<HTMLInputElement | null>(null);
-  const passwordRef = useRef<HTMLInputElement | null>(null);
+  const [forgotOpen, setForgotOpen] = useState(false);
   const logo = getAdminLogo();
   const title = getAdminTitle();
   const backgroundUrl = getAdminBackgroundUrl();
-  const legacyBackgroundImage = (backgroundUrl && `url(${backgroundUrl})`) as string;
-  const redirectParam = params.get('redirect');
-  const redirect = redirectParam || 'dashboard';
+  const redirect = params.get('redirect') || 'dashboard';
+  const form = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: '', password: '' },
+  });
 
-  const onLogin = useCallback(async () => {
-    setSubmitting(true);
+  const submit = form.handleSubmit(async ({ email, password }) => {
     try {
-      const result = await passport.login(apiClient, {
-        email: emailRef.current!.value,
-        password: passwordRef.current!.value,
-      });
-      setSubmitting(false);
+      const result = await passport.login(apiClient, { email, password });
       setAuthData(result.auth_data);
-      if (!result.is_admin) {
-        return;
-      }
+      // A non-admin login stays on this screen (the backend error is surfaced by
+      // the global onError handler); only an admin session enters the console.
+      if (!result.is_admin) return;
       navigate('/dashboard');
       void user.info(apiClient).catch(() => undefined);
     } catch {
       // Login failures are surfaced by the global onError handler (legacy parity).
-      setSubmitting(false);
     }
-  }, [navigate]);
+  });
 
   useEffect(() => {
-    if (getAuthData()) {
-      user
-        .checkLogin(apiClient)
-        .then((result) => {
-          if (result.is_admin) {
-            void user.info(apiClient).catch(() => undefined);
-            navigate(redirect);
-          }
-        })
-        .catch(() => undefined);
-    }
+    // An existing admin session skips the form and resumes at the redirect target.
+    if (!getAuthData()) return;
+    user
+      .checkLogin(apiClient)
+      .then((result) => {
+        if (result.is_admin) {
+          void user.info(apiClient).catch(() => undefined);
+          navigate(redirect);
+        }
+      })
+      .catch(() => undefined);
   }, [navigate, redirect]);
 
-  useEffect(() => {
-    const keyDown = (event: KeyboardEvent) => {
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- behavior-parity: deprecated API mirrors the legacy frontend (AGENTS.md)
-      if (event.keyCode === 13) void onLogin();
-    };
-    window.addEventListener('keydown', keyDown, false);
-    return () => window.removeEventListener('keydown', keyDown, false);
-  }, [onLogin]);
-
   return (
-    <div id="page-container">
-      <main id="main-container">
-        <div className="v2board-background" style={{ backgroundImage: legacyBackgroundImage }} />
-        <div className="no-gutters v2board-auth-box">
-          <div className="" style={{ maxWidth: 450, width: '100%', margin: 'auto' }}>
-            <div className="mx-2 mx-sm-0">
-              <div
-                className="block block-rounded block-transparent block-fx-pop w-100 mb-0 overflow-hidden bg-image"
-                style={{ boxShadow: '0 0.5rem 2rem #0000000d' }}
+    <div className="v2board-island relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
+      {backgroundUrl ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `url(${backgroundUrl})` }}
+        />
+      ) : null}
+      <Card className="relative w-full max-w-sm shadow-lg" data-testid="admin-login-card">
+        <CardHeader className="items-center gap-2 text-center">
+          {logo ? (
+            <img src={logo} alt={title || 'V2Board'} className="h-10 object-contain" />
+          ) : (
+            <CardTitle className="text-2xl">{title || 'V2Board'}</CardTitle>
+          )}
+          <CardDescription>登录到管理中心</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Form {...form}>
+            <form className="grid gap-4" onSubmit={submit} noValidate>
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>邮箱</FormLabel>
+                    <FormControl>
+                      <Input type="email" autoComplete="username" placeholder="邮箱" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>密码</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        autoComplete="current-password"
+                        placeholder="密码"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button
+                type="submit"
+                block
+                loading={form.formState.isSubmitting}
+                data-testid="admin-login-submit"
               >
-                <div className="row no-gutters">
-                  <div className="col-md-12 order-md-1 bg-white">
-                    <div className="block-content block-content-full px-lg-4 py-md-4 py-lg-4">
-                      <div className="mb-3 text-center">
-                        <a className="font-size-h1" ref={legacyHref()}>
-                          {logo ? (
-                            <img className="v2board-logo mb-3" src={logo} />
-                          ) : (
-                            <span className="text-dark">{title || 'V2Board'}</span>
-                          )}
-                        </a>
-                        <p className="font-size-sm text-muted mb-3">登录到管理中心</p>
-                      </div>
-                      <div className="form-group">
-                        <input
-                          type="text"
-                          className="form-control form-control-alt"
-                          placeholder="邮箱"
-                          ref={emailRef}
-                        />
-                      </div>
-                      <div className="form-group">
-                        <input
-                          type="password"
-                          className="form-control form-control-alt"
-                          placeholder="密码"
-                          ref={passwordRef}
-                        />
-                      </div>
-                      <div className="form-group mb-0">
-                        <button
-                          disabled={submitting}
-                          type="submit"
-                          className="btn btn-block btn-primary font-w400"
-                          onClick={() => void onLogin()}
-                        >
-                          {submitting ? (
-                            <LegacyLoadingIcon />
-                          ) : (
-                            <span>
-                              <i className="si si-login mr-1" />
-                              登入
-                            </span>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="text-center bg-gray-lighter p-3 px-4">
-                  <a
-                    onClick={() => {
-                      void legacyInfo({
-                        title: '忘记密码',
-                        content: (
-                          <div>
-                            <div>在站点目录下执行命令找回密码</div>
-                            <code>php artisan reset:password 管理员邮箱</code>
-                          </div>
-                        ),
-                        centered: true,
-                        okText: '我知道了',
-                        onOk() {},
-                      });
-                    }}
-                  >
-                    忘记密码
-                  </a>
-                </div>
-              </div>
-            </div>
+                <LogIn className="size-4" />
+                登入
+              </Button>
+            </form>
+          </Form>
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              onClick={() => setForgotOpen(true)}
+            >
+              忘记密码
+            </button>
           </div>
-        </div>
-      </main>
+        </CardContent>
+      </Card>
+
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="sm:max-w-md" data-testid="admin-forgot-dialog">
+          <DialogHeader>
+            <DialogTitle>忘记密码</DialogTitle>
+            <DialogDescription>在站点目录下执行命令找回密码</DialogDescription>
+          </DialogHeader>
+          <code className="block rounded-md bg-muted px-3 py-2 font-mono text-sm text-foreground">
+            php artisan reset:password 管理员邮箱
+          </code>
+          <DialogFooter>
+            <Button type="button" onClick={() => setForgotOpen(false)}>
+              我知道了
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

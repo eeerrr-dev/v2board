@@ -1,63 +1,145 @@
-import { disable as disableDarkReader, enable as enableDarkReader } from 'darkreader';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyInitialDarkMode, isDarkModeEnabled, setDarkMode } from './dark-mode';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  applyInitialDarkMode,
+  isDarkModeApplied,
+  readThemePreference,
+  resolveDarkMode,
+  setThemePreference,
+} from './dark-mode';
 
-vi.mock('darkreader', () => ({
-  disable: vi.fn(),
-  enable: vi.fn(),
-}));
+// A controllable `(prefers-color-scheme: dark)` stub — jsdom ships no matchMedia,
+// so tests that exercise the system preference install one and can flip it live.
+function mockMatchMedia(dark: boolean) {
+  const changeListeners = new Set<() => void>();
+  const mql = {
+    matches: dark,
+    media: '(prefers-color-scheme: dark)',
+    addEventListener: (_type: string, listener: () => void) => changeListeners.add(listener),
+    removeEventListener: (_type: string, listener: () => void) => changeListeners.delete(listener),
+    dispatch(next: boolean) {
+      mql.matches = next;
+      changeListeners.forEach((listener) => listener());
+    },
+  };
+  vi.stubGlobal('matchMedia', () => mql);
+  return mql;
+}
 
-const disableDarkReaderMock = vi.mocked(disableDarkReader);
-const enableDarkReaderMock = vi.mocked(enableDarkReader);
-
-describe('admin dark mode legacy behavior', () => {
+describe('dark mode preference store', () => {
   beforeEach(() => {
     document.cookie = 'dark_mode=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     document.documentElement.className = '';
-    window.localStorage.clear();
-    disableDarkReaderMock.mockClear();
-    enableDarkReaderMock.mockClear();
+    document.documentElement.style.colorScheme = '';
   });
 
-  it('reads dark mode from the original cookie key', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('reads the tri-state preference, tolerating the legacy 1/0 values', () => {
     document.cookie = 'dark_mode=1;path=/';
-    window.localStorage.setItem('dark_mode', '0');
-
-    expect(isDarkModeEnabled()).toBe(true);
+    expect(readThemePreference()).toBe('dark');
+    document.cookie = 'dark_mode=0;path=/';
+    expect(readThemePreference()).toBe('light');
+    document.cookie = 'dark_mode=dark;path=/';
+    expect(readThemePreference()).toBe('dark');
+    document.cookie = 'dark_mode=system;path=/';
+    expect(readThemePreference()).toBe('system');
   });
 
-  it('ignores malformed legacy dark mode cookie encoding during startup', () => {
-    document.cookie = 'dark_mode=%E0%A4%A;path=/';
-
-    expect(isDarkModeEnabled()).toBe(false);
-    expect(() => applyInitialDarkMode()).not.toThrow();
-    expect(document.documentElement.classList.contains('v2board-dark-mode')).toBe(false);
-    expect(enableDarkReaderMock).not.toHaveBeenCalled();
+  it('defaults to following the system when no cookie is set', () => {
+    expect(readThemePreference()).toBe('system');
   });
 
-  it('enables DarkReader with the original options and writes the legacy cookie', () => {
-    setDarkMode(true);
+  it('resolves system to the OS preference and lets explicit choices override it', () => {
+    mockMatchMedia(true);
+    expect(resolveDarkMode('system')).toBe(true);
+    expect(resolveDarkMode('light')).toBe(false);
+    mockMatchMedia(false);
+    expect(resolveDarkMode('system')).toBe(false);
+    expect(resolveDarkMode('dark')).toBe(true);
+  });
+
+  it('reports the applied theme from the live class, not the cookie', () => {
+    // The trigger icon and the toaster read this, so they must track the rendered
+    // `.dark` class rather than the cookie. When the two drift (another tab, or a
+    // stale legacy cookie at a different path) the UI still reflects what is on
+    // screen instead of getting stuck.
+    document.documentElement.classList.add('dark');
+    document.cookie = 'dark_mode=0;path=/';
+    expect(isDarkModeApplied()).toBe(true);
+
+    document.documentElement.classList.remove('dark');
+    document.cookie = 'dark_mode=1;path=/';
+    expect(isDarkModeApplied()).toBe(false);
+  });
+
+  it('persists an explicit dark choice as the legacy 1 and applies the class', () => {
+    setThemePreference('dark');
 
     expect(document.cookie).toContain('dark_mode=1');
-    expect(window.localStorage.getItem('dark_mode')).toBeNull();
-    expect(enableDarkReaderMock).toHaveBeenCalledWith({ brightness: 100, contrast: 90, sepia: 10 });
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.style.colorScheme).toBe('dark');
   });
 
-  it('disables DarkReader and keeps the original cookie key', () => {
-    setDarkMode(false);
+  it('persists an explicit light choice as the legacy 0 and clears the class', () => {
+    document.documentElement.classList.add('dark');
+    document.documentElement.style.colorScheme = 'dark';
+
+    setThemePreference('light');
 
     expect(document.cookie).toContain('dark_mode=0');
-    expect(disableDarkReaderMock).toHaveBeenCalledOnce();
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe('light');
   });
 
-  it('matches legacy startup by only applying DarkReader when the cookie is set', () => {
-    applyInitialDarkMode();
-    expect(enableDarkReaderMock).not.toHaveBeenCalled();
-    expect(disableDarkReaderMock).not.toHaveBeenCalled();
+  it('persists system and re-defers to the OS preference', () => {
+    mockMatchMedia(true);
 
-    document.cookie = 'dark_mode=1;path=/';
+    setThemePreference('system');
+
+    expect(document.cookie).toContain('dark_mode=system');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.style.colorScheme).toBe('dark');
+  });
+
+  it('applies the OS preference on startup when following the system', () => {
+    mockMatchMedia(true);
+
     applyInitialDarkMode();
-    expect(enableDarkReaderMock).toHaveBeenCalledWith({ brightness: 100, contrast: 90, sepia: 10 });
-    expect(disableDarkReaderMock).not.toHaveBeenCalled();
+
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.style.colorScheme).toBe('dark');
+  });
+
+  it('tracks live OS changes while following the system', () => {
+    const media = mockMatchMedia(false);
+    applyInitialDarkMode();
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+    media.dispatch(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.style.colorScheme).toBe('dark');
+
+    media.dispatch(false);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+
+  it('ignores live OS changes once an explicit choice is made', () => {
+    const media = mockMatchMedia(false);
+    applyInitialDarkMode();
+
+    setThemePreference('light');
+    media.dispatch(true);
+
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+
+  it('treats a malformed cookie as system and stays light without matchMedia', () => {
+    document.cookie = 'dark_mode=%E0%A4%A;path=/';
+
+    expect(() => applyInitialDarkMode()).not.toThrow();
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe('light');
   });
 });

@@ -1,15 +1,21 @@
-import { act } from 'react';
-import { readFileSync } from 'node:fs';
-import { enable as enableDarkReader } from 'darkreader';
-import { createRoot, type Root } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { user } from '@v2board/api-client';
 import { AdminLayout } from './admin-layout';
 
+// The admin shell is a redesigned shadcn island (SidebarProvider + token
+// dark-mode) replacing the OneUI/Bootstrap replica. The legacy byte-pins
+// (#sidebar OneUI classes, darkreader, the header search overlay, avatar
+// document-click, dead loading/search/title props) are retired. What stays
+// covered is behavior: navigation targets, the user.info/email fetch, active +
+// title routing, logout, scroll-to-top, and the dark-mode toggle outcome.
+
 const mocks = vi.hoisted(() => ({
-  location: { pathname: '/dashboard' },
+  location: { pathname: '/dashboard' } as { pathname: string },
   navigate: vi.fn(),
+  logout: vi.fn(),
 }));
 
 vi.mock('react-router', () => ({
@@ -18,388 +24,110 @@ vi.mock('react-router', () => ({
   useNavigate: () => mocks.navigate,
 }));
 
-vi.mock('@v2board/api-client', () => ({
-  user: { info: vi.fn() },
-}));
+vi.mock('@v2board/api-client', () => ({ user: { info: vi.fn() } }));
+vi.mock('@/lib/api', () => ({ apiClient: {} }));
+vi.mock('@/lib/auth', () => ({ logout: mocks.logout }));
 
-vi.mock('@/lib/api', () => ({
-  apiClient: {},
-}));
-
-vi.mock('darkreader', () => ({
-  disable: vi.fn(),
-  enable: vi.fn(),
-}));
-
-const enableDarkReaderMock = vi.mocked(enableDarkReader);
-
-(
-  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
-
-function installLocalStorageStub() {
-  const store = new Map<string, string>();
-  const storage = {
-    clear: () => store.clear(),
-    getItem: (key: string) => store.get(key) ?? null,
-    removeItem: (key: string) => {
-      store.delete(key);
-    },
-    setItem: (key: string, value: string) => {
-      store.set(key, value);
-    },
-  };
-  Object.defineProperty(window, 'localStorage', {
-    configurable: true,
-    value: storage,
-  });
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: storage,
-  });
+function renderShell() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <AdminLayout />
+    </QueryClientProvider>,
+  );
 }
 
-function resetAdminLayoutMocks() {
-  installLocalStorageStub();
-  mocks.location = { pathname: '/dashboard' };
-  mocks.navigate.mockReset();
-  vi.mocked(user.info).mockReset();
-  vi.mocked(user.info).mockResolvedValue({ email: 'admin@example.com' } as Awaited<
-    ReturnType<typeof user.info>
-  >);
-  window.localStorage.clear();
-  document.cookie = 'dark_mode=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
-  document.documentElement.className = '';
-  enableDarkReaderMock.mockClear();
-  const scrollTo = vi.fn();
-  Object.defineProperty(window, 'scrollTo', {
-    configurable: true,
-    value: scrollTo,
-  });
-  window.settings = {
-    title: 'V2Board',
-    theme: { sidebar: 'dark', header: 'dark', color: 'default' },
-    secure_path: 'admin',
-  };
-  return scrollTo;
-}
-
-describe('AdminLayout legacy shell', () => {
+describe('AdminLayout', () => {
   beforeEach(() => {
-    resetAdminLayoutMocks();
-  });
-
-  it('renders the original OneUI admin layout shell', () => {
-    const html = renderToStaticMarkup(<AdminLayout />);
-
-    expect(html).toContain('id="page-container"');
-    expect(html).toContain('sidebar-o sidebar-dark page-header-dark');
-    expect(html).toContain('class="v2board-nav-mask"');
-    expect(html).toContain('id="sidebar"');
-    expect(html).toContain('class="content-side content-side-full"');
-    expect(html).toContain('id="page-header"');
-    expect(html).toContain('id="main-container"');
-    expect(html).toContain('class="p-0 p-lg-4"');
-    expect(html).toContain('V2Board v1.7.5');
-  });
-
-  it('renders the bundled loading main container when loading is passed', () => {
-    const html = renderToStaticMarkup(<AdminLayout loading />);
-
-    expect(html).toContain('id="main-container"');
-    expect(html).toContain('class="content content-full text-center pt-5"');
-    expect(html).toContain('class="spinner-grow text-primary"');
-    expect(html).toContain('role="status"');
-    expect(html).toContain('class="sr-only"');
-    expect(html).toContain('Loading...');
-    expect(html).not.toContain('class="p-0 p-lg-4"');
-    expect(html).not.toContain('data-outlet="true"');
-  });
-
-  it('renders the legacy admin navigation labels and icons', () => {
-    const html = renderToStaticMarkup(<AdminLayout />);
-
-    expect(html).toContain('系统配置');
-    expect(html).toContain('支付配置');
-    expect(html).toContain('节点管理');
-    expect(html).toContain('礼品卡管理');
-    expect(html).toContain('队列监控');
-    expect(html).toContain('nav-main-link-icon si si-speedometer');
-    expect(html).toContain('nav-main-link active');
-    expect(html).not.toContain('href="/#/dashboard"');
-    expect(html).not.toContain('href="/#/server/manage"');
-  });
-
-  it('uses stable admin sidebar keys without changing the legacy navigation markup', () => {
-    const source = readFileSync(`${process.cwd()}/src/components/layout/admin-layout.tsx`, 'utf8');
-
-    expect(source).toContain(
-      '<li key={`heading-${item.title}-${index}`} className="nav-main-heading">',
-    );
-    expect(source).toContain('<li key={item.href ?? item.title} className="nav-main-item">');
-    expect(source).toContain(
-      "className={`dropdown-menu dropdown-menu-right dropdown-menu-lg p-0 ${showAvatarMenu && 'show'}`}",
-    );
-    expect(source).toContain('<a className="link-fx font-size-lg text-white" href="/">');
-    expect(source).not.toContain('handleHomeClick');
-    expect(source).not.toContain('onClick={handleHomeClick}');
-    expect(source).toContain('document.onclick = function legacyAvatarMenuDocumentClick()');
-    expect(source).toContain(
-      "document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];",
-    );
-    expect(source).not.toContain("document.addEventListener('click'");
-    expect(source).not.toContain("document.removeEventListener('click'");
-    expect(source).not.toContain('key={Math.random()} className="nav-main-heading"');
-    expect(source).not.toContain('key={Math.random()} className="nav-main-item"');
-  });
-});
-
-describe('AdminLayout legacy dark mode behavior', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-  let scrollTo: ReturnType<typeof vi.fn>;
-
-  beforeEach(() => {
-    scrollTo = resetAdminLayoutMocks();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
+    mocks.location = { pathname: '/dashboard' };
+    mocks.navigate.mockReset();
+    mocks.logout.mockReset();
+    vi.mocked(user.info).mockReset();
+    vi.mocked(user.info).mockResolvedValue({ email: 'admin@example.com' } as Awaited<
+      ReturnType<typeof user.info>
+    >);
+    localStorage.clear();
+    document.cookie = 'dark_mode=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    document.documentElement.className = '';
+    window.settings = { title: 'V2Board', secure_path: 'admin' };
+    Object.defineProperty(window, 'scrollTo', { configurable: true, value: vi.fn() });
   });
 
   afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
+    window.settings = undefined;
+    document.documentElement.className = '';
   });
 
-  async function renderLayout() {
-    await act(async () => {
-      root.render(<AdminLayout />);
-      await Promise.resolve();
-    });
-  }
+  it('renders the grouped admin navigation without any legacy OneUI shell markup', () => {
+    renderShell();
 
-  it('scrolls to top on mount and toggles the mobile sidebar mask like the old layout', async () => {
-    await renderLayout();
-
-    expect(scrollTo).toHaveBeenCalledWith(0, 0);
-    const page = container.querySelector('#page-container')!;
-    const toggle = container.querySelector<HTMLButtonElement>('.sidebar-toggle button')!;
-
-    await act(async () => {
-      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(page.className).toContain('sidebar-o-xs');
-    expect((container.querySelector('.v2board-nav-mask') as HTMLElement).style.display).toBe(
-      'block',
-    );
-
-    await act(async () => {
-      container
-        .querySelector('.v2board-nav-mask')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(page.className).not.toContain('sidebar-o-xs');
-    expect((container.querySelector('.v2board-nav-mask') as HTMLElement).style.display).toBe(
-      'none',
-    );
+    for (const label of ['系统配置', '支付配置', '节点管理', '礼品卡管理', '队列监控', '知识库管理']) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    expect(document.querySelector('.nav-main-link')).toBeNull();
+    expect(document.querySelector('.content-side')).toBeNull();
+    expect(document.querySelector('i.si')).toBeNull();
+    expect(document.body.innerHTML).not.toContain('v1.7.5');
   });
 
-  it('does not scroll again when the route changes without remounting', async () => {
-    await renderLayout();
-    scrollTo.mockClear();
-
-    mocks.location = { pathname: '/order' };
-    await act(async () => {
-      root.render(<AdminLayout />);
-      await Promise.resolve();
-    });
-
-    expect(scrollTo).not.toHaveBeenCalled();
-  });
-
-  it('requests user info on mount even without a local authorization token', async () => {
-    expect(window.localStorage.getItem('authorization')).toBeNull();
-
-    await renderLayout();
-
-    expect(user.info).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('#page-header-user-dropdown')!.textContent).toContain(
-      'admin@example.com',
-    );
-  });
-
-  it('navigates with sidebar links and closes the mobile sidebar after navigation', async () => {
-    await renderLayout();
-
-    const toggle = container.querySelector<HTMLButtonElement>('.sidebar-toggle button')!;
-    await act(async () => {
-      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    const nodeManage = Array.from(container.querySelectorAll('.nav-main-link')).find(
-      (link) => link.textContent === '节点管理',
-    )!;
-    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
-    await act(async () => {
-      nodeManage.dispatchEvent(click);
-      await Promise.resolve();
-    });
-
-    expect((nodeManage as HTMLAnchorElement).getAttribute('href')).toBeNull();
-    expect(click.defaultPrevented).toBe(false);
-    expect(mocks.navigate).toHaveBeenCalledWith('/server/manage');
-    expect(container.querySelector('#page-container')!.className).not.toContain('sidebar-o-xs');
-  });
-
-  it('keeps the legacy brand as a plain href without client-side interception', async () => {
-    await renderLayout();
-
-    const brand = container.querySelector<HTMLAnchorElement>(
-      '#sidebar .content-header > a.link-fx',
-    )!;
-    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
-
-    await act(async () => {
-      brand.dispatchEvent(click);
-      await Promise.resolve();
-    });
-
-    expect(brand.getAttribute('href')).toBe('/');
-    expect(click.defaultPrevented).toBe(false);
-    expect(mocks.navigate).not.toHaveBeenCalled();
-  });
-
-  it('renders and controls the bundled header search overlay when search props are passed', async () => {
-    const onChange = vi.fn();
-    await act(async () => {
-      root.render(
-        <AdminLayout
-          search={{
-            placeholder: '输入任意关键字搜索',
-            defaultValue: 'node',
-            onChange,
-          }}
-        />,
-      );
-      await Promise.resolve();
-    });
-
-    const sidebarToggle = container.querySelector<HTMLElement>('.sidebar-toggle')!;
-    expect(sidebarToggle.style.display).toBe('block');
-    expect(container.innerHTML).toContain('overlay-header bg-dark ');
-
-    const searchButton = Array.from(
-      sidebarToggle.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((button) => button.textContent?.includes('搜索'))!;
-
-    await act(async () => {
-      searchButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('.overlay-header')!.className).toContain('show');
-    const input = container.querySelector<HTMLInputElement>('.overlay-header input')!;
-    expect(input.defaultValue).toBe('node');
-    expect(input.placeholder).toBe('输入任意关键字搜索');
-
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        input,
-        'trojan',
-      );
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(onChange).toHaveBeenCalledWith('trojan');
-
-    const closeButton = container.querySelector<HTMLButtonElement>('.overlay-header .btn-dark')!;
-    await act(async () => {
-      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('.overlay-header')!.className).not.toContain('show');
-  });
-
-  it('only titles legacy route paths and does not support removed alias paths', async () => {
+  it('marks the active route and titles the header from the route', () => {
     mocks.location = { pathname: '/user' };
-    await renderLayout();
+    renderShell();
 
-    expect(container.querySelector('.v2board-container-title')!.textContent).toBe('用户管理');
+    expect(screen.getByRole('button', { name: '用户管理' })).toHaveAttribute('data-active', 'true');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('用户管理');
+  });
 
+  it('leaves the header title empty for a non-legacy route path', () => {
     mocks.location = { pathname: '/users' };
-    await act(async () => {
-      root.render(<AdminLayout />);
-      await Promise.resolve();
-    });
+    renderShell();
 
-    expect(container.querySelector('.v2board-container-title')!.textContent).toBe('');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('');
   });
 
-  it('prefers the bundled layout title prop over the route title', async () => {
-    await act(async () => {
-      root.render(<AdminLayout title="自定义标题" />);
-      await Promise.resolve();
-    });
+  it('navigates to the target route from a sidebar item', async () => {
+    const u = userEvent.setup();
+    renderShell();
 
-    expect(container.querySelector('.v2board-container-title')!.textContent).toBe('自定义标题');
+    await u.click(screen.getByRole('button', { name: '节点管理' }));
+    expect(mocks.navigate).toHaveBeenCalledWith('/server/manage');
   });
 
-  it('closes the avatar menu on the next document click like the old layout', async () => {
-    await renderLayout();
+  it('requests user info on mount and shows the email in the account footer', async () => {
+    renderShell();
 
-    const userButton = container.querySelector<HTMLButtonElement>('#page-header-user-dropdown')!;
-
-    await act(async () => {
-      userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('.dropdown-menu')!.className).toContain('show');
-    expect(document.onclick).toBeTypeOf('function');
-
-    await act(async () => {
-      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('.dropdown-menu')!.className).not.toContain('show');
-    expect(document.onclick).toBeNull();
+    await waitFor(() => expect(user.info).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByTestId('admin-avatar-trigger').textContent).toContain(
+        'admin@example.com',
+      ),
+    );
   });
 
-  it('toggles the original dark_mode cookie and header icon from the old admin button', async () => {
-    await renderLayout();
+  it('scrolls to the top on mount', () => {
+    renderShell();
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+  });
 
-    const darkButton = container.querySelector<HTMLButtonElement>('#page-header .dropdown button')!;
-    expect(darkButton.innerHTML).toContain('fa-sun');
+  it('logs out and returns to the login route from the account menu', async () => {
+    const u = userEvent.setup();
+    renderShell();
 
-    await act(async () => {
-      darkButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
+    await u.click(screen.getByTestId('admin-avatar-trigger'));
+    await u.click(await screen.findByTestId('admin-logout'));
 
+    expect(mocks.logout).toHaveBeenCalledTimes(1);
+    expect(mocks.navigate).toHaveBeenCalledWith('/login');
+  });
+
+  it('applies dark mode through the token theme menu instead of darkreader', async () => {
+    const u = userEvent.setup();
+    renderShell();
+
+    await u.click(screen.getByRole('button', { name: '切换主题' }));
+    await u.click(await screen.findByText('深色'));
+
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
     expect(document.cookie).toContain('dark_mode=1');
-    expect(window.localStorage.getItem('dark_mode')).toBeNull();
-    expect(enableDarkReaderMock).toHaveBeenCalledWith({ brightness: 100, contrast: 90, sepia: 10 });
-    expect(darkButton.innerHTML).toContain('fa-moon');
-  });
-
-  it('renders the original dark mode cookie state without owning global startup', async () => {
-    document.cookie = 'dark_mode=1;path=/';
-
-    await renderLayout();
-
-    expect(enableDarkReaderMock).not.toHaveBeenCalled();
-    expect(
-      container.querySelector<HTMLButtonElement>('#page-header .dropdown button')!.innerHTML,
-    ).toContain('fa-moon');
   });
 });

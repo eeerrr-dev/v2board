@@ -7,7 +7,8 @@ export default defineConfig({
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
   test: {
     environment: 'happy-dom',
+    globals: false,
     include: ['src/**/*.test.{ts,tsx}'],
-    setupFiles: ['src/test/setup-local-storage.ts'],
+    setupFiles: ['src/test/setup-local-storage.ts', 'src/test/setup-testing-library.ts'],
   },
 });

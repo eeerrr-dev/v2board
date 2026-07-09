@@ -1,334 +1,297 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useState, type ComponentType, type SVGProps } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
 import { user } from '@v2board/api-client';
 import { getLegacyLocaleClassName, legacyGetLocale } from '@v2board/i18n';
+import {
+  BarChart3,
+  BookOpen,
+  CreditCard,
+  Gauge,
+  Gift,
+  Layers,
+  List,
+  MessageSquare,
+  Monitor,
+  Moon,
+  Route as RouteIcon,
+  ShoppingBag,
+  SlidersHorizontal,
+  Star,
+  Sun,
+  Ticket,
+  Users,
+  Wand2,
+  Wrench,
+} from 'lucide-react';
 import { apiClient } from '@/lib/api';
-import { logout } from '@/lib/auth';
-import { isDarkModeEnabled, setDarkMode } from '@/lib/dark-mode';
-import { legacyHref } from '@/lib/legacy-href';
+import { cn } from '@/lib/cn';
+import { getLegacyCookie } from '@/lib/legacy-cookie';
+import {
+  setThemePreference,
+  useDarkMode,
+  useThemePreference,
+  type ThemePreference,
+} from '@/lib/dark-mode';
 import { RouteBoundaryOutlet } from '@/components/route-error-boundary';
+import { AdminNavUser } from './admin-nav-user';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Separator } from '@/components/ui/separator';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from '@/components/ui/sidebar';
 
-interface LegacyNavItem {
+type ShellIcon = ComponentType<SVGProps<SVGSVGElement>>;
+
+interface NavItem {
+  to: string;
   title: string;
-  type: 'heading' | 'item';
-  href?: string;
-  icon?: string;
+  icon: ShellIcon;
 }
 
-interface LegacyLayoutSearch {
-  placeholder?: string;
-  defaultValue?: string;
-  onChange: (value: string) => void;
-}
-
-interface AdminLayoutProps {
-  loading?: boolean;
-  search?: LegacyLayoutSearch;
+interface NavGroup {
   title?: string;
+  items: NavItem[];
 }
 
-const LEGACY_NAV: LegacyNavItem[] = [
-  { title: '仪表盘', type: 'item', href: '/dashboard', icon: 'si si-speedometer' },
-  { title: '设置', type: 'heading' },
-  { title: '系统配置', type: 'item', href: '/config/system', icon: 'si si-equalizer' },
-  { title: '支付配置', type: 'item', href: '/config/payment', icon: 'si si-credit-card' },
-  { title: '主题配置', type: 'item', href: '/config/theme', icon: 'si si-magic-wand' },
-  { title: '服务器', type: 'heading' },
-  { title: '节点管理', type: 'item', href: '/server/manage', icon: 'si si-layers' },
-  { title: '权限组管理', type: 'item', href: '/server/group', icon: 'si si-wrench' },
-  { title: '路由管理', type: 'item', href: '/server/route', icon: 'si si-shuffle' },
-  { title: '财务', type: 'heading' },
-  { title: '订阅管理', type: 'item', href: '/plan', icon: 'si si-bag' },
-  { title: '订单管理', type: 'item', href: '/order', icon: 'si si-list' },
-  { title: '优惠券管理', type: 'item', href: '/coupon', icon: 'si si-present' },
-  { title: '礼品卡管理', type: 'item', href: '/giftcard', icon: 'si si-star' },
-  { title: '用户', type: 'heading' },
-  { title: '用户管理', type: 'item', href: '/user', icon: 'si si-users' },
-  { title: '公告管理', type: 'item', href: '/notice', icon: 'si si-speech' },
-  { title: '工单管理', type: 'item', href: '/ticket', icon: 'si si-support' },
-  { title: '知识库管理', type: 'item', href: '/knowledge', icon: 'si si-bulb' },
-  { title: '指标', type: 'heading' },
-  { title: '队列监控', type: 'item', href: '/queue', icon: 'si si-bar-chart' },
+const NAV: NavGroup[] = [
+  {
+    items: [{ to: '/dashboard', title: '仪表盘', icon: Gauge }],
+  },
+  {
+    title: '设置',
+    items: [
+      { to: '/config/system', title: '系统配置', icon: SlidersHorizontal },
+      { to: '/config/payment', title: '支付配置', icon: CreditCard },
+      { to: '/config/theme', title: '主题配置', icon: Wand2 },
+    ],
+  },
+  {
+    title: '服务器',
+    items: [
+      { to: '/server/manage', title: '节点管理', icon: Layers },
+      { to: '/server/group', title: '权限组管理', icon: Wrench },
+      { to: '/server/route', title: '路由管理', icon: RouteIcon },
+    ],
+  },
+  {
+    title: '财务',
+    items: [
+      { to: '/plan', title: '订阅管理', icon: ShoppingBag },
+      { to: '/order', title: '订单管理', icon: List },
+      { to: '/coupon', title: '优惠券管理', icon: Gift },
+      { to: '/giftcard', title: '礼品卡管理', icon: Star },
+    ],
+  },
+  {
+    title: '用户',
+    items: [
+      { to: '/user', title: '用户管理', icon: Users },
+      { to: '/notice', title: '公告管理', icon: MessageSquare },
+      { to: '/ticket', title: '工单管理', icon: Ticket },
+      { to: '/knowledge', title: '知识库管理', icon: BookOpen },
+    ],
+  },
+  {
+    title: '指标',
+    items: [{ to: '/queue', title: '队列监控', icon: BarChart3 }],
+  },
 ];
 
-const ROUTE_TITLES: Record<string, string> = {
-  '/dashboard': '仪表盘',
-  '/config/system': '系统配置',
-  '/config/payment': '支付配置',
-  '/config/theme': '主题配置',
-  '/server/manage': '节点管理',
-  '/server/group': '权限组管理',
-  '/server/route': '路由管理',
-  '/plan': '订阅管理',
-  '/order': '订单管理',
-  '/coupon': '优惠券管理',
-  '/giftcard': '礼品卡管理',
-  '/user': '用户管理',
-  '/notice': '公告管理',
-  '/ticket': '工单管理',
-  '/knowledge': '知识库管理',
-  '/queue': '队列监控',
-};
+const SIDEBAR_STATE_COOKIE = 'sidebar_state';
 
-function getSettings() {
-  return window.settings ?? {};
+function readSidebarDefaultOpen(): boolean {
+  if (typeof document === 'undefined') return true;
+  return getLegacyCookie(SIDEBAR_STATE_COOKIE) !== 'false';
 }
 
-function getTheme() {
-  return getSettings().theme ?? { sidebar: 'light', header: 'dark', color: 'default' };
+function getSiteTitle(): string {
+  return window.settings?.title || 'V2Board';
 }
 
-function getSiteTitle() {
-  return getSettings().title || 'V2Board';
-}
-
-function clearLegacyDocumentClick() {
-  document.onclick = void 0 as unknown as GlobalEventHandlers['onclick'];
-}
-
-export function AdminLayout({ loading, search, title: titleProp }: AdminLayoutProps = {}) {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [showNav, setShowNav] = useState(false);
-  const [showAvatarMenu, setShowAvatarMenu] = useState(false);
-  const [showSearchBar, setShowSearchBar] = useState(false);
-  const [email, setEmail] = useState('');
-  const [darkMode, setDarkModeState] = useState(() => isDarkModeEnabled());
-  const avatarDocumentClickTimer = useRef<number | undefined>(undefined);
-  const theme = getTheme();
-  const title = titleProp ?? ROUTE_TITLES[location.pathname] ?? '';
-  const localeClass = getLegacyLocaleClassName(legacyGetLocale(), { includeLocale: false });
-  const pageClassName =
-    `${localeClass ? `${localeClass} ` : ''}sidebar-o ${
-      theme.sidebar === 'dark' ? 'sidebar-dark' : ''
-    } ` +
-    `${theme.header === 'dark' ? 'page-header-dark' : ''} ` +
-    `side-scroll page-header-fixed main-content-boxed side-trans-enabled ${showNav && 'sidebar-o-xs'}`;
-
-  useEffect(() => {
-    user
-      .info(apiClient)
-      .then((info) => setEmail(info.email ?? ''))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (avatarDocumentClickTimer.current !== undefined) {
-        window.clearTimeout(avatarDocumentClickTimer.current);
-      }
-      clearLegacyDocumentClick();
-    };
-  }, []);
-
-  const navItems = useMemo(() => LEGACY_NAV, []);
-
-  const closeMobileNav = () => setShowNav(false);
-
-  const toggleDarkMode = () => {
-    const next = !darkMode;
-    setDarkModeState(next);
-    setDarkMode(next);
-  };
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
-
-  const toggleAvatarMenu = () => {
-    setShowAvatarMenu((value) => !value);
-    if (avatarDocumentClickTimer.current !== undefined) {
-      window.clearTimeout(avatarDocumentClickTimer.current);
+function findActiveTitle(pathname: string): string {
+  for (const group of NAV) {
+    for (const item of group.items) {
+      if (pathname === item.to || pathname.startsWith(item.to + '/')) return item.title;
     }
-    avatarDocumentClickTimer.current = window.setTimeout(() => {
-      document.onclick = function legacyAvatarMenuDocumentClick() {
-        setShowAvatarMenu((value) => (value ? false : value));
-        clearLegacyDocumentClick();
-      };
-      avatarDocumentClickTimer.current = undefined;
-    }, 0);
-  };
+  }
+  return '';
+}
 
-  const handleNavClick = (href: string | undefined) => {
-    if (href) navigate(href);
-    closeMobileNav();
+// The sidebar lives inside SidebarProvider, so it owns the router hooks and the
+// mobile-sheet close-on-navigate that AdminLayout (which renders the provider)
+// cannot reach through useSidebar.
+function AdminSidebar({ siteTitle, email }: { siteTitle: string; email: string }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { setOpenMobile } = useSidebar();
+
+  const goto = (to: string) => {
+    navigate(to);
+    setOpenMobile(false);
   };
 
   return (
-    <div id="page-container" className={pageClassName}>
-      <div
-        onClick={() => setShowNav((value) => !value)}
-        className="v2board-nav-mask"
-        style={{ display: showNav ? 'block' : 'none' }}
-      />
-
-      <nav id="sidebar">
-        <div className="smini-hidden bg-header-dark">
-          <div className="content-header justify-content-lg-center bg-black-10">
-            <a className="link-fx font-size-lg text-white" href="/">
-              <span className="text-white-75">{getSiteTitle()}</span>
-            </a>
-            <div className="d-lg-none">
-              <a
-                className="text-white ml-2"
-                data-toggle="layout"
-                data-action="sidebar_close"
-                ref={legacyHref()}
-                onClick={() => setShowNav((value) => !value)}
-              >
-                <i className="fa fa-times-circle" />
-              </a>
-            </div>
-          </div>
-        </div>
-
-        <div className="content-side content-side-full">
-          <ul className="nav-main">
-            {navItems.map((item, index) =>
-              item.type === 'heading' ? (
-                <li key={`heading-${item.title}-${index}`} className="nav-main-heading">
-                  {item.title}
-                </li>
-              ) : (
-                <li key={item.href ?? item.title} className="nav-main-item">
-                  <a
-                    className={`nav-main-link ${location.pathname === item.href && 'active'}`}
-                    onClick={() => handleNavClick(item.href)}
-                  >
-                    {item.icon ? <i className={`nav-main-link-icon ${item.icon}`} /> : null}
-                    <span className="nav-main-link-name">{item.title}</span>
-                  </a>
-                </li>
-              ),
-            )}
-          </ul>
-        </div>
-
-        <div className="v2board-copyright">{getSiteTitle()} v1.7.5</div>
-      </nav>
-
-      <header id="page-header">
-        <div className="content-header" style={{ maxWidth: 'unset' }}>
-          <div className="sidebar-toggle" style={{ display: search ? 'block' : 'none' }}>
-            <button
-              type="button"
-              className={
-                theme.header === 'dark' ? 'btn btn-primary mr-1 d-lg-none' : 'btn mr-1 d-lg-none'
-              }
-              onClick={() => setShowNav((value) => !value)}
-            >
-              <i className="fa fa-fw fa-bars" />
-            </button>
-            {search && (
-              <button
-                type="button"
-                className={theme.header === 'dark' ? 'btn btn-primary' : 'btn'}
-                onClick={() => setShowSearchBar(true)}
-              >
-                <i className="fa fa-fw fa-search" />{' '}
-                <span className="ml-1 d-none d-sm-inline-block">搜索</span>
-              </button>
-            )}
-          </div>
-          <div
-            className={
-              theme.header === 'dark'
-                ? 'v2board-container-title text-white'
-                : 'v2board-container-title text-black'
-            }
+    <Sidebar
+      id="sidebar"
+      variant="sidebar"
+      collapsible="icon"
+      sheetTitle="导航"
+      sheetDescription="管理中心导航"
+    >
+      <SidebarHeader>
+        <div className="flex items-center justify-between gap-1">
+          <button
+            type="button"
+            onClick={() => goto('/dashboard')}
+            className="min-w-0 truncate rounded-md px-2 py-1 text-left text-base font-semibold text-sidebar-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:hidden"
           >
-            {title}
-          </div>
-          <div>
-            <div className="dropdown d-inline-block">
-              <button
-                type="button"
-                className={theme.header === 'dark' ? 'btn btn-primary mr-1' : 'btn mr-1'}
-                onClick={toggleDarkMode}
-              >
-                <i className={darkMode ? 'far fa fa-moon' : 'far fa fa-sun'} />
-              </button>
-            </div>
-            <div className="dropdown d-inline-block">
-              <button
-                type="button"
-                className={theme.header === 'dark' ? 'btn btn-primary' : 'btn'}
-                id="page-header-user-dropdown"
-                data-toggle="dropdown"
-                aria-haspopup="true"
-                aria-expanded="false"
-                onClick={toggleAvatarMenu}
-              >
-                <i className="far fa fa-user-circle" />
-                <span className="d-none d-lg-inline ml-1">{email}</span>
-                <i className="fa fa-fw fa-angle-down ml-1" />
-              </button>
-              <div
-                className={`dropdown-menu dropdown-menu-right dropdown-menu-lg p-0 ${showAvatarMenu && 'show'}`}
-                aria-labelledby="page-header-user-dropdown"
-              >
-                <div className="p-2">
-                  <a
-                    className="dropdown-item d-flex justify-content-between align-items-center"
-                    ref={legacyHref()}
-                    onClick={handleLogout}
-                  >
-                    登出
-                    <i className="fa fa-fw fa-sign-out-alt text-danger ml-1" />
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
-          {search && (
-            <div className={`overlay-header bg-dark ${showSearchBar ? 'show' : ''}`}>
-              <div className="content-header bg-dark">
-                <div className="w-100">
-                  <div className="input-group">
-                    <div className="input-group-prepend">
-                      <button
-                        type="button"
-                        className="btn btn-dark"
-                        onClick={() => setShowSearchBar(false)}
-                      >
-                        <i className="fa fa-fw fa-times-circle" />
-                      </button>
-                    </div>
-                    <input
-                      type="text"
-                      className="form-control border-0"
-                      placeholder={search.placeholder}
-                      onChange={(event) => search.onChange(event.target.value)}
-                      defaultValue={search.defaultValue}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+            {siteTitle}
+          </button>
+          <SidebarTrigger className="size-8 shrink-0" aria-label="切换导航" />
         </div>
-      </header>
+      </SidebarHeader>
 
-      {loading ? (
-        <main id="main-container">
-          <div className="content content-full text-center pt-5">
-            <div className="spinner-grow text-primary" role="status">
-              <span className="sr-only">Loading...</span>
+      <SidebarContent role="navigation" aria-label="主导航">
+        {NAV.map((group, groupIndex) => (
+          <SidebarGroup key={group.title ?? `group-${groupIndex}`}>
+            {group.title ? (
+              <SidebarGroupLabel className="group-data-[collapsible=icon]:mt-0">
+                {group.title}
+              </SidebarGroupLabel>
+            ) : null}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => {
+                  const active =
+                    location.pathname === item.to || location.pathname.startsWith(item.to + '/');
+                  return (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton isActive={active} tooltip={item.title} onClick={() => goto(item.to)}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
+
+      <SidebarFooter>
+        <AdminNavUser email={email} />
+      </SidebarFooter>
+    </Sidebar>
+  );
+}
+
+export function AdminLayout() {
+  const location = useLocation();
+  const darkMode = useDarkMode();
+  const themePreference = useThemePreference();
+  const [sidebarDefaultOpen] = useState(readSidebarDefaultOpen);
+  const { data: userInfo } = useQuery({
+    queryKey: ['admin', 'user-info'],
+    queryFn: () => user.info(apiClient),
+  });
+  const email = userInfo?.email ?? '';
+  const siteTitle = getSiteTitle();
+  const title = findActiveTitle(location.pathname);
+  const localeClass = getLegacyLocaleClassName(legacyGetLocale(), { includeLocale: false });
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
+
+  return (
+    <SidebarProvider
+      id="page-container"
+      defaultOpen={sidebarDefaultOpen}
+      className={cn('v2board-island v2board-app-shell text-foreground', localeClass)}
+    >
+      <AdminSidebar siteTitle={siteTitle} email={email} />
+
+      <SidebarInset>
+        <header
+          id="page-header"
+          className="flex h-12 shrink-0 items-center gap-2 border-b border-border"
+        >
+          <div className="flex w-full items-center gap-1 px-4 sm:px-6 lg:gap-2">
+            <SidebarTrigger className="-ml-1 md:hidden" aria-label="切换导航" />
+            <Separator
+              orientation="vertical"
+              className="mx-2 data-[orientation=vertical]:h-4 md:hidden"
+            />
+            <h1 className="v2board-container-title min-w-0 flex-1 truncate text-base font-medium text-foreground">
+              {title}
+            </h1>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 text-muted-foreground hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
+                    data-dark-mode-trigger
+                    aria-label="切换主题"
+                    title="切换主题"
+                  >
+                    {darkMode ? <Moon /> : <Sun />}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuRadioGroup
+                    value={themePreference}
+                    onValueChange={(value) => setThemePreference(value as ThemePreference)}
+                  >
+                    <DropdownMenuRadioItem value="system" data-theme-option="system" className="gap-2">
+                      <Monitor className="size-4" />
+                      跟随系统
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="light" data-theme-option="light" className="gap-2">
+                      <Sun className="size-4" />
+                      浅色
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="dark" data-theme-option="dark" className="gap-2">
+                      <Moon className="size-4" />
+                      深色
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
-        </main>
-      ) : (
-        <main id="main-container">
-          <div className="p-0 p-lg-4">
+        </header>
+
+        <div id="main-container" className="v2board-app-main flex-1">
+          <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 md:py-6">
             <RouteBoundaryOutlet />
           </div>
-        </main>
-      )}
-    </div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

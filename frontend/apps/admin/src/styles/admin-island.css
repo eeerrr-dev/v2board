@@ -1,0 +1,262 @@
+/*
+ * Pure shadcn islands.
+ *
+ * Every redesigned surface and every body-portaled menu / dialog / sheet /
+ * popover / tooltip / toast root carries the shared `.v2board-island` class.
+ * Keying all island theming — design variables, box-sizing, text selection, the
+ * prose margin reset, and the `.dark` flip — off that single membership class
+ * (instead of re-listing each root in parallel selector lists that silently
+ * drift) is what guarantees a newly added portal surface renders tokened and
+ * dark-aware. Roots keep their specific `v2board-*` class for motion targets and
+ * parity hooks; `v2board-island` is purely the theming-membership marker.
+ */
+
+.v2board-island {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  /*
+   * Semantic status tones. shadcn ships no success/warning/info tokens, so the
+   * status surfaces used to hardcode divergent Tailwind ramps — emerald/sky in
+   * status-badge, green/blue in orders/detail — rendering the same state in
+   * different hues. One repaintable token per state (consumed as text-<tone>,
+   * bg-<tone>/10, border-<tone>/30, and solid dots/bars) fixes both the drift
+   * and the non-themeability. Lightness tracks the old -700/-300 text ramps.
+   */
+  --success: oklch(0.55 0.13 163);
+  --warning: oklch(0.56 0.13 70);
+  --info: oklch(0.55 0.16 250);
+  /*
+   * shadcn Sidebar primitive tokens. The shell is a full-bleed rail layout:
+   * --sidebar paints the left rail sitting against the white content with a
+   * 1px --sidebar-border divider — so light --sidebar is deepened one step
+   * from upstream's 0.985 (which reads white-on-white next to the content)
+   * and --sidebar-accent is a white pill that echoes the content surface. The
+   * island stays monochrome, so the upstream blue --sidebar-primary accent is
+   * dropped rather than tokened (the sidebar active state uses --sidebar-accent).
+   */
+  --sidebar: oklch(0.97 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-accent: oklch(1 0 0);
+  --sidebar-accent-foreground: oklch(0.145 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.v2board-island {
+  box-sizing: border-box;
+  color-scheme: light;
+  font-family: var(--font-sans);
+  font-feature-settings: normal;
+  font-variant-numeric: normal;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.v2board-island *,
+.v2board-island *::before,
+.v2board-island *::after {
+  box-sizing: inherit;
+  letter-spacing: 0;
+}
+
+/*
+ * Island-scoped Preflight.
+ *
+ * Unlike the user app, the admin cannot inject Tailwind's GLOBAL Preflight — it
+ * would fight the still-mounted Bootstrap/OneUI/antd resets on the legacy Outlet
+ * surfaces. But shadcn primitives still assume a handful of Preflight guarantees,
+ * so reproduce exactly those inside every island (and nowhere else):
+ *   - `border: 0 solid` — Tailwind's `border` utility only sets border-WIDTH; the
+ *     STYLE default comes from Preflight. Without this, every `border`/`border-b`
+ *     on a Card / Input / Sidebar renders width-0-invisible. Color is left at the
+ *     UA `currentColor` default (matching Tailwind v4), with shadcn setting an
+ *     explicit `border-*` color wherever it matters.
+ *   - `margin: 0; padding: 0` — the zero baseline shadcn spacing utilities build
+ *     on (a Dialog/Card assumes no inherited UA margin).
+ *   - list reset — the Sidebar renders a bare `<ul>`; without it the rail shows
+ *     native bullets and indent.
+ *   - native control reset — bare `<button>`s (SidebarTrigger, icon buttons) must
+ *     drop the UA button chrome and inherit type.
+ *   - block media — images/svg/icons align as blocks, not inline text.
+ * Emitted at (0,1,0); admin-shadcn.css imports its utilities AFTER this file, so
+ * any explicit `m-*`/`p-*`/`border`/`list-*` utility wins on source order. At
+ * teardown — legacy layer deleted — this collapses into a plain global
+ * `@import 'tailwindcss'` like the user app and this block goes away.
+ */
+.v2board-island *,
+.v2board-island *::before,
+.v2board-island *::after,
+.v2board-island ::backdrop {
+  margin: 0;
+  padding: 0;
+  border: 0 solid;
+}
+
+.v2board-island :where(ul, ol) {
+  list-style: none;
+}
+
+.v2board-island :where(button, [type='button'], [type='reset'], [type='submit']) {
+  appearance: button;
+  background-color: transparent;
+  background-image: none;
+  cursor: pointer;
+}
+
+.v2board-island :where(button:disabled, [disabled]) {
+  cursor: default;
+}
+
+.v2board-island :where(img, svg, video, canvas, audio, iframe, embed, object) {
+  display: block;
+  vertical-align: middle;
+}
+
+.v2board-island :where(img, video) {
+  max-width: 100%;
+  height: auto;
+}
+
+.v2board-island :where(hr) {
+  height: 0;
+  color: inherit;
+  border-top-width: 1px;
+}
+
+/*
+ * Neutralize the legacy global heading/paragraph rhythm AND color inside every
+ * island. The replica's prose CSS sets h1-h6 / p margins plus a document-wide
+ * heading color (rgba(0, 0, 0, 0.85), user-headings.css) and body color whose
+ * bare element selectors still match any heading inside an island. Resetting
+ * margin to 0 and color to `inherit` makes portaled Dialog/Sheet titles and any
+ * bare island heading follow the shadcn rhythm and the island `--foreground`
+ * instead of the vendored margin and near-black. The shadcn color utilities
+ * (text-foreground / text-card-foreground) still win wherever a surface sets
+ * one explicitly: they are emitted after this file, so they take equal-
+ * specificity conflicts on source order.
+ */
+.v2board-island :where(h1, h2, h3, h4, h5, h6, p) {
+  margin: 0;
+  color: inherit;
+}
+
+.v2board-island::selection,
+.v2board-island ::selection {
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.v2board-island :where(button, input, select, textarea) {
+  font-family: inherit;
+}
+
+.dark .v2board-island {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.77 0.16 163);
+  --warning: oklch(0.82 0.17 82);
+  --info: oklch(0.75 0.15 240);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+/*
+ * Rich announcement / knowledge-article content (.custom-html-style) renders in
+ * two kinds of place: portaled into island surfaces (the knowledge Sheet, notice
+ * Dialog, plan checkout) whose island variables are scoped and dark-flipped
+ * above, AND the public operator homepage (home.tsx), which renders OUTSIDE any
+ * island. The legacy replica pins this content to fixed light-mode colors
+ * (color: #333, plus the global h1-h6 rgba(0, 0, 0, 0.85) rule), so in dark mode
+ * they render near-black on the dark page/drawer. Re-point body and heading text
+ * to the island foreground in dark mode only. The fallback keeps the non-island
+ * homepage legible: outside an island `--foreground` is undefined, so without it
+ * `var(--foreground)` would be invalid and the text would fall back to the light
+ * body color (#495057) on the dark `#0a0a0a` page — a failing-contrast pairing.
+ */
+.dark .custom-html-style {
+  color: var(--foreground, #fafafa);
+}
+
+.dark .custom-html-style :where(h1, h2, h3, h4, h5, h6) {
+  color: inherit;
+}
+
+/*
+ * The remaining light-only colors in user-custom-html.css match elements
+ * directly, so they beat the inherited dark foreground above and must each be
+ * re-pointed: the #0052d9 link blue (~2.4:1 on the dark page), the #f5f5f5
+ * pre/code fill (which would sit under near-white inherited text), the #333
+ * blockquote text, the #f5f7fa table-header fill, and the #eee/#efefef/#f6f6f6
+ * hairlines. Island token vars apply inside islands (knowledge Sheet, notice
+ * Dialog, plan checkout); the fixed fallbacks keep the non-island homepage
+ * legible, mirroring the var(--foreground, #fafafa) pattern above. Links use a
+ * fixed accessible light blue rather than the island --primary, which is
+ * near-white in dark mode and would leave links indistinguishable from text.
+ */
+.dark .custom-html-style a {
+  color: #8ab4f8;
+}
+
+.dark .custom-html-style pre,
+.dark .custom-html-style code {
+  background-color: var(--muted, oklch(0.269 0 0));
+}
+
+.dark .custom-html-style blockquote {
+  color: inherit;
+  border-left-color: oklch(1 0 0 / 25%);
+}
+
+.dark .custom-html-style hr {
+  border-top-color: var(--border, oklch(1 0 0 / 15%));
+}
+
+.dark .custom-html-style table,
+.dark .custom-html-style table tr,
+.dark .custom-html-style table th,
+.dark .custom-html-style table td {
+  border-color: var(--border, oklch(1 0 0 / 15%));
+}
+
+.dark .custom-html-style table th {
+  background-color: var(--muted, oklch(0.269 0 0));
+}

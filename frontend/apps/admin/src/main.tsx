@@ -17,6 +17,8 @@ import { HashRouter, Navigate, useLocation } from 'react-router';
 import App, { ADMIN_LEGACY_ROUTE_PATHS } from './App';
 import { RouteBoundaryElement } from './components/route-error-boundary';
 import { LegacyConfirmProvider } from './components/legacy-confirm';
+import { ConfirmDialogProvider } from './components/ui/confirm-dialog';
+import { Toaster } from './components/ui/toaster';
 import { applyAdminLegacySettings } from './lib/legacy-settings';
 import { applyInitialDarkMode } from './lib/dark-mode';
 import { redirectToLegacyLogin } from './lib/api';
@@ -32,6 +34,10 @@ import './styles/admin-animations.css';
 import './styles/admin-plugin-widgets.css';
 import './styles/admin-app-overrides.css';
 import './styles/antd-v5-compat.css';
+// The redesigned shadcn island layer. Imported LAST so its non-!important
+// utilities win equal-specificity conflicts with the legacy CSS above on source
+// order — the same ordering guarantee the user app relies on.
+import './styles/admin-redesigned-surfaces.css';
 
 const legacyHashRouteOptions = {
   authenticatedFallback: '/dashboard',
@@ -142,6 +148,8 @@ function Boot() {
                 <App />
               </LegacyRouteGate>
               <LegacyConfirmProvider />
+              <ConfirmDialogProvider />
+              <Toaster />
             </RouteBoundaryElement>
           </HashRouter>
         </QueryClientProvider>
