@@ -262,6 +262,10 @@ deploys, lock expiration, or manual replay.
 
 ## Current Rewrite Status
 
+The Laravel-vs-Rust behavioral audit and its per-finding disposition (fixed /
+intentional / deferred / needs-infra) are recorded in
+[RUST_AUDIT_DISPOSITION.md](RUST_AUDIT_DISPOSITION.md).
+
 Status as of 2026-07-06:
 
 Completed in the Rust tree:
