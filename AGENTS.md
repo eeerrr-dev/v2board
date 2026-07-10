@@ -142,9 +142,10 @@ For gradual-reskin code, keep using the `tw:` prefix. Vendored legacy CSS owns
 bare class names like `block`, `container`, `badge`, `.btn`, and
 `.form-control`; prefixed utilities avoid accidental collisions. No surface is
 currently gradual-reskin — the user surfaces are all pure shadcn islands (the
-user app even asserts `tw:` is absent) and admin is the strict replica — so this
-prefix rule and the `@v2board/tokens` / local `components/ui` gradual-reskin
-guidance above apply only if such a surface is reintroduced.
+user app even asserts `tw:` is absent) and the admin app is a redesigned shadcn
+surface (zero Ant Design imports) — so this prefix rule and the `@v2board/tokens`
+/ local `components/ui` gradual-reskin guidance above apply only if such a surface
+is reintroduced.
 
 For pure shadcn islands, unprefixed Tailwind utilities and shadcn token names are
 allowed intentionally. Keep those islands route- or component-scoped, avoid
@@ -278,6 +279,32 @@ structure rather than pixel-era class names.
   on redesigned user surfaces. In particular, do not use `.block` as a layout
   utility because OneUI owns that class; use `flex`, `grid`, `inline-block`, or
   no display class instead.
+
+### Admin Surface Direction
+
+The entire admin app (`frontend/apps/admin/src/pages/*`) is a redesigned shadcn
+surface — every admin page is shadcn/Radix with zero Ant Design imports. Its
+visual-parity scenarios are retired (`visualRetired: true`), so the admin
+interaction-parity scenarios are the standing contract guard, run with
+`INTERACTION_PARITY_SCENARIOS="admin" make interaction-parity` (desktop +
+mobile). Admin copy stays Chinese-only; preserve exact Chinese labels and titles.
+
+- Keep admin contracts strict: every admin API endpoint and request payload
+  (config, coupon/giftcard/notice/knowledge/plan/server/user/order/ticket
+  create/edit/delete bodies, including form-encoded array shapes like
+  `limit_plan_ids[0]`), the cents conversions (e.g. coupon `type===1 →
+  value*100`), list/fetch query and pagination/filter parameters, admin
+  auth/session persistence, and route contracts must stay covered by an
+  interaction-parity scenario.
+- Tier-2 defaults are relaxable here: overlay chrome (sheet vs modal vs drawer),
+  button order, spinner/toast/poll/refetch timing, close-overlay-on-save timing,
+  table truncation and horizontal-scroll observability, and date-picker chrome.
+- Admin interaction scenarios use union selectors (shadcn slot/testid/role first,
+  Ant class fallback) so one `run(page)` drives both the shadcn source and the
+  frozen Ant oracle, with a Tier-1 `normalize*InteractionResult` reducer dropping
+  Tier-2 presentation. Keep that pattern when adding or editing admin scenarios
+  rather than branching per world, and reduce cross-world comparison to the
+  Tier-1 payload/query/redirect fields while dropping presentation.
 
 For new redesigned surfaces, do not use:
 
