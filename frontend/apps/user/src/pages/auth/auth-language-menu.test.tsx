@@ -35,7 +35,7 @@ describe('AuthLanguageMenu', () => {
     expect(trigger.tagName).toBe('BUTTON');
     expect(trigger).toHaveAttribute('type', 'button');
     expect(trigger).toHaveTextContent('English');
-    // visual-parity.mjs drives the auth switcher through this hook.
+    // The interaction-parity harness drives the auth switcher through this hook.
     expect(trigger).toHaveClass('v2board-auth-language-trigger');
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
@@ -45,7 +45,7 @@ describe('AuthLanguageMenu', () => {
     const menu = await screen.findByRole('menu');
     // The auth variant renders plain items (LanguageMenuItems passes
     // role={undefined}, which wipes Radix's menuitem role), so select entries
-    // through the class hook visual-parity.mjs also drives.
+    // through the class hook the interaction-parity harness also drives.
     const items = Array.from(menu.querySelectorAll('.v2board-auth-language-menu-item'));
     expect(items.map((item) => item.textContent)).toEqual(['English', '简体中文']);
   });

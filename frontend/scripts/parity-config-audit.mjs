@@ -4,6 +4,11 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { viewports } from '../tests/lib/env.mjs';
+import { interactions } from '../tests/lib/interaction-scenarios.mjs';
+import { scenariosByLabel } from '../tests/lib/scenario-meta.mjs';
+import { GROUP_NAMES, groupOf } from '../tests/lib/spec-groups.mjs';
+
 if (isMainModule()) {
   const result = await auditParityConfig();
 
@@ -17,7 +22,6 @@ if (isMainModule()) {
 
 export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
   const makefilePath = resolve(projectRoot, 'Makefile');
-  const parityScriptPath = resolve(projectRoot, 'frontend/scripts/visual-parity.mjs');
   const userAppPath = resolve(projectRoot, 'frontend/apps/user/src/App.tsx');
   const adminAppPath = resolve(projectRoot, 'frontend/apps/admin/src/App.tsx');
   const userMainPath = resolve(projectRoot, 'frontend/apps/user/src/main.tsx');
@@ -25,72 +29,44 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
   const userDevEntryPath = resolve(projectRoot, 'frontend/apps/user/index.html');
   const adminDevEntryPath = resolve(projectRoot, 'frontend/apps/admin/index.html');
 
-  const [
-    makefile,
-    parityScript,
-    userApp,
-    adminApp,
-    userMain,
-    adminMain,
-    userDevEntry,
-    adminDevEntry,
-  ] = await Promise.all([
-    readFile(makefilePath, 'utf8'),
-    readFile(parityScriptPath, 'utf8'),
-    readFile(userAppPath, 'utf8'),
-    readFile(adminAppPath, 'utf8'),
-    readFile(userMainPath, 'utf8'),
-    readFile(adminMainPath, 'utf8'),
-    readFile(userDevEntryPath, 'utf8'),
-    readFile(adminDevEntryPath, 'utf8'),
-  ]);
+  const [makefile, userApp, adminApp, userMain, adminMain, userDevEntry, adminDevEntry] =
+    await Promise.all([
+      readFile(makefilePath, 'utf8'),
+      readFile(userAppPath, 'utf8'),
+      readFile(adminAppPath, 'utf8'),
+      readFile(userMainPath, 'utf8'),
+      readFile(adminMainPath, 'utf8'),
+      readFile(userDevEntryPath, 'utf8'),
+      readFile(adminDevEntryPath, 'utf8'),
+    ]);
 
-  const makeVisualScenarios = readMakeList(makefile, 'VISUAL_PARITY_SCENARIOS');
+  // The parity modules are the single source of truth for the interaction lane.
+  // The old text-parse of visual-parity.mjs retired with the driver; the
+  // Playwright specs now import these same modules, so auditing them keeps the
+  // Makefile scope list and route coverage honest against what actually runs.
+  const scenarios = [...scenariosByLabel.values()];
+  const scenarioLabels = scenarios.map((scenario) => scenario.label);
+  const scenarioPaths = scenarios.map((scenario) => ({
+    label: scenario.label,
+    route: normalizeScenarioRoute(scenario.path),
+    ...(scenario.visualRetired === true ? { visualRetired: true } : {}),
+  }));
+  const interactionLabels = interactions.map((interaction) => interaction.label);
+  const interactionTargets = interactions.map((interaction) => interaction.scenarioLabel);
+  const viewportLabels = viewports.map((viewport) => viewport.label);
+
   const makeInteractionScenarios = readMakeList(makefile, 'INTERACTION_PARITY_SCENARIOS');
-  const makeBrowserScenarios = resolveMakeListReferences(
-    readMakeList(makefile, 'BROWSER_PARITY_SCENARIOS'),
-    { VISUAL_PARITY_SCENARIOS: makeVisualScenarios },
-  );
-  const makeBrowserViewports = readMakeList(makefile, 'BROWSER_PARITY_VIEWPORTS');
-  const visualScenarioBlock = extractBlock(
-    parityScript,
-    'const scenarios = [',
-    '];\nconst interactionScenarios = [',
-  );
-  const visualScenarios = extractLabelsFromBlock(visualScenarioBlock);
-  const visualScenarioPaths = extractVisualScenarioPaths(visualScenarioBlock);
-  const viewportBlock = extractBlock(
-    parityScript,
-    'const viewports = [',
-    '];\nconst darkModeStyleTargets =',
-  );
-  const visualViewports = extractLabelsFromBlock(viewportBlock);
-  const interactionBlock = extractBlock(
-    parityScript,
-    'const interactionScenarios = [',
-    '];\nconst guestConfigFixture =',
-  );
-  const interactionScenarios = extractLabelsFromBlock(interactionBlock);
-  const interactionTargets = [...interactionBlock.matchAll(/\bscenarioLabel:\s*'([^']+)'/g)].map(
-    (match) => match[1],
-  );
+  const makeViewports = readMakeList(makefile, 'VISUAL_PARITY_VIEWPORTS');
+
   const userRoutes = extractRouteArray(userApp, 'USER_LEGACY_ROUTE_PATHS');
   const adminRoutes = extractRouteArray(adminApp, 'ADMIN_LEGACY_ROUTE_PATHS');
-  const userAppPublicRoutes = extractObjectArray(
-    userApp,
-    'USER_LEGACY_ROUTE_OPTIONS',
-    'publicRoutes',
-  );
+  const userAppPublicRoutes = extractObjectArray(userApp, 'USER_LEGACY_ROUTE_OPTIONS', 'publicRoutes');
   const adminAppPublicRoutes = extractObjectArray(
     adminApp,
     'ADMIN_LEGACY_ROUTE_OPTIONS',
     'publicRoutes',
   );
-  const userMainPublicRoutes = extractObjectArray(
-    userMain,
-    'legacyHashRouteOptions',
-    'publicRoutes',
-  );
+  const userMainPublicRoutes = extractObjectArray(userMain, 'legacyHashRouteOptions', 'publicRoutes');
   const adminMainPublicRoutes = extractObjectArray(
     adminMain,
     'legacyHashRouteOptions',
@@ -98,60 +74,42 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
   );
   const userDevRoutes = extractAssignedRouteArray(userDevEntry, 'var legacyRoutes = [');
   const adminDevRoutes = extractAssignedRouteArray(adminDevEntry, 'var legacyRoutes = [');
-  const userDevPublicRoutes = extractAssignedRouteArray(
-    userDevEntry,
-    'var legacyPublicRoutes = [',
-  );
-  const adminDevPublicRoutes = extractAssignedRouteArray(
-    adminDevEntry,
-    'var legacyPublicRoutes = [',
-  );
+  const userDevPublicRoutes = extractAssignedRouteArray(userDevEntry, 'var legacyPublicRoutes = [');
+  const adminDevPublicRoutes = extractAssignedRouteArray(adminDevEntry, 'var legacyPublicRoutes = [');
 
   const failures = [
-    ...assertUnique('visual parity script scenarios', visualScenarios),
-    ...assertUnique('interaction parity script scenarios', interactionScenarios),
-    ...assertUnique('Makefile VISUAL_PARITY_SCENARIOS', makeVisualScenarios),
+    ...assertUnique('parity scenarios', scenarioLabels),
+    ...assertUnique('parity interactions', interactionLabels),
     ...assertUnique('Makefile INTERACTION_PARITY_SCENARIOS', makeInteractionScenarios),
-    ...assertUnique('Makefile BROWSER_PARITY_SCENARIOS', makeBrowserScenarios),
-    ...assertUnique('Makefile BROWSER_PARITY_VIEWPORTS', makeBrowserViewports),
-    ...assertSameOrderedList('VISUAL_PARITY_SCENARIOS', makeVisualScenarios, visualScenarios),
     ...assertSameOrderedList(
       'INTERACTION_PARITY_SCENARIOS',
       makeInteractionScenarios,
-      interactionScenarios,
+      interactionLabels,
     ),
-    ...assertSameOrderedList('BROWSER_PARITY_SCENARIOS', makeBrowserScenarios, visualScenarios),
-    ...assertSubset('BROWSER_PARITY_VIEWPORTS', makeBrowserViewports, visualViewports),
-    ...assertInteractionTargetsExist(visualScenarios, interactionTargets),
+    ...assertSubset('VISUAL_PARITY_VIEWPORTS', makeViewports, viewportLabels),
+    ...assertInteractionTargetsExist(scenarioLabels, interactionTargets),
+    ...assertSpecGroupCoverage(interactions, GROUP_NAMES),
     ...assertRouteCoverage(
-      'user visual parity route coverage',
+      'user parity route coverage',
       userRoutes,
-      visualScenarioPaths.filter((scenario) => scenario.label.startsWith('user-')),
+      scenarioPaths.filter((scenario) => scenario.label.startsWith('user-')),
       new Set(interactionTargets),
     ),
     ...assertRouteCoverage(
-      'admin visual parity route coverage',
+      'admin parity route coverage',
       adminRoutes,
-      visualScenarioPaths.filter((scenario) => scenario.label.startsWith('admin-')),
+      scenarioPaths.filter((scenario) => scenario.label.startsWith('admin-')),
       new Set(interactionTargets),
     ),
     ...assertSameOrderedValues('user dev entry legacyRoutes', userDevRoutes, userRoutes),
     ...assertSameOrderedValues('admin dev entry legacyRoutes', adminDevRoutes, adminRoutes),
-    ...assertSameOrderedValues(
-      'user main legacy publicRoutes',
-      userMainPublicRoutes,
-      userAppPublicRoutes,
-    ),
+    ...assertSameOrderedValues('user main legacy publicRoutes', userMainPublicRoutes, userAppPublicRoutes),
     ...assertSameOrderedValues(
       'admin main legacy publicRoutes',
       adminMainPublicRoutes,
       adminAppPublicRoutes,
     ),
-    ...assertSameOrderedValues(
-      'user dev entry legacyPublicRoutes',
-      userDevPublicRoutes,
-      userAppPublicRoutes,
-    ),
+    ...assertSameOrderedValues('user dev entry legacyPublicRoutes', userDevPublicRoutes, userAppPublicRoutes),
     ...assertSameOrderedValues(
       'admin dev entry legacyPublicRoutes',
       adminDevPublicRoutes,
@@ -161,17 +119,17 @@ export async function auditParityConfig(projectRoot = getDefaultProjectRoot()) {
 
   return {
     adminRouteCount: adminRoutes.length,
-    browserScenarioCount: makeBrowserScenarios.length,
-    browserViewportCount: makeBrowserViewports.length,
     failures,
-    interactionScenarioCount: interactionScenarios.length,
+    interactionScenarioCount: interactionLabels.length,
+    scenarioCount: scenarioLabels.length,
+    specGroupCount: GROUP_NAMES.length,
     userRouteCount: userRoutes.length,
-    visualScenarioCount: visualScenarios.length,
+    viewportCount: viewportLabels.length,
   };
 }
 
 export function formatAuditSuccess(result) {
-  return `Parity config audit OK: Makefile tracks ${result.visualScenarioCount} visual scenarios, ${result.interactionScenarioCount} interaction scenarios, ${result.browserScenarioCount} browser scenarios across ${result.browserViewportCount} viewports, parity covers ${result.userRouteCount} user routes plus ${result.adminRouteCount} admin routes, and dev entry route mirrors are aligned.`;
+  return `Parity config audit OK: ${result.scenarioCount} parity scenarios and ${result.interactionScenarioCount} interactions across ${result.specGroupCount} spec groups and ${result.viewportCount} viewports, Makefile INTERACTION_PARITY_SCENARIOS mirrors the interaction modules, parity covers ${result.userRouteCount} user routes plus ${result.adminRouteCount} admin routes, and dev entry route mirrors are aligned.`;
 }
 
 export function readMakeList(source, name) {
@@ -197,18 +155,6 @@ export function readMakeList(source, name) {
   return chunks.join(' ').trim().split(/\s+/).filter(Boolean);
 }
 
-export function resolveMakeListReferences(values, references) {
-  return values.flatMap((value) => {
-    const match = /^\$\(([^)]+)\)$/.exec(value);
-    if (!match) return [value];
-    const resolved = references[match[1]];
-    if (!resolved) {
-      throw new Error(`Unsupported Makefile list reference ${value}`);
-    }
-    return resolved;
-  });
-}
-
 export function extractBlock(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
   if (start === -1) {
@@ -222,39 +168,6 @@ export function extractBlock(source, startMarker, endMarker) {
   }
 
   return source.slice(contentStart, end);
-}
-
-export function extractLabelsFromBlock(block) {
-  return [...block.matchAll(/\blabel:\s*'([^']+)'/g)].map((match) => match[1]);
-}
-
-export function extractVisualScenarioPaths(block) {
-  const labelMatches = [...block.matchAll(/\blabel:\s*'([^']+)'/g)];
-
-  return labelMatches.map((labelMatch, index) => {
-    const start = labelMatch.index;
-    const end =
-      index + 1 < labelMatches.length ? labelMatches[index + 1].index : block.length;
-    const segment = block.slice(start, end);
-    const pathMatch = /\bpath:\s*(?:'([^']+)'|`([^`]+)`)/.exec(segment);
-
-    if (!pathMatch) {
-      throw new Error(`Visual parity scenario ${labelMatch[1]} is missing a path`);
-    }
-
-    const scenario = {
-      label: labelMatch[1],
-      route: normalizeScenarioRoute(pathMatch[1] ?? pathMatch[2]),
-    };
-
-    // A redesigned surface marks its visual scenario `visualRetired: true`, which
-    // retires the pixel diff against the old oracle while keeping the behavior gate.
-    if (/\bvisualRetired:\s*true\b/.test(segment)) {
-      scenario.visualRetired = true;
-    }
-
-    return scenario;
-  });
 }
 
 export function extractRouteArray(source, name) {
@@ -303,18 +216,18 @@ export function assertSameOrderedList(name, actual, expected) {
   const extra = actual.filter((value) => !expected.includes(value));
 
   if (missing.length > 0) {
-    failures.push(`${name} is missing labels from visual-parity.mjs: ${missing.join(', ')}`);
+    failures.push(`${name} is missing labels from the interaction modules: ${missing.join(', ')}`);
   }
 
   if (extra.length > 0) {
-    failures.push(`${name} has labels not defined in visual-parity.mjs: ${extra.join(', ')}`);
+    failures.push(`${name} has labels not defined in the interaction modules: ${extra.join(', ')}`);
   }
 
   if (missing.length === 0 && extra.length === 0 && actual.join('\n') !== expected.join('\n')) {
     failures.push(
-      `${name} order differs from visual-parity.mjs.\n` +
+      `${name} order differs from the interaction modules.\n` +
         `Makefile: ${actual.join(' ')}\n` +
-        `Script:   ${expected.join(' ')}`,
+        `Modules:  ${expected.join(' ')}`,
     );
   }
 
@@ -349,16 +262,47 @@ export function assertSubset(name, actual, expected) {
 
   return missing.length === 0
     ? []
-    : [`${name} has values not defined by visual-parity.mjs: ${missing.join(', ')}`];
+    : [`${name} has values not defined by the parity viewports: ${missing.join(', ')}`];
 }
 
-export function assertInteractionTargetsExist(visualLabels, interactionTargets) {
-  const visualLabelSet = new Set(visualLabels);
-  const missingTargets = interactionTargets.filter((label) => !visualLabelSet.has(label));
+export function assertInteractionTargetsExist(scenarioLabels, interactionTargets) {
+  const scenarioLabelSet = new Set(scenarioLabels);
+  const missingTargets = interactionTargets.filter((label) => !scenarioLabelSet.has(label));
 
   return missingTargets.length === 0
     ? []
-    : [`Interaction scenarios reference missing visual scenarios: ${missingTargets.join(', ')}`];
+    : [`Interactions reference missing parity scenarios: ${missingTargets.join(', ')}`];
+}
+
+export function assertSpecGroupCoverage(interactionList, groupNames) {
+  const failures = [];
+  const groupNameSet = new Set(groupNames);
+  const usedGroups = new Set();
+  const unmapped = [];
+
+  for (const interaction of interactionList) {
+    const group = groupOf(interaction);
+    if (!group) {
+      unmapped.push(interaction.label);
+      continue;
+    }
+    if (!groupNameSet.has(group)) {
+      failures.push(`Interaction ${interaction.label} maps to unknown spec group ${group}`);
+      continue;
+    }
+    usedGroups.add(group);
+  }
+
+  if (unmapped.length > 0) {
+    failures.push(`Interactions not assigned to any spec group: ${unmapped.join(', ')}`);
+  }
+
+  const emptyGroups = groupNames.filter((group) => !usedGroups.has(group));
+  if (emptyGroups.length > 0) {
+    failures.push(`Spec groups with no interactions: ${emptyGroups.join(', ')}`);
+  }
+
+  return failures;
 }
 
 export function assertRouteCoverage(name, routes, scenarios, behaviorCoveredLabels = new Set()) {
@@ -367,9 +311,7 @@ export function assertRouteCoverage(name, routes, scenarios, behaviorCoveredLabe
   const retiredWithoutBehavior = [];
 
   for (const route of routes) {
-    const matching = scenarios.filter((scenario) =>
-      routePatternMatches(route, scenario.route),
-    );
+    const matching = scenarios.filter((scenario) => routePatternMatches(route, scenario.route));
 
     if (matching.length === 0) {
       uncoveredRoutes.push(route);
@@ -394,7 +336,7 @@ export function assertRouteCoverage(name, routes, scenarios, behaviorCoveredLabe
   );
 
   if (uncoveredRoutes.length > 0) {
-    failures.push(`${name} is missing screenshot scenarios for routes: ${uncoveredRoutes.join(', ')}`);
+    failures.push(`${name} is missing parity scenarios for routes: ${uncoveredRoutes.join(', ')}`);
   }
 
   if (retiredWithoutBehavior.length > 0) {
@@ -407,7 +349,7 @@ export function assertRouteCoverage(name, routes, scenarios, behaviorCoveredLabe
 
   if (unknownScenarioRoutes.length > 0) {
     failures.push(
-      `${name} has screenshot scenarios for routes not declared by App.tsx: ${unknownScenarioRoutes
+      `${name} has parity scenarios for routes not declared by App.tsx: ${unknownScenarioRoutes
         .map((scenario) => `${scenario.label} -> ${scenario.route}`)
         .join(', ')}`,
     );
@@ -419,7 +361,7 @@ export function assertRouteCoverage(name, routes, scenarios, behaviorCoveredLabe
 export function normalizeScenarioRoute(path) {
   const hashIndex = path.indexOf('#');
   if (hashIndex === -1) {
-    throw new Error(`Visual parity scenario path does not include a hash route: ${path}`);
+    throw new Error(`Parity scenario path does not include a hash route: ${path}`);
   }
 
   const routeWithQuery = path.slice(hashIndex + 1) || '/';

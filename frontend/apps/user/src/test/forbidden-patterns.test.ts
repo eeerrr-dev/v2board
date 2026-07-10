@@ -280,7 +280,7 @@ describe('retired auth chrome never returns', () => {
   it('bans replica-era auth shell hooks anywhere in src', () => {
     // from: guest-layout.test.tsx, login.test.tsx, register.test.tsx,
     // forget.test.tsx. Note: .v2board-auth-box remains a legitimate ORACLE-side
-    // readySelector in frontend/scripts/visual-parity.mjs — the ban is only on
+    // readySelector in the interaction-parity harness (frontend/tests/lib) — the ban is only on
     // user-app sources.
     expect(
       violations([

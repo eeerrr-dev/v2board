@@ -138,7 +138,6 @@ services:
       - ./frontend:/src/frontend:ro
       - frontend-workspace:/app/frontend
       - frontend-deploy:/app/frontend/dist-deploy
-      - frontend-visual-artifacts:/app/frontend/.cache/visual-parity
       - frontend-interaction-artifacts:/app/frontend/.cache/interaction-parity
       - frontend-node_modules:/app/frontend/node_modules
       - frontend-pnpm-store:/app/frontend/.pnpm-store
@@ -284,7 +283,6 @@ volumes:
   mysql-data:
   frontend-workspace:
   frontend-deploy:
-  frontend-visual-artifacts:
   frontend-interaction-artifacts:
   frontend-node_modules:
   frontend-pnpm-store:

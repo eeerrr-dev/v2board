@@ -11,7 +11,7 @@ admin shipped, restored from the frozen oracle bundle and **kept byte-faithful o
 purpose** so the rewrite matches the oracle pixel-for-pixel. They are NOT authored
 source and should not be hand-edited rule-by-rule; if a vendored surface ever needs
 to change, re-derive it from the upstream library at the version below and re-run
-`make visual-parity`.
+`make visual-smoke`.
 
 The rewrite's runtime is modern (React 19; antd **6** is a dependency but is used
 only for the `App` context provider and `Form` — every visible admin control is
@@ -28,7 +28,7 @@ here means *vendored CSS/icon-font look*, not old running JavaScript.
 
 Versions are intentionally **not** upgraded: the project goal is a faithful replica
 of the frozen oracle, and the oracle's appearance *is* these framework versions.
-Upgrading would change the look and break `make visual-parity` — that would be a
+Upgrading would change the look and regress `make visual-smoke` — that would be a
 redesign, not a cleanup. See the repo replica goal in `AGENTS.md`.
 
 ## 2. Authored V2Board source styles (source-owned)

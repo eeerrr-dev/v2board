@@ -91,7 +91,7 @@ describe('toast', () => {
 
     const [message] = activeToasts('.v2board-toast-message');
     expect(message).toBeDefined();
-    // visual-parity.mjs waits on `.v2board-toast-root`, and `v2board-island`
+    // The interaction-parity harness waits on `.v2board-toast-root`, and `v2board-island`
     // scopes island tokens onto toast DOM rendered outside the island root.
     expect(message!.classList.contains('v2board-toast-root')).toBe(true);
     expect(message!.classList.contains('v2board-island')).toBe(true);

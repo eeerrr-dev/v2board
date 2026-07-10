@@ -68,7 +68,7 @@ verdict. Ordered by how self-contained the fix is.
   `.custom-html-style` + a homepage wrapper, then remove the island neutralizer. Only
   worth it as part of a homepage redesign.
 - **Risk:** medium — touches non-island homepage typography; needs visual review.
-- **Gate:** `make visual-parity`/`visual-smoke` on `home` + island dialog/sheet titles;
+- **Gate:** `make visual-smoke` on `home` + island dialog/sheet titles;
   `styles/globals.test.ts`.
 
 ## 5. ~~Lift status tones into semantic tokens~~ — DONE (2026-07-09)

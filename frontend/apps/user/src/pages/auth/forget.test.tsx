@@ -116,7 +116,7 @@ describe('ForgetPage', () => {
     const { container } = renderWithProviders(<ForgetPage />);
 
     // Parity-harness hook: visual/interaction parity selects the auth surface
-    // via `.v2board-auth-card` (frontend/scripts/visual-parity.mjs).
+    // via `.v2board-auth-card` (the interaction-parity harness).
     expect(container.querySelector('.v2board-auth-card')).not.toBeNull();
 
     // The card headline is the reset flow title, not the site title.

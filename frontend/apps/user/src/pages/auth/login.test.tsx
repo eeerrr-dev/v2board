@@ -141,7 +141,7 @@ describe('LoginPage', () => {
   it('renders the login card with translated labels, shadcn examples, and footer copy', () => {
     const view = renderWithProviders(<LoginPage />);
 
-    // Interaction-parity harness hooks (visual-parity.mjs selects
+    // Interaction-parity harness hooks (frontend/tests/lib selects
     // `.v2board-auth-card` and `.v2board-auth-title` in interactions mode).
     expect(view.container.querySelector('.v2board-auth-card')).not.toBeNull();
     const heading = view.getByRole('heading', { level: 1, name: '欢迎回来' });

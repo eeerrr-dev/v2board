@@ -18,11 +18,11 @@ or deploy output inside the repository.
 - Use `make deploy-smoke` after deploy-path or public asset changes.
 - Use `make visual-smoke` after visual/layout work that needs browser review.
 - Use `make behavior-parity` for the durable reskin behavior gate.
-- Use `make interaction-parity` for focused browser behavior checks. Narrow the
-  outer list with `INTERACTION_PARITY_SCENARIOS=... make interaction-parity`.
-- Use `make visual-parity` only as a read-only oracle check for surfaces still
-  on the replica. Focus it with `VISUAL_PARITY_FILTER=...` and
-  `VISUAL_PARITY_VIEWPORT_FILTER=...` when debugging.
+- Use `make interaction-parity` (Playwright Test) for focused browser behavior
+  checks. Narrow the scenarios with `INTERACTION_PARITY_SCENARIOS=... make
+  interaction-parity` and the viewports with `VISUAL_PARITY_VIEWPORTS=desktop`
+  (or `mobile`). The old pixel/screenshot `make visual-parity` lane is retired:
+  every scenario is `visualRetired`, so parity is behavioral, not byte-for-byte.
 - Use `make legacy-oracle-check` before relying on the frozen packaged oracle.
 - Use `make legacy-oracle-up` / `make legacy-oracle-down` only for a persistent
   manual oracle on `http://localhost:8001`.
@@ -347,5 +347,5 @@ parity and must not be upgraded casually; upgrading them is a redesign decision.
 - Route/scenario changes: run `make parity-config-audit`.
 - Deploy path or public asset changes: run `make deploy-smoke`.
 - Redesigned behavior changes: run focused `make interaction-parity` shards.
-- Visual/layout changes: use focused `make visual-parity` or `make visual-smoke`
-  as appropriate.
+- Visual/layout changes: use focused `make visual-smoke` for a browser-rendered
+  smoke of the deployed assets.

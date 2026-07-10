@@ -1,5 +1,6 @@
 // Result normalizers + the label-keyed normalizeInteractionResult dispatcher.
-// Extracted verbatim from frontend/scripts/visual-parity.mjs (the source of truth).
+// Extracted verbatim from the retired frontend/scripts/visual-parity.mjs driver;
+// these modules are now the source of truth.
 import {
   clonePageRequests,
   jsonIncludes,

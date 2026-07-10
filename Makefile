@@ -1,4 +1,4 @@
-.PHONY: up down logs shell reset sync ps doctor rust-check rust-up rust-dev rust-api-up rust-api-logs rust-worker-logs rust-contract rust-route-audit rust-worker-reconcile rust-target-gate rust-interaction-parity public-bundle-audit replica-audit parity-config-audit legacy-oracle-check legacy-oracle-up legacy-oracle-serve legacy-oracle-down deploy-smoke deploy-public-sync deploy-public-check deploy-public-ensure visual-smoke visual-parity browser-parity interaction-parity behavior-parity clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
+.PHONY: up down logs shell reset sync ps doctor rust-check rust-up rust-dev rust-api-up rust-api-logs rust-worker-logs rust-contract rust-route-audit rust-worker-reconcile rust-target-gate rust-interaction-parity public-bundle-audit replica-audit parity-config-audit legacy-oracle-check legacy-oracle-up legacy-oracle-serve legacy-oracle-down deploy-smoke deploy-public-sync deploy-public-check deploy-public-ensure visual-smoke interaction-parity behavior-parity clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
 
 DC := $(shell \
 	if docker compose version >/dev/null 2>&1; then echo "docker compose"; \
@@ -31,11 +31,10 @@ FRONTEND_SERVE_RUN = $(DCF) run --rm -T --no-deps --entrypoint sh -p $(LEGACY_OR
 FRONTEND_WORKSPACE_BOOTSTRAP := if [ ! -f /app/frontend/package.json ]; then mkdir -p /app/frontend && tar --exclude=node_modules --exclude=.pnpm-store --exclude=dist --exclude=dist-deploy -C /src/frontend -cf - . | tar -C /app/frontend -xf -; fi
 FRONTEND_SETUP := $(FRONTEND_WORKSPACE_BOOTSTRAP) && corepack enable && corepack prepare pnpm@11.9.0 --activate >/dev/null && pnpm config set store-dir /app/frontend/.pnpm-store >/dev/null
 FRONTEND_INSTALL := HUSKY=0 pnpm install --frozen-lockfile
-FRONTEND_FAST_INSTALL := if [ ! -x /app/frontend/node_modules/.bin/playwright ]; then HUSKY=0 pnpm install --frozen-lockfile; fi
+FRONTEND_FAST_INSTALL := if [ ! -x /app/frontend/node_modules/.bin/playwright ] || [ ! -d /app/frontend/node_modules/@playwright/test ]; then HUSKY=0 pnpm install --frozen-lockfile; fi
 FRONTEND_BOOTSTRAP := $(FRONTEND_SETUP) && $(FRONTEND_INSTALL)
 FRONTEND_FAST_BOOTSTRAP := $(FRONTEND_SETUP) && $(FRONTEND_FAST_INSTALL)
 PLAYWRIGHT_CHROMIUM_BOOTSTRAP := if ! find /app/frontend/.cache/ms-playwright -path "*/chrome-linux/chrome" -type f 2>/dev/null | grep -q .; then pnpm exec playwright install chromium >/dev/null; fi
-PLAYWRIGHT_BROWSER_BOOTSTRAP := browser="$${VISUAL_PARITY_BROWSER:-chromium}"; case "$$browser" in chromium) marker="*/chrome-linux/chrome" ;; firefox) marker="*/firefox/firefox" ;; webkit) marker="*/pw_run.sh" ;; *) echo "Unsupported VISUAL_PARITY_BROWSER=$$browser"; exit 1 ;; esac; if ! find /app/frontend/.cache/ms-playwright -path "$$marker" -type f 2>/dev/null | grep -q .; then pnpm exec playwright install "$$browser" >/dev/null; fi
 LEGACY_ORACLE_REF_FILE := frontend/fixtures/legacy-oracle.ref
 LEGACY_ORACLE_REF ?= $(shell test -s $(LEGACY_ORACLE_REF_FILE) && sed -n '1p' $(LEGACY_ORACLE_REF_FILE))
 LEGACY_ORACLE_CONTAINER ?= $(COMPOSE_PROJECT)-legacy-oracle
@@ -77,7 +76,6 @@ LEGACY_ORACLE_REQUIRED_PATHS := \
 	public/assets/admin/theme/green.css \
 	resources/views/admin.blade.php
 VISUAL_SOURCE_BASE_URL ?= http://host.docker.internal:8000
-VISUAL_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/visual-parity
 INTERACTION_PARITY_ARTIFACT_DIR ?= /app/frontend/.cache/interaction-parity
 INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-persistence user-home-root-page-state user-register-form-state user-forget-form-state admin-root-page-state admin-login-form-state \
 	admin-system-queue-state user-dashboard-header-language-dropdown user-session-expired-redirect user-auth-401-no-redirect user-dashboard-dark-mode-persistence user-dashboard-subscribe-drawer user-dashboard-subscribe-import-links \
@@ -100,68 +98,19 @@ INTERACTION_PARITY_SCENARIOS ?= user-login-form-language user-login-language-per
 	admin-user-destructive-failure-matrix admin-user-export-download-matrix admin-user-create-modal admin-user-create-plan-select-dropdown admin-user-create-expiry-picker admin-user-send-mail-modal admin-user-send-mail-submit-matrix admin-user-reset-secret-confirm \
 	admin-user-delete-confirm admin-user-copy-action admin-user-edit-action admin-user-update-validation-failure admin-user-assign-action admin-user-orders-action admin-user-invite-action admin-user-traffic-action \
 	admin-users-extreme-viewport-matrix
-INTERACTION_PARITY_RETRIES ?= 4
-INTERACTION_PARITY_SHARD_DELAY ?= 20
+# Playwright Test workers for the interaction lane (empty = serial, faithful to
+# the legacy driver). Override with PARITY_WORKERS=N once a run is green.
+PARITY_WORKERS ?=
 INTERACTION_PARITY_PAUSE_SERVICES ?= frontend horizon scheduler
 INTERACTION_PARITY_RESUME_SERVICES ?= mysql redis mailpit app frontend horizon scheduler
-VISUAL_PARITY_RESTART_SERVICES ?= 1
-VISUAL_PARITY_SHARD_DELAY ?= 30
-VISUAL_PARITY_RETRIES ?= 2
-VISUAL_PARITY_RETRY_DELAY ?= 20
-VISUAL_PARITY_MODE ?= screenshots
-VISUAL_PARITY_PUBLIC_CHECKED ?= 0
-VISUAL_PARITY_APP_READY ?= 0
-VISUAL_PARITY_FILTER ?=
-VISUAL_PARITY_INTERACTION_FILTER ?=
-VISUAL_PARITY_VIEWPORT_FILTER ?=
-VISUAL_PARITY_BROWSER ?= chromium
 VISUAL_PARITY_SKIP_DEPLOY ?= 0
-VISUAL_PARITY_SCENARIOS ?= user-home-root user-login user-register-rich user-forget user-dashboard user-dashboard-session-expired user-dashboard-no-subscription user-dashboard-expired-subscription \
-	user-dashboard-traffic-used-up user-dashboard-device-limit-reached user-dashboard-banned user-dashboard-banned-no-subscription user-dashboard-expired-traffic-used-up user-dashboard-device-limit-expired user-dashboard-dark user-plans \
-	user-plans-long-data user-plans-sold-out user-plans-empty user-plans-timeout user-plan-checkout user-plan-checkout-non-renewable user-orders user-orders-long-data \
-	user-orders-empty user-orders-api-500 user-orders-timeout user-order-detail user-node user-node-long-data user-node-empty user-node-api-500 \
-	user-node-timeout user-traffic user-traffic-timeout user-invite user-tickets user-tickets-empty user-tickets-timeout user-ticket-detail \
-	user-ticket-detail-long-thread user-knowledge user-knowledge-timeout user-profile user-dashboard-no-subscription-zh-tw user-dashboard-expired-subscription-zh-tw user-dashboard-traffic-used-up-zh-tw user-dashboard-device-limit-reached-zh-tw \
-	user-dashboard-banned-zh-tw user-dashboard-dark-zh-tw user-plans-long-data-zh-tw user-plans-sold-out-zh-tw user-plan-checkout-non-renewable-zh-tw user-dashboard-session-expired-zh-tw user-plans-empty-zh-tw user-orders-empty-zh-tw \
-	user-node-empty-zh-tw user-tickets-empty-zh-tw user-orders-long-data-zh-tw user-node-long-data-zh-tw user-dashboard-no-subscription-en-us user-dashboard-expired-subscription-en-us user-dashboard-traffic-used-up-en-us user-dashboard-device-limit-reached-en-us \
-	user-dashboard-banned-en-us user-dashboard-dark-en-us user-plans-long-data-en-us user-plans-sold-out-en-us user-plan-checkout-non-renewable-en-us user-orders-long-data-en-us user-dashboard-session-expired-en-us user-plans-empty-en-us \
-	user-orders-empty-en-us user-node-empty-en-us user-tickets-empty-en-us user-node-long-data-en-us user-home-root-zh-tw user-login-zh-tw user-register-rich-zh-tw user-forget-zh-tw \
-	user-dashboard-zh-tw user-plans-zh-tw user-plan-checkout-zh-tw user-orders-zh-tw user-order-detail-zh-tw user-node-zh-tw user-traffic-zh-tw user-invite-zh-tw \
-	user-tickets-zh-tw user-ticket-detail-zh-tw user-knowledge-zh-tw user-profile-zh-tw user-home-root-en-us user-login-en-us user-register-rich-en-us user-forget-en-us \
-	user-dashboard-en-us user-plans-en-us user-plan-checkout-en-us user-orders-en-us user-order-detail-en-us user-node-en-us user-traffic-en-us user-invite-en-us \
-	user-tickets-en-us user-ticket-detail-en-us user-knowledge-en-us user-profile-en-us user-dashboard-no-subscription-ja-jp user-dashboard-expired-subscription-ja-jp user-dashboard-traffic-used-up-ja-jp user-dashboard-device-limit-reached-ja-jp \
-	user-dashboard-banned-ja-jp user-dashboard-dark-ja-jp user-plans-long-data-ja-jp user-plans-sold-out-ja-jp user-plan-checkout-non-renewable-ja-jp user-dashboard-session-expired-ja-jp user-plans-empty-ja-jp user-orders-empty-ja-jp \
-	user-node-empty-ja-jp user-tickets-empty-ja-jp user-orders-long-data-ja-jp user-node-long-data-ja-jp user-home-root-ja-jp user-login-ja-jp user-register-rich-ja-jp user-forget-ja-jp \
-	user-dashboard-ja-jp user-plans-ja-jp user-plan-checkout-ja-jp user-orders-ja-jp user-order-detail-ja-jp user-node-ja-jp user-traffic-ja-jp user-invite-ja-jp \
-	user-tickets-ja-jp user-ticket-detail-ja-jp user-knowledge-ja-jp user-profile-ja-jp user-dashboard-no-subscription-vi-vn user-dashboard-expired-subscription-vi-vn user-dashboard-traffic-used-up-vi-vn user-dashboard-device-limit-reached-vi-vn \
-	user-dashboard-banned-vi-vn user-dashboard-dark-vi-vn user-plans-long-data-vi-vn user-plans-sold-out-vi-vn user-plan-checkout-non-renewable-vi-vn user-dashboard-session-expired-vi-vn user-plans-empty-vi-vn user-orders-empty-vi-vn \
-	user-node-empty-vi-vn user-tickets-empty-vi-vn user-orders-long-data-vi-vn user-node-long-data-vi-vn user-home-root-vi-vn user-login-vi-vn user-register-rich-vi-vn user-forget-vi-vn \
-	user-dashboard-vi-vn user-plans-vi-vn user-plan-checkout-vi-vn user-orders-vi-vn user-order-detail-vi-vn user-node-vi-vn user-traffic-vi-vn user-invite-vi-vn \
-	user-tickets-vi-vn user-ticket-detail-vi-vn user-knowledge-vi-vn user-profile-vi-vn user-dashboard-no-subscription-ko-kr user-dashboard-expired-subscription-ko-kr user-dashboard-traffic-used-up-ko-kr user-dashboard-device-limit-reached-ko-kr \
-	user-dashboard-banned-ko-kr user-dashboard-dark-ko-kr user-plans-long-data-ko-kr user-plans-sold-out-ko-kr user-plan-checkout-non-renewable-ko-kr user-dashboard-session-expired-ko-kr user-plans-empty-ko-kr user-orders-empty-ko-kr \
-	user-node-empty-ko-kr user-tickets-empty-ko-kr user-orders-long-data-ko-kr user-node-long-data-ko-kr user-home-root-ko-kr user-login-ko-kr user-register-rich-ko-kr user-forget-ko-kr \
-	user-dashboard-ko-kr user-plans-ko-kr user-plan-checkout-ko-kr user-orders-ko-kr user-order-detail-ko-kr user-node-ko-kr user-traffic-ko-kr user-invite-ko-kr \
-	user-tickets-ko-kr user-ticket-detail-ko-kr user-knowledge-ko-kr user-profile-ko-kr admin-dashboard admin-dashboard-session-expired admin-dashboard-dark admin-plans \
-	admin-plans-timeout admin-orders admin-orders-long-data admin-orders-api-500 admin-orders-timeout admin-users admin-users-timeout admin-users-api-500 \
-	admin-tickets-timeout admin-users-long-data admin-tickets admin-ticket-detail admin-config admin-theme admin-system admin-server-groups \
-	admin-server-manage admin-server-manage-long-data admin-server-manage-timeout admin-server-routes admin-payments admin-payments-timeout admin-coupons admin-coupons-timeout \
-	admin-giftcards admin-giftcards-timeout admin-notices admin-notices-timeout admin-knowledge admin-knowledge-timeout admin-root admin-login
 VISUAL_PARITY_VIEWPORTS ?= desktop mobile
-BROWSER_PARITY_BROWSERS ?= chromium firefox webkit
-BROWSER_PARITY_SCENARIOS ?= $(VISUAL_PARITY_SCENARIOS)
-BROWSER_PARITY_VIEWPORTS ?= desktop mobile
-BROWSER_PARITY_BATCH_SIZE ?= 8
-VISUAL_PARITY_CHECK_EACH_SHARD ?= 0
 DEPLOY_BUILD_PAUSE_SERVICES ?= app frontend horizon scheduler mysql redis mailpit
 DEPLOY_RESUME_SERVICES ?= mysql redis mailpit app frontend horizon scheduler
 DEPLOY_FINAL_RESUME_SERVICES ?= mysql redis mailpit app frontend horizon scheduler
 DEPLOY_NODE_OPTIONS ?= --max-old-space-size=256
 DEPLOY_PUBLIC_ENSURE_RETRIES ?= 3
 DEPLOY_PUBLIC_ENSURE_RETRY_DELAY ?= 20
-VISUAL_PARITY_NODE_OPTIONS ?= --max-old-space-size=256
-VISUAL_PARITY_FRESH_BROWSER ?= auto
-VISUAL_PARITY_PAUSE_SERVICES ?= frontend horizon scheduler
-VISUAL_PARITY_RESUME_SERVICES ?= mysql redis mailpit app frontend horizon scheduler
 
 ifeq ($(DC),)
 $(error docker compose not found; run 'brew install docker-compose' or add cliPluginsExtraDirs to ~/.docker/config.json)
@@ -360,7 +309,7 @@ public-bundle-audit:
 
 replica-audit:
 	@echo "Auditing runtime/build references to packaged legacy frontend bundles..."
-	@matches="$$(rg -n '/theme/default/assets/(umi|components\.chunk)\.css|/theme/default/assets/(umi\.js|(vendors|components)\.async\.js|env\.example\.js)|/theme/default/assets/(i18n|images|static|theme)/|/assets/admin/components\.chunk\.css|/assets/admin/((vendors|components)\.async\.js|env\.example\.js)|/assets/admin/theme/|\.\./\.\./\.\./public/theme(?:/default/assets)?|\.\./\.\./\.\./public/assets/admin|legacyThemeRoot|copyLegacy|themeRuntimeAssetsPlugin|legacyThemePlugin|legacyAdminAssetsPlugin|copyLegacyAdminAssets' frontend/apps frontend/packages frontend/scripts backend/laravel/resources/views backend/laravel/public/theme/default/dashboard.blade.php backend/laravel/public/theme/default/config.json docker-compose.local.yml --glob '!**/*.test.*' --glob '!frontend/scripts/visual-parity.mjs' || true)"; \
+	@matches="$$(rg -n '/theme/default/assets/(umi|components\.chunk)\.css|/theme/default/assets/(umi\.js|(vendors|components)\.async\.js|env\.example\.js)|/theme/default/assets/(i18n|images|static|theme)/|/assets/admin/components\.chunk\.css|/assets/admin/((vendors|components)\.async\.js|env\.example\.js)|/assets/admin/theme/|\.\./\.\./\.\./public/theme(?:/default/assets)?|\.\./\.\./\.\./public/assets/admin|legacyThemeRoot|copyLegacy|themeRuntimeAssetsPlugin|legacyThemePlugin|legacyAdminAssetsPlugin|copyLegacyAdminAssets' frontend/apps frontend/packages frontend/scripts backend/laravel/resources/views backend/laravel/public/theme/default/dashboard.blade.php backend/laravel/public/theme/default/config.json docker-compose.local.yml --glob '!**/*.test.*' || true)"; \
 	if [ -n "$$matches" ]; then \
 		echo "$$matches"; \
 		echo ""; \
@@ -407,7 +356,6 @@ legacy-oracle-up: legacy-oracle-check
 		-e PLAYWRIGHT_BROWSERS_PATH=/app/frontend/.cache/ms-playwright \
 		-e NODE_OPTIONS=$(LEGACY_ORACLE_NODE_OPTIONS) \
 		-e VISUAL_PARITY_ADMIN_PATH=$$admin_path \
-		-e VISUAL_PARITY_SERVE_ONLY=1 \
 		-e VISUAL_PARITY_ORACLE_HOST=0.0.0.0 \
 		-e VISUAL_PARITY_PUBLIC_ORACLE_HOST=localhost \
 		-e VISUAL_PARITY_ORACLE_PORT=$(LEGACY_ORACLE_PORT) \
@@ -417,7 +365,6 @@ legacy-oracle-up: legacy-oracle-check
 		-v $(LEGACY_ORACLE_VOLUME):/oracle:ro \
 		-v $(COMPOSE_PROJECT)_frontend-workspace:/app/frontend \
 		-v $(COMPOSE_PROJECT)_frontend-deploy:/app/frontend/dist-deploy \
-		-v $(COMPOSE_PROJECT)_frontend-visual-artifacts:/app/frontend/.cache/visual-parity \
 		-v $(COMPOSE_PROJECT)_frontend-interaction-artifacts:/app/frontend/.cache/interaction-parity \
 		-v $(COMPOSE_PROJECT)_frontend-node_modules:/app/frontend/node_modules \
 		-v $(COMPOSE_PROJECT)_frontend-pnpm-store:/app/frontend/.pnpm-store \
@@ -428,7 +375,7 @@ legacy-oracle-up: legacy-oracle-check
 		-v $(COMPOSE_PROJECT)_frontend-config-node_modules:/app/frontend/packages/config/node_modules \
 		-v $(COMPOSE_PROJECT)_frontend-i18n-node_modules:/app/frontend/packages/i18n/node_modules \
 		-v $(COMPOSE_PROJECT)_frontend-types-node_modules:/app/frontend/packages/types/node_modules \
-		v2board-frontend sh -lc 'rm -rf /tmp/v2board-legacy-oracle && mkdir -p /tmp/v2board-legacy-oracle && tar -C /tmp/v2board-legacy-oracle -xf /oracle/oracle.tar && $(FRONTEND_FAST_BOOTSTRAP) && VISUAL_PARITY_SERVE_ONLY=1 VISUAL_PARITY_ORACLE_HOST=0.0.0.0 VISUAL_PARITY_PUBLIC_ORACLE_HOST=localhost VISUAL_PARITY_ORACLE_PORT=$(LEGACY_ORACLE_PORT) VISUAL_PARITY_SOURCE_BASE_URL=$(VISUAL_SOURCE_BASE_URL) VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle node scripts/visual-parity.mjs'; \
+		v2board-frontend sh -lc 'rm -rf /tmp/v2board-legacy-oracle && mkdir -p /tmp/v2board-legacy-oracle && tar -C /tmp/v2board-legacy-oracle -xf /oracle/oracle.tar && $(FRONTEND_FAST_BOOTSTRAP) && VISUAL_PARITY_ORACLE_HOST=0.0.0.0 VISUAL_PARITY_PUBLIC_ORACLE_HOST=localhost VISUAL_PARITY_ORACLE_PORT=$(LEGACY_ORACLE_PORT) VISUAL_PARITY_SOURCE_BASE_URL=$(VISUAL_SOURCE_BASE_URL) VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle node scripts/serve-oracle.mjs'; \
 	echo "Legacy oracle user: http://localhost:$(LEGACY_ORACLE_PORT)/"; \
 	echo "Legacy oracle admin: http://localhost:$(LEGACY_ORACLE_PORT)/$$admin_path#/login"
 
@@ -445,7 +392,7 @@ legacy-oracle-serve: legacy-oracle-check
 	[ -n "$$admin_path" ] || admin_path=admin; \
 	$(DCF) stop $(LEGACY_ORACLE_PAUSE_SERVICES) >/dev/null 2>&1 || true; \
 	trap '$(DCF) up -d $(LEGACY_ORACLE_RESUME_SERVICES) >/dev/null 2>&1 || true' EXIT; \
-	git archive $(LEGACY_ORACLE_REF) public/theme/default public/assets/admin resources/views/admin.blade.php | $(FRONTEND_SERVE_RUN) -e NODE_OPTIONS=$(LEGACY_ORACLE_NODE_OPTIONS) -e VISUAL_PARITY_ADMIN_PATH=$$admin_path frontend -lc 'rm -rf /tmp/v2board-legacy-oracle && mkdir -p /tmp/v2board-legacy-oracle && tar -C /tmp/v2board-legacy-oracle -xf - && $(FRONTEND_FAST_BOOTSTRAP) && VISUAL_PARITY_SERVE_ONLY=1 VISUAL_PARITY_ORACLE_HOST=0.0.0.0 VISUAL_PARITY_PUBLIC_ORACLE_HOST=localhost VISUAL_PARITY_ORACLE_PORT=$(LEGACY_ORACLE_PORT) VISUAL_PARITY_SOURCE_BASE_URL=$(VISUAL_SOURCE_BASE_URL) VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle node scripts/visual-parity.mjs'
+	git archive $(LEGACY_ORACLE_REF) public/theme/default public/assets/admin resources/views/admin.blade.php | $(FRONTEND_SERVE_RUN) -e NODE_OPTIONS=$(LEGACY_ORACLE_NODE_OPTIONS) -e VISUAL_PARITY_ADMIN_PATH=$$admin_path frontend -lc 'rm -rf /tmp/v2board-legacy-oracle && mkdir -p /tmp/v2board-legacy-oracle && tar -C /tmp/v2board-legacy-oracle -xf - && $(FRONTEND_FAST_BOOTSTRAP) && VISUAL_PARITY_ORACLE_HOST=0.0.0.0 VISUAL_PARITY_PUBLIC_ORACLE_HOST=localhost VISUAL_PARITY_ORACLE_PORT=$(LEGACY_ORACLE_PORT) VISUAL_PARITY_SOURCE_BASE_URL=$(VISUAL_SOURCE_BASE_URL) VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle node scripts/serve-oracle.mjs'
 
 legacy-oracle-down:
 	@docker rm -f $(LEGACY_ORACLE_CONTAINER) >/dev/null 2>&1 || true
@@ -657,276 +604,18 @@ visual-smoke: deploy-smoke
 		-e VISUAL_SMOKE_ADMIN_PATH=$$admin_path \
 		-w /app/frontend frontend -lc '$(FRONTEND_FAST_BOOTSTRAP) && $(PLAYWRIGHT_CHROMIUM_BOOTSTRAP) && node scripts/visual-smoke.mjs'
 
-visual-parity: legacy-oracle-check
-	@if [ "$${VISUAL_PARITY_MODE:-screenshots}" = "screenshots" ] && [ "$${VISUAL_PARITY_SHARD:-}" != "1" ] && [ -z "$${VISUAL_PARITY_FILTER:-}" ] && [ -z "$${VISUAL_PARITY_VIEWPORT_FILTER:-}" ]; then \
-		status=0; \
-		if [ "$(VISUAL_PARITY_SKIP_DEPLOY)" != "1" ]; then \
-			$(MAKE) --no-print-directory deploy-smoke || exit $$?; \
-		else \
-			$(MAKE) --no-print-directory deploy-public-ensure || exit $$?; \
-		fi; \
-		$(DCF) up -d app >/dev/null; \
-		admin_path="$$( $(DCF) exec -T app sh -lc 'php artisan tinker --execute='\''echo config("v2board.secure_path", config("v2board.frontend_admin_path", hash("crc32b", config("app.key"))));'\'' 2>/dev/null || true' )"; \
-		[ -n "$$admin_path" ] || admin_path=admin; \
-		$(DCF) stop $(VISUAL_PARITY_PAUSE_SERVICES) >/dev/null 2>&1 || true; \
-		needs_public_check=0; \
-		for viewport in $(VISUAL_PARITY_VIEWPORTS); do \
-			for scenario in $(VISUAL_PARITY_SCENARIOS); do \
-				echo "Visual parity shard: $$scenario/$$viewport"; \
-					attempt=0; \
-					while :; do \
-						attempt=$$((attempt + 1)); \
-						status=0; \
-						if [ "$(VISUAL_PARITY_CHECK_EACH_SHARD)" = "1" ] || [ "$$needs_public_check" = "1" ]; then \
-							$(MAKE) --no-print-directory deploy-public-ensure || status=$$?; \
-							needs_public_check=0; \
-						fi; \
-						$(DCF) stop $(VISUAL_PARITY_PAUSE_SERVICES) >/dev/null 2>&1 || true; \
-						artifact_dir="$(VISUAL_PARITY_ARTIFACT_DIR)/$$scenario-$$viewport"; \
-						$(MAKE) --no-print-directory clean-frontend-runs; \
-					if [ "$$status" -eq 0 ] && git archive $(LEGACY_ORACLE_REF) public/theme/default public/assets/admin resources/views/admin.blade.php | $(FRONTEND_RUN) \
-						-e NODE_OPTIONS=$(VISUAL_PARITY_NODE_OPTIONS) \
-						-e PLAYWRIGHT_BROWSERS_PATH=/app/frontend/.cache/ms-playwright \
-						-e VISUAL_PARITY_MODE=$${VISUAL_PARITY_MODE:-screenshots} \
-						-e VISUAL_PARITY_CAPTURE_RETIRED="$${VISUAL_PARITY_CAPTURE_RETIRED:-}" \
-						-e VISUAL_PARITY_SOURCE_BASE_URL=$(VISUAL_SOURCE_BASE_URL) \
-						-e VISUAL_PARITY_ADMIN_PATH=$$admin_path \
-						-e VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle \
-						-e VISUAL_PARITY_ARTIFACT_DIR=$$artifact_dir \
-						-e VISUAL_PARITY_SCENARIO_LABELS="$${VISUAL_PARITY_SCENARIO_LABELS:-}" \
-						-e VISUAL_PARITY_FILTER=$$scenario \
-						-e VISUAL_PARITY_EXACT_FILTER="$${VISUAL_PARITY_EXACT_FILTER:-}" \
-						-e VISUAL_PARITY_INTERACTION_FILTER="$(VISUAL_PARITY_INTERACTION_FILTER)" \
-						-e VISUAL_PARITY_VIEWPORT_FILTER=$$viewport \
-						-e VISUAL_PARITY_BROWSER=$(VISUAL_PARITY_BROWSER) \
-						-e VISUAL_PARITY_FRESH_BROWSER=$(VISUAL_PARITY_FRESH_BROWSER) \
-						-w /app/frontend frontend -lc 'rm -rf /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && mkdir -p /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && tar -C /tmp/v2board-legacy-oracle -xf - && $(FRONTEND_FAST_BOOTSTRAP) && $(PLAYWRIGHT_BROWSER_BOOTSTRAP) && node scripts/visual-parity.mjs'; then \
-						status=0; \
-					else \
-						status=$$?; \
-					fi; \
-					$(MAKE) --no-print-directory clean-frontend-runs; \
-					if [ "$$status" -eq 0 ]; then \
-						break; \
-					fi; \
-					if [ "$$status" != "137" ] && [ "$$attempt" -le "$(VISUAL_PARITY_RETRIES)" ]; then \
-						echo "Visual parity shard failed; rechecking Docker public assets before retry $$attempt/$(VISUAL_PARITY_RETRIES) of $$scenario/$$viewport."; \
-						needs_public_check=1; \
-						sleep $(VISUAL_PARITY_RETRY_DELAY); \
-						continue; \
-					fi; \
-					if [ "$$status" != "137" ] || [ "$$attempt" -gt "$(VISUAL_PARITY_RETRIES)" ]; then \
-						break; \
-					fi; \
-					echo "Visual parity shard hit 137; retrying $$scenario/$$viewport after $(VISUAL_PARITY_RETRY_DELAY)s."; \
-					needs_public_check=1; \
-					sleep $(VISUAL_PARITY_RETRY_DELAY); \
-				done; \
-				if [ "$$status" -ne 0 ]; then \
-					$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-					exit $$status; \
-				fi; \
-				if [ "$(VISUAL_PARITY_SHARD_DELAY)" != "0" ]; then \
-					sleep $(VISUAL_PARITY_SHARD_DELAY); \
-				fi; \
-			done; \
-		done; \
-		echo "Visual parity OK: all configured shards passed."; \
-		echo "Artifacts: $(VISUAL_PARITY_ARTIFACT_DIR)"; \
-		$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-		exit 0; \
-	fi
-	@if [ "$${VISUAL_PARITY_MODE:-screenshots}" = "interactions" ] && [ "$${VISUAL_PARITY_SHARD:-}" != "1" ] && [ -z "$${VISUAL_PARITY_VIEWPORT_FILTER:-}" ]; then \
-		if [ -z "$${VISUAL_PARITY_INTERACTION_FILTER:-}" ] && [ -z "$${VISUAL_PARITY_FILTER:-}" ]; then \
-			$(MAKE) --no-print-directory interaction-parity || exit $$?; \
-			exit 0; \
-		fi; \
-		if [ "$(VISUAL_PARITY_SKIP_DEPLOY)" = "1" ]; then \
-			$(MAKE) --no-print-directory deploy-public-ensure || exit $$?; \
-		else \
-			$(MAKE) --no-print-directory deploy-smoke || exit $$?; \
-		fi; \
-		$(DCF) up -d app >/dev/null; \
-		status=0; \
-		for viewport in $(VISUAL_PARITY_VIEWPORTS); do \
-			echo "Interaction parity viewport shard: $$viewport"; \
-			artifact_dir="$(VISUAL_PARITY_ARTIFACT_DIR)/$$viewport"; \
-			VISUAL_PARITY_MODE=interactions \
-			VISUAL_PARITY_SHARD=1 \
-			VISUAL_PARITY_SKIP_DEPLOY=1 \
-			VISUAL_PARITY_PUBLIC_CHECKED=1 \
-			VISUAL_PARITY_APP_READY=1 \
-			VISUAL_PARITY_RESTART_SERVICES=0 \
-			VISUAL_PARITY_ARTIFACT_DIR="$$artifact_dir" \
-			VISUAL_PARITY_VIEWPORT_FILTER="$$viewport" \
-			$(MAKE) --no-print-directory visual-parity || status=$$?; \
-			if [ "$$status" -ne 0 ]; then \
-				$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-				exit $$status; \
-			fi; \
-		done; \
-		if [ "$(VISUAL_PARITY_RESTART_SERVICES)" != "0" ]; then \
-			$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-		fi; \
-		echo "Interaction parity OK: filtered viewport shards passed."; \
-		echo "Artifacts: $(VISUAL_PARITY_ARTIFACT_DIR)/<viewport>"; \
-		exit 0; \
-	fi
-	@if [ "$${VISUAL_PARITY_MODE:-screenshots}" = "screenshots" ] && [ "$${VISUAL_PARITY_SHARD:-}" != "1" ] && [ -z "$${VISUAL_PARITY_FILTER:-}" ] && [ -z "$${VISUAL_PARITY_VIEWPORT_FILTER:-}" ]; then \
-		exit 0; \
-	fi; \
-	if [ "$${VISUAL_PARITY_MODE:-screenshots}" = "interactions" ] && [ "$${VISUAL_PARITY_SHARD:-}" != "1" ] && [ -z "$${VISUAL_PARITY_VIEWPORT_FILTER:-}" ]; then \
-		exit 0; \
-	fi; \
-	status=0; \
-	$(MAKE) --no-print-directory clean-frontend-runs; \
-	if [ "$(VISUAL_PARITY_SKIP_DEPLOY)" = "1" ]; then \
-		echo "Skipping deploy-smoke; reusing the current Docker app public assets."; \
-		if [ "$(VISUAL_PARITY_PUBLIC_CHECKED)" != "1" ]; then \
-			$(MAKE) --no-print-directory deploy-public-ensure || status=$$?; \
-		elif [ "$(VISUAL_PARITY_APP_READY)" != "1" ]; then \
-			$(DCF) up -d app || status=$$?; \
-		fi; \
-	else \
-		$(MAKE) --no-print-directory deploy-smoke || status=$$?; \
-	fi; \
-	if [ "$$status" -eq 0 ]; then \
-		admin_path="$${VISUAL_PARITY_ADMIN_PATH:-}"; \
-		if [ -z "$$admin_path" ]; then \
-			admin_path="$$( $(DCF) exec -T app sh -lc 'php artisan tinker --execute='\''echo config("v2board.secure_path", config("v2board.frontend_admin_path", hash("crc32b", config("app.key"))));'\'' 2>/dev/null || true' )"; \
-		fi; \
-		[ -n "$$admin_path" ] || admin_path=admin; \
-		artifact_dir="$(VISUAL_PARITY_ARTIFACT_DIR)"; \
-		if [ "$$artifact_dir" = "/app/frontend/.cache/visual-parity" ]; then \
-			artifact_name="$${VISUAL_PARITY_FILTER:-$(VISUAL_PARITY_INTERACTION_FILTER)}"; \
-			[ -n "$$artifact_name" ] || artifact_name=filtered; \
-			artifact_viewport="$${VISUAL_PARITY_VIEWPORT_FILTER:-all}"; \
-			artifact_dir="$$artifact_dir/$$artifact_name-$$artifact_viewport"; \
-		fi; \
-		$(DCF) stop $(VISUAL_PARITY_PAUSE_SERVICES) >/dev/null 2>&1 || true; \
-		if [ "$(VISUAL_PARITY_SHARD_DELAY)" != "0" ]; then \
-			sleep $(VISUAL_PARITY_SHARD_DELAY); \
-		fi; \
-			attempt=0; \
-			needs_public_check=0; \
-				while :; do \
-					attempt=$$((attempt + 1)); \
-					status=0; \
-					if [ "$$needs_public_check" = "1" ]; then \
-						$(MAKE) --no-print-directory deploy-public-ensure || status=$$?; \
-						needs_public_check=0; \
-					fi; \
-					$(DCF) stop $(VISUAL_PARITY_PAUSE_SERVICES) >/dev/null 2>&1 || true; \
-					$(MAKE) --no-print-directory clean-frontend-runs; \
-				if [ "$$status" -eq 0 ] && git archive $(LEGACY_ORACLE_REF) public/theme/default public/assets/admin resources/views/admin.blade.php | $(FRONTEND_RUN) \
-					-e NODE_OPTIONS=$(VISUAL_PARITY_NODE_OPTIONS) \
-					-e PLAYWRIGHT_BROWSERS_PATH=/app/frontend/.cache/ms-playwright \
-					-e VISUAL_PARITY_MODE=$${VISUAL_PARITY_MODE:-screenshots} \
-					-e VISUAL_PARITY_CAPTURE_RETIRED="$${VISUAL_PARITY_CAPTURE_RETIRED:-}" \
-					-e VISUAL_PARITY_SOURCE_BASE_URL=$(VISUAL_SOURCE_BASE_URL) \
-					-e VISUAL_PARITY_ADMIN_PATH=$$admin_path \
-					-e VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle \
-					-e VISUAL_PARITY_ARTIFACT_DIR=$$artifact_dir \
-					-e VISUAL_PARITY_SCENARIO_LABELS="$${VISUAL_PARITY_SCENARIO_LABELS:-}" \
-					-e VISUAL_PARITY_FILTER="$${VISUAL_PARITY_FILTER:-}" \
-					-e VISUAL_PARITY_EXACT_FILTER="$${VISUAL_PARITY_EXACT_FILTER:-}" \
-					-e VISUAL_PARITY_INTERACTION_FILTER="$(VISUAL_PARITY_INTERACTION_FILTER)" \
-					-e VISUAL_PARITY_VIEWPORT_FILTER="$${VISUAL_PARITY_VIEWPORT_FILTER:-}" \
-					-e VISUAL_PARITY_BROWSER=$(VISUAL_PARITY_BROWSER) \
-					-e VISUAL_PARITY_FRESH_BROWSER=$(VISUAL_PARITY_FRESH_BROWSER) \
-					-w /app/frontend frontend -lc 'rm -rf /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && mkdir -p /tmp/v2board-legacy-oracle "$$VISUAL_PARITY_ARTIFACT_DIR" && tar -C /tmp/v2board-legacy-oracle -xf - && $(FRONTEND_FAST_BOOTSTRAP) && $(PLAYWRIGHT_BROWSER_BOOTSTRAP) && node scripts/visual-parity.mjs'; then \
-					status=0; \
-				else \
-					status=$$?; \
-				fi; \
-				$(MAKE) --no-print-directory clean-frontend-runs; \
-				if [ "$$status" -eq 0 ]; then \
-					break; \
-				fi; \
-				if [ "$$status" != "137" ] && [ "$$attempt" -le "$(VISUAL_PARITY_RETRIES)" ]; then \
-					echo "Visual parity filtered run failed; rechecking Docker public assets before retry $$attempt/$(VISUAL_PARITY_RETRIES)."; \
-					needs_public_check=1; \
-					sleep $(VISUAL_PARITY_RETRY_DELAY); \
-					continue; \
-				fi; \
-				if [ "$$status" != "137" ] || [ "$$attempt" -gt "$(VISUAL_PARITY_RETRIES)" ]; then \
-					break; \
-				fi; \
-				echo "Visual parity hit 137; retrying filtered run after $(VISUAL_PARITY_RETRY_DELAY)s."; \
-				needs_public_check=1; \
-				sleep $(VISUAL_PARITY_RETRY_DELAY); \
-				$(DCF) stop $(VISUAL_PARITY_PAUSE_SERVICES) >/dev/null 2>&1 || true; \
-			done; \
-		fi; \
-		if [ "$(VISUAL_PARITY_RESTART_SERVICES)" != "0" ]; then \
-		$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-		fi; \
-		exit $$status
-
-browser-parity: legacy-oracle-check
-	@if [ "$(VISUAL_PARITY_SKIP_DEPLOY)" = "1" ]; then \
-		$(MAKE) --no-print-directory deploy-public-ensure || exit $$?; \
-	else \
-		$(MAKE) --no-print-directory deploy-smoke || exit $$?; \
-	fi; \
-	$(DCF) up -d app >/dev/null; \
-	status=0; \
-	batch_size="$(BROWSER_PARITY_BATCH_SIZE)"; \
-	case "$$batch_size" in ''|*[!0-9]*|0) echo "BROWSER_PARITY_BATCH_SIZE must be a positive integer."; exit 1 ;; esac; \
-	for browser in $(BROWSER_PARITY_BROWSERS); do \
-		for viewport in $(BROWSER_PARITY_VIEWPORTS); do \
-			batch=""; \
-			batch_count=0; \
-			batch_index=1; \
-			batch_first=""; \
-			for scenario in $(BROWSER_PARITY_SCENARIOS); do \
-				[ -n "$$batch_first" ] || batch_first="$$scenario"; \
-				batch="$${batch:+$$batch }$$scenario"; \
-				batch_count=$$((batch_count + 1)); \
-				if [ "$$batch_count" -ge "$$batch_size" ]; then \
-					echo "Browser parity shard: $$browser/$$viewport batch $$batch_index ($$batch_first..$$scenario)"; \
-					VISUAL_PARITY_BROWSER=$$browser \
-					VISUAL_PARITY_SCENARIO_LABELS="$$batch" \
-					VISUAL_PARITY_VIEWPORT_FILTER=$$viewport \
-					VISUAL_PARITY_SKIP_DEPLOY=1 \
-					VISUAL_PARITY_PUBLIC_CHECKED=1 \
-					VISUAL_PARITY_APP_READY=1 \
-					VISUAL_PARITY_ARTIFACT_DIR="$(VISUAL_PARITY_ARTIFACT_DIR)/browser-$$browser-$$viewport-batch-$$batch_index" \
-					$(MAKE) --no-print-directory visual-parity || status=$$?; \
-					if [ "$${status:-0}" -ne 0 ]; then \
-						$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-						exit $$status; \
-					fi; \
-					batch=""; \
-					batch_count=0; \
-					batch_index=$$((batch_index + 1)); \
-					batch_first=""; \
-				fi; \
-			done; \
-			if [ -n "$$batch" ]; then \
-				echo "Browser parity shard: $$browser/$$viewport batch $$batch_index ($$batch_first..last)"; \
-				VISUAL_PARITY_BROWSER=$$browser \
-				VISUAL_PARITY_SCENARIO_LABELS="$$batch" \
-				VISUAL_PARITY_VIEWPORT_FILTER=$$viewport \
-				VISUAL_PARITY_SKIP_DEPLOY=1 \
-				VISUAL_PARITY_PUBLIC_CHECKED=1 \
-				VISUAL_PARITY_APP_READY=1 \
-				VISUAL_PARITY_ARTIFACT_DIR="$(VISUAL_PARITY_ARTIFACT_DIR)/browser-$$browser-$$viewport-batch-$$batch_index" \
-				$(MAKE) --no-print-directory visual-parity || status=$$?; \
-				if [ "$${status:-0}" -ne 0 ]; then \
-					$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-					exit $$status; \
-				fi; \
-			fi; \
-		done; \
-	done; \
-	$(DCF) up -d $(VISUAL_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-	echo "Browser parity OK: configured browser shards passed."
-
+# Interaction/behavior parity on the frozen antd oracle, driven by Playwright
+# Test (frontend/playwright.config.mjs). A single `playwright test` run in one
+# frontend container: globalSetup starts the in-process oracle server, then each
+# spec drives the redesigned source (VISUAL_SOURCE_BASE_URL) and the oracle
+# through the same run(), reducing both worlds to Tier-1 contract fields before
+# comparing. VISUAL_PARITY_VIEWPORTS selects the viewport projects and
+# INTERACTION_PARITY_SCENARIOS narrows to specific interaction labels (empty =
+# all); the config reads both from the environment.
 interaction-parity:
 	@case "$(INTERACTION_PARITY_ARTIFACT_DIR)" in \
 		/app/frontend/*) ;; \
-		*) echo "INTERACTION_PARITY_ARTIFACT_DIR must be inside /app/frontend so shard artifacts persist across Docker one-off containers."; exit 1 ;; \
+		*) echo "INTERACTION_PARITY_ARTIFACT_DIR must be inside /app/frontend so Playwright artifacts persist across Docker one-off containers."; exit 1 ;; \
 	esac
 	@if [ "$(VISUAL_PARITY_SKIP_DEPLOY)" = "1" ]; then \
 		$(MAKE) --no-print-directory deploy-public-ensure || exit $$?; \
@@ -934,43 +623,31 @@ interaction-parity:
 		$(MAKE) --no-print-directory deploy-smoke || exit $$?; \
 	fi; \
 	$(DCF) up -d app >/dev/null; \
-	$(DCF) stop $(INTERACTION_PARITY_PAUSE_SERVICES) >/dev/null 2>&1 || true; \
-	if [ "$(INTERACTION_PARITY_SHARD_DELAY)" != "0" ]; then \
-		sleep $(INTERACTION_PARITY_SHARD_DELAY); \
+	admin_path="$${VISUAL_PARITY_ADMIN_PATH:-}"; \
+	if [ -z "$$admin_path" ]; then \
+		admin_path="$$( $(DCF) exec -T app sh -lc 'php artisan tinker --execute='\''echo config("v2board.secure_path", config("v2board.frontend_admin_path", hash("crc32b", config("app.key"))));'\'' 2>/dev/null || true' )"; \
 	fi; \
-	expected_artifacts=""; \
-	for viewport in $(VISUAL_PARITY_VIEWPORTS); do \
-		for interaction in $(INTERACTION_PARITY_SCENARIOS); do \
-			echo "Interaction parity shard: $$interaction/$$viewport"; \
-			artifact_dir="$(INTERACTION_PARITY_ARTIFACT_DIR)/$$interaction-$$viewport"; \
-			expected_artifacts="$$expected_artifacts $$interaction-$$viewport"; \
-			status=0; \
-			VISUAL_PARITY_MODE=interactions \
-			VISUAL_PARITY_SKIP_DEPLOY=1 \
-			VISUAL_PARITY_PUBLIC_CHECKED=1 \
-			VISUAL_PARITY_RESTART_SERVICES=0 \
-			VISUAL_PARITY_RETRIES=$(INTERACTION_PARITY_RETRIES) \
-			VISUAL_PARITY_PAUSE_SERVICES="$(INTERACTION_PARITY_PAUSE_SERVICES)" \
-			VISUAL_PARITY_RESUME_SERVICES="$(INTERACTION_PARITY_RESUME_SERVICES)" \
-			VISUAL_PARITY_ARTIFACT_DIR="$$artifact_dir" \
-			VISUAL_PARITY_INTERACTION_FILTER="$$interaction" \
-			VISUAL_PARITY_VIEWPORT_FILTER="$$viewport" \
-			VISUAL_PARITY_SHARD_DELAY=0 \
-			$(MAKE) --no-print-directory visual-parity || status=$$?; \
-			if [ "$${status:-0}" -ne 0 ]; then \
-				$(DCF) up -d $(INTERACTION_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-				exit $$status; \
-			fi; \
-			if [ "$(INTERACTION_PARITY_SHARD_DELAY)" != "0" ]; then \
-				sleep $(INTERACTION_PARITY_SHARD_DELAY); \
-			fi; \
-		done; \
-	done; \
+	[ -n "$$admin_path" ] || admin_path=admin; \
+	$(DCF) stop $(INTERACTION_PARITY_PAUSE_SERVICES) >/dev/null 2>&1 || true; \
 	$(MAKE) --no-print-directory clean-frontend-runs; \
-	$(FRONTEND_RUN) -e INTERACTION_PARITY_ARTIFACT_DIR=$(INTERACTION_PARITY_ARTIFACT_DIR) -e EXPECTED_INTERACTION_ARTIFACTS="$$expected_artifacts" frontend -lc 'for artifact in $$EXPECTED_INTERACTION_ARTIFACTS; do test -s "$$INTERACTION_PARITY_ARTIFACT_DIR/$$artifact/report.json" || { echo "Missing interaction parity artifact: $$artifact/report.json"; exit 1; }; done'; \
+	status=0; \
+	git archive $(LEGACY_ORACLE_REF) public/theme/default public/assets/admin resources/views/admin.blade.php | $(FRONTEND_RUN) \
+		-e PLAYWRIGHT_BROWSERS_PATH=/app/frontend/.cache/ms-playwright \
+		-e VISUAL_PARITY_SOURCE_BASE_URL=$(VISUAL_SOURCE_BASE_URL) \
+		-e VISUAL_PARITY_ADMIN_PATH=$$admin_path \
+		-e VISUAL_PARITY_ORACLE_ROOT=/tmp/v2board-legacy-oracle \
+		-e VISUAL_PARITY_VIEWPORTS="$(VISUAL_PARITY_VIEWPORTS)" \
+		-e INTERACTION_PARITY_SCENARIOS="$(INTERACTION_PARITY_SCENARIOS)" \
+		-e INTERACTION_PARITY_ARTIFACT_DIR=$(INTERACTION_PARITY_ARTIFACT_DIR) \
+		-e PARITY_WORKERS="$(PARITY_WORKERS)" \
+		-w /app/frontend frontend -lc 'rm -rf /tmp/v2board-legacy-oracle && mkdir -p /tmp/v2board-legacy-oracle "$$INTERACTION_PARITY_ARTIFACT_DIR" && tar -C /tmp/v2board-legacy-oracle -xf - && $(FRONTEND_FAST_BOOTSTRAP) && $(PLAYWRIGHT_CHROMIUM_BOOTSTRAP) && pnpm exec playwright test' || status=$$?; \
 	$(MAKE) --no-print-directory clean-frontend-runs; \
 	$(DCF) up -d $(INTERACTION_PARITY_RESUME_SERVICES) >/dev/null 2>&1 || true; \
-	echo "Interaction parity OK: all configured shards passed."; \
+	if [ "$$status" -ne 0 ]; then \
+		echo "Interaction parity failed (see the Playwright output above)."; \
+		exit $$status; \
+	fi; \
+	echo "Interaction parity OK: source interactions match the packaged oracle."; \
 	echo "Artifacts: $(INTERACTION_PARITY_ARTIFACT_DIR)"
 
 # Behavior/contract parity gate for the gradual reskin. This is the durable gate:

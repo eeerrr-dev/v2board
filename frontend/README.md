@@ -54,11 +54,11 @@ Local ports:
 
 The old packaged frontend must not be restored into the current `public/` tree
 for comparison. Use `make public-bundle-audit` to verify those host deploy
-targets are empty, `make visual-parity` for automated oracle screenshots, and
-`make legacy-oracle-serve` only for manual inspection.
+targets are empty, `make interaction-parity` for behavior parity against the
+frozen oracle, and `make legacy-oracle-serve` only for manual inspection.
 Before relying on the oracle, `make legacy-oracle-check` verifies that the
 frozen ref contains the packaged user/admin entrypoints, async chunks, i18n
-scripts, and static/theme assets used by the visual parity harness.
+scripts, and static/theme assets used by the parity harness.
 
 ## Deployment
 
@@ -101,17 +101,22 @@ Playwright Chromium at desktop and mobile sizes. This is a smoke guard for
 loaded CSS, visible layout, old-chunk regressions, and horizontal overflow; it
 is not by itself proof of full pixel parity with the packaged frontend.
 
-For screenshot parity work, run `make visual-parity`. This command is an oracle
-only: it extracts the packaged frontend from git history into Docker `/tmp`,
-serves it from a temporary local server, and compares screenshots against the
-source-built Laravel deployment. It must not be used as a source, build, Vite,
-Laravel, or deployment dependency.
+For behavior/contract parity against the frozen packaged frontend, run
+`make interaction-parity` (aliased by `make behavior-parity`). It extracts the
+packaged frontend from git history into Docker `/tmp`, serves it from an
+in-process oracle, and drives both the redesigned source and that oracle through
+the same interaction with Playwright Test (`frontend/playwright.config.mjs`),
+comparing only the Tier-1 contract fields. The pixel-screenshot lane is retired:
+every visual scenario is `visualRetired`, so parity is behavioral, not
+byte-for-byte. It must not be used as a source, build, Vite, Laravel, or
+deployment dependency.
 
 Run `make parity-config-audit` after adding or renaming parity scenarios. It is
-also part of `make doctor` and prevents the Makefile full-suite lists from
-drifting away from `frontend/scripts/visual-parity.mjs`; it also checks that
-user/admin routes have screenshot parity coverage. The target runs in the Docker
-frontend container, so it does not require host Node.
+also part of `make doctor` and prevents the Makefile `INTERACTION_PARITY_SCENARIOS`
+list from drifting away from the parity modules under `frontend/tests/lib`; it
+also checks that every interaction maps to a spec group and that user/admin
+routes keep behavior coverage. The target runs in the Docker frontend container,
+so it does not require host Node.
 
 The deploy build is not considered fully source-restored while it copies,
 concatenates, or links old `umi.css`, `components.chunk.css`, `umi.js`,

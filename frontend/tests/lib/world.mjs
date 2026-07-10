@@ -5,7 +5,7 @@
 // server). Each world independently asserts its raw result is useful
 // (assertUsefulInteraction), then the results are reduced to Tier-1 fields
 // (normalizeInteractionResult + collapseCjkDeep) and compared cross-world by
-// stableJson equality. This ports the interactions lane of the legacy
+// stableJson equality. This ports the interactions lane of the retired
 // frontend/scripts/visual-parity.mjs driver (runInteractionParity /
 // runInteractionTarget / preparePageForInteraction) onto @playwright/test.
 import { readFileSync } from 'node:fs';

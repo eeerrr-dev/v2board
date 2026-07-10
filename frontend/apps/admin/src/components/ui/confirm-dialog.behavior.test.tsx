@@ -99,7 +99,7 @@ describe('confirm dialog queued behavior', () => {
     // The shell is a real alert dialog labelled by its title (shadcn/Radix
     // alert-dialog semantics rather than an Ant modal shim).
     const dialog = await screen.findByRole('alertdialog', { name: 'Hooked' });
-    // frontend/scripts/visual-parity.mjs selects these v2board-* hooks, so they
+    // The interaction-parity harness (frontend/tests/lib) selects these v2board-* hooks, so they
     // must stay addressable on the rendered dialog.
     expect(dialog).toHaveClass('v2board-confirm-dialog');
     expect(within(dialog).getByText('Hooked')).toHaveClass('v2board-confirm-title');
