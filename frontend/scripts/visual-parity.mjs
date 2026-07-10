@@ -1939,6 +1939,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-dashboard',
+    visualRetired: true,
     path: `/${adminPath}#/dashboard`,
     postReadyDelay: 800,
     readySelector: '[role="alert"], .alert.alert-danger',
@@ -1950,6 +1951,7 @@ const scenarios = [
     forceAdminUnauthorized: true,
     forceCheckLoginNotAdmin: true,
     label: 'admin-dashboard-session-expired',
+    visualRetired: true,
     path: `/${adminPath}#/dashboard`,
     postReadyDelay: 300,
     readySelector: '.v2board-auth-box',
@@ -1958,6 +1960,7 @@ const scenarios = [
     authenticated: true,
     darkMode: true,
     label: 'admin-dashboard-dark',
+    visualRetired: true,
     path: `/${adminPath}#/dashboard`,
     postReadyDelay: 800,
     readySelector: '[role="alert"], .alert.alert-danger',
@@ -1967,6 +1970,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-plans',
+    visualRetired: true,
     path: `/${adminPath}#/plan`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -1976,6 +1980,7 @@ const scenarios = [
     adminPlansTimeout: true,
     authenticated: true,
     label: 'admin-plans-timeout',
+    visualRetired: true,
     path: `/${adminPath}#/plan`,
     postReadyDelay: 800,
     readySelector: '[data-slot="table"], .ant-table',
@@ -1985,6 +1990,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-orders',
+    visualRetired: true,
     path: `/${adminPath}#/order`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -1993,6 +1999,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-orders-long-data',
+    visualRetired: true,
     longData: true,
     path: `/${adminPath}#/order`,
     postReadyDelay: 500,
@@ -2004,6 +2011,7 @@ const scenarios = [
     adminOrdersHttpError: true,
     authenticated: true,
     label: 'admin-orders-api-500',
+    visualRetired: true,
     path: `/${adminPath}#/order`,
     postReadyDelay: 500,
     readySelector: '[data-slot="table"], .ant-table',
@@ -2014,6 +2022,7 @@ const scenarios = [
     adminOrdersTimeout: true,
     authenticated: true,
     label: 'admin-orders-timeout',
+    visualRetired: true,
     path: `/${adminPath}#/order`,
     postReadyDelay: 800,
     readySelector: '[data-slot="table"], .ant-table',
@@ -2023,6 +2032,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-users',
+    visualRetired: true,
     path: `/${adminPath}#/user`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -2032,6 +2042,7 @@ const scenarios = [
     adminUsersTimeout: true,
     authenticated: true,
     label: 'admin-users-timeout',
+    visualRetired: true,
     path: `/${adminPath}#/user`,
     postReadyDelay: 800,
     readySelector: '[data-slot="table"], .ant-table',
@@ -2042,6 +2053,7 @@ const scenarios = [
     adminUsersHttpError: true,
     authenticated: true,
     label: 'admin-users-api-500',
+    visualRetired: true,
     path: `/${adminPath}#/user`,
     postReadyDelay: 500,
     readySelector: '[data-slot="table"], .ant-table',
@@ -2052,6 +2064,7 @@ const scenarios = [
     adminTicketsTimeout: true,
     authenticated: true,
     label: 'admin-tickets-timeout',
+    visualRetired: true,
     path: `/${adminPath}#/ticket`,
     postReadyDelay: 800,
     readySelector: '[data-slot="table"], .ant-table',
@@ -2061,6 +2074,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-users-long-data',
+    visualRetired: true,
     longData: true,
     path: `/${adminPath}#/user`,
     postReadyDelay: 500,
@@ -2071,6 +2085,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-tickets',
+    visualRetired: true,
     path: `/${adminPath}#/ticket`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -2079,6 +2094,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-ticket-detail',
+    visualRetired: true,
     path: `/${adminPath}#/ticket/7`,
     readySelector: '[data-testid="ticket-reply-input"], .js-chat-input',
     seedLegacyAdminStore: true,
@@ -2087,6 +2103,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-config',
+    visualRetired: true,
     path: `/${adminPath}#/config/system`,
     readySelector: '[data-testid^="config-tab-"], .ant-tabs-tab',
     seedLegacyAdminStore: true,
@@ -2095,6 +2112,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-theme',
+    visualRetired: true,
     path: `/${adminPath}#/config/theme`,
     readySelector: '[data-testid^="theme-card-"], .block-transparent.bg-image',
     seedLegacyAdminStore: true,
@@ -2103,6 +2121,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-system',
+    visualRetired: true,
     path: `/${adminPath}#/queue`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -2111,6 +2130,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-server-groups',
+    visualRetired: true,
     path: `/${adminPath}#/server/group`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -2119,6 +2139,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-server-manage',
+    visualRetired: true,
     path: `/${adminPath}#/server/manage`,
     postReadyDelay: 300,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
@@ -2128,6 +2149,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-server-manage-long-data',
+    visualRetired: true,
     longData: true,
     path: `/${adminPath}#/server/manage`,
     postReadyDelay: 500,
@@ -2139,6 +2161,7 @@ const scenarios = [
     adminServerManageTimeout: true,
     authenticated: true,
     label: 'admin-server-manage-timeout',
+    visualRetired: true,
     path: `/${adminPath}#/server/manage`,
     postReadyDelay: 800,
     readySelector: '[data-slot="table"], .ant-table',
@@ -2148,6 +2171,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-server-routes',
+    visualRetired: true,
     path: `/${adminPath}#/server/route`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -2156,6 +2180,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-payments',
+    visualRetired: true,
     path: `/${adminPath}#/config/payment`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -2165,6 +2190,7 @@ const scenarios = [
     adminPaymentsTimeout: true,
     authenticated: true,
     label: 'admin-payments-timeout',
+    visualRetired: true,
     path: `/${adminPath}#/config/payment`,
     postReadyDelay: 800,
     readySelector: '[data-slot="table"], .ant-table',
@@ -2174,6 +2200,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-coupons',
+    visualRetired: true,
     path: `/${adminPath}#/coupon`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -2183,6 +2210,7 @@ const scenarios = [
     adminCouponsTimeout: true,
     authenticated: true,
     label: 'admin-coupons-timeout',
+    visualRetired: true,
     path: `/${adminPath}#/coupon`,
     postReadyDelay: 800,
     readySelector: '[data-slot="table"], .ant-table',
@@ -2192,6 +2220,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-giftcards',
+    visualRetired: true,
     path: `/${adminPath}#/giftcard`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -2201,6 +2230,7 @@ const scenarios = [
     adminGiftcardsTimeout: true,
     authenticated: true,
     label: 'admin-giftcards-timeout',
+    visualRetired: true,
     path: `/${adminPath}#/giftcard`,
     postReadyDelay: 800,
     readySelector: '[data-slot="table"], .ant-table',
@@ -2210,6 +2240,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-notices',
+    visualRetired: true,
     path: `/${adminPath}#/notice`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -2219,6 +2250,7 @@ const scenarios = [
     adminNoticesTimeout: true,
     authenticated: true,
     label: 'admin-notices-timeout',
+    visualRetired: true,
     path: `/${adminPath}#/notice`,
     postReadyDelay: 800,
     readySelector: '[data-slot="table"], .ant-table',
@@ -2228,6 +2260,7 @@ const scenarios = [
   {
     authenticated: true,
     label: 'admin-knowledge',
+    visualRetired: true,
     path: `/${adminPath}#/knowledge`,
     readySelector: '[data-slot="table-row"], .ant-table-tbody tr',
     seedLegacyAdminStore: true,
@@ -2237,14 +2270,20 @@ const scenarios = [
     adminKnowledgeTimeout: true,
     authenticated: true,
     label: 'admin-knowledge-timeout',
+    visualRetired: true,
     path: `/${adminPath}#/knowledge`,
     postReadyDelay: 800,
     readySelector: '[data-slot="table"], .ant-table',
     seedLegacyAdminStore: true,
     warmupPath: `/${adminPath}#/login`,
   },
-  { label: 'admin-root', path: `/${adminPath}#/`, readySelector: '.v2board-auth-box' },
-  { label: 'admin-login', path: `/${adminPath}#/login` },
+  {
+    label: 'admin-root',
+    path: `/${adminPath}#/`,
+    readySelector: '.v2board-auth-box',
+    visualRetired: true,
+  },
+  { label: 'admin-login', path: `/${adminPath}#/login`, visualRetired: true },
 ];
 const interactionScenarios = [
   {
