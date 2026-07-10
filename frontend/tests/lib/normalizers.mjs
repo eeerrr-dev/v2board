@@ -8,6 +8,8 @@ import {
   sortForStableJson,
 } from './json-util.mjs';
 import { normalizeParityText } from './text.mjs';
+import { visibleTexts } from './dom-helpers.mjs';
+import { dashboardResetPackageTradeNo, profileDepositTradeNo } from './fixture-data.mjs';
 import { authPageState } from './state-readers/auth.mjs';
 import { isDarkModeActiveControlState } from './assert-useful.mjs';
 

@@ -5,6 +5,12 @@ import {
   requestIncludesParamValue,
   stableJson,
 } from './json-util.mjs';
+import {
+  couponCheckFixture,
+  couponErrorCode,
+  dashboardResetPackageTradeNo,
+  profileDepositTradeNo,
+} from './fixture-data.mjs';
 
 export function isDarkModeReadyState(state) {
   return Boolean(state?.darkReaderReady || state?.shadcnDarkReady);
