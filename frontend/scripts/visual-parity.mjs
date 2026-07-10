@@ -14556,19 +14556,39 @@ async function clickHeaderAvatarTrigger(page) {
   // Radix opens on real pointer events, so a synthetic element.click() is a
   // no-op. Use Playwright's page.click for the shadcn trigger; the legacy antd
   // header dropdown still opens fine via a synthetic click.
-  const shadcnVisible = await page.evaluate(() => {
-    const element = document.querySelector('[data-testid="admin-avatar-trigger"]');
-    if (!element) return false;
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-    return (
-      rect.width > 0 &&
-      rect.height > 0 &&
-      style.display !== 'none' &&
-      style.visibility !== 'hidden'
-    );
+  const shadcn = await page.evaluate(() => {
+    const isVisible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      );
+    };
+    return {
+      triggerVisible: isVisible(document.querySelector('[data-testid="admin-avatar-trigger"]')),
+      // The redesigned shell always renders a header SidebarTrigger; antd does
+      // not. On mobile the sidebar-footer account chip lives inside the collapsed
+      // nav sheet, which Radix only mounts when open — so the avatar trigger is
+      // absent from the DOM (not merely hidden) until the sheet opens.
+      shadcnShell: Boolean(document.querySelector('#page-header [data-sidebar="trigger"]')),
+    };
   });
-  if (shadcnVisible) {
+  if (shadcn.triggerVisible) {
+    await page.click('[data-testid="admin-avatar-trigger"]');
+    return;
+  }
+  if (shadcn.shadcnShell) {
+    // Open the collapsed mobile nav sheet via the header SidebarTrigger (same as
+    // the dashboard language menu), then the footer avatar trigger mounts.
+    await page.click('#page-header [data-sidebar="trigger"]');
+    await page.waitForSelector('[data-testid="admin-avatar-trigger"]', {
+      state: 'visible',
+      timeout: 5_000,
+    });
     await page.click('[data-testid="admin-avatar-trigger"]');
     return;
   }
